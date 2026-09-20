@@ -21,6 +21,7 @@ import type { TokenUsage } from '#universal/ai/tokenUsage.ts'
 import { toolDisplayName } from '#universal/ai/toolDisplay.ts'
 import { ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
 import type { BranchPoint } from '../../chat/branchPoint.ts'
+import type { UnwindBlocker } from '../../chat/unwind.ts'
 import { ChatActivity, type TurnQueries } from './chatActivity.tsx'
 import { clearChatDraft, useChatDraft, type ChatDraft } from './chatDraft.ts'
 import { FileClips, Paperclip, type PendingChatFile, useChatFiles } from './chatFiles.tsx'
@@ -28,6 +29,7 @@ import { ChatImages, replyImages } from './chatImages.tsx'
 import { renderChatMarkdown } from './chatMarkdown.ts'
 import { chatMessageId, ChatTurnNavigation } from './chatNavigation.tsx'
 import { ChatSelectionMenu } from './chatSelection.tsx'
+import { QuestionMenu, UnwindNote, type UnwindNoteState, useUnwind } from './chatUnwind.tsx'
 import { useChatVoice } from './chatVoice.ts'
 import { ChatWritingDraft, WritingDraftReply } from './chatWritingDraft.tsx'
 import { splitWritingDrafts, useWritingDrafts, writingDraftRequest } from './chatWritingDrafts.ts'
@@ -189,6 +191,8 @@ export interface ThreadState {
   inherited: number
   /** The chat this thread branched from; null for one that began on its own */
   parent: ThreadParent | null
+  /** Messages at the head of `turns` that cannot be deleted: inherited, or already in the notebook file */
+  fixed: number
   /** The saved chat this thread continues, relative to the notebook root; null for one with no file yet */
   saved: string | null
   /** The branches filed beside that chat */
@@ -235,6 +239,7 @@ type Action =
       runs?: Run[]
       queries?: TurnQueries[]
       inherited?: number
+      fixed?: number
       parent?: ThreadParent | null
       saved?: string | null
       branches?: SavedBranch[]
@@ -252,7 +257,10 @@ type Action =
       runs: Run[]
       queries?: TurnQueries[]
       interrupted?: Interrupted | null
+      fixed?: number
     }
+  /** A delete from the first question: nothing of the thread is left but its tuning */
+  | { type: 'emptied'; id: string }
   | { type: 'approval'; id: string; approval: Approval }
   | { type: 'answered'; id: string; approvalId: string; approved: boolean; at: number }
   | { type: 'sent'; id: string; content: string; files?: PendingChatFile[] }
@@ -311,6 +319,7 @@ function initial(id: string): ThreadState {
     phase: 'idle',
     inherited: 0,
     parent: null,
+    fixed: 0,
     saved: null,
     branches: [],
     loaded: false,
@@ -358,6 +367,7 @@ function reduce(state: ThreadState, action: Action): ThreadState {
         documents: action.documents,
         loaded: true,
         inherited: action.inherited ?? 0,
+        fixed: action.fixed ?? 0,
         parent: action.parent ?? null,
         saved: action.saved ?? null,
         branches: action.branches ?? [],
@@ -380,10 +390,13 @@ function reduce(state: ThreadState, action: Action): ThreadState {
         runs: action.runs,
         queries: action.queries ?? state.queries,
         interrupted: action.interrupted ?? null,
+        fixed: action.fixed ?? state.fixed,
         phase: action.busy ? 'busy' : 'idle',
         gather: action.busy ? (action.approvals.length > 0 ? WAITING : 'still working') : null,
         contextVersion: action.busy ? state.contextVersion : state.contextVersion + 1,
       }
+    case 'emptied':
+      return { ...initial(state.id), loaded: true, settings: state.settings, contextVersion: state.contextVersion + 1 }
     case 'approval':
       if (state.approvals.some((a) => a.id === action.approval.id)) return state
       return { ...state, approvals: [...state.approvals, action.approval], gather: WAITING }
@@ -629,6 +642,7 @@ interface ThreadBody {
   kept: number | null
   busy?: boolean
   inherited?: number
+  fixed?: number
   parent?: ThreadParent | null
   saved?: string | null
   branches?: SavedBranch[]
@@ -709,6 +723,7 @@ export function useChat(id: string) {
       runs: body.runs ?? [],
       queries: body.queries ?? [],
       interrupted: interruptedOf(body),
+      fixed: body.fixed,
     })
   }, [id])
 
@@ -759,6 +774,7 @@ export function useChat(id: string) {
           runs: body.runs ?? [],
           queries: body.queries ?? [],
           inherited: body.inherited ?? 0,
+          fixed: body.fixed ?? 0,
           parent: body.parent ?? null,
           saved: body.saved ?? null,
           branches: body.branches ?? [],
@@ -1112,6 +1128,44 @@ export function useChat(id: string) {
     [state.id, state.phase],
   )
 
+  // Delete from here: the service keeps the thread through `point`'s reply
+  // (nothing, when null) and removes what follows; the page then shows the
+  // thread as the service holds it. A refusal comes back in words, with the
+  // open threads in the way when that is why.
+  const unwind = useCallback(
+    async (
+      point: BranchPoint | null,
+    ): Promise<{ turns: number } | { message: string; blockedBy?: UnwindBlocker[] }> => {
+      if (!state.id) return { message: 'No thread to delete from.' }
+      if (state.phase !== 'idle') return { message: 'Wait for the turn to finish, then delete.' }
+      const id = state.id
+      const response = await fetch(`/chat/${id}/unwind`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(point ?? { turn: 0 }),
+      }).catch(() => null)
+      if (!response) return { message: "Couldn't reach sky — is the service running?" }
+      const body = (await response.json().catch(() => ({}))) as {
+        turns?: number
+        message?: string
+        blockedBy?: UnwindBlocker[]
+      }
+      if (!response.ok || typeof body.turns !== 'number') {
+        return { message: body.message ?? `The service answered ${response.status}.`, blockedBy: body.blockedBy }
+      }
+      if (body.turns === 0) dispatch({ id, type: 'emptied' })
+      else {
+        try {
+          await reload()
+        } catch {
+          return { message: 'Deleted, but this page could not refresh. Reload the page.' }
+        }
+      }
+      return { turns: body.turns }
+    },
+    [state.id, state.phase, reload],
+  )
+
   // Ending a thread files it through the same gate as ai:chat (or drops
   // it). The temporary notification keeps the full result behind View.
   // Every write the save makes to the machine-owned stores is among them;
@@ -1218,6 +1272,7 @@ export function useChat(id: string) {
     reload,
     answer,
     branch,
+    unwind,
   }
 }
 
@@ -1730,6 +1785,7 @@ export function ThreadColumn({
     }
   }
   const leftAt = (point?: BranchPoint) => (point ? branches.filter((b) => b.turn === point.turn) : [])
+  const unwinding = useUnwind(chat, branches, replyThreads)
   // Why a branch did not open, said under the turns for a moment; and which
   // turn's branch is being made, so its button says so meanwhile.
   const [refusal, setRefusal] = useState<string | null>(null)
@@ -1840,6 +1896,12 @@ export function ThreadColumn({
                   : undefined
               }
               branching={branching !== null && branching === turn.branchPoint?.key}
+              going={unwinding.from !== null && i >= unwinding.from}
+              goingFrom={unwinding.from === i}
+              onDelete={unwinding.offers(i) ? () => unwinding.ask(i) : undefined}
+              unwindNote={unwinding.at === i ? unwinding.note : null}
+              onUnwindConfirm={unwinding.confirm}
+              onUnwindCancel={unwinding.cancel}
             />
             {replyMode && i === state.inherited - 1 && (
               <div className="sky-reply-divider">
@@ -1888,6 +1950,9 @@ export function ThreadColumn({
             )}
           </Fragment>
         ),
+      )}
+      {unwinding.deleted && (
+        <div className="sky-condensed">— deleted from here · your question is back in the box —</div>
       )}
       {writing.drafts
         .filter((draft) => draftAt(draft) >= state.turns.length)
@@ -2464,6 +2529,12 @@ export function TurnView({
   replyThread,
   activeReplyId,
   writingDrafts,
+  going = false,
+  goingFrom = false,
+  onDelete,
+  unwindNote,
+  onUnwindConfirm,
+  onUnwindCancel,
 }: {
   turn: Turn
   messageId?: string
@@ -2484,6 +2555,16 @@ export function TurnView({
   replyThread?: ReplyThreadSummary
   activeReplyId?: string
   writingDrafts?: Omit<Parameters<typeof WritingDraftReply>[0], 'content' | 'html'>
+  /** The turn is among those an open delete would remove — drawn faint */
+  going?: boolean
+  /** The first of them: what follows it on the page goes too */
+  goingFrom?: boolean
+  /** "Delete from here…": on a question whose turn can still be deleted */
+  onDelete?: () => void
+  /** The confirm, or the refusal, standing under this question */
+  unwindNote?: UnwindNoteState | null
+  onUnwindConfirm?: () => void
+  onUnwindCancel?: () => void
 }) {
   const userMessage = useMemo(() => {
     if (turn.role !== 'user') return null
@@ -2500,16 +2581,24 @@ export function TurnView({
         data-chat-message={messageId}
         data-speaker="You"
         data-shared={shared || undefined}
+        data-going={going || undefined}
+        data-going-from={goingFrom || undefined}
       >
-        <div className="sky-bubble">
-          {text &&
-            (html ? (
-              <RenderedHtml className="sky-bubble-text sky-rendered" html={html} />
-            ) : (
-              <div className="sky-bubble-text">{text}</div>
-            ))}
-          <FileClips files={files.length ? files : (turn.files ?? [])} />
+        <div className="sky-question">
+          {onDelete && <QuestionMenu onDelete={onDelete} />}
+          <div className="sky-bubble">
+            {text &&
+              (html ? (
+                <RenderedHtml className="sky-bubble-text sky-rendered" html={html} />
+              ) : (
+                <div className="sky-bubble-text">{text}</div>
+              ))}
+            <FileClips files={files.length ? files : (turn.files ?? [])} />
+          </div>
         </div>
+        {unwindNote && onUnwindConfirm && onUnwindCancel && (
+          <UnwindNote note={unwindNote} onConfirm={onUnwindConfirm} onCancel={onUnwindCancel} />
+        )}
       </div>
     )
   }
@@ -2533,6 +2622,8 @@ export function TurnView({
         data-speaker="Sky"
         data-streaming={streaming || undefined}
         data-shared={shared || undefined}
+        data-going={going || undefined}
+        data-going-from={goingFrom || undefined}
       >
         <span className="sky-who">
           <span>sky{turn.time ? ` · ${turn.time}` : ''}</span>

@@ -53,6 +53,7 @@ import { registerReplyThreads, type ReplyThreadHost } from './replyThreads.ts'
 import { registerSelectionStarts, type SelectionStartOptions } from './selection.ts'
 import { timelineOf } from './timeline.ts'
 import { inspectablePayload, recordToolExecution, restoreToolRuns, toolRunsFromMessages } from './toolRuns.ts'
+import { fixedMessages, registerUnwind } from './unwind.ts'
 import { isSpokenTurns, voiceConversation } from './voiceTranscript.ts'
 
 /** What a thread is tuned with before its first message builds it. */
@@ -830,6 +831,7 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
     },
   }
   const openingReply = registerReplyThreads(app, replyHost)
+  registerUnwind(app, { ...replyHost, accepting, pending })
 
   // The window the host serves for a profile, as the picker lists it; undefined takes any budget.
   const windowOf = (host: ChatSettingsHost, profile: string) =>
@@ -1202,6 +1204,7 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
       title: titleOf(thread),
       parent: thread.parent,
       inherited: thread.session.inherited,
+      fixed: fixedMessages(thread.session),
       saved: savedOf(thread, baseDir),
       branches: await savedBranchesOf(savedOf(thread, baseDir), baseDir),
       turns: thread.session.turns,

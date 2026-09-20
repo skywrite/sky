@@ -434,6 +434,89 @@
   justify-content: flex-end;
 }
 
+/* A question and its menu share a row. The menu sits at the bubble's foot, so it opens below the words. */
+.sky-question {
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+  gap: 4px;
+  width: 100%;
+  min-width: 0;
+}
+
+/* Always there, quiet at rest: a control shown only on hover cannot be reached by touch. */
+.sky-question-more {
+  flex-shrink: 0;
+  opacity: 0.55;
+}
+
+.sky-question-more:hover,
+.sky-question-more:focus-visible,
+.sky-question-more[aria-expanded='true'] {
+  opacity: 1;
+}
+
+.sky-menu-danger {
+  --menu-item-color: var(--sky-action-danger);
+  --menu-item-hover: var(--sky-action-danger-soft);
+}
+
+/* The confirm under a question, or why the delete cannot happen: aligned with the bubble it belongs to. */
+.sky-unwind-note {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  max-width: min(100%, 46ch);
+  margin-top: 2px;
+  text-align: right;
+}
+
+.sky-unwind-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--sky-text);
+}
+
+.sky-unwind-line {
+  font-size: 15px;
+  line-height: 1.45;
+  color: var(--sky-text-2);
+}
+
+.sky-unwind-line[data-tone='done'] {
+  color: var(--sky-amber);
+}
+
+.sky-unwind-line a {
+  color: var(--sky-accent);
+  text-decoration: none;
+}
+
+.sky-unwind-line a:hover {
+  text-decoration: underline;
+}
+
+.sky-unwind-acts {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+/* While a delete waits for its answer, what would go is drawn faint: the turns, and what stands between them. */
+.sky-turn[data-going] > :not(.sky-unwind-note) {
+  opacity: 0.38;
+}
+
+.sky-turn-user[data-going] > .sky-question {
+  opacity: 0.55;
+}
+
+.sky-turn[data-going-from] ~ :not(.sky-turn) {
+  opacity: 0.38;
+}
+
 /* A reply thread shares the page with its parent, with its own scroll and composer. */
 .sky-reply-panel {
   display: flex;

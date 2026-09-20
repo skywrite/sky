@@ -1,6 +1,6 @@
 ---
 created: 2026-09-01
-updated: 2026-09-18
+updated: 2026-09-20
 ---
 
 # Chat over HTTP — a thread, its tuning, and the story of its context
@@ -339,6 +339,25 @@ a person can see and touch:
   on talking into that file; the branch then files beside it, in the
   folder carrying the parent's name, holding only its own turns and its
   parent key. The rail lists a day's branches under the chat each left.
+- **Delete from here.** A question's options menu offers it, on the page
+  only. The thread is kept through the reply before that question, and what
+  follows leaves: the turns, their context log entries, the model's own
+  history, the tool runs, the answered cards, usage and timings. The
+  recovery snapshot is rewritten without them at once. The question's text
+  returns to the composer unsent, after anything already typed there.
+  `POST /chat/:id/unwind` `{ turn, key? }` keeps the thread through reply
+  `turn`, named by the same key branching uses, so a page showing an older
+  conversation deletes nothing. `turn: 0` keeps nothing: the snapshot goes
+  and the id holds only its tuning again, as before its first message. The
+  thread is rebuilt the way a restart rebuilds it, from the state through
+  the kept reply, under the same id and start time. Three kinds of turn
+  cannot go, and the route says which in words: turns already in the
+  thread's notebook file, turns a branch inherited, and turns that a branch
+  or reply thread still open was made from. The read-back carries `fixed`,
+  the count of messages at the head that the first two cover, and the page
+  offers no delete on them. Nothing in the notebook is rewritten. What tools
+  already did stays done; the confirm names each approved call among the
+  turns that go. See [2026-09-20 — delete from here](2026-09-20-delete-from-here.md).
 - **A saved chat opens to continue.** Continue chat in either day list opens a thread
   whose session writes back to its file — `POST /chat/open` `{ chat }`
   with the path relative to the notebook root; opening the same file again
@@ -548,6 +567,22 @@ failed check reads as usual. See
   removing the copy.
 
 ## Verified
+
+- 2026-09-20 — delete from here. Route tests on real sessions with a
+  scripted model: a delete from the second of three questions leaves one
+  exchange with only its runs, usage, timings and queries; the snapshot
+  holds the kept question and neither deleted one; the next message reaches
+  the model with the kept tool result and without the deleted questions. A
+  delete from the first question removes the thread and its snapshot and
+  keeps the id's tuning. Refused: a stale key, nothing after the point, a
+  turn running, a branch or reply thread still open after the point (named
+  in the answer), turns a branch inherited, turns already in the file. On a
+  saved chat continued for two turns, the unsaved last turn deletes and the
+  rest saves through the write-back gate. Browser tests on the real page:
+  the confirm under the question with its counts, the faint region, Escape,
+  the question joining text already in the composer, the next message
+  continuing, the refusal linking an open branch, an emptied chat, no offer
+  on saved turns, and the approved call named in the confirm.
 
 - 2026-09-18 — the preflight's second question for follow-ups, after a
   day of verdicts showed the first one reading nearly everything.
