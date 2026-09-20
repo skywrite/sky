@@ -2,7 +2,7 @@ import * as path from 'node:path'
 import { taskLinkLabel } from '#commands/lib/linkLabel.ts'
 import { ArgOrFlag, categoryTodo, Command, CommandResult, dayFlag, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
-import { dayFile } from '#lib/nbfs/mod.ts'
+import { dayFile, withDayWrite, withScheduleWrite } from '#lib/nbfs/mod.ts'
 import { exists, readTextFile, writeTextFile } from '#shared/fs/mod.ts'
 import ItemList from '#shared/models/Markdown/ItemList/mod.ts'
 import type { Link } from '#shared/models/Markdown/Link/mod.ts'
@@ -55,36 +55,42 @@ export default class DayTodoAddTask extends Command {
     const file = path.join(<string>config.DIR_TIME, dayFile(when))
     const fileExists = await exists(file)
 
+    // Adds sent at once wait their turn on the file they write, so each one
+    // reads what the add before it wrote.
     if (!fileExists) {
       const scheduleFile = category.startsWith('Personal')
         ? config.FILE_SCHEDULE_PERSONAL
         : config.FILE_SCHEDULE_PROFESSIONAL
 
-      const contents = await readTextFile(scheduleFile as string)
-      const doc = ListDocument.fromMarkdown(contents)
-      const dateStr = when.ymd
+      return withScheduleWrite(config, async () => {
+        const contents = await readTextFile(scheduleFile as string)
+        const doc = ListDocument.fromMarkdown(contents)
+        const dateStr = when.ymd
 
-      const existingIndex = doc.findListIndex((list) => list.title === dateStr)
+        const existingIndex = doc.findListIndex((list) => list.title === dateStr)
 
-      let docWithDateList = doc
-      if (existingIndex < 0) {
-        const emptyList = new ItemList(dateStr)
-        const insertIndex = doc.findListIndex((list) => list.title > dateStr)
-        docWithDateList = doc.insertList(insertIndex < 0 ? doc.lists.length : insertIndex, emptyList)
-      }
+        let docWithDateList = doc
+        if (existingIndex < 0) {
+          const emptyList = new ItemList(dateStr)
+          const insertIndex = doc.findListIndex((list) => list.title > dateStr)
+          docWithDateList = doc.insertList(insertIndex < 0 ? doc.lists.length : insertIndex, emptyList)
+        }
 
-      const newDoc = docWithDateList.addItem(dateStr, taskWithLink, { links: linkMap })
+        const newDoc = docWithDateList.addItem(dateStr, taskWithLink, { links: linkMap })
 
-      await writeTextFile(scheduleFile as string, newDoc.toMarkdown())
-      output.log(`Added to schedule (day file does not exist yet)`)
-      return CommandResult.success()
+        await writeTextFile(scheduleFile as string, newDoc.toMarkdown())
+        output.log(`Added to schedule (day file does not exist yet)`)
+        return CommandResult.success()
+      })
     }
 
-    const contents = await readTextFile(file)
-    const doc = ListDocument.fromMarkdown(contents)
-    const newDoc = doc.addItem(category, taskWithLink, { links: linkMap })
+    return withDayWrite(config, when.ymd, async () => {
+      const contents = await readTextFile(file)
+      const doc = ListDocument.fromMarkdown(contents)
+      const newDoc = doc.addItem(category, taskWithLink, { links: linkMap })
 
-    await writeTextFile(file, newDoc.toMarkdown())
-    return CommandResult.success()
+      await writeTextFile(file, newDoc.toMarkdown())
+      return CommandResult.success()
+    })
   }
 }

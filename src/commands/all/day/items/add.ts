@@ -9,7 +9,7 @@ import * as path from 'node:path'
 import { AIChatTool } from '#commands/lib/AIChatTool.ts'
 import { ArgOrFlag, category, Command, CommandResult, dayFlag, Flag, isFailOrError } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
-import { dayFile } from '#lib/nbfs/mod.ts'
+import { dayFile, withDayWrite } from '#lib/nbfs/mod.ts'
 import { exists, readTextFile, writeTextFile } from '#shared/fs/mod.ts'
 import DayDocument from '#shared/models/Day/mod.ts'
 import { type DayListKind, parseListKind } from './lib/items.ts'
@@ -80,31 +80,35 @@ export default class DayItemsAddTask extends Command {
       return CommandResult.success({ day: when.ymd, list: `${cat} Todos`, item: task, filed: 'schedule' })
     }
 
-    // The DayDocument add methods create a missing list in its canonical
-    // position. addItem-by-title must not be used here: on a day without
-    // the list it silently appends to the LAST list (findListFromIndexOrTitle
-    // resolves a missing title to index -1).
-    let item = task
-    let list: string
-    const day = DayDocument.fromMarkdown(await readTextFile(file))
-    let next: DayDocument
-    if (kind === 'todos') {
-      list = `${cat} Todos`
-      next = day.addTodoItem(task, { category: cat })
-    } else if (kind === 'reminders') {
-      list = 'Reminders'
-      next = day.addReminderItem(task)
-    } else {
-      if (time) {
-        const normalized = normalizeTime(time)
-        if (!normalized) return CommandResult.fail(`Not a clock time: "${time}" — use HH:MM.`)
-        item = `${normalized} > ${task}`
+    // A chat model asked for several items sends the adds at once. Each one
+    // waits its turn here, so it reads the file the add before it wrote.
+    return withDayWrite<CommandResult<Result>>(config, when.ymd, async () => {
+      // The DayDocument add methods create a missing list in its canonical
+      // position. addItem-by-title must not be used here: on a day without
+      // the list it silently appends to the LAST list (findListFromIndexOrTitle
+      // resolves a missing title to index -1).
+      let item = task
+      let list: string
+      const day = DayDocument.fromMarkdown(await readTextFile(file))
+      let next: DayDocument
+      if (kind === 'todos') {
+        list = `${cat} Todos`
+        next = day.addTodoItem(task, { category: cat })
+      } else if (kind === 'reminders') {
+        list = 'Reminders'
+        next = day.addReminderItem(task)
+      } else {
+        if (time) {
+          const normalized = normalizeTime(time)
+          if (!normalized) return CommandResult.fail(`Not a clock time: "${time}" — use HH:MM.`)
+          item = `${normalized} > ${task}`
+        }
+        list = `${cat} Commitments`
+        next = day.addCommitmentItem(item, { category: cat })
       }
-      list = `${cat} Commitments`
-      next = day.addCommitmentItem(item, { category: cat })
-    }
-    await writeTextFile(file, next.toMarkdown())
-    output.log(`Added to ${list}: ${item}`)
-    return CommandResult.success({ day: when.ymd, list, item, filed: 'day' })
+      await writeTextFile(file, next.toMarkdown())
+      output.log(`Added to ${list}: ${item}`)
+      return CommandResult.success({ day: when.ymd, list, item, filed: 'day' })
+    })
   }
 }

@@ -8,7 +8,7 @@ import * as path from 'node:path'
 import { AIChatTool } from '#commands/lib/AIChatTool.ts'
 import { ArgOrFlag, Command, CommandResult, dayFlag, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
-import { dayFile } from '#lib/nbfs/mod.ts'
+import { dayFile, withDayWrite } from '#lib/nbfs/mod.ts'
 import { exists, readTextFile, writeTextFile } from '#shared/fs/mod.ts'
 import DayDocument from '#shared/models/Day/mod.ts'
 import { cleanItemText, findDayItem, parseListKind } from './lib/items.ts'
@@ -55,32 +55,36 @@ export default class DayItemsDoneTask extends Command {
       return CommandResult.fail(`No day file for ${when.ymd}.`)
     }
 
-    const content = await readTextFile(file)
-    const day = DayDocument.fromMarkdown(content)
-    const search = findDayItem(day, item, kind)
+    // Several strikes sent at once wait their turn, like the adds: each one
+    // reads the file the strike before it wrote.
+    return withDayWrite<CommandResult<Result>>(config, when.ymd, async () => {
+      const content = await readTextFile(file)
+      const day = DayDocument.fromMarkdown(content)
+      const search = findDayItem(day, item, kind)
 
-    if (search.kind === 'none') {
-      return CommandResult.fail(`No item matching "${item}" in the ${when.ymd} lists.`)
-    }
-    if (search.kind === 'many') {
-      const shown = search.matches.map((m) => `${m.listTitle}: ${cleanItemText(m.raw)}`).join('; ')
-      return CommandResult.fail(`Several items match "${item}" — ${shown}. Add words or name the list.`)
-    }
-    if (search.kind === 'already-done') {
+      if (search.kind === 'none') {
+        return CommandResult.fail(`No item matching "${item}" in the ${when.ymd} lists.`)
+      }
+      if (search.kind === 'many') {
+        const shown = search.matches.map((m) => `${m.listTitle}: ${cleanItemText(m.raw)}`).join('; ')
+        return CommandResult.fail(`Several items match "${item}" — ${shown}. Add words or name the list.`)
+      }
+      if (search.kind === 'already-done') {
+        const text = cleanItemText(search.match.raw)
+        output.log(`Already done: ${text}`)
+        return CommandResult.success({ day: when.ymd, list: search.match.listTitle, item: text, already: true })
+      }
+
+      // The model's line edit strikes in place — the file keeps its own spelling
+      // and every byte outside the one line, reference links included.
+      const struck = DayDocument.toggleItem(content, search.match.listTitle, search.match.raw, true)
+      if (struck.kind !== 'written') {
+        return CommandResult.fail(`Could not strike "${cleanItemText(search.match.raw)}" — the day changed underneath.`)
+      }
+      await writeTextFile(file, struck.content)
       const text = cleanItemText(search.match.raw)
-      output.log(`Already done: ${text}`)
-      return CommandResult.success({ day: when.ymd, list: search.match.listTitle, item: text, already: true })
-    }
-
-    // The model's line edit strikes in place — the file keeps its own spelling
-    // and every byte outside the one line, reference links included.
-    const struck = DayDocument.toggleItem(content, search.match.listTitle, search.match.raw, true)
-    if (struck.kind !== 'written') {
-      return CommandResult.fail(`Could not strike "${cleanItemText(search.match.raw)}" — the day changed underneath.`)
-    }
-    await writeTextFile(file, struck.content)
-    const text = cleanItemText(search.match.raw)
-    output.log(`Done: ${text} (${search.match.listTitle})`)
-    return CommandResult.success({ day: when.ymd, list: search.match.listTitle, item: text })
+      output.log(`Done: ${text} (${search.match.listTitle})`)
+      return CommandResult.success({ day: when.ymd, list: search.match.listTitle, item: text })
+    })
   }
 }

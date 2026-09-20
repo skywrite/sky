@@ -1,6 +1,6 @@
 ---
 created: 2026-08-29
-updated: 2026-09-09
+updated: 2026-09-19
 ---
 
 # Day commands
@@ -41,6 +41,26 @@ One add door for todos/commitments/reminders, substring matching that
 refuses ambiguity, strike-in-place with links preserved. Design and the
 two `ListDocument` facts they lean on:
 [2026-08-30 — day:items](2026-08-30-day-items-voice-trio.md).
+
+## Writing a day file — one writer at a time
+
+A day write reads the whole file, changes it in memory, and writes the
+whole file back. Two writers that overlap both start from the same bytes,
+and the later write erases the earlier one. No call fails, so nothing
+reports the loss.
+
+A chat model asked for several items sends its tool calls at once, so the
+`day:items` tools hit this every time. They take `withDayWrite` from
+`lib/nbfs` around the read-to-write section. It is the same lock the web
+day page takes around its item writes, so a command and the page queue on
+each other too. `day:todo:add` takes `withScheduleWrite` when it files
+into the schedule, whose two files hold every future date.
+
+The lock does not nest: a writer that holds it must not run another day
+writer inside it. Other day writers (`writeDayItems` callers, the move and
+sweep commands) do not take it yet. A new command that reads a day file in
+order to write it takes `withDayWrite` around both.
+[2026-09-19 — adds sent at once all land](2026-09-19-adds-sent-at-once-all-land.md).
 
 ## Carrying unfinished items to another day
 
