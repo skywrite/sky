@@ -12,6 +12,7 @@ import {
 import { Arg, categoryComplete, Command, CommandPlatform, CommandResult, Flag, whenNBTime } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { DayDirFileWriter, meetingFileName, writeDayItems } from '#lib/nbfs/mod.ts'
+import { commandPlanningDate } from '#lib/nbfs/taskDestination.ts'
 import { normalizeActionItems, parseActionItemsSection, type TranscriptActionItem } from '#lib/notebook/actionItems.ts'
 import { autoRelMessage, mergeRel } from '#lib/notebook/enrich/autoRel.ts'
 import { autoTagMessage } from '#lib/notebook/enrich/autoTag.ts'
@@ -29,7 +30,7 @@ import { actionItemWithSource, loadActionItemReview, saveActionItemReview } from
 import {
   countWaiting,
   executeActionItemRoute,
-  lastCreatedDay,
+  planningThrough,
   planActionItemRoute,
   proposedWhen,
 } from './lib/actionItemRoutes.ts'
@@ -463,7 +464,7 @@ export default class MeetingNewTask extends Command {
     const io = serviceDocumentIO()
     const review = await loadActionItemReview(toNotebookRelative(file, String(config.DIR_BASE)), extracted, io)
     const { items, source } = review
-    const today = new PlainDate(context.notebookNow.date)
+    const today = commandPlanningDate(context)
     const fallback: PlaceWhen = { date: today.addDays(1).ymd, time: null }
     const proposed = items.map((item) => proposedWhen(item, today.ymd, fallback))
     const indexes = items.map((_, i) => i)
@@ -481,7 +482,7 @@ export default class MeetingNewTask extends Command {
       })),
       initial: indexes.filter((i) => items[i].mine).map(String),
       today: today.ymd,
-      createdThrough: await lastCreatedDay(today),
+      createdThrough: await planningThrough(today),
       fallback,
       waiting: await countWaiting(<string>config.FILE_NEXT_PROFESSIONAL),
     })

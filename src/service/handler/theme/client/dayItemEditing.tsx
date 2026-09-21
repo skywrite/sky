@@ -94,7 +94,9 @@ export function DayItemEditing({
   const [busy, setBusy] = useState(false)
   const pending = useRef(false)
   const [error, setError] = useState<string | null>(null)
-  const [undo, setUndo] = useState<{ id: string; message: string; route: string; date?: string } | null>(null)
+  const [undo, setUndo] = useState<{ id: string; message: string; route: string; date?: string; href?: string } | null>(
+    null,
+  )
   const requestId = useRef<{ payload: string; id: string } | null>(null)
   const mobile = useMediaQuery('(max-width: 900px)') ?? false
   const viewport = useEditViewport(Boolean(draft) && mobile)
@@ -201,11 +203,18 @@ export function DayItemEditing({
         item: { list: string; raw: string }
         undoRoute?: string
         date?: string
+        href?: string
       }>('edit', { ...input, requestId: requestId.current.id })
       setDraft(null)
       applyView(result.view)
       dismissOtherUndo()
-      setUndo({ id: result.undo, message: result.message, route: result.undoRoute ?? 'edit/undo', date: result.date })
+      setUndo({
+        id: result.undo,
+        message: result.message,
+        route: result.undoRoute ?? 'edit/undo',
+        date: result.date,
+        href: result.href,
+      })
       restoreFocus(result.item)
     } catch (failure) {
       if (currentDay.current === ymd)
@@ -242,7 +251,7 @@ export function DayItemEditing({
     readOnly,
     feedbackActive: Boolean(draft || (undo && !readOnly)),
     mobile,
-    today: day?.today.ymd ?? ymd,
+    today: day?.planningToday ?? day?.today.ymd ?? ymd,
     dismissUndo: () => setUndo(null),
     begin: (item, mode, selection) => {
       if (pending.current || readOnly || item.workstream || (draft && keyOf(draft.item) !== keyOf(item))) return
@@ -319,7 +328,7 @@ export function DayItemEditing({
             Undo
           </Button>
           {undo.date && (
-            <Button variant="secondary" disabled={busy} onClick={() => navigate(`/${undo.date}`)}>
+            <Button variant="secondary" disabled={busy} onClick={() => navigate(undo.href ?? `/${undo.date}`)}>
               Open date
             </Button>
           )}

@@ -1,6 +1,6 @@
 ---
 created: 2026-09-03
-updated: 2026-09-13
+updated: 2026-09-20
 ---
 
 # meeting:new — the action items
@@ -39,14 +39,15 @@ answer, so the ledger can say each one in words.
 
 | The when | Lands in | As |
 | --- | --- | --- |
-| A day whose file exists, with a time | that day's `## Professional Commitments` | `HH:MM > item` |
-| A day whose file exists, no time | that day's `## Professional Todos` | `item` |
-| A day whose week is not made yet | `schedule-professional.md` under `## YYYY-MM-DD`, the time kept | the morning's `day:schedule:update` files it under Commitments or Todos by the same split |
+| A date within this week, with a time | that day's `## Professional Commitments` | `HH:MM > item` |
+| A date within this week, no time | that day's `## Professional Todos` | `item` |
+| A date beyond this week | `schedule-professional.md` under `## YYYY-MM-DD`, the time kept | the morning's `day:schedule:update` files it under Commitments or Todos by the same split |
 | No day | `next-professional.md` `## Next` | `item` |
 
-A past date cannot be scheduled; it is treated as no day. The Commitments
-write goes straight to the day file (`writeDayItems`); the others run
-`day:todo:add` and `next:add`, each told its list by name (see below). The
+A past date cannot be scheduled; it is treated as no day. Dated items use the shared
+[date-routing rule](../../day/docs/README.md#task-dates-choose-their-destination),
+through `day:items:add` for commitments and `day:todo:add` for todos. Undated
+items run `next:add`; each command is told its list explicitly. The
 ledger prints one line per item — `✓ item → Tomorrow · Todos`,
 `✓ item → Fri 13 Mar · Commitments`, `✓ item → Mon 16 Mar · schedule`,
 `✓ item → Next` — or `✗ item — reason`, and ticks the count.
@@ -55,7 +56,7 @@ ledger prints one line per item — `✓ item → Tomorrow · Todos`,
 
 The step is one `place` question on the prompt seam
 (`commands/lib/prompt/Prompter.ts`): the items with their proposed whens,
-today's date, the last created day, the fallback, and how many items
+today's date, the current week's Sunday, the fallback, and how many items
 already wait on Next.
 
 - **The terminal** keeps the multiselect it has always had. Space ticks,

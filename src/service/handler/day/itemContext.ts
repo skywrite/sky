@@ -26,16 +26,18 @@ export interface ItemRoutesOptions {
 export async function dayFileOf(
   c: Context,
   options: ItemRoutesOptions,
-): Promise<{ ymd: string; file: string; content: string } | Response> {
+  allowMissing = false,
+): Promise<{ ymd: string; file: string; content: string; exists: boolean } | Response> {
   const ymd = c.req.param('ymd') ?? ''
   if (!isDay(ymd)) return c.json({ error: `not a day: ${ymd}` }, 404)
   const file = path.join(options.timeDir, dayFile(new PlainDate(ymd)))
-  if (!(await exists(file))) return c.json({ error: `no day file for ${ymd}` }, 404)
-  const content = await readTextFile(file)
+  const present = await exists(file)
+  if (!present && (!allowMissing || ymd < options.today().ymd)) return c.json({ error: `no day file for ${ymd}` }, 404)
+  const content = present ? await readTextFile(file) : DayDocument.createFutureDay(new PlainDate(ymd)).toMarkdown()
   if (dayEnd(DayDocument.fromMarkdown(content)).ended) {
     return c.json({ error: 'This day has ended. Tasks are read-only.', view: await options.view(ymd) }, 409)
   }
-  return { ymd, file, content }
+  return { ymd, file, content, exists: present }
 }
 
 /** The body as an object, or null when it is not one. */

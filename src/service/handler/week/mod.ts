@@ -12,10 +12,17 @@
  * is the week of that calendar day.
  */
 
+import { tmpdir } from 'node:os'
 import * as path from 'node:path'
 import { type Context, Hono } from 'hono'
+import { appendTaskBlock } from '#lib/nbfs/fileTaskItems.ts'
+import { writePlanningChanges } from '#lib/nbfs/planningChanges.ts'
+import { emptySchedule } from '#lib/nbfs/scheduledItems.ts'
+import { taskDestination } from '#lib/nbfs/taskDestination.ts'
+import { hash, readOptional, withLock } from '#lib/outbox/files.ts'
 import { OutboxError } from '#lib/outbox/types.ts'
 import { exists, readTextFile } from '#shared/fs/mod.ts'
+import DayDocument from '#shared/models/Day/document/mod.ts'
 import { dayFile, fetchNowSync, readDay, weekDir } from '#shared/nbfs/mod.ts'
 import { PlainDate, Week, ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
 import { hold } from '../../activity.ts'
@@ -25,7 +32,6 @@ import { type CheckinGoal, parseCheckins, statusesFor, type WeekCheckins } from 
 import { parseWeekPlan, type PlanGoal, type WeekPlan } from './plan.ts'
 import {
   addQueueItem,
-  addScheduledItem,
   isQueueFile,
   isScheduleFile,
   promoteItem,
@@ -53,6 +59,8 @@ export interface WeekRoutesOptions {
   commands?: WeekCommands
   /** Local retry receipts and locks for direct captures; outside the synced notebook by default. */
   captureStateDir?: string
+  /** Shared CLI/day-page projection locks. */
+  taskStateDir?: string
 }
 
 export type DayState =
@@ -355,7 +363,23 @@ export function createWeekRoutes(options: WeekRoutesOptions): Hono {
     const day = body.day
     if (day !== undefined) {
       if (typeof day !== 'string' || !isDay(day)) return c.json({ error: `not a day: ${String(day)}` }, 400)
-      await addScheduledItem(options.timeDir, body.category, day, text)
+      const date = new PlainDate(day)
+      const list = `${body.category} ${DayDocument.itemStartsWithTime(text) ? 'Commitments' : 'Todos'}`
+      const destination = taskDestination({ DIR_TIME: options.timeDir }, date, readClock(options).calendarDay, list)
+      const lockDir = options.taskStateDir ?? path.join(tmpdir(), `sky-week-tasks-${hash(options.timeDir)}`)
+      await withLock(
+        path.join(lockDir, destination.filed === 'schedule' ? 'schedule.lock' : `day-${day}.lock`),
+        async () => {
+          const before = await readOptional(destination.file)
+          if (destination.filed === 'day' && before && DayDocument.fromMarkdown(before).yaml.ended)
+            throw new Error('The destination day has ended. Choose another date.')
+          const content =
+            before ??
+            (destination.filed === 'day' ? DayDocument.createFutureDay(date).toMarkdown() : emptySchedule(list))
+          const after = appendTaskBlock(content, date, list, `- ${text}`, destination.filed === 'schedule')
+          await writePlanningChanges([{ file: destination.file, before, after }])
+        },
+      )
     } else {
       await addQueueItem(options.timeDir, body.category, text, readClock(options).thisWeek.toString())
     }
@@ -373,7 +397,9 @@ export function createWeekRoutes(options: WeekRoutesOptions): Hono {
       typeof body.raw !== 'string'
     )
       return c.json({ error: 'expected {file, list, raw}' }, 400)
-    const edit = await removeItem(options.timeDir, body.file, body.list, body.raw)
+    const lockDir = options.taskStateDir ?? path.join(tmpdir(), `sky-week-tasks-${hash(options.timeDir)}`)
+    const { file, list, raw } = body
+    const edit = await withLock(path.join(lockDir, 'schedule.lock'), () => removeItem(options.timeDir, file, list, raw))
     if (edit === 'missing') return c.json({ error: 'no such line — the file changed under the page' }, 404)
     return c.json(await buildWeekView(options, week.toString()))
   })

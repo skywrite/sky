@@ -1,7 +1,13 @@
 import * as path from 'node:path'
 import { Hono } from 'hono'
-import { atomicWrite, readOptional } from '#lib/outbox/files.ts'
+import { appendTaskBlock } from '#lib/nbfs/fileTaskItems.ts'
+import { blockRaw, ItemEditError } from '#lib/nbfs/listBlocks.ts'
+import { writePlanningChanges as writeChanges, type PlanningChange as Change } from '#lib/nbfs/planningChanges.ts'
+import { emptySchedule, scheduledBlock } from '#lib/nbfs/scheduledItems.ts'
+import { taskDestination, taskFiling } from '#lib/nbfs/taskDestination.ts'
+import { readOptional, withLock } from '#lib/outbox/files.ts'
 import DayDocument from '#shared/models/Day/document/mod.ts'
+import { PlainDate, Week } from '#universal/dates/nbdt/mod.ts'
 import { bodyOf, dayFileOf, type ItemRoutesOptions } from './itemContext.ts'
 import {
   addPlanItem,
@@ -14,12 +20,8 @@ import {
 import { normalizeDayTime, type DayPlanInput, type NextFile } from './planningTypes.ts'
 
 const FILES: NextFile[] = ['next-professional.md', 'next-personal.md']
-interface Change {
-  file: string
-  before: string
-  after: string
-}
 interface Added {
+  file: string
   list: string
   raw: string
 }
@@ -36,6 +38,7 @@ interface Operation {
   added: Added[]
   removed: Removed[]
   message: string
+  href?: string
   expires: number
   undone: boolean
 }
@@ -46,28 +49,6 @@ class PlanningError extends Error {
     readonly status: 400 | 404 | 409 = 409,
   ) {
     super(message)
-  }
-}
-
-/** Validate everything before writing. The destination lands first; a failed write rolls back our own bytes only. */
-async function writeChanges(changes: Change[], write = atomicWrite): Promise<void> {
-  for (const change of changes) {
-    if ((await readOptional(change.file)) !== change.before)
-      throw new PlanningError('A file changed. Refresh and try again.')
-  }
-  const written: Change[] = []
-  try {
-    for (const change of changes) {
-      if ((await readOptional(change.file)) !== change.before)
-        throw new PlanningError('A file changed. Refresh and try again.')
-      await write(change.file, change.after)
-      written.push(change)
-    }
-  } catch (error) {
-    for (const change of written.reverse()) {
-      if ((await readOptional(change.file)) === change.after) await atomicWrite(change.file, change.before)
-    }
-    throw error
   }
 }
 
@@ -87,6 +68,13 @@ function inputOf(body: Record<string, unknown> | null): DayPlanInput | null {
 export function createPlanningRoutes(options: ItemRoutesOptions): Hono {
   const app = new Hono()
   const operations = new Map<string, Operation>()
+  // The outer item guard already owns the source/day lock. Schedule writers
+  // use the same second lock as CLI carries and day:start imports.
+  app.use('*', async (c, next) => {
+    if (c.req.method === 'POST' && /\/item\/(?:add|pull|undo)$/.test(c.req.path) && options.workstreams)
+      return withLock(path.join(options.workstreams.stateDir, 'schedule.lock'), next)
+    await next()
+  })
   const cleanup = () => {
     for (const [id, operation] of operations) if (operation.expires < performance.now()) operations.delete(id)
     while (operations.size > 200) operations.delete(operations.keys().next().value!)
@@ -95,7 +83,12 @@ export function createPlanningRoutes(options: ItemRoutesOptions): Hono {
     cleanup()
     operations.set(id, { ...operation, expires: performance.now() + 10 * 60_000, undone: false })
   }
-  app.onError((error, c) => c.json({ error: error.message }, error instanceof PlanningError ? error.status : 500))
+  app.onError((error, c) =>
+    c.json(
+      { error: error.message },
+      error instanceof PlanningError || error instanceof ItemEditError ? error.status : 500,
+    ),
+  )
   const readNext = async (content: string) => {
     const sources = new Map<string, string>()
     const entries: NextEntry[] = []
@@ -109,7 +102,7 @@ export function createPlanningRoutes(options: ItemRoutesOptions): Hono {
   }
 
   app.get('/:ymd/item/next', async (c) => {
-    const day = await dayFileOf(c, options)
+    const day = await dayFileOf(c, options, true)
     if (day instanceof Response) return day
     const { entries } = await readNext(day.content)
     return c.json({
@@ -125,7 +118,7 @@ export function createPlanningRoutes(options: ItemRoutesOptions): Hono {
     const input = inputOf(body)
     if (!input || typeof body?.requestId !== 'string' || !/^[a-f0-9-]{36}$/.test(body.requestId))
       return c.json({ error: 'Enter an item, its category, and a time for a commitment.' }, 400)
-    const day = await dayFileOf(c, options)
+    const day = await dayFileOf(c, options, true)
     if (day instanceof Response) return day
     const id = body.requestId
     const request = JSON.stringify(input)
@@ -134,7 +127,7 @@ export function createPlanningRoutes(options: ItemRoutesOptions): Hono {
     if (previous) {
       if (previous.day !== day.ymd || previous.request !== request || previous.undone)
         throw new PlanningError('This request has already been used. Try again.')
-      return c.json({ view: await options.view(day.ymd), undo: id, message: previous.message })
+      return c.json({ view: await options.view(day.ymd), undo: id, message: previous.message, href: previous.href })
     }
     const result = addPlanItem(day.content, input)
     if (
@@ -143,23 +136,41 @@ export function createPlanningRoutes(options: ItemRoutesOptions): Hono {
       )
     )
       throw new PlanningError('That item is already on this day.')
-    const changes = [{ file: day.file, before: day.content, after: result.content }]
+    const date = new PlainDate(day.ymd)
+    const destination = taskDestination({ DIR_TIME: options.timeDir }, date, options.today(), result.list)
+    const before =
+      destination.filed === 'day' ? (day.exists ? day.content : undefined) : await readOptional(destination.file)
+    const after =
+      destination.filed === 'day'
+        ? result.content
+        : appendTaskBlock(before ?? emptySchedule(result.list), date, result.list, `- ${result.raw}`, true)
+    const changes = [{ file: destination.file, before, after }]
     await writeChanges(changes, options.writePlanning)
     const message =
-      input.kind === 'commitments'
-        ? `Commitment added at ${input.time}`
-        : input.kind === 'reminders'
-          ? 'Reminder added'
-          : 'To-do added'
+      destination.filed === 'schedule'
+        ? `Scheduled for ${day.ymd}`
+        : input.kind === 'commitments'
+          ? `Commitment added at ${input.time}`
+          : input.kind === 'reminders'
+            ? 'Reminder added'
+            : 'To-do added'
+    const href = destination.filed === 'schedule' ? `/week/${Week.of(date)}` : undefined
     remember(id, {
       day: day.ymd,
       request,
       changes,
-      added: [{ list: result.list, raw: result.raw }],
+      added: [
+        {
+          file: destination.file,
+          list: destination.list,
+          raw: destination.filed === 'schedule' ? blockRaw(scheduledBlock(`- ${result.raw}`, result.list)) : result.raw,
+        },
+      ],
       removed: [],
       message,
+      href,
     })
-    return c.json({ view: await options.view(day.ymd), undo: id, message })
+    return c.json({ view: await options.view(day.ymd), undo: id, message, href })
   })
 
   app.post('/:ymd/item/pull', async (c) => {
@@ -176,7 +187,7 @@ export function createPlanningRoutes(options: ItemRoutesOptions): Hono {
       body.time !== undefined
     )
       return c.json({ error: 'Select untimed Next items to move into To-dos or Reminders.' }, 400)
-    const day = await dayFileOf(c, options)
+    const day = await dayFileOf(c, options, true)
     if (day instanceof Response) return day
     const request = JSON.stringify({ kind: body.kind, ids: [...new Set(body.ids)].sort() })
     const id = body.requestId
@@ -185,7 +196,7 @@ export function createPlanningRoutes(options: ItemRoutesOptions): Hono {
     if (previous) {
       if (previous.day !== day.ymd || previous.request !== request || previous.undone)
         throw new PlanningError('This request has already been used. Try again.')
-      return c.json({ view: await options.view(day.ymd), undo: id, message: previous.message })
+      return c.json({ view: await options.view(day.ymd), undo: id, message: previous.message, href: previous.href })
     }
     const { sources, entries } = await readNext(day.content)
     const selected = [...new Set(body.ids)].map((id) => entries.find((entry) => entry.id === id))
@@ -195,6 +206,8 @@ export function createPlanningRoutes(options: ItemRoutesOptions): Hono {
     const added: Added[] = []
     const removed: Removed[] = []
     const changedSources = new Map(sources)
+    const destinations = new Map<string, Change>()
+    const date = new PlainDate(day.ymd)
     for (const entry of selected as NextEntry[]) {
       const file = path.join(options.timeDir, entry.file)
       const text = moveItemMarkdown(entry.item, sources.get(entry.file)!, file, day.file)
@@ -209,19 +222,45 @@ export function createPlanningRoutes(options: ItemRoutesOptions): Hono {
       if (deletion.kind === 'missing')
         throw new PlanningError('An item changed in its Next list. Refresh and try again.')
       changedSources.set(entry.file, deletion.content)
-      content = result.content
-      added.push({ list: result.list, raw: result.raw })
+      const destination = taskDestination({ DIR_TIME: options.timeDir }, date, options.today(), result.list)
+      if (destination.filed === 'day') content = result.content
+      else {
+        let change = destinations.get(destination.file)
+        if (!change) {
+          const before = await readOptional(destination.file)
+          change = { file: destination.file, before, after: before ?? emptySchedule(result.list) }
+          destinations.set(destination.file, change)
+        }
+        const movedText = moveItemMarkdown(entry.item, sources.get(entry.file)!, file, destination.file)
+        change.after = appendTaskBlock(change.after!, date, result.list, `- ${movedText}`, true)
+      }
+      const raw =
+        destination.filed === 'day'
+          ? result.raw
+          : blockRaw(
+              scheduledBlock(
+                `- ${moveItemMarkdown(entry.item, sources.get(entry.file)!, file, destination.file)}`,
+                result.list,
+              ),
+            )
+      added.push({ file: destination.file, list: destination.list, raw })
       removed.push({ file, list: entry.list, raw: entry.raw, at: entry.at })
     }
-    const changes: Change[] = [{ file: day.file, before: day.content, after: content }]
+    const changes: Change[] = [...destinations.values()]
+    if (content !== day.content)
+      changes.push({ file: day.file, before: day.exists ? day.content : undefined, after: content })
     for (const [name, after] of changedSources) {
       const before = sources.get(name)!
       if (before !== after) changes.push({ file: path.join(options.timeDir, name), before, after })
     }
     await writeChanges(changes, options.writePlanning)
-    const message = `Moved ${added.length} ${added.length === 1 ? 'item' : 'items'} to the day`
-    remember(id, { day: day.ymd, request, changes, added, removed, message })
-    return c.json({ view: await options.view(day.ymd), undo: id, message })
+    const scheduled = taskFiling(date, options.today()) === 'schedule'
+    const message = scheduled
+      ? `Scheduled ${added.length} ${added.length === 1 ? 'item' : 'items'} for ${day.ymd}`
+      : `Moved ${added.length} ${added.length === 1 ? 'item' : 'items'} to the day`
+    const href = scheduled ? `/week/${Week.of(date)}` : undefined
+    remember(id, { day: day.ymd, request, changes, added, removed, message, href })
+    return c.json({ view: await options.view(day.ymd), undo: id, message, href })
   })
 
   app.post('/:ymd/item/undo', async (c) => {
@@ -229,7 +268,7 @@ export function createPlanningRoutes(options: ItemRoutesOptions): Hono {
     cleanup()
     const operation = typeof body?.id === 'string' ? operations.get(body.id) : undefined
     if (!operation || operation.day !== c.req.param('ymd')) throw new PlanningError('This undo has expired.', 404)
-    const day = await dayFileOf(c, options)
+    const day = await dayFileOf(c, options, true)
     if (day instanceof Response) return day
     if (operation.undone) return c.json(await options.view(day.ymd))
     const changes: Change[] = []
@@ -239,8 +278,8 @@ export function createPlanningRoutes(options: ItemRoutesOptions): Hono {
       let after = change.before
       if (current !== change.after) {
         after = current
-        if (change.file === day.file) {
-          for (const item of operation.added) {
+        if (operation.added.some((item) => item.file === change.file)) {
+          for (const item of operation.added.filter((item) => item.file === change.file)) {
             const list = DayDocument.fromMarkdown(after).lists.find((list) => list.title === item.list)
             if (!list?.items.includes(item.raw))
               throw new PlanningError('An added item changed. The move cannot be undone automatically.')
@@ -252,7 +291,7 @@ export function createPlanningRoutes(options: ItemRoutesOptions): Hono {
           for (const item of operation.removed
             .filter((item) => item.file === change.file)
             .sort((a, b) => a.at - b.at)) {
-            const original = moveItemMarkdown(item.raw, change.before, change.file, change.file)
+            const original = moveItemMarkdown(item.raw, change.before!, change.file, change.file)
             if (original !== moveItemMarkdown(item.raw, current, change.file, change.file))
               throw new PlanningError('A source link changed. Open the source before undoing.')
             const restored = restorePlanItem(after, item.list, item.raw, item.at)

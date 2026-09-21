@@ -372,11 +372,13 @@ export function useDayPlanning(
   itemUndo: unknown,
 ) {
   const ymd = day?.day.ymd ?? ''
-  const enabled = Boolean(day?.day.dayRelativePath && !day.record.ended)
+  const enabled = Boolean(
+    day && !day.record.ended && (day.day.dayRelativePath || day.day.ymd >= (day.planningToday ?? day.today.ymd)),
+  )
   const [active, setActive] = useState<DayPlanKind | 'next' | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [undo, setUndo] = useState<{ id: string; message: string } | null>(null)
+  const [undo, setUndo] = useState<{ id: string; message: string; href?: string } | null>(null)
   const scope = `${ymd}/${enabled}`
   const current = useRef(scope)
   current.current = scope
@@ -417,7 +419,7 @@ export function useDayPlanning(
       const result = await request<DayPlanResult>(route, body)
       applyView(result.view)
       dismissItemUndo()
-      setUndo({ id: result.undo, message: result.message })
+      setUndo({ id: result.undo, message: result.message, href: result.href })
       setActive(null)
     } catch (failure) {
       if (current.current === scope) setError(failure instanceof Error ? failure.message : 'Could not save. Try again.')
@@ -503,6 +505,11 @@ export function useDayPlanning(
           <Button variant="secondary" loading={busy} onClick={() => void revert()}>
             Undo
           </Button>
+          {undo.href && (
+            <Button component="a" href={undo.href} variant="secondary">
+              Open schedule
+            </Button>
+          )}
           <ActionIcon
             aria-label="Dismiss notification"
             onClick={() => {

@@ -367,7 +367,7 @@ test({ name: 'week route - something for next week lands in the queue, or under 
       queuedUnderWeekNext: nextFile.indexOf('Get a quote') < nextFile.indexOf('## Next'),
       queueShows: queued.view?.queue?.weekNext.professional.length,
       datedOrder: scheduleFile.indexOf('## 2026-03-21') < scheduleFile.indexOf('## 2026-09-09'),
-      datedLine: scheduleFile.includes('## 2026-09-09\n- Walk the dog before the call'),
+      datedLine: /## 2026-09-09\n\s*\n?- Walk the dog before the call/.test(scheduleFile),
       inWeek: dated.view?.queue?.scheduled.inWeek.map((g) => `${g.date} ${g.items.map((i) => i.category).join(',')}`),
     },
     expected: {

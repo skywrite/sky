@@ -2,10 +2,7 @@ import { parsePartialDate } from '#commands/lib/args/parsePartialDate.ts'
 import type { CommandArgs, CommandDescription } from '#commands/lib/commands.d.ts'
 import { categoryTodo, Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { InferParams } from '#commands/mod.ts'
-import { ensureDay } from '#lib/nbfs/mod.ts'
-import DayDocument from '#shared/models/Day/mod.ts'
-import type ItemList from '#shared/models/Markdown/ItemList/mod.ts'
-import { readDay, writeDay } from '#shared/nbfs/mod.ts'
+import { carryItems } from '../_carryItems.ts'
 
 const params = {
   old: Flag.plainDate('Old Day (e.g., 27, 8-27, 2025-08-27)', {
@@ -40,41 +37,9 @@ export default class DayTodoMoveFutureTask extends Command {
     params,
   }
 
-  async run({ args, context, tasks }: CommandArgs<Params>): Promise<CommandResult> {
-    const { category, old: oldDate, new: newDate, noIncomplete } = args
-    const { DIR_TIME } = context.config
-    const missingList = `Cannot find ${newDate.ymd} ${category}.`
-
-    const source = (await readDay(oldDate, DIR_TIME)).lists.find((list) => list.title === category)
-    if (!source) return CommandResult.error(`Cannot find ${oldDate.ymd} ${category}.`)
-    if (!source.items.some(DayDocument.isItemNotDone)) {
-      context.output.log(`\n  No incomplete items in ${category}.\n`)
-      return CommandResult.success()
-    }
-
-    // The target is checked before the sweep writes the source day. A sweep
-    // with nowhere to land leaves the items under Incomplete with nothing
-    // moved, and a rerun finds nothing left to move.
-    await ensureDay(newDate, DIR_TIME)
-    if (!(await readDay(newDate, DIR_TIME)).lists.some((list) => list.title === category)) {
-      return CommandResult.error(missingList)
-    }
-
-    const result = await tasks.run('day:todo:incomplete', { day: oldDate, category, cleanOnly: noIncomplete })
-    if (!result.ok) return result
-
-    const incompleteList = result.data?.incompleteItems?.get(category)
-    if (!incompleteList || incompleteList.size === 0) return CommandResult.success()
-
-    // Read the target again: when old and new are the same day, the sweep just wrote it.
-    const nextDayDoc = await readDay(newDate, DIR_TIME)
-    const listNextDayTodos = nextDayDoc.lists.find((list) => list.title === category)
-    if (!listNextDayTodos) return CommandResult.error(missingList)
-
-    const newNextDayDoc = nextDayDoc.replaceList(category, listNextDayTodos.concat(incompleteList))
-    await writeDay(newNextDayDoc, DIR_TIME)
-
-    context.output.log(`\n  Moved ${incompleteList.size} items.\n`)
+  async run({ args, context }: CommandArgs<Params>): Promise<CommandResult> {
+    const count = await carryItems(context, args.old, args.new, args.category, { incomplete: !args.noIncomplete })
+    context.output.log(`\n  Moved ${count} todos to ${args.new.ymd}.\n`)
     return CommandResult.success()
   }
 }

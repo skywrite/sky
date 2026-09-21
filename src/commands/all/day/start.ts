@@ -70,7 +70,7 @@ export default class DayStartTask extends Command {
     // Run configurable startup commands in parallel (day.start in config)
     const startResults = await Promise.allSettled(
       config.DAY_START_COMMANDS.map((cmd) =>
-        tasks.run(cmd).catch((err: Error) => {
+        tasks.run(cmd, { day: targetDate }).catch((err: Error) => {
           // Command may not exist (e.g., moved to sky-extras without commandDirs configured)
           console.warn(`  [day:start] ${cmd}: ${err.message}`)
           return CommandResult.fail(err.message)

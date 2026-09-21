@@ -1,13 +1,15 @@
-import { unlink } from 'node:fs/promises'
 import * as path from 'node:path'
 import { Hono, type Context } from 'hono'
-import { createDayFile } from '#lib/nbfs/createDayFile.ts'
-import { atomicWrite, readOptional, withLock } from '#lib/outbox/files.ts'
+import { appendTaskBlock } from '#lib/nbfs/fileTaskItems.ts'
+import { listRow } from '#lib/nbfs/listBlocks.ts'
+import { writePlanningChanges as writeChanges } from '#lib/nbfs/planningChanges.ts'
+import { emptySchedule, scheduledBlock } from '#lib/nbfs/scheduledItems.ts'
+import { taskDestination, taskFiling, type TaskFiling } from '#lib/nbfs/taskDestination.ts'
+import { readOptional, withLock } from '#lib/outbox/files.ts'
 import { workstreamDayReference } from '#lib/workstreams/day.ts'
 import DayDocument from '#shared/models/Day/document/mod.ts'
-import { dayFile } from '#shared/nbfs/mod.ts'
-import { PlainDate } from '#universal/dates/nbdt/mod.ts'
-import { editPlanItem, editableRow, ItemEditError, planSection, planSections } from './editingText.ts'
+import { PlainDate, Week } from '#universal/dates/nbdt/mod.ts'
+import { editPlanItem, ItemEditError, planSection, planSections } from './editingText.ts'
 import type { DayEditFields } from './editingTypes.ts'
 import { dayEnd } from './ended.ts'
 import isDay from './isDay.ts'
@@ -24,7 +26,7 @@ interface Change {
 }
 interface MovedBlock {
   before: { list: string; raw: string; block: string; index: number }
-  after: { list: string; raw: string; block: string }
+  after: { file: string; list: string; raw: string; block: string }
 }
 interface Operation {
   day: string
@@ -34,6 +36,7 @@ interface Operation {
   expires: number
   undone: boolean
   target?: string
+  filed?: TaskFiling
   moved?: MovedBlock[]
   lists?: string[]
 }
@@ -68,38 +71,6 @@ function orderAddedItems(before: string, after: string, lists: Iterable<string>)
   return after
 }
 
-async function writeChanges(changes: Change[], write?: ItemRoutesOptions['writePlanning']): Promise<void> {
-  for (const change of changes)
-    if ((await readOptional(change.file)) !== change.before)
-      throw new ItemEditError('A day changed while saving. Refresh and try again.')
-  const attempted: Change[] = []
-  try {
-    for (const change of changes) {
-      if (change.before === change.after) continue
-      if ((await readOptional(change.file)) !== change.before)
-        throw new ItemEditError('A day changed while saving. Refresh and try again.')
-      if (change.after === undefined) await unlink(change.file)
-      else if (write) {
-        // A test writer may fail after writing; inspect its bytes during rollback too.
-        attempted.push(change)
-        await write(change.file, change.after)
-        continue
-      } else if (change.before === undefined) {
-        if (!(await createDayFile(change.file, change.after)))
-          throw new ItemEditError('The destination day was just created elsewhere. Refresh and try again.')
-      } else await atomicWrite(change.file, change.after)
-      attempted.push(change)
-    }
-  } catch (error) {
-    for (const change of attempted.reverse()) {
-      if ((await readOptional(change.file)) !== change.after) continue
-      if (change.before === undefined) await unlink(change.file)
-      else await atomicWrite(change.file, change.before)
-    }
-    throw error
-  }
-}
-
 export function createDayOrganizer(options: ItemRoutesOptions) {
   const routes = new Hono()
   const operations = new Map<string, Operation>()
@@ -125,11 +96,21 @@ export function createDayOrganizer(options: ItemRoutesOptions) {
       undoRoute: 'organize/undo',
       message: operation.message,
       date: operation.target,
+      href: operation.target
+        ? operation.filed === 'schedule'
+          ? `/week/${Week.of(operation.target)}`
+          : `/${operation.target}`
+        : undefined,
       item: operation.moved?.[0]?.after,
     })
   }
-  const lockedTarget = <T>(ymd: string, run: () => Promise<T>): Promise<T> =>
-    options.workstreams ? withLock(path.join(options.workstreams.stateDir, `day-${ymd}.lock`), run) : run()
+  const lockedTarget = <T>(ymd: string, filed: TaskFiling, run: () => Promise<T>): Promise<T> =>
+    options.workstreams
+      ? withLock(
+          path.join(options.workstreams.stateDir, filed === 'schedule' ? 'schedule.lock' : `day-${ymd}.lock`),
+          run,
+        )
+      : run()
   routes.onError((error, c) => c.json({ error: error.message }, error instanceof ItemEditError ? error.status : 500))
 
   const move = async (
@@ -145,12 +126,10 @@ export function createDayOrganizer(options: ItemRoutesOptions) {
     if (day instanceof Response) return day
     const request = JSON.stringify(input)
     if (previous(input.requestId, day.ymd, request)) return response(c, input.requestId)
-    return lockedTarget(input.date, async () => {
-      const file = path.join(options.timeDir, dayFile(new PlainDate(input.date)))
-      const before = await readOptional(file)
-      const destination = before ?? DayDocument.createFutureDay(new PlainDate(input.date)).toMarkdown()
-      if (dayEnd(DayDocument.fromMarkdown(destination)).ended)
-        throw new ItemEditError('The destination day has ended. Choose another date.')
+    const date = new PlainDate(input.date)
+    const filed = taskFiling(date, new PlainDate(today))
+    return lockedTarget(input.date, filed, async () => {
+      const destinations = new Map<string, Change>()
       // Sort by source position, so selection order never changes the order of moved tasks.
       const rows = selected
         .map((address) => {
@@ -160,7 +139,6 @@ export function createDayOrganizer(options: ItemRoutesOptions) {
         })
         .sort((a, b) => a.row.from - b.row.from)
       let source = day.content
-      let target = destination
       const moved: MovedBlock[] = []
       for (const { address, row } of rows) {
         const edited = input.edit ? editPlanItem(day.content, address.list, address.raw, input.edit).after : null
@@ -173,20 +151,28 @@ export function createDayOrganizer(options: ItemRoutesOptions) {
             400,
           )
         const list = edited?.list ?? address.list
+        const destination = taskDestination({ DIR_TIME: options.timeDir }, date, new PlainDate(today), list)
+        const file = destination.file
+        let change = destinations.get(file)
+        if (!change) {
+          const before = await readOptional(file)
+          const after =
+            before ?? (filed === 'day' ? DayDocument.createFutureDay(date).toMarkdown() : emptySchedule(list))
+          if (filed === 'day' && dayEnd(DayDocument.fromMarkdown(after)).ended)
+            throw new ItemEditError('The destination day has ended. Choose another date.')
+          change = { file, before, after }
+          destinations.set(file, change)
+        }
         const block = moveItemMarkdown(edited?.block ?? row.block, day.content, day.file, file)
-        target = insertBlock(target, list, block)
+        change.after = appendTaskBlock(change.after!, date, list, block, filed === 'schedule')
         source = removeBlock(source, address.list, address.raw)
-        const raw = blockRaw(block)
+        const raw = blockRaw(filed === 'schedule' ? scheduledBlock(block, list) : block)
         moved.push({
           before: { list: address.list, raw: row.raw, block: row.block, index: row.index },
-          after: { list, raw, block: editableRow(target, list, raw).block },
+          after: { file, list: destination.list, raw, block: listRow(change.after, destination.list, raw).block },
         })
       }
-      for (const list of new Set(moved.map((item) => item.after.list))) target = orderPlanList(target, list)
-      const changes = [
-        { file, before, after: target },
-        { file: day.file, before: day.content, after: source },
-      ]
+      const changes = [...destinations.values(), { file: day.file, before: day.content, after: source }]
       // Keep a destination copy before removing anything from the source.
       await writeChanges(changes, options.writePlanning)
       const when = input.date === new PlainDate(today).addDays(1).ymd ? 'tomorrow' : input.date
@@ -196,7 +182,8 @@ export function createDayOrganizer(options: ItemRoutesOptions) {
         changes,
         moved,
         target: input.date,
-        message: `${moved.length} ${moved.length === 1 ? 'item' : 'items'} moved to ${when}`,
+        filed,
+        message: `${moved.length} ${moved.length === 1 ? 'item' : 'items'} ${filed === 'schedule' ? 'scheduled for' : 'moved to'} ${when}`,
       })
       return response(c, input.requestId)
     })
@@ -291,8 +278,8 @@ export function createDayOrganizer(options: ItemRoutesOptions) {
               }
               after = orderAddedItems(change.before!, after, new Set(operation.moved.map((item) => item.before.list)))
             } else {
-              for (const item of operation.moved) {
-                const row = editableRow(after, item.after.list, item.after.raw)
+              for (const item of operation.moved.filter((item) => item.after.file === change.file)) {
+                const row = listRow(after, item.after.list, item.after.raw)
                 if (
                   blockRevision(row.block, after, change.file) !==
                   blockRevision(item.after.block, change.after!, change.file)
@@ -337,7 +324,7 @@ export function createDayOrganizer(options: ItemRoutesOptions) {
       operation.undone = true
       return c.json(await options.view(day.ymd))
     }
-    return operation.target ? lockedTarget(operation.target, undo) : undo()
+    return operation.target ? lockedTarget(operation.target, operation.filed ?? 'day', undo) : undo()
   })
   return { routes, move }
 }

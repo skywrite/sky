@@ -1,89 +1,14 @@
-import { Lexer } from 'marked'
 import DayDocument from '#shared/models/Day/document/mod.ts'
 import { itemEditFields, type DayEditFields } from './editingTypes.ts'
 import { orderPlanList } from './order.ts'
 
-export class ItemEditError extends Error {
-  constructor(
-    message: string,
-    readonly status: 400 | 409 = 409,
-  ) {
-    super(message)
-  }
-}
-
-export interface PlanBlock {
-  from: number
-  to: number
-  raw: string
-  block: string
-}
-export interface PlanSection {
-  title: string
-  end: number
-  rows: PlanBlock[]
-}
-
-/** Parse actual top-level tasks, ignoring nested notes and examples in fenced code. */
-export function planSections(content: string): PlanSection[] {
-  const offsets: number[] = []
-  for (let i = 0; i < content.length; i++) {
-    offsets.push(i)
-    if (content[i] === '\r' && content[i + 1] === '\n') i++
-  }
-  offsets.push(content.length)
-  const normalized = content.replace(/\r\n/g, '\n')
-  const result: PlanSection[] = []
-  let section: PlanSection | null = null
-  let cursor = 0
-  for (const token of Lexer.lex(normalized)) {
-    const start = normalized.indexOf(token.raw, cursor)
-    if (start < 0) continue
-    cursor = start + token.raw.length
-    if (token.type === 'heading') {
-      if (section) section.end = offsets[start]
-      section = token.depth === 2 ? { title: token.text.trim(), end: content.length, rows: [] } : null
-      if (section) result.push(section)
-    }
-    if (!section || token.type !== 'list' || token.ordered) continue
-    let at = start
-    for (const item of token.items) {
-      const from = normalized.indexOf(item.raw, at)
-      at = from + item.raw.length
-      const to = from + item.raw.replace(/\n+$/, '').length
-      if (from < start || to > cursor) throw new ItemEditError('This item could not be located. Reload the day.')
-      section.rows.push({
-        from: offsets[from],
-        to: offsets[to],
-        raw: item.raw
-          .split('\n')[0]
-          .replace(/^\s*[-*+]\s*/, '')
-          .trim(),
-        block: content.slice(offsets[from], offsets[to]),
-      })
-    }
-  }
-  return result
-}
-
-export function planSection(content: string, title: string): PlanSection | undefined {
-  const found = planSections(content).filter((section) => section.title === title)
-  if (found.length > 1) throw new ItemEditError('This list heading appears more than once. Edit it in the day file.')
-  return found[0]
-}
+export { ItemEditError, planSection, planSections, listRow, type PlanBlock } from '#lib/nbfs/listBlocks.ts'
+import { ItemEditError, planSection, listRow, type PlanBlock } from '#lib/nbfs/listBlocks.ts'
 
 export function editableRow(content: string, list: string, raw: string): PlanBlock & { index: number } {
   if (!/^(?:most important|reminders|(?:.*\s)?(?:todos|commitments|incomplete))$/i.test(list))
     throw new ItemEditError('This list is not editable here.', 400)
-  const rows = planSection(content, list)?.rows ?? []
-  const matches = rows.filter((row) => row.raw === raw.split(/\r?\n/)[0])
-  if (matches.length !== 1)
-    throw new ItemEditError(
-      matches.length
-        ? 'There are identical items in this list. Edit them in the day file.'
-        : 'This item changed. Your draft is kept; reload the day before trying again.',
-    )
-  return { ...matches[0], index: rows.indexOf(matches[0]) }
+  return listRow(content, list, raw)
 }
 
 /** Replace or move the whole block, retaining its bullet, notes, links and original line endings. */

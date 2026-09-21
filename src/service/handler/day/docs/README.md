@@ -25,7 +25,8 @@ task blocks within the list, preserving their notes, links and surrounding text.
 
 Inline forms add to-dos, reminders, and commitments, including when their
 sections are empty. A time makes a task a commitment; times accept the
-notebook's extended hours. Adding requires an existing, open day file.
+notebook's extended hours. Adding can prepare a missing current-week day without starting it. Later dates
+use the schedule files; the confirmation links to the scheduled week.
 
 Each row's "Get Sky's help" opens a temporary chat with the item, its notes
 and links, and its source drafted in the composer (`dayItemHelp.tsx`).
@@ -71,9 +72,10 @@ back to Time sorts the file; dragging never changes a time. This preference must
 be honored by additions as well as rendering, or a later write would silently
 erase a user's order.
 
-`organizing.ts` moves whole blocks between days. It validates all selections and
-the destination before writing, creates a missing destination from the normal
-future-day template without starting it, writes that destination first, and then
+`organizing.ts` moves whole blocks to days or schedules using the shared
+[date-routing rule](../../../../commands/all/day/docs/README.md#task-dates-choose-their-destination). It validates all selections and
+the destination before writing, creates a missing day from the normal
+future-day template, or a dated entry in a schedule file, writes that destination first, and then
 removes the source blocks. It resolves references and rebases relative links,
 including links in notes. A revision covers both the block and its resolved
 references, so a stale selection cannot move newly changed notes or links.
@@ -89,7 +91,7 @@ writes and rollback of only the operation's own bytes avoid losing source items
 when a multi-file write fails. These operations use the shared planning lock and,
 when workstreams are enabled, each affected day's projection lock.
 
-A move can create a partial week. Day start preserves an existing future plan
+A move within this week can create a partial week. Day start preserves an existing future plan
 and reconciles its streaks. Do not run day-start routines merely to schedule an
 item. See the [day-file lifecycle](../../../../commands/all/day/docs/README.md#day-files-are-created-as-needed).
 

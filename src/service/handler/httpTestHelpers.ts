@@ -2,6 +2,7 @@ import * as path from 'node:path'
 import type { YogaServerInstance } from 'graphql-yoga'
 import type { CalendarSchedulerHost } from '#lib/calendarScheduler/types.ts'
 import type MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
+import type { ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
 import { Store } from '../store.ts'
 import type { KeepOptions } from './attachments/keep.ts'
 import type { AutomationsRoutesOptions } from './automations/mod.ts'
@@ -30,6 +31,7 @@ export function createTestHttpApp(
   markdownDirs: string[],
   options: {
     markdownStore?: MarkdownStore | null
+    now?: () => ZonedDateTime
     chat?: ChatRoutesOptions
     voice?: VoiceRoutesOptions
     settings?: SettingsRoutesOptions
@@ -54,6 +56,7 @@ export function createTestHttpApp(
     markdownBaseDir,
     markdownDirs,
     chat: options.chat,
+    now: options.now,
     voice: options.voice,
     settings: options.settings,
     clock: options.clock,

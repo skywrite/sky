@@ -1,10 +1,8 @@
-import * as path from 'node:path'
 import { taskLinkLabel } from '#commands/lib/linkLabel.ts'
 import { ArgOrFlag, Command, CommandResult, dayFlag, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
-import { dayFile } from '#lib/nbfs/mod.ts'
-import { readTextFile, writeTextFile } from '#shared/fs/mod.ts'
-import DayDocument from '#shared/models/Day/mod.ts'
+import { fileTaskItems } from '#lib/nbfs/fileTaskItems.ts'
+import { commandPlanningDate } from '#lib/nbfs/taskDestination.ts'
 import type { Link } from '#shared/models/Markdown/Link/mod.ts'
 
 const params = {
@@ -32,10 +30,6 @@ export default class DayRemindersAddTask extends Command {
     const { config, output } = context
     const { task, link, when } = args
 
-    const file = path.join(<string>config.DIR_TIME, dayFile(when))
-    const contents = await readTextFile(file)
-    let dayObj = DayDocument.fromMarkdown(contents)
-
     let linkMap: Map<string, Link> | undefined = undefined
     let taskWithLink = task
     if (link) {
@@ -54,9 +48,7 @@ export default class DayRemindersAddTask extends Command {
       taskWithLink = `${task} [${commandDesc}][]`
     }
 
-    dayObj = dayObj.addReminderItem(taskWithLink, { links: linkMap })
-
-    await writeTextFile(file, dayObj.toMarkdown())
+    await fileTaskItems(config, commandPlanningDate(context), when, 'Reminders', [taskWithLink], linkMap)
     return CommandResult.success()
   }
 }

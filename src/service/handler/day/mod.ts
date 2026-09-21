@@ -7,6 +7,7 @@
 
 import * as path from 'node:path'
 import { Hono } from 'hono'
+import { planningDate } from '#lib/nbfs/taskDestination.ts'
 import { OutboxError } from '#lib/outbox/types.ts'
 import { resolveWorkstreamDayItems } from '#lib/workstreams/day.ts'
 import type { WorkstreamStore } from '#lib/workstreams/store.ts'
@@ -32,6 +33,7 @@ export interface DayRoutesOptions {
   aboutMePath?: string
   /** Test seam — production reads the notebook clock */
   today?: () => PlainDate
+  planningToday?: () => PlainDate
   /** Test seam — production reads about-me.md */
   ownerNames?: string[]
   /** The day's files live under the user-data directory; without it the files routes stay off */
@@ -67,6 +69,8 @@ export interface SavedChatSummary {
 
 export interface DayView {
   today: DayRef
+  /** Calendar date used by task date pickers and the scheduling boundary. */
+  planningToday?: string
   /** The day on the page — today unless a past day was asked for */
   day: DayRef & { dateLabel: string }
   /** Today and the six days before it, newest first */
@@ -88,9 +92,28 @@ async function dayRef(day: PlainDate, offset: number, options: DayRoutesOptions)
   return { ymd: day.ymd, label, meta: `${day.dayShort} ${day.ymd.slice(5)}`, dayRelativePath }
 }
 
+function planningToday(options: DayRoutesOptions): PlainDate {
+  if (options.planningToday) return options.planningToday()
+  if (options.today) return options.today()
+  try {
+    return planningDate(fetchNowSync({ timeDir: options.timeDir }))
+  } catch {
+    return PlainDate.today()
+  }
+}
+
 /** The view of one day: today by default, or the day named by `ymd`. */
 export async function buildDayView(options: DayRoutesOptions, ymd?: string): Promise<DayView> {
-  const today = (options.today ?? (() => fetchNowSync().plainDateTime.plainDate))()
+  const today = (
+    options.today ??
+    (() => {
+      try {
+        return fetchNowSync({ timeDir: options.timeDir }).plainDateTime.plainDate
+      } catch {
+        return PlainDate.today()
+      }
+    })
+  )()
   const day = ymd ? new PlainDate(ymd) : today
   const days = await Promise.all(
     Array.from({ length: DAYS_BACK + 1 }, (_, offset) => dayRef(today.addDays(-offset), offset, options)),
@@ -129,7 +152,15 @@ export async function buildDayView(options: DayRoutesOptions, ymd?: string): Pro
     }
   }
 
-  return { today: days[0], day: { ...ref, dateLabel: formatDateLabel(day) }, days, section: null, chats, record }
+  return {
+    today: days[0],
+    planningToday: planningToday(options).ymd,
+    day: { ...ref, dateLabel: formatDateLabel(day) },
+    days,
+    section: null,
+    chats,
+    record,
+  }
 }
 
 export function createDayRoutes(options: DayRoutesOptions): Hono {
@@ -154,7 +185,7 @@ export function createDayRoutes(options: DayRoutesOptions): Hono {
       markdownBaseDir: options.markdownBaseDir,
       stateDir: options.files ? path.join(options.files.userDataDir, 'day-planning') : undefined,
       writePlanning: options.writePlanning,
-      today: options.today ?? (() => fetchNowSync().plainDateTime.plainDate),
+      today: () => planningToday(options),
       view: (ymd) => buildDayView(options, ymd),
       workstreams: options.workstreams,
     }),

@@ -14,7 +14,7 @@ import MoveReminders from './reminders/move-future.ts'
 import TodosIncomplete from './todo/incomplete.ts'
 import MoveTodos from './todo/move-future.ts'
 
-const SOURCE = new PlainDate('2031-03-16')
+const SOURCE = new PlainDate('2031-03-15')
 const TARGET = SOURCE.addDays(1)
 const cases = [
   { command: new MoveTodos(), list: 'Professional Todos', item: 'Review [Atlas][atlas]', copy: false },
@@ -65,13 +65,13 @@ for (const { command, list, item, copy } of cases) {
         await invoke()
         const destination = await readDay(TARGET, timeDir)
         assert({
-          given: 'unfinished work moved or copied across the week boundary into a missing day',
+          given: 'unfinished work moved or copied within the current week into a missing day',
           should: 'create just that unstarted day, retain links and handle the source according to the operation',
           actual: {
             files: (await readdir(timeDir, { recursive: true })).filter((file) => file.endsWith('.md')).sort(),
             started: destination.started,
             items: destination.lists.find((section) => section.title === list)?.items,
-            link: destination.links.get('atlas')?.href,
+            link: destination.toMarkdown().includes('(https://example.com/atlas)'),
             sourceHasItem: (await readDay(SOURCE, timeDir)).lists
               .find((section) => section.title === list)
               ?.items.includes(item),
@@ -79,8 +79,8 @@ for (const { command, list, item, copy } of cases) {
           expected: {
             files: [dayFile(SOURCE), dayFile(TARGET)].sort(),
             started: undefined,
-            items: [item],
-            link: 'https://example.com/atlas',
+            items: [item.replace('[Atlas][atlas]', '[Atlas](https://example.com/atlas)')],
+            link: true,
             sourceHasItem: copy,
           },
         })

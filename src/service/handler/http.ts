@@ -10,9 +10,10 @@ import type { YogaServerInstance } from 'graphql-yoga'
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import type { CalendarSchedulerHost } from '#lib/calendarScheduler/types.ts'
+import { planningDate } from '#lib/nbfs/taskDestination.ts'
 import type MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
 import { fetchNowSync } from '#shared/nbfs/mod.ts'
-import type { PlainDate } from '#universal/dates/nbdt/mod.ts'
+import type { PlainDate, ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
 import { resolveContext } from '../context/mod.ts'
 import * as jsend from '../jsend.ts'
 import type { Store } from '../store.ts'
@@ -63,6 +64,8 @@ import { createWorkstreamRoutes, type WorkstreamsRoutesOptions } from './workstr
  * Options for creating the HTTP app.
  */
 export interface HttpHandlerOptions {
+  /** Optional notebook clock, shared by day and week planning. */
+  now?: () => ZonedDateTime
   /** Store instance for data access */
   store: Store
   /** GraphQL yoga instance */
@@ -156,6 +159,8 @@ export function createHttpApp(options: HttpHandlerOptions): Hono {
         markdownBaseDir,
         timeDir: chat.timeDir,
         aboutMePath: chat.aboutMePath,
+        today: options.now ? () => options.now!().plainDateTime.plainDate : undefined,
+        planningToday: options.now ? () => planningDate(options.now!()) : undefined,
         files: { userDataDir, timeDir: chat.timeDir, markdownBaseDir },
         schedule: createDayScheduleHost({
           timeDir: chat.timeDir,
@@ -173,7 +178,9 @@ export function createHttpApp(options: HttpHandlerOptions): Hono {
         markdownBaseDir,
         timeDir: chat.timeDir,
         commands: week,
+        now: options.now,
         captureStateDir: path.join(userDataDir, 'week-capture'),
+        taskStateDir: options.workstreams?.store.stateDir,
       }),
     )
   }

@@ -1,8 +1,10 @@
 import { readFile, writeFile } from 'node:fs/promises'
+import * as path from 'node:path'
 import type { Page, Request } from 'playwright'
+import { exists } from '#shared/fs/mod.ts'
 import { dayFile } from '#shared/nbfs/mod.ts'
 import { assert, test } from '#test'
-import { PlainDate } from '#universal/dates/nbdt/mod.ts'
+import { PlainDate, Week, ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
 import type { DayView } from './day/mod.ts'
 import { runWysiwygE2e } from './httpWysiwygE2eTestHelpers.ts'
 
@@ -137,7 +139,13 @@ test(
   async (t) => {
     await runWysiwygE2e(
       t,
-      { initialMarkdown: CONTENT, file: `time/${dayFile(DAY)}`, tempPrefix: 'day-organizing-', day: true },
+      {
+        initialMarkdown: CONTENT,
+        file: `time/${dayFile(DAY)}`,
+        tempPrefix: 'day-organizing-',
+        day: true,
+        now: new ZonedDateTime('2026-01-27T08:00:00', 'UTC'),
+      },
       async ({ page: desktop, origin, file, errors }) => {
         const browser = desktop.context().browser()!
         for (const mobile of [false, true]) {
@@ -291,6 +299,85 @@ test(
           }
         }
         assert({ given: 'the browser runs', should: 'finish without app errors', actual: errors, expected: [] })
+      },
+    )
+  },
+)
+
+test(
+  {
+    name: 'Sunday moves schedule next week and Open date shows the scheduled tasks on desktop and mobile',
+    timeout: 60000,
+  },
+  async (t) => {
+    const sunday = new PlainDate('2031-03-16')
+    const monday = sunday.addDays(1)
+    await runWysiwygE2e(
+      t,
+      {
+        initialMarkdown: CONTENT,
+        file: `time/${dayFile(sunday)}`,
+        tempPrefix: 'day-schedule-routing-',
+        day: true,
+        now: new ZonedDateTime('2031-03-16T08:00:00', 'UTC'),
+      },
+      async ({ page, origin, file, userDataDir, errors }) => {
+        const timeDir = path.join(path.dirname(userDataDir), 'time')
+        for (const mobile of [false, true]) {
+          await page.setViewportSize(mobile ? { width: 390, height: 844 } : { width: 1500, height: 1000 })
+          await page.goto(`${origin}/${sunday.ymd}`)
+          const move = async () => {
+            await page.getByRole('button', { name: 'Organize', exact: true }).click()
+            await page.getByRole('checkbox', { name: 'Select Review the Atlas proposal', exact: true }).click()
+            await page.getByRole('checkbox', { name: 'Select Send the venue options', exact: true }).click()
+            const saved = page.waitForResponse((response) => response.url().endsWith('/item/organize/move'))
+            await page.getByRole('button', { name: mobile ? 'Tomorrow' : 'Move to tomorrow', exact: true }).click()
+            const response = await saved
+            if (!response.ok()) throw new Error(await response.text())
+            return (await response.json()) as { undo: string }
+          }
+          await move()
+          await page
+            .locator('.sky-organize-toast')
+            .getByText('2 items scheduled for tomorrow', { exact: true })
+            .waitFor()
+          await page.locator('.sky-organize-toast').getByRole('button', { name: 'Undo', exact: true }).click()
+          await page.locator('.sky-prow').filter({ hasText: 'Review the Atlas proposal' }).waitFor()
+          assert({
+            given: 'Undo of a Sunday-to-Monday move',
+            should: 'restore the source exactly',
+            actual: await readFile(file, 'utf8'),
+            expected: CONTENT,
+          })
+          const result = await move()
+          await page.locator('.sky-organize-toast').getByRole('button', { name: 'Open date', exact: true }).click()
+          await page.waitForURL(`${origin}/week/${Week.of(monday)}`)
+          await page.getByText('Review the Atlas proposal', { exact: true }).waitFor()
+          await page.getByText('Send the venue options', { exact: true }).waitFor()
+          assert({
+            given: `${mobile ? 'mobile' : 'desktop'} Open date after a next-week move`,
+            should: 'show the scheduled tasks, preserve attached notes, and create no future day',
+            actual: {
+              dayCreated: await exists(path.join(timeDir, dayFile(monday))),
+              notes: (await readFile(path.join(timeDir, 'schedule-professional.md'), 'utf8')).includes(
+                '  Keep the attached notes.',
+              ),
+              metadataVisible: (await page.locator('body').innerText()).includes('sky-list:'),
+              overflow: await page.evaluate(() => document.documentElement.scrollWidth > innerWidth),
+            },
+            expected: { dayCreated: false, notes: true, metadataVisible: false, overflow: false },
+          })
+          const undo = await page.request.post(`${origin}/day/${sunday.ymd}/item/organize/undo`, {
+            data: { id: result.undo },
+          })
+          if (!undo.ok()) throw new Error(await undo.text())
+        }
+        assert({
+          given: 'scheduled browser moves',
+          should: 'finish without browser errors',
+          actual: errors,
+          expected: [],
+        })
       },
     )
   },

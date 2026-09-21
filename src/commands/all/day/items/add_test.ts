@@ -11,7 +11,7 @@ import { workstreamStoragePaths } from '#lib/workstreams/storagePaths.ts'
 import { outputFile, readTextFile } from '#shared/fs/mod.ts'
 import DayDocument from '#shared/models/Day/mod.ts'
 import { assert, test } from '#test'
-import { PlainDate } from '#universal/dates/nbdt/mod.ts'
+import { PlainDate, ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
 import DayTodoAddTask from '../todo/add.ts'
 import DayItemsAddTask from './add.ts'
 import DayItemsDoneTask from './done.ts'
@@ -24,14 +24,17 @@ async function notebook(run: (n: { context: CommandContext; file: string; schedu
   const root = await mkdtemp(path.join(tmpdir(), 'sky-day-items-test-'))
   const timeDir = path.join(root, 'time')
   const schedule = path.join(timeDir, 'schedule-professional.md')
-  const context = CommandContext.test({
-    ...config,
-    DIR_BASE: root,
-    DIR_STATE: path.join(root, 'state'),
-    DIR_TIME: timeDir,
-    FILE_SCHEDULE_PROFESSIONAL: schedule,
-    FILE_SCHEDULE_PERSONAL: path.join(timeDir, 'schedule-personal.md'),
-  })
+  const context = CommandContext.test(
+    {
+      ...config,
+      DIR_BASE: root,
+      DIR_STATE: path.join(root, 'state'),
+      DIR_TIME: timeDir,
+      FILE_SCHEDULE_PROFESSIONAL: schedule,
+      FILE_SCHEDULE_PERSONAL: path.join(timeDir, 'schedule-personal.md'),
+    },
+    { notebookNow: new ZonedDateTime('2031-03-13T08:00:00', 'UTC') },
+  )
   try {
     await run({ context, file: path.join(timeDir, dayFile(DAY)), schedule })
   } finally {
@@ -116,14 +119,14 @@ test('day:items:done - strikes sent at once all stay struck', async () => {
   })
 })
 
-test('day:todo:add - adds sent at once for a day with no file all reach the schedule', async () => {
+test('day:todo:add - adds sent at once for next week all reach the schedule', async () => {
   await notebook(async ({ context, schedule }) => {
     await outputFile(schedule, '# Schedule\n')
 
     await Promise.all(
       TASKS.map((task) =>
         new DayTodoAddTask().run({
-          args: { task, category: 'Professional Todos', link: undefined, when: DAY },
+          args: { task, category: 'Professional Todos', link: undefined, when: DAY.addDays(1) },
           ...call(context),
         }),
       ),

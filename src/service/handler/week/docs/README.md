@@ -68,9 +68,10 @@ be waiting for it in the standing files at the top of `time/`:
   lists; day:schedule:update pulls a day's list into the day file when the
   day starts. **Scheduled** shows them by date: the week's own dates, later
   ones, and in amber the dates that came and went without the day starting,
-  which the terminal only ever warned about. The add row's day pick files an
-  item under that date, the way day:todo:add files a to-do for a day that
-  has no file yet.
+  which the terminal only ever warned about. The add row's day pick follows the shared
+  [date-routing rule](../../../../commands/all/day/docs/README.md#task-dates-choose-their-destination):
+  this week goes straight to a day; later dates go to the schedule. Task-list
+  annotations are hidden from displayed text but retained for day-start import.
 
 The × on any of these lines is the person's hand: the line leaves, and a
 list it leaves empty leaves with it. Nothing else empties the queue —

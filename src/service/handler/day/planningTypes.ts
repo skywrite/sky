@@ -26,6 +26,7 @@ export interface DayPlanResult {
   view: DayView
   undo: string
   message: string
+  href?: string
 }
 
 /** Accept the notebook's extended hours as well as ordinary clock times. */
@@ -34,19 +35,4 @@ export function normalizeDayTime(value: string): string | null {
   return match ? `${match[1].padStart(2, '0')}:${match[2]}` : null
 }
 
-/** Completed tasks first; to-dos keep their relative order, commitments use time within each group. */
-export function comparePlanItems(
-  a: { done: boolean; time: string | null },
-  b: { done: boolean; time: string | null },
-  timed: boolean,
-): number {
-  const completed = Number(b.done) - Number(a.done)
-  if (completed || !timed) return completed
-  const minutes = (time: string | null) => {
-    const match = /^(\d{1,2}):([0-5]\d)$/.exec(time ?? '')
-    return match ? Number(match[1]) * 60 + Number(match[2]) : Number.POSITIVE_INFINITY
-  }
-  const left = minutes(a.time)
-  const right = minutes(b.time)
-  return left === right ? 0 : left - right
-}
+export { comparePlanItems } from '#lib/nbfs/comparePlanItems.ts'

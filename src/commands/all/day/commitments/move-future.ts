@@ -2,10 +2,7 @@ import { parsePartialDate } from '#commands/lib/args/parsePartialDate.ts'
 import type { CommandArgs, CommandDescription } from '#commands/lib/commands.d.ts'
 import { categoryCommitment, Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { InferParams } from '#commands/mod.ts'
-import { ensureDay } from '#lib/nbfs/mod.ts'
-import DayDocument from '#shared/models/Day/mod.ts'
-import { readDay, writeDay } from '#shared/nbfs/mod.ts'
-import { appendCommitments } from './lib/moveCommitments.ts'
+import { carryItems } from '../_carryItems.ts'
 
 const params = {
   old: Flag.plainDate('Old Day (e.g., 27, 8-27, 2025-08-27)', {
@@ -40,31 +37,9 @@ export default class DayCommitmentsMoveFutureTask extends Command {
     params,
   }
 
-  async run({ args, context, tasks }: CommandArgs<Params>): Promise<CommandResult> {
-    const { category, old: oldDate, new: newDate, noIncomplete } = args
-    const { DIR_TIME } = context.config
-
-    const source = (await readDay(oldDate, DIR_TIME)).lists.find((list) => list.title === category)
-    if (!source) return CommandResult.error(`Cannot find ${oldDate.ymd} ${category}.`)
-    if (!source.items.some(DayDocument.isItemNotDone)) {
-      context.output.log(`\n  No incomplete items in ${category}.\n`)
-      return CommandResult.success()
-    }
-
-    // Checked before the sweep touches the source day: a sweep with nowhere to
-    // land would leave the items under Incomplete and a rerun with nothing to move.
-    await ensureDay(newDate, DIR_TIME)
-
-    const result = await tasks.run('day:commitments:incomplete', { day: oldDate, category, cleanOnly: noIncomplete })
-    if (!result.ok) return result
-
-    const moved = result.data?.incompleteItems?.get(category)
-    if (!moved || moved.size === 0) return CommandResult.success()
-
-    const targetDoc = appendCommitments(await readDay(newDate, DIR_TIME), category, moved)
-    await writeDay(targetDoc, DIR_TIME)
-
-    context.output.log(`\n  Moved ${moved.size} commitments to ${newDate.ymd}.\n`)
+  async run({ args, context }: CommandArgs<Params>): Promise<CommandResult> {
+    const count = await carryItems(context, args.old, args.new, args.category, { incomplete: !args.noIncomplete })
+    context.output.log(`\n  Moved ${count} commitments to ${args.new.ymd}.\n`)
     return CommandResult.success()
   }
 }

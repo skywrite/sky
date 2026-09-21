@@ -52,6 +52,7 @@ export interface DayRef {
 
 export interface DayData {
   today: DayRef
+  planningToday?: string
   /** The day on the page — today unless a past day was asked for */
   day: DayRef & { dateLabel: string }
   days: DayRef[]

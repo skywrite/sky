@@ -15,7 +15,7 @@ import type { DayData, DayItem } from './day.tsx'
 import { DayCalendarIcon, DayDatePicker } from './dayDatePicker.tsx'
 import { useItemEditing } from './dayItemEditing.tsx'
 
-type Result = { view: DayData; undo: string; message: string; date?: string }
+type Result = { view: DayData; undo: string; message: string; date?: string; href?: string }
 /** A place the lifted row can land: how far its slot sits from home, and the rows that make room. */
 type Landing = { offset: number; neighbor: string | null; after: boolean; first: number; last: number; by: number }
 type Drag = {
@@ -472,12 +472,12 @@ export function useDayOrganizing(
     moveTomorrow: () =>
       void save('move', {
         items: [...selected.values()].map(address),
-        date: new PlainDate(day!.today.ymd).addDays(1).ymd,
+        date: new PlainDate(day!.planningToday ?? day!.today.ymd).addDays(1).ymd,
       }),
-    tomorrowIsCurrent: Boolean(day && ymd === new PlainDate(day.today.ymd).addDays(1).ymd),
+    tomorrowIsCurrent: Boolean(day && ymd === new PlainDate(day.planningToday ?? day.today.ymd).addDays(1).ymd),
     revert: () => void revert(),
     openDate: () => {
-      if (undo?.date) navigate(`/${undo.date}`)
+      if (undo?.date) navigate(undo.href ?? `/${undo.date}`)
     },
     step: (item: DayItem, direction: -1 | 1) => {
       const nodes = [...document.querySelectorAll<HTMLElement>('[data-organize-key]')].filter(
@@ -500,8 +500,8 @@ export function useDayOrganizing(
     picker:
       datePicker && selected.size > 0 && day ? (
         <DayDatePicker
-          today={day.today.ymd}
-          initial={new PlainDate(day.today.ymd).addDays(1).ymd}
+          today={day.planningToday ?? day.today.ymd}
+          initial={new PlainDate(day.planningToday ?? day.today.ymd).addDays(1).ymd}
           exclude={ymd}
           title={`Move ${selected.size} ${selected.size === 1 ? 'item' : 'items'}`}
           confirmLabel={`Move ${selected.size} ${selected.size === 1 ? 'item' : 'items'}`}

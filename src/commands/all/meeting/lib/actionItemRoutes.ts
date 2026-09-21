@@ -1,16 +1,16 @@
-import { dayFileExists, writeDayItems } from '#lib/nbfs/mod.ts'
+import { taskFiling } from '#lib/nbfs/taskDestination.ts'
 import type { TranscriptActionItem } from '#lib/notebook/actionItems.ts'
 import { exists, readTextFile } from '#shared/fs/mod.ts'
 import ListDocument from '#shared/models/Markdown/ListDocument/mod.ts'
-import { PlainDate } from '#universal/dates/nbdt/mod.ts'
+import { PlainDate, Week } from '#universal/dates/nbdt/mod.ts'
 import { normalizeClock, placeDestination, type PlaceWhen } from '#universal/dates/whenLabel/mod.ts'
 
 /**
  * Where an accepted action item lands, and how it gets there.
  *
  * An item is placed on a day or on no day. A day with a clock time is a
- * Commitment; without one it is a Todo. A day whose file exists takes the
- * item directly; a day whose week is not made yet parks it in the schedule
+ * Commitment; without one it is a Todo. A date in the current week takes the
+ * item directly; a later date parks it in the schedule
  * file under its date, time kept, and `day:schedule:update` files it on
  * that morning by the same split. No day means the Next list.
  */
@@ -30,19 +30,9 @@ export function proposedWhen(item: TranscriptActionItem, today: string, fallback
   return fallback
 }
 
-/**
- * The last day, from today on, whose day file exists — null when today's
- * own is missing. Looks a fortnight ahead at most: a week is made whole, so
- * the first gap is the end of what is created.
- */
-export async function lastCreatedDay(today: PlainDate, dayExists = dayFileExists): Promise<string | null> {
-  let last: string | null = null
-  for (let offset = 0; offset < 14; offset++) {
-    const day = today.addDays(offset)
-    if (!(await dayExists(day))) break
-    last = day.ymd
-  }
-  return last
+/** Last date routed straight to a day, whether its file exists yet or not. */
+export function planningThrough(today: PlainDate): string {
+  return Week.of(today).end.ymd
 }
 
 /** How many items wait under `## Next` in a next-* file's markdown. */
@@ -64,7 +54,6 @@ export async function countWaiting(file: string): Promise<number> {
 export async function planActionItemRoute(
   item: { text: string; when: PlaceWhen },
   today: string,
-  dayExists = dayFileExists,
 ): Promise<ActionItemRoute> {
   const date = item.when.date !== null && item.when.date >= today ? item.when.date : null
   if (date === null) return { kind: 'next', task: item.text, destination: 'Next' }
@@ -74,10 +63,10 @@ export async function planActionItemRoute(
   const time = item.when.time !== null ? normalizeClock(item.when.time) : null
   const task = time !== null ? `${time} > ${item.text}` : item.text
   const when = new PlainDate(date)
-  const created = await dayExists(when)
+  const created = taskFiling(when, new PlainDate(today)) === 'day'
   const destination = placeDestination({ date, time }, today, created ? date : null)
 
-  if (created && time !== null) return { kind: 'commitments', task, when, destination }
+  if (time !== null) return { kind: 'commitments', task, when, destination }
   return { kind: 'todo', task, when, destination }
 }
 
@@ -94,16 +83,17 @@ export interface RouteRunner {
  * list by that name.
  */
 export async function executeActionItemRoute(route: ActionItemRoute, tasks: RouteRunner): Promise<void> {
-  if (route.kind === 'commitments') {
-    await writeDayItems(route.when, 'Professional Commitments', route.task)
-    return
-  }
-  // day:todo:add itself forks on whether the day file exists yet: into its
-  // Todos list when it does, into the schedule file's date entry when not.
   const result =
     route.kind === 'next'
       ? await tasks.run('next:add', { task: route.task, category: 'Next' })
-      : await tasks.run('day:todo:add', { task: route.task, when: route.when, category: 'Professional Todos' })
+      : route.kind === 'commitments'
+        ? await tasks.run('day:items:add', {
+            task: route.task,
+            list: 'commitments',
+            when: route.when,
+            category: 'Professional',
+          })
+        : await tasks.run('day:todo:add', { task: route.task, when: route.when, category: 'Professional Todos' })
   if (!result.ok) {
     throw new Error(result.message ?? `${route.kind === 'next' ? 'next:add' : 'day:todo:add'} failed`)
   }

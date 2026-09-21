@@ -6,14 +6,13 @@ import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import {
   countWaitingIn,
   executeActionItemRoute,
-  lastCreatedDay,
+  planningThrough,
   planActionItemRoute,
   proposedWhen,
 } from './actionItemRoutes.ts'
 
 // A fictional week: Wednesday 11 March 2026, day files made through Sunday.
 const TODAY = '2026-03-11'
-const created = (day: PlainDate) => Promise.resolve(day.ymd <= '2026-03-15')
 const fallback = { date: '2026-03-12', time: null }
 
 test('actionItemRoutes: the when an item arrives with', () => {
@@ -33,12 +32,12 @@ test('actionItemRoutes: the when an item arrives with', () => {
 test('actionItemRoutes: where each placement goes', async () => {
   const text = 'Send the sheet'
   const routes = await Promise.all([
-    planActionItemRoute({ text, when: { date: '2026-03-12', time: '9:30' } }, TODAY, created),
-    planActionItemRoute({ text, when: { date: '2026-03-12', time: null } }, TODAY, created),
-    planActionItemRoute({ text, when: { date: '2026-03-16', time: '10:00' } }, TODAY, created),
-    planActionItemRoute({ text, when: { date: '2026-03-16', time: null } }, TODAY, created),
-    planActionItemRoute({ text, when: { date: null, time: null } }, TODAY, created),
-    planActionItemRoute({ text, when: { date: '2026-03-02', time: '09:00' } }, TODAY, created),
+    planActionItemRoute({ text, when: { date: '2026-03-12', time: '9:30' } }, TODAY),
+    planActionItemRoute({ text, when: { date: '2026-03-12', time: null } }, TODAY),
+    planActionItemRoute({ text, when: { date: '2026-03-16', time: '10:00' } }, TODAY),
+    planActionItemRoute({ text, when: { date: '2026-03-16', time: null } }, TODAY),
+    planActionItemRoute({ text, when: { date: null, time: null } }, TODAY),
+    planActionItemRoute({ text, when: { date: '2026-03-02', time: '09:00' } }, TODAY),
   ])
   assert({
     given: 'timed and untimed items on a made day, on a day whose week is not made, on no day, and in the past',
@@ -47,7 +46,7 @@ test('actionItemRoutes: where each placement goes', async () => {
     expected: [
       ['commitments', '09:30 > Send the sheet', 'Tomorrow · Commitments'],
       ['todo', 'Send the sheet', 'Tomorrow · Todos'],
-      ['todo', '10:00 > Send the sheet', 'Mon 16 Mar · schedule'],
+      ['commitments', '10:00 > Send the sheet', 'Mon 16 Mar · schedule'],
       ['todo', 'Send the sheet', 'Mon 16 Mar · schedule'],
       ['next', 'Send the sheet', 'Next'],
       ['next', 'Send the sheet', 'Next'],
@@ -126,10 +125,10 @@ test('actionItemRoutes: a composed run would otherwise inherit the meeting categ
 test('actionItemRoutes: what is created, and what waits', async () => {
   const today = new PlainDate(TODAY)
   assert({
-    given: 'day files through Sunday, and none at all',
-    should: 'name the last created day, or null',
-    actual: [await lastCreatedDay(today, created), await lastCreatedDay(today, () => Promise.resolve(false))],
-    expected: ['2026-03-15', null],
+    given: 'a Wednesday with no pre-created day files',
+    should: 'name Sunday as the planning boundary',
+    actual: planningThrough(today),
+    expected: '2026-03-15',
   })
   const next = ['# Next Actions', '', '## Week-Next', '- One', '', '## Next', '- Two', '- Three', ''].join('\n')
   assert({

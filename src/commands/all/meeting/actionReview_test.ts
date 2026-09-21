@@ -39,7 +39,7 @@ test('meeting:new resumes a filed meeting, saves notes before routing, and retai
   const mocks = [
     spyOn(runs, 'runOptionsFor').mockReturnValue(runOptions),
     spyOn(documents, 'serviceDocumentIO').mockReturnValue(io),
-    spyOn(routes, 'lastCreatedDay').mockResolvedValue('2026-02-01'),
+    spyOn(routes, 'planningThrough').mockReturnValue('2026-02-01'),
     spyOn(routes, 'countWaiting').mockResolvedValue(0),
     spyOn(routes, 'executeActionItemRoute').mockImplementation(async (route) => {
       operations.push(`routed ${route.task}`)

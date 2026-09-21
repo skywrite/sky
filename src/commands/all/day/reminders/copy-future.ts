@@ -1,11 +1,7 @@
 import { parsePartialDate } from '#commands/lib/args/parsePartialDate.ts'
 import { Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
-import { ensureDay } from '#lib/nbfs/mod.ts'
-import DayDocument from '#shared/models/Day/mod.ts'
-import Document from '#shared/models/Markdown/Document/mod.ts'
-import { type Link, mergeLinkMaps } from '#shared/models/Markdown/Link/mod.ts'
-import { readDay, writeDay } from '#shared/nbfs/mod.ts'
+import { carryItems } from '../_carryItems.ts'
 
 const params = {
   old: Flag.plainDate('Old Day (e.g., 27, 8-27, 2025-08-27)', {
@@ -36,61 +32,8 @@ export default class DayRemindersCopyFutureTask extends Command {
   }
 
   async run({ args, context }: CommandArgs<Params>): Promise<CommandResult> {
-    const { output, config } = context
-    const { old: oldDate, new: newDate } = args
-
-    const dayDoc = await readDay(oldDate, config.DIR_TIME)
-
-    const listDayReminders = dayDoc.lists.find((list) => list.title === 'Reminders')
-    if (!listDayReminders) {
-      output.log('No Reminders list found in source day')
-      return CommandResult.success()
-    }
-
-    const listDayNotDone = listDayReminders.filter(DayDocument.isItemNotDone)
-
-    if (listDayNotDone.size === 0) {
-      output.log('No incomplete reminders to copy')
-      return CommandResult.success()
-    }
-
-    await ensureDay(newDate, config.DIR_TIME)
-    const nextDayDoc = await readDay(newDate, config.DIR_TIME)
-
-    // Extract links referenced by the copied items
-    const copiedLinks = new Map<string, Link>()
-    for (const item of listDayNotDone.items) {
-      const labels = Document.extractReferenceLabels(item)
-      for (const label of labels) {
-        const link = dayDoc.links.get(label)
-        if (link) copiedLinks.set(label, link)
-      }
-    }
-
-    // Get or create next day's Reminders list and add links
-    const listNextDayReminders = nextDayDoc.lists.find((list) => list.title === 'Reminders')
-    let newNextDayDoc: DayDocument
-
-    if (listNextDayReminders) {
-      const newNextDayReminders = listNextDayReminders.concat(listDayNotDone)
-      newNextDayDoc = nextDayDoc.replaceList('Reminders', newNextDayReminders)
-    } else {
-      // Add reminders one by one using addReminderItem which handles list creation
-      newNextDayDoc = nextDayDoc
-      for (const item of listDayNotDone.items) {
-        newNextDayDoc = newNextDayDoc.addReminderItem(item)
-      }
-    }
-
-    // Add copied links to next day
-    if (copiedLinks.size > 0) {
-      newNextDayDoc = newNextDayDoc.updateLinks(mergeLinkMaps([newNextDayDoc.links, copiedLinks]))
-    }
-
-    // Only write the destination day (source day remains unchanged)
-    await writeDay(newNextDayDoc, config.DIR_TIME)
-
-    output.log(`\n  Copied ${listDayNotDone.size} reminders.\n`)
+    const count = await carryItems(context, args.old, args.new, 'Reminders', { copy: true })
+    context.output.log(`\n  Copied ${count} reminders to ${args.new.ymd}.\n`)
     return CommandResult.success()
   }
 }

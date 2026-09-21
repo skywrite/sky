@@ -1,8 +1,10 @@
 import { readFile, writeFile } from 'node:fs/promises'
 import * as path from 'node:path'
+import { exists } from '#shared/fs/mod.ts'
+import DayDocument from '#shared/models/Day/mod.ts'
 import { dayFile } from '#shared/nbfs/mod.ts'
 import { assert, test } from '#test'
-import { PlainDate } from '#universal/dates/nbdt/mod.ts'
+import { PlainDate, Week, ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
 import { runWysiwygE2e } from './httpWysiwygE2eTestHelpers.ts'
 
 const DAY = new PlainDate('2026-01-27')
@@ -178,6 +180,72 @@ test(
           ],
           expected: [0, 0],
         })
+      },
+    )
+  },
+)
+
+test(
+  {
+    name: 'web composers prepare missing this-week days and schedule later dates on desktop and mobile',
+    timeout: 45000,
+  },
+  async (t) => {
+    const saturday = new PlainDate('2031-03-15')
+    const sunday = saturday.addDays(1)
+    const monday = saturday.addDays(2)
+    await runWysiwygE2e(
+      t,
+      {
+        initialMarkdown: EMPTY,
+        file: `time/${dayFile(saturday)}`,
+        tempPrefix: 'day-lazy-composer-',
+        day: true,
+        now: new ZonedDateTime('2031-03-15T08:00:00', 'UTC'),
+      },
+      async ({ page, origin, userDataDir, errors }) => {
+        const timeDir = path.join(path.dirname(userDataDir), 'time')
+        for (const mobile of [false, true]) {
+          await page.setViewportSize(mobile ? { width: 390, height: 844 } : { width: 1500, height: 1000 })
+          await page.goto(`${origin}/${sunday.ymd}`)
+          await page.getByRole('button', { name: 'Add a to-do', exact: true }).click()
+          await page.getByRole('textbox', { name: 'Item text', exact: true }).fill('Review Atlas')
+          await page.getByRole('button', { name: 'Add to-do', exact: true }).click()
+          await page.locator('.sky-ptext').filter({ hasText: 'Review Atlas' }).waitFor()
+          const sundayFile = path.join(timeDir, dayFile(sunday))
+          assert({
+            given: 'an add on a missing day this week',
+            should: 'create the day without starting it',
+            actual: DayDocument.fromMarkdown(await readFile(sundayFile, 'utf8')).started,
+            expected: undefined,
+          })
+          await page.locator('.sky-plan-undo').getByRole('button', { name: 'Undo', exact: true }).click()
+          await page.locator('.sky-prow').filter({ hasText: 'Review Atlas' }).waitFor({ state: 'detached' })
+          assert({
+            given: 'Undo of the first item on the day',
+            should: 'remove the untouched day file',
+            actual: await exists(sundayFile),
+            expected: false,
+          })
+          await page.goto(`${origin}/${monday.ymd}`)
+          await page.getByRole('button', { name: 'Add a reminder', exact: true }).click()
+          await page.getByRole('textbox', { name: 'Item text', exact: true }).fill('Water the plants')
+          const saved = page.waitForResponse((response) => response.url().endsWith('/item/add'))
+          await page.getByRole('button', { name: 'Add reminder', exact: true }).click()
+          const result = (await (await saved).json()) as { undo: string }
+          await page.locator('.sky-plan-undo').getByRole('link', { name: 'Open schedule', exact: true }).click()
+          await page.waitForURL(`${origin}/week/${Week.of(monday)}`)
+          await page.getByText('Water the plants', { exact: true }).waitFor()
+          assert({
+            given: 'an add on a date next week',
+            should: 'show it on the schedule without creating a day',
+            actual: await exists(path.join(timeDir, dayFile(monday))),
+            expected: false,
+          })
+          const undo = await page.request.post(`${origin}/day/${monday.ymd}/item/undo`, { data: { id: result.undo } })
+          if (!undo.ok()) throw new Error(await undo.text())
+        }
+        assert({ given: 'empty-day composers', should: 'finish without browser errors', actual: errors, expected: [] })
       },
     )
   },

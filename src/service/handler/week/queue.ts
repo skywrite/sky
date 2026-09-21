@@ -10,8 +10,8 @@
  *   week:plan uses, stamped with the week that pushed it.
  * - `schedule-professional.md` / `schedule-personal.md`: `## YYYY-MM-DD`
  *   lists; day:schedule:update pulls the day's list into the day file when
- *   that day starts. An item added with a day lands under that date, the
- *   way day:todo:add files a to-do for a day with no file yet.
+ *   that day starts. The shared date rule files tasks here beyond the
+ *   current week.
  *
  * Removing a line is the person's hand: the bullet leaves; a list left
  * empty leaves with it, so a dated heading never stands over nothing.
@@ -19,9 +19,9 @@
 
 import * as path from 'node:path'
 import { appendWeekNext } from '#commands/all/week/lib/weekNext.ts'
+import { planSection, removeBlock } from '#lib/nbfs/listBlocks.ts'
+import { readScheduledItem } from '#lib/nbfs/scheduledItems.ts'
 import { exists, readTextFile, writeTextFile } from '#shared/fs/mod.ts'
-import ItemList from '#shared/models/Markdown/ItemList/mod.ts'
-import ListDocument from '#shared/models/Markdown/ListDocument/mod.ts'
 import type { PlainDate, Week } from '#universal/dates/nbdt/mod.ts'
 
 export const QUEUE_FILES = ['next-professional.md', 'next-personal.md'] as const
@@ -92,10 +92,6 @@ export function queueFileOf(category: Category): QueueFile {
   return category === 'Personal' ? 'next-personal.md' : 'next-professional.md'
 }
 
-export function scheduleFileOf(category: Category): ScheduleFile {
-  return category === 'Personal' ? 'schedule-personal.md' : 'schedule-professional.md'
-}
-
 function categoryOf(file: QueueFile | ScheduleFile): Category {
   return file.endsWith('personal.md') ? 'Personal' : 'Professional'
 }
@@ -151,9 +147,10 @@ function nextItem(text: string, file: QueueFile, list: string): NextItem {
 }
 
 function scheduledItem(text: string, file: ScheduleFile): ScheduledItem {
-  const timed = text.match(TIMED)
+  const decoded = readScheduledItem(text, categoryOf(file))
+  const timed = decoded.block.match(TIMED)
   return {
-    text: (timed ? timed[2] : text).trim(),
+    text: (timed ? timed[2] : decoded.block).trim(),
     time: timed?.[1] ?? null,
     category: categoryOf(file),
     raw: text,
@@ -189,7 +186,7 @@ export async function readWeekQueue(timeDir: string, week: Week, today: PlainDat
     const lines = await readLines(path.join(timeDir, file))
     if (!lines) continue
     for (const section of sectionsOf(lines)) {
-      if (!YMD.test(section.title)) continue
+      if (!YMD.test(section.title) || !section.bullets.length) continue
       const items = groups.get(section.title) ?? []
       items.push(...section.bullets.map((b) => scheduledItem(b.text, file)))
       groups.set(section.title, items)
@@ -212,19 +209,6 @@ export async function addQueueItem(timeDir: string, category: Category, text: st
   const file = path.join(timeDir, queueFileOf(category))
   const existing = (await exists(file)) ? await readTextFile(file) : `---\n---\n\n# Next Actions ${category}\n`
   await writeTextFile(file, appendWeekNext(existing, [text.trim()], weekId))
-}
-
-/** A line for a day: under `## YYYY-MM-DD` in the category's schedule file, the list made in date order when missing. */
-export async function addScheduledItem(timeDir: string, category: Category, ymd: string, text: string): Promise<void> {
-  const file = path.join(timeDir, scheduleFileOf(category))
-  const contents = (await exists(file)) ? await readTextFile(file) : `---\n---\n\n# ${category} Todos\n`
-  const doc = ListDocument.fromMarkdown(contents)
-  let withList = doc
-  if (doc.findListIndex((list) => list.title === ymd) < 0) {
-    const insertAt = doc.findListIndex((list) => list.title > ymd)
-    withList = doc.insertList(insertAt < 0 ? doc.lists.length : insertAt, new ItemList(ymd))
-  }
-  await writeTextFile(file, withList.addItem(ymd, text.trim()).toMarkdown())
 }
 
 export type LineEdit = 'written' | 'missing'
@@ -258,7 +242,21 @@ export async function removeItem(
 ): Promise<LineEdit> {
   const lines = await readLines(path.join(timeDir, file))
   if (!lines) return 'missing'
-  const next = removeBullet(lines, list, raw)
+  let next: string[] | null
+  if (isScheduleFile(file)) {
+    const content = lines.join('\n')
+    const section = planSection(content, list)
+    if (!section?.rows.some((row) => row.raw === raw)) return 'missing'
+    let after = removeBlock(content, list, raw)
+    const remaining = planSection(after, list)
+    if (remaining && !remaining.rows.some((row) => row.raw)) {
+      const region = after.slice(remaining.from, remaining.end)
+      // Keep prose and reference definitions after the emptied date.
+      const empty = /^##[^\r\n]*\r?\n(?:[\t ]*\r?\n)*[\t ]*[-*+][\t ]*(?:\r?\n|$)(?:[\t ]*\r?\n)*/.exec(region)
+      if (empty) after = after.slice(0, remaining.from) + region.slice(empty[0].length) + after.slice(remaining.end)
+    }
+    next = after.split('\n')
+  } else next = removeBullet(lines, list, raw)
   if (!next) return 'missing'
   await writeTextFile(path.join(timeDir, file), next.join('\n'))
   return 'written'

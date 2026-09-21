@@ -9,7 +9,7 @@ import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import { createDayRoutes, type DayRoutesOptions, type DayView } from './mod.ts'
 
 const DAY = '2026-01-27'
-const TARGET = '2026-02-02'
+const TARGET = '2026-01-28'
 const CONTENT = `---
 started: 08:00
 ended:
@@ -89,7 +89,7 @@ const selected = (view: DayView) =>
 type Result = { view: DayView; undo: string; message: string; date?: string; undoRoute?: string }
 
 for (const eol of ['\n', '\r\n'])
-  test(`moving mixed task blocks preserves notes and links across weeks (${eol.length})`, async () => {
+  test(`moving mixed task blocks preserves notes and links within the week (${eol.length})`, async () => {
     const original = CONTENT.replace(/\n/g, eol)
     await withDays(async ({ post, view, read, write }) => {
       const input = { items: selected(await view()), date: TARGET, requestId: randomUUID() }

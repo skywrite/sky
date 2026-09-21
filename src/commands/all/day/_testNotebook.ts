@@ -18,6 +18,8 @@ export async function withDayNotebook(
       DIR_TIME: path.join(root, 'time'),
       DIR_STATE: path.join(root, 'state'),
       DIR_STREAKS: path.join(root, 'streaks'),
+      FILE_SCHEDULE_PROFESSIONAL: path.join(root, 'time', 'schedule-professional.md'),
+      FILE_SCHEDULE_PERSONAL: path.join(root, 'time', 'schedule-personal.md'),
       DAY_START_COMMANDS: [],
       PORT_SERVER: 0,
     },

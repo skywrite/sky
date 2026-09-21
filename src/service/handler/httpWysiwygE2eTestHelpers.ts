@@ -12,6 +12,7 @@ import type { ServerType } from '@hono/node-server'
 import { type Browser, chromium, type Page } from 'playwright'
 import MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
 import { env } from '#shared/sys/mod.ts'
+import type { ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
 import type { ChatRoutesOptions } from './chat/mod.ts'
 import { createTestHttpApp } from './httpTestHelpers.ts'
 import type { ImportRoutesOptions } from './import/mod.ts'
@@ -124,6 +125,7 @@ export async function runWysiwygE2e(
     store?: boolean
     /** Serve the day page too: its routes, and the import routes a drop on it needs */
     day?: boolean
+    now?: ZonedDateTime
     /** Script an import's read-back and run when testing the day import flow */
     imports?: Partial<ImportRoutesOptions>
     /** A real chat host with a scripted model, for browser conversation tests. */
@@ -168,6 +170,7 @@ export async function runWysiwygE2e(
         markdownStore,
         keep: { searchDirs: [downloads], spotlight: false },
         ...(options.day ? dayHosts(notebookBaseDir, userDataDir, options.imports) : {}),
+        now: options.now ? () => options.now! : undefined,
         ...(options.chat ? { chat: options.chat(notebookBaseDir, userDataDir) } : {}),
       },
     )
