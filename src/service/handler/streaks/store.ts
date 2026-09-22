@@ -1,20 +1,24 @@
 import { randomUUID } from 'node:crypto'
-import { lstat, mkdir, readFile, readdir, unlink, writeFile } from 'node:fs/promises'
+import { lstat, mkdir, readFile, readdir, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import * as path from 'node:path'
 import { Marked } from 'marked'
 import { z } from 'zod'
+import { insertBlock } from '#lib/nbfs/listBlocks.ts'
+import { writePlanningChanges, type PlanningChange } from '#lib/nbfs/planningChanges.ts'
 import { atomicWrite, hash, missing, readOptional, withLock } from '#lib/outbox/files.ts'
+import { createStreakClassifier, resolveStreakCategory, type StreakClassifier } from '#lib/streaks/category.ts'
 import slugify from '#lib/string/slugify.ts'
 import DayDocument from '#shared/models/Day/mod.ts'
 import StreakDocument, {
   computeStreakStats,
   STREAKS_LIST_TITLE,
+  STREAK_CATEGORIES,
   streaksItemsFromDay,
   type StreakDayEntry,
 } from '#shared/models/Streak/mod.ts'
 import { dayFile } from '#shared/nbfs/mod.ts'
-import { PlainDate } from '#universal/dates/nbdt/mod.ts'
+import { PlainDate, PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import { dayEnd } from '../day/ended.ts'
 import isDay from '../day/isDay.ts'
 import type { StreakDayView, StreakMutation, StreakReport, StreakView } from './types.ts'
@@ -56,6 +60,7 @@ const Create = z
       ),
     rule: z.string().trim().min(1, 'Describe what counts.').max(10_000),
     why: z.string().trim().max(10_000).default(''),
+    category: z.enum(STREAK_CATEGORIES).optional(),
     schedule: z.enum(['daily', 'weekdays']),
     start: Day,
     end: Day.nullish(),
@@ -65,7 +70,8 @@ const Create = z
     path: ['end'],
   })
 const Completion = z.object({ date: Day, done: z.boolean(), expectedDone: z.boolean() })
-const Archive = z.object({ revision: z.string().min(1) })
+const Archive = z.object({ revision: z.string().min(1), category: z.enum(STREAK_CATEGORIES).optional() })
+const Category = z.object({ revision: z.string().min(1), category: z.enum(STREAK_CATEGORIES) })
 
 interface Loaded {
   file: string
@@ -77,11 +83,7 @@ interface Loaded {
 interface UndoRecord {
   name: string
   expires: number
-  file: string
-  before: string
-  after: string
-  /** Archive restores the prior active file and removes the archived destination. */
-  restoreTo?: string
+  changes: PlanningChange[]
   day?: string
 }
 
@@ -149,9 +151,14 @@ export class StreaksStore {
 
   constructor(
     readonly paths: StreaksPaths,
-    private readonly today: () => Promise<PlainDate> = async () => PlainDate.today(),
+    private readonly now: () => Promise<PlainDateTime> = async () => new PlainDateTime(),
+    private readonly classify: StreakClassifier = createStreakClassifier(paths.root),
   ) {
     this.stateDir = paths.stateDir ?? path.join(tmpdir(), `sky-streaks-${hash(paths.streaksDir)}`)
+  }
+
+  private async today(): Promise<PlainDate> {
+    return (await this.now()).plainDate
   }
 
   private relative(file: string): string {
@@ -269,6 +276,7 @@ export class StreaksStore {
         return {
           name: document.name,
           title: document.title,
+          category: document.category ?? null,
           schedule: document.schedule,
           start: document.start?.ymd ?? null,
           end: document.end?.ymd ?? null,
@@ -343,6 +351,11 @@ export class StreaksStore {
 
   async create(input: unknown): Promise<StreakMutation> {
     const value = Create.parse(input)
+    const draft = new StreakDocument(
+      { title: value.title },
+      StreakDocument.createTemplate({ title: value.title, why: value.why, details: `## What counts\n\n${value.rule}` }),
+    )
+    const category = await resolveStreakCategory(draft, value.category, this.classify)
     return withLock(path.join(this.stateDir, 'write.lock'), async () => {
       const { streaks, warnings } = await this.load()
       if (warnings.some((warning) => warning.startsWith('Could not read')))
@@ -367,6 +380,7 @@ export class StreaksStore {
       const document = StreakDocument.create({
         name,
         title: value.title,
+        category: category.category,
         schedule: value.schedule,
         start: new PlainDate(value.start),
         end: value.end ? new PlainDate(value.end) : undefined,
@@ -384,7 +398,22 @@ export class StreaksStore {
           throw new StreaksError('That streak file already exists. Refresh and try again.', 409)
         throw error
       }
-      return { name, message: 'Streak created.' }
+      return { name, message: category.warning ? `Streak created. ${category.warning}` : 'Streak created.' }
+    })
+  }
+
+  async setCategory(name: string, input: unknown): Promise<StreakMutation> {
+    const { revision, category } = Category.parse(input)
+    return withLock(path.join(this.stateDir, 'write.lock'), async () => {
+      const streak = await this.required(name)
+      if (streak.status !== 'active') throw new StreaksError('Set the category before archiving the streak.', 409)
+      if (hash(streak.content) !== revision)
+        throw new StreaksError('This streak changed. Refresh before changing its category.', 409)
+      const today = await this.today()
+      const after = streak.document.updateYaml({ category, updated: today.ymd }).toMarkdown()
+      await this.changed(streak.file, streak.content)
+      await atomicWrite(streak.file, after)
+      return { name, message: `Category set to ${category}.` }
     })
   }
 
@@ -418,42 +447,61 @@ export class StreaksStore {
         await this.changed(streak.file, streak.content)
         await this.changed(file, before)
         await atomicWrite(file, result.content)
-        const undoId = this.remember({ name, file, before, after: result.content, day: date.ymd })
+        const undoId = this.remember({ name, changes: [{ file, before, after: result.content }], day: date.ymd })
         return { name, undoId, message: value.done ? 'Streak completed.' : 'Completion removed.' }
       }),
     )
   }
 
   async archive(name: string, input: unknown): Promise<StreakMutation> {
-    const { revision } = Archive.parse(input)
-    return withLock(path.join(this.stateDir, 'write.lock'), async () => {
+    const { revision, category: override } = Archive.parse(input)
+    const current = async () => {
       const streak = await this.required(name)
       if (streak.status !== 'active') throw new StreaksError('This streak is already archived.', 409)
       if (hash(streak.content) !== revision)
         throw new StreaksError('This streak changed. Refresh before archiving it.', 409)
-      const today = await this.today()
-      const end = streak.document.end && streak.document.end.ymd < today.ymd ? streak.document.end.ymd : today.ymd
-      const after = streak.document.updateYaml({ end, updated: today.ymd }).toMarkdown()
-      const file = path.join(this.paths.streaksDir, 'archived', `${name}.md`)
-      await this.checked(file, true)
-      await this.changed(streak.file, streak.content)
-      await mkdir(path.dirname(file), { recursive: true })
-      try {
-        await writeFile(file, after, { encoding: 'utf8', flag: 'wx' })
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code === 'EEXIST')
-          throw new StreaksError('An archived file already uses this name. Review the documents first.', 409)
-        throw error
-      }
-      try {
+      return streak
+    }
+    // Inference can take seconds. Keep it outside the writer locks, then recheck the revision.
+    const category = await resolveStreakCategory((await current()).document, override, this.classify)
+    return withLock(path.join(this.stateDir, 'write.lock'), async () => {
+      const streak = await current()
+      const now = await this.now()
+      const today = now.plainDate
+      return this.dayWrite(today.ymd, async () => {
+        const dayPath = path.join(this.paths.timeDir, dayFile(today))
+        await this.checked(dayPath, true)
+        const before = await readOptional(dayPath)
+        const day = before === undefined ? DayDocument.createFutureDay(today) : DayDocument.fromMarkdown(before)
+        if (day.yamlError) throw new StreaksError('This day record could not be read.', 409)
+        if (dayEnd(day).ended)
+          throw new StreaksError('This day has ended. Start a new day before archiving a streak.', 409)
+        const dayItem = `${now.time} > streaks/${name} -> Archived | ${streak.document.title}`
+        const list = `${category.category ?? 'Personal'} Complete`
+        const dayAfter = insertBlock(before ?? day.toMarkdown(), list, `- ${dayItem}`)
+        const end = streak.document.end && streak.document.end.ymd < today.ymd ? streak.document.end.ymd : today.ymd
+        const after = streak.document
+          .updateYaml({ end, updated: today.ymd, ...(category.category ? { category: category.category } : {}) })
+          .toMarkdown()
+        const file = path.join(this.paths.streaksDir, 'archived', `${name}.md`)
+        await this.checked(file, true)
         await this.changed(streak.file, streak.content)
-        await unlink(streak.file)
-      } catch (error) {
-        if ((await readOptional(file)) === after) await unlink(file)
-        throw error
-      }
-      const undoId = this.remember({ name, file, before: streak.content, after, restoreTo: streak.file })
-      return { name, undoId, message: 'Streak archived. Its history is saved.' }
+        // Publish the archive and its day record before removing the active rule.
+        const changes: PlanningChange[] = [
+          { file, before: undefined, after },
+          { file: dayPath, before, after: dayAfter },
+          { file: streak.file, before: streak.content, after: undefined },
+        ]
+        await writePlanningChanges(changes)
+        const undoId = this.remember({ name, changes, day: today.ymd })
+        return {
+          name,
+          undoId,
+          message: category.warning
+            ? 'Streak archived. Category could not be determined; recorded in Personal Complete.'
+            : `Streak archived. Recorded in ${list}.`,
+        }
+      })
     })
   }
 
@@ -464,27 +512,15 @@ export class StreaksStore {
       if (!record || record.expires < performance.now())
         throw new StreaksError('Undo expired. Review the current record.', 409)
       const restore = async (): Promise<StreakMutation> => {
-        await this.changed(record.file, record.after)
-        if (record.day && dayEnd(DayDocument.fromMarkdown(record.after)).ended)
+        for (const change of record.changes) await this.checked(change.file, true)
+        const day = record.day
+          ? record.changes.find((change) => change.file === path.join(this.paths.timeDir, dayFile(record.day!)))
+          : undefined
+        if (day?.after && dayEnd(DayDocument.fromMarkdown(day.after)).ended)
           throw new StreaksError('This day has ended. Its streaks are read-only.', 409)
-        if (record.restoreTo) {
-          await this.checked(record.restoreTo, true)
-          await mkdir(path.dirname(record.restoreTo), { recursive: true })
-          try {
-            await writeFile(record.restoreTo, record.before, { encoding: 'utf8', flag: 'wx' })
-          } catch (error) {
-            if ((error as NodeJS.ErrnoException).code === 'EEXIST')
-              throw new StreaksError('The active streak file changed. Review it before restoring.', 409)
-            throw error
-          }
-          try {
-            await this.changed(record.file, record.after)
-            await unlink(record.file)
-          } catch (error) {
-            if ((await readOptional(record.restoreTo)) === record.before) await unlink(record.restoreTo)
-            throw error
-          }
-        } else await atomicWrite(record.file, record.before)
+        await writePlanningChanges(
+          record.changes.toReversed().map(({ file, before, after }) => ({ file, before: after, after: before })),
+        )
         this.undos.delete(id)
         return { name: record.name, message: 'Change undone.' }
       }

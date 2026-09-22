@@ -1,6 +1,9 @@
+import type { StreakCategory } from '#shared/models/Streak/category.ts'
+
 export interface StreakView {
   name: string
   title: string
+  category: StreakCategory | null
   schedule: 'daily' | 'weekdays'
   start: string | null
   end: string | null

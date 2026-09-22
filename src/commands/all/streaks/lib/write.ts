@@ -5,11 +5,17 @@
  */
 
 import * as path from 'node:path'
-import { DIR_STREAKS } from '#config'
+import { DIR_BASE, DIR_STREAKS } from '#config'
+import { createDayFile } from '#lib/nbfs/createDayFile.ts'
 import { writeDayItems } from '#lib/nbfs/mod.ts'
+import { createStreakClassifier, resolveStreakCategory, type StreakClassifier } from '#lib/streaks/category.ts'
 import { loadAllStreaks, stampStreaksList } from '#lib/streaks/mod.ts'
-import { exists, outputFile } from '#shared/fs/mod.ts'
-import StreakDocument, { type StreakSchedule } from '#shared/models/Streak/mod.ts'
+import { exists } from '#shared/fs/mod.ts'
+import StreakDocument, {
+  parseStreakCategory,
+  type StreakCategory,
+  type StreakSchedule,
+} from '#shared/models/Streak/mod.ts'
 import type TagSet from '#shared/models/TagSet/mod.ts'
 import { readDay, writeDay } from '#shared/nbfs/mod.ts'
 import type { PlainDate, ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
@@ -35,14 +41,16 @@ export interface WriteStreakInput {
   rel?: string[]
   /** Notebook now — created/updated stamps and the day item key off it */
   now: ZonedDateTime
-  /** Day-item collection, e.g. "Personal Complete" */
-  category: string
+  /** Explicit category; legacy collection names such as "Personal Complete" are also accepted. */
+  category?: string
 }
 
 export interface WriteStreakResult {
   file: string
   markdown: string
   dayItem: string
+  category?: StreakCategory
+  categoryWarning?: string
   /** True when the start day's Streaks list was updated */
   stamped: boolean
   /** Set when the start-day stamp failed (the rule doc itself succeeded) */
@@ -59,7 +67,7 @@ export interface WriteStreakResult {
  */
 export async function writeStreak(
   input: WriteStreakInput,
-  dirs: { streaksDir?: string; timeDir?: string } = {},
+  dirs: { root?: string; streaksDir?: string; timeDir?: string; classify?: StreakClassifier } = {},
 ): Promise<WriteStreakResult> {
   const streaksDir = dirs.streaksDir ?? DIR_STREAKS
   const { now, start } = input
@@ -81,7 +89,7 @@ export async function writeStreak(
     throw new SlugCollisionError(`File already exists: ${file}`)
   }
 
-  const streak = StreakDocument.create({
+  let streak = StreakDocument.create({
     name: input.name,
     title: input.title,
     schedule: input.schedule,
@@ -93,9 +101,17 @@ export async function writeStreak(
     rel: input.rel,
     createdOn: now.plainDateTime.date,
   })
+  const override = parseStreakCategory(input.category)
+  if (input.category !== undefined && !override) throw new Error('Category must be Personal or Professional.')
+  const category = await resolveStreakCategory(
+    streak,
+    override,
+    dirs.classify ?? createStreakClassifier(dirs.root ?? DIR_BASE),
+  )
+  if (category.category) streak = streak.updateYaml({ category: category.category })
 
   const markdown = streak.toMarkdown()
-  await outputFile(file, markdown)
+  if (!(await createDayFile(file, markdown))) throw new SlugCollisionError(`File already exists: ${file}`)
 
   // Stamp the start day's file so the item shows up immediately — its day
   // file may already exist even for a future start (a task move can prepare it)
@@ -105,7 +121,7 @@ export async function writeStreak(
     const dayModel = await readDay(start, dirs.timeDir)
     const stampedModel = stampStreaksList(dayModel, [streak], start)
     if (stampedModel !== dayModel) {
-      await writeDay(stampedModel)
+      await writeDay(stampedModel, dirs.timeDir)
       stamped = true
     }
   } catch (err) {
@@ -118,10 +134,24 @@ export async function writeStreak(
   const dayItem = `${now.plainDateTime.time} > streaks/${input.name} -> Started | ${input.title}${startsNote}`
   let dayItemWarning: string | undefined
   try {
-    await writeDayItems(today, input.category, dayItem, dirs.timeDir ? { timeDir: dirs.timeDir } : {})
+    await writeDayItems(
+      today,
+      `${category.category ?? 'Personal'} Complete`,
+      dayItem,
+      dirs.timeDir ? { timeDir: dirs.timeDir } : {},
+    )
   } catch (err) {
     dayItemWarning = (err as Error).message
   }
 
-  return { file, markdown, dayItem, stamped, stampWarning, dayItemWarning }
+  return {
+    file,
+    markdown,
+    dayItem,
+    category: category.category,
+    categoryWarning: category.warning,
+    stamped,
+    stampWarning,
+    dayItemWarning,
+  }
 }

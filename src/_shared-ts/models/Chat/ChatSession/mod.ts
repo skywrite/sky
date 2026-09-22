@@ -186,6 +186,8 @@ export interface ChatSessionOptions {
   approvals?: () => readonly string[]
   /** Crash snapshot written after every turn; null for none */
   autosavePath: string | null
+  /** Record durable links before ending clears the recovery snapshot. */
+  onSaved?: (report: SaveChatReport) => Promise<void>
   onEvent?: (event: ChatSessionEvent) => void
   /** Test seams — production uses the real model, service, clock, and error log. */
   invokeModel?: ModelInvoker
@@ -850,7 +852,7 @@ export default class ChatSession {
 
   private async save(opts: EndOptions): Promise<SaveChatReport> {
     const history = this.engine.snapshotMessages()
-    return saveChat({
+    const saved = await saveChat({
       continuation: {
         version: 1,
         historyKey: conversationKey(this.turns),
@@ -882,6 +884,8 @@ export default class ChatSession {
       onProgress: (event) => this.emit(event),
       enricher: opts.enricher,
     })
+    if (!saved.aborted) await this.opts.onSaved?.(saved)
+    return saved
   }
 
   /**

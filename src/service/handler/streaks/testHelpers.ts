@@ -1,8 +1,9 @@
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import * as path from 'node:path'
+import type { StreakClassifier } from '#lib/streaks/category.ts'
 import { dayFile } from '#shared/nbfs/mod.ts'
-import { PlainDate } from '#universal/dates/nbdt/mod.ts'
+import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import { createStreaksRoutes } from './mod.ts'
 import { StreaksStore } from './store.ts'
 
@@ -15,7 +16,10 @@ export const readInput = {
   start: '2026-05-18',
 }
 
-export async function streaksFixture() {
+export async function streaksFixture(
+  now = new PlainDateTime({ date: STREAKS_TODAY, time: '14:30' }),
+  classify: StreakClassifier = async () => 'Personal',
+) {
   const temporary = await mkdtemp(path.join(tmpdir(), 'sky-streaks-test-'))
   const root = path.join(temporary, 'notebook')
   await mkdir(root)
@@ -27,7 +31,8 @@ export async function streaksFixture() {
       stateDir: path.join(temporary, 'streaks-state'),
       dayStateDir: path.join(temporary, 'day-state'),
     },
-    async () => new PlainDate(STREAKS_TODAY),
+    async () => now,
+    classify,
   )
   const app = createStreaksRoutes({ store })
   const post = (url: string, body: unknown, headers: Record<string, string> = {}) =>

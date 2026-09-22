@@ -7,6 +7,12 @@ import { type DayListKind, parseListKind } from './lib/items.ts'
 
 const params = {
   task: ArgOrFlag.string('The item text, as it should appear in the list', { short: 't', required: true }),
+  notes: Flag.string(
+    'Context to keep beneath the task as Markdown. For tasks from a conversation, include the relevant background, ' +
+      'people/project, why it matters, and the expected result or open question. Use only established facts; ' +
+      'do not just repeat the title or refer to "what we discussed".',
+    { optional: true },
+  ),
   list: ArgOrFlag.string('Which list: todos, commitments, or reminders', {
     short: 'l',
     position: 1,
@@ -42,7 +48,8 @@ export default class DayItemsAddTask extends Command {
     description:
       "Add one item to a day's Todos, Commitments, or Reminders. Category is Personal or Professional by the " +
       "item's subject (default Professional). A commitment at a stated clock time carries it as HH:MM. Defaults " +
-      'to today; dates beyond this week go to the schedule, preserving the item type.',
+      'to today; dates beyond this week go to the schedule, preserving the item type. Make the task understandable ' +
+      'on its own tomorrow, and preserve relevant conversation context in notes.',
     params,
   }
 
@@ -62,6 +69,14 @@ export default class DayItemsAddTask extends Command {
       item = `${normalized} > ${task}`
     }
     const list = kind === 'reminders' ? 'Reminders' : `${cat} ${kind === 'todos' ? 'Todos' : 'Commitments'}`
+    const notes = args.notes?.trim()
+    if (notes)
+      item +=
+        '\n\n' +
+        notes
+          .split(/\r?\n/)
+          .map((line) => `  ${line}`)
+          .join('\n')
     const filed = await fileTaskItems(config, commandPlanningDate(context), when, list, [item])
     output.log(filed === 'schedule' ? `Scheduled for ${when.ymd}: ${item}` : `Added to ${list}: ${item}`)
     return CommandResult.success({ day: when.ymd, list, item, filed })

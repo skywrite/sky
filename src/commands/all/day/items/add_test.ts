@@ -5,6 +5,7 @@ import { setTimeout as delay } from 'node:timers/promises'
 import CommandContext from '#commands/lib/core/CommandContext.ts'
 import CommandService from '#commands/lib/core/CommandService.ts'
 import * as config from '#config'
+import { planSection } from '#lib/nbfs/listBlocks.ts'
 import { dayFile } from '#lib/nbfs/mod.ts'
 import { withLock } from '#lib/outbox/files.ts'
 import { workstreamStoragePaths } from '#lib/workstreams/storagePaths.ts'
@@ -44,6 +45,53 @@ async function notebook(run: (n: { context: CommandContext; file: string; schedu
 
 const call = (context: CommandContext) => ({ context, tasks: new CommandService(context), rawArgs: { _: [] } })
 
+test('day:items:add - context stays with its task on days and schedules', async () => {
+  await notebook(async ({ context, file, schedule }) => {
+    const task = 'Confirm the Atlas launch owner with Jane'
+    const notes =
+      'The launch checklist has no owner. Agree who will sign off before the demo.\n\n' +
+      '- Keep the existing launch window.\n- [Source chat](/chat/source/atlas-planning)'
+    for (const when of [DAY, DAY.addDays(1)]) {
+      await new DayItemsAddTask().run({
+        args: { task, notes, list: 'todos', category: 'Professional', time: undefined, when },
+        ...call(context),
+      })
+    }
+    for (const [destination, heading] of [
+      [file, 'Professional Todos'],
+      [schedule, DAY.addDays(1).ymd],
+    ]) {
+      const content = await readTextFile(destination)
+      const rows = planSection(content, heading)?.rows ?? []
+      assert({
+        given: `a task with paragraphs, a nested list and a source link in ${heading}`,
+        should: 'keep all its context in one movable task block',
+        actual: { count: rows.length, block: rows[0]?.block },
+        expected: {
+          count: 1,
+          block: `- ${task}\n\n${notes
+            .split('\n')
+            .map((line) => `  ${line}`)
+            .join('\n')}`,
+        },
+      })
+    }
+    await new DayItemsDoneTask().run({
+      args: { item: 'Confirm the Atlas launch owner', list: 'todos', when: DAY },
+      ...call(context),
+    })
+    assert({
+      given: 'the contextual task is completed',
+      should: 'strike its title and preserve the background and source link',
+      actual: planSection(await readTextFile(file), 'Professional Todos')?.rows[0]?.block,
+      expected: `- ~~${task}~~\n\n${notes
+        .split('\n')
+        .map((line) => `  ${line}`)
+        .join('\n')}`,
+    })
+  })
+})
+
 test('day:items:add - adds sent at once all land', async () => {
   await notebook(async ({ context, file }) => {
     await outputFile(file, DayDocument.createFutureDay(DAY).toMarkdown())
@@ -52,7 +100,7 @@ test('day:items:add - adds sent at once all land', async () => {
     const results = await Promise.all(
       TASKS.map((task) =>
         new DayItemsAddTask().run({
-          args: { task, list: 'todos', category: 'Professional', time: undefined, when: DAY },
+          args: { task, notes: undefined, list: 'todos', category: 'Professional', time: undefined, when: DAY },
           ...call(context),
         }),
       ),
@@ -80,7 +128,7 @@ test('day:items:add - waits while the day page writes the same day', async () =>
     let adding: Promise<unknown> = Promise.resolve()
     await withLock(pageLock, async () => {
       adding = new DayItemsAddTask().run({
-        args: { task: TASKS[0], list: 'todos', category: 'Professional', time: undefined, when: DAY },
+        args: { task: TASKS[0], notes: undefined, list: 'todos', category: 'Professional', time: undefined, when: DAY },
         ...call(context),
       })
       await delay(120)

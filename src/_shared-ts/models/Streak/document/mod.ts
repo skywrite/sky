@@ -1,6 +1,7 @@
 import Document from '#shared/models/Markdown/Document/mod.ts'
 import TagSet from '#shared/models/TagSet/mod.ts'
 import PlainDate from '#universal/dates/nbdt/PlainDate/mod.ts'
+import { parseStreakCategory, type StreakCategory } from '../category.ts'
 
 /** How often a streak expects completion. */
 export type StreakSchedule = 'daily' | 'weekdays'
@@ -32,7 +33,18 @@ export const STREAKS_LIST_TITLE = 'Streaks'
  * written again. See src/service/handler/streaks/docs/.
  */
 export default class StreakDocument extends Document {
-  static override yamlKeyOrder = ['name', 'title', 'schedule', 'start', 'end', 'created', 'updated', 'rel', 'tags']
+  static override yamlKeyOrder = [
+    'name',
+    'title',
+    'category',
+    'schedule',
+    'start',
+    'end',
+    'created',
+    'updated',
+    'rel',
+    'tags',
+  ]
 
   constructor(yaml: Record<string, unknown> = {}, markdown = '', yamlError?: string) {
     const normalizedYaml = { ...yaml }
@@ -54,6 +66,10 @@ export default class StreakDocument extends Document {
   /** Short human phrasing — what actually appears in the day file's Streaks list. */
   get title(): string {
     return (this.yaml['title'] as string) ?? this.name
+  }
+
+  get category(): StreakCategory | undefined {
+    return parseStreakCategory(this.yaml['category'])
   }
 
   /** Completion cadence. Unknown values normalize to 'daily'. */
@@ -144,11 +160,12 @@ export default class StreakDocument extends Document {
   /**
    * Create a new StreakDocument from input data.
    *
-   * YAML key order: name, title, schedule, start, end, created, updated, rel, tags
+   * YAML key order: name, title, category, schedule, start, end, created, updated, rel, tags
    */
   static create(input: {
     name: string
     title?: string
+    category?: StreakCategory
     schedule?: StreakSchedule
     start?: PlainDate
     /** Planned last tracked day, inclusive. */
@@ -167,6 +184,7 @@ export default class StreakDocument extends Document {
     const yaml: Record<string, unknown> = {
       name: input.name,
       title,
+      ...(input.category ? { category: input.category } : {}),
       schedule: input.schedule ?? DEFAULT_SCHEDULE,
       start: start.ymd,
       end: input.end ? input.end.ymd : null,

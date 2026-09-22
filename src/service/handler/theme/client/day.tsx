@@ -8,6 +8,7 @@ import { DayChatResume } from './dayChatResume.tsx'
 import { chatState, chatTurnCount, type DayChatRow, dayChatRows } from './dayChats.ts'
 import { DayItemEditing, InlineItemEditor, ItemDetailsIcon, useItemEditing } from './dayItemEditing.tsx'
 import { DayItemHelp, ItemHelpButton } from './dayItemHelp.tsx'
+import { DayItemNotes, itemNotes } from './dayItemNotes.tsx'
 import { DayMostImportant } from './dayMostImportant.tsx'
 import {
   DayCommitmentOrder,
@@ -530,6 +531,7 @@ function PlanRow({
   onDelete: (item: DayItem) => void
 }) {
   const struck = phase === 'struck' || (phase !== 'reopened' && item.done)
+  const notes = itemNotes(item.raw)
   const editor = useItemEditing()
   const organize = useItemOrganizing()
   const organizing = organize.active
@@ -652,7 +654,7 @@ function PlanRow({
             {item.time ? clock(item.time) : '—'}
           </span>
         )}
-        <div className="sky-item-body">
+        <div className="sky-item-body" data-notes={Boolean(notes) || undefined}>
           <div className="sky-item-title">
             {inline ? (
               <InlineItemEditor />
@@ -732,6 +734,7 @@ function PlanRow({
               </span>
             )}
           </div>
+          {notes && <DayItemNotes source={notes} at={at} />}
           {(late || personal) && (
             <span className="sky-item-meta">
               {late && <span className="sky-late">overdue</span>}

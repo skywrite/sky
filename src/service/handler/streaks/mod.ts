@@ -1,5 +1,6 @@
 import { Hono } from 'hono'
 import { z } from 'zod'
+import { ItemEditError } from '#lib/nbfs/listBlocks.ts'
 import { OutboxError } from '#lib/outbox/types.ts'
 import { hold } from '../../activity.ts'
 import { StreaksError, StreaksStore } from './store.ts'
@@ -30,7 +31,7 @@ export function createStreaksRoutes({ store }: StreaksRoutesOptions): Hono {
       {
         message: error instanceof z.ZodError ? error.issues.map((issue) => issue.message).join('; ') : error.message,
       },
-      error instanceof StreaksError || error instanceof OutboxError
+      error instanceof StreaksError || error instanceof OutboxError || error instanceof ItemEditError
         ? error.status
         : error instanceof z.ZodError || error instanceof SyntaxError
           ? 400
@@ -41,6 +42,7 @@ export function createStreaksRoutes({ store }: StreaksRoutesOptions): Hono {
   app.post('/create', async (c) => c.json(await store.create(await c.req.json()), 201))
   app.post('/:name/completion', async (c) => c.json(await store.completion(c.req.param('name'), await c.req.json())))
   app.post('/:name/archive', async (c) => c.json(await store.archive(c.req.param('name'), await c.req.json())))
+  app.post('/:name/category', async (c) => c.json(await store.setCategory(c.req.param('name'), await c.req.json())))
   app.post('/undo', async (c) => {
     const { id } = z.object({ id: z.uuid() }).parse(await c.req.json())
     return c.json(await store.undo(id))

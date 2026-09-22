@@ -1,22 +1,18 @@
-import { unlink } from 'node:fs/promises'
 import * as path from 'node:path'
 import colors from 'picocolors'
-import { Arg, Command, CommandResult, Flag } from '#commands/mod.ts'
+import { Arg, Command, CommandResult } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
-import { DIR_STREAKS } from '#config'
 import { writeDayItems } from '#lib/nbfs/mod.ts'
+import { writePlanningChanges } from '#lib/nbfs/planningChanges.ts'
+import { createStreakClassifier, resolveStreakCategory } from '#lib/streaks/category.ts'
 import { loadStreakEntries, loadStreaks } from '#lib/streaks/mod.ts'
-import { outputFile } from '#shared/fs/mod.ts'
-import { computeStreakStats } from '#shared/models/Streak/mod.ts'
-import { fetchNow } from '#shared/nbfs/mod.ts'
+import { readTextFile } from '#shared/fs/mod.ts'
+import StreakDocument, { computeStreakStats, parseStreakCategory } from '#shared/models/Streak/mod.ts'
+import { streakCategoryFlag } from './lib/category.ts'
 
 const params = {
   name: Arg.string('Streak slug to archive'),
-  category: Flag.string('Category for day item: "Personal" or "Professional"', {
-    short: 'c',
-    parse: (val: string) => `${val} Complete`,
-    default: () => 'Personal Complete',
-  }),
+  category: streakCategoryFlag(),
 }
 
 type Params = InferParams<typeof params>
@@ -44,10 +40,10 @@ export default class StreaksArchiveTask extends Command {
   }
 
   async run({ args, context }: CommandArgs<Params>): Promise<CommandResult<Result>> {
-    const { output } = context
-    const { name, category } = args
+    const { output, config } = context
+    const { name } = args
 
-    const loaded = await loadStreaks('active')
+    const loaded = await loadStreaks('active', config.DIR_STREAKS)
     const found = loaded.find(({ streak }) => streak.name === name)
 
     if (!found) {
@@ -56,28 +52,39 @@ export default class StreaksArchiveTask extends Command {
       return CommandResult.fail(`Unknown streak "${name}"`)
     }
 
-    const now = await fetchNow()
+    const now = context.notebookNow
     const today = now.plainDateTime.plainDate
-    const { streak } = found
+    const before = await readTextFile(found.path)
+    const streak = StreakDocument.fromMarkdown(before)
 
     // Final stats before the archive stamp caps the walk
-    const entries = await loadStreakEntries(streak.start ?? today, today)
+    const entries = await loadStreakEntries(streak.start ?? today, today, config.DIR_TIME)
     const stats = computeStreakStats(streak, entries, today)
 
-    const archived = streak.archive(today)
-    const archivedPath = path.join(DIR_STREAKS, 'archived', `${name}.md`)
+    const category = await resolveStreakCategory(
+      streak,
+      parseStreakCategory(args.category),
+      createStreakClassifier(config.DIR_BASE),
+    )
+    let archived = streak.archive(today)
+    if (category.category) archived = archived.updateYaml({ category: category.category })
+    const archivedPath = path.join(config.DIR_STREAKS, 'archived', `${name}.md`)
 
-    await outputFile(archivedPath, archived.toMarkdown())
-    await unlink(found.path)
+    await writePlanningChanges([
+      { file: archivedPath, before: undefined, after: archived.toMarkdown() },
+      { file: found.path, before, after: undefined },
+    ])
 
     output.log(
       colors.green(`Archived "${streak.title}"`) + colors.dim(`  final run: ${stats.current}d, best: ${stats.best}d`),
     )
 
     const dayItem = `${now.plainDateTime.time} > streaks/${name} -> Archived | ${streak.title}`
+    const collection = `${category.category ?? 'Personal'} Complete`
+    if (category.warning) output.log(colors.yellow('Category could not be determined; using Personal Complete.'))
     try {
-      await writeDayItems(today, category, dayItem)
-      output.log(colors.gray(`Added to ${category}: ${dayItem}`))
+      await writeDayItems(today, collection, dayItem, { timeDir: config.DIR_TIME })
+      output.log(colors.gray(`Added to ${collection}: ${dayItem}`))
     } catch (err) {
       output.log(colors.yellow(`Warning: Could not add day item: ${(err as Error).message}`))
     }

@@ -17,7 +17,15 @@ import { useItemEditing } from './dayItemEditing.tsx'
 
 type Result = { view: DayData; undo: string; message: string; date?: string; href?: string }
 /** A place the lifted row can land: how far its slot sits from home, and the rows that make room. */
-type Landing = { offset: number; neighbor: string | null; after: boolean; first: number; last: number; by: number }
+type Landing = {
+  offset: number
+  threshold: number
+  neighbor: string | null
+  after: boolean
+  first: number
+  last: number
+  by: number
+}
 type Drag = {
   item: DayItem
   x: number
@@ -36,7 +44,7 @@ type Drag = {
 }
 /** The row in hand, and how far each row of its card stands from home while it is out. */
 type Sorting = { key: string; shifts: Map<string, number> }
-const HOME: Landing = { offset: 0, neighbor: null, after: false, first: 0, last: -1, by: 0 }
+const HOME: Landing = { offset: 0, threshold: 0, neighbor: null, after: false, first: 0, last: -1, by: 0 }
 const LANDING_MS = 180
 const allItems = (day: DayData | null) =>
   day ? [...day.record.mostImportant, ...day.record.commitments, ...day.record.todos, ...day.record.reminders] : []
@@ -249,10 +257,12 @@ export function useDayOrganizing(
     state.landings = [HOME]
     nodes.forEach((node, index) => {
       if (index === from || node.dataset.organizeList !== state.item.list) return
+      const threshold = boxes[index].top + boxes[index].height / 2 - state.startY
       state.landings.push(
         index < from
           ? {
               offset: boxes[index].top - home.top,
+              threshold,
               neighbor: state.rows[index],
               after: false,
               first: index,
@@ -261,6 +271,7 @@ export function useDayOrganizing(
             }
           : {
               offset: boxes[index].bottom - home.bottom,
+              threshold,
               neighbor: state.rows[index],
               after: true,
               first: from + 1,
@@ -306,9 +317,13 @@ export function useDayOrganizing(
     if (!state?.active || !lift.current) return
     lift.current.style.translate = `0 ${state.y - state.startY}px`
     const travel = state.y - state.startY + (state.scroll?.scrollTop ?? 0) - state.scrolled
-    const landing = state.landings.reduce((best, next) =>
-      Math.abs(next.offset - travel) < Math.abs(best.offset - travel) ? next : best,
-    )
+    // A tall row's final offset differs from the pointer's travel. Cross the
+    // siblings' original midpoints so notes cannot make a drag skip a row.
+    const landing = state.landings.reduce((best, next) => {
+      if (next.after && travel >= next.threshold && next.offset > best.offset) return next
+      if (!next.after && travel <= next.threshold && next.offset < best.offset) return next
+      return best
+    }, HOME)
     if (landing === state.landing) return
     state.landing = landing
     setSorting({ key: dayItemKey(state.item), shifts: shifts(state) })

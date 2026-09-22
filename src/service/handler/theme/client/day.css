@@ -385,6 +385,36 @@
   gap: 8px;
 }
 
+.sky-item-body[data-notes] {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sky-item-body[data-notes] .sky-item-title {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.sky-item-notes {
+  color: var(--sky-text-2);
+  font-size: 0.9em;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+.sky-item-notes.sky-rendered > * {
+  margin: 0 0 0.5em;
+}
+
+.sky-item-notes.sky-rendered > :last-child {
+  margin-bottom: 0;
+}
+
 @media (max-width: 900px) {
   .sky-item-body {
     display: flex;

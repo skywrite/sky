@@ -40,6 +40,36 @@ function asToolMessage(output: unknown) {
   }
 }
 
+test('chat task tools attach trusted provenance without replacing the model context', async () => {
+  const calls: Record<string, unknown>[] = []
+  const tasks = {
+    run: (_name: string, input: Record<string, unknown>) => {
+      calls.push(input)
+      return Promise.resolve(CommandResult.success())
+    },
+  } as unknown as CommandService
+  const entry = { toolName: 'day_items_add', commandName: 'day:items:add' }
+  const input = { task: 'Review the Atlas launch', notes: 'The release needs an owner and a go/no-go decision.' }
+  await Promise.all([
+    runToolCommand(tasks, entry, input, { sourceChat: '/chat/source/atlas' }),
+    runToolCommand(tasks, entry, { task: 'Book the room', notes: '  ' }, { sourceChat: '/chat/source/offsite' }),
+    runToolCommand(tasks, ENTRY, input, { sourceChat: '/chat/source/unrelated' }),
+  ])
+  assert({
+    given: 'two chats creating tasks at once, plus an unrelated tool',
+    should: 'attach each source to its own task, retain context, and leave other inputs untouched',
+    actual: { calls, input },
+    expected: {
+      calls: [
+        { ...input, notes: `${input.notes}\n\n[Source chat](/chat/source/atlas)` },
+        { task: 'Book the room', notes: '[Source chat](/chat/source/offsite)' },
+        input,
+      ],
+      input,
+    },
+  })
+})
+
 test('runToolCommand failure shaping', async () => {
   const cause = new FakeApiError('prompt is too long: 111 tokens > 100 maximum', { body: 'x'.repeat(4096) })
   const labeled = await runToolCommand(stubTasks(CommandResult.error(cause, 'Drafting failed')), ENTRY, {})

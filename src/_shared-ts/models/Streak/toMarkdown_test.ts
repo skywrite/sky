@@ -26,6 +26,7 @@ test(`StreakDocument.create()`, () => {
   const s = StreakDocument.create({
     name: 'morning-run',
     title: 'Run before breakfast',
+    category: 'Personal',
     schedule: 'weekdays',
     start: new PlainDate('2026-03-02'),
     why: 'Mornings are the only slot that survives the day.',
@@ -33,6 +34,12 @@ test(`StreakDocument.create()`, () => {
 
   assert({ given, should: 'have correct name', expected: 'morning-run', actual: s.name })
   assert({ given, should: 'have correct title', expected: 'Run before breakfast', actual: s.title })
+  assert({
+    given,
+    should: 'retain its category through markdown',
+    expected: 'Personal',
+    actual: StreakDocument.fromMarkdown(s.toMarkdown()).category,
+  })
   assert({ given, should: 'have correct schedule', expected: 'weekdays', actual: s.schedule })
   assert({ given, should: 'have correct start', expected: '2026-03-02', actual: s.start?.ymd })
   assert({ given, should: 'stamp created', expected: true, actual: Boolean(s.yaml['created']) })
@@ -52,6 +59,12 @@ test(`StreakDocument.create() defaults`, () => {
   assert({ given, should: 'default schedule to daily', expected: 'daily', actual: s.schedule })
   assert({ given, should: 'default start to today', expected: PlainDate.today().ymd, actual: s.start?.ymd })
   assert({ given, should: 'have no end', expected: undefined, actual: s.end })
+  assert({
+    given,
+    should: 'leave the category unset until chosen or inferred',
+    expected: undefined,
+    actual: s.category,
+  })
 })
 
 test(`StreakDocument yaml key order`, () => {

@@ -31,5 +31,5 @@ export default async function writeDayItems(
     dayObj = dayObj.addItem(collectionTitle, items[i], i === 0 ? { links } : undefined)
   }
 
-  await writeDay(dayObj)
+  await writeDay(dayObj, timeDir)
 }

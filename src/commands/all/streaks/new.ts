@@ -5,7 +5,7 @@ import openEditor from 'open-editor'
 import colors from 'picocolors'
 import { z } from 'zod'
 import { type ClarifierRound, gatherNotebookContext, runClarifierRound } from '#commands/lib/interview.ts'
-import { categoryComplete, Command, CommandResult, Flag } from '#commands/mod.ts'
+import { Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import slugify from '#lib/string/slugify.ts'
 import { promptMultiline } from '#lib/tui/MultilineTextPrompt.tsx'
@@ -19,6 +19,7 @@ import { readPromptFile } from '#shared/prompts/load.ts'
 import { type RenderInput, renderPromptFile } from '#shared/prompts/mod.ts'
 import * as dateFns from '#universal/dates/dateFns/mod.ts'
 import PlainDate from '#universal/dates/nbdt/PlainDate/mod.ts'
+import { streakCategoryFlag } from './lib/category.ts'
 import { editText, stripEmbeddedComments } from './lib/editText.ts'
 import { plannedEndAfter, type PlannedEndUnit } from './lib/plannedEnd.ts'
 import { SlugCollisionError, TitleCollisionError, writeStreak } from './lib/write.ts'
@@ -36,7 +37,7 @@ const params = {
     short: 's',
     optional: true,
   }),
-  category: categoryComplete({ defaultCategory: 'Personal' }),
+  category: streakCategoryFlag(),
 }
 
 type Params = InferParams<typeof params>
@@ -582,6 +583,8 @@ export default class StreaksNewTask extends Command {
     }
 
     output.log(colors.green(`\nCreated streak: ${written.file}`))
+    if (written.category) output.log(colors.gray(`Category: ${written.category}`))
+    if (written.categoryWarning) output.log(colors.yellow(written.categoryWarning))
 
     if (written.stamped) {
       output.log(colors.gray(`Stamped "${title}" into the ${startDay.ymd} Streaks list`))
@@ -592,7 +595,7 @@ export default class StreaksNewTask extends Command {
     if (written.dayItemWarning) {
       output.log(colors.yellow(`Warning: Could not add day item: ${written.dayItemWarning}`))
     } else {
-      output.log(colors.gray(`Added to ${category}: ${written.dayItem}`))
+      output.log(colors.gray(`Added to ${written.category ?? 'Personal'} Complete: ${written.dayItem}`))
     }
 
     // Step 12: Open in editor

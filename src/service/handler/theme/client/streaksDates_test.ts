@@ -15,6 +15,7 @@ function habit(values: Partial<StreakView> = {}): StreakView {
   return {
     name: 'read-a-chapter',
     title: 'Read a chapter',
+    category: null,
     schedule: 'daily',
     start: '2028-02-01',
     end: null,

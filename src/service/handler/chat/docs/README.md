@@ -1,6 +1,6 @@
 ---
 created: 2026-09-01
-updated: 2026-09-20
+updated: 2026-09-22
 ---
 
 # Chat over HTTP — a thread, its tuning, and the story of its context
@@ -15,6 +15,21 @@ first context load, and is saved on each turn through the
 The shared agreement summary, reviewer context, sources and user decisions follow the [legal review design](../../../../commands/all/legal/docs/README.md).
 
 ## What is built
+
+### Tasks from chat
+
+`day:items:add` receives a self-contained action and context notes. The web host
+adds a trusted **Source chat** link to those notes before the command runs;
+the model does not supply its own conversation identity. The day page renders
+the attached notes, which move with the task as ordinary Markdown.
+
+`/chat/source/:id` opens a live conversation or its saved transcript. A small
+`source-links` index beside recovery snapshots maps thread IDs to notebook paths.
+`ChatSession.onSaved` records that mapping after successful filing and before
+the recovery snapshot is cleared, including when a parent is filed for a branch.
+This avoids links breaking at Save & close or after restart without filing a
+temporary conversation merely because it created a task. Discarded temporary
+chats and deleted transcripts report an unavailable source; the task keeps its notes.
 
 ### Files in the conversation
 

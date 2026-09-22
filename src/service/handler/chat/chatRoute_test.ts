@@ -28,6 +28,7 @@ import type { BranchPoint } from './branchPoint.ts'
 import { createChatHost } from './createSession.ts'
 import { interruptedOf } from './interrupted.ts'
 import type { ChatRoutesOptions, ChatSessionFactory, ChatSettingsHost, ThreadSummary, ToolOutputEvent } from './mod.ts'
+import { chatSourceLinks, sourceChatHref } from './sourceLinks.ts'
 import { restoreToolRuns } from './toolRuns.ts'
 
 setUserSpeakerLabel('Jane')
@@ -133,9 +134,11 @@ async function testHost(
     /** Another catalog behind the settings routes */
     settings?: ChatSettingsHost
     canonicalSnapshots?: boolean
+    sourceLinks?: boolean
   } = {},
 ): Promise<ChatRoutesOptions & { tmp: string }> {
   const tmp = await makeTempDir({ prefix: 'sky-chat-route-' })
+  const sourceLinks = over.sourceLinks ? chatSourceLinks(path.join(tmp, 'source-links')) : undefined
   const snapshotPath = (id: string, start: PlainDateTime) =>
     path.join(tmp, over.canonicalSnapshots ? chatAutosaveFilename(start, id) : `${id}.autosave.md`)
   const createSession: ChatSessionFactory = (id, onEvent, prefs, ask, restore) =>
@@ -171,6 +174,7 @@ async function testHost(
           return decision
         },
         autosavePath: snapshotPath(id, restore?.startTime ?? START),
+        onSaved: sourceLinks ? (saved) => sourceLinks.set(id, path.relative(path.dirname(tmp), saved.path)) : undefined,
         onEvent,
         invokeModel: over.invokeModel ?? streamingModel(['Focus on ', 'the demo.']),
         fetchContext: fetchFake({ today: [FIX.day], goals: [FIX.goal] }),
@@ -180,6 +184,7 @@ async function testHost(
     )
   return {
     createSession,
+    sourceLinks,
     snapshotPath,
     settings: over.settings ?? settingsHost,
     endDefaults: { enricher: stubEnricher },
@@ -197,6 +202,64 @@ function appWith(host: ChatRoutesOptions) {
 }
 
 type App = ReturnType<typeof createTestHttpApp>
+
+test('source chat links follow live chats and survive saving, closing and restarting', async () => {
+  const host = await testHost({ sourceLinks: true })
+  host.openSaved = async (chat) => {
+    const file = path.resolve(path.dirname(host.tmp), chat)
+    if (!file.startsWith(host.tmp + path.sep) || !(await exists(file))) return null
+    return { resume: await loadResumeSession(file, { baseDir: path.dirname(host.tmp) }), startTime: START }
+  }
+  try {
+    const app = appWith(host)
+    const id = 'atlas-source'
+    await (await send(app, `/chat/${id}/messages`, { message: 'Plan the Atlas demo.' })).text()
+    const live = await app.request(sourceChatHref(id))
+    const ended = await post(app, `/chat/${id}/end`, { save: true })
+    const { saved } = (await ended.json()) as { saved: SaveChatReport }
+    const reopened = appWith({
+      ...host,
+      sourceLinks: chatSourceLinks(path.join(host.tmp, 'source-links')),
+    })
+    const after = await reopened.request(sourceChatHref(id))
+    assert({
+      given: 'a linked chat is filed and its service restarts with no active sessions',
+      should: 'open the live conversation first and the saved transcript afterward',
+      actual: {
+        live: live.headers.get('location'),
+        after: after.headers.get('location'),
+        statuses: [live.status, ended.status, after.status],
+        cache: after.headers.get('cache-control'),
+      },
+      expected: {
+        live: `/thread/${id}`,
+        after: `/explorer/${path.relative(path.dirname(host.tmp), saved.path).split('/').map(encodeURIComponent).join('/')}`,
+        statuses: [302, 200, 302],
+        cache: 'no-store',
+      },
+    })
+    await rm(saved.path)
+    assert({
+      given: 'the saved source transcript has been deleted',
+      should: 'report that the source is unavailable instead of opening an empty new chat',
+      actual: (await reopened.request(sourceChatHref(id))).status,
+      expected: 404,
+    })
+    await (await send(app, '/chat/temporary-source/messages', { message: 'A temporary plan.' })).text()
+    await post(app, '/chat/temporary-source/end', { save: false })
+    assert({
+      given: 'a temporary source chat is discarded',
+      should: 'retain no transcript or durable source mapping',
+      actual: [
+        await host.sourceLinks!.get('temporary-source'),
+        (await app.request(sourceChatHref('temporary-source'))).status,
+      ],
+      expected: [null, 404],
+    })
+  } finally {
+    await rm(host.tmp, { recursive: true, force: true })
+  }
+})
 
 function post(app: App, url: string, body: unknown): Promise<Response> {
   return Promise.resolve(

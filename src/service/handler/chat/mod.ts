@@ -42,6 +42,7 @@ import { isEffortOverride, type Effort, type EffortOverride } from '#universal/a
 import { fitBudget } from '#universal/ai/readingBudget.ts'
 import { type PlainDateTime, ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
 import { hold } from '../../activity.ts'
+import { explorerHref } from '../explorer/mod.ts'
 import { prettyModel } from '../settings/mod.ts'
 import { branchPoints } from './branchPoint.ts'
 import { callSubject } from './callSubject.ts'
@@ -51,6 +52,7 @@ import type { InterruptedTurn } from './interrupted.ts'
 import { registerLegalReviewRoutes } from './legalReview.ts'
 import { registerReplyThreads, type ReplyThreadHost } from './replyThreads.ts'
 import { registerSelectionStarts, type SelectionStartOptions } from './selection.ts'
+import type { ChatSourceLinks } from './sourceLinks.ts'
 import { timelineOf } from './timeline.ts'
 import { inspectablePayload, recordToolExecution, restoreToolRuns, toolRunsFromMessages } from './toolRuns.ts'
 import { fixedMessages, registerUnwind } from './unwind.ts'
@@ -245,6 +247,7 @@ export interface ChatSettingsHost {
 }
 
 export interface ChatRoutesOptions {
+  sourceLinks?: ChatSourceLinks
   selectionStarts?: SelectionStartOptions
   writingDrafts?: WritingDraftStore
   legalReviews?: LegalReviewStore
@@ -1196,6 +1199,16 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
     })
 
   if (options.writingDrafts) registerWritingDraftRoutes(app, options.writingDrafts, replyHost)
+
+  app.get('/source/:id', async (c) => {
+    await restored
+    const id = c.req.param('id')
+    c.header('Cache-Control', 'no-store')
+    if (threads.has(id)) return c.redirect(`/thread/${encodeURIComponent(id)}`)
+    const saved = await options.sourceLinks?.get(id)
+    if (saved && (await options.openSaved?.(saved))) return c.redirect(explorerHref(saved))
+    return c.text('This source chat is no longer available. It may have been temporary or deleted.', 404)
+  })
 
   app.get('/:id', async (c) => {
     await restored

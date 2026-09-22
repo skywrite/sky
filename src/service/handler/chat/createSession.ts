@@ -76,6 +76,7 @@ import type {
   ToolOutputEvent,
 } from './mod.ts'
 import { readSession } from './readSession.ts'
+import { chatSourceLinks, sourceChatHref } from './sourceLinks.ts'
 import { restoreToolRuns } from './toolRuns.ts'
 
 /** ai:chat's defaults — one filing convention across hosts. */
@@ -294,6 +295,7 @@ export function createChatSettingsHost(): ChatSettingsHost {
 
 export function createChatHost(config: typeof ConfigModule, env: Record<string, string>): ChatRoutesOptions {
   const writingDrafts = createWritingDrafts(config)
+  const sourceLinks = chatSourceLinks(path.join(config.DIR_STATE_AI_CHATS, 'source-links'))
   /** A thread's crash copy: the service's own snapshot, named by the thread id. */
   const snapshotPath = (id: string, startTime: PlainDateTime) =>
     path.join(config.DIR_STATE_AI_CHATS, chatAutosaveFilename(startTime, id))
@@ -394,6 +396,7 @@ export function createChatHost(config: typeof ConfigModule, env: Record<string, 
             // A browser has no shell directory, so a relative path resolves from home.
             ...createFileTools({ today, attachmentsRoot: config.DIR_ATTACHMENTS, cwd: config.DIR_HOME, onAttachments }),
             ...(await createNotebookTools(toolTasks, {
+              sourceChat: sourceChatHref(id),
               researchContext: hooks.researchContext,
               legalReviewContext: legalReviewContext(hooks, config.DIR_ATTACHMENTS, `chat:${id}`),
               prepareResult: prepareChatImageResult({
@@ -438,6 +441,7 @@ export function createChatHost(config: typeof ConfigModule, env: Record<string, 
       },
       approvals: () => blessed.serializeDurable(),
       autosavePath: snapshotPath(id, startTime),
+      onSaved: (saved) => sourceLinks.set(id, path.relative(config.DIR_BASE, saved.path)),
       onEvent,
     })
   }
@@ -522,6 +526,7 @@ export function createChatHost(config: typeof ConfigModule, env: Record<string, 
 
   return {
     createSession,
+    sourceLinks,
     selectionStarts: { dir: path.join(config.DIR_STATE_AI_CHATS, 'selection-starts') },
     writingDrafts,
     legalReviews: createLegalReviewer(config).store,

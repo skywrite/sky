@@ -322,6 +322,7 @@ test(
         now: new ZonedDateTime('2031-03-16T08:00:00', 'UTC'),
       },
       async ({ page, origin, file, userDataDir, errors }) => {
+        await page.route('**/schedule', (route) => route.fulfill({ json: { read: true, errors: [], meetings: [] } }))
         const timeDir = path.join(path.dirname(userDataDir), 'time')
         for (const mobile of [false, true]) {
           await page.setViewportSize(mobile ? { width: 390, height: 844 } : { width: 1500, height: 1000 })

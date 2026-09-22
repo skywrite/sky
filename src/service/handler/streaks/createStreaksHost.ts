@@ -1,7 +1,7 @@
 import * as path from 'node:path'
 import { hash } from '#lib/outbox/files.ts'
 import { fetchNow } from '#shared/nbfs/mod.ts'
-import { PlainDate } from '#universal/dates/nbdt/mod.ts'
+import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import type { StreaksRoutesOptions } from './mod.ts'
 import { StreaksStore } from './store.ts'
 
@@ -24,10 +24,10 @@ export function createStreaksHost(config: Record<string, unknown>): StreaksRoute
       },
       async () => {
         try {
-          return (await fetchNow({ timeDir })).plainDateTime.plainDate
+          return (await fetchNow({ timeDir })).plainDateTime
         } catch {
           // A fresh notebook can create its first streak before it has a started day.
-          return PlainDate.today()
+          return new PlainDateTime()
         }
       },
     ),

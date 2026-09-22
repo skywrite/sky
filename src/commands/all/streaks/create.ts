@@ -3,7 +3,7 @@ import openEditor from 'open-editor'
 import colors from 'picocolors'
 import { AIChatTool } from '#commands/lib/AIChatTool.ts'
 import type { OutputHandler } from '#commands/lib/output/OutputHandler.ts'
-import { categoryComplete, Command, CommandResult, Flag } from '#commands/mod.ts'
+import { Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import slugify from '#lib/string/slugify.ts'
 import MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
@@ -11,6 +11,7 @@ import type { StreakSchedule } from '#shared/models/Streak/mod.ts'
 import TagSet from '#shared/models/TagSet/mod.ts'
 import { fetchNow } from '#shared/nbfs/mod.ts'
 import PlainDate from '#universal/dates/nbdt/PlainDate/mod.ts'
+import { streakCategoryFlag } from './lib/category.ts'
 import { SlugCollisionError, TitleCollisionError, writeStreak } from './lib/write.ts'
 
 // -----------------------------------------------------------------------------
@@ -38,7 +39,7 @@ const params = {
   name: Flag.string('Slug override (otherwise derived from the title)', { short: 'n', optional: true }),
   tags: Flag.string('Comma- or semicolon-separated tags; omit unless the user named some', { optional: true }),
   rel: Flag.string('Semicolon-separated notebook references, from streaks_clarify', { optional: true }),
-  category: categoryComplete({ defaultCategory: 'Personal' }),
+  category: streakCategoryFlag(),
 }
 
 type Params = InferParams<typeof params>
@@ -62,7 +63,8 @@ export default class StreaksCreateTask extends Command {
       'Write a streak rule doc into the notebook (active/), stamp its start day, and add the day item. Headless — pass fields produced by streaks_clarify; the user approves before anything is written.',
     descriptionLong: [
       'Creates the streak exactly as streaks:new would, from explicit fields.',
-      'No AI calls — pure write with name/title collision checks.',
+      'Infers Personal or Professional from the purpose and rules unless --category is supplied.',
+      'Saves the category for future day entries, with name/title collision checks.',
     ],
     usage: ['sky streaks:create --title "Eat clean" --why "..." --schedule daily --start 2026-08-10'],
     params,
@@ -73,7 +75,7 @@ export default class StreaksCreateTask extends Command {
     output.log(`  Schedule: ${input.schedule ? String(input.schedule) : 'daily'}`)
     output.log(`  Start:    ${input.start ? String(input.start) : 'today'}`)
     if (input.end) output.log(`  End:      ${String(input.end)}`)
-    output.log(`  Category: ${input.category ? String(input.category) : 'Personal Complete'}`)
+    output.log(`  Category: ${input.category ? String(input.category) : 'Automatic'}`)
   }
 
   async run({ args, context }: CommandArgs<Params>): Promise<CommandResult<Result>> {
@@ -152,6 +154,8 @@ export default class StreaksCreateTask extends Command {
     }
 
     output.log(colors.green(`Created streak: ${written.file}`))
+    if (written.category) output.log(colors.gray(`Category: ${written.category}`))
+    if (written.categoryWarning) output.log(colors.yellow(written.categoryWarning))
     if (written.stamped) {
       output.log(colors.gray(`Stamped "${title}" into the ${start.ymd} Streaks list`))
     }

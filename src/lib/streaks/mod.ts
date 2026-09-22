@@ -120,13 +120,13 @@ export function strikeStreakItem(day: DayDocument, streak: StreakDocument, date:
  * Read the Streaks-list items from every day file in an inclusive date range.
  * Days without a file are skipped — the stats walker treats the gap as a miss.
  */
-export async function loadStreakEntries(from: PlainDate, to: PlainDate): Promise<StreakDayEntry[]> {
+export async function loadStreakEntries(from: PlainDate, to: PlainDate, timeDir?: string): Promise<StreakDayEntry[]> {
   const entries: StreakDayEntry[] = []
 
   let cursor = from
   while (PlainDate.compare(cursor, to) <= 0) {
     try {
-      const day = await readDay(cursor)
+      const day = await readDay(cursor, timeDir)
       entries.push({ day: cursor, items: streaksItemsFromDay(day) })
     } catch {
       // No day file for this date

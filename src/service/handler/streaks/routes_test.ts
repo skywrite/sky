@@ -20,6 +20,7 @@ test('streak routes reject invalid, cross-site, closed-day, and stale writes', a
       { ...readInput, start: '2026-02-30' },
       { ...readInput, end: '2026-01-01' },
       { ...readInput, rule: '' },
+      { ...readInput, category: 'Work' },
       { ...readInput, schedule: 'sometimes' },
     ]
     assert({

@@ -1,6 +1,6 @@
 ---
 created: 2026-08-29
-updated: 2026-09-21
+updated: 2026-09-22
 ---
 
 # Day commands
@@ -93,6 +93,10 @@ One add door for todos/commitments/reminders, substring matching that
 refuses ambiguity, strike-in-place with links preserved. Design and the
 two `ListDocument` facts they lean on:
 [2026-08-30 — day:items](2026-08-30-day-items-voice-trio.md).
+
+`day:items:add` keeps `notes` as indented Markdown beneath the task. Matching
+and completion use the title, while moves preserve the complete block.
+Chat provenance follows the [chat host's source-link contract](../../../../service/handler/chat/docs/README.md#tasks-from-chat).
 
 ## Writing a day file — one writer at a time
 

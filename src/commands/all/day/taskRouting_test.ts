@@ -37,6 +37,7 @@ test('CLI adds prepare missing current-week days and schedule every type beyond 
           ...notebook,
           args: {
             task: time ? 'Call Jane Doe' : 'Review the draft',
+            notes: undefined,
             list: 'commitments',
             category: 'Personal',
             when,

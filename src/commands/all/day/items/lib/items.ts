@@ -55,7 +55,7 @@ export function normalizeForMatch(raw: string): string {
 export function listDayItems(day: DayDocument): DayItemList[] {
   return day.lists.map((list) => ({
     title: list.title,
-    items: list.items.map((raw) => ({ text: cleanItemText(raw), done: DayDocument.isItemDone(raw) })),
+    items: list.items.map((raw) => ({ text: cleanItemText(raw), done: DayDocument.isItemDone(raw.split(/\r?\n/)[0]) })),
   }))
 }
 
@@ -97,7 +97,9 @@ export function findDayItem(day: DayDocument, query: string, kind?: DayListKind)
   for (const list of day.lists) {
     if (!searchable(list.title)) continue
     if (kind && !listMatchesKind(list.title, kind)) continue
-    list.items.forEach((raw, index) => {
+    list.items.forEach((block, index) => {
+      // Notes may name other tasks or people; only the title identifies what is being completed.
+      const raw = block.split(/\r?\n/)[0]
       if (!normalizeForMatch(raw).includes(q)) return
       const found = { listTitle: list.title, index, raw }
       if (DayDocument.isItemDone(raw)) done.push(found)

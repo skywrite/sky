@@ -80,6 +80,8 @@ export interface ExternalFileRef {
 }
 
 export interface CreateNotebookToolsOptions {
+  /** Supplied by the host, so task provenance never depends on a model inventing a URL. */
+  sourceChat?: string
   researchContext?: ResearchContext
   legalReviewContext?: LegalReviewChatContext
   onOpenQuestions?: OnOpenQuestions
@@ -257,7 +259,14 @@ export async function runToolCommand(
     }
   }
   if (reviewTurn) reviewAttempts.set(reviewTurn, {})
-  const runCommand = () => tasks.run(entry.commandName, withoutBlankStrings(input))
+  const args = withoutBlankStrings(input)
+  if (entry.commandName === 'day:items:add' && options.sourceChat) {
+    const href = options.sourceChat.replaceAll('(', '%28').replaceAll(')', '%29')
+    args.notes = [typeof args.notes === 'string' ? args.notes.trim() : '', `[Source chat](${href})`]
+      .filter(Boolean)
+      .join('\n\n')
+  }
+  const runCommand = () => tasks.run(entry.commandName, args)
   const run = () =>
     entry.commandName === 'ai:research' && options.researchContext
       ? researchContext.run(options.researchContext, runCommand)

@@ -1,5 +1,6 @@
 import { ActionIcon, Button, Menu, Modal, Select, Textarea, TextInput } from '@mantine/core'
 import { useEffect, useMemo, useState } from 'react'
+import { STREAK_CATEGORIES } from '#shared/models/Streak/category.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import type { StreakReport, StreakView } from '../../streaks/types.ts'
 import { RenderedHtml } from './renderedHtml.tsx'
@@ -253,6 +254,7 @@ function NewStreak({
   const [title, setTitle] = useState('')
   const [rule, setRule] = useState('')
   const [why, setWhy] = useState('')
+  const [category, setCategory] = useState('auto')
   const [schedule, setSchedule] = useState('daily')
   const [start, setStart] = useState(report.today)
   const [end, setEnd] = useState('')
@@ -283,6 +285,7 @@ function NewStreak({
               title: title.trim(),
               rule: rule.trim(),
               why: why.trim(),
+              ...(category === 'auto' ? {} : { category }),
               schedule,
               start,
               ...(end ? { end } : {}),
@@ -291,6 +294,7 @@ function NewStreak({
               setTitle('')
               setRule('')
               setWhy('')
+              setCategory('auto')
               setSchedule('daily')
               setStart(report.today)
               setEnd('')
@@ -325,6 +329,14 @@ function NewStreak({
           value={why}
           onChange={(event) => setWhy(event.currentTarget.value)}
           minRows={2}
+        />
+        <Select
+          label="Category"
+          description="Used for entries in your day’s Complete lists."
+          data={[{ value: 'auto', label: 'Choose automatically' }, ...STREAK_CATEGORIES]}
+          value={category}
+          onChange={(value) => setCategory(value ?? 'auto')}
+          allowDeselect={false}
         />
         <Select
           label="Schedule"
@@ -550,6 +562,31 @@ function StreakDetail({
           </p>
         </section>
         <aside className="sky-streaks-habit-context">
+          <section>
+            {streak.status === 'active' ? (
+              <Select
+                label="Category"
+                description="Used for entries in your day’s Complete lists."
+                placeholder="Automatic when archived"
+                data={[...STREAK_CATEGORIES]}
+                value={streak.category}
+                disabled={actions.busy || ambiguousStreak(report, streak)}
+                allowDeselect={false}
+                onChange={(category) => {
+                  if (category && category !== streak.category)
+                    void actions.act(`/${encodeURIComponent(streak.name)}/category`, {
+                      category,
+                      revision: streak.revision,
+                    })
+                }}
+              />
+            ) : (
+              <>
+                <h2>Category</h2>
+                <p>{streak.category ?? 'Not set'}</p>
+              </>
+            )}
+          </section>
           {streak.why && (
             <section>
               <h2>Why this matters</h2>

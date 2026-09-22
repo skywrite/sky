@@ -5,11 +5,12 @@ import * as path from 'node:path'
 import { serve } from '@hono/node-server'
 import { Hono } from 'hono'
 import { chromium, type Page } from 'playwright'
+import DayDocument from '#shared/models/Day/mod.ts'
 import StreakDocument from '#shared/models/Streak/document/mod.ts'
 import { dayFile } from '#shared/nbfs/mod.ts'
 import { env } from '#shared/sys/mod.ts'
 import { assert, test } from '#test'
-import { PlainDate } from '#universal/dates/nbdt/mod.ts'
+import { PlainDate, PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import { createDayRoutes } from './day/mod.ts'
 import { createTestHttpApp } from './httpTestHelpers.ts'
 import { StreaksStore } from './streaks/store.ts'
@@ -63,7 +64,11 @@ async function streaksFixture() {
   }
   return {
     dirs,
-    store: new StreaksStore(dirs, async () => TODAY),
+    store: new StreaksStore(
+      dirs,
+      async () => new PlainDateTime('14:30', TODAY),
+      async () => 'Personal',
+    ),
     todayFile,
     endedFile,
     original,
@@ -166,7 +171,9 @@ test(
         expected: 2,
       })
       await shot('detail-month-desktop')
-      const why = page.locator('.sky-streaks-habit-context section').first()
+      const why = page.locator('.sky-streaks-habit-context section').filter({
+        has: page.getByRole('heading', { name: 'Why this matters', exact: true }),
+      })
       await why.locator('strong').filter({ hasText: 'attention' }).waitFor()
       await why.evaluate((section) => {
         const paragraphs = section.querySelectorAll('p')
@@ -328,27 +335,38 @@ test(
           created.includes('Play one short piece with focused attention.'),
           created.includes('Make space for a creative practice.'),
           created.includes('end: 2026-06-30'),
+          created.includes('category: Personal'),
         ],
-        expected: [true, true, true, true],
+        expected: [true, true, true, true, true],
       })
+      await page.getByRole('combobox', { name: 'Category', exact: true }).click()
+      await page.getByRole('option', { name: 'Professional', exact: true }).click()
+      await page.getByText('Category set to Professional.', { exact: true }).waitFor()
+      const corrected = await readFile(createdPath, 'utf8')
+      const dayBeforeArchive = await readFile(f.todayFile, 'utf8')
       await page.getByRole('button', { name: 'Streak options', exact: true }).click()
       await page.getByRole('menuitem', { name: 'Archive streak', exact: true }).click()
       await page.getByRole('button', { name: 'Undo', exact: true }).waitFor()
       assert({
         given: 'archiving before a planned end',
-        should: 'move the file into the archive and stop tracking today',
-        actual: (await readFile(path.join(f.dirs.streaksDir, 'archived', 'practice-piano.md'), 'utf8')).includes(
-          `end: ${TODAY.ymd}`,
-        ),
-        expected: true,
+        should: 'move the file, stop tracking today, and record it in the corrected Professional category',
+        actual: [
+          (await readFile(path.join(f.dirs.streaksDir, 'archived', 'practice-piano.md'), 'utf8')).includes(
+            `end: ${TODAY.ymd}`,
+          ),
+          DayDocument.fromMarkdown(await readFile(f.todayFile, 'utf8')).lists.find(
+            (list) => list.title === 'Professional Complete',
+          )?.items,
+        ],
+        expected: [true, ['14:30 > streaks/practice-piano -> Archived | Practice piano']],
       })
       await page.getByRole('button', { name: 'Undo', exact: true }).click()
       await page.locator('a.sky-streaks-habit-title[href*="/practice-piano?"]').waitFor()
       assert({
         given: 'Undo immediately after archiving',
-        should: 'restore the active document and its original planned end exactly',
-        actual: await readFile(createdPath, 'utf8'),
-        expected: created,
+        should: 'restore the active document, original planned end, and day record exactly',
+        actual: [await readFile(createdPath, 'utf8'), await readFile(f.todayFile, 'utf8')],
+        expected: [corrected, dayBeforeArchive],
       })
 
       for (const width of [390, 768, 1024, 1440]) {
