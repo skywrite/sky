@@ -6,7 +6,6 @@ import { conversationMessages } from './outboxMessages.ts'
 import { outboxSender } from './outboxPresentation.ts'
 import { askedLabel } from './outboxTime.ts'
 import { RailToggle } from './railToggle.tsx'
-import { WritingVoiceQuestions } from './writingVoice.tsx'
 
 /**
  * The rail beside an item: why it needs the person, the ask in the
@@ -140,9 +139,6 @@ export function OutboxRail({
           ))}
         </section>
       )}
-      <section className="sky-rail-sec">
-        <WritingVoiceQuestions key={item.id} source={`outbox:${item.id}`} refreshKey={item.revision} />
-      </section>
     </aside>
   )
 }

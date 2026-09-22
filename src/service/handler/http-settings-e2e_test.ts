@@ -70,8 +70,8 @@ test(
     })
     app.get('/settings/_api/writing-voice', (c) =>
       c.json({
-        rules: { text: 'Use clear language.', revision: 'rules', compacted: [] },
-        examples: [],
+        rules: { text: 'Use clear language.', revision: 'rules', folding: [] },
+        edits: [],
         compacting: false,
         compactionError: null,
       }),

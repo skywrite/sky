@@ -2,10 +2,10 @@ import { tool } from 'ai'
 import { z } from 'zod'
 import { runWithUsageSource } from '#shared/ai/usageLog.ts'
 import { toolDisplayName } from '#universal/ai/toolDisplay.ts'
-import type { WritingVoice } from './agent.ts'
 import { WritingDraftId } from './draftId.ts'
+import type { WritingDraftStore } from './drafts.ts'
 import { ChatDraftInputSchema, type WritingDraftToolHost } from './draftTypes.ts'
-import { ExampleId, ExampleInputSchema, type VoiceExampleRecord } from './types.ts'
+import { EditId, EditInputSchema, type VoiceEditRecord } from './types.ts'
 
 export const WRITING_VOICE_TOOL = 'me_voice'
 const AGENT_NAME = toolDisplayName(WRITING_VOICE_TOOL)
@@ -18,12 +18,12 @@ For EVERY draft or revision written on the owner's behalf, call me_voice with ac
 
 When the owner supplies an edited version of a draft, or explicitly accepts a revised version after giving editing direction, call me_voice with action learn. Pass the actual original and accepted revision verbatim, plus the owner's direction. Never treat an unaccepted AI rewrite, a quoted third-party message, or casual chat prose as the owner's writing example. The tool saves the pair and asks one question with two suggested answers; the web interface provides clickable choices and Write my own. Do not ask another learning question in your prose. In a terminal, the tool asks directly. If the owner answers in chat, pass their actual choice or exact text to action answer; never choose an answer for them. Writing questions do not block unrelated work.
 
-Use action rules to inspect the shared guide. All voice learning belongs to me/voice/ and applies across Chat and Outbox. A draft's content and commitments still come from the current task; learning style never authorizes an action or a new commitment.
+Use action rules to inspect the shared guide. Everything learned is kept with the draft it came from, under me/voice/, and applies across Chat and Outbox. A draft's content and commitments still come from the current task; learning style never authorizes an action or a new commitment.
 `
 
 const Input = z.discriminatedUnion('action', [
   ChatDraftInputSchema.extend({ action: z.literal('draft') }),
-  ExampleInputSchema.omit({ source: true }).extend({
+  EditInputSchema.omit({ source: true }).extend({
     action: z.literal('learn'),
     draftId: WritingDraftId.optional(),
     draftRevision: z.number().int().positive().optional(),
@@ -31,7 +31,7 @@ const Input = z.discriminatedUnion('action', [
   z.object({ action: z.literal('accept'), draftId: WritingDraftId, draftRevision: z.number().int().positive() }),
   z.object({
     action: z.literal('answer'),
-    id: ExampleId,
+    id: EditId,
     revision: z.string(),
     option: z.number().int().min(0).max(1).optional(),
     text: z.string().max(4000).optional(),
@@ -43,22 +43,23 @@ const Input = z.discriminatedUnion('action', [
 // Providers receive an object schema; action-specific requirements are checked before execution.
 const ToolInput = ChatDraftInputSchema.partial().extend({
   action: z.enum(['draft', 'learn', 'answer', 'rules', 'compact', 'accept']),
-  original: ExampleInputSchema.shape.original.optional(),
-  revised: ExampleInputSchema.shape.revised.optional(),
-  id: ExampleId.optional(),
+  original: EditInputSchema.shape.original.optional(),
+  revised: EditInputSchema.shape.revised.optional(),
+  id: EditId.optional(),
   revision: z.string().optional(),
   option: z.number().int().min(0).max(1).optional(),
   text: z.string().max(4000).optional(),
 })
 
 export function createWritingVoiceTools(
-  voice: WritingVoice,
+  store: WritingDraftStore,
   options: {
     source: string
     drafts?: WritingDraftToolHost
-    onQuestion?: (example: VoiceExampleRecord) => Promise<{ option?: number; text?: string } | undefined>
+    onQuestion?: (edit: VoiceEditRecord) => Promise<{ option?: number; text?: string } | undefined>
   },
 ): Record<string, unknown> {
+  const { voice, learning } = store
   return {
     [WRITING_VOICE_TOOL]: tool({
       description: `${AGENT_NAME} drafts and revises prose in the owner's writing voice. Always use for writing on their behalf. Learn from their accepted edits by saving one original/revised example and asking one question with two answer choices. The same rules and confirmed lessons serve Chat and Outbox. Refer to this agent as ${AGENT_NAME}.`,
@@ -80,21 +81,23 @@ export function createWritingVoiceTools(
               }
               case 'learn': {
                 if (options.drafts) return options.drafts.learn({ ...input, source: options.source })
-                let example = await voice.capture({ ...input, source: options.source })
-                if (example?.question && !example.answer && options.onQuestion) {
-                  const answer = await options.onQuestion(example)
-                  if (answer) example = await voice.answer(example.id, example.revision, answer)
+                // A terminal keeps no frames, so the edit becomes a draft here and its question is asked at once.
+                const captured = await learning.capture({ ...input, source: options.source })
+                let edit = captured ? await learning.prepare(captured.edit) : undefined
+                if (edit?.question && !edit.answer && options.onQuestion) {
+                  const answer = await options.onQuestion(edit)
+                  if (answer) edit = await learning.answer(edit.id, edit.revision, answer)
                 }
                 return {
                   success: true,
-                  example,
-                  message: example
-                    ? 'Example saved. The learning question is available in the interface.'
-                    : 'No new example to learn from.',
+                  edit,
+                  message: edit
+                    ? 'Your edit is saved with its draft. The learning question is available in the interface.'
+                    : 'Nothing new to learn from.',
                 }
               }
               case 'answer':
-                return { success: true, example: await voice.answer(input.id, input.revision, input) }
+                return { success: true, edit: await learning.answer(input.id, input.revision, input) }
               case 'compact':
                 return { success: true, ...(await voice.compact()) }
             }

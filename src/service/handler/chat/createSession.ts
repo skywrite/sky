@@ -386,7 +386,7 @@ export function createChatHost(config: typeof ConfigModule, env: Record<string, 
             .filter(Boolean)
             .join('\n\n'),
           tools: {
-            ...createWritingVoiceTools(writingDrafts.voice, {
+            ...createWritingVoiceTools(writingDrafts, {
               source: `chat:${id}`,
               drafts: writingDraftTools(hooks, writingDrafts, unsaved),
             }),

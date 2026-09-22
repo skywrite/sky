@@ -1,6 +1,6 @@
 import { Button, Select, Textarea, TextInput } from '@mantine/core'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { VoiceDraft, VoiceExampleRecord, VoiceRules } from '#lib/writingVoice/types.ts'
+import type { VoiceDraft, VoiceEditRecord, VoiceRules } from '#lib/writingVoice/types.ts'
 import { Block } from './settingsBlocks.tsx'
 import './writingVoice.css'
 
@@ -17,13 +17,14 @@ export async function writingVoiceRequest<T>(route: string, method = 'GET', body
   return data as T
 }
 
-function ExampleCard({
-  example,
+/** One edit of a draft and what Sky learned from it. */
+function EditCard({
+  edit: example,
   onChange,
 }: {
   key?: string
-  example: VoiceExampleRecord
-  onChange: (example: VoiceExampleRecord) => void
+  edit: VoiceEditRecord
+  onChange: (edit: VoiceEditRecord) => void
 }) {
   const [own, setOwn] = useState(false)
   const [text, setText] = useState('')
@@ -34,15 +35,15 @@ function ExampleCard({
     setBusy(true)
     setError('')
     try {
-      const result = await writingVoiceRequest<{ example: VoiceExampleRecord }>(
-        `/examples/${example.id}/${action}`,
+      const result = await writingVoiceRequest<{ edit: VoiceEditRecord }>(
+        `/edits/${encodeURIComponent(example.id)}/${action}`,
         'POST',
         {
           revision: example.revision,
           ...answer,
         },
       )
-      onChange(result.example)
+      onChange(result.edit)
       setOwn(false)
     } catch (problem) {
       setError(problem instanceof Error ? problem.message : 'Sky could not save your answer.')
@@ -110,7 +111,7 @@ function ExampleCard({
       ) : (
         <p role="status">
           {example.error
-            ? 'Your example is saved. Sky could not prepare the question.'
+            ? 'Your edit is saved. Sky could not prepare the question.'
             : 'Sky is preparing one question about your revision…'}
         </p>
       )}
@@ -154,19 +155,19 @@ export function WritingVoiceQuestions({
   refreshKey?: string | number
   polling?: boolean
 }) {
-  const [examples, setExamples] = useState<VoiceExampleRecord[]>([])
+  const [examples, setExamples] = useState<VoiceEditRecord[]>([])
   const [error, setError] = useState('')
-  const [learned, setLearned] = useState<VoiceExampleRecord | null>(null)
+  const [learned, setLearned] = useState<VoiceEditRecord | null>(null)
   const awaiting = examples.some(
     (example) => !example.lesson && !example.error && (!example.question || example.answer),
   )
   useEffect(() => {
     let active = true
     const load = () =>
-      writingVoiceRequest<{ examples: VoiceExampleRecord[] }>(`/examples?source=${encodeURIComponent(source)}`)
+      writingVoiceRequest<{ edits: VoiceEditRecord[] }>(`/edits?source=${encodeURIComponent(source)}`)
         .then((data) => {
           if (active) {
-            setExamples(data.examples)
+            setExamples(data.edits)
             setError('')
           }
         })
@@ -189,9 +190,9 @@ export function WritingVoiceQuestions({
   if (!example) return null
   return (
     <div className="sky-writing-questions">
-      <ExampleCard
+      <EditCard
         key={example.id}
-        example={example}
+        edit={example}
         onChange={(next) => {
           setExamples((current) => current.map((entry) => (entry.id === next.id ? next : entry)))
           if (next.lesson) setLearned(next)
@@ -204,7 +205,7 @@ export function WritingVoiceQuestions({
 
 type VoiceStatus = {
   rules: VoiceRules
-  examples: VoiceExampleRecord[]
+  edits: VoiceEditRecord[]
   compacting: boolean
   compactionError: string | null
 }
@@ -362,7 +363,7 @@ export function WritingVoicePane({
                 disabled={busy || !revised.trim() || original === revised}
                 onClick={() =>
                   void act(async () => {
-                    await writingVoiceRequest('/examples', 'POST', {
+                    await writingVoiceRequest('/edits', 'POST', {
                       original,
                       revised,
                       medium,
@@ -370,7 +371,7 @@ export function WritingVoicePane({
                     })
                     setOriginal('')
                     setRevised('')
-                    setNote('Example saved. Answer the question below to teach Sky why you changed it.')
+                    setNote('Your edit is saved as a draft. Answer the question below to teach Sky why you changed it.')
                   })
                 }
               >
@@ -382,35 +383,35 @@ export function WritingVoicePane({
       </Block>
       <Block
         head="Learning from your revisions"
-        note="Each example keeps the draft, your revision, and your explanation. After eight confirmed lessons, Sky consolidates them into your rules and removes the processed examples."
+        note="Sky learns from your drafts: each edit keeps your wording, your reason, and the lesson. After eight lessons, Sky folds them into your rules. The drafts keep their history."
       >
         {status?.compactionError && (
-          <p role="alert">Compaction paused: {status.compactionError} Your examples are still available.</p>
+          <p role="alert">Folding lessons into your rules paused: {status.compactionError} Your drafts keep them.</p>
         )}
         <div className="sky-writing-actions">
           <Button
-            disabled={busy || status?.compacting || !status?.examples.some((example) => example.lesson)}
+            disabled={busy || status?.compacting || !status?.edits.some((edit) => edit.lesson)}
             onClick={() =>
               void act(async () => {
                 const result = await writingVoiceRequest<{ compacted: number }>('/compact', 'POST', {})
-                setNote(`${result.compacted} examples compacted into your writing rules.`)
+                setNote(`${result.compacted} lessons folded into your writing rules.`)
               })
             }
           >
-            {status?.compacting ? 'Compacting examples…' : 'Compact learned examples'}
+            {status?.compacting ? 'Folding lessons into your rules…' : 'Fold lessons into my rules'}
           </Button>
         </div>
-        {status && status.examples.length === 0 && (
-          <p className="sky-set-note">Your revisions will appear here as Sky learns your voice.</p>
+        {status && status.edits.length === 0 && (
+          <p className="sky-set-note">Your edits will appear here as Sky learns your voice.</p>
         )}
-        {status?.examples.map((example) => (
-          <ExampleCard
-            key={example.id}
-            example={example}
+        {status?.edits.map((edit) => (
+          <EditCard
+            key={edit.id}
+            edit={edit}
             onChange={(next) => {
               setStatus((current) =>
                 current
-                  ? { ...current, examples: current.examples.map((entry) => (entry.id === next.id ? next : entry)) }
+                  ? { ...current, edits: current.edits.map((entry) => (entry.id === next.id ? next : entry)) }
                   : current,
               )
               void reload().catch(() => {})
@@ -422,7 +423,7 @@ export function WritingVoicePane({
         <summary>Writing model</summary>
         <Block
           head="Writing model"
-          note="Used for drafting, learning from your edits, and compacting examples. Changes apply to the next call in Chat and Outbox."
+          note="Used for drafting, learning from your edits, and folding lessons into your rules. Changes apply to the next call in Chat and Outbox."
         >
           <Select
             label="Model configuration"

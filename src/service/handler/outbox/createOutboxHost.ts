@@ -18,7 +18,6 @@ import { createReplyComposer } from '#lib/outbox/triage.ts'
 import { OutboxError, type OutboxRecord } from '#lib/outbox/types.ts'
 import { createWorkstreamOutbox } from '#lib/workstreams/outbox.ts'
 import { createWorkstreamsRuntime } from '#lib/workstreams/runtime.ts'
-import { captureOutboxRevision } from '#lib/writingVoice/outbox.ts'
 import { createWritingVoice } from '#lib/writingVoice/runtime.ts'
 import { runWithUsageSource } from '#shared/ai/usageLog.ts'
 import { loadAutomationDir } from '#shared/models/Automation/loadAutomationDir.ts'
@@ -34,28 +33,8 @@ export function createOutboxHost(
   options: { composeInProcess?: boolean } = {},
 ): OutboxRoutesOptions {
   const { store, sources } = createOutboxRuntime(config)
+  // Every reply the owner edits, approves or reports sent has a draft record, and Sky learns from that record.
   const voice = createWritingVoice(config)
-  const learningJobs = new Set<string>()
-  const startLearning = (id: string) => {
-    if (learningJobs.has(id)) return
-    learningJobs.add(id)
-    void runWithUsageSource('me:voice:learn', () => voice.prepare(id))
-      .catch(() => {})
-      .finally(() => learningJobs.delete(id))
-  }
-  const learnRevision = async (before: OutboxRecord | null, after: OutboxRecord, accepted = false) => {
-    if (!before || after.draftId) return after
-    try {
-      const example = await captureOutboxRevision(voice, before, after, accepted)
-      if (example && !example.question && !example.lesson && !example.error) startLearning(example.id)
-      return after
-    } catch (error) {
-      return {
-        ...after,
-        writingVoiceError: `Your draft is saved, but the writing example could not be saved: ${error instanceof Error ? error.message : 'unknown error'}`,
-      }
-    }
-  }
   const { store: workstreams } = createWorkstreamsRuntime(config)
   const bridge = createWorkstreamOutbox({
     store,
@@ -156,15 +135,6 @@ export function createOutboxHost(
 
   return {
     report: async () => {
-      for (const example of await voice.store.list()) {
-        if (
-          example.source.startsWith('outbox:') &&
-          !example.lesson &&
-          !example.error &&
-          (!example.question || example.answer)
-        )
-          startLearning(example.id)
-      }
       const [items, preferences, job, last, check] = await Promise.all([
         store.list(),
         store.preferences(),
@@ -258,15 +228,11 @@ export function createOutboxHost(
       }
       return scanJob.start()
     },
-    save: async (id, revision, draft) => {
-      const before = await store.get(id)
-      return learnRevision(before, await review.save(id, revision, draft))
-    },
+    save: (id, revision, draft) => review.save(id, revision, draft),
     approve: async (id, revision, draft, reviewedChanges) => {
-      const before = await store.get(id)
       const item = await review.approve(id, revision, draft, reviewedChanges)
       startFollowups(item)
-      return learnRevision(before, item, true)
+      return item
     },
     retryFollowups: async (id, revision) => {
       const item = await review.retryFollowups(id, revision)
@@ -298,13 +264,8 @@ export function createOutboxHost(
         ? review.composePrepared(id, revision, instruction, reviewedChanges)
         : composition.start(id, revision, draft, instruction, reviewedChanges),
     reportSent: async (id, revision, evidence) => {
-      const before = await store.get(id)
       const item = await review.reportSent(id, revision, evidence)
-      return learnRevision(
-        before,
-        item.workstreams?.length ? await bridge.reportSent(id, item.revision, evidence) : item,
-        true,
-      )
+      return item.workstreams?.length ? bridge.reportSent(id, item.revision, evidence) : item
     },
   }
 }

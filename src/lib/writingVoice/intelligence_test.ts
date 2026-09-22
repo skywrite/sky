@@ -1,18 +1,20 @@
-import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import * as path from 'node:path'
 import { createAnthropic } from '@ai-sdk/anthropic'
 import { generateObject, NoObjectGeneratedError } from 'ai'
 import { MockLanguageModelV4 } from 'ai/test'
 import { z } from 'zod'
-import Document from '#shared/models/Markdown/Document/mod.ts'
 import { assert, test } from '#test'
+import { WritingVoice } from './agent.ts'
+import { reviseDraft } from './draftChanges.ts'
+import { WritingDraftStore } from './drafts.ts'
 import { createVoiceIntelligence } from './intelligence.ts'
 import { WritingVoiceStore } from './store.ts'
-import { ExampleSchema, QuestionSchema } from './types.ts'
+import { EditSchema, QuestionSchema } from './types.ts'
 
-const example = ExampleSchema.parse({
-  id: 'a'.repeat(32),
+const example = EditSchema.parse({
+  id: 'Sample-Draft:2',
   source: 'settings',
   medium: 'Email',
   original: 'I wanted to let you know the Atlas draft is ready.',
@@ -135,19 +137,20 @@ test('An invalid number of answer choices or an empty choice cannot enter a gene
   }
 })
 
-test('Previously saved writing examples with two answer choices remain readable', async () => {
+test('A saved draft whose edit carries two answer choices remains readable', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'sky-voice-schema-'))
   try {
-    const store = new WritingVoiceStore(root, path.join(root, 'state'))
-    const dir = path.join(store.dir, 'examples')
-    await mkdir(dir, { recursive: true })
-    const saved = { ...example, question, answer: question.options[1] }
-    await writeFile(path.join(dir, `${example.id}.md`), new Document(saved, '# Writing example\n').toMarkdown())
-    const loaded = await store.get(example.id)
+    const voice = new WritingVoice(new WritingVoiceStore(root, path.join(root, 'state')))
+    const drafts = new WritingDraftStore(voice, undefined, async () => 'Atlas Draft')
+    const shown = drafts.initial({ meaning: example.original, medium: 'Email' }, example.original, 'settings', 'shown')
+    reviseDraft(shown, example.revised, 'you', '2025-03-15')
+    Object.assign(shown.versions[1]!, { explanation: undefined, question, answer: question.options[1] })
+    const saved = await drafts.adopt(shown)
+    const loaded = (await drafts.require(saved.id)).versions[1]!
     assert({
-      given: 'an existing Markdown example containing the original two-element answer array',
-      should: 'load both choices and the owner’s answer without migration',
-      actual: [loaded?.question, loaded?.answer],
+      given: 'a draft file whose edited version holds the ordinary two-element answer array',
+      should: 'load both choices and the owner’s answer',
+      actual: [loaded.question, loaded.answer],
       expected: [question, question.options[1]],
     })
   } finally {

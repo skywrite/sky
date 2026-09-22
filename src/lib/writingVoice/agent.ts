@@ -4,39 +4,50 @@ import { createVoiceIntelligence, type VoiceIntelligence } from './intelligence.
 import { WritingVoiceStore } from './store.ts'
 import {
   DraftInputSchema,
-  LessonSchema,
   MAX_WRITING_CHARS,
-  QuestionSchema,
   WritingVoiceError,
   type VoiceDraftInput,
   type VoiceDraft,
-  type VoiceExampleInput,
-  type VoiceExampleRecord,
+  type VoiceEditRecord,
 } from './types.ts'
 
-export const AUTO_COMPACT_EXAMPLES = 8
+export const AUTO_COMPACT_LESSONS = 8
 const maintenance = new Map<string, Promise<void>>()
 
+/** What the writer needs from the drafts: the owner's edits and their lessons, and a way to mark them folded in. */
+export interface VoiceLessons {
+  edits(source?: string): Promise<VoiceEditRecord[]>
+  fold(ids: string[]): Promise<void>
+}
+
 export class WritingVoice {
+  /** Set by the draft store. Drafts are the only thing Sky learns from, so a writer without them knows only the rules. */
+  lessons?: VoiceLessons
+
   constructor(
     readonly store: WritingVoiceStore,
     readonly intelligence: VoiceIntelligence = createVoiceIntelligence(),
   ) {}
 
+  /** Lessons the rules already hold, from a fold-in that did not finish marking its drafts, are not read twice. */
+  private async learned(): Promise<VoiceEditRecord[]> {
+    const folding = new Set((await this.store.rules()).folding)
+    return ((await this.lessons?.edits()) ?? []).filter((edit) => edit.answer && edit.lesson && !folding.has(edit.id))
+  }
+
   async draft(input: VoiceDraftInput): Promise<VoiceDraft> {
     const value = DraftInputSchema.parse(input)
     await this.store.initialize()
-    const [rules, examples] = await Promise.all([this.store.rules(), this.store.list()])
-    const learned = examples.filter((example) => example.answer && example.lesson)
+    const [rules, learned] = await Promise.all([this.store.rules(), this.learned()])
     const relevant = learned.toSorted((a, b) => Number(b.medium === value.medium) - Number(a.medium === value.medium))
     const draft = await this.intelligence.draft({
       ...value,
       rules: rules.text,
-      lessons: learned.map((example) => example.lesson!),
-      examples: relevant.slice(0, 4).map((example) => ({
-        ...example,
-        original: example.original.slice(0, 2000),
-        revised: example.revised.slice(0, 2000),
+      lessons: learned.map((edit) => edit.lesson!),
+      examples: relevant.slice(0, 4).map((edit) => ({
+        ...edit,
+        original: edit.original.slice(0, 2000),
+        revised: edit.revised.slice(0, 2000),
       })),
     })
     if (!draft.trim() || draft.length > MAX_WRITING_CHARS)
@@ -45,72 +56,34 @@ export class WritingVoice {
     return { draft, rulesRevision: rules.revision }
   }
 
-  async capture(input: VoiceExampleInput, explanation?: string): Promise<VoiceExampleRecord | null> {
-    let example = await this.store.capture(input)
-    if (example && explanation?.trim() && !example.answer) {
-      if (explanation.length > 4000) throw new WritingVoiceError('Keep your explanation under 4,000 characters.')
-      example = await this.store.update(example.id, example.revision, { answer: explanation })
-    }
-    return example ? this.prepare(example.id) : null
-  }
-
-  async prepare(id: string): Promise<VoiceExampleRecord> {
-    const example = await this.store.get(id)
-    if (!example) throw new WritingVoiceError('This writing example is no longer available.', 404)
-    if (example.lesson || (example.question && !example.answer)) return example
-    try {
-      if (example.answer) {
-        const lesson = LessonSchema.parse(await this.intelligence.learn(example))
-        const learned = await this.store.update(id, example.revision, { lesson, error: undefined })
-        this.scheduleCompaction()
-        return learned
-      }
-      const question = QuestionSchema.parse(await this.intelligence.question(example))
-      if (
-        (!question.before && !question.after) ||
-        question.before === question.after ||
-        !example.original.includes(question.before) ||
-        !example.revised.includes(question.after) ||
-        question.options[0].toLowerCase() === question.options[1].toLowerCase()
-      )
-        throw new WritingVoiceError('The learning question did not match your revision. Try again.')
-      return await this.store.update(id, example.revision, { question, error: undefined })
-    } catch (error) {
-      if (error instanceof WritingVoiceError && error.status === 409) throw error
-      return this.store.update(id, example.revision, {
-        error: error instanceof Error ? error.message : 'Sky could not prepare the learning question.',
-      })
-    }
-  }
-
-  async answer(id: string, revision: string, answer: { option?: number; text?: string }): Promise<VoiceExampleRecord> {
-    const example = await this.store.get(id)
-    if (!example?.question) throw new WritingVoiceError('Prepare the learning question before answering.')
-    if (example.revision !== revision)
-      throw new WritingVoiceError('This writing example changed. Reload before answering.', 409)
-    if ((answer.option === undefined) === (answer.text === undefined))
-      throw new WritingVoiceError('Choose one answer or write your own.')
-    if (answer.option !== undefined && ![0, 1].includes(answer.option))
-      throw new WritingVoiceError('Choose one of the two suggested answers.')
-    const text = answer.option === undefined ? answer.text!.trim() : example.question.options[answer.option]
-    if (!text || text.length > 4000) throw new WritingVoiceError('Keep your answer between 1 and 4,000 characters.')
-    // The user's exact answer survives even if lesson extraction fails.
-    await this.store.update(id, revision, { answer: text, lesson: undefined, error: undefined })
-    return this.prepare(id)
-  }
-
+  /** Fold lessons into the rules. Their drafts keep them as history and stop being read for them. */
   async compact(force = true): Promise<{ compacted: number }> {
+    const lessons = this.lessons
+    if (!lessons) return { compacted: 0 }
     return withLock(path.join(this.store.stateDir, 'compact.lock'), async () => {
-      await this.store.finishCompaction()
-      const examples = (await this.store.list()).filter((example) => example.answer && example.lesson)
-      if (!examples.length || (!force && examples.length < AUTO_COMPACT_EXAMPLES)) return { compacted: 0 }
-      const batch = examples.slice(-12)
+      await this.finishFolding(lessons)
+      const edits = await this.learned()
+      if (!edits.length || (!force && edits.length < AUTO_COMPACT_LESSONS)) return { compacted: 0 }
+      const batch = edits.slice(-12)
       const rules = await this.store.rules()
       const plan = await this.intelligence.compact(rules.text, batch)
-      const compacted = await this.store.compact(rules, batch, plan)
-      await atomicWrite(path.join(this.store.stateDir, 'compaction.json'), JSON.stringify({ error: null, compacted }))
-      return { compacted }
+      // An answer the owner changed while the model worked must not be folded in as it was.
+      const current = new Map((await this.learned()).map((edit) => [edit.id, edit.revision]))
+      if (batch.some((edit) => current.get(edit.id) !== edit.revision))
+        throw new WritingVoiceError('An edit changed during compaction. Try again.', 409)
+      await this.store.fold(rules, batch, plan)
+      await this.finishFolding(lessons)
+      await atomicWrite(path.join(this.store.stateDir, 'compaction.json'), JSON.stringify({ error: null }))
+      return { compacted: batch.length }
     })
+  }
+
+  /** The rules write records what it took. Marking the drafts, then dropping that record, can always be finished later. */
+  private async finishFolding(lessons: VoiceLessons): Promise<void> {
+    const { folding } = await this.store.rules()
+    if (!folding.length) return
+    await lessons.fold(folding)
+    await this.store.folded(folding)
   }
 
   scheduleCompaction(): void {
@@ -122,7 +95,7 @@ export class WritingVoice {
         await atomicWrite(
           path.join(this.store.stateDir, 'compaction.json'),
           JSON.stringify({
-            error: error instanceof Error ? error.message : 'Writing example compaction failed.',
+            error: error instanceof Error ? error.message : 'Sky could not fold your lessons into the writing rules.',
           }),
         )
       })
@@ -136,12 +109,12 @@ export class WritingVoice {
   }
 
   async status() {
-    const [rules, examples, raw] = await Promise.all([
+    const [rules, edits, raw] = await Promise.all([
       this.store.rules(),
-      this.store.list(),
+      this.lessons?.edits() ?? [],
       readOptional(path.join(this.store.stateDir, 'compaction.json')),
     ])
     const state = raw ? (JSON.parse(raw) as { error?: string | null }) : null
-    return { rules, examples, compacting: maintenance.has(this.store.dir), compactionError: state?.error ?? null }
+    return { rules, edits, compacting: maintenance.has(this.store.dir), compactionError: state?.error ?? null }
   }
 }

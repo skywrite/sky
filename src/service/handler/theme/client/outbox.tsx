@@ -89,7 +89,7 @@ export function OutboxMain({ item, navigate }: { item: string; navigate: (path: 
                 </div>
               )}
               {item ? (
-                <OutboxItemPage editor={editor} today={report?.today ?? ''} open={open} railShown={railShown} />
+                <OutboxItemPage editor={editor} today={report?.today ?? ''} open={open} />
               ) : (
                 <OutboxList
                   report={report}

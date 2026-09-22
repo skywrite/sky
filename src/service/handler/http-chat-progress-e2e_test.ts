@@ -32,7 +32,7 @@ test(
     }
     const app = new Hono()
     app.get('/settings/_api/settings', (c) => c.json({ theme: 'light', textSize: 'default' }))
-    app.get('/settings/_api/writing-voice/examples', (c) => c.json({ examples: [] }))
+    app.get('/settings/_api/writing-voice/edits', (c) => c.json({ edits: [] }))
     app.get('/chat/progress', (c) =>
       c.json({
         turns: [

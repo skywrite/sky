@@ -66,7 +66,17 @@ export function WritingDraftEditor<T extends WritingDraft>({
     [history, current.text, version.text],
   )
   const historyId = `${anchor ?? `writing-draft-${draft.id}`}-history`
-  const learning = draft.versions.some((v) => v.learnFrom && !v.learningDone && !v.learningError)
+  // Sky is still working on an edit: no lesson yet, no failure, and no question waiting for the owner.
+  const learning = draft.versions.some(
+    (v) =>
+      v.accepted &&
+      v.learnFrom &&
+      !v.learningDone &&
+      !v.folded &&
+      !v.lesson &&
+      !v.learningError &&
+      !(v.question && !v.answer),
+  )
   const learningError = draft.versions.find((v) => v.learningError)?.learningError
   const remember = (value: Edit | null) => {
     setEdit(value)
@@ -353,7 +363,9 @@ export function WritingDraftEditor<T extends WritingDraft>({
       {!unsaved && (
         <WritingVoiceQuestions
           source={`draft:${draft.id}`}
-          refreshKey={JSON.stringify(draft.versions.map((v) => [v.version, v.accepted, v.exampleId, v.learningDone]))}
+          refreshKey={JSON.stringify(
+            draft.versions.map((v) => [v.version, v.accepted, Boolean(v.question), v.answer, Boolean(v.lesson)]),
+          )}
           polling={learning}
         />
       )}

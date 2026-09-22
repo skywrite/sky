@@ -157,8 +157,13 @@ export function writingDraftTools(
         if (ids.length === 1) id = ids[0]
       }
       if (!id) {
-        const example = await store.voice.capture(input)
-        return { success: true, example }
+        // Words from outside this chat: the owner's change to them still becomes a draft, the one place Sky learns from.
+        const saved = (await store.learning.capture(input))?.draft
+        if (saved) {
+          await links.link(saved.id)
+          store.learn(saved.id)
+        }
+        return { success: true, draftId: saved?.id, draftRevision: saved?.revision }
       }
       const waiting = await shown(id)
       if (!waiting && !isLinked(id)) throw new WritingVoiceError('That draft is not part of this conversation.', 404)

@@ -21,7 +21,7 @@ import { Command, CommandResult, Flag, whenNBTime } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { legalReviewBrief, legalReviewContext } from '#lib/legalReview/chat.ts'
 import { summarizeTranscript } from '#lib/notebook/enrich/summarize.ts'
-import { createWritingVoice } from '#lib/writingVoice/runtime.ts'
+import { createWritingLessons } from '#lib/writingVoice/runtime.ts'
 import { createWritingVoiceTools } from '#lib/writingVoice/tools.ts'
 import { AI_ERROR_LOG_DISPLAY } from '#shared/ai/errorLog.ts'
 import { getProfile, resolveProfile, roleProfile } from '#shared/ai/models.ts'
@@ -603,10 +603,10 @@ export default class AiChatTask extends Command {
             ...webTools,
             ...fileTools,
             ...notebookTools,
-            ...createWritingVoiceTools(createWritingVoice(context.config), {
+            ...createWritingVoiceTools(createWritingLessons(context.config), {
               source: `chat:terminal:${startTime.toString()}`,
-              onQuestion: async (example) => {
-                const question = example.question!
+              onQuestion: async (edit) => {
+                const question = edit.question!
                 const selected = await p.select({
                   message: question.question,
                   options: [

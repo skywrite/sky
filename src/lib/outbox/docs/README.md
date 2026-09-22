@@ -29,7 +29,7 @@ The model-facing judgment schema asks for `explanation`, described as a brief us
 
 Judgment follows authors and timestamps inside captured message bodies, since top-level sender metadata can describe the original message. An earlier owner question is not a final approval; a subsequent recommendation, scheduling choice, or substantive reply can still need the owner. Clear acknowledgments and completed or delegated matters stay quiet. Uncertainty about the answer to a verified personal ask can need a decision; uncertainty about whether the ask belongs to the owner cannot.
 
-Production drafting uses the shared [writing voice](../../writingVoice/docs/README.md). Your voice and Settings → Writing Voice edit `me/voice/rules.md`, initially seeded from existing Outbox `preferences.md`, including after its migration into data state. Saved edits and accepted revisions become individual examples with one question, two suggested reasons, and the owner's answer. Confirmed lessons improve later drafts and compact into the rules. Examples teach writing, never transferable facts or standing permission for commitments.
+Production drafting uses the shared [writing voice](../../writingVoice/docs/README.md). Your voice and Settings → Writing Voice edit `me/voice/rules.md`, initially seeded from existing Outbox `preferences.md`, including after its migration into data state. Saved edits and accepted revisions are learned from on the reply's own draft record, with one question, two suggested reasons, and the owner's answer. Confirmed lessons improve later drafts and compact into the rules. Edits teach writing, never transferable facts or standing permission for commitments.
 
 The check establishes the intended reply, then the shared writer applies the current voice before the draft reaches review. Reply composition and follow-ups use that writer too. Outbox judgment resolves through `model.ts`; writing and learning use their owning module's model adapter. The writing pass reads current rules and confirmed lessons, with bounded excerpts from relevant examples. Legacy callers without a writer retain the original single-call behavior.
 
@@ -169,6 +169,7 @@ The colocated tests cover strict date scope on every run, legacy checkpoint migr
 
 ## Notes
 
+- [2026-09-20 — Sky learns from drafts alone](../../writingVoice/docs/2026-09-20-sky-learns-from-drafts-alone.md), in the writing voice docs: Outbox keeps no learning path of its own.
 - [2026-09-20 — A draft is saved when it is used](../../writingVoice/docs/2026-09-20-a-draft-is-saved-when-it-is-used.md), in the writing voice docs, which own the shared draft contract.
 - [2026-09-16 — Chats from Beeper join the queue](2026-09-16-beeper-conversations.md).
 - [2026-09-14 — Readable ids and merged decisions](2026-09-14-readable-ids-and-merged-decisions.md).

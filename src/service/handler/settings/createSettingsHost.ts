@@ -7,7 +7,7 @@ import { preferredResearcherVoice, preferredVoice, VOICE_GROUPS } from '#command
 import { DIR_AI_MEMORY, DIR_CODE } from '#config'
 import * as notebookConfig from '#config'
 import { isCommandAvailable } from '#lib/sys/mod.ts'
-import { createWritingVoice } from '#lib/writingVoice/runtime.ts'
+import { createWritingLessons } from '#lib/writingVoice/runtime.ts'
 import { KNOWN_PROVIDERS, PROFILES, ROLES } from '#shared/ai/models.ts'
 import { loadSkyConfig, readSkyConfigFile, SKY_CONFIG_PATH } from '#shared/config/loader.ts'
 import { removeConfigValue, setConfigValue } from '#shared/config/write.ts'
@@ -103,7 +103,7 @@ export function createSettingsHost(): SettingsRoutesOptions {
     connections: createConnectionsHost(),
     aboutMe: createAboutMeHost(notebookConfig),
     prompts: createPromptCatalog(),
-    writingVoice: createWritingVoice(notebookConfig),
+    writingVoice: createWritingLessons(notebookConfig),
     reveal: async (target: RevealTarget) => {
       if (process.platform !== 'darwin') throw new Error('Reveal works on macOS only for now.')
       const config = loadSkyConfig()

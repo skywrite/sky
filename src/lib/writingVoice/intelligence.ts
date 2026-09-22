@@ -12,18 +12,16 @@ import {
   QuestionSchema,
   type VoiceCompaction,
   type VoiceDraftInput,
-  type VoiceExample,
+  type VoiceEdit,
   type VoiceLesson,
   type VoiceQuestion,
 } from './types.ts'
 
 export interface VoiceIntelligence {
-  draft: (
-    input: VoiceDraftInput & { rules: string; lessons: VoiceLesson[]; examples: VoiceExample[] },
-  ) => Promise<string>
-  question: (example: VoiceExample) => Promise<VoiceQuestion>
-  learn: (example: VoiceExample) => Promise<VoiceLesson>
-  compact: (rules: string, examples: VoiceExample[]) => Promise<VoiceCompaction>
+  draft: (input: VoiceDraftInput & { rules: string; lessons: VoiceLesson[]; examples: VoiceEdit[] }) => Promise<string>
+  question: (edit: VoiceEdit) => Promise<VoiceQuestion>
+  learn: (edit: VoiceEdit) => Promise<VoiceLesson>
+  compact: (rules: string, edits: VoiceEdit[]) => Promise<VoiceCompaction>
 }
 
 const PROMPTS = {
@@ -48,8 +46,8 @@ export function createVoiceIntelligence(model: () => ResolvedModel = writingVoic
   return {
     draft: async (input) =>
       (await ask('draft', z.object({ draft: z.string().min(1).max(MAX_WRITING_CHARS) }), input)).draft,
-    question: (example) => ask('question', QuestionSchema, example),
-    learn: (example) => ask('learn', LessonSchema, example),
+    question: (edit) => ask('question', QuestionSchema, edit),
+    learn: (edit) => ask('learn', LessonSchema, edit),
     compact: (rules, examples) => ask('compact', CompactionSchema, { rules, examples }),
   }
 }

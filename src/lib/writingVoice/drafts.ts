@@ -1,25 +1,34 @@
-import { lstat, readdir, unlink } from 'node:fs/promises'
+import { lstat, mkdir, readdir, unlink, writeFile } from 'node:fs/promises'
 import * as path from 'node:path'
 import { atomicWrite, missing, readOptional, withLock } from '#lib/outbox/files.ts'
 import Document from '#shared/models/Markdown/Document/mod.ts'
 import { instantNow } from '#universal/dates/nbdt/mod.ts'
 import type { WritingVoice } from './agent.ts'
 import { acceptDraft, restoreDraft, reviseDraft } from './draftChanges.ts'
+import { teaches } from './draftEdits.ts'
 import { WritingDraftId } from './draftId.ts'
+import { DraftLearning } from './draftLearning.ts'
 import { createDraftName, draftSlug, draftStamp, type DraftName } from './draftName.ts'
 import { currentDraftVersion, WritingDraftSchema, type DraftVersion, type WritingDraft } from './draftTypes.ts'
 import { DraftInputSchema, WritingVoiceError, type VoiceDraftInput } from './types.ts'
 
-/** Draft history stays in the notebook, independently of learning-example compaction. */
+/**
+ * The owner's drafts: their words, every version, and what Sky learned from each change.
+ * They are the only thing Sky learns from. The rules file holds lessons once they are folded in.
+ */
 export class WritingDraftStore {
-  private readonly learning = new Map<string, Promise<void>>()
+  readonly learning: DraftLearning
 
   constructor(
     readonly voice: WritingVoice,
     readonly clock: () => string = instantNow,
     readonly name: DraftName = createDraftName(),
     readonly beforeChange: (draft: WritingDraft, author: 'sky' | 'you') => Promise<void> = async () => {},
-  ) {}
+  ) {
+    this.learning = new DraftLearning(this)
+    // The writer reads its lessons from these drafts.
+    voice.lessons = this.learning
+  }
 
   private async file(id: string): Promise<string> {
     WritingDraftId.parse(id)
@@ -35,7 +44,7 @@ export class WritingDraftStore {
     return at
   }
 
-  private lock<T>(id: string, run: () => Promise<T>): Promise<T> {
+  lock<T>(id: string, run: () => Promise<T>): Promise<T> {
     WritingDraftId.parse(id)
     return withLock(path.join(this.voice.store.stateDir, 'drafts', `${id}.lock`), run)
   }
@@ -130,6 +139,7 @@ export class WritingDraftStore {
       await unlink(await this.file(id)).catch((error: unknown) => {
         if (!missing(error)) throw error
       })
+      await this.unmark(id)
     })
   }
 
@@ -201,61 +211,100 @@ export class WritingDraftStore {
 
   /** Save/accept never waits for a model. Pending learning can resume after a restart. */
   learn(id: string, retry = false): void {
-    if (this.learning.has(id)) return
-    const task = this.learnPending(id, retry)
-      .catch(() => {})
-      .finally(() => this.learning.delete(id))
-    this.learning.set(id, task)
+    this.learning.start(id, retry)
   }
 
-  private async learnPending(id: string, retry: boolean): Promise<void> {
-    const draft = await this.require(id)
-    for (const version of draft.versions) {
-      if (!version.accepted || !version.learnFrom || version.learningDone || (version.learningError && !retry)) continue
-      const original = draft.versions[version.learnFrom - 1]?.text
-      if (!original) continue
-      try {
-        const example = await this.voice.capture(
-          {
-            source: `draft:${id}`,
-            medium: draft.input.medium,
-            recipient: draft.input.recipient,
-            context: draft.input.context.slice(0, 8000),
-            instruction: version.direction,
-            original,
-            revised: version.text,
-          },
-          version.explanation,
-        )
-        await this.updateLearning(id, version.version, {
-          learningDone: true,
-          exampleId: example?.id,
-          learningError: undefined,
-        })
-      } catch (error) {
-        await this.updateLearning(id, version.version, { learningError: (error as Error).message })
-      }
+  /**
+   * Change what one version holds about its learning, never its words or the draft's revision.
+   * `still` refuses a result worked out from state the owner has since replaced.
+   */
+  async patchLearning(
+    id: string,
+    version: number,
+    patch: Partial<DraftVersion>,
+    still: (current: DraftVersion) => boolean = () => true,
+  ): Promise<WritingDraft | null> {
+    // The rules lock comes first everywhere, so folding lessons in never meets a half-saved answer.
+    return this.voice.store.lock(() =>
+      this.lock(id, async () => {
+        const draft = await this.get(id)
+        const current = draft?.versions[version - 1]
+        if (!draft || !current || !still(current)) return null
+        Object.assign(current, patch)
+        await this.write(draft)
+        return draft
+      }),
+    )
+  }
+
+  /** Every draft file in the notebook, by id. */
+  async ids(): Promise<string[]> {
+    await this.file('x')
+    const files = await readdir(path.join(this.voice.store.dir, 'drafts')).catch((error) => {
+      if (missing(error)) return [] as string[]
+      throw error
+    })
+    return files.filter((file) => file.endsWith('.md')).map((file) => file.slice(0, -3))
+  }
+
+  private get marks(): string {
+    return path.join(this.voice.store.stateDir, 'drafts', 'learning')
+  }
+
+  /**
+   * The drafts that still hold something to learn or to fold in. One empty file marks each,
+   * so the writer never opens every draft the owner has kept. A missing folder is rebuilt from the drafts.
+   */
+  async learningIds(): Promise<string[]> {
+    const marked = await readdir(this.marks).catch((error) => {
+      if (missing(error)) return null
+      throw error
+    })
+    if (marked) return marked.filter((name) => WritingDraftId.safeParse(name).success)
+    await mkdir(this.marks, { recursive: true })
+    const found: string[] = []
+    for (const id of await this.ids()) {
+      const draft = await this.get(id).catch(() => null)
+      if (!draft?.versions.some(teaches)) continue
+      await writeFile(path.join(this.marks, id), '')
+      found.push(id)
     }
+    return found
   }
 
-  private async updateLearning(id: string, version: number, patch: Partial<DraftVersion>): Promise<void> {
-    await this.lock(id, async () => {
-      const draft = await this.require(id)
-      Object.assign(draft.versions[version - 1]!, patch)
-      await this.write(draft)
+  private async mark(draft: WritingDraft): Promise<void> {
+    const file = path.join(this.marks, draft.id)
+    if (draft.versions.some(teaches)) {
+      await mkdir(this.marks, { recursive: true })
+      await writeFile(file, '')
+    } else await this.unmark(draft.id)
+  }
+
+  /** The owner may delete a draft's file; its mark goes when that is noticed. */
+  async unmark(id: string): Promise<void> {
+    await unlink(path.join(this.marks, id)).catch((error: unknown) => {
+      if (!missing(error)) throw error
     })
   }
 
   async idle(): Promise<void> {
-    await Promise.all(this.learning.values())
+    await this.learning.idle()
     await this.voice.idle()
   }
 
   private async write(draft: WritingDraft): Promise<void> {
     const valid = WritingDraftSchema.parse(draft)
-    const history = valid.versions.map(
-      (version) =>
-        `## Version ${version.version} · ${version.author === 'you' ? 'You' : 'Sky'}${version.restoredFrom ? ` · restored from ${version.restoredFrom}` : ''}\n\n${version.text}${version.explanation || version.direction ? `\n\nWhy / direction: ${version.explanation || version.direction}` : ''}`,
+    const history = valid.versions.map((version) =>
+      [
+        `## Version ${version.version} · ${version.author === 'you' ? 'You' : 'Sky'}${version.restoredFrom ? ` · restored from ${version.restoredFrom}` : ''}`,
+        version.text,
+        (version.answer || version.explanation || version.direction) &&
+          `Why / direction: ${version.answer || version.explanation || version.direction}`,
+        version.lesson &&
+          `What Sky learned: ${version.lesson.text}\n\nApplies to: ${version.lesson.scope}${version.folded ? '\n\nNow part of your writing rules.' : ''}`,
+      ]
+        .filter(Boolean)
+        .join('\n\n'),
     )
     await atomicWrite(
       await this.file(valid.id),
@@ -264,5 +313,6 @@ export class WritingDraftStore {
         `# Draft${valid.input.recipient ? ` to ${valid.input.recipient}` : ''}\n\n${currentDraftVersion(valid).text}\n\n# Version history\n\n${history.join('\n\n')}\n`,
       ).toMarkdown(),
     )
+    await this.mark(valid)
   }
 }

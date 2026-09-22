@@ -46,7 +46,7 @@ export function writingDraftTestHost(
     tools: async (hooks, thread) => {
       const unsaved = () =>
         unsavedDraftsOf(thread.id, drafts, thread.runs, thread.started)(hooks.writingDrafts?.list() ?? [])
-      const tools = createWritingVoiceTools(voice, {
+      const tools = createWritingVoiceTools(drafts, {
         source: 'chat:fixture',
         drafts: writingDraftTools(hooks, drafts, unsaved),
       })

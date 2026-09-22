@@ -3,11 +3,12 @@ import { tmpdir } from 'node:os'
 import * as path from 'node:path'
 import type { OutboxRecord } from '#lib/outbox/types.ts'
 import { WritingVoice } from './agent.ts'
+import { WritingDraftStore } from './drafts.ts'
 import type { VoiceIntelligence } from './intelligence.ts'
 import { WritingVoiceStore } from './store.ts'
-import type { VoiceExampleInput } from './types.ts'
+import type { VoiceEditInput, VoiceEditRecord } from './types.ts'
 
-export const SAMPLE: VoiceExampleInput = {
+export const SAMPLE: VoiceEditInput = {
   source: 'chat:sample',
   medium: 'Email',
   recipient: 'Jane Doe',
@@ -62,12 +63,20 @@ export async function voiceFixture(overrides: Partial<VoiceIntelligence> = {}) {
     () => `2025-03-15 12:00:${String(tick++).padStart(2, '0')}`,
   )
   const voice = new WritingVoice(store, { ...intelligence, ...overrides })
+  const drafts = new WritingDraftStore(voice, undefined, async () => 'Sample Draft')
   return {
     root,
     store,
     voice,
+    drafts,
+    learning: drafts.learning,
+    /** The owner's change to words that had no draft: saved as one, with Sky's first learning step done. */
+    edited: async (input: VoiceEditInput = SAMPLE, explanation?: string): Promise<VoiceEditRecord> => {
+      const captured = (await drafts.learning.capture(input, explanation))!
+      return drafts.learning.prepare(captured.edit)
+    },
     dispose: async () => {
-      await voice.idle()
+      await drafts.idle()
       await rm(root, { recursive: true, force: true })
     },
   }

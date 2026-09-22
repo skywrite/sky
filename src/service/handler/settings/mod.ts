@@ -14,7 +14,7 @@
  */
 
 import { Hono } from 'hono'
-import type { WritingVoice } from '#lib/writingVoice/agent.ts'
+import type { WritingDraftStore } from '#lib/writingVoice/drafts.ts'
 import { DEFAULT_WRITING_VOICE_PROFILE } from '#lib/writingVoice/model.ts'
 import type { ModelProfile } from '#shared/ai/models.ts'
 import { ENV_OVERRIDES } from '#shared/config/loader.ts'
@@ -293,7 +293,7 @@ export interface SettingsHost {
   /** Accounts and keys over the keychain; absent, /connections is not served */
   connections?: ConnectionsHost
   prompts?: PromptCatalog
-  writingVoice?: WritingVoice
+  writingVoice?: WritingDraftStore
   aboutMe?: AboutMeHost
 }
 

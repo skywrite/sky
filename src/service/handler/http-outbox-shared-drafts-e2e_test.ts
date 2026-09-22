@@ -99,7 +99,7 @@ test(
     const item = await legacy.put(seed, null)
     const app = new Hono()
     app.get('/settings/_api/settings', (c) => c.json({ theme: 'system', textSize: 'default' }))
-    app.route('/settings/_api/writing-voice', createWritingVoiceRoutes(drafts.voice))
+    app.route('/settings/_api/writing-voice', createWritingVoiceRoutes(drafts))
     app.route(
       '/',
       createTestHttpApp([path.join(root, 'time'), path.join(root, 'me')], {
@@ -257,7 +257,7 @@ test(
           await draftFiles(),
           (await drafts.require(draftId)).versions.map((version) => [version.author, version.text]),
           currentDraftVersion(await drafts.require(draftId)).text,
-          (await drafts.voice.store.list()).length,
+          (await drafts.learning.edits()).length,
           nativeWrites,
         ],
         expected: [
@@ -290,7 +290,7 @@ test(
         actual: [
           (await store.get(item.id))?.draftId,
           (await store.get(item.id))?.draft,
-          (await drafts.voice.store.list()).length,
+          (await drafts.learning.edits()).length,
           nativeWrites,
         ],
         expected: [draftId, WARM_DRAFT, 1, 0],
@@ -309,7 +309,7 @@ test(
         actual: [
           (await drafts.require(draftId)).versions.length,
           (await store.get(item.id))?.draft,
-          (await drafts.voice.store.list()).length,
+          (await drafts.learning.edits()).length,
           nativeWrites,
         ],
         expected: [4, EDITED_DRAFT, 2, 0],

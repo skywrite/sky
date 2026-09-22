@@ -360,7 +360,7 @@ test(
     const host = writingDraftTestHost(root)
     const app = new Hono()
     app.get('/settings/_api/settings', (c) => c.json({ theme: 'system', textSize: 'default' }))
-    app.route('/settings/_api/writing-voice', createWritingVoiceRoutes(host.writingDrafts.voice))
+    app.route('/settings/_api/writing-voice', createWritingVoiceRoutes(host.writingDrafts))
     app.route('/', createTestHttpApp([path.join(root, 'time'), path.join(root, 'me')], { chat: host }))
     const server = serve({ fetch: app.fetch, hostname: '127.0.0.1', port: 0 })
     const address = server.address()

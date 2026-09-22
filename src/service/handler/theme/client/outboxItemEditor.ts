@@ -148,13 +148,11 @@ export function useOutboxItemEditor(options: OutboxEditorOptions) {
   const save = () =>
     act(async () => {
       if (!item || !edit) return
-      const result = await outboxRequest<OutboxRecord & { writingVoiceError?: string }>(
-        `/item/${encodeURIComponent(item.id)}`,
-        'PUT',
-        { revision: edit.revision, draft: edit.text },
-      )
+      const result = await outboxRequest<OutboxRecord>(`/item/${encodeURIComponent(item.id)}`, 'PUT', {
+        revision: edit.revision,
+        draft: edit.text,
+      })
       edits.remove(item.id)
-      if (result.writingVoiceError) setError(result.writingVoiceError)
       if (idRef.current === item.id) setEdit({ text: result.draft, revision: result.revision, saved: result.draft })
     })
   const approve = () =>
@@ -162,17 +160,12 @@ export function useOutboxItemEditor(options: OutboxEditorOptions) {
       if (!item || !edit) return
       setApproving(item.id)
       try {
-        const result = await outboxRequest<OutboxRecord & { writingVoiceError?: string }>(
-          `/item/${encodeURIComponent(item.id)}/approve`,
-          'POST',
-          {
-            revision: item.writingDraft || item.unsavedDraft ? item.revision : edit.revision,
-            draft: item.writingDraft || item.unsavedDraft ? item.draft : edit.text,
-            reviewedChanges,
-          },
-        )
+        const result = await outboxRequest<OutboxRecord>(`/item/${encodeURIComponent(item.id)}/approve`, 'POST', {
+          revision: item.writingDraft || item.unsavedDraft ? item.revision : edit.revision,
+          draft: item.writingDraft || item.unsavedDraft ? item.draft : edit.text,
+          reviewedChanges,
+        })
         edits.remove(item.id)
-        if (result.writingVoiceError) setError(result.writingVoiceError)
         if (idRef.current === item.id) setEdit({ text: result.draft, revision: result.revision, saved: result.draft })
       } finally {
         setApproving(null)

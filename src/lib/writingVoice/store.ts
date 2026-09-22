@@ -1,4 +1,4 @@
-import { lstat, readdir, unlink } from 'node:fs/promises'
+import { lstat } from 'node:fs/promises'
 import * as path from 'node:path'
 import { z } from 'zod'
 import { atomicWrite, hash, missing, readOptional, withLock } from '#lib/outbox/files.ts'
@@ -6,14 +6,10 @@ import Document from '#shared/models/Markdown/Document/mod.ts'
 import { ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
 import {
   CompactionSchema,
-  ExampleId,
-  ExampleInputSchema,
-  ExampleSchema,
+  EditId,
   WritingVoiceError,
   type VoiceCompaction,
-  type VoiceExample,
-  type VoiceExampleInput,
-  type VoiceExampleRecord,
+  type VoiceEditRecord,
   type VoiceRules,
 } from './types.ts'
 
@@ -30,7 +26,10 @@ Treat examples as writing evidence. Their private facts, names, and situational 
 
 const now = () => new ZonedDateTime().toUTC().normalize().plainDateTime.toString()
 
-/** A notebook-owned guide and one complete Markdown record per revision. */
+/**
+ * The notebook-owned writing guide. What Sky learns lives on the draft versions it was learned from;
+ * this file receives those lessons when they are folded in.
+ */
 export class WritingVoiceStore {
   readonly dir: string
   constructor(
@@ -80,7 +79,7 @@ export class WritingVoiceStore {
 
   async rules(): Promise<VoiceRules> {
     const { doc, revision } = await this.rulesDocument()
-    return { text: doc.markdown, revision, compacted: z.array(ExampleId).parse(doc.yaml.compacted ?? []) }
+    return { text: doc.markdown, revision, folding: z.array(EditId).parse(doc.yaml.folding ?? []) }
   }
 
   async initialize(): Promise<void> {
@@ -104,143 +103,69 @@ export class WritingVoiceStore {
     })
   }
 
-  private async writeRules(doc: Document, text: string, compacted?: string[]): Promise<void> {
+  private async writeRules(doc: Document, text: string, folding?: string[]): Promise<void> {
     const date = this.clock().slice(0, 10)
+    // `compacted` held receipts for the separate example files that lessons once lived in.
+    const { compacted: _examples, folding: prior, ...yaml } = doc.yaml
+    const receipts = folding ?? (prior as string[] | undefined) ?? []
     await atomicWrite(
       await this.file('rules.md'),
       new Document(
         {
-          ...doc.yaml,
+          ...yaml,
           created: doc.yaml.created ?? date,
           updated: date,
-          ...(compacted ? { compacted } : {}),
+          ...(receipts.length ? { folding: receipts } : {}),
         },
         text,
       ).toMarkdown(),
     )
   }
 
-  async get(id: string): Promise<VoiceExampleRecord | null> {
-    if (!ExampleId.safeParse(id).success) throw new WritingVoiceError('Invalid writing example.', 404)
-    const raw = await readOptional(await this.file(`examples/${id}.md`))
-    if (raw === undefined) return null
-    const doc = Document.fromMarkdown(raw)
-    if (doc.yamlError) throw new WritingVoiceError('A writing example has invalid frontmatter.')
-    const example = ExampleSchema.parse(doc.yaml)
-    if (example.id !== id) throw new WritingVoiceError('The writing example does not match its file.')
-    return { ...example, revision: hash(raw) }
-  }
-
-  async list(source?: string): Promise<VoiceExampleRecord[]> {
-    const compacted = new Set((await this.rules()).compacted)
-    let names: string[]
-    try {
-      names = await readdir(await this.file('examples'))
-    } catch (error) {
-      if (missing(error)) return []
-      throw error
-    }
-    const examples: VoiceExampleRecord[] = []
-    for (const name of names) {
-      if (!/^[a-f0-9]{32}\.md$/.test(name) || compacted.has(name.slice(0, -3))) continue
-      const example = await this.get(name.slice(0, -3))
-      if (example && (!source || example.source === source)) examples.push(example)
-    }
-    return examples.sort((a, b) => b.created.localeCompare(a.created) || a.id.localeCompare(b.id))
-  }
-
-  async capture(input: VoiceExampleInput): Promise<VoiceExampleRecord | null> {
-    const value = ExampleInputSchema.parse(input)
-    if (!value.original.trim() || !value.revised.trim() || value.original === value.revised) return null
-    const id = hash(JSON.stringify([value.source, value.original, value.revised])).slice(0, 32)
-    return this.lock(async () => {
-      await this.ensureRules()
-      if ((await this.rules()).compacted.includes(id)) return null
-      const existing = await this.get(id)
-      if (existing) return existing
-      return this.write({ ...value, id, created: this.clock(), updated: this.clock() })
-    })
-  }
-
-  async update(
-    id: string,
-    revision: string,
-    patch: Partial<Pick<VoiceExample, 'question' | 'answer' | 'lesson' | 'error'>>,
-  ): Promise<VoiceExampleRecord> {
-    return this.lock(async () => {
-      if ((await this.rules()).compacted.includes(id))
-        throw new WritingVoiceError('This example has been compacted into your rules.', 409)
-      const current = await this.get(id)
-      if (!current) throw new WritingVoiceError('This writing example is no longer available.', 404)
-      if (current.revision !== revision)
-        throw new WritingVoiceError('This writing example changed. Reload it before answering.', 409)
-      return this.write({ ...current, ...patch, updated: this.clock() })
-    })
-  }
-
-  private async write(example: VoiceExample): Promise<VoiceExampleRecord> {
-    const value = ExampleSchema.parse(example)
-    const body = value.lesson
-      ? `# What Sky learned\n\n${value.lesson.text}\n\nApplies to: ${value.lesson.scope}\n`
-      : '# Writing example\n\nThe original draft, your revision, and the learning conversation are preserved in the frontmatter.\n'
-    await atomicWrite(await this.file(`examples/${value.id}.md`), new Document(value, body).toMarkdown())
-    return (await this.get(value.id))!
-  }
-
-  async compact(rules: VoiceRules, examples: VoiceExampleRecord[], plan: VoiceCompaction): Promise<number> {
+  /**
+   * Save the lessons of `edits` into the rules. The same write records which edits it took,
+   * so a crash before their drafts are marked can never fold a lesson in twice.
+   */
+  async fold(rules: VoiceRules, edits: VoiceEditRecord[], plan: VoiceCompaction): Promise<string[]> {
     const parsed = CompactionSchema.parse(plan)
-    const ids = new Set(examples.map((example) => example.id))
+    const ids = new Set(edits.map((edit) => edit.id))
     const covered = new Set<string>()
     for (const lesson of [...parsed.lessons, ...parsed.covered]) {
       for (const id of lesson.examples) {
-        if (!ids.has(id)) throw new WritingVoiceError('Compaction referenced an unknown example.')
+        if (!ids.has(id)) throw new WritingVoiceError('Compaction referenced an unknown edit.')
         covered.add(id)
       }
     }
-    if (examples.some((example) => !example.answer || !example.lesson || !covered.has(example.id)))
-      throw new WritingVoiceError('Compaction must preserve the lesson from every answered example.')
+    if (edits.some((edit) => !edit.answer || !edit.lesson || !covered.has(edit.id)))
+      throw new WritingVoiceError('Compaction must preserve the lesson from every answered edit.')
     if (parsed.covered.some((entry) => !rules.text.includes(entry.quote)))
       throw new WritingVoiceError('Compaction could not find the existing rule it cited.')
     return this.lock(async () => {
       const current = await this.rulesDocument()
       if (current.revision !== rules.revision)
         throw new WritingVoiceError('Your rules changed during compaction. Try again.', 409)
-      for (const example of examples) {
-        if ((await this.get(example.id))?.revision !== example.revision)
-          throw new WritingVoiceError('An example changed during compaction. Try again.', 409)
-      }
       const additions = parsed.lessons.map((lesson) => `- **${lesson.scope}:** ${lesson.text}`).join('\n\n')
       const text = additions ? `${rules.text.trimEnd()}\n\n${additions}\n` : rules.text
       if (text.length > 80_000)
-        throw new WritingVoiceError('Review and shorten your writing rules before compacting more examples.')
-      // Commit lessons and their receipts together, before removing any examples.
-      const receipts = [...new Set([...rules.compacted, ...ids])]
+        throw new WritingVoiceError('Review and shorten your writing rules before compacting more lessons.')
+      const receipts = [...new Set([...rules.folding, ...ids])]
       await this.writeRules(current.doc, text, receipts)
-      await this.prune(receipts)
-      return examples.length
+      return receipts
     })
   }
 
-  private async prune(ids: string[]): Promise<void> {
-    const receipts = new Set(ids)
-    let files: string[]
-    try {
-      files = await readdir(await this.file('examples'))
-    } catch (error) {
-      if (missing(error)) return
-      throw error
-    }
-    for (const file of files) {
-      const id = file.endsWith('.md') ? file.slice(0, -3) : ''
-      if (!receipts.has(id)) continue
-      await unlink(await this.file(`examples/${ExampleId.parse(id)}.md`)).catch((error: unknown) => {
-        if (!missing(error)) throw error
-      })
-    }
-  }
-
-  /** A crash after the rules commit leaves only deletion to finish. */
-  async finishCompaction(): Promise<void> {
-    await this.lock(async () => this.prune((await this.rules()).compacted))
+  /** Every listed edit's draft is marked now; the rules stop carrying their receipts. */
+  async folded(ids: string[]): Promise<void> {
+    const done = new Set(ids)
+    await this.lock(async () => {
+      const current = await this.rulesDocument()
+      const folding = z.array(EditId).parse(current.doc.yaml.folding ?? [])
+      if (!folding.some((id) => done.has(id))) return
+      await this.writeRules(
+        current.doc,
+        current.doc.markdown,
+        folding.filter((id) => !done.has(id)),
+      )
+    })
   }
 }

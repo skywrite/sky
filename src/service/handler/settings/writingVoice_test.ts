@@ -1,4 +1,5 @@
 import { Hono } from 'hono'
+import { parseEditId } from '#lib/writingVoice/draftEdits.ts'
 import { SAMPLE, voiceFixture } from '#lib/writingVoice/testHelpers.ts'
 import { assert, test } from '#test'
 import { createWritingVoiceRoutes } from './writingVoice.ts'
@@ -6,35 +7,48 @@ import { createWritingVoiceRoutes } from './writingVoice.ts'
 test('Writing voice HTTP saves the pair, offers two choices, and preserves a custom answer', async () => {
   const f = await voiceFixture()
   try {
-    const app = new Hono().route('/voice', createWritingVoiceRoutes(f.voice))
-    const created = await app.request('/voice/examples', {
+    const app = new Hono().route('/voice', createWritingVoiceRoutes(f.drafts))
+    const created = await app.request('/voice/edits', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(SAMPLE),
     })
-    const { example } = await created.json()
-    const answered = await app.request(`/voice/examples/${example.id}/answer`, {
+    const { edit: example } = await created.json()
+    const answered = await app.request(`/voice/edits/${encodeURIComponent(example.id)}/answer`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ revision: example.revision, text: 'Only for short status emails.' }),
     })
-    const { example: learned } = await answered.json()
+    const { edit: learned } = await answered.json()
     const status = await app.request('/voice')
+    const draft = await f.drafts.require(parseEditId(example.id).draftId)
     assert({
       given: 'a revision submitted through Settings and a custom reason',
-      should: 'persist a single example and confirmed scoped learning',
+      should: 'persist one draft holding the pair and the confirmed scoped learning',
       actual: [
         created.status,
         answered.status,
         status.status,
         example.question.options.length,
-        learned.source,
+        draft.source,
+        draft.versions.map((version) => version.text),
         learned.answer,
         learned.lesson.scope,
+        ((await status.json()) as { edits: unknown[] }).edits.length,
       ],
-      expected: [200, 200, 200, 2, 'settings', 'Only for short status emails.', 'Email'],
+      expected: [
+        200,
+        200,
+        200,
+        2,
+        'settings',
+        [SAMPLE.original, SAMPLE.revised],
+        'Only for short status emails.',
+        'Email',
+        1,
+      ],
     })
-    const stale = await app.request(`/voice/examples/${example.id}/answer`, {
+    const stale = await app.request(`/voice/edits/${encodeURIComponent(example.id)}/answer`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ revision: example.revision, option: 0 }),
@@ -53,14 +67,14 @@ test('Writing voice HTTP saves the pair, offers two choices, and preserves a cus
 test('Writing voice HTTP rejects cross-origin writes and ambiguous answers', async () => {
   const f = await voiceFixture()
   try {
-    const app = createWritingVoiceRoutes(f.voice)
-    const rejected = await app.request('http://localhost/examples', {
+    const app = createWritingVoiceRoutes(f.drafts)
+    const rejected = await app.request('http://localhost/edits', {
       method: 'POST',
       headers: { Origin: 'https://example.com', 'Content-Type': 'application/json' },
       body: JSON.stringify(SAMPLE),
     })
-    const example = (await f.voice.capture(SAMPLE))!
-    const ambiguous = await app.request(`/examples/${example.id}/answer`, {
+    const example = await f.edited()
+    const ambiguous = await app.request(`/edits/${encodeURIComponent(example.id)}/answer`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ revision: example.revision, option: 0, text: 'A different reason.' }),
@@ -68,8 +82,8 @@ test('Writing voice HTTP rejects cross-origin writes and ambiguous answers', asy
     assert({
       given: 'a foreign origin and an answer containing both modes',
       should: 'write neither request',
-      actual: [rejected.status, ambiguous.status, (await f.store.get(example.id))?.answer],
-      expected: [403, 400, undefined],
+      actual: [rejected.status, ambiguous.status, (await f.learning.get(example.id)).answer, await f.drafts.ids()],
+      expected: [403, 400, undefined, [parseEditId(example.id).draftId]],
     })
   } finally {
     await f.dispose()

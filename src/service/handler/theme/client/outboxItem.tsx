@@ -16,7 +16,6 @@ import {
 } from './outboxPresentation.ts'
 import { outboxHref } from './outboxRoutes.ts'
 import { askedAt, askedLabel, waitingLabel } from './outboxTime.ts'
-import { WritingVoiceQuestions } from './writingVoice.tsx'
 
 /**
  * One item's page: the facts, the heading, one banner for what has
@@ -105,14 +104,11 @@ export function OutboxItemPage({
   editor,
   today,
   open,
-  railShown,
 }: {
   editor: OutboxEditor
   today: string
   /** Opens a related item's page. */
   open: (id: string) => void
-  /** Whether the rail is beside the page; folded, its voice questions move into the column. */
-  railShown: boolean
 }) {
   const { item, edit } = editor
   const feedback = useRef<HTMLDivElement>(null)
@@ -269,7 +265,6 @@ export function OutboxItemPage({
         </section>
       )}
       <p className="sky-outbox-meta sky-outbox-hint">{hint}</p>
-      {!railShown && <WritingVoiceQuestions key={item.id} source={`outbox:${item.id}`} refreshKey={item.revision} />}
       {Boolean(item.followups?.length) && !editor.placing && (
         <section className="sky-outbox-followups" aria-label="Follow-up messages">
           <h3>Following through</h3>

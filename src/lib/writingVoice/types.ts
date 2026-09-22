@@ -1,7 +1,8 @@
 import { z } from 'zod'
 
 export const MAX_WRITING_CHARS = 40_000
-export const ExampleId = z.string().regex(/^[a-f0-9]{32}$/)
+/** One edit of one draft: `<draft id>:<version>`. Everything Sky learns belongs to a draft's version. */
+export const EditId = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_-]{0,159}:[1-9][0-9]{0,3}$/)
 const Text = z.string().trim().min(1)
 
 export const QuestionSchema = z.object({
@@ -16,7 +17,8 @@ export const LessonSchema = z.object({
   text: Text.max(1600),
 })
 
-export const ExampleInputSchema = z.object({
+/** Words and the owner's change to them, from a place that kept no draft: the settings page, a terminal chat. */
+export const EditInputSchema = z.object({
   source: Text.max(500),
   medium: Text.max(80),
   recipient: z.string().max(300).default(''),
@@ -26,8 +28,12 @@ export const ExampleInputSchema = z.object({
   revised: z.string().min(1).max(MAX_WRITING_CHARS),
 })
 
-export const ExampleSchema = ExampleInputSchema.extend({
-  id: ExampleId,
+/**
+ * One edit as the learning steps and the pages see it: the version before, the owner's version,
+ * and the conversation about why. It is read from a draft's versions, never stored on its own.
+ */
+export const EditSchema = EditInputSchema.extend({
+  id: EditId,
   created: Text,
   updated: Text,
   question: QuestionSchema.optional(),
@@ -45,20 +51,22 @@ export const DraftInputSchema = z.object({
 })
 
 export const CompactionSchema = z.object({
-  lessons: z.array(LessonSchema.extend({ examples: z.array(ExampleId).min(1) })).max(24),
-  covered: z.array(z.object({ examples: z.array(ExampleId).min(1), quote: Text.max(2000) })).max(24),
+  lessons: z.array(LessonSchema.extend({ examples: z.array(EditId).min(1) })).max(24),
+  covered: z.array(z.object({ examples: z.array(EditId).min(1), quote: Text.max(2000) })).max(24),
 })
 
 export type VoiceQuestion = z.infer<typeof QuestionSchema>
 export type VoiceLesson = z.infer<typeof LessonSchema>
-export type VoiceExampleInput = z.input<typeof ExampleInputSchema>
-export type VoiceExample = z.infer<typeof ExampleSchema>
-export type VoiceExampleRecord = VoiceExample & { revision: string }
+export type VoiceEditInput = z.input<typeof EditInputSchema>
+export type VoiceEdit = z.infer<typeof EditSchema>
+/** `revision` names the edit's learning state, so an answer to a question that has since changed is refused. */
+export type VoiceEditRecord = VoiceEdit & { revision: string }
 export type VoiceDraftInput = z.input<typeof DraftInputSchema>
 export type VoiceDraft = { draft: string; rulesRevision: string }
 export type VoiceWriter = (input: VoiceDraftInput) => Promise<VoiceDraft>
 export type VoiceCompaction = z.infer<typeof CompactionSchema>
-export type VoiceRules = { text: string; revision: string; compacted: string[] }
+/** `folding`: edits whose lessons the rules now hold, until their drafts are marked. */
+export type VoiceRules = { text: string; revision: string; folding: string[] }
 
 export class WritingVoiceError extends Error {
   constructor(

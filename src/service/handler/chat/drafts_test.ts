@@ -55,7 +55,7 @@ test('chat draft edits, thread revisions and accepted explanations share durable
       ],
       expected: [true, [], undefined, [`${first.id}.md`], [first.id]],
     })
-    const example = (await host.writingDrafts.voice.store.list(`draft:${first.id}`))[0]!
+    const example = (await host.writingDrafts.learning.edits(`draft:${first.id}`))[0]!
     const stale = await post(app, `/main/drafts/${first.id}`, {
       action: 'edit',
       revision: shown.revision,
@@ -89,14 +89,14 @@ test('chat draft edits, thread revisions and accepted explanations share durable
         proposed.id,
         currentDraftVersion(proposed).text,
         (await read(app, '/main')).turns,
-        (await host.writingDrafts.voice.store.list()).length,
+        (await host.writingDrafts.learning.edits()).length,
         briefs.at(-1)?.includes(EDITED_DRAFT.replaceAll('\n', '\\n')),
       ],
       expected: [first.id, WARM_DRAFT, originalChat.turns, 1, true],
     })
     await post(app, `/${child}/drafts/${first.id}`, { action: 'accept', revision: proposed.revision })
     await host.writingDrafts.idle()
-    const lessons = await host.writingDrafts.voice.store.list(`draft:${first.id}`)
+    const lessons = await host.writingDrafts.learning.edits(`draft:${first.id}`)
     assert({
       given: 'the owner accepts the AI revision in its frame',
       should: 'learn using their actual editing direction',
@@ -127,7 +127,7 @@ test('chat draft edits, thread revisions and accepted explanations share durable
       actual: [
         reply.id,
         restoredDraft.versions.map((version) => version.text),
-        (await host.writingDrafts.voice.store.list()).length,
+        (await host.writingDrafts.learning.edits()).length,
       ],
       expected: [first.id, [ORIGINAL_DRAFT, EDITED_DRAFT, WARM_DRAFT, ORIGINAL_DRAFT], 2],
     })
@@ -271,7 +271,7 @@ test('a revision typed in the main chat is a first use: one record holds both ve
         (await draftFiles(root)).length,
         drafts.map((draft) => [draft.unsaved, draft.turn, draft.versions.map((version) => version.text)]),
         drafts[0]!.versions[1]!.direction,
-        (await host.writingDrafts.voice.store.list()).length,
+        (await host.writingDrafts.learning.edits()).length,
       ],
       expected: [[], 1, [[undefined, 1, [ORIGINAL_DRAFT, WARM_DRAFT]]], 'Make this warmer.', 0],
     })

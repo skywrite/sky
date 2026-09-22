@@ -1,9 +1,12 @@
-import { mkdir, readFile, readdir, symlink, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, symlink, writeFile } from 'node:fs/promises'
 import * as path from 'node:path'
 import Document from '#shared/models/Markdown/Document/mod.ts'
 import { assert, test } from '#test'
+import { WritingVoice } from './agent.ts'
+import { parseEditId } from './draftEdits.ts'
+import { WritingDraftStore } from './drafts.ts'
 import { WritingVoiceStore } from './store.ts'
-import { failure, SAMPLE, voiceFixture } from './testHelpers.ts'
+import { failure, intelligence, SAMPLE, voiceFixture } from './testHelpers.ts'
 
 test('Writing voice seeds the shared rules from existing Outbox preferences and preserves hand edits', async () => {
   const f = await voiceFixture()
@@ -31,7 +34,7 @@ test('Writing voice seeds the shared rules from existing Outbox preferences and 
   }
 })
 
-test('Writing examples preserve exact characters, survive reload, and deduplicate retries', async () => {
+test('An edit with no draft becomes one that keeps exact characters, survives reload, and is saved once', async () => {
   const f = await voiceFixture()
   try {
     const input = {
@@ -39,53 +42,37 @@ test('Writing examples preserve exact characters, survive reload, and deduplicat
       original: '## Draft\n\n“Ready”—yes…\n---\n  keep spaces  ',
       revised: '## Revision\n\n"Ready" - yes.\n  keep spaces  ',
     }
-    const first = (await f.store.capture(input))!
-    const again = (await f.store.capture(input))!
-    const reopened = new WritingVoiceStore(f.root, f.store.stateDir)
-    const saved = (await reopened.get(first.id))!
+    const first = (await f.learning.capture(input))!.draft
+    const again = (await f.learning.capture(input))!.draft
+    const reopened = new WritingDraftStore(
+      new WritingVoice(new WritingVoiceStore(f.root, f.store.stateDir), intelligence),
+    )
+    const saved = await reopened.require(first.id)
     assert({
       given: 'headings, punctuation, whitespace, and a repeated capture',
-      should: 'preserve the exact pair once in its own file',
-      actual: [saved.original, saved.revised, again.id, (await f.store.list()).length],
-      expected: [input.original, input.revised, first.id, 1],
+      should: 'preserve the exact pair once, as two versions of one draft',
+      actual: [
+        saved.versions.map((version) => [version.author, version.text]),
+        saved.source,
+        again.id,
+        await f.drafts.ids(),
+        (await f.learning.edits()).length,
+      ],
+      expected: [
+        [
+          ['sky', input.original],
+          ['you', input.revised],
+        ],
+        SAMPLE.source,
+        first.id,
+        [first.id],
+        1,
+      ],
     })
     assert({
       given: 'unchanged text',
-      should: 'create no learning example',
-      actual: await f.store.capture({ ...SAMPLE, revised: SAMPLE.original }),
-      expected: null,
-    })
-  } finally {
-    await f.dispose()
-  }
-})
-
-test('Compaction preserves existing rules and all confirmed lessons before deleting processed examples', async () => {
-  const f = await voiceFixture()
-  try {
-    const captured = (await f.voice.capture(SAMPLE))!
-    const learned = await f.voice.answer(captured.id, captured.revision, { option: 0 })
-    await f.voice.idle()
-    const unanswered = (await f.store.capture({ ...SAMPLE, source: 'outbox:other' }))!
-    const before = await f.store.rules()
-    const result = await f.voice.compact()
-    const rules = await f.store.rules()
-    const resumed = new WritingVoiceStore(f.root, f.store.stateDir)
-    assert({
-      given: 'one learned example and one unanswered question',
-      should: 'retain existing rules, add the lesson, and keep unanswered evidence',
-      actual: [
-        result.compacted,
-        rules.text.startsWith(before.text.trimEnd()),
-        rules.text.includes(learned.lesson!.text),
-        (await resumed.list()).map((entry) => entry.id),
-      ],
-      expected: [1, true, true, [unanswered.id]],
-    })
-    assert({
-      given: 'a retry after compaction',
-      should: 'keep the example compacted without recreating its raw text',
-      actual: [await resumed.capture(SAMPLE), (await readdir(path.join(f.store.dir, 'examples'))).length],
+      should: 'save nothing to learn from',
+      actual: [await f.learning.capture({ ...SAMPLE, revised: SAMPLE.original }), (await f.drafts.ids()).length],
       expected: [null, 1],
     })
   } finally {
@@ -93,60 +80,115 @@ test('Compaction preserves existing rules and all confirmed lessons before delet
   }
 })
 
-test('Compaction refuses invented coverage and concurrent rule changes without losing examples', async () => {
+test('Folding lessons in preserves existing rules and every confirmed lesson, and the drafts keep their history', async () => {
   const f = await voiceFixture()
   try {
-    const example = (await f.voice.capture(SAMPLE))!
-    const learned = await f.voice.answer(example.id, example.revision, { text: 'Use a direct opening in emails.' })
+    const asked = await f.edited()
+    const learned = await f.learning.answer(asked.id, asked.revision, { option: 0 })
     await f.voice.idle()
+    const unanswered = await f.edited({ ...SAMPLE, source: 'outbox:other' })
+    const before = await f.store.rules()
+    const result = await f.voice.compact()
     const rules = await f.store.rules()
-    const invalid = await failure(
-      f.store.compact(rules, [learned], {
-        lessons: [],
-        covered: [{ examples: [example.id], quote: 'An invented rule.' }],
-      }),
+    const resumed = new WritingDraftStore(
+      new WritingVoice(new WritingVoiceStore(f.root, f.store.stateDir), intelligence),
     )
-    await f.store.saveRules(`${rules.text}\nKeep my manual rule.\n`, rules.revision)
-    const stale = await failure(
-      f.store.compact(rules, [learned], { covered: [], lessons: [{ ...learned.lesson!, examples: [example.id] }] }),
-    )
+    const kept = (await resumed.require(parseEditId(learned.id).draftId)).versions[1]!
     assert({
-      given: 'fabricated coverage and an editor racing compaction',
-      should: 'refuse both plans and preserve the pair and manual rule',
+      given: 'one learned edit and one unanswered question',
+      should: 'retain existing rules, add the lesson, keep the unanswered edit open, and leave no receipt behind',
       actual: [
-        invalid.includes('cited'),
-        stale.includes('changed'),
-        Boolean(await f.store.get(example.id)),
-        (await f.store.rules()).text.includes('Keep my manual rule.'),
+        result.compacted,
+        rules.text.startsWith(before.text.trimEnd()),
+        rules.text.includes(learned.lesson!.text),
+        rules.folding,
+        (await resumed.learning.edits()).map((entry) => entry.id),
+        [kept.folded, kept.lesson, kept.answer],
       ],
-      expected: [true, true, true, true],
+      expected: [1, true, true, [], [unanswered.id], [true, learned.lesson, learned.answer]],
+    })
+    const file = await readFile(path.join(f.store.dir, 'drafts', `${parseEditId(learned.id).draftId}.md`), 'utf8')
+    assert({
+      given: 'the folded draft opened as a file',
+      should: 'show the owner what Sky learned from that version and that the rules now hold it',
+      actual: [
+        file.includes(`What Sky learned: ${learned.lesson!.text}`),
+        file.includes('Now part of your writing rules.'),
+      ],
+      expected: [true, true],
+    })
+    assert({
+      given: 'the same change saved again after its lesson was folded in',
+      should: 'return the draft it already has instead of teaching the lesson twice',
+      actual: [(await resumed.learning.capture(SAMPLE))?.draft.id, (await resumed.ids()).length],
+      expected: [parseEditId(learned.id).draftId, 2],
     })
   } finally {
     await f.dispose()
   }
 })
 
-test('Compaction recovery finishes deletion only for durably recorded receipts', async () => {
+test('Folding refuses invented coverage and concurrent rule changes without losing the lesson', async () => {
   const f = await voiceFixture()
   try {
-    const example = (await f.store.capture(SAMPLE))!
-    const other = (await f.store.capture({ ...SAMPLE, source: 'chat:other' }))!
+    const asked = await f.edited()
+    const learned = await f.learning.answer(asked.id, asked.revision, { text: 'Use a direct opening in emails.' })
+    await f.voice.idle()
+    const rules = await f.store.rules()
+    const invalid = await failure(
+      f.store.fold(rules, [learned], {
+        lessons: [],
+        covered: [{ examples: [learned.id], quote: 'An invented rule.' }],
+      }),
+    )
+    await f.store.saveRules(`${rules.text}\nKeep my manual rule.\n`, rules.revision)
+    const stale = await failure(
+      f.store.fold(rules, [learned], { covered: [], lessons: [{ ...learned.lesson!, examples: [learned.id] }] }),
+    )
+    assert({
+      given: 'fabricated coverage and an editor racing the fold-in',
+      should: 'refuse both plans and preserve the lesson and the manual rule',
+      actual: [
+        invalid.includes('cited'),
+        stale.includes('changed'),
+        (await f.learning.get(learned.id)).lesson,
+        (await f.store.rules()).text.includes('Keep my manual rule.'),
+      ],
+      expected: [true, true, learned.lesson, true],
+    })
+  } finally {
+    await f.dispose()
+  }
+})
+
+test('An interrupted fold-in finishes only for lessons the rules durably recorded', async () => {
+  const f = await voiceFixture()
+  try {
+    const first = await f.edited(SAMPLE, 'State the point directly.')
+    const other = await f.edited({ ...SAMPLE, source: 'chat:other' }, 'State the point directly.')
     const file = path.join(f.store.dir, 'rules.md')
     const doc = Document.fromMarkdown(await readFile(file, 'utf8'))
     await writeFile(
       file,
-      new Document({ ...doc.yaml, compacted: [example.id] }, `${doc.markdown}\nPreserved lesson.\n`).toMarkdown(),
+      new Document({ ...doc.yaml, folding: [first.id] }, `${doc.markdown}\nPreserved lesson.\n`).toMarkdown(),
     )
-    await f.store.finishCompaction()
+    const inputs: Parameters<typeof intelligence.draft>[0][] = []
+    f.voice.intelligence.draft = async (input) => {
+      inputs.push(input)
+      return input.meaning
+    }
+    await f.voice.draft({ meaning: 'The draft is ready.', medium: 'Email' })
+    await f.voice.compact(false)
     assert({
-      given: 'a crash after saving rules and before pruning',
-      should: 'finish the committed deletion while retaining unrelated examples',
+      given: 'a crash after the rules took a lesson and before its draft was marked',
+      should: 'never read that lesson twice, then mark its draft, drop the receipt, and leave the other edit open',
       actual: [
-        await f.store.get(example.id),
-        Boolean(await f.store.get(other.id)),
+        inputs[0]!.lessons.length,
+        (await f.learning.edits()).map((edit) => edit.id),
+        (await f.store.rules()).folding,
         (await f.store.rules()).text.includes('Preserved lesson.'),
       ],
-      expected: [null, true, true],
+      expected: [1, [other.id], [], true],
     })
   } finally {
     await f.dispose()
@@ -162,7 +204,7 @@ test('Writing voice refuses traversals and symbolic links', async () => {
       given: 'a traversal ID and a redirected voice directory',
       should: 'refuse access outside the canonical files',
       actual: [
-        (await failure(f.store.get('../rules'))).includes('Invalid'),
+        (await failure(f.learning.get('../rules:1'))).includes('Invalid'),
         (await failure(f.store.rules())).includes('symbolic'),
       ],
       expected: [true, true],

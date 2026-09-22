@@ -45,7 +45,7 @@ test('a slow AI revision cannot overwrite an owner edit and compaction preserves
       actual: [
         result.includes('draft changed'),
         currentDraftVersion(await store.require(initial.id)).text,
-        (await f.store.list())[0]?.answer,
+        (await store.learning.edits())[0]?.answer,
       ],
       expected: [true, 'The proposal is ready for Friday.', 'Include the agreed day.'],
     })
@@ -104,9 +104,9 @@ test('an explanation saved with an edit survives a failed learning model and ret
     await store.revise(draft.id, 1, 'Please review the draft.', 'you', 'Say what I need the recipient to do.')
     store.learn(draft.id)
     await store.idle()
-    const example = (await f.store.list(`draft:${draft.id}`))[0]!
+    const example = (await store.learning.edits(`draft:${draft.id}`))[0]!
     fail = false
-    const learned = await f.voice.prepare(example.id)
+    const learned = await store.learning.prepare(example.id)
     assert({
       given: 'the learning model fails after a direct edit is saved',
       should: 'retain the revision and exact explanation, then finish learning without repeating the question',
@@ -286,7 +286,7 @@ test('an edit the owner supplies in chat saves the unsaved draft it changes and 
         links,
         learned.draftRevision,
         saved.versions.map((v) => [v.author, v.text]),
-        (await f.store.list(`draft:${learned.draftId}`)).map((example) => [example.original, example.revised]),
+        (await store.learning.edits(`draft:${learned.draftId}`)).map((edit) => [edit.original, edit.revised]),
       ],
       expected: [
         [{ id: learned.draftId, turn: 2 }],

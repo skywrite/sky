@@ -9,7 +9,7 @@ import { setConfigValue } from '#shared/config/write.ts'
 import { assert, test } from '#test'
 import { createVoiceIntelligence } from './intelligence.ts'
 import { createWritingVoiceModel } from './model.ts'
-import { ExampleSchema } from './types.ts'
+import { EditSchema } from './types.ts'
 
 const baseAI: SkyConfig['ai'] = {
   models: { strong: 'mock/strong', fast: 'mock/fast', transcription: 'mock/transcription' },
@@ -46,12 +46,12 @@ test('An existing writing agent uses the current model selection and definition 
       'my-writer': { provider: 'ollama', model: 'synthetic-writer-one', options: { temperature: 0.2 } },
     },
   }
-  const example = ExampleSchema.parse({
+  const example = EditSchema.parse({
     source: 'settings',
     medium: 'Email',
     original: 'It is ready.',
     revised: 'Ready.',
-    id: 'a'.repeat(32),
+    id: 'Sample-Draft:2',
     created: '2025-03-15',
     updated: '2025-03-15',
   })

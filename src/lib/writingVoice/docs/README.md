@@ -27,11 +27,15 @@ a selected custom configuration without choosing another one first.
 ```
 me/voice/
   rules.md
-  examples/<id>.md
   drafts/<id>.md
 ```
 
-The rules body is the editable guide. The first draft or example initializes it
+Drafts are the only thing Sky learns from. A draft holds the owner's words, every
+version, and what Sky learned from each change. The rules receive those lessons
+when they are folded in. See
+[Sky learns from drafts alone](2026-09-20-sky-learns-from-drafts-alone.md).
+
+The rules body is the editable guide. The first draft initializes it
 from existing Outbox preferences, or the default guide. Preference seeding and
 linked draft checks support the [Outbox storage migration](../../outbox/docs/README.md#files-and-concurrency).
 Production Outbox preference reads and writes use this same file. Reads do not cache its contents;
@@ -97,59 +101,70 @@ An explicit explanation goes straight to learning without generating a redundant
 question. Otherwise the existing optional learning question applies. AI revisions
 remain proposals until the owner accepts them, using the actual conversation
 direction as evidence. Restoring a version appends a new version without creating
-a writing preference. Draft history retains the edits and reasons after example
-compaction, and draft records survive closing or discarding their conversation.
+a writing preference. Draft history retains the edits, reasons and lessons after
+they are folded into the rules, and draft records survive closing or discarding
+their conversation.
 
 The browser keeps unsaved editor text independently of polling and restores it
 after navigation. A newer saved version requires an explicit choice before that
 edit can replace it. Read-only draft text uses `RenderedHtml` to preserve selection.
 
-Each example is one Markdown document with YAML frontmatter holding the source,
-medium, recipient, context, owner direction, exact original and revised text,
-creation/update times in UTC, one question, exactly two suggested answers, the
-owner's actual answer, and a scoped lesson. Its body displays the lesson. Its ID
-is a digest of source plus the exact pair, so repeated saves reuse the example.
-Names and other source data belong only in the personal notebook; repository
-fixtures must stay synthetic.
+An edit is one version the owner wrote or accepted, read with the version it
+replaced (`learnFrom`). That version keeps the whole learning conversation: one
+question, exactly two suggested answers, the owner's actual answer, and a scoped
+lesson. The draft's readable history shows the reason and the lesson under their
+version. `draftEdits.ts` reads an edit from a draft; nothing stores one separately.
+Its ID is `<draft id>:<version>`. Names and other source data belong only in the
+personal notebook; repository fixtures must stay synthetic.
 
-Chat captures an owner-supplied edit or an explicitly accepted revision. Outbox
-captures saved edits and accepted revisions, preserving the owner's direction.
-An untouched draft creates no example. Outbox stores the pair before starting
-question generation; model work does not hold up native draft placement. Pending
-Outbox questions resume after a service restart; failed work waits for Retry.
+Chat learns from an owner-supplied edit or an explicitly accepted revision. Outbox
+learns from saved edits and accepted revisions, preserving the owner's direction.
+Sky's own wording is never evidence: a version only Sky wrote teaches nothing, and
+an untouched draft has no record at all. An edit from a place that kept no draft,
+the Settings page or a terminal chat, becomes a draft at that moment; saving the
+same change from the same place again returns that draft. The words are saved
+before any question is generated; model work does not hold up native draft
+placement. Pending questions resume the next time the draft is read; failed work
+waits for Retry.
 
 The question names exact excerpts from the two versions. Its choices are
 hypotheses. The user chooses one or writes their own answer; no choice is accepted
 by default. The exact answer is saved before extracting a lesson, so a failed
 model call can resume without asking again. Drafting uses only answered, learned
-examples. Scope and the owner's explanation travel with each lesson; a one-off
+edits whose lessons the rules do not hold yet. Scope and the owner's explanation travel with each lesson; a one-off
 content correction cannot silently become a universal writing rule.
 
 Model-facing answer choices use a homogeneous array constrained to exactly two
 strings. A tuple emits positional JSON Schema items that Anthropic's structured
 output API rejects before generation. Keep the array shape compatible at the
-provider boundary and retain the exact count in local validation; saved examples
+provider boundary and retain the exact count in local validation; saved questions
 remain ordinary two-element arrays.
 
 ## Compaction and concurrency
 
-After eight confirmed lessons, a background pass considers up to twelve examples.
-Settings and the tool also offer explicit compaction. The model merges lessons
+After eight confirmed lessons, a background pass considers up to twelve edits.
+Settings and the tool also offer it explicitly. The model merges lessons
 from the batch into scoped additions, or cites exact existing rules that already
-cover them. Every processed example must be accounted for. Existing rules remain
+cover them. Every processed edit must be accounted for. Existing rules remain
 intact; only supported additions are appended. The owner can edit and consolidate
-the full guide in Settings. Unanswered or failed examples remain available.
+the full guide in Settings. Unanswered or failed edits remain open.
 
-Rules and example content revisions are checked after model work under a short
-writer lock. A concurrent edit refuses the obsolete plan. One atomic rules write
-commits both additions and compacted example IDs before deleting any raw examples.
-Those small receipts prevent retries from recreating old samples, and let recovery
-finish deletion after a crash. They are omitted from drafting context. Compaction
-cleans up learning copies; source chats and Outbox approval records retain their
-own history. A second process uses the same per-notebook machine-state locks.
+The writer must not open every draft the owner has kept. One empty file per draft
+under the machine state's `drafts/learning/` marks the drafts that still hold an
+open edit; every draft write keeps its own mark current, and a missing folder is
+rebuilt from the drafts. A mark whose draft the owner deleted is dropped when read.
 
-Settings → Writing Voice edits rules, exercises the writer, shows examples and
-their answers, and offers compaction. Chat and Outbox share the same question
+The rules revision and each edit's learning state are checked after model work. A
+concurrent edit refuses the obsolete plan. One atomic rules write commits both the
+additions and a `folding` receipt naming the edits it took. Their versions are then
+marked `folded`, and the receipt is dropped. A crash in between leaves the receipt:
+the writer skips those lessons, and the next pass finishes marking. Learning state
+is saved under the rules lock first, then the draft's lock, so a fold-in never
+meets a half-saved answer. Nothing is deleted; the draft keeps the lesson as
+history. A second process uses the same per-notebook machine-state locks.
+
+Settings → Writing Voice edits rules, exercises the writer, shows open edits and
+their answers, and offers the fold-in. Chat and Outbox share the same question
 component. Text stays selectable across refreshes, and a question remains separate
 from permission to place or send a draft. The ordinary cross-origin and revision
 checks apply to these local writes.
@@ -160,4 +175,5 @@ are not independently distilled into a second memory store.
 
 ## Notes
 
+- [2026-09-20 — Sky learns from drafts alone](2026-09-20-sky-learns-from-drafts-alone.md).
 - [2026-09-20 — A draft is saved when it is used](2026-09-20-a-draft-is-saved-when-it-is-used.md).

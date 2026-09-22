@@ -52,7 +52,6 @@ import { FieldsView, RunLines } from './toolLinesView.tsx'
 import { awaitReturn, frames } from './turnStream.ts'
 import { VoiceButton, VoiceStatus, VoiceTranscript } from './voice.tsx'
 import { VoicePresence } from './voicePresence.tsx'
-import { WritingVoiceQuestions } from './writingVoice.tsx'
 import { renderStatic } from './wysiwyg/render.ts'
 
 /**
@@ -2011,14 +2010,6 @@ export function ThreadColumn({
       {refusal && <NoteLine note={{ text: refusal, tone: 'failed' }} />}
       <ChatActivity active={Boolean(activity)} text={activity} />
       {state.phase === 'saving' && <ChatActivity active text="saving" />}
-      {state.id && (
-        <WritingVoiceQuestions
-          key={state.id}
-          source={`chat:${state.id}`}
-          refreshKey={`${state.turns.length}:${state.phase}`}
-          polling={busy}
-        />
-      )}
     </div>
   )
 }

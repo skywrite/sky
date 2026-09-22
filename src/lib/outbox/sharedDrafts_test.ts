@@ -86,7 +86,7 @@ test('Outbox and chat edit one draft record and share version history and learni
         stale.includes('decision changed'),
         fromOutbox.draftId,
         saved.versions.map((v) => v.text),
-        (await f.store.list(`draft:${id}`)).length,
+        (await f.drafts.learning.edits(`draft:${id}`)).length,
         fromOutbox.status,
         fromOutbox.native,
         fromOutbox.delivery,
@@ -117,7 +117,7 @@ test('Outbox and chat edit one draft record and share version history and learni
     assert({
       given: 'an old version restored from Outbox',
       should: 'append history without treating Undo as a new writing preference',
-      actual: [restored.draft, restored.writingDraft?.revision, (await f.store.list()).length],
+      actual: [restored.draft, restored.writingDraft?.revision, (await f.drafts.learning.edits()).length],
       expected: [f.seed.draft, 4, 2],
     })
   } finally {
@@ -312,7 +312,7 @@ test('an older reply kept in its item is saved at its first use, with its known 
         adopted.writingDraft?.versions.map((v) => v.text),
         adopted.status,
         adopted.edited,
-        (await f.store.list()).length,
+        (await f.drafts.learning.edits()).length,
         (await f.draftFiles()).length,
       ],
       expected: [
@@ -408,7 +408,7 @@ test('a draft nobody has worked on stays out of the notebook until its first use
         await f.draftFiles(),
         saved.versions.map((v) => [v.author, v.text]),
         saved.versions.at(-1)?.learnFrom,
-        (await f.store.list(`draft:${edited.draftId}`)).length,
+        (await f.drafts.learning.edits(`draft:${edited.draftId}`)).length,
       ],
       expected: [
         '2025-03-15_12-00-00Z_Atlas-API-Update',
@@ -459,7 +459,7 @@ test('approving or reporting a send saves the record; archiving an untouched dra
         ready.writingDraft?.versions.map((v) => [v.author, v.accepted, v.learnFrom]),
         sent.draftId !== undefined,
         (await f.draftFiles()).length,
-        (await f.store.list()).length,
+        (await f.drafts.learning.edits()).length,
       ],
       expected: [undefined, [], [['sky', true, undefined]], true, 2, 0],
     })

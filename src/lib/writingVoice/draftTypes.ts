@@ -1,6 +1,13 @@
 import { z } from 'zod'
 import { WritingDraftId } from './draftId.ts'
-import { DraftInputSchema, ExampleId, MAX_WRITING_CHARS, type VoiceDraft, type VoiceExampleInput } from './types.ts'
+import {
+  DraftInputSchema,
+  LessonSchema,
+  MAX_WRITING_CHARS,
+  QuestionSchema,
+  type VoiceDraft,
+  type VoiceEditInput,
+} from './types.ts'
 
 export const DraftVersionSchema = z.object({
   version: z.number().int().positive(),
@@ -10,9 +17,17 @@ export const DraftVersionSchema = z.object({
   direction: z.string().max(4000),
   accepted: z.boolean(),
   restoredFrom: z.number().int().positive().optional(),
+  /** The version this one is compared with when Sky learns from it. Set for the owner's edits and accepted revisions. */
   learnFrom: z.number().int().positive().optional(),
   explanation: z.string().max(4000).optional(),
-  exampleId: ExampleId.optional(),
+  /** The one question Sky asked about this edit, when the owner gave no reason with it. */
+  question: QuestionSchema.optional(),
+  /** The owner's exact words about why: their reason given with the edit, or their answer to the question. */
+  answer: z.string().trim().min(1).max(4000).optional(),
+  lesson: LessonSchema.optional(),
+  /** The rules now hold this lesson. The writer stops reading it here; the version stays as history. */
+  folded: z.boolean().optional(),
+  /** History carried in from elsewhere, already taught or never the owner's: nothing to learn here. */
   learningDone: z.boolean().optional(),
   learningError: z.string().optional(),
 })
@@ -43,7 +58,7 @@ export interface WritingDraftToolHost {
   /** A new draft has no record yet, so no id: the owner's first use of it creates one. */
   draft(input: ChatDraftInput): Promise<VoiceDraft & { draftId?: string; draftRevision?: number }>
   accept(id: string, revision: number): Promise<unknown>
-  learn(input: VoiceExampleInput & { draftId?: string; draftRevision?: number }): Promise<unknown>
+  learn(input: VoiceEditInput & { draftId?: string; draftRevision?: number }): Promise<unknown>
 }
 
 export const currentDraftVersion = (draft: WritingDraft): DraftVersion => draft.versions.at(-1)!
