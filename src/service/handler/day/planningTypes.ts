@@ -1,11 +1,12 @@
 import type { DayView } from './mod.ts'
 
 export type DayPlanKind = 'todos' | 'commitments' | 'reminders'
+export type DayAddKind = DayPlanKind | 'complete'
 export type NextDestination = Exclude<DayPlanKind, 'commitments'>
 export type NextFile = 'next-professional.md' | 'next-personal.md'
 
 export interface DayPlanInput {
-  kind: DayPlanKind
+  kind: DayAddKind
   text: string
   category: string
   time?: string

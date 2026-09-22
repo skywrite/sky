@@ -4,8 +4,8 @@ import { useMediaQuery } from '@mantine/hooks'
 import { type FormEvent, useEffect, useRef, useState } from 'react'
 import {
   normalizeDayTime,
+  type DayAddKind,
   type DayPlanInput,
-  type DayPlanKind,
   type DayPlanResult,
   type NextDayItem,
   type NextDestination,
@@ -13,7 +13,12 @@ import {
 import type { DayData } from './day.tsx'
 import { fileHref } from './explorer.tsx'
 
-const LABELS: Record<DayPlanKind, string> = { todos: 'to-do', commitments: 'commitment', reminders: 'reminder' }
+const LABELS: Record<DayAddKind, string> = {
+  todos: 'to-do',
+  commitments: 'commitment',
+  reminders: 'reminder',
+  complete: 'entry',
+}
 
 function PlanComposer({
   kind,
@@ -26,7 +31,7 @@ function PlanComposer({
   onAdd,
 }: {
   key?: string
-  kind: DayPlanKind
+  kind: DayAddKind
   opened: boolean
   categories: string[]
   busy: boolean
@@ -37,7 +42,7 @@ function PlanComposer({
 }) {
   const [text, setText] = useState('')
   const [category, setCategory] = useState('Professional')
-  const [timed, setTimed] = useState(kind === 'commitments')
+  const [timed, setTimed] = useState(kind === 'commitments' || kind === 'complete')
   const [time, setTime] = useState('')
   const [invalidTime, setInvalidTime] = useState(false)
   const field = useRef<HTMLTextAreaElement>(null)
@@ -48,7 +53,7 @@ function PlanComposer({
     if (opened) {
       setText('')
       setTime('')
-      setTimed(kind === 'commitments')
+      setTimed(kind === 'commitments' || kind === 'complete')
       setInvalidTime(false)
       request.current = null
       field.current?.focus()
@@ -65,10 +70,10 @@ function PlanComposer({
         onClick={onOpen}
         leftSection={<span aria-hidden="true">＋</span>}
       >
-        Add a {LABELS[kind]}
+        {kind === 'complete' ? 'Add entry' : `Add a ${LABELS[kind]}`}
       </Button>
     )
-  const destination = kind === 'reminders' ? kind : timed ? 'commitments' : 'todos'
+  const destination = kind === 'reminders' || kind === 'complete' ? kind : timed ? 'commitments' : 'todos'
   const submit = (event: FormEvent) => {
     event.preventDefault()
     if (busy || !text.trim()) return
@@ -85,7 +90,7 @@ function PlanComposer({
   return (
     <form
       className="sky-plan-composer"
-      aria-label={`Add a ${LABELS[kind]}`}
+      aria-label={kind === 'complete' ? 'Add entry' : `Add a ${LABELS[kind]}`}
       onSubmit={submit}
       onKeyDown={(event) => {
         if (event.key === 'Escape' && !busy) {
@@ -97,7 +102,13 @@ function PlanComposer({
       <Textarea
         ref={field}
         aria-label="Item text"
-        placeholder={kind === 'reminders' ? 'What do you want to remember?' : 'What needs to happen?'}
+        placeholder={
+          kind === 'complete'
+            ? 'What happened?'
+            : kind === 'reminders'
+              ? 'What do you want to remember?'
+              : 'What needs to happen?'
+        }
         autosize
         minRows={1}
         maxRows={5}
@@ -128,7 +139,7 @@ function PlanComposer({
           (timed ? (
             <div className="sky-plan-time">
               <TextInput
-                aria-label="Commitment time"
+                aria-label={kind === 'complete' ? 'Entry time' : 'Commitment time'}
                 placeholder="HH:MM"
                 value={time}
                 maxLength={5}
@@ -139,17 +150,19 @@ function PlanComposer({
                   setInvalidTime(false)
                 }}
               />
-              <ActionIcon
-                aria-label="Remove time"
-                title="Make this a to-do"
-                disabled={busy}
-                onClick={() => {
-                  setTimed(false)
-                  setInvalidTime(false)
-                }}
-              >
-                ×
-              </ActionIcon>
+              {kind !== 'complete' && (
+                <ActionIcon
+                  aria-label="Remove time"
+                  title="Make this a to-do"
+                  disabled={busy}
+                  onClick={() => {
+                    setTimed(false)
+                    setInvalidTime(false)
+                  }}
+                >
+                  ×
+                </ActionIcon>
+              )}
             </div>
           ) : (
             <Button variant="secondary" disabled={busy} onClick={() => setTimed(true)}>
@@ -164,7 +177,7 @@ function PlanComposer({
           Add {LABELS[destination]}
         </Button>
       </div>
-      {timed && <p className="sky-plan-note">A time makes this a commitment.</p>}
+      {timed && kind !== 'complete' && <p className="sky-plan-note">A time makes this a commitment.</p>}
       {(invalidTime || error) && (
         <p className="sky-plan-error" role="alert">
           {invalidTime ? 'Enter a time as HH:MM, for example 09:30.' : error}
@@ -375,7 +388,7 @@ export function useDayPlanning(
   const enabled = Boolean(
     day && !day.record.ended && (day.day.dayRelativePath || day.day.ymd >= (day.planningToday ?? day.today.ymd)),
   )
-  const [active, setActive] = useState<DayPlanKind | 'next' | null>(null)
+  const [active, setActive] = useState<DayAddKind | 'next' | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [undo, setUndo] = useState<{ id: string; message: string; href?: string } | null>(null)
@@ -449,7 +462,7 @@ export function useDayPlanning(
         : []),
     ]),
   ]
-  const open = (kind: DayPlanKind | 'next') => {
+  const open = (kind: DayAddKind | 'next') => {
     setActive(kind)
     setError(null)
   }
@@ -457,7 +470,7 @@ export function useDayPlanning(
     editing: active !== null || busy,
     undo,
     dismissUndo: () => setUndo(null),
-    composer: (kind: DayPlanKind) =>
+    composer: (kind: DayAddKind) =>
       enabled ? (
         <PlanComposer
           key={`${ymd}/${kind}`}

@@ -53,7 +53,7 @@ class PlanningError extends Error {
 }
 
 function inputOf(body: Record<string, unknown> | null): DayPlanInput | null {
-  if (!body || !['todos', 'commitments', 'reminders'].includes(String(body.kind))) return null
+  if (!body || !['todos', 'commitments', 'reminders', 'complete'].includes(String(body.kind))) return null
   if (typeof body.text !== 'string' || !body.text.trim() || body.text.length > 4000) return null
   // A composer adds one item. Newlines cannot introduce another list or metadata.
   const text = body.text.trim().replace(/\s+/g, ' ')
@@ -61,7 +61,9 @@ function inputOf(body: Record<string, unknown> | null): DayPlanInput | null {
   if (typeof category !== 'string' || !category.trim() || category.length > 80 || /[\r\n#]/.test(category)) return null
   const kind = body.kind as DayPlanInput['kind']
   const time = typeof body.time === 'string' ? normalizeDayTime(body.time) : null
-  if (kind === 'commitments' ? !time : body.time !== undefined && body.time !== '') return null
+  if (kind === 'commitments' || kind === 'complete') {
+    if (!time) return null
+  } else if (body.time !== undefined && body.time !== '') return null
   return { kind, text, category: category.trim(), ...(time ? { time } : {}) }
 }
 
@@ -117,7 +119,7 @@ export function createPlanningRoutes(options: ItemRoutesOptions): Hono {
     const body = await bodyOf(c)
     const input = inputOf(body)
     if (!input || typeof body?.requestId !== 'string' || !/^[a-f0-9-]{36}$/.test(body.requestId))
-      return c.json({ error: 'Enter an item, its category, and a time for a commitment.' }, 400)
+      return c.json({ error: 'Enter text, a category, and a time for a commitment or completed entry.' }, 400)
     const day = await dayFileOf(c, options, true)
     if (day instanceof Response) return day
     const id = body.requestId
@@ -137,7 +139,11 @@ export function createPlanningRoutes(options: ItemRoutesOptions): Hono {
     )
       throw new PlanningError('That item is already on this day.')
     const date = new PlainDate(day.ymd)
-    const destination = taskDestination({ DIR_TIME: options.timeDir }, date, options.today(), result.list)
+    // Complete entries record the selected day, even beyond the task scheduling window.
+    const destination =
+      input.kind === 'complete'
+        ? { filed: 'day' as const, file: day.file, list: result.list }
+        : taskDestination({ DIR_TIME: options.timeDir }, date, options.today(), result.list)
     const before =
       destination.filed === 'day' ? (day.exists ? day.content : undefined) : await readOptional(destination.file)
     const after =
@@ -149,11 +155,13 @@ export function createPlanningRoutes(options: ItemRoutesOptions): Hono {
     const message =
       destination.filed === 'schedule'
         ? `Scheduled for ${day.ymd}`
-        : input.kind === 'commitments'
-          ? `Commitment added at ${input.time}`
-          : input.kind === 'reminders'
-            ? 'Reminder added'
-            : 'To-do added'
+        : input.kind === 'complete'
+          ? `Entry added at ${input.time}`
+          : input.kind === 'commitments'
+            ? `Commitment added at ${input.time}`
+            : input.kind === 'reminders'
+              ? 'Reminder added'
+              : 'To-do added'
     const href = destination.filed === 'schedule' ? `/week/${Week.of(date)}` : undefined
     remember(id, {
       day: day.ymd,

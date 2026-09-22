@@ -65,6 +65,10 @@ export function nextEntries(content: string, file: NextFile, dayContent: string)
 
 export function addPlanItem(content: string, input: DayPlanInput): { content: string; list: string; raw: string } {
   const document = DayDocument.fromMarkdown(content)
+  if (input.kind === 'complete') {
+    const result = document.addCompleteItem(input.text, { category: input.category, time: input.time! })
+    return { content: result.toMarkdown(), list: `${input.category} Complete`, raw: `${input.time} > ${input.text}` }
+  }
   const raw = input.kind === 'commitments' ? `${input.time} > ${input.text}` : input.text
   const list =
     input.kind === 'reminders' ? 'Reminders' : `${input.category} ${input.kind === 'todos' ? 'Todos' : 'Commitments'}`

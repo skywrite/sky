@@ -1124,6 +1124,7 @@ export function DayView({
   const doneToday = [...(record?.done ?? [])].sort(
     (a, b) => (minutesOf(a.time) ?? NO_TIME) - (minutesOf(b.time) ?? NO_TIME),
   )
+  const entryComposer = !organize.active ? planning.composer('complete') : null
   const completedTasks = doneToday.length + tasks.filter((item) => itemDone(item, checkOff.phases)).length
   const totalTasks = doneToday.length + tasks.length
 
@@ -1288,8 +1289,9 @@ export function DayView({
 
                   <ChatsCard rows={chats} onOpenThread={onOpen} onOpenSaved={onOpenSaved} />
 
-                  {doneToday.length > 0 && (
+                  {(doneToday.length > 0 || entryComposer) && (
                     <Block head="Done today" mini={String(doneToday.length)}>
+                      {doneToday.length === 0 && <p className="sky-plan-note">Record something from your day.</p>}
                       <Fold
                         rows={doneToday}
                         render={(item: DayItem) => (
@@ -1305,6 +1307,7 @@ export function DayView({
                           </div>
                         )}
                       />
+                      {entryComposer}
                     </Block>
                   )}
 

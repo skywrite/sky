@@ -2,7 +2,8 @@ import { randomUUID } from 'node:crypto'
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import * as path from 'node:path'
 import { atomicWrite } from '#lib/outbox/files.ts'
-import { makeTempDir } from '#shared/fs/mod.ts'
+import { exists, makeTempDir } from '#shared/fs/mod.ts'
+import DayDocument from '#shared/models/Day/document/mod.ts'
 import { dayFile } from '#shared/nbfs/mod.ts'
 import { assert, test } from '#test'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
@@ -149,6 +150,119 @@ test(
     })
   },
 )
+
+test('timed entries write directly to Complete lists and Undo preserves later changes', async () => {
+  await withNotebook(async ({ post, file }) => {
+    const entry = {
+      kind: 'complete',
+      text: 'Activity/Walk: Park loop',
+      category: 'Personal',
+      time: '9:30',
+      requestId: randomUUID(),
+    }
+    const response = await post('add', entry)
+    const added = (await response.json()) as DayPlanResult
+    const retry = await post('add', entry)
+    const duplicate = await post('add', { ...entry, requestId: randomUUID() })
+    await post('add', { ...entry, text: 'Read a chapter', time: '25:30', requestId: randomUUID() })
+    await post('add', { ...entry, text: 'Morning walk', time: '08:00', requestId: randomUUID() })
+    const professional = (await (
+      await post('add', {
+        ...entry,
+        text: 'Research: Read the brief',
+        category: 'Professional',
+        time: '10:00',
+        requestId: randomUUID(),
+      })
+    ).json()) as DayPlanResult
+    const content = await readFile(file, 'utf8')
+    const document = DayDocument.fromMarkdown(content)
+    assert({
+      given: 'a freeform entry, a retried request, and entries in both categories',
+      should: 'save each record once in its Complete list, keeping times and leaving the plan empty',
+      actual: {
+        statuses: [response.status, retry.status, duplicate.status],
+        personal: document.lists.find((list) => list.title === 'Personal Complete')?.items,
+        professional: document.lists.find((list) => list.title === 'Professional Complete')?.items,
+        done: professional.view.record.done.length,
+        plan: professional.view.record.todos.length + professional.view.record.commitments.length,
+        message: added.message,
+        prose: content.includes('A paragraph to keep.'),
+      },
+      expected: {
+        statuses: [200, 200, 409],
+        personal: ['08:00 > Morning walk', '09:30 > Activity/Walk: Park loop', '25:30 > Read a chapter'],
+        professional: ['10:00 > Research: Read the brief'],
+        done: 4,
+        plan: 0,
+        message: 'Entry added at 09:30',
+        prose: true,
+      },
+    })
+    await writeFile(file, content + '\nA later note.\n')
+    const undone = (await (await post('undo', { id: added.undo })).json()) as DayView
+    assert({
+      given: 'Undo after other entries and an independent note were added',
+      should: 'remove only the requested entry',
+      actual: {
+        entries: undone.record.done.map((item) => item.text).sort(),
+        note: (await readFile(file, 'utf8')).includes('A later note.'),
+      },
+      expected: { entries: ['Morning walk', 'Read a chapter', 'Research: Read the brief'], note: true },
+    })
+  })
+})
+
+test('Complete entries stay on the selected day outside the planning window', async () => {
+  await withNotebook(async ({ app, root, file }) => {
+    const later = DAY.addDays(14)
+    const target = path.join(root, 'time', dayFile(later))
+    const response = await app.request(`/${later.ymd}/item/add`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        kind: 'complete',
+        text: 'Activity: A sample entry',
+        category: 'Personal',
+        time: '10:00',
+        requestId: randomUUID(),
+      }),
+    })
+    const added = (await response.json()) as DayPlanResult
+    const content = DayDocument.fromMarkdown(await readFile(target, 'utf8'))
+    assert({
+      given: 'an entry for a missing day beyond the current week',
+      should: 'prepare that day with the record, without starting it or scheduling a task',
+      actual: {
+        status: response.status,
+        day: added.view.day.ymd,
+        entries: added.view.record.done.map((item) => [item.list, item.raw]),
+        started: content.started,
+        schedule: await exists(path.join(root, 'time', 'schedule-personal.md')),
+        original: await readFile(file, 'utf8'),
+      },
+      expected: {
+        status: 200,
+        day: later.ymd,
+        entries: [['Personal Complete', '10:00 > Activity: A sample entry']],
+        started: undefined,
+        schedule: false,
+        original: EMPTY,
+      },
+    })
+    const undo = await app.request(`/${later.ymd}/item/undo`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ id: added.undo }),
+    })
+    assert({
+      given: 'Undo of the only entry on a newly created day',
+      should: 'remove the untouched new file',
+      actual: [undo.status, await exists(target)],
+      expected: [200, false],
+    })
+  })
+})
 
 test(
   { name: 'Next moves preserve links, source categories, completed duplicates, and support exact undo' },
@@ -302,6 +416,8 @@ test(
     await withNotebook(async ({ app, post, file }) => {
       const body = { kind: 'commitments', text: 'A sample commitment', time: '09:90', requestId: randomUUID() }
       const badTime = await post('add', body)
+      const badEntry = await post('add', { ...body, kind: 'complete' })
+      const missingTime = await post('add', { ...body, kind: 'complete', time: undefined })
       const timedNext = await post('pull', {
         kind: 'commitments',
         ids: ['unused'],
@@ -318,8 +434,16 @@ test(
       assert({
         given: 'invalid or unauthorized requests',
         should: 'reject them and leave the day untouched',
-        actual: [badTime.status, timedNext.status, origin.status, missing.status, await readFile(file, 'utf8')],
-        expected: [400, 400, 403, 404, EMPTY],
+        actual: [
+          badTime.status,
+          badEntry.status,
+          missingTime.status,
+          timedNext.status,
+          origin.status,
+          missing.status,
+          await readFile(file, 'utf8'),
+        ],
+        expected: [400, 400, 400, 400, 403, 404, EMPTY],
       })
     })
   },
@@ -335,6 +459,7 @@ test({ name: 'ending a day closes every planning mutation including an outstandi
     await writeFile(file, ended)
     const requests = await Promise.all([
       post('add', { kind: 'todos', text: 'Another task', requestId: randomUUID() }),
+      post('add', { kind: 'complete', text: 'A sample entry', time: '09:30', requestId: randomUUID() }),
       post('pull', { kind: 'todos', ids: [entry.id], requestId: randomUUID() }),
       post('undo', { id: added.undo }),
     ])
@@ -347,7 +472,7 @@ test({ name: 'ending a day closes every planning mutation including an outstandi
         await readFile(file, 'utf8'),
         await readFile(professional, 'utf8'),
       ],
-      expected: [[409, 409, 409], true, ended, PROFESSIONAL],
+      expected: [[409, 409, 409, 409], true, ended, PROFESSIONAL],
     })
   })
 })
