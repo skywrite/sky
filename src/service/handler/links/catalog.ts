@@ -7,7 +7,8 @@ import parseTimePath from '#shared/nbfs/parseTimePath.ts'
 import { docDate, docTitle } from '../home/docMeta.ts'
 import { isPathWithinRoots } from '../markdown-preview/request.ts'
 import { vocabularyOf } from '../vocabulary/mod.ts'
-import type { LinkItem, LinkKind } from './types.ts'
+import { linkFrequency } from './frequency.ts'
+import { type LinkItem, type LinkKind, PRIMARY_LINK_KINDS } from './types.ts'
 
 function text(value: unknown): string | undefined {
   if (typeof value === 'string') return value.trim() || undefined
@@ -90,7 +91,8 @@ export async function linkCatalog(store: MarkdownStore, base: string, dirs: stri
     if (at >= 0) items[at] = item
     else items.push(item)
   }
-  return items
+  const counts = linkFrequency(store, base, dirs, items)
+  return items.map((item) => ({ ...item, linkCount: counts.get(item.path) }))
 }
 
 function normalizeSearch(value: string): string {
@@ -100,34 +102,71 @@ function normalizeSearch(value: string): string {
     .replace(/[\s_-]+/g, ' ')
 }
 
-/** Names and aliases outrank incidental matches in a record's context, regardless of age. */
-function relevance(item: LinkItem, query: string, terms: string[]): number {
-  if (terms.length === 0) return 1
-  const names = [item.title, ...(item.aliases ?? [])].map(normalizeSearch)
-  if (names.includes(query)) return 5
-  if (names.some((name) => name.startsWith(query))) return 4
-  if (names.some((name) => terms.every((term) => name.split(/[\s/.,()]+/).some((word) => word.startsWith(term)))))
-    return 3
-  if (names.some((name) => terms.every((term) => name.includes(term)))) return 2
+/** Entity names lead; record titles outrank incidental context, including filename aliases. */
+function relevance(item: LinkItem, query: string, terms: string[]): { score: number; entityName: boolean } {
+  if (terms.length === 0) return { score: 1, entityName: false }
+  const primary = PRIMARY_LINK_KINDS.includes(item.kind)
+  // Time-record and library aliases include filenames, not alternate entity names.
+  const names = [item.title, ...(primary || item.kind === 'place' ? (item.aliases ?? []) : [])].map(normalizeSearch)
+  let score = 0
+  if (names.includes(query)) score = 5
+  else if (names.some((name) => name.startsWith(query))) score = 4
+  else if (names.some((name) => terms.every((term) => name.split(/[\s/.,()]+/).some((word) => word.startsWith(term)))))
+    score = 3
+  else if (names.some((name) => terms.every((term) => name.includes(term)))) score = 2
+  if (score) return { score, entityName: primary }
   const searchable = normalizeSearch(
-    [...names, item.value, item.hint, item.people, item.summary, item.date, item.path, item.parent?.title].join(' '),
+    [
+      ...names,
+      ...(item.aliases ?? []),
+      item.value,
+      item.hint,
+      item.people,
+      item.summary,
+      item.date,
+      item.path,
+      item.parent?.title,
+    ].join(' '),
   )
-  return terms.every((term) => searchable.includes(term)) ? 1 : 0
+  return { score: terms.every((term) => searchable.includes(term)) ? 1 : 0, entityName: false }
 }
 
-export function searchLinks(items: LinkItem[], query: string, kind: string, day: string, exclude: string): LinkItem[] {
+export function searchLinks(
+  items: LinkItem[],
+  query: string,
+  kinds: string | readonly string[],
+  day: string,
+  exclude: string,
+): LinkItem[] {
   const normalized = normalizeSearch(query)
   const terms = normalized.split(' ').filter(Boolean)
-  return items
-    .filter((item) => item.path !== exclude && (!kind || item.kind === kind) && (!day || item.date === day))
-    .map((item) => ({ item, score: relevance(item, normalized, terms) }))
+  const selected = new Set((typeof kinds === 'string' ? kinds.split(',') : kinds).filter(Boolean))
+  const matches = items
+    .filter(
+      (item) => item.path !== exclude && (!selected.size || selected.has(item.kind)) && (!day || item.date === day),
+    )
+    .map((item) => ({ item, ...relevance(item, normalized, terms) }))
     .filter(({ score }) => score > 0)
     .sort(
       (a, b) =>
+        Number(b.entityName) - Number(a.entityName) ||
         b.score - a.score ||
+        (a.entityName ? (b.item.linkCount ?? 0) - (a.item.linkCount ?? 0) : 0) ||
         (b.item.date ?? '').localeCompare(a.item.date ?? '') ||
         a.item.title.localeCompare(b.item.title) ||
         a.item.path.localeCompare(b.item.path),
     )
     .map(({ item }) => item)
+  if (normalized) return matches
+
+  const primaryOnly = selected.size > 0 && [...selected].every((kind) => PRIMARY_LINK_KINDS.includes(kind as LinkKind))
+  const frequent = matches
+    .filter((item) => PRIMARY_LINK_KINDS.includes(item.kind) && (item.linkCount ?? 0) > 0)
+    .sort((a, b) => (b.linkCount ?? 0) - (a.linkCount ?? 0) || a.title.localeCompare(b.title))
+    .slice(0, primaryOnly ? undefined : 6)
+  const promoted = new Set(frequent.map((item) => item.path))
+  return [
+    ...frequent.map((item) => ({ ...item, frequent: true })),
+    ...matches.filter((item) => !promoted.has(item.path)),
+  ]
 }

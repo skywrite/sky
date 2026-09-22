@@ -15,7 +15,7 @@ const FILED = 'time/2026/W05/01-28/actions/videos/Loom_followup.md'
 const SRT = '1\n00:00:00,000 --> 00:00:02,000\nHere is the Atlas follow-up.\n'
 
 test(
-  { name: 'person link search keeps relevance order and saves an alias as its canonical name', timeout: 30000 },
+  { name: 'link search favors frequently linked names and retains specific records and aliases', timeout: 30000 },
   async (t) => {
     await runWysiwygE2e(
       t,
@@ -25,26 +25,50 @@ test(
         store: true,
         files: {
           'people/Jane-Doe.md': '---\nname: [Jane Doe, Jay]\nalt: JD\nupdated: 2025-01-01\n---\n',
+          'people/Jane-Example.md': '---\nname: Jane Example\nupdated: 2026-01-28\n---\n',
           'people/Jayden-Doe.md': '---\nname: Jayden Doe\nupdated: 2026-01-27\n---\n',
           'people/Sanjay-Example.md': '---\nname: Sanjay Example\nupdated: 2025-01-01\n---\n',
           'people/Bob-Example.md': '---\nname: Bob Example\nsummary: Blue jay notes\nupdated: 2026-01-28\n---\n',
+          [DAY_FILE]: '---\nrel: [Jane Doe]\n---\n\n# Planning\n',
+          [MESSAGE]: '---\nsummary: Jane follow-up\nfrom: Jane Doe\nrel: [Jane Doe]\n---\n',
+          'time/2023/W02/01-09/actions/meetings/Jane.md': '---\nsummary: Equity review\nwho: Jane Doe\n---\n',
+          'time/2023/W02/01-10/actions/meetings/Review.md': '---\nsummary: Jane equity review\nwho: Jane Doe\n---\n',
         },
       },
       async ({ page, origin, relativePath, file, errors }) => {
         await page.goto(`${origin}/explorer/${relativePath}`)
         await page.getByRole('button', { name: 'Edit', exact: true }).click()
+        const search = async (query: string) => {
+          const response = page.waitForResponse((response) => {
+            const url = new URL(response.url())
+            return url.pathname === '/docs/_api/links' && url.searchParams.get('q') === query
+          })
+          await page.getByLabel('Search notebook links').fill(query)
+          await response
+          await page.locator('.sky-link-picker[aria-busy="false"]').waitFor()
+          return page.locator('.sky-link-title').allTextContents()
+        }
         for (const width of [1500, 430]) {
           await page.setViewportSize({ width, height: 1000 })
           if (width === 430) await page.getByRole('button', { name: 'Show details', exact: true }).click()
           await page.getByRole('button', { name: '+ Add link', exact: true }).click()
-          await page.getByRole('combobox', { name: 'Link type', exact: true }).click()
-          await page.getByRole('option', { name: 'People', exact: true }).click()
-          await page.getByLabel('Search notebook links').fill('jay')
-          await page.getByRole('heading', { name: 'Search results', exact: true }).waitFor()
+          assert({
+            given: `an unfiltered first-name search at ${width}px`,
+            should: 'put the frequently linked person above another contact and old meeting filename matches',
+            actual: await search('jane'),
+            expected: ['Jane Doe', 'Jane Example', 'Jane follow-up', 'Jane equity review', 'Equity review'],
+          })
+          assert({
+            given: `a name plus a specific topic at ${width}px`,
+            should: 'still find the older meetings',
+            actual: await search('jane equity'),
+            expected: ['Jane equity review', 'Equity review'],
+          })
+          await page.getByRole('checkbox', { name: 'Include People', exact: true }).check()
           assert({
             given: `person search at ${width}px, with exact and substring matches sharing a date`,
             should: 'show names and aliases by relevance without regrouping them by date',
-            actual: await page.locator('.sky-link-title').allTextContents(),
+            actual: await search('jay'),
             expected: ['Jane Doe', 'Jayden Doe', 'Sanjay Example', 'Bob Example'],
           })
           await page.getByRole('button', { name: 'Cancel', exact: true }).click()
@@ -128,7 +152,7 @@ test(
           await route.fulfill({ response, json: { ...data, today: DAY } })
         })
         await page.goto(`${origin}/${DAY}`)
-        await page.locator('.sky-day').waitFor()
+        await page.getByRole('button', { name: 'Add a file', exact: true }).waitFor()
         await page.locator('.sky-day').evaluate((target, text) => {
           const transfer = new DataTransfer()
           transfer.items.add(new File([text], 'Atlas.srt', { type: 'text/plain' }))
@@ -144,8 +168,8 @@ test(
         const popup = page.waitForEvent('popup')
         await page.getByRole('link', { name: 'Open full record ↗' }).click()
         await (await popup).close()
-        await page.getByRole('combobox', { name: 'Link type', exact: true }).click()
-        await page.getByRole('option', { name: 'Videos', exact: true }).click()
+        await page.getByRole('button', { name: 'More types', exact: true }).click()
+        await page.getByRole('checkbox', { name: 'Include Videos', exact: true }).check()
         await page.getByRole('combobox', { name: 'Link date', exact: true }).click()
         await page.getByRole('option', { name: 'Yesterday', exact: true }).click()
         await page.getByRole('checkbox', { name: 'Select Atlas walkthrough', exact: true }).check()

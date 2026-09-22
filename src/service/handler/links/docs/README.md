@@ -1,6 +1,6 @@
 ---
 created: 2026-09-06
-updated: 2026-09-08
+updated: 2026-09-22
 ---
 
 # Links between notebook records
@@ -24,16 +24,33 @@ Record previews follow the
 ## Choosing a record
 
 `GET /docs/_api/links` searches the existing markdown index by title,
-aliases, summary, people, tags, date and path. Exact names and aliases rank
-first, followed by name/title prefixes, word prefixes, substrings, then
-contextual matches. Dates break ties within each relevance tier. The person
-appears once under their canonical name, whichever alias found them.
+aliases, summary, people, tags, date and path. Direct name or alias matches
+on people, orgs and projects lead. Within these, exact matches precede
+prefixes, word prefixes and substrings; saved link frequency breaks ties
+before record date. Record titles follow, then contextual matches, with
+newer records first within each relevance tier. A meeting's filename or
+participant is context, not an alternate name receiving the entity boost.
+Every search term must match, so adding a topic still brings specific
+records forward. The person appears once under their canonical name,
+whichever alias found them.
 
-Type and date filters and relevance ranking apply before pagination; each
-page has forty records. Searches display in relevance order. Empty search
-lists recent records grouped under Today, Yesterday or their full date,
-anchored to notebook time. The current document is excluded. Search errors
-remain visible.
+Type checkboxes combine inclusively; repeated `kind` parameters (or a
+comma-separated value) select any of those types. All types clears that
+selection, as does unchecking the last type. Search, date and self-exclusion
+still apply before pagination; each page has forty records. Date filtering
+appears for time records and clears when a person, org or project joins the
+selection. Pending link choices survive filtering and pagination.
+
+Empty search promotes up to six frequently
+linked people, orgs and projects before recent records; a selection containing
+only those entity types orders all linked entities by frequency. Counts are
+distinct source records with a saved `rel`, deduplicated across aliases and
+limited to the permitted roots. Self-links and membership in the containing
+project do not count. These are saved relationships, including automatic ones,
+not click history. Frequency is cached by store version, roots and available
+targets, so saved edits and newly available project folders refresh it.
+With no history the normal recent-record list remains available, grouped by
+notebook date. Search errors remain visible.
 
 Videos, meetings, messages, journals and saved chats receive specific type
 labels. A chat branch is its own record, showing its parent title and turn.

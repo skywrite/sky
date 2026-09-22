@@ -104,12 +104,14 @@ export function createLinks(
   }
   routes.get('/', async (c) => {
     if (!store) return c.json({ message: 'The notebook search is still loading.' }, 503)
+    const kinds = (c.req.queries('kind') ?? [])
+      .flatMap((value) => value.split(','))
+      .map((value) => value.trim())
+      .filter(Boolean)
     const matches = searchLinks(
-      (await catalog()).filter(
-        (item) => !item.needsCreation || c.req.query('q')?.trim() || c.req.query('kind') === 'place',
-      ),
+      (await catalog()).filter((item) => !item.needsCreation || c.req.query('q')?.trim() || kinds.includes('place')),
       c.req.query('q') ?? '',
-      c.req.query('kind') ?? '',
+      kinds,
       c.req.query('day') ?? '',
       c.req.query('exclude') ?? '',
     )

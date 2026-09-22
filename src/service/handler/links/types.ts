@@ -12,6 +12,8 @@ export type LinkKind =
   | 'place'
   | 'library'
 
+export const PRIMARY_LINK_KINDS: readonly LinkKind[] = ['person', 'org', 'project']
+
 /** A notebook reference, with enough context to choose the right record. */
 export interface LinkItem {
   value: string
@@ -23,6 +25,10 @@ export interface LinkItem {
   date?: string
   people?: string
   summary?: string
+  /** Distinct indexed records linking to this person, org, or project. */
+  linkCount?: number
+  /** Promoted into the frequently linked section of an unqueried search. */
+  frequent?: boolean
   /** Geographic context distinguishes places with the same name. */
   hint?: string
   /** A known country becomes a notebook record when selected. Search itself never writes. */

@@ -3,32 +3,12 @@ import { Button, Checkbox, Drawer, Modal, Select, TextInput } from '@mantine/cor
 import { useMediaQuery } from '@mantine/hooks'
 import { type KeyboardEvent, useEffect, useRef, useState } from 'react'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
-import type { LinkItem, LinkSearch } from '../../links/types.ts'
+import { type LinkItem, type LinkKind, type LinkSearch, PRIMARY_LINK_KINDS } from '../../links/types.ts'
+import { LinkTypeFilters, linkTypesHaveDates, linkTypesLabel } from './linkFilters.tsx'
 import { LinkIcon } from './linkIcon.tsx'
 import { RenderedHtml } from './renderedHtml.tsx'
 import { lexInline, plainText } from './wysiwyg/lexer.ts'
 import { renderStatic } from './wysiwyg/render.ts'
-
-const KINDS = [
-  { value: '', label: 'All types' },
-  ...[
-    'Video',
-    'Meeting',
-    'Chat',
-    'Message',
-    'Journal',
-    'Note',
-    'Day',
-    'Person',
-    'Org',
-    'Project',
-    'Place',
-    'Library',
-  ].map((label) => ({
-    value: label.toLowerCase(),
-    label: label === 'Person' ? 'People' : label === 'Library' ? 'Library' : `${label}s`,
-  })),
-]
 
 async function request<T>(url: string, body?: unknown): Promise<T> {
   const response = await fetch(
@@ -125,7 +105,9 @@ function Picker({
 }) {
   const phone = useMediaQuery('(max-width: 900px)') ?? false
   const [query, setQuery] = useState('')
-  const [kind, setKind] = useState('')
+  const [kinds, setKinds] = useState<LinkKind[]>([])
+  const [filtersOpened, setFiltersOpened] = useState(false)
+  const [datesOpened, setDatesOpened] = useState(false)
   const [day, setDay] = useState('')
   const [today, setToday] = useState(PlainDate.today().ymd)
   const [offset, setOffset] = useState(0)
@@ -138,7 +120,9 @@ function Picker({
   useEffect(() => {
     if (opened) {
       setQuery('')
-      setKind('')
+      setKinds([])
+      setFiltersOpened(false)
+      setDatesOpened(false)
       setDay('')
       setOffset(0)
       setPreview(null)
@@ -153,7 +137,8 @@ function Picker({
     setError(null)
     const timer = window.setTimeout(
       () => {
-        const params = new URLSearchParams({ q: query, kind, day, offset: String(offset), exclude: file ?? '' })
+        const params = new URLSearchParams({ q: query, day, offset: String(offset), exclude: file ?? '' })
+        for (const kind of kinds) params.append('kind', kind)
         void request<LinkSearch>(`/docs/_api/links?${params}`)
           .then((data) => {
             if (alive) {
@@ -171,7 +156,13 @@ function Picker({
       alive = false
       window.clearTimeout(timer)
     }
-  }, [opened, query, kind, day, offset, file])
+  }, [opened, query, kinds, day, offset, file])
+  const changeKinds = (next: LinkKind[]) => {
+    setKinds(next)
+    if (!linkTypesHaveDates(next)) setDay('')
+    setOffset(0)
+    setPreview(null)
+  }
   const choose = async () => {
     if (busy || !pending.length) return
     setBusy(true)
@@ -212,16 +203,33 @@ function Picker({
     }
   }
   const groups = new Map<string, LinkItem[]>()
+  const primaryOnly = kinds.length > 0 && kinds.every((kind) => PRIMARY_LINK_KINDS.includes(kind))
+  const typesLabel = linkTypesLabel(kinds)
   for (const item of result?.items ?? []) {
-    const label = query.trim() ? 'Search results' : dateLabel(item.date, today)
+    const label = query.trim()
+      ? 'Search results'
+      : item.frequent
+        ? 'Frequently linked'
+        : PRIMARY_LINK_KINDS.includes(item.kind)
+          ? primaryOnly
+            ? 'More records'
+            : 'Elsewhere in the notebook'
+          : dateLabel(item.date, today)
     groups.set(label, [...(groups.get(label) ?? []), item])
   }
   const body = (
-    <div className="sky-link-picker" aria-busy={busy || (!result && !error)}>
+    <div
+      className="sky-link-picker"
+      aria-busy={busy || (!result && !error)}
+      onKeyDown={(event) => {
+        // Escape belongs to this picker or its popover, not the enclosing Details rail.
+        if (event.key === 'Escape') event.stopPropagation()
+      }}
+    >
       <TextInput
         data-autofocus
         aria-label="Search notebook links"
-        placeholder="Search by title, person, or topic…"
+        placeholder="Search people, orgs, projects, or records…"
         value={query}
         onChange={(e) => {
           setQuery(e.currentTarget.value)
@@ -229,95 +237,109 @@ function Picker({
         }}
         onKeyDown={move}
       />
-      <div className="sky-link-filters">
-        <Select
-          aria-label="Link type"
-          data={KINDS}
-          value={kind}
-          onChange={(v) => {
-            setKind(v ?? '')
-            setOffset(0)
-          }}
-          allowDeselect={false}
+      <div className="sky-link-browse" data-phone={phone || undefined}>
+        <LinkTypeFilters
+          kinds={kinds}
+          onChange={changeKinds}
+          phone={phone}
+          disabled={busy}
+          popoverOpened={filtersOpened}
+          onPopoverChange={setFiltersOpened}
         />
-        <Select
-          aria-label="Link date"
-          data={[
-            { value: '', label: 'Any date' },
-            { value: today, label: 'Today' },
-            { value: new PlainDate(today).addDays(-1).ymd, label: 'Yesterday' },
-          ]}
-          value={day}
-          onChange={(v) => {
-            setDay(v ?? '')
-            setOffset(0)
-          }}
-          allowDeselect={false}
-        />
-      </div>
-      {error && (
-        <p className="sky-rail-problem" role="alert">
-          {error}
-        </p>
-      )}
-      <div className="sky-link-results" ref={list} onKeyDown={move} aria-live="polite">
-        {!result && !error ? (
-          <p>Loading records…</p>
-        ) : result?.items.length === 0 ? (
-          <p>No matching records. Try another title, person, or date.</p>
-        ) : null}
-        {[...groups].map(([label, items]) => (
-          <section key={label} aria-label={label}>
-            <h3>{label}</h3>
-            {items.map((item) => {
-              const chosen = selected.includes(item.value) || selectedPaths.includes(item.path)
-              const checked = pending.some((choice) => choice.path === item.path)
-              const title = titleText(item.title)
-              return (
-                <div className="sky-link-result" key={item.path}>
-                  <div className="sky-link-result-head">
-                    <Checkbox
-                      className="sky-link-pick"
-                      classNames={{ body: 'sky-link-choice', label: 'sky-link-label' }}
-                      wrapperProps={{ 'data-selected': checked || undefined, 'data-linked': chosen || undefined }}
-                      checked={chosen || checked}
-                      disabled={chosen || busy}
-                      onChange={() =>
-                        setPending((choices) =>
-                          choices.some((choice) => choice.path === item.path)
-                            ? choices.filter((choice) => choice.path !== item.path)
-                            : [...choices, item],
-                        )
-                      }
-                      aria-label={`${chosen ? 'Linked' : 'Select'} ${title}`}
-                      label={
-                        <>
-                          <span className="sky-link-title">
-                            {title}
-                            {chosen ? ' · Linked' : ''}
-                          </span>
-                          <Detail item={item} />
-                        </>
-                      }
-                    />
-                    {!item.needsCreation && item.path.endsWith('.md') && (
-                      <button
-                        type="button"
-                        className="sky-link-preview-button"
-                        aria-label={`Preview ${title}`}
-                        aria-expanded={preview === item.path}
-                        onClick={() => setPreview(preview === item.path ? null : item.path)}
-                      >
-                        Preview
-                      </button>
-                    )}
-                  </div>
-                  {preview === item.path && <Preview item={item} />}
-                </div>
-              )
-            })}
-          </section>
-        ))}
+        <div className="sky-link-results-column">
+          <div className="sky-link-results-heading">
+            <h2 title={typesLabel}>{kinds.length > 3 ? `${kinds.length} types` : typesLabel}</h2>
+            {linkTypesHaveDates(kinds) && (
+              <Select
+                aria-label="Link date"
+                className="sky-link-date-filter"
+                classNames={{ dropdown: 'sky-link-date-dropdown' }}
+                variant="unstyled"
+                size="sm"
+                onDropdownOpen={() => setDatesOpened(true)}
+                onDropdownClose={() => setDatesOpened(false)}
+                data={[
+                  { value: '', label: 'Any date' },
+                  { value: today, label: 'Today' },
+                  { value: new PlainDate(today).addDays(-1).ymd, label: 'Yesterday' },
+                ]}
+                value={day}
+                onChange={(v) => {
+                  setDay(v ?? '')
+                  setOffset(0)
+                }}
+                allowDeselect={false}
+                disabled={busy}
+              />
+            )}
+          </div>
+          {error && (
+            <p className="sky-rail-problem" role="alert">
+              {error}
+            </p>
+          )}
+          <div className="sky-link-results" ref={list} onKeyDown={move} aria-live="polite">
+            {!result && !error ? (
+              <p>Loading records…</p>
+            ) : result?.items.length === 0 ? (
+              <p>No matching records. Try another title, person, or date.</p>
+            ) : null}
+            {[...groups].map(([label, items]) => (
+              <section key={label} aria-label={label}>
+                <h3>{label}</h3>
+                {items.map((item) => {
+                  const chosen = selected.includes(item.value) || selectedPaths.includes(item.path)
+                  const checked = pending.some((choice) => choice.path === item.path)
+                  const title = titleText(item.title)
+                  return (
+                    <div className="sky-link-result" key={item.path}>
+                      <div className="sky-link-result-head">
+                        <Checkbox
+                          className="sky-link-pick"
+                          color="var(--sky-action-primary)"
+                          iconColor="var(--sky-action-primary-text)"
+                          classNames={{ body: 'sky-link-choice', label: 'sky-link-label' }}
+                          wrapperProps={{ 'data-selected': checked || undefined, 'data-linked': chosen || undefined }}
+                          checked={chosen || checked}
+                          disabled={chosen || busy}
+                          onChange={() =>
+                            setPending((choices) =>
+                              choices.some((choice) => choice.path === item.path)
+                                ? choices.filter((choice) => choice.path !== item.path)
+                                : [...choices, item],
+                            )
+                          }
+                          aria-label={`${chosen ? 'Linked' : 'Select'} ${title}`}
+                          label={
+                            <>
+                              <span className="sky-link-title">
+                                {title}
+                                {chosen ? ' · Linked' : ''}
+                              </span>
+                              <Detail item={item} />
+                            </>
+                          }
+                        />
+                        {!item.needsCreation && item.path.endsWith('.md') && (
+                          <button
+                            type="button"
+                            className="sky-link-preview-button"
+                            aria-label={`Preview ${title}`}
+                            aria-expanded={preview === item.path}
+                            onClick={() => setPreview(preview === item.path ? null : item.path)}
+                          >
+                            Preview
+                          </button>
+                        )}
+                      </div>
+                      {preview === item.path && <Preview item={item} />}
+                    </div>
+                  )
+                })}
+              </section>
+            ))}
+          </div>
+        </div>
       </div>
       <div className="sky-link-footer">
         <div className="sky-link-pagination">
@@ -352,6 +374,7 @@ function Picker({
       size="90dvh"
       classNames={{ content: 'sky-link-dialog-content', body: 'sky-link-dialog-body' }}
       closeButtonProps={{ disabled: busy }}
+      closeOnEscape={!filtersOpened && !datesOpened}
     >
       {body}
     </Drawer>
@@ -361,9 +384,10 @@ function Picker({
       onClose={close}
       title="Add links"
       centered
-      size={720}
+      size={820}
       classNames={{ content: 'sky-link-dialog-content', body: 'sky-link-dialog-body' }}
       closeButtonProps={{ disabled: busy }}
+      closeOnEscape={!filtersOpened && !datesOpened}
     >
       {body}
     </Modal>
