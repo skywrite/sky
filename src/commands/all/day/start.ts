@@ -1,7 +1,7 @@
 import { Command, CommandResult, dayArg, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { ensureDay, withDayWrite } from '#lib/nbfs/mod.ts'
-import { computeStreakCounts, loadStreaks, stampStreaksList } from '#lib/streaks/mod.ts'
+import { loadStreaks, stampStreaksList } from '#lib/streaks/mod.ts'
 import { readDay, writeDay } from '#shared/nbfs/mod.ts'
 import { PlainDate, ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
 
@@ -24,9 +24,8 @@ async function reconcileStreaks(targetDay: PlainDate, timeDir: string, streaksDi
   const active = (await loadStreaks('active', streaksDir)).map((loaded) => loaded.streak)
   if (active.length === 0) return
 
-  const counts = await computeStreakCounts(active, targetDay)
   const dayModel = await readDay(targetDay, timeDir)
-  const stamped = stampStreaksList(dayModel, active, targetDay, counts)
+  const stamped = stampStreaksList(dayModel, active, targetDay)
   if (stamped !== dayModel) await writeDay(stamped, timeDir)
 }
 

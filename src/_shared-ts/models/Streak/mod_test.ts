@@ -94,21 +94,6 @@ test(`StreakDocument.isTrackedOn()`, () => {
   })
 })
 
-test(`StreakDocument.formatDayItem()`, () => {
-  assert({
-    given: 'a title with no count',
-    should: 'render the bare title',
-    expected: 'Eat clean',
-    actual: StreakDocument.formatDayItem('Eat clean'),
-  })
-  assert({
-    given: 'a title with a count',
-    should: 'append the run decoration',
-    expected: 'Eat clean — 12d',
-    actual: StreakDocument.formatDayItem('Eat clean', 12),
-  })
-})
-
 test(`StreakDocument.parseDayItemTitle()`, () => {
   const given = 'day-list item text in each state'
 

@@ -1,17 +1,20 @@
 ---
 created: 2026-09-08
-updated: 2026-09-08
+updated: 2026-09-19
 ---
 
 # Streaks in the app
 
 The app reads rule documents from `streaks/active/` and `streaks/archived/`,
 and completion records from each day's `## Streaks` list. A rule's title is
-the exact join key, with the optional trailing run count and outer strike
-marks removed by `StreakDocument`. Creation reserves titles across both
-statuses; the app has no rename operation because changing a title would
-detach its existing history. Ambiguous names, titles, or day items remain
-visible through warnings and cannot be changed through the app.
+the exact join key, with outer strike marks removed by `StreakDocument`.
+Older day files carry a stamped run count after the title (`— 12d`); it is
+stripped when matching and never written again
+([why](2026-09-19-the-run-count-leaves-the-day-file.md)). Creation reserves
+titles across both statuses; the app has no rename operation because
+changing a title would detach its existing history. Ambiguous names, titles,
+or day items remain visible through warnings and cannot be changed through
+the app.
 
 Reports never create or stamp files. They read only the configured `day.md`
 paths in bounded batches, from the earliest rule start through notebook

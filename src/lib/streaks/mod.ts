@@ -51,20 +51,15 @@ export async function loadAllStreaks(baseDir = DIR_STREAKS): Promise<LoadedStrea
  * Ensure a day document carries the ## Streaks list with one item per streak
  * tracked on `date`.
  *
- * - Adds missing items (bare title, or decorated when `counts` has an entry).
- * - Refreshes the decoration on UNSTRUCK items only — struck items are
- *   completion records and are never touched.
+ * - Adds missing items as the bare title. The run is never written to the
+ *   day file — it is counted back from the day files on read.
+ * - Never rewrites an existing item, struck or not.
  * - Unrecognized items (hand-added) are preserved.
  * - Never removes items.
  *
  * Returns the same instance when nothing needs to change.
  */
-export function stampStreaksList(
-  day: DayDocument,
-  streaks: StreakDocument[],
-  date: PlainDate,
-  counts?: Map<string, number>,
-): DayDocument {
+export function stampStreaksList(day: DayDocument, streaks: StreakDocument[], date: PlainDate): DayDocument {
   const tracked = streaks.filter((s) => s.isTrackedOn(date))
   if (tracked.length === 0) return day
 
@@ -73,26 +68,9 @@ export function stampStreaksList(
   let changed = false
 
   for (const streak of tracked) {
-    const index = items.findIndex((item) => streak.matchesDayItem(item))
-    const count = counts?.get(streak.name)
-
-    if (index === -1) {
-      items.push(StreakDocument.formatDayItem(streak.title, count))
-      changed = true
-      continue
-    }
-
-    // Only a fresh count may rewrite an existing item — stamping without
-    // counts must never strip a decoration someone else put there.
-    if (count === undefined) continue
-
-    const current = items[index]
-    const desired = StreakDocument.formatDayItem(streak.title, count)
-    const isStruck = /^~~.*~~$/.test(current.trim())
-    if (!isStruck && current !== desired) {
-      items[index] = desired
-      changed = true
-    }
+    if (items.some((item) => streak.matchesDayItem(item))) continue
+    items.push(streak.title)
+    changed = true
   }
 
   if (!changed && existing) return day
@@ -159,7 +137,7 @@ export async function loadStreakEntries(from: PlainDate, to: PlainDate): Promise
   return entries
 }
 
-/** Current-run count per streak name, for decorating day items (`— 12d`). */
+/** Current-run count per streak name, counted back from the day files. */
 export async function computeStreakCounts(streaks: StreakDocument[], today: PlainDate): Promise<Map<string, number>> {
   const counts = new Map<string, number>()
 

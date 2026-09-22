@@ -1,6 +1,6 @@
 ---
 created: 2026-07-28
-updated: 2026-09-06
+updated: 2026-09-19
 ---
 
 # Overview
@@ -92,7 +92,7 @@ tz: America/New_York
 
 ## Streaks
 - ~~Morning run~~
-- Read 20 pages — 12d
+- Read 20 pages
 
 ## Professional Complete
 - 09:30 > Standup with the Atlas team

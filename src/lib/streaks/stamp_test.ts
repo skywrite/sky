@@ -58,26 +58,24 @@ test(`stampStreaksList() honors schedules`, () => {
   })
 })
 
-test(`stampStreaksList() decorates with counts and refreshes unstruck items`, () => {
+test(`stampStreaksList() leaves an older stamped run count alone`, () => {
   const day = DayDocument.createFutureDay(MONDAY)
-  const counts = new Map([['eat-clean', 12]])
+    .addList(STREAKS_LIST_TITLE)
+    .addItem(STREAKS_LIST_TITLE, 'Eat clean — 12d')
 
-  const bare = stampStreaksList(day, [EAT_CLEAN], MONDAY)
-  const decorated = stampStreaksList(bare, [EAT_CLEAN], MONDAY, counts)
+  const stamped = stampStreaksList(day, [EAT_CLEAN], MONDAY)
 
   assert({
-    given: 'a bare item and a fresh count',
-    should: 'refresh the decoration in place',
+    given: 'an unstruck item from an older day file with a run count',
+    should: 'match it and add no second item',
     expected: ['Eat clean — 12d'],
-    actual: streaksList(decorated)?.items,
+    actual: streaksList(stamped)?.items,
   })
-
-  const rethreshed = stampStreaksList(decorated, [EAT_CLEAN], MONDAY, new Map([['eat-clean', 13]]))
   assert({
-    given: 'a stale decoration',
-    should: 'update to the new count',
-    expected: ['Eat clean — 13d'],
-    actual: streaksList(rethreshed)?.items,
+    given: 'an unstruck item from an older day file with a run count',
+    should: 'return the same instance',
+    expected: true,
+    actual: stamped === day,
   })
 })
 
@@ -86,10 +84,10 @@ test(`stampStreaksList() never touches struck items`, () => {
     .addList(STREAKS_LIST_TITLE)
     .addItem(STREAKS_LIST_TITLE, '~~Eat clean — 11d~~')
 
-  const stamped = stampStreaksList(day, [EAT_CLEAN], MONDAY, new Map([['eat-clean', 12]]))
+  const stamped = stampStreaksList(day, [EAT_CLEAN], MONDAY)
 
   assert({
-    given: 'a struck item with a stale count',
+    given: 'a struck item with an older run count',
     should: 'preserve the completion record verbatim',
     expected: ['~~Eat clean — 11d~~'],
     actual: streaksList(stamped)?.items,
@@ -136,14 +134,14 @@ test(`stampStreaksList() with nothing tracked leaves the day alone`, () => {
 })
 
 test(`strikeStreakItem() strikes an unstruck item`, () => {
-  const day = stampStreaksList(DayDocument.createFutureDay(MONDAY), [EAT_CLEAN], MONDAY, new Map([['eat-clean', 4]]))
+  const day = stampStreaksList(DayDocument.createFutureDay(MONDAY), [EAT_CLEAN], MONDAY)
   const result = strikeStreakItem(day, EAT_CLEAN, MONDAY)
 
   assert({ given: 'an unstruck item', should: 'report struck', expected: 'struck', actual: result.kind })
   assert({
     given: 'the struck day',
     should: 'wrap the item in strikethrough',
-    expected: ['~~Eat clean — 4d~~'],
+    expected: ['~~Eat clean~~'],
     actual: result.kind === 'struck' ? streaksList(result.day)?.items : undefined,
   })
   assert({
@@ -151,6 +149,20 @@ test(`strikeStreakItem() strikes an unstruck item`, () => {
     should: 'satisfy the shared done test',
     expected: true,
     actual: result.kind === 'struck' && DayDocument.isItemDone(result.item),
+  })
+})
+
+test(`strikeStreakItem() strikes an older item with its run count verbatim`, () => {
+  const day = DayDocument.createFutureDay(MONDAY)
+    .addList(STREAKS_LIST_TITLE)
+    .addItem(STREAKS_LIST_TITLE, 'Eat clean — 4d')
+  const result = strikeStreakItem(day, EAT_CLEAN, MONDAY)
+
+  assert({
+    given: 'an unstruck item stamped with a run count by an older day:start',
+    should: 'wrap the text as it stands',
+    expected: ['~~Eat clean — 4d~~'],
+    actual: result.kind === 'struck' ? streaksList(result.day)?.items : undefined,
   })
 })
 

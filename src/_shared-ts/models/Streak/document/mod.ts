@@ -21,10 +21,15 @@ export const STREAKS_LIST_TITLE = 'Streaks'
  * - /archived/ → archived (streaks are never deleted, only archived)
  *
  * Day-file contract: each tracked day carries this streak's `title` as a plain
- * bullet in the day's `## Streaks` list, optionally decorated with a run count
- * (`Eat clean — 12d`). Completion is the standard strikethrough mechanic
- * (`~~Eat clean — 12d~~`, see DayDocument.isItemDone). The title is therefore
- * the join key between day items and this rule — renaming it orphans history.
+ * bullet in the day's `## Streaks` list. Completion is the standard
+ * strikethrough mechanic (`~~Eat clean~~`, see DayDocument.isItemDone). The
+ * title is therefore the join key between day items and this rule — renaming
+ * it orphans history.
+ *
+ * The run is never written to the day file; it is counted back from the
+ * struck items on read (computeStreakStats). Older day files carry a stamped
+ * run count (`Eat clean — 12d`). It is ignored when matching and never
+ * written again. See src/service/handler/streaks/docs/.
  */
 export default class StreakDocument extends Document {
   static override yamlKeyOrder = ['name', 'title', 'schedule', 'start', 'end', 'created', 'updated', 'rel', 'tags']
@@ -102,15 +107,11 @@ export default class StreakDocument extends Document {
 
   // Day-item text
 
-  /** Render the day-list item text: `Eat clean` or `Eat clean — 12d`. */
-  static formatDayItem(title: string, count?: number): string {
-    return count === undefined ? title : `${title} — ${count}d`
-  }
-
   /**
    * Recover the bare title from a day-list item: strips the strikethrough
-   * wrapper and the trailing ` — Nd` decoration. Splits on the LAST dash-count
-   * suffix, so titles containing em-dashes survive.
+   * wrapper and the trailing ` — Nd` run count that older day files carry.
+   * Splits on the LAST dash-count suffix, so titles containing em-dashes
+   * survive.
    */
   static parseDayItemTitle(item: string): string {
     let text = item.trim()
