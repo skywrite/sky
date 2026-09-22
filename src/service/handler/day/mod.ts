@@ -7,6 +7,7 @@
 
 import * as path from 'node:path'
 import { Hono } from 'hono'
+import type { MostImportantAI } from '#lib/mostImportant/types.ts'
 import { planningDate } from '#lib/nbfs/taskDestination.ts'
 import { OutboxError } from '#lib/outbox/types.ts'
 import { resolveWorkstreamDayItems } from '#lib/workstreams/day.ts'
@@ -21,6 +22,7 @@ import { createDayFilesRoutes, type DayFilesOptions } from './files.ts'
 import isDay from './isDay.ts'
 import { createItemRoutes } from './item.ts'
 import type { ItemRoutesOptions } from './itemContext.ts'
+import { createMostImportantRoutes } from './mostImportant.ts'
 import { buildDayRecord, type DayRecord, loadOwnerNames } from './record.ts'
 import { createScheduleRoutes, type ScheduleHost } from './schedule.ts'
 
@@ -43,6 +45,7 @@ export interface DayRoutesOptions {
   workstreams?: WorkstreamStore
   /** Test seam for a failed planning write. */
   writePlanning?: ItemRoutesOptions['writePlanning']
+  mostImportant?: MostImportantAI
 }
 
 /** A day in the sidebar: what to call it, and the short stamp beside it. */
@@ -194,5 +197,18 @@ export function createDayRoutes(options: DayRoutesOptions): Hono {
   if (options.files) app.route('/', createDayFilesRoutes(options.files))
   // The day's schedule: the calendar's meetings against the notebook clock, for the rail.
   if (options.schedule) app.route('/', createScheduleRoutes(options.schedule))
+  app.route(
+    '/',
+    createMostImportantRoutes({
+      timeDir: options.timeDir,
+      markdownBaseDir: options.markdownBaseDir,
+      stateDir: options.files ? path.join(options.files.userDataDir, 'day-planning') : undefined,
+      writePlanning: options.writePlanning,
+      today: options.today ?? (() => fetchNowSync().plainDateTime.plainDate),
+      view: (ymd) => buildDayView(options, ymd),
+      workstreams: options.workstreams,
+      ai: options.mostImportant,
+    }),
+  )
   return app
 }

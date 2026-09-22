@@ -1,6 +1,7 @@
 import * as path from 'node:path'
 import type { YogaServerInstance } from 'graphql-yoga'
 import type { CalendarSchedulerHost } from '#lib/calendarScheduler/types.ts'
+import type { MostImportantAI } from '#lib/mostImportant/types.ts'
 import type MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
 import type { ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
 import { Store } from '../store.ts'
@@ -37,6 +38,7 @@ export function createTestHttpApp(
     settings?: SettingsRoutesOptions
     clock?: ClockRoutesOptions
     meetings?: CalendarSchedulerHost
+    mostImportant?: MostImportantAI
     automations?: AutomationsRoutesOptions
     workstreams?: WorkstreamsRoutesOptions
     tracking?: TrackingRoutesOptions
@@ -61,6 +63,7 @@ export function createTestHttpApp(
     settings: options.settings,
     clock: options.clock,
     meetings: options.meetings,
+    mostImportant: options.mostImportant,
     automations: options.automations,
     workstreams: options.workstreams,
     tracking: options.tracking,

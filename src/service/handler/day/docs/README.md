@@ -16,6 +16,8 @@ opens the import picker on desktop and mobile.
 
 ## The day's items
 
+Most Important creation uses the shared [MI workflow](../../../../lib/mostImportant/docs/README.md): ranked suggestions, a relevant interview, and an editable draft accepted into the day. Its checkbox also updates the linked MI's completion state.
+
 The plan on the page — Most important, Commitments, To-dos, Reminders — is
 the day file's own lists, read by heading (`record.ts`). Each row writes
 back to the file through `item.ts`, and every write answers with the fresh

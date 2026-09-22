@@ -194,7 +194,7 @@
   }
 }
 
-/* Most important is the day's one card. The other sections share the page. */
+/* A chosen Most important is the day's one card; its empty invitation shares the page. */
 .sky-day .sky-col > .sky-day-priority {
   background: color-mix(in srgb, var(--sky-accent-soft) 45%, var(--sky-bg));
 }

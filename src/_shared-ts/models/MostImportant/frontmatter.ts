@@ -8,10 +8,10 @@ import { stringify } from '#shared/yaml/mod.ts'
  * the frontmatter. An empty summary renders as a bare `summary:` key, same as
  * the other empty keys.
  */
-export function miFrontmatter(summary: string): string {
+export function miFrontmatter(summary: string, metadata: Record<string, unknown> = {}): string {
   return [
     '---',
-    stringify({ summary: summary || null, complete: null, dateStarted: null, rel: null, tags: null }),
+    stringify({ summary: summary || null, complete: null, dateStarted: null, rel: null, tags: null, ...metadata }),
     '---',
   ].join('\n')
 }

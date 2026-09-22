@@ -10,6 +10,7 @@ import process from 'node:process'
 import { serve } from '@hono/node-server'
 import type { ServerType } from '@hono/node-server'
 import { type Browser, chromium, type Page } from 'playwright'
+import type { MostImportantAI } from '#lib/mostImportant/types.ts'
 import MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
 import { env } from '#shared/sys/mod.ts'
 import type { ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
@@ -126,6 +127,7 @@ export async function runWysiwygE2e(
     /** Serve the day page too: its routes, and the import routes a drop on it needs */
     day?: boolean
     now?: ZonedDateTime
+    mostImportant?: MostImportantAI
     /** Script an import's read-back and run when testing the day import flow */
     imports?: Partial<ImportRoutesOptions>
     /** A real chat host with a scripted model, for browser conversation tests. */
@@ -170,6 +172,7 @@ export async function runWysiwygE2e(
         markdownStore,
         keep: { searchDirs: [downloads], spotlight: false },
         ...(options.day ? dayHosts(notebookBaseDir, userDataDir, options.imports) : {}),
+        mostImportant: options.mostImportant,
         now: options.now ? () => options.now! : undefined,
         ...(options.chat ? { chat: options.chat(notebookBaseDir, userDataDir) } : {}),
       },

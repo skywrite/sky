@@ -9,14 +9,15 @@
 import { readdir } from 'node:fs/promises'
 import * as path from 'node:path'
 import { DIR_DECISIONS, DIR_GOALS, DIR_TIME } from '#config'
+import { MI_FILE } from '#lib/mostImportant/paths.ts'
 import { exists, readTextFile, walk } from '#shared/fs/mod.ts'
 import stripHtmlComments from '#shared/models/Markdown/Document/_stripHtmlComments.ts'
+import { Document } from '#shared/models/Markdown/mod.ts'
 import { dayAIChatsDir, dayDir } from '#shared/nbfs/mod.ts'
 import type { PlainDate } from '#universal/dates/nbdt/mod.ts'
 
-/** Most-important files live under a day's most-important/ directory as
- * MI1.md, MI2.md, … — optionally suffixed with a summary slug (MI2_Ship-Docs.md). */
-export const MI_FILE = /^MI\d+(?:[_-].*)?\.md$/i
+/** Both the legacy MI ordinals and creation-timestamp names identify daily priorities. */
+export { MI_FILE }
 
 /** One titled block of assembled context. */
 export interface ContextSection {
@@ -75,9 +76,10 @@ export async function readDayJournals(day: PlainDate): Promise<ContextFile[]> {
   return readMatching(path.join(DIR_TIME, dayDir(day), 'journal'), (f) => f.endsWith('.md'))
 }
 
-/** A day's most-important files: time/<day>/most-important/MI*.md. */
-export async function readDayMostImportant(day: PlainDate): Promise<ContextFile[]> {
-  return readMatching(path.join(DIR_TIME, dayDir(day), 'most-important'), (f) => MI_FILE.test(f))
+/** A day's accepted MIs. An interrupted save is repaired by its retry, not suggested as committed work. */
+export async function readDayMostImportant(day: PlainDate, timeDir = DIR_TIME): Promise<ContextFile[]> {
+  const files = await readMatching(path.join(timeDir, dayDir(day), 'most-important'), (f) => MI_FILE.test(f))
+  return files.filter((file) => Document.fromMarkdown(file.body).yaml['creationLinked'] !== false)
 }
 
 /** A day's AI chats: every .md in its chats folder. The conversation rides;

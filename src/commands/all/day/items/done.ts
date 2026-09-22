@@ -8,6 +8,7 @@ import * as path from 'node:path'
 import { AIChatTool } from '#commands/lib/AIChatTool.ts'
 import { ArgOrFlag, Command, CommandResult, dayFlag, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
+import { setMostImportantComplete } from '#lib/mostImportant/store.ts'
 import { dayFile, withDayWrite } from '#lib/nbfs/mod.ts'
 import { exists, readTextFile, writeTextFile } from '#shared/fs/mod.ts'
 import DayDocument from '#shared/models/Day/mod.ts'
@@ -70,6 +71,7 @@ export default class DayItemsDoneTask extends Command {
         return CommandResult.fail(`Several items match "${item}" — ${shown}. Add words or name the list.`)
       }
       if (search.kind === 'already-done') {
+        await setMostImportantComplete(config.DIR_TIME, file, search.match.raw, true, content)
         const text = cleanItemText(search.match.raw)
         output.log(`Already done: ${text}`)
         return CommandResult.success({ day: when.ymd, list: search.match.listTitle, item: text, already: true })
@@ -81,7 +83,13 @@ export default class DayItemsDoneTask extends Command {
       if (struck.kind !== 'written') {
         return CommandResult.fail(`Could not strike "${cleanItemText(search.match.raw)}" — the day changed underneath.`)
       }
-      await writeTextFile(file, struck.content)
+      const rollback = await setMostImportantComplete(config.DIR_TIME, file, search.match.raw, true, content)
+      try {
+        await writeTextFile(file, struck.content)
+      } catch (error) {
+        await rollback()
+        throw error
+      }
       const text = cleanItemText(search.match.raw)
       output.log(`Done: ${text} (${search.match.listTitle})`)
       return CommandResult.success({ day: when.ymd, list: search.match.listTitle, item: text })

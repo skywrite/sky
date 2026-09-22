@@ -10,6 +10,7 @@ import type { YogaServerInstance } from 'graphql-yoga'
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import type { CalendarSchedulerHost } from '#lib/calendarScheduler/types.ts'
+import type { MostImportantAI } from '#lib/mostImportant/types.ts'
 import { planningDate } from '#lib/nbfs/taskDestination.ts'
 import type MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
 import { fetchNowSync } from '#shared/nbfs/mod.ts'
@@ -87,6 +88,7 @@ export interface HttpHandlerOptions {
   /** The clock page's host; absent, /clock/_api is not served */
   clock?: ClockRoutesOptions
   meetings?: CalendarSchedulerHost
+  mostImportant?: MostImportantAI
   /** The automations page's host; absent, /automations/_api is not served */
   automations?: AutomationsRoutesOptions
   outbox?: OutboxRoutesOptions
@@ -169,6 +171,7 @@ export function createHttpApp(options: HttpHandlerOptions): Hono {
           scores: store,
         }),
         workstreams: options.workstreams?.store,
+        mostImportant: options.mostImportant,
       }),
     )
     // The week the days live in: its days, its plan, what waits for the next one. The page itself is /week, below.

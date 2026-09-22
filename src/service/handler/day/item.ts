@@ -10,6 +10,7 @@
 import { tmpdir } from 'node:os'
 import * as path from 'node:path'
 import { Hono, type MiddlewareHandler } from 'hono'
+import { setMostImportantComplete } from '#lib/mostImportant/store.ts'
 import { hash, withLock } from '#lib/outbox/files.ts'
 import { updateWorkstreamDay, workstreamDayRemoval } from '#lib/workstreams/day.ts'
 import { writeTextFile } from '#shared/fs/mod.ts'
@@ -72,7 +73,13 @@ export function createItemRoutes(options: ItemRoutesOptions): Hono {
         },
       )
     const content = orderPlanList(result.kind === 'written' ? result.content : day.content, body.list)
-    if (content !== day.content) await writeTextFile(day.file, content)
+    const rollback = await setMostImportantComplete(options.timeDir, day.file, body.raw, body.done, day.content)
+    try {
+      if (content !== day.content) await writeTextFile(day.file, content)
+    } catch (error) {
+      await rollback()
+      throw error
+    }
     return c.json(await options.view(day.ymd))
   })
 

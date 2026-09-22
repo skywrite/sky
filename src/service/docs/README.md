@@ -1,6 +1,6 @@
 ---
 created: 2026-09-05
-updated: 2026-09-10
+updated: 2026-09-20
 ---
 
 # The service process
@@ -25,7 +25,7 @@ does the person, from the shell, which is the one way to cut a wait short.
 
 What holds the process (`activity.ts`): boot itself, a chat turn, a chat
 being filed, an import running, a heartbeat tick with its follow checks,
-an Outbox check starting its worker, and a voice conversation for two minutes past
+an Outbox check starting its worker, a [Most Important creation flow](../../lib/mostImportant/docs/README.md), and a voice conversation for two minutes past
 its last request. A hold is taken where the work starts and released where it
 ends; a timed hold covers work the service only hears from in bursts.
 

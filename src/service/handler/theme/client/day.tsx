@@ -8,6 +8,7 @@ import { DayChatResume } from './dayChatResume.tsx'
 import { chatState, chatTurnCount, type DayChatRow, dayChatRows } from './dayChats.ts'
 import { DayItemEditing, InlineItemEditor, ItemDetailsIcon, useItemEditing } from './dayItemEditing.tsx'
 import { DayItemHelp, ItemHelpButton } from './dayItemHelp.tsx'
+import { DayMostImportant } from './dayMostImportant.tsx'
 import {
   DayCommitmentOrder,
   DayItemGrip,
@@ -751,6 +752,7 @@ function PlanCard({
   checkOff,
   at,
   className,
+  action,
   children,
 }: {
   head: string
@@ -759,6 +761,7 @@ function PlanCard({
   checkOff: CheckOff
   at: string
   className?: string
+  action?: ReactNode
   children?: ReactNode
 }) {
   const organize = useItemOrganizing()
@@ -790,9 +793,9 @@ function PlanCard({
   return (
     <Block
       head={head}
-      mini={items.length ? mini : undefined}
+      mini={items.length && head !== 'Most important' ? mini : undefined}
       className={className}
-      action={head === 'Commitments' && items.length ? <DayCommitmentOrder /> : undefined}
+      action={head === 'Commitments' && items.length ? <DayCommitmentOrder /> : action}
     >
       {sorted.map((item) => {
         const key = itemKey(item)
@@ -1204,14 +1207,21 @@ export function DayView({
             <div className="sky-col">
               {record && (
                 <>
-                  <PlanCard
-                    head="Most important"
-                    className="sky-day-priority"
-                    items={record.mostImportant}
-                    today={isToday}
-                    checkOff={checkOff}
-                    at={at}
-                  />
+                  <DayMostImportant key={view!.day.ymd} day={view!} onSaved={setView}>
+                    {(entry) => (
+                      <PlanCard
+                        head="Most important"
+                        className={record.mostImportant.length ? 'sky-day-priority' : undefined}
+                        items={record.mostImportant}
+                        today={isToday}
+                        checkOff={checkOff}
+                        at={at}
+                        action={Boolean(record.mostImportant.length) && !organize.active && entry}
+                      >
+                        {!record.mostImportant.length && !organize.active && entry}
+                      </PlanCard>
+                    )}
+                  </DayMostImportant>
                   <PlanCard head="Commitments" items={record.commitments} today={isToday} checkOff={checkOff} at={at}>
                     {!organize.active && planning.composer('commitments')}
                   </PlanCard>

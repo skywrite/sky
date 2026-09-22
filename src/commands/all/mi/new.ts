@@ -2,11 +2,14 @@ import * as path from 'node:path'
 import colors from 'picocolors'
 import { ArgOrFlag, Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
+import { saveMostImportant } from '#lib/mostImportant/store.ts'
+import type { MIDraft } from '#lib/mostImportant/types.ts'
 import { DayDirFileWriter } from '#lib/nbfs/mod.ts'
 import { autoRelMessage } from '#lib/notebook/enrich/autoRel.ts'
 import { autoTagMessage } from '#lib/notebook/enrich/autoTag.ts'
 import openEditor from '#lib/shell/openEditor.ts'
 import slugify from '#lib/string/slugify.ts'
+import { workstreamStoragePaths } from '#lib/workstreams/storagePaths.ts'
 import readDir from '#shared/fs/readDir.ts'
 import { Document } from '#shared/models/Markdown/mod.ts'
 import MostImportant from '#shared/models/MostImportant/mod.ts'
@@ -25,7 +28,7 @@ const MI_ENRICH: { mediums: string[]; kind: string; maxTags: number } = {
 const params = {
   summary: ArgOrFlag.string('Summary of the most important task', { short: 's' }),
   ai: Flag.bool('Use AI to suggest the most important thing', {
-    default: false,
+    default: true,
   }),
   dryRun: Flag.bool('Show AI suggestion without creating file', {
     default: false,
@@ -33,7 +36,7 @@ const params = {
   inspect: Flag.bool('Open the AI prompt in VSCode without calling AI', {
     default: false,
   }),
-  depend: Flag.bool('Add questions about depending upon others', {
+  depend: Flag.bool('Add dependency questions to the non-AI template (AI considers dependencies automatically)', {
     short: 'd',
     default: false,
   }),
@@ -74,11 +77,10 @@ export default class MiNewTask extends Command {
 
     const whenDay = when.plainDate
 
-    // Get summary from AI if --ai flag is set and no summary provided
+    // A supplied task skips suggestions, while keeping the interview and draft review.
     let summary = providedSummary
-    let aiMarkdown = ''
-    let aiDueBy: string | undefined
-    if (ai && !summary) {
+    let reviewed: MIDraft | undefined
+    if (ai) {
       const aiResult = await suggestMostImportant({
         context,
         today: whenDay,
@@ -86,11 +88,11 @@ export default class MiNewTask extends Command {
         dryRun,
         inspect,
         depend,
+        initialSummary: providedSummary,
       })
 
       summary = aiResult.summary
-      aiMarkdown = aiResult.markdown
-      aiDueBy = aiResult.dueBy
+      reviewed = aiResult.draft
 
       if (inspect) {
         return CommandResult.success({ file: '', count: 0 })
@@ -109,6 +111,29 @@ export default class MiNewTask extends Command {
       output.log(`\nMI: "${summary}"`)
     }
 
+    if (dryRun || inspect) return CommandResult.success({ file: '', count: 0 })
+    if (reviewed) {
+      const input = { summary: reviewed.summary, body: reviewed.body }
+      const [tags, rel] = await Promise.all([
+        noAutoTag ? undefined : autoTagMessage(input, MI_ENRICH),
+        noAutoRel ? undefined : autoRelMessage(input, MI_ENRICH),
+      ])
+      const saved = await saveMostImportant(
+        {
+          timeDir: config.DIR_TIME,
+          stateDir: path.join(config.DIR_USER_DATA, 'day-planning'),
+          dayStateDir: workstreamStoragePaths(config).stateDir,
+        },
+        whenDay,
+        reviewed,
+        crypto.randomUUID(),
+        { tags: tags ?? undefined, rel: rel ?? undefined },
+      )
+      openEditor([{ file: path.join(config.DIR_TIME, dayDir(whenDay), saved.file), line: 1 }])
+      output.log(`\n  Successfully created ${saved.file}.\n`)
+      return CommandResult.success(saved)
+    }
+
     const miDir = path.join(<string>config.DIR_TIME, dayDir(whenDay), 'most-important')
 
     let count = 1
@@ -122,7 +147,7 @@ export default class MiNewTask extends Command {
 
     const ddfw = new DayDirFileWriter(whenDay)
 
-    let markdown = aiMarkdown || MostImportant.create(whenDay, { count, dependQuestions: depend, summary }).toMarkdown()
+    let markdown = MostImportant.create(whenDay, { count, dependQuestions: depend, summary }).toMarkdown()
 
     // Enrich (tags, rel) when there's a summary to work from — a blank
     // questionnaire has nothing to classify. Both helpers abstain on failure.
@@ -152,11 +177,7 @@ export default class MiNewTask extends Command {
     const filePath = await ddfw.write(`most-important/${fileName}`, markdown)
 
     if (summary) {
-      // Day-file items require an HH:MM prefix (every reader matches
-      // /^\d{2}:\d{2} >/), so free-text due-by ("EOD") falls back to now.
-      const dueTime = aiDueBy?.match(/^(\d{1,2}):(\d{2})$/)
-      const entryTime = dueTime ? `${dueTime[1].padStart(2, '0')}:${dueTime[2]}` : when.time
-      const dayItem = `${entryTime} > MI/${count} -> [${summary}](most-important/${path.basename(filePath)})`
+      const dayItem = `MI/${count} -> [${summary}](most-important/${path.basename(filePath)})`
       let dayObj = await readDay(whenDay)
       dayObj = dayObj.addMostImportantItem(dayItem)
       await writeDay(dayObj)
