@@ -1,3 +1,4 @@
+import { afterEach } from 'bun:test'
 import type { RealtimeFunctionTool, RealtimeSessionCreateRequest } from 'openai/resources/realtime/realtime'
 import { makeTempDir } from '#shared/fs/mod.ts'
 import { assert, test } from '#test'
@@ -76,7 +77,23 @@ async function appWith(host: VoiceRoutesOptions) {
 
 type App = Awaited<ReturnType<typeof appWith>>
 
+const calls = new Map<App, Set<string>>()
+
+afterEach(async () => {
+  // Calls outlive their requests; end them even when a test assertion fails.
+  const opened = [...calls]
+  calls.clear()
+  for (const [app, ids] of opened) {
+    for (const id of ids) await post(app, `/voice/${id}/end`)
+  }
+})
+
 function post(app: App, url: string, body?: unknown): Promise<Response> {
+  const call = /^\/voice\/([^/]+)\/(?:session|tools)$/.exec(url)
+  if (call) {
+    if (!calls.has(app)) calls.set(app, new Set())
+    calls.get(app)!.add(call[1])
+  }
   return Promise.resolve(
     app.request(url, {
       method: 'POST',

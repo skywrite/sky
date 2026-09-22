@@ -71,8 +71,8 @@ test('automatic reload waits for open creation sessions and the final in-flight 
     assert({
       given: 'a pending reload while two creation dialogs are open, then both close during model work',
       should: 'wait across questions, respect the other tab, and restart only when the last request finishes',
-      actual: { betweenQuestions, otherTab, generating, after: codes },
-      expected: { betweenQuestions: [], otherTab: [], generating: [], after: [RELOAD_EXIT_CODE] },
+      actual: { betweenQuestions, otherTab, generating, after: codes, holding: gate.status().holding },
+      expected: { betweenQuestions: [], otherTab: [], generating: [], after: [RELOAD_EXIT_CODE], holding: [] },
     })
   } finally {
     finish.resolve()

@@ -655,19 +655,24 @@ test('a service restart reads a running job as failed, file kept', async () => {
   const { job } = (await (await app.request('/import', { method: 'POST', body: upload('atlas.vtt', VTT) })).json()) as {
     job: ImportJob
   }
-  await postJson(app, `/import/${job.id}/start`, { kind: 'meeting', when: '2026-01-27 09:31' })
-  await events(await app.request(`/import/${job.id}/events`), (e) => e.type === 'prompt')
+  try {
+    await postJson(app, `/import/${job.id}/start`, { kind: 'meeting', when: '2026-01-27 09:31' })
+    await events(await app.request(`/import/${job.id}/events`), (e) => e.type === 'prompt')
 
-  // The same directory, read by a fresh service.
-  const reborn = createTestHttpApp([path.join(w.notebook, 'time')], { imports: w.options })
-  const list = (await (await reborn.request('/import')).json()) as { imports: ImportJob[] }
-  const staged = await readdir(path.join(w.dir, job.id))
-  assert({
-    given: 'a job that was mid-way when the service died',
-    should: 'read as failed with the restart sentence, the upload still there',
-    actual: [list.imports[0]?.state, list.imports[0]?.error, staged.includes('atlas.vtt')],
-    expected: ['failed', 'Sky restarted while this was running. The file is still here.', true],
-  })
+    // The same directory, read by a fresh service.
+    const reborn = createTestHttpApp([path.join(w.notebook, 'time')], { imports: w.options })
+    const list = (await (await reborn.request('/import')).json()) as { imports: ImportJob[] }
+    const staged = await readdir(path.join(w.dir, job.id))
+    assert({
+      given: 'a job that was mid-way when the service died',
+      should: 'read as failed with the restart sentence, the upload still there',
+      actual: [list.imports[0]?.state, list.imports[0]?.error, staged.includes('atlas.vtt')],
+      expected: ['failed', 'Sky restarted while this was running. The file is still here.', true],
+    })
+  } finally {
+    // Recreating the router does not stop the original runner or release its service hold.
+    await postJson(app, `/import/${job.id}/cancel`, {})
+  }
 })
 
 test('an earlier run of the file shows on the job, and Start over reaches the command', async () => {
