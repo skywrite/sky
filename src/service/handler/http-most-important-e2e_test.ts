@@ -173,6 +173,7 @@ test(
     const drafts: MIDraftInput[] = []
     const contextReady = Promise.withResolvers<void>()
     const suggestionsReady = Promise.withResolvers<void>()
+    const writingReady = Promise.withResolvers<void>()
     let suggestionCalls = 0
     const ai: MostImportantAI = {
       suggest: async (_day, options, progress) => {
@@ -183,6 +184,7 @@ test(
           progress?.({ stage: 'thinking', documents: 24 })
           await suggestionsReady.promise
           progress?.({ stage: 'writing' })
+          await writingReady.promise
         }
         return {
           contextSummary: 'Several useful decisions are ready for your attention. '.repeat(15),
@@ -275,6 +277,20 @@ test(
           })
         await page.setViewportSize({ width: 1280, height: 900 })
         suggestionsReady.resolve()
+        await dialog.getByText('Writing your shortlist…', { exact: true }).waitFor()
+        await page.clock.fastForward(7500)
+        assert({
+          given: 'a slow response after writing starts',
+          should: 'rotate writing captions without resetting elapsed time or advancing the real stage',
+          actual: {
+            changing: (await dialog.getByRole('status').locator('strong').innerText()) !== 'Writing your shortlist…',
+            elapsed: Number.parseInt(await dialog.locator('.sky-mi-elapsed').innerText(), 10) >= 15,
+            completed: await dialog.locator('.sky-mi-stages [data-state="done"]').count(),
+            active: await dialog.locator('.sky-mi-stages [aria-current="step"]').innerText(),
+          },
+          expected: { changing: true, elapsed: true, completed: 2, active: '3\nWrite options' },
+        })
+        writingReady.resolve()
         await dialog.locator('.sky-mi-suggestion').first().waitFor()
         assert({
           given: 'the initial recommendations',
