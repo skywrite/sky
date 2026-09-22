@@ -15,6 +15,8 @@ import type { ImageEditAssessment } from './review.ts'
 import { runImageWorkflow } from './workflow.ts'
 import type { ImageWorkflowDependencies } from './workflow.ts'
 
+// Use the default workflow budget for real native rendering; Bun's test timeout bounds execution.
+// Short budgets can cut corrections off on slow runners. Deadline behavior is covered in attempts_test.ts.
 const noPaidCalls: Partial<ImageWorkflowDependencies> = {
   renderImages: async () => {
     throw new Error('Unexpected image API call.')
@@ -114,7 +116,6 @@ test('Image corrections reuse the original source and preserve focus, refinement
       size: '128x96',
       count: 1,
       maxAttempts: 3,
-      budgetMs: 1000,
     },
     {
       ...noPaidCalls,
@@ -186,7 +187,6 @@ test('Image workflow honors an explicit request to disable focused rendering', a
       count: 1,
       focus: false,
       maxAttempts: 1,
-      budgetMs: 1000,
     },
     {
       ...noPaidCalls,
@@ -219,7 +219,6 @@ test('Precise graphic edits preserve original pixels and their SVG without invok
       size: '128x96',
       count: 1,
       maxAttempts: 3,
-      budgetMs: 1000,
     },
     {
       ...noPaidCalls,
@@ -288,7 +287,6 @@ test('Pure drawing creation receives visual review and corrects exact geometry w
       size: '128x96',
       count: 1,
       maxAttempts: 3,
-      budgetMs: 1000,
     },
     {
       ...noPaidCalls,
@@ -344,7 +342,6 @@ test('Mixed typography corrections reuse artwork and keep the full original requ
       size: '128x96',
       count: 1,
       maxAttempts: 3,
-      budgetMs: 1000,
     },
     {
       ...noPaidCalls,
@@ -452,7 +449,6 @@ test('Localized mixed artwork uses the refined working footprint without sending
       size: '128x96',
       count: 1,
       maxAttempts: 1,
-      budgetMs: 1000,
     },
     {
       ...noPaidCalls,
@@ -550,7 +546,6 @@ test('New drawings and transformations use references for style without embeddin
         refs: [reference],
         count: 1,
         maxAttempts: 1,
-        budgetMs: 2000,
       },
       {
         ...noPaidCalls,
@@ -612,7 +607,6 @@ test('A drawing edit planner sees the actual padded canvas used by the renderer 
       size: '128x128',
       count: 1,
       maxAttempts: 1,
-      budgetMs: 1000,
     },
     {
       ...noPaidCalls,
@@ -658,7 +652,6 @@ test('A mixed whole-image edit normalizes unsupported reference dimensions befor
       refs: [reference],
       count: 1,
       maxAttempts: 1,
-      budgetMs: 2000,
     },
     {
       ...noPaidCalls,
@@ -720,7 +713,6 @@ test('Mixed surface repainting keeps the full prepared panel instead of narrowin
         size: '128x96',
         count: 1,
         maxAttempts: 1,
-        budgetMs: 1000,
       },
       {
         ...noPaidCalls,
