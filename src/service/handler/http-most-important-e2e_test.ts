@@ -1,6 +1,6 @@
 import { readFile, readdir } from 'node:fs/promises'
 import * as path from 'node:path'
-import type { MIDraftInput, MISuggestion, MostImportantAI } from '#lib/mostImportant/types.ts'
+import type { MIDraft, MIDraftInput, MISuggestion, MostImportantAI } from '#lib/mostImportant/types.ts'
 import { Document } from '#shared/models/Markdown/mod.ts'
 import { dayFile } from '#shared/nbfs/mod.ts'
 import { env } from '#shared/sys/mod.ts'
@@ -22,6 +22,147 @@ const choices: MISuggestion[] = [
   { summary: 'Share the Atlas research notes', reason: 'Give the team enough context to challenge the assumptions.' },
   { summary: 'Send the Widget handoff', reason: 'The support team is waiting for the documented changes.' },
 ]
+
+const longDraft: MIDraft = {
+  summary: 'Prepare the Atlas release handoff and send the review draft to Jane',
+  dueBy: '',
+  body: [
+    'Prepare a handoff that gives the support team the context they need for the Atlas release. Bring the current product brief and the open support questions into one document, then send the draft to Jane for review.',
+    '## Why this matters',
+    'The product brief explains what is changing, but the support team still needs a clear account of what customers will notice. A shared draft gives both teams something specific to review before launch. It also puts the remaining questions in one place so they can be resolved without another round of scattered messages.',
+    'The handoff should preserve the distinctions already established in the brief: features that are ready, changes still under review, and issues that need a follow-up. The purpose is to give the team an accurate starting point for the release, with enough context to recognize where they need more information.',
+    '## Done when',
+    'Jane has the draft, with the agreed release scope and unresolved support questions clearly described. Include links to the product brief and the current issue list so the team can find the supporting detail. Keep the document focused on the handoff rather than reproducing every discussion that led to it.',
+    'The review draft is ready to share with the support team.',
+  ].join('\n\n'),
+}
+
+test({ name: 'a long draft review keeps document text clear of its controls', timeout: 60000 }, async (t) => {
+  await runWysiwygE2e(
+    t,
+    {
+      initialMarkdown: EMPTY,
+      tempPrefix: 'sky-mi-review-',
+      file: FILE,
+      day: true,
+      files: { [path.posix.join('time', dayFile(PlainDate.today()))]: '---\nstarted: 08:00\ntz: UTC\n---\n' },
+    },
+    async ({ page, origin, errors }) => {
+      await page.addInitScript(
+        ({ day, draft }) =>
+          sessionStorage.setItem(`sky-mi-draft:${day}`, JSON.stringify({ step: 'review', answers: [], draft })),
+        { day: DAY.ymd, draft: longDraft },
+      )
+      await page.setViewportSize({ width: 1280, height: 800 })
+      await page.goto(`${origin}/${DAY.ymd}`)
+      await page.getByRole('button', { name: 'Continue draft', exact: true }).click()
+      const dialog = page.getByRole('dialog')
+      const editor = dialog.getByRole('textbox', { name: 'Task document', exact: true })
+      await editor.getByText('The review draft is ready to share with the support team.', { exact: true }).waitFor()
+      const screenshots = env.get('SKY_MI_SCREENSHOTS')
+      const title = dialog.getByRole('textbox', { name: 'Most important', exact: true })
+      const scroller = dialog.locator('.sky-mi-scroll')
+      const feedback = dialog.getByRole('textbox', { name: 'Refine with Sky', exact: true })
+      try {
+        for (const viewport of [
+          { width: 1280, height: 800 },
+          { width: 1024, height: 600 },
+          { width: 390, height: 844 },
+        ]) {
+          await page.setViewportSize(viewport)
+          await page.locator(viewport.width <= 900 ? '.mantine-Drawer-content' : '.mantine-Modal-content').waitFor()
+          await editor.waitFor()
+          await dialog.evaluate((element) =>
+            Promise.all(element.getAnimations({ subtree: true }).map((animation) => animation.finished)),
+          )
+          await scroller.evaluate((element) => {
+            element.scrollTop = 0
+          })
+          if (screenshots)
+            await page.screenshot({
+              path: path.join(screenshots, `review-${viewport.width}.png`),
+              animations: 'disabled',
+            })
+          assert({
+            given: `a long review at ${viewport.width} × ${viewport.height}`,
+            should: 'wrap the title, grow the document, and keep the footer below a single scroller',
+            actual: {
+              overlaps: await editor.evaluate((element) => {
+                const last = element.lastElementChild!.getBoundingClientRect()
+                return last.bottom > document.querySelector('.sky-mi-refinement')!.getBoundingClientRect().top
+              }),
+              titleClipped: await title.evaluate((element) => element.scrollHeight > element.clientHeight + 1),
+              footerVisible: await dialog.locator('.sky-mi-footer').evaluate((element) => {
+                const footer = element.getBoundingClientRect()
+                const scroll = document.querySelector('.sky-mi-scroll')!.getBoundingClientRect()
+                return scroll.bottom <= footer.top + 1 && footer.bottom <= innerHeight
+              }),
+              feedbackVisible: await feedback.isVisible(),
+              overflow: await page.evaluate(() => document.documentElement.scrollWidth > innerWidth),
+            },
+            expected: {
+              overlaps: false,
+              titleClipped: false,
+              footerVisible: true,
+              feedbackVisible: false,
+              overflow: false,
+            },
+          })
+          await editor.locator(':scope > :last-child').scrollIntoViewIfNeeded()
+          assert({
+            given: 'scrolling to the end of the draft',
+            should: 'make the final paragraph readable above the action bar',
+            actual: await editor.locator(':scope > :last-child').evaluate((element) => {
+              const paragraph = element.getBoundingClientRect()
+              const scroll = document.querySelector('.sky-mi-scroll')!.getBoundingClientRect()
+              return paragraph.top >= scroll.top && paragraph.bottom <= scroll.bottom + 1
+            }),
+            expected: true,
+          })
+        }
+        await dialog.getByRole('button', { name: 'Refine with Sky', exact: true }).click()
+        await feedback.fill('Keep the handoff focused on the release scope.')
+        await feedback.scrollIntoViewIfNeeded()
+        if (screenshots)
+          await page.screenshot({ path: path.join(screenshots, 'review-mobile-refine.png'), animations: 'disabled' })
+        assert({
+          given: 'refinement opened beneath a long draft on a phone',
+          should: 'keep its input below the document',
+          actual: await feedback.evaluate((element) => {
+            const paragraph = document.querySelector('.sky-mi-document')!.lastElementChild!.getBoundingClientRect()
+            return element.getBoundingClientRect().top >= paragraph.bottom
+          }),
+          expected: true,
+        })
+        await dialog.getByRole('button', { name: 'Add a deadline', exact: true }).click()
+        const deadline = dialog.getByRole('textbox', { name: 'Due by (optional)', exact: true })
+        await deadline.fill('Friday')
+        await title.fill('Prepare the Atlas release handoff\nand send it to Jane')
+        assert({
+          given: 'an optional deadline and a title pasted with a line break',
+          should: 'keep the title valid for saving and preserve the draft body',
+          actual: {
+            title: await title.inputValue(),
+            deadline: await deadline.inputValue(),
+            finalParagraph: await editor.getByText('The review draft is ready to share with the support team.').count(),
+          },
+          expected: {
+            title: 'Prepare the Atlas release handoff and send it to Jane',
+            deadline: 'Friday',
+            finalParagraph: 1,
+          },
+        })
+        assert({ given: 'the long review', should: 'render without browser errors', actual: errors, expected: [] })
+      } finally {
+        const released = page.waitForResponse(
+          (response) => response.url().endsWith('/mi/activity') && response.request().postDataJSON().active === false,
+        )
+        await dialog.getByRole('button', { name: 'Close', exact: true }).click()
+        await released
+      }
+    },
+  )
+})
 
 test(
   {
@@ -206,6 +347,7 @@ test(
         await page.keyboard.press('ControlOrMeta+End')
         await page.keyboard.press('Enter')
         await page.keyboard.type('Keep the optional support package out of this draft.')
+        await dialog.getByRole('button', { name: 'Refine with Sky', exact: true }).click()
         await dialog.getByRole('textbox', { name: 'Refine with Sky', exact: true }).fill('Add a concrete first move.')
         await dialog.getByRole('button', { name: 'Refine draft', exact: true }).click()
         await editor.getByText('Compare the two pricing options against the brief.', { exact: true }).waitFor()

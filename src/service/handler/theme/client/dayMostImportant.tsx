@@ -112,11 +112,20 @@ export function DayMostImportant({
   const [error, setError] = useState('')
   const [editorVersion, setEditorVersion] = useState(0)
   const [deadlineOpen, setDeadlineOpen] = useState(false)
+  const [refinementOpen, setRefinementOpen] = useState(Boolean(state.feedback))
   const editor = useRef<EditorHandle | null>(null)
+  const scroll = useRef<HTMLDivElement>(null)
+  const deadline = useRef<HTMLInputElement>(null)
   const sequence = useRef(0)
   const snapshot = useRef(state)
   snapshot.current = state
   const change = (patch: Partial<DraftState>) => setState((current) => ({ ...current, ...patch }))
+  useEffect(() => {
+    if (scroll.current) scroll.current.scrollTop = 0
+  }, [state.step, editorVersion])
+  useEffect(() => {
+    if (deadlineOpen) deadline.current?.focus()
+  }, [deadlineOpen])
   useEffect(() => {
     if (!opened) return
     const id = crypto.randomUUID()
@@ -258,6 +267,7 @@ export function DayMostImportant({
       if (!current()) return
       change({ draft: result.draft, feedback: '', saveRequest: undefined })
       setEditorVersion((version) => version + 1)
+      setRefinementOpen(false)
     })
   }
   function save() {
@@ -270,6 +280,7 @@ export function DayMostImportant({
       if (!current()) return
       setState(empty())
       setDeadlineOpen(false)
+      setRefinementOpen(false)
       setOpened(false)
       onSaved(result.view)
     })
@@ -282,7 +293,7 @@ export function DayMostImportant({
   const hasTask = day.record.mostImportant.length > 0
   const body = (
     <div className="sky-mi-composer">
-      <div className="sky-mi-scroll">
+      <div ref={scroll} className="sky-mi-scroll">
         <p className="sky-mi-date">{day.day.dateLabel}</p>
         {busy && <MIActivity work={busy} />}
         {state.step === 'choose' && (
@@ -398,18 +409,23 @@ export function DayMostImportant({
           </>
         )}
         {state.step === 'review' && state.draft && (
-          <>
-            <p className="sky-mi-intro">Make it yours, then add it to the day.</p>
-            <TextInput
-              label="Most important"
+          <div className="sky-mi-review">
+            <Textarea
+              aria-label="Most important"
               className="sky-mi-title"
+              variant="unstyled"
+              autosize
+              minRows={1}
               value={state.draft.summary}
               maxLength={2000}
               disabled={Boolean(busy) || readOnly}
-              onChange={(event) => change({ draft: { ...state.draft!, summary: event.currentTarget.value } })}
+              onChange={(event) =>
+                change({ draft: { ...state.draft!, summary: event.currentTarget.value.replace(/[\r\n]+/g, ' ') } })
+              }
             />
-            {state.draft.dueBy || deadlineOpen ? (
+            {(state.draft.dueBy || deadlineOpen) && (
               <TextInput
+                ref={deadline}
                 label="Due by (optional)"
                 onFocus={() => setDeadlineOpen(true)}
                 value={state.draft.dueBy}
@@ -417,14 +433,6 @@ export function DayMostImportant({
                 disabled={Boolean(busy) || readOnly}
                 onChange={(event) => change({ draft: { ...state.draft!, dueBy: event.currentTarget.value } })}
               />
-            ) : (
-              <Button
-                className="sky-mi-deadline"
-                disabled={Boolean(busy) || readOnly}
-                onClick={() => setDeadlineOpen(true)}
-              >
-                Add a deadline
-              </Button>
             )}
             <BodyEditor
               key={editorVersion}
@@ -436,25 +444,51 @@ export function DayMostImportant({
               }
             />
             <div className="sky-mi-refinement">
-              <Textarea
-                label="Refine with Sky"
-                placeholder="What should change?"
-                autosize
-                minRows={2}
-                maxLength={12000}
-                value={state.feedback}
-                disabled={Boolean(busy) || readOnly}
-                onChange={(event) => change({ feedback: event.currentTarget.value })}
-              />
-              <Button
-                variant="secondary"
-                disabled={Boolean(busy) || readOnly || !state.feedback.trim()}
-                onClick={refine}
-              >
-                Refine draft
-              </Button>
+              <div className="sky-mi-review-tools">
+                <Button
+                  variant="secondary"
+                  aria-expanded={refinementOpen}
+                  aria-controls="sky-mi-refine-fields"
+                  disabled={Boolean(busy) || readOnly}
+                  onClick={() => setRefinementOpen((value) => !value)}
+                >
+                  Refine with Sky
+                </Button>
+                {!state.draft.dueBy && !deadlineOpen && (
+                  <Button
+                    variant="secondary"
+                    disabled={Boolean(busy) || readOnly}
+                    onClick={() => setDeadlineOpen(true)}
+                  >
+                    Add a deadline
+                  </Button>
+                )}
+              </div>
+              {refinementOpen && (
+                <div id="sky-mi-refine-fields" className="sky-mi-refine-fields">
+                  <Textarea
+                    aria-label="Refine with Sky"
+                    placeholder="What should change?"
+                    autoFocus
+                    autosize
+                    minRows={2}
+                    maxLength={12000}
+                    value={state.feedback}
+                    disabled={Boolean(busy) || readOnly}
+                    onChange={(event) => change({ feedback: event.currentTarget.value })}
+                  />
+                  <Button
+                    variant="secondary"
+                    loading={busy?.action === 'refine'}
+                    disabled={Boolean(busy) || readOnly || !state.feedback.trim()}
+                    onClick={refine}
+                  >
+                    Refine draft
+                  </Button>
+                </div>
+              )}
             </div>
-          </>
+          </div>
         )}
         {error && (
           <div role="alert" className="sky-mi-error">
@@ -480,6 +514,7 @@ export function DayMostImportant({
             onClick={() => {
               setState(empty())
               setDeadlineOpen(false)
+              setRefinementOpen(false)
               setError('')
               setOpened(false)
             }}
@@ -574,6 +609,7 @@ export function DayMostImportant({
           opened={opened}
           onClose={() => setOpened(false)}
           title="Most important"
+          closeButtonProps={{ 'aria-label': 'Close' }}
           position="bottom"
           size="92%"
           className="sky-mi-sheet"
@@ -587,6 +623,7 @@ export function DayMostImportant({
           opened={opened}
           onClose={() => setOpened(false)}
           title="Most important"
+          closeButtonProps={{ 'aria-label': 'Close' }}
           centered
           size={780}
           className="sky-mi-modal"
