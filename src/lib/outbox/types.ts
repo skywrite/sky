@@ -144,6 +144,8 @@ export type OutboxItem = z.infer<typeof ItemSchema>
 export type OutboxRecord = OutboxItem & {
   revision: string
   writingDraft?: WritingDraft
+  /** The item's words as the shared editor shows them while no notebook record exists. Never persisted. */
+  unsavedDraft?: WritingDraft
   /** Worker status is local process state, never persisted in the decision record. */
   composition?: {
     id: string

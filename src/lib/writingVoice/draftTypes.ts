@@ -36,10 +36,12 @@ export const ChatDraftInputSchema = DraftInputSchema.extend({
 export type WritingDraft = z.infer<typeof WritingDraftSchema>
 export type DraftVersion = z.infer<typeof DraftVersionSchema>
 export type ChatDraftInput = z.input<typeof ChatDraftInputSchema>
-export type WritingDraftView = WritingDraft & { turn: number; legacy?: boolean }
+/** `unsaved`: shown from the words Sky wrote, with no notebook record until the owner first uses it. */
+export type WritingDraftView = WritingDraft & { turn: number; unsaved?: boolean }
 
 export interface WritingDraftToolHost {
-  draft(input: ChatDraftInput): Promise<VoiceDraft & { draftId: string; draftRevision: number }>
+  /** A new draft has no record yet, so no id: the owner's first use of it creates one. */
+  draft(input: ChatDraftInput): Promise<VoiceDraft & { draftId?: string; draftRevision?: number }>
   accept(id: string, revision: number): Promise<unknown>
   learn(input: VoiceExampleInput & { draftId?: string; draftRevision?: number }): Promise<unknown>
 }

@@ -186,6 +186,8 @@ export type ChatSessionFactory = (
   prefs: ThreadPrefs,
   ask: AskApproval,
   restore?: ThreadRestore,
+  /** The thread's recorded tool runs, read when a turn builds its tools: drafts nobody has saved yet live there. */
+  runs?: () => readonly ToolRun[],
 ) => Promise<ChatSession>
 
 /** One model a thread may think with, as the picker lists it. */
@@ -684,6 +686,7 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
           prefs,
           ask,
           restore,
+          () => threads.get(id)?.runs ?? [],
         )
         .then((session) => {
           if (restore?.title) session.pinTitle(restore.title)
@@ -1363,13 +1366,17 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
     const state = source.session.stateAt(turn)
     if (options.writingDrafts && state.writingDrafts) {
       const store = options.writingDrafts
-      state.writingDrafts = await Promise.all(
+      const copies = await Promise.all(
         state.writingDrafts.map(async (ref) => {
+          // A draft whose file the owner deleted has nothing to copy; its words are still in the transcript.
+          if (!(await store.get(ref.id))) return null
           const draft = await store.fork(ref.id, `chat:${branchId}`)
           if (state.writingDraftFocus === ref.id) state.writingDraftFocus = draft.id
           return { ...ref, id: draft.id }
         }),
       )
+      state.writingDrafts = copies.filter((ref) => ref !== null)
+      if (!state.writingDrafts.some((ref) => ref.id === state.writingDraftFocus)) delete state.writingDraftFocus
     }
     const branch = await open(branchId, {
       id: branchId,

@@ -117,7 +117,7 @@ export function useOutboxItemEditor(options: OutboxEditorOptions) {
     })
   }, [item, edits])
   useEffect(() => {
-    if (!item?.writingDraft) return
+    if (!item?.writingDraft && !item?.unsavedDraft) return
     setEdit((current) =>
       current?.direction?.trim()
         ? { ...current, text: item.draft, saved: item.draft, revision: item.revision }
@@ -166,8 +166,8 @@ export function useOutboxItemEditor(options: OutboxEditorOptions) {
           `/item/${encodeURIComponent(item.id)}/approve`,
           'POST',
           {
-            revision: item.writingDraft ? item.revision : edit.revision,
-            draft: item.writingDraft ? item.draft : edit.text,
+            revision: item.writingDraft || item.unsavedDraft ? item.revision : edit.revision,
+            draft: item.writingDraft || item.unsavedDraft ? item.draft : edit.text,
             reviewedChanges,
           },
         )
@@ -278,18 +278,6 @@ export function useOutboxItemEditor(options: OutboxEditorOptions) {
       setSentReport(null)
       if (idRef.current === item.id) onLeave('sent')
     })
-  const askAboutDraft = () =>
-    act(async () => {
-      if (!item?.writingDraft) return
-      const response = await fetch(`/chat/drafts/${encodeURIComponent(item.writingDraft.id)}/discuss`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: '{}',
-      })
-      const result = (await response.json()) as { id?: string; message?: string }
-      if (!response.ok || !result.id) throw new Error(result.message ?? 'Sky could not open the draft discussion.')
-      openDiscussion({ id: result.id, point: { turn: 0, key: item.writingDraft.id }, draftId: item.writingDraft.id })
-    })
   const mutateDraft = async (mutation: unknown) => {
     if (!item) throw new Error('This item is no longer open.')
     const result = await outboxRequest<{ item: OutboxRecord; draft: NonNullable<OutboxRecord['writingDraft']> }>(
@@ -300,6 +288,24 @@ export function useOutboxItemEditor(options: OutboxEditorOptions) {
     receiveItem(result.item)
     return result.draft
   }
+  /** A discussion works on a saved record. `savedId` names one the editor has just saved. */
+  const askAboutDraft = (savedId?: string) =>
+    act(async () => {
+      if (!item) return
+      const draftId =
+        savedId ??
+        item.writingDraft?.id ??
+        (item.unsavedDraft ? (await mutateDraft({ action: 'adopt' })).id : undefined)
+      if (!draftId) return
+      const response = await fetch(`/chat/drafts/${encodeURIComponent(draftId)}/discuss`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: '{}',
+      })
+      const result = (await response.json()) as { id?: string; message?: string }
+      if (!response.ok || !result.id) throw new Error(result.message ?? 'Sky could not open the draft discussion.')
+      openDiscussion({ id: result.id, point: { turn: 0, key: draftId }, draftId })
+    })
   /** Beeper has no link Sky can hand the browser; the service asks the desktop app to come forward. */
   const openApp = () =>
     act(async () => {

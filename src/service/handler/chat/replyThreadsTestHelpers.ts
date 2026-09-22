@@ -3,6 +3,7 @@ import type { ModelMessage } from 'ai'
 import type { ResolvedModel } from '#shared/ai/models.ts'
 import { exists } from '#shared/fs/mod.ts'
 import type { ModelInvoker } from '#shared/models/Chat/ChatEngine/mod.ts'
+import type { ToolExecutionEvent } from '#shared/models/Chat/ChatEngine/toolExecution.ts'
 import ChatSession from '#shared/models/Chat/ChatSession/mod.ts'
 import type { ToolFactory } from '#shared/models/Chat/ChatSession/mod.ts'
 import { chatAutosaveFilename, listChatAutosaves } from '#shared/models/Chat/ChatStore/autosave.ts'
@@ -10,7 +11,7 @@ import { loadResumeSession } from '#shared/models/Chat/ChatStore/mod.ts'
 import { setUserSpeakerLabel } from '#shared/models/Chat/document/mod.ts'
 import { PlainDate, PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import { interruptedOf } from './interrupted.ts'
-import type { ChatRoutesOptions, ThreadRestore } from './mod.ts'
+import type { ChatRoutesOptions, ThreadRestore, ToolRun } from './mod.ts'
 import { restoreToolRuns } from './toolRuns.ts'
 
 export const REPLY_TEST_DAY = new PlainDate('2026-02-04')
@@ -29,8 +30,16 @@ export function replyThreadTestHost(
   over: {
     calls?: ReplyTestCall[]
     wait?: (call: ReplyTestCall) => Promise<void>
-    tools?: ToolFactory
-    invokeModel?: ModelInvoker
+    /** `thread` gives a tool factory what the production one gets: the thread's id, recorded runs and start. */
+    tools?: (
+      hooks: Parameters<ToolFactory>[0],
+      thread: { id: string; runs: () => readonly ToolRun[]; started: string },
+    ) => ReturnType<ToolFactory>
+    /** A scripted model reports the tools it runs, as the engine does for a real one. */
+    invokeModel?: (
+      args: Parameters<ModelInvoker>[0],
+      report: (event: ToolExecutionEvent) => void,
+    ) => ReturnType<ModelInvoker>
     systemPrompt?: string
   } = {},
 ): ChatRoutesOptions {
@@ -94,7 +103,7 @@ export function replyThreadTestHost(
       }
       return restores
     },
-    createSession: async (id, onEvent, prefs, ask, restore) =>
+    createSession: async (id, onEvent, prefs, ask, restore, runs = () => []) =>
       new ChatSession({
         today: REPLY_TEST_DAY,
         startTime: restore?.startTime ?? START,
@@ -115,7 +124,9 @@ export function replyThreadTestHost(
         },
         ambient: { today: { date: REPLY_TEST_DAY.ymd, dayOfWeek: 'Wednesday' }, health: [], prices: [] },
         systemPrompt: async () => over.systemPrompt ?? 'Synthetic chat for thread verification.',
-        tools: over.tools ?? (async () => ({ tools: {}, toolApproval: {} })),
+        tools: over.tools
+          ? (hooks) => over.tools!(hooks, { id, runs, started: (restore?.startTime ?? START).toString() })
+          : async () => ({ tools: {}, toolApproval: {} }),
         approvalHandler: async ({ toolName }) => ask({ toolName, lines: ['Synthetic document update'] }),
         approvals: () => [...(restore?.approvals ?? [])],
         autosavePath: snapshotPath(id, restore?.startTime ?? START),
@@ -124,7 +135,7 @@ export function replyThreadTestHost(
         now: async () => START,
         logError: async () => {},
         invokeModel:
-          over.invokeModel ??
+          (over.invokeModel && ((args) => over.invokeModel!(args, onEvent))) ??
           (async (args) => {
             const isReply = (restore?.parent ?? restore?.resume?.parent)?.kind === 'thread'
             const call = { id, messages: structuredClone(args.messages), reply: isReply }

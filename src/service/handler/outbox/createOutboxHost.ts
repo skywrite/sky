@@ -277,7 +277,7 @@ export function createOutboxHost(
     changeDraft: (id, revision, mutation) => store.changeDraft(id, revision, mutation),
     preferences: (text, revision) => store.savePreferences(text, revision),
     get: async (id) => {
-      const item = await store.ensureDraft(id)
+      const item = await store.get(id)
       return item ? composition.decorate(item) : null
     },
     open: async (id) => {

@@ -27,7 +27,7 @@ function savedEdit(key: string): Edit | null {
 
 export function WritingDraftEditor<T extends WritingDraft>({
   anchor,
-  legacy = false,
+  unsaved = false,
   mutate,
   onEditingChange,
   draft,
@@ -37,7 +37,8 @@ export function WritingDraftEditor<T extends WritingDraft>({
 }: {
   key?: string
   anchor?: string
-  legacy?: boolean
+  /** No record exists yet. The first action saves one, and its id may differ from the one shown. */
+  unsaved?: boolean
   mutate: (body: unknown) => Promise<T>
   onEditingChange?: (editing: boolean) => void
   draft: T
@@ -120,7 +121,7 @@ export function WritingDraftEditor<T extends WritingDraft>({
     }
   }
   const ask = async () => {
-    const next = legacy ? await act({ action: 'adopt' }) : draft
+    const next = unsaved ? await act({ action: 'adopt' }) : draft
     if (next) onAsk?.(next)
   }
   const save = (revision: number) =>
@@ -349,7 +350,7 @@ export function WritingDraftEditor<T extends WritingDraft>({
           </Button>
         </div>
       )}
-      {!legacy && (
+      {!unsaved && (
         <WritingVoiceQuestions
           source={`draft:${draft.id}`}
           refreshKey={JSON.stringify(draft.versions.map((v) => [v.version, v.accepted, v.exampleId, v.learningDone]))}

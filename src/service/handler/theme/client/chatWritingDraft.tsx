@@ -12,6 +12,7 @@ export function ChatWritingDraft({
   chatId,
   draft,
   snapshot,
+  onChange,
   ...props
 }: {
   key?: string
@@ -19,7 +20,8 @@ export function ChatWritingDraft({
   draft: WritingDraftView
   snapshot?: string
   disabled?: boolean
-  onChange: (draft: WritingDraftView) => void
+  /** The first use saves an unsaved draft under its own id; `shownId` names the frame it replaces. */
+  onChange: (draft: WritingDraftView, shownId?: string) => void
   onAsk?: (draft: WritingDraftView) => void
 }) {
   if (snapshot !== undefined) return <WritingDraftSnapshot draft={draft} text={snapshot} />
@@ -27,8 +29,9 @@ export function ChatWritingDraft({
     <WritingDraftEditor
       {...props}
       draft={draft}
-      legacy={draft.legacy}
+      unsaved={draft.unsaved}
       anchor={writingDraftAnchor(chatId, draft.id)}
+      onChange={(next) => onChange(next, draft.id)}
       mutate={(body) => writingDraftRequest(chatId, draft.id, body)}
     />
   )
@@ -100,7 +103,7 @@ export function WritingDraftReply({
   turnIndex: number
   replyMode: boolean
   disabled?: boolean
-  onChange: (draft: WritingDraftView) => void
+  onChange: (draft: WritingDraftView, shownId?: string) => void
   onAsk?: (draft: WritingDraftView) => void
 }) {
   const parts = useMemo(() => splitWritingDrafts(content, drafts), [content, drafts])

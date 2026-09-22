@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, readdir, rm } from 'node:fs/promises'
 import * as os from 'node:os'
 import * as path from 'node:path'
 import { currentDraftVersion, type WritingDraftView } from '#lib/writingVoice/draftTypes.ts'
@@ -12,6 +12,7 @@ const post = (app: App, url: string, body: unknown) =>
   app.request(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
 const read = async (app: App, url: string) => (await app.request(url)).json() as Promise<any>
 const current = async (app: App, id = 'main') => (await read(app, `/${id}/drafts`)).drafts[0] as WritingDraftView
+const draftFiles = (root: string) => readdir(path.join(root, 'me', 'voice', 'drafts')).catch(() => [] as string[])
 const send = async (app: App, id: string, message: string) => {
   const response = await post(app, `/${id}/messages`, {
     message,
@@ -30,20 +31,34 @@ test('chat draft edits, thread revisions and accepted explanations share durable
   try {
     let app = createChatRoutes(host)
     await send(app, 'main', 'Draft an email to Jane.')
-    const first = await current(app)
+    const shown = await current(app)
+    const filesBeforeUse = await draftFiles(root)
     const originalChat = await read(app, '/main')
     const explanation = 'Make the requested action and timing explicit for the recipient.'
-    const edited = await post(app, `/main/drafts/${first.id}`, {
+    const edited = await post(app, `/main/drafts/${shown.id}`, {
       action: 'edit',
-      revision: first.revision,
+      revision: shown.revision,
       text: EDITED_DRAFT,
       explanation,
     })
+    const first = ((await edited.clone().json()) as { draft: WritingDraftView }).draft
     await host.writingDrafts.idle()
+    assert({
+      given: 'a draft Sky wrote in chat, then the owner’s first edit in its frame',
+      should: 'write no file until that edit, then save one readably named record in place of the shown frame',
+      actual: [
+        shown.unsaved,
+        filesBeforeUse,
+        first.unsaved,
+        await draftFiles(root),
+        ((await read(app, '/main/drafts')).drafts as WritingDraftView[]).map((draft) => draft.id),
+      ],
+      expected: [true, [], undefined, [`${first.id}.md`], [first.id]],
+    })
     const example = (await host.writingDrafts.voice.store.list(`draft:${first.id}`))[0]!
     const stale = await post(app, `/main/drafts/${first.id}`, {
       action: 'edit',
-      revision: first.revision,
+      revision: shown.revision,
       text: 'Obsolete text',
     })
     assert({
@@ -51,6 +66,7 @@ test('chat draft edits, thread revisions and accepted explanations share durable
       should: 'retain the exact pair and reason without a redundant question or lost update',
       actual: [
         edited.status,
+        first.id.endsWith('_Atlas-Review'),
         stale.status,
         example.original,
         example.revised,
@@ -58,7 +74,7 @@ test('chat draft edits, thread revisions and accepted explanations share durable
         example.question,
         currentDraftVersion(await current(app)).text,
       ],
-      expected: [200, 409, ORIGINAL_DRAFT, EDITED_DRAFT, explanation, undefined, EDITED_DRAFT],
+      expected: [200, true, 409, ORIGINAL_DRAFT, EDITED_DRAFT, explanation, undefined, EDITED_DRAFT],
     })
 
     const opened = await post(app, '/main/replies', { ...originalChat.branchPoints[1], draftId: first.id })
@@ -146,29 +162,44 @@ test('draft mutation validates ownership and branches keep independent copies', 
     const app = createChatRoutes(host)
     await send(app, 'main', 'Draft an email.')
     await send(app, 'other', 'Draft another email.')
-    const draft = await current(app)
-    const badOwner = await post(app, `/other/drafts/${draft.id}`, {
+    const shown = await current(app)
+    const badOwner = await post(app, `/other/drafts/${shown.id}`, {
       action: 'edit',
       revision: 1,
       text: 'Wrong conversation',
     })
-    const invalid = await post(app, `/main/drafts/${draft.id}`, { action: 'restore', revision: 1, version: 100 })
+    const invalid = await post(app, `/main/drafts/${shown.id}`, { action: 'restore', revision: 1, version: 100 })
+    const filesAfterRefusals = await draftFiles(root)
+    const adopted = await post(app, `/main/drafts/${shown.id}`, { action: 'adopt' })
+    const draft = ((await adopted.json()) as { draft: WritingDraftView }).draft
     const main = await read(app, '/main')
     const branch = await post(app, '/main/branch', main.branchPoints[1])
     const id = ((await branch.json()) as { id: string }).id
     const fork = await current(app, id)
     await post(app, `/${id}/drafts/${fork.id}`, { action: 'edit', revision: fork.revision, text: EDITED_DRAFT })
     assert({
-      given: 'an unrelated chat, an invalid restore and a separate branch',
-      should: 'refuse unlinked writes and leave the original draft intact when the branch edits its copy',
+      given: 'an unrelated chat, an invalid restore, then a draft the owner works on and a separate branch',
+      should: 'save nothing for a refused write, and leave the original intact when the branch edits its own copy',
       actual: [
         badOwner.status,
         invalid.status,
+        filesAfterRefusals,
+        fork.unsaved,
         fork.id !== draft.id,
         currentDraftVersion(await current(app)).text,
         currentDraftVersion(await current(app, id)).text,
+        (await draftFiles(root)).length,
       ],
-      expected: [404, 400, true, ORIGINAL_DRAFT, EDITED_DRAFT],
+      expected: [404, 400, [], undefined, true, ORIGINAL_DRAFT, EDITED_DRAFT, 2],
+    })
+    await rm(path.join(root, 'me', 'voice', 'drafts', `${draft.id}.md`))
+    const afterDelete = await current(app)
+    const second = await post(app, '/main/branch', main.branchPoints[1])
+    assert({
+      given: 'the owner deletes the draft’s file from the notebook',
+      should: 'show the words from the chat as an unsaved draft again, and still branch',
+      actual: [afterDelete.unsaved, currentDraftVersion(afterDelete).text, second.status],
+      expected: [true, ORIGINAL_DRAFT, 201],
     })
   } finally {
     await host.writingDrafts.idle()
@@ -194,7 +225,7 @@ test('older writer results become editable on demand without duplicating their d
     assert({
       given: 'a recovered chat with a successful me_voice result predating draft records',
       should: 'show an editable candidate without creating a notebook record just by reading it',
-      actual: [candidate.legacy, currentDraftVersion(candidate).text, await host.writingDrafts.get(candidate.id)],
+      actual: [candidate.unsaved, currentDraftVersion(candidate).text, await host.writingDrafts.get(candidate.id)],
       expected: [true, ORIGINAL_DRAFT, null],
     })
     await post(app, `/main/drafts/${candidate.id}`, {
@@ -210,11 +241,39 @@ test('older writer results become editable on demand without duplicating their d
       should: 'adopt it once, retain the original and preserve the source response',
       actual: [
         drafts.length,
-        drafts[0]!.legacy,
+        drafts[0]!.unsaved,
         drafts[0]!.versions.map((v) => v.text),
         (await read(app, '/main')).turns,
       ],
       expected: [1, undefined, [ORIGINAL_DRAFT, EDITED_DRAFT], conversation],
+    })
+  } finally {
+    await host.writingDrafts.idle()
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('a revision typed in the main chat is a first use: one record holds both versions from the turn they began', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'sky-chat-typed-revision-'))
+  const host = writingDraftTestHost(root)
+  try {
+    const app = createChatRoutes(host)
+    await send(app, 'main', 'Draft an email to Jane.')
+    const before = await draftFiles(root)
+    await send(app, 'main', 'Make this warmer.')
+    await host.writingDrafts.idle()
+    const drafts = (await read(app, '/main/drafts')).drafts as WritingDraftView[]
+    assert({
+      given: 'a draft Sky wrote, then a revision the owner asked for in the conversation',
+      should: 'write no file for the first draft, then save one record with both versions and teach nothing yet',
+      actual: [
+        before,
+        (await draftFiles(root)).length,
+        drafts.map((draft) => [draft.unsaved, draft.turn, draft.versions.map((version) => version.text)]),
+        drafts[0]!.versions[1]!.direction,
+        (await host.writingDrafts.voice.store.list()).length,
+      ],
+      expected: [[], 1, [[undefined, 1, [ORIGINAL_DRAFT, WARM_DRAFT]]], 'Make this warmer.', 0],
     })
   } finally {
     await host.writingDrafts.idle()

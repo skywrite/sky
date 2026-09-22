@@ -62,6 +62,7 @@ import { fitBudget } from '#universal/ai/readingBudget.ts'
 import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import { prettyModel, PROVIDER_LABEL, ROLE_LABEL } from '../settings/mod.ts'
 import { approvalCard } from './approvalCard.ts'
+import { unsavedDraftsOf } from './drafts.ts'
 import { chatFileContext } from './files.ts'
 import { prepareChatImageResult } from './images.ts'
 import { interruptedOf } from './interrupted.ts'
@@ -307,7 +308,7 @@ export function createChatHost(config: typeof ConfigModule, env: Record<string, 
     return held
   }
 
-  const createSession: ChatSessionFactory = async (id, onEvent, prefs, ask, restore) => {
+  const createSession: ChatSessionFactory = async (id, onEvent, prefs, ask, restore, runs = () => []) => {
     const context = CommandContext.server(config, env)
     const blessed = blessingsFor(id)
     if (restore?.approvals) blessed.restoreDurable(restore.approvals)
@@ -321,6 +322,8 @@ export function createChatHost(config: typeof ConfigModule, env: Record<string, 
     // A restored thread keeps the start it had: its day, and the snapshot it writes.
     const startTime = restore?.startTime ?? context.notebookNow.plainDateTime
     const today = startTime.plainDate
+    // Drafts nobody has worked on have no record; the writer's tools see them as the page does.
+    const unsavedDrafts = unsavedDraftsOf(id, writingDrafts, runs, startTime.toString())
     const profileName = prefs.profile ?? roleProfile('reasoning')
     const profile = getProfile(profileName)
     const clock = {
@@ -374,14 +377,18 @@ export function createChatHost(config: typeof ConfigModule, env: Record<string, 
       // needsApproval is the source of truth for what asks.
       tools: async (hooks) => {
         const { onExternalFiles, onAttachments, onImages } = hooks
+        const unsaved = () => unsavedDrafts(hooks.writingDrafts?.list() ?? [])
         return {
-          instructions: [await legalReviewBrief(hooks, config), await writingDraftBrief(hooks, writingDrafts)]
+          instructions: [
+            await legalReviewBrief(hooks, config),
+            await writingDraftBrief(hooks, writingDrafts, await unsaved()),
+          ]
             .filter(Boolean)
             .join('\n\n'),
           tools: {
             ...createWritingVoiceTools(writingDrafts.voice, {
               source: `chat:${id}`,
-              drafts: writingDraftTools(hooks, writingDrafts, `chat:${id}`),
+              drafts: writingDraftTools(hooks, writingDrafts, unsaved),
             }),
             ...(env.PERPLEXITY_API_KEY ? createWebTools() : {}),
             // A browser has no shell directory, so a relative path resolves from home.

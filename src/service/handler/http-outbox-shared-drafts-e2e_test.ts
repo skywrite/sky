@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, readdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import * as path from 'node:path'
 import { serve } from '@hono/node-server'
@@ -112,7 +112,7 @@ test(
             automation: { name: 'outbox', status: 'paused' },
             lastScan: null,
           }),
-          get: (id) => store.ensureDraft(id),
+          get: (id) => store.get(id),
           changeDraft: (id, revision, mutation) => store.changeDraft(id, revision, mutation),
           setup: async () => ({}),
           scan: async () => ({ outcome: 'nothing' }),
@@ -224,6 +224,19 @@ test(
         expected: [3, 'Pilot scope', 2],
       })
       const card = page.locator('.sky-outbox-column .sky-writing-draft').first()
+      const draftFiles = () => readdir(path.join(root, 'me', 'voice', 'drafts')).catch(() => [] as string[])
+      await card.locator('.sky-writing-draft-version').filter({ hasText: 'Version 1' }).waitFor()
+      assert({
+        given: 'a prepared reply opened in Outbox with nothing done to its words',
+        should: 'show it in the shared editor without saving a draft record to the notebook',
+        actual: [(await store.get(item.id))?.draftId, await draftFiles()],
+        expected: [undefined, []],
+      })
+      const unsavedShots = env.get('SKY_DRAFT_SCREENSHOTS')
+      if (unsavedShots) {
+        await mkdir(unsavedShots, { recursive: true })
+        await page.screenshot({ path: path.join(unsavedShots, 'outbox-unsaved.png'), fullPage: true })
+      }
       await card.getByRole('button', { name: 'Edit', exact: true }).click()
       await card.getByLabel('Edit draft text').fill(EDITED_DRAFT)
       await card.getByLabel('Why I changed this (optional)').fill('Include the agreed review date.')
@@ -236,15 +249,27 @@ test(
       await card.getByRole('button', { name: 'Save edit', exact: true }).click()
       await card.locator('.sky-writing-draft-version').filter({ hasText: 'Version 2' }).waitFor()
       await drafts.idle()
+      const draftId = (await store.get(item.id))!.draftId!
       assert({
         given: 'an Outbox edit saved with an explanation',
-        should: 'update the shared record and learn once without any native write',
+        should: 'save the shared record at that first use and learn once without any native write',
         actual: [
-          currentDraftVersion(await drafts.require(item.draftId!)).text,
+          await draftFiles(),
+          (await drafts.require(draftId)).versions.map((version) => [version.author, version.text]),
+          currentDraftVersion(await drafts.require(draftId)).text,
           (await drafts.voice.store.list()).length,
           nativeWrites,
         ],
-        expected: [EDITED_DRAFT, 1, 0],
+        expected: [
+          [`${draftId}.md`],
+          [
+            ['sky', ORIGINAL_DRAFT],
+            ['you', EDITED_DRAFT],
+          ],
+          EDITED_DRAFT,
+          1,
+          0,
+        ],
       })
 
       await card.getByRole('button', { name: 'Work on this…', exact: true }).click()
@@ -268,7 +293,7 @@ test(
           (await drafts.voice.store.list()).length,
           nativeWrites,
         ],
-        expected: [item.draftId, WARM_DRAFT, 1, 0],
+        expected: [draftId, WARM_DRAFT, 1, 0],
       })
       await panel.getByRole('button', { name: 'Close thread', exact: true }).click()
       await card.getByRole('button', { name: 'Use this version', exact: true }).click()
@@ -282,7 +307,7 @@ test(
         given: 'an accepted AI revision followed by Undo and a page reload',
         should: 'retain every version while leaving delivery untouched',
         actual: [
-          (await drafts.require(item.draftId!)).versions.length,
+          (await drafts.require(draftId)).versions.length,
           (await store.get(item.id))?.draft,
           (await drafts.voice.store.list()).length,
           nativeWrites,

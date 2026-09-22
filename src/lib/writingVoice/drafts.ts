@@ -1,4 +1,4 @@
-import { lstat, readdir } from 'node:fs/promises'
+import { lstat, readdir, unlink } from 'node:fs/promises'
 import * as path from 'node:path'
 import { atomicWrite, missing, readOptional, withLock } from '#lib/outbox/files.ts'
 import Document from '#shared/models/Markdown/Document/mod.ts'
@@ -97,6 +97,16 @@ export class WritingDraftStore {
     return this.allocate(base, (id) => this.initial(input, text, source, id))
   }
 
+  /**
+   * The first time the owner works on a draft, it becomes a notebook record.
+   * Until then its words live only where Sky wrote them: a chat turn or an Outbox item.
+   * The record takes a readable name and keeps the history it was shown with.
+   */
+  async adopt(shown: WritingDraft): Promise<WritingDraft> {
+    const base = `${draftStamp(this.clock())}_${draftSlug(await this.name(shown.input, currentDraftVersion(shown).text))}`
+    return this.allocate(base, (id) => ({ ...structuredClone(shown), id }))
+  }
+
   private async allocate(base: string, build: (id: string) => WritingDraft): Promise<WritingDraft> {
     return withLock(path.join(this.voice.store.stateDir, 'drafts', 'create.lock'), async () => {
       // Check the directory before listing it, including its parents.
@@ -111,6 +121,15 @@ export class WritingDraftStore {
       const draft = build(id)
       await this.write(draft)
       return draft
+    })
+  }
+
+  /** Undo an adoption whose linking write failed: a record nothing links to would read as a draft the owner used. */
+  async discard(id: string): Promise<void> {
+    await this.lock(id, async () => {
+      await unlink(await this.file(id)).catch((error: unknown) => {
+        if (!missing(error)) throw error
+      })
     })
   }
 

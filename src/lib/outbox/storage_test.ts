@@ -87,7 +87,8 @@ test('production Outbox migrates all durable records beside existing scan state 
       should: 'retain their complete records and links in the same namespace as the scan checkpoints',
       actual: [
         runtime.store.dir === f.dir && runtime.store.stateDir === f.dir,
-        items.sort((a, b) => a.id.localeCompare(b.id)),
+        // The editor's view of an untouched reply is derived on each read, never stored.
+        items.map(({ unsavedDraft: _view, ...record }) => record).sort((a, b) => a.id.localeCompare(b.id)),
         selected.value,
         preferences.text.trim(),
         await readFile(path.join(f.dir, 'sources.json'), 'utf8'),
@@ -141,10 +142,12 @@ test('a shared draft discussion can migrate Outbox first and keeps editing and n
   )
   try {
     const legacy = new OutboxStore(path.join(f.root, 'outbox'), storage.dir, f.store, drafts)
-    const item = await legacy.put(
+    const prepared = await legacy.put(
       { ...sampleOutboxItem(), id: '2025-03-15_1200_Project-update', origin: 'followup' },
       null,
     )
+    // A draft has a shared record only once the owner has worked on it.
+    const item = await legacy.changeDraft(prepared.id, prepared.revision, { action: 'adopt' })
     const original = Document.fromMarkdown(await readFile(path.join(legacy.dir, 'items', `${item.id}.md`), 'utf8'))
     await drafts.revise(item.draftId!, 1, 'The Atlas update is ready.', 'you')
     const store = new OutboxStore(storage.dir, storage.dir, f.store, drafts, storage.initialize)

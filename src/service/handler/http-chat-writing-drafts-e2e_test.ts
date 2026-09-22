@@ -233,6 +233,11 @@ test(
         const original = replies.nth(0).locator('.sky-writing-draft')
         const composer = main.getByPlaceholder('Message sky…')
         await original.getByRole('button', { name: 'Edit', exact: true }).waitFor()
+        const unsavedShots = env.get('SKY_DRAFT_SCREENSHOTS')
+        if (unsavedShots) {
+          await mkdir(unsavedShots, { recursive: true })
+          await page.screenshot({ path: path.join(unsavedShots, 'chat-unsaved.png'), fullPage: true })
+        }
 
         await composer.fill('Make this warmer.')
         await composer.press('Enter')

@@ -1,6 +1,6 @@
 ---
 created: 2026-09-08
-updated: 2026-09-13
+updated: 2026-09-20
 ---
 
 # Writing voice
@@ -43,11 +43,20 @@ Chat and Outbox use the same draft record, mutations, editor, and learning path.
 `drafts/` owns the current wording and append-only text history. Outbox items link
 to the record through `draftId`; their own files retain source snapshots, review,
 dismissal, and native handoff state. Draft acceptance or editing never establishes
-that a message was sent. Opening an older inline Outbox draft adopts its known
-original, approved pairs, and current text without duplicating past learning.
-A new request after dismissal gets a separate draft, preserving the old history.
+that a message was sent. A new request after dismissal gets a separate draft,
+preserving the old history.
 
-New drafts and branches use a UTC date/time prefix and a short Haiku-generated
+A record exists only for a draft the owner has used: edited, asked Sky to revise,
+accepted or restored a version of, approved into its app, or recorded as sent.
+Until then the words stay where Sky wrote them, a chat turn's recorded `me_voice`
+result or the Outbox item's own state file, and both surfaces show them in the
+shared editor as an unsaved draft under a provisional id. The first use saves the
+record with the history shown, including an older item's original, approved pairs,
+and current text, without duplicating past learning. A deleted draft file never
+breaks its item or chat; they fall back to the words they hold. See
+[A draft is saved when it is used](2026-09-20-a-draft-is-saved-when-it-is-used.md).
+
+Saved drafts and branches use a UTC date/time prefix and a short Haiku-generated
 summary, slugified without changing capitalization, for example
 `2025-03-15_12-34-56Z_Atlas-API-Update.md`. Allocation checks filenames under a
 shared lock, including case-insensitive collisions, adding a numeric suffix only
@@ -61,8 +70,9 @@ transcript retains the wording originally shown. Each main-chat response that
 quotes a writer-owned draft displays it in full: earlier appearances show their
 original wording with Copy, and the latest appearance owns the current editor.
 Reply-thread revisions update that current frame in place without adding a main
-response. Ordinary quotations remain read-only. Older recorded `me_voice`
-outputs acquire records when the owner first edits or discusses them.
+response. Ordinary quotations remain read-only. A recorded `me_voice` output
+acquires its record when the owner first edits or discusses it, or asks for a
+revision of it.
 
 Chat continuation metadata carries draft IDs and the turn where each appeared.
 Reply threads share those IDs, so a revision in a draft discussion updates its
@@ -147,3 +157,7 @@ checks apply to these local writes.
 The assistant's general cross-session memory continues to own preferences about
 how Sky answers the user. Writing in the user's name is owned here, so its rules
 are not independently distilled into a second memory store.
+
+## Notes
+
+- [2026-09-20 — A draft is saved when it is used](2026-09-20-a-draft-is-saved-when-it-is-used.md).

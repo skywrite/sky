@@ -58,7 +58,7 @@ export type OutboxRoutesOptions = {
   reportSent?: (id: string, revision: string, evidence: string) => Promise<OutboxRecord>
   get?: (id: string) => Promise<OutboxRecord | null>
   retryFollowups?: (id: string, revision: string) => Promise<OutboxRecord>
-  changeDraft?: (id: string, revision: string, mutation: DraftMutation) => Promise<OutboxRecord>
+  changeDraft?: (id: string, revision: string, mutation: DraftMutation | { action: 'adopt' }) => Promise<OutboxRecord>
   /** Bring the conversation's app to the front on this conversation; only Beeper needs Sky's help. */
   open?: (id: string) => Promise<{ opened: boolean }>
 }
@@ -92,7 +92,13 @@ export function createOutboxRoutes(host: OutboxRoutesOptions): Hono {
   })
   app.post('/item/:id/draft', async (c) => {
     if (!host.changeDraft) return c.json({ message: 'Draft editing is unavailable.' }, 503)
-    const input = z.object({ itemRevision: z.string().min(1), mutation: DraftMutationSchema }).parse(await c.req.json())
+    // `adopt` saves the record of an untouched draft without changing its words: its discussion needs one.
+    const input = z
+      .object({
+        itemRevision: z.string().min(1),
+        mutation: z.union([DraftMutationSchema, z.object({ action: z.literal('adopt') })]),
+      })
+      .parse(await c.req.json())
     const item = await host.changeDraft(c.req.param('id'), input.itemRevision, input.mutation)
     return c.json({ item, draft: item.writingDraft })
   })

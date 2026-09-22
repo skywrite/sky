@@ -7,6 +7,7 @@ import { WritingVoiceStore } from '#lib/writingVoice/store.ts'
 import { intelligence } from '#lib/writingVoice/testHelpers.ts'
 import { createWritingVoiceTools } from '#lib/writingVoice/tools.ts'
 import type { VoiceDraftInput } from '#lib/writingVoice/types.ts'
+import { unsavedDraftsOf } from './drafts.ts'
 import { replyThreadTestHost } from './replyThreadsTestHelpers.ts'
 
 export const ORIGINAL_DRAFT = 'Hi Jane,\n\nThe Atlas draft is ready. Please review it with the launch team.\n\nThanks.'
@@ -42,19 +43,29 @@ export function writingDraftTestHost(
   let currentId: string | undefined
   let currentRevision: number | undefined
   const host = replyThreadTestHost(root, {
-    tools: async (hooks) => {
+    tools: async (hooks, thread) => {
+      const unsaved = () =>
+        unsavedDraftsOf(thread.id, drafts, thread.runs, thread.started)(hooks.writingDrafts?.list() ?? [])
       const tools = createWritingVoiceTools(voice, {
         source: 'chat:fixture',
-        drafts: writingDraftTools(hooks, drafts, 'chat:fixture'),
+        drafts: writingDraftTools(hooks, drafts, unsaved),
       })
       execute = (tools.me_voice as { execute: typeof execute }).execute
-      currentId = hooks.writingDrafts?.focus() ?? hooks.writingDrafts?.list().at(-1)?.id
-      currentRevision = currentId ? (await drafts.require(currentId)).revision : undefined
-      const instructions = await writingDraftBrief(hooks, drafts)
+      const instructions = await writingDraftBrief(hooks, drafts, await unsaved())
+      // The scripted model reads its brief as a real one does: the selected draft, else the latest listed.
+      const listed = JSON.parse(instructions.slice(instructions.lastIndexOf('\n') + 1)) as {
+        selected?: string
+        drafts: { draftId: string; draftRevision?: number; unavailable?: boolean }[]
+      }
+      const target =
+        listed.drafts.find((draft) => draft.draftId === listed.selected && !draft.unavailable) ??
+        listed.drafts.findLast((draft) => !draft.unavailable)
+      currentId = target?.draftId
+      currentRevision = target?.draftRevision
       calls.briefs?.push(instructions)
       return { tools, toolApproval: {}, instructions }
     },
-    invokeModel: async (args) => {
+    invokeModel: async (args, report) => {
       const last = args.messages.findLast((message) => message.role === 'user')
       const direction =
         typeof last?.content === 'string'
@@ -71,13 +82,15 @@ export function writingDraftTestHost(
         instruction: direction,
         ...(currentId ? { draftId: currentId, draftRevision: currentRevision } : { newDraft: true }),
       }
+      const toolCallId = `mock-writing-${args.messages.length}`
+      report({ type: 'tool-execution-start', toolName: 'me_voice', toolCallId, input, phase: 'running', started: 1000 })
       const result = await execute(input)
+      report({ type: 'tool-execution-end', toolName: 'me_voice', toolCallId, output: result, finished: 2000 })
       if (!result.success) throw new Error(String(result.error))
       const text =
         calls.reply?.(String(result.draft)) ??
         `Here is the message.\n\n> ${String(result.draft).replaceAll('\n', '\n> ')}\n\nPlease check the timing before sending.`
       args.sink.write(text)
-      const toolCallId = `mock-writing-${args.messages.length}`
       const responseMessages: ModelMessage[] = [
         { role: 'assistant', content: [{ type: 'tool-call', toolName: 'me_voice', toolCallId, input }] },
         {
@@ -92,8 +105,10 @@ export function writingDraftTestHost(
                 value: {
                   success: true,
                   draft: String(result.draft),
-                  draftId: String(result.draftId),
-                  draftRevision: Number(result.draftRevision),
+                  // Only a draft the owner has used has a record to name.
+                  ...(result.draftId
+                    ? { draftId: String(result.draftId), draftRevision: Number(result.draftRevision) }
+                    : {}),
                   rulesRevision: String(result.rulesRevision),
                 },
               },

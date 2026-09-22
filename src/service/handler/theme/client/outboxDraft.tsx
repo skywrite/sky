@@ -135,17 +135,20 @@ export function OutboxPreparedReply({ editor }: { editor: OutboxEditor }) {
       ? `Ready in ${editor.nativeApp}`
       : 'Approved reply'
   const hasText = edit.text.trim() !== ''
+  // Words nobody has worked on have no notebook record yet; the first action in the editor saves one.
+  const draft = item.writingDraft ?? item.unsavedDraft
   return (
     <section className="sky-outbox-draft" aria-label="Reply editor" aria-busy={composing}>
       <div className="sky-outbox-draft-label">{label}</div>
-      {item.writingDraft ? (
+      {draft ? (
         <>
           <WritingDraftEditor
-            key={item.writingDraft.id}
-            draft={item.writingDraft}
+            key={draft.id}
+            draft={draft}
+            unsaved={!item.writingDraft}
             disabled={busy || placing}
             onEditingChange={editor.setSharedEditing}
-            onAsk={editable && !item.contextError ? () => void editor.askAboutDraft() : undefined}
+            onAsk={editable && !item.contextError ? (saved) => void editor.askAboutDraft(saved.id) : undefined}
             onChange={() => {}}
             mutate={editor.mutateDraft}
           />

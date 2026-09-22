@@ -117,7 +117,8 @@ export interface ToolHooks {
   writingDrafts?: {
     list: () => readonly { id: string; turn: number }[]
     focus: () => string | undefined
-    link: (id: string) => Promise<void>
+    /** `turn` places a draft at the reply it first appeared in; the current turn otherwise. */
+    link: (id: string, turn?: number) => Promise<void>
   }
   /** A tool reported touching external files — the session records them for the transcript's rel. */
   onExternalFiles: (files: ExternalFileRef[]) => void
@@ -730,7 +731,7 @@ export default class ChatSession {
             writingDrafts: {
               list: () => this.writingDraftLinks,
               focus: () => this.writingDraftFocus,
-              link: (id) => this.linkWritingDraft(id),
+              link: (id, turn) => this.linkWritingDraft(id, turn),
             },
             legalReview: {
               id: () => this.legalReview?.id,

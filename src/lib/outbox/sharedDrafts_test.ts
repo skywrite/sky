@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import * as path from 'node:path'
 import { workstreamOutboxContext } from '#lib/workstreams/outbox.ts'
 import { createWorkstreamStorage } from '#lib/workstreams/storage.ts'
@@ -15,6 +15,7 @@ import { OutboxReview } from './review.ts'
 import { createSavedMessages, SavedMessages } from './sources.ts'
 import { outboxStateDir } from './storage.ts'
 import { OutboxStore } from './store.ts'
+import type { OutboxItem } from './types.ts'
 
 const NOW = '2025-03-15 12:00:00 UTC'
 const configFor = (root: string) => ({
@@ -44,6 +45,12 @@ async function fixture(guard?: (root: string) => WritingDraftStore['beforeChange
     drafts,
     outbox: store,
     seed,
+    /** A draft gets its notebook record at its first use; opening its discussion is the plainest one. */
+    worked: async (item: OutboxItem) => {
+      const put = await store.put(item, null)
+      return store.changeDraft(put.id, put.revision, { action: 'adopt' })
+    },
+    draftFiles: () => readdir(path.join(f.store.dir, 'drafts')).catch(() => [] as string[]),
     clean: async () => {
       await drafts.idle()
       await f.dispose()
@@ -54,7 +61,7 @@ async function fixture(guard?: (root: string) => WritingDraftStore['beforeChange
 test('Outbox and chat edit one draft record and share version history and learning', async () => {
   const f = await fixture()
   try {
-    const item = await f.outbox.put(f.seed, null)
+    const item = await f.worked(f.seed)
     const id = item.draftId!
     await f.drafts.revise(id, 1, 'The Atlas API is ready.', 'you', 'Name the subject directly.')
     f.drafts.learn(id)
@@ -144,7 +151,7 @@ test('draft discussions use configured follows and reject new messages or change
     await writeMessage(firstRef, 'Please review the Atlas API.')
     await follow([firstRef])
     const conversation = (await sources.conversation(firstRef))!
-    const item = await f.outbox.put({ ...f.seed, conversation }, null)
+    const item = await f.worked({ ...f.seed, conversation })
     const proposed = await f.drafts.revise(item.draftId!, 1, 'I will review the Atlas API.', 'sky')
     await writeMessage(nextRef, 'Please wait for the revised API specification.')
     await follow([firstRef, nextRef])
@@ -213,7 +220,7 @@ test('draft discussions check linked work before saving an AI revision', async (
         contextVersion: '',
       },
     ])
-    const item = await f.outbox.put({ ...f.seed, workstreams: links }, null)
+    const item = await f.worked({ ...f.seed, workstreams: links })
     await f.drafts.beforeChange(item.writingDraft!, 'sky')
     await workstreams.put({ ...work, outcome: 'Review the revised API before approval' }, work.revision)
     const result = await failure(f.drafts.revise(item.draftId!, 1, 'A proposal based on the old outcome.', 'sky'))
@@ -231,7 +238,7 @@ test('draft discussions check linked work before saving an AI revision', async (
 test('shared draft revisions cannot outrun approval or change text during native placement', async () => {
   const f = await fixture()
   try {
-    const item = await f.outbox.put(f.seed, null)
+    const item = await f.worked(f.seed)
     let writes = 0
     const sources = new SavedMessages(f.root, { Slack: [], Email: [] })
     const staleReview = new OutboxReview(
@@ -283,27 +290,47 @@ test('shared draft revisions cannot outrun approval or change text during native
   }
 })
 
-test('adopting an existing Outbox reply preserves its known history without duplicating learning', async () => {
+test('an older reply kept in its item is saved at its first use, with its known history and no repeated learning', async () => {
   const f = await fixture()
   try {
     const legacy = new OutboxStore(f.outbox.dir, f.outbox.stateDir)
     const previous = await legacy.put({ ...f.seed, draft: 'An existing owner edit.', edited: true }, null)
-    const adopted = (await f.outbox.ensureDraft(previous.id))!
-    const reread = (await f.outbox.ensureDraft(previous.id))!
+    const opened = (await f.outbox.get(previous.id))!
+    const filesWhenOpened = await f.draftFiles()
+    const adopted = await f.outbox.changeDraft(previous.id, opened.revision, { action: 'adopt' })
+    const again = await f.outbox.changeDraft(previous.id, adopted.revision, { action: 'adopt' })
     await f.drafts.idle()
     assert({
-      given: 'an old inline draft opened repeatedly with the shared store',
-      should: 'adopt it once with its original and latest text and keep the review state',
+      given: 'an old inline draft opened, then worked on twice with the shared store',
+      should:
+        'write nothing when opened, then save one record with its original and latest text and keep the review state',
       actual: [
-        adopted.draftId === reread.draftId,
+        opened.draftId,
+        filesWhenOpened,
+        opened.unsavedDraft?.versions.map((v) => [v.author, v.text]),
+        adopted.draftId === again.draftId,
         adopted.writingDraft?.versions.map((v) => v.text),
         adopted.status,
         adopted.edited,
         (await f.store.list()).length,
+        (await f.draftFiles()).length,
       ],
-      expected: [true, [f.seed.originalDraft, 'An existing owner edit.'], 'needs_review', true, 0],
+      expected: [
+        undefined,
+        [],
+        [
+          ['sky', f.seed.originalDraft],
+          ['you', 'An existing owner edit.'],
+        ],
+        true,
+        [f.seed.originalDraft, 'An existing owner edit.'],
+        'needs_review',
+        true,
+        0,
+        1,
+      ],
     })
-    await f.outbox.put({ ...adopted, status: 'dismissed' }, adopted.revision)
+    await f.outbox.put({ ...again, status: 'dismissed' }, again.revision)
     const dismissed = (await f.outbox.get(adopted.id))!
     const next = await f.outbox.put(
       { ...dismissed, status: 'needs_review', draft: 'A new request needs a reply.' },
@@ -311,9 +338,178 @@ test('adopting an existing Outbox reply preserves its known history without dupl
     )
     assert({
       given: 'a new request in a conversation with a dismissed reply',
-      should: 'keep the old draft history intact and give the new reply its own record',
-      actual: [next.draftId !== adopted.draftId, currentDraftVersion(await f.drafts.require(adopted.draftId!)).text],
-      expected: [true, 'An existing owner edit.'],
+      should: 'keep the old draft history intact and leave the new reply unsaved until it is used',
+      actual: [
+        next.draftId,
+        next.unsavedDraft?.versions.at(-1)?.text,
+        currentDraftVersion(await f.drafts.require(adopted.draftId!)).text,
+        (await f.draftFiles()).length,
+      ],
+      expected: [undefined, 'A new request needs a reply.', 'An existing owner edit.', 1],
+    })
+  } finally {
+    await f.clean()
+  }
+})
+
+test('a draft nobody has worked on stays out of the notebook until its first use', async () => {
+  const f = await fixture()
+  try {
+    const item = await f.outbox.put(f.seed, null)
+    const recomposed = await f.outbox.put(
+      {
+        ...item,
+        draft: 'The Atlas API is ready for review.',
+        edited: true,
+        replyDirections: [{ at: NOW, text: 'Name the API.', sourceVersion: 'v1' }],
+      },
+      item.revision,
+      { author: 'sky', direction: 'Name the API.' },
+    )
+    const raw = await readFile(path.join(f.outbox.dir, 'items', `${item.id}.md`), 'utf8')
+    const untouched = await f.draftFiles()
+    const reread = (await f.outbox.get(item.id))!
+    assert({
+      given: 'a reply Sky prepared, then composed again from a direction, with nothing done to its words',
+      should: 'keep the words in the item, show them with their history, and write no draft file',
+      actual: [
+        item.draftId,
+        recomposed.draftId,
+        untouched,
+        raw.includes('The Atlas API is ready for review.'),
+        recomposed.unsavedDraft?.versions.map((v) => [v.author, v.text, v.direction]),
+        JSON.stringify(reread.unsavedDraft) === JSON.stringify(recomposed.unsavedDraft),
+      ],
+      expected: [
+        undefined,
+        undefined,
+        [],
+        true,
+        [
+          ['sky', f.seed.originalDraft, ''],
+          ['sky', 'The Atlas API is ready for review.', 'Name the API.'],
+        ],
+        true,
+      ],
+    })
+    const edited = await f.outbox.changeDraft(item.id, recomposed.revision, {
+      action: 'edit',
+      revision: recomposed.unsavedDraft!.revision,
+      text: 'The Atlas API is ready. Please review it.',
+      explanation: 'Ask for the next action.',
+    })
+    await f.drafts.idle()
+    const saved = await f.drafts.require(edited.draftId!)
+    assert({
+      given: 'the first edit in the shared editor',
+      should: 'save one readably named record with the shown history, and learn from that edit alone',
+      actual: [
+        edited.draftId,
+        await f.draftFiles(),
+        saved.versions.map((v) => [v.author, v.text]),
+        saved.versions.at(-1)?.learnFrom,
+        (await f.store.list(`draft:${edited.draftId}`)).length,
+      ],
+      expected: [
+        '2025-03-15_12-00-00Z_Atlas-API-Update',
+        ['2025-03-15_12-00-00Z_Atlas-API-Update.md'],
+        [
+          ['sky', f.seed.originalDraft],
+          ['sky', 'The Atlas API is ready for review.'],
+          ['you', 'The Atlas API is ready. Please review it.'],
+        ],
+        2,
+        1,
+      ],
+    })
+  } finally {
+    await f.clean()
+  }
+})
+
+test('approving or reporting a send saves the record; archiving an untouched draft never does', async () => {
+  const f = await fixture()
+  try {
+    const sources = new SavedMessages(f.root, { Slack: [], Email: [] })
+    const review = new OutboxReview(
+      f.outbox,
+      sources,
+      async () => ({ id: 'native', url: 'https://example.com/draft' }),
+      () => NOW,
+    )
+    const other = (id: string, key: string) => ({
+      ...f.seed,
+      id: id.repeat(32),
+      conversation: { ...f.seed.conversation, key },
+    })
+    const approve = await f.outbox.put(f.seed, null)
+    const archive = await f.outbox.put(other('b', 'archived'), null)
+    const send = await f.outbox.put(other('c', 'sent'), null)
+    const archived = await review.dismiss(archive.id, archive.revision)
+    const afterArchive = await f.draftFiles()
+    const ready = await review.approve(approve.id, approve.revision, approve.draft, false)
+    const sent = await review.reportSent(send.id, send.revision, 'Sent by email on 2025-03-15.')
+    await f.drafts.idle()
+    assert({
+      given: 'three untouched replies: one archived, one approved as written, one reported sent',
+      should: 'write a record for the two that left review, accept their first version, and teach nothing',
+      actual: [
+        archived.draftId,
+        afterArchive,
+        ready.writingDraft?.versions.map((v) => [v.author, v.accepted, v.learnFrom]),
+        sent.draftId !== undefined,
+        (await f.draftFiles()).length,
+        (await f.store.list()).length,
+      ],
+      expected: [undefined, [], [['sky', true, undefined]], true, 2, 0],
+    })
+  } finally {
+    await f.clean()
+  }
+})
+
+test('a draft file deleted from the notebook never breaks its item', async () => {
+  const f = await fixture()
+  try {
+    const sources = new SavedMessages(f.root, { Slack: [], Email: [] })
+    const review = new OutboxReview(
+      f.outbox,
+      sources,
+      async () => ({ id: 'native', url: 'https://example.com/draft' }),
+      () => NOW,
+    )
+    const untouched = await f.worked({
+      ...f.seed,
+      id: 'b'.repeat(32),
+      conversation: { ...f.seed.conversation, key: 'b' },
+    })
+    const item = await f.outbox.put(f.seed, null)
+    const ready = await review.approve(item.id, item.revision, 'The draft is ready.', false)
+    for (const id of [untouched.draftId!, ready.draftId!]) await rm(path.join(f.store.dir, 'drafts', `${id}.md`))
+    const listed = await f.outbox.list()
+    const approved = listed.find((entry) => entry.id === item.id)!
+    const plain = listed.find((entry) => entry.id === untouched.id)!
+    const archived = await f.outbox.put({ ...approved, status: 'dismissed' }, approved.revision)
+    const raw = await readFile(path.join(f.outbox.dir, 'items', `${item.id}.md`), 'utf8')
+    assert({
+      given: 'an approved reply and an untouched one whose draft files the owner deleted',
+      should: 'list both from the words their items hold, and drop the dead link at the next write',
+      actual: [
+        [approved.draft, approved.draftId, approved.writingDraft],
+        [plain.draft, plain.draftId, plain.unsavedDraft?.revision],
+        archived.draftId,
+        Document.fromMarkdown(raw).yaml.draftId,
+        Document.fromMarkdown(raw).markdown.trim(),
+        await f.draftFiles(),
+      ],
+      expected: [
+        ['The draft is ready.', undefined, undefined],
+        [f.seed.originalDraft, undefined, 1],
+        undefined,
+        undefined,
+        'The draft is ready.',
+        [],
+      ],
     })
   } finally {
     await f.clean()

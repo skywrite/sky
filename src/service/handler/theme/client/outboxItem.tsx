@@ -138,7 +138,9 @@ export function OutboxItemPage({
   const who = outboxWho(item)
   const where = outboxWhere(item)
   const hasText = edit.text.trim() !== ''
-  const decision = editor.editable && !item.writingDraft && !hasText && !editor.manualReply
+  // The shared editor shows a draft whether or not a notebook record of it exists yet.
+  const sharedDraft = Boolean(item.writingDraft ?? item.unsavedDraft)
+  const decision = editor.editable && !sharedDraft && !hasText && !editor.manualReply
   // A prepared reply can still carry a decision: the questions stay in view above the words.
   const asksAbove = !decision && editor.editable && outboxAsks(editor)
   const appLink = item.native?.url || outboxSourceLink(item)
@@ -203,7 +205,7 @@ export function OutboxItemPage({
                 : `Approve draft in ${editor.nativeApp}`}
           </Button>
         )}
-        {item.status === 'needs_review' && !item.writingDraft && (
+        {item.status === 'needs_review' && !sharedDraft && (
           <Button
             disabled={editor.busy || editor.conflicted || edit.text === edit.saved}
             onClick={() => void editor.save()}
@@ -211,7 +213,7 @@ export function OutboxItemPage({
             Save edit
           </Button>
         )}
-        {item.writingDraft && editor.editable && !item.contextError && (
+        {sharedDraft && editor.editable && !item.contextError && (
           <Button disabled={editor.busy} onClick={() => void editor.askAboutDraft()}>
             Ask about this draft
           </Button>
@@ -226,7 +228,7 @@ export function OutboxItemPage({
             Open in Beeper
           </Button>
         )}
-        {!item.writingDraft && hasText && <Button onClick={editor.copyReply}>Copy reply</Button>}
+        {!sharedDraft && hasText && <Button onClick={editor.copyReply}>Copy reply</Button>}
         {!done && (
           <Button
             variant="primary-quiet"
@@ -286,7 +288,7 @@ export function OutboxItemPage({
           </div>
         </section>
       )}
-      {!item.writingDraft && item.originalDraft && item.originalDraft !== edit.text && (
+      {!sharedDraft && item.originalDraft && item.originalDraft !== edit.text && (
         <details className="sky-outbox-original">
           <summary>Sky’s original draft</summary>
           <p className="sky-outbox-text">{item.originalDraft}</p>

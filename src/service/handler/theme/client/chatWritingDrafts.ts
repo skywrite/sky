@@ -65,13 +65,15 @@ export function useWritingDrafts(chatId: string, refreshKey: string) {
   const [drafts, setDrafts] = useState<WritingDraftView[]>([])
   const [error, setError] = useState('')
   const generation = useRef(0)
-  const update = useCallback((draft: WritingDraftView) => {
+  // A saved record takes the place of the unsaved frame it came from, whose id differs.
+  const update = useCallback((draft: WritingDraftView, shownId = draft.id) => {
     generation.current++
-    setDrafts((prior) =>
-      prior.some((item) => item.id === draft.id)
-        ? prior.map((item) => (item.id === draft.id ? draft : item))
-        : [...prior, draft],
-    )
+    setDrafts((prior) => {
+      const same = (item: WritingDraftView) => item.id === shownId || item.id === draft.id
+      const at = prior.findIndex(same)
+      if (at < 0) return [...prior, draft]
+      return prior.flatMap((item, index) => (index === at ? [draft] : same(item) ? [] : [item]))
+    })
   }, [])
   useEffect(() => {
     generation.current++
