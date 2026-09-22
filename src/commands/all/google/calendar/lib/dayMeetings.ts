@@ -10,11 +10,12 @@ import {
 import type { CalendarEvent } from '#lib/google/mod.ts'
 import type { SecretsProvider } from '#lib/secrets/SecretsProvider.ts'
 import { readSystemTimezone } from '#lib/sys/mod.ts'
+import { dayTimezone } from '#shared/nbfs/mod.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import { currentTimezoneIANA } from '#universal/dates/timezones/mod.ts'
 
 export interface DayMeetings {
-  /** IANA zone the day was evaluated in (system symlink first, Intl fallback). */
+  /** The day's saved IANA zone, falling back to the notebook's current zone, then the system zone. */
   timeZone: string
   /** The day's events that count as meetings, oldest first. */
   meetings: CalendarEvent[]
@@ -27,15 +28,22 @@ export interface DayMeetings {
 /**
  * One civil day's calendar events across every authorized Google account,
  * split by the meeting policy. The API is queried over a UTC window padded a
- * day on both sides with responses rendered in the local zone, then filtered
+ * day on both sides with responses rendered in the notebook day's zone, then filtered
  * to the day by string comparison — timezone and DST correctness stay
  * Google's job, and no absolute-time math happens here. Events spanning
  * midnight belong to the day they start. No cross-account dedupe yet: with
  * several accounts, an event shared between them would appear once per
  * account.
  */
-export async function fetchDayMeetings(secrets: SecretsProvider, day: PlainDate): Promise<DayMeetings> {
-  const timeZone = (await readSystemTimezone()) ?? currentTimezoneIANA()
+export async function fetchDayMeetings(
+  secrets: SecretsProvider,
+  day: PlainDate,
+  timeDir?: string,
+): Promise<DayMeetings> {
+  // Calendar times must share the records' clock even after the owner travels.
+  const timeZone = await dayTimezone(day, timeDir).catch(
+    async () => (await readSystemTimezone()) ?? currentTimezoneIANA(),
+  )
   const result: DayMeetings = { timeZone, meetings: [], dropped: [], errors: [] }
 
   const oauthClient = await loadOAuthClient(secrets)

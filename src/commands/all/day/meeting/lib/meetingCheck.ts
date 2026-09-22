@@ -126,7 +126,7 @@ export async function checkDayMeetings(
 ): Promise<MeetingCheck> {
   const [calendar, notebook, events] = await Promise.all([
     // Even a keychain failure below the calendar fetch degrades to an error line.
-    fetchDayMeetings(secrets, day).catch((err: unknown) => ({
+    fetchDayMeetings(secrets, day, timeDir).catch((err: unknown) => ({
       timeZone: null,
       meetings: [],
       errors: [err instanceof Error ? err.message : String(err)],
@@ -199,10 +199,8 @@ interface Distance {
 }
 
 /**
- * Wall-clock minutes from the notebook clock to a calendar timestamp. The
- * calendar renders its times in the system zone and the notebook clock
- * reads in the notebook's, so this is a civil difference, never absolute
- * time — the same footing the record match stands on. A 25:30 clock
+ * Wall-clock minutes from the notebook clock to a calendar timestamp in
+ * the notebook day's zone — the same footing the record match stands on. A 25:30 clock
  * normalizes to 01:30 the next day inside `until`.
  */
 function minutesUntil(clock: PlainDateTime, rfc3339: string): number {

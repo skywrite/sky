@@ -11,7 +11,7 @@ import { fetchDayMeetings } from '#commands/all/google/calendar/lib/dayMeetings.
 import type { CalendarEvent } from '#lib/google/mod.ts'
 import { KeychainSecretsProvider } from '#lib/secrets/KeychainSecretsProvider.ts'
 import type PeopleStore from '#shared/models/Store/PeopleStore/mod.ts'
-import { dayDir, fetchNowSync } from '#shared/nbfs/mod.ts'
+import { dayDir, fetchNow } from '#shared/nbfs/mod.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import type { PersonScore } from '../../scoring/ScoringStore.ts'
 import type { Store } from '../../store.ts'
@@ -151,7 +151,7 @@ export function createDayScheduleHost(options: {
   const secrets = new KeychainSecretsProvider()
   return async (day) => {
     const [calendar, record] = await Promise.all([
-      fetchDayMeetings(secrets, day).catch((err: unknown) => ({
+      fetchDayMeetings(secrets, day, options.timeDir).catch((err: unknown) => ({
         meetings: [] as CalendarEvent[],
         errors: [err instanceof Error ? err.message : String(err)],
       })),
@@ -163,7 +163,7 @@ export function createDayScheduleHost(options: {
         ownerNames: [],
       }).catch(() => null),
     ])
-    const now = fetchNowSync().plainDateTime
+    const now = (await fetchNow({ timeDir: options.timeDir })).plainDateTime
     return scheduleOf({
       day: day.ymd,
       events: calendar.meetings,

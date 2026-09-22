@@ -1,6 +1,6 @@
 ---
 created: 2026-08-29
-updated: 2026-09-20
+updated: 2026-09-21
 ---
 
 # Day commands
@@ -71,7 +71,10 @@ with no record, plus records whose `when:` states no end time. Its rules:
 - **A record is a start-time match** within 15 minutes. Notebook meetings
   the calendar never saw are ignored, not flagged.
 - **Civil-day calendar windows.** The calendar is asked for the civil day
-  in the system zone; the check does no absolute-time math of its own.
+  in that day file's saved `tz:`, so travel does not change meeting times or
+  break record matching. A missing day uses the current notebook timezone;
+  a notebook without a started day falls back to the system zone. The check
+  does no absolute-time math of its own.
 
 The check lives in `meeting/lib/meetingCheck.ts` — a pure comparison over
 already-fetched sources, the fetches, and a model-facing render — and

@@ -30,10 +30,10 @@ export default class GoogleCalendarEventsTask extends Command {
   }
 
   async run({ args, context }: CommandArgs<Params>): Promise<CommandResult<Result>> {
-    const { output, secrets } = context
+    const { output, secrets, config } = context
     const { day } = args
 
-    const { timeZone, meetings, dropped, errors } = await fetchDayMeetings(secrets, day)
+    const { timeZone, meetings, dropped, errors } = await fetchDayMeetings(secrets, day, <string>config.DIR_TIME)
 
     if (errors.length > 0 && meetings.length === 0 && dropped.length === 0) {
       return CommandResult.fail(errors.join('\n'))
