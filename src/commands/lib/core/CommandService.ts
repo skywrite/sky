@@ -217,7 +217,7 @@ export default class CommandService {
    * }
    *
    * // Unregistered task - use generic for result type
-   * const result = await tasks.run<LocationData>('util:location')
+   * const result = await tasks.run<'util:location', LocationData>('util:location')
    * ```
    */
   // Overload 1: Registered task - fully typed params and result.
@@ -226,14 +226,20 @@ export default class CommandService {
   // falling back to `params`.
   async run<K extends keyof CommandTypesRegistry>(
     commandName: K,
-    argsOverride?: CommandTypesRegistry[K] extends { paramsIn: infer I }
-      ? Partial<I>
-      : Partial<CommandTypesRegistry[K]['params']>,
+    argsOverride?: NoInfer<
+      CommandTypesRegistry[K] extends { paramsIn: infer I } ? Partial<I> : Partial<CommandTypesRegistry[K]['params']>
+    >,
   ): Promise<CommandResult<CommandTypesRegistry[K]['result']>>
 
-  // Overload 2: Unregistered task - loose typing (backward compat)
+  // Dynamic names and unregistered commands retain runtime validation. Infer
+  // the name even when a result type is supplied: a plain string overload
+  // would also accept registered commands whose typed arguments were invalid.
+  // Extract rejects unions containing a registered name as well as literals.
   // deno-lint-ignore no-explicit-any
-  async run<T = any>(commandName: string, argsOverride?: Record<string, unknown>): Promise<CommandResult<T>>
+  async run<K extends string, T = any>(
+    commandName: K & ([Extract<K, keyof CommandTypesRegistry>] extends [never] ? unknown : never),
+    argsOverride?: Record<string, unknown>,
+  ): Promise<CommandResult<T>>
 
   // Implementation
   // deno-lint-ignore no-explicit-any

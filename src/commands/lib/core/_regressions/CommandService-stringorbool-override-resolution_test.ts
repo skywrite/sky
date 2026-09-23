@@ -39,7 +39,7 @@ test('stringOrBool override true resolves to bareValue through composition', asy
   // Parent merged args carry a boolean server default, like ai:context:files
   const service = createService({ server: false })
 
-  const result = await service.run<{ server: unknown }>('test:server-echo', { server: true })
+  const result = await service.run<'test:server-echo', { server: unknown }>('test:server-echo', { server: true })
 
   assert({
     given: 'a composing caller passing server: true',
@@ -52,7 +52,9 @@ test('stringOrBool override true resolves to bareValue through composition', asy
 test('stringOrBool override host string passes through composition', async () => {
   const service = createService({ server: false })
 
-  const result = await service.run<{ server: unknown }>('test:server-echo', { server: '192.168.10.3' })
+  const result = await service.run<'test:server-echo', { server: unknown }>('test:server-echo', {
+    server: '192.168.10.3',
+  })
 
   assert({
     given: 'a composing caller passing a host string',
@@ -65,7 +67,7 @@ test('stringOrBool override host string passes through composition', async () =>
 test('stringOrBool inherited false resolves to absent through composition', async () => {
   const service = createService({ server: false })
 
-  const result = await service.run<{ server: unknown }>('test:server-echo', {})
+  const result = await service.run<'test:server-echo', { server: unknown }>('test:server-echo', {})
 
   assert({
     given: "only the parent's inherited server: false (the original leak)",

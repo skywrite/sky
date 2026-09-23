@@ -119,7 +119,7 @@ export default class LegalAnnotateTask extends Command {
 
     // Both target params are passed explicitly: composition merges the parent's
     // args into the child, so leaving one unset could let a stale value stand.
-    const result = await tasks.run<{ report: string; files: MissionFile[]; artifact?: string }>('google:agent', {
+    const result = await tasks.run('google:agent', {
       mission,
       file: target ? document.trim() : undefined,
       import: target ? undefined : document.trim(),

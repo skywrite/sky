@@ -62,7 +62,7 @@ export default class MarkdownConcatTask extends Command {
       : []
 
     // Get files via task composition
-    const filterResult = await tasks.run<{ files: string[] }>('markdown:filter', {
+    const filterResult = await tasks.run<'markdown:filter', { files: string[] }>('markdown:filter', {
       tags,
       tagsAll,
       rel,

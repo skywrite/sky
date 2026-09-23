@@ -14,7 +14,7 @@ export function contextProducers(tasks: CommandService): ContextProducers {
   return {
     produceInitialQuery: async (userMessage) => {
       const r = await tasks.run('ai:context:files', {
-        _: ['ai:context:files', userMessage],
+        question: userMessage,
         server: true,
       })
       return r.status === 'success'
@@ -32,8 +32,8 @@ export function contextProducers(tasks: CommandService): ContextProducers {
         : { ok: false, message: r.message ?? 'ai:context:files failed' }
     },
     evolveQueries: async (userMessage, queries, recentConversation) => {
-      const r = await tasks.run<{ queries: string[]; changed: boolean }>('ai:context:evolve', {
-        _: ['ai:context:evolve', userMessage],
+      const r = await tasks.run('ai:context:evolve', {
+        message: userMessage,
         queries: JSON.stringify(queries),
         conversation: JSON.stringify(recentConversation),
       })

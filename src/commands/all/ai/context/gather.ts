@@ -80,9 +80,7 @@ export default class AIContextGatherTask extends Command {
     // Step 1: Generate GraphQL query using AI
     output.log(colors.dim('Generating query...'))
 
-    const selResult = await tasks.run<{ query: string }>('ai:context:sel', {
-      _: ['ai:context:sel', question], // positional arg
-    })
+    const selResult = await tasks.run('ai:context:sel', { question })
 
     if (selResult.status !== 'success' || !selResult.data?.query) {
       output.log(colors.red('Failed to generate query'))

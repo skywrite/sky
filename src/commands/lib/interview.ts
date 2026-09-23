@@ -111,8 +111,8 @@ export async function gatherNotebookContext(
   today: PlainDate,
 ): Promise<NotebookContext> {
   try {
-    const filesResult = await tasks.run<{ paths: string[] }>('ai:context:files', {
-      _: ['ai:context:files', description],
+    const filesResult = await tasks.run('ai:context:files', {
+      question: description,
       since: '90d',
     })
 

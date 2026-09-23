@@ -99,10 +99,7 @@ export default class AIContextFilesTask extends Command {
     if (since === 'auto') {
       resolvedSince = undefined
       try {
-        const dateResult = await tasks.run<{ since: string; until: string; start?: string; dates: string[] }>(
-          'ai:context:date',
-          { _: ['ai:context:date', question] },
-        )
+        const dateResult = await tasks.run('ai:context:date', { message: question })
         if (dateResult.status === 'success') {
           resolvedSince = dateResult.data?.since || undefined
           resolvedUntil = dateResult.data?.until || undefined
@@ -123,8 +120,8 @@ export default class AIContextFilesTask extends Command {
     // Step 2: Generate GraphQL query using AI
     output.log(colors.dim('Generating query...'))
 
-    const selResult = await tasks.run<{ query: string }>('ai:context:sel', {
-      _: ['ai:context:sel', question],
+    const selResult = await tasks.run('ai:context:sel', {
+      question,
       since: resolvedSince === 'all' ? undefined : resolvedSince,
       until: resolvedUntil,
       from: resolvedStart,

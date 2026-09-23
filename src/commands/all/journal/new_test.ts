@@ -4,7 +4,7 @@ import CommandContext from '#commands/lib/core/CommandContext.ts'
 import CommandService from '#commands/lib/core/CommandService.ts'
 import { commandDescriptionToSchema } from '#commands/lib/jsonSchema.ts'
 import transformTypedParamsArgs from '#commands/lib/transformTypedParamsArgs/mod.ts'
-import { Command, CommandResult, type CommandTypesRegistry } from '#commands/mod.ts'
+import { CommandResult, type CommandTypesRegistry } from '#commands/mod.ts'
 import * as config from '#config'
 import { DayDirFileWriter } from '#lib/nbfs/mod.ts'
 import { startArgs } from '#service/handler/import/startArgs.ts'
@@ -16,21 +16,27 @@ import JournalNewTask from './new.ts'
 const WHEN = new PlainDateTime('2031-03-16 08:00')
 const NOW = new ZonedDateTime(WHEN, 'UTC')
 
-// Exercise the real command definition and dispatcher without invoking AI or writing journals.
-class CaptureJournalArgs extends Command {
-  static override description = JournalNewTask.description
+type JournalInput = Partial<CommandTypesRegistry['journal:new']['paramsIn']>
+type CapturedJournalArgs = Pick<Parameters<JournalNewTask['run']>[0]['args'], 'types' | 'fromAudio'>
 
-  async run({ args }: Parameters<JournalNewTask['run']>[0]) {
-    return CommandResult.success({ types: args.types, fromAudio: args.fromAudio })
+async function withJournalService(
+  parent: Record<string, unknown>,
+  run: (tasks: CommandService, received: CapturedJournalArgs[]) => Promise<void>,
+) {
+  const received: CapturedJournalArgs[] = []
+  // Exercise the real definition and dispatcher without invoking AI or writing journals.
+  class CaptureJournalArgs extends JournalNewTask {
+    override async run({ args }: Parameters<JournalNewTask['run']>[0]) {
+      received.push({ types: args.types, fromAudio: args.fromAudio })
+      return CommandResult.success({ files: [] })
+    }
   }
-}
 
-async function withJournalService(parent: Record<string, unknown>, run: (tasks: CommandService) => Promise<void>) {
   const context = CommandContext.test(config, { notebookNow: NOW, systemNow: NOW })
   const tasks = new CommandService(context, { when: WHEN, ...parent })
   const load = spyOn(tasks, 'get').mockResolvedValue(CaptureJournalArgs)
   try {
-    await run(tasks)
+    await run(tasks, received)
   } finally {
     load.mockRestore()
   }
@@ -58,13 +64,15 @@ test('journal:new run() supplies normalized arrays for strings, arrays and alrea
     when: WHEN,
     types: 'Mood, Health',
   })
-  await withJournalService({}, async (tasks) => {
+  await withJournalService({}, async (tasks, received) => {
+    // The CLI adapter supplies a dynamic name and values without static parameter types.
+    const commandName: string = 'journal:new'
     for (const types of ['Mood, Health', ['Mood', ' Health '], cli.types]) {
-      const result = await tasks.run('journal:new', { types })
+      await tasks.run(commandName, { types })
       assert({
         given: `types supplied as ${JSON.stringify(types)}`,
         should: 'deliver the validated list to the handler without restoring the raw override',
-        actual: result.data,
+        actual: received.at(-1),
         expected: { types: ['Mood', 'Health'], fromAudio: undefined },
       })
     }
@@ -78,13 +86,13 @@ test('journal:new types preserve defaults, inheritance and override precedence',
     [{ types: ['Health'] }, { types: 'Mood' }, ['Mood']],
     [{ types: ['Health'] }, { types: ['Gratitude'] }, ['Gratitude']],
     [{ types: ['Health'] }, { types: undefined }, ['Mood']],
-  ] as const) {
-    await withJournalService(parent, async (tasks) => {
-      const result = await tasks.run('journal:new', overrides)
+  ] satisfies Array<[Record<string, unknown>, JournalInput, string[]]>) {
+    await withJournalService(parent, async (tasks, received) => {
+      await tasks.run('journal:new', overrides)
       assert({
         given: `parent ${JSON.stringify(parent)} and overrides ${JSON.stringify(overrides)}`,
         should: 'resolve overrides before inheritance and use the array default for a missing value',
-        actual: result.data,
+        actual: received.at(-1),
         expected: { types: expected, fromAudio: undefined },
       })
     })
@@ -98,28 +106,28 @@ test('journal:new accepts the web importer array and custom audio journal names'
     { kind: 'journal', when: WHEN.toString(), journalType: 'Reflection', category: 'Personal', fresh: false },
     file,
   )
-  await withJournalService({}, async (tasks) => {
-    const result = await tasks.run(start.command, start.args)
+  await withJournalService({}, async (tasks, received) => {
+    await tasks.run(start.command, start.args)
     assert({
       given: 'a journal import with a custom journal type',
       should: 'reach the handler with the full journal name and the recording path',
-      actual: result.data,
+      actual: received.at(-1),
       expected: { types: ['Reflection'], fromAudio: file },
     })
   })
 })
 
 test('journal:new array normalization does not mutate caller values or reuse a default list', async () => {
-  await withJournalService({}, async (tasks) => {
+  await withJournalService({}, async (tasks, received) => {
     const types = [' Mood ']
-    const first = await tasks.run('journal:new', { types })
-    const defaulted = await tasks.run<{ types: string[] }>('journal:new')
-    defaulted.data!.types.push('Health')
-    const next = await tasks.run('journal:new')
+    await tasks.run('journal:new', { types })
+    await tasks.run('journal:new')
+    received[1].types.push('Health')
+    await tasks.run('journal:new')
     assert({
       given: 'an array override needing trimming and a caller that mutates a previous default result',
       should: 'normalize without mutating input and allocate a fresh default for the next run',
-      actual: [types, first.data, next.data],
+      actual: [types, received[0], received[2]],
       expected: [[' Mood '], { types: ['Mood'], fromAudio: undefined }, { types: ['Mood'], fromAudio: undefined }],
     })
   })
@@ -201,28 +209,25 @@ test('journal:new CLI audio validation still requires explicitly supplied types'
 })
 
 test('journal:new rejects malformed type lists before executing', async () => {
-  await withJournalService({}, async (tasks) => {
-    const execute = spyOn(CaptureJournalArgs.prototype, 'run')
-    try {
-      for (const types of [true, 12, null, [], ['Mood', 12], [['Mood']], '', 'Mood,', [' ']]) {
-        let message = ''
-        try {
-          await tasks.run('journal:new', { types })
-        } catch (error) {
-          message = (error as Error).message
-        }
-        assert({
-          given: `invalid types ${JSON.stringify(types)}`,
-          should: 'fail validation before journal creation',
-          actual: {
-            rejected: message.startsWith('Validation failed for "types"'),
-            executions: execute.mock.calls.length,
-          },
-          expected: { rejected: true, executions: 0 },
-        })
+  await withJournalService({}, async (tasks, received) => {
+    // Malformed external input must still be rejected at runtime, beyond typed callers.
+    const commandName: string = 'journal:new'
+    for (const types of [true, 12, null, [], ['Mood', 12], [['Mood']], '', 'Mood,', [' ']]) {
+      let message = ''
+      try {
+        await tasks.run(commandName, { types })
+      } catch (error) {
+        message = (error as Error).message
       }
-    } finally {
-      execute.mockRestore()
+      assert({
+        given: `invalid types ${JSON.stringify(types)}`,
+        should: 'fail validation before journal creation',
+        actual: {
+          rejected: message.startsWith('Validation failed for "types"'),
+          executions: received.length,
+        },
+        expected: { rejected: true, executions: 0 },
+      })
     }
   })
 })
@@ -243,7 +248,7 @@ test('journal:new exposes an optional array of nonempty names to tools', () => {
 })
 
 function _verifyJournalTypes() {
-  type Input = Partial<CommandTypesRegistry['journal:new']['paramsIn']>
+  type Input = JournalInput
   type Resolved = Parameters<JournalNewTask['run']>[0]['args']
   const allowed: Input[] = [{}, { types: 'Mood, Health' }, { types: ['Mood', 'Health'] }]
   const names: Resolved['types'] = ['Mood']

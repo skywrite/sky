@@ -112,7 +112,7 @@ export default class SummaryWeekTask extends Command {
       }
       const pdfPath = this.pdfPath(week)
       output.log(`Exporting existing summary to PDF...`)
-      const result = await tasks.run<{ pdfPath: string }>('markdown:pdf', {
+      const result = await tasks.run('markdown:pdf', {
         file: summaryPath,
         output: pdfPath,
         title: `Weekly Summary – ${week.toString()}`,

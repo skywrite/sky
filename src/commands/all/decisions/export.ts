@@ -197,8 +197,8 @@ export default class DecisionsExportTask extends Command {
     const pdfFilename = buildPdfFilename(decision.identified, decision.name)
     const pdfPath = path.join(DIR_OUTPUT, pdfFilename)
 
-    const pdfResult = await tasks.run<{ pdfPath: string }>('markdown:pdf', {
-      _: ['markdown:pdf', decision.path],
+    const pdfResult = await tasks.run('markdown:pdf', {
+      file: decision.path,
       output: pdfPath,
       title: decision.title,
     })
