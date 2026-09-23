@@ -131,13 +131,13 @@ function hostWith(config: SkyConfig = CONFIG) {
       groups: GROUPS,
     }),
     models: () => [
-      { role: 'reasoning', label: 'Thinking', value: 'Claude Opus 5 · Anthropic', profile: 'default-opus-5' },
+      { role: 'reasoning', label: 'Thinking', value: 'Claude Opus 5.5 · Anthropic', profile: 'default-opus-5.5' },
     ],
     builtinProfiles: () => [
       {
-        name: 'default-opus-5',
+        name: 'default-opus-5.5',
         provider: 'anthropic',
-        model: 'claude-opus-5',
+        model: 'claude-opus-5-5',
         options: { effort: 'xhigh' },
       },
     ],
@@ -220,7 +220,7 @@ test({ name: 'settings route - one payload carries every pane' }, async () => {
     should: 'ride along: models, about, and the advanced view',
     actual: [data.models, data.about, data.advanced.path, data.advanced.exists],
     expected: [
-      [{ role: 'reasoning', label: 'Thinking', value: 'Claude Opus 5 · Anthropic', profile: 'default-opus-5' }],
+      [{ role: 'reasoning', label: 'Thinking', value: 'Claude Opus 5.5 · Anthropic', profile: 'default-opus-5.5' }],
       { version: 'abc1234', date: '2026-08-30' },
       '~/.sky/config.jsonc',
       true,
@@ -319,7 +319,7 @@ test('Writing Voice settings select available configurations and protect the sel
   config.ai.writingVoiceProfile = 'my-writer'
   const selected = await read()
   const blocked = await app.request('/settings/_api/profile/my-writer', { method: 'DELETE' })
-  config.ai.writingVoiceProfile = 'default-opus-5'
+  config.ai.writingVoiceProfile = 'default-opus-5.5'
   const removed = await app.request('/settings/_api/profile/my-writer', { method: 'DELETE' })
   assert({
     given: 'a custom configuration selected for the writing agent',
@@ -338,7 +338,7 @@ test('Writing Voice settings select available configurations and protect the sel
     ],
     expected: [
       'default-fable-5.1-high',
-      ['default-opus-5', 'my-writer'],
+      ['default-opus-5.5', 'my-writer'],
       200,
       400,
       400,
@@ -380,7 +380,7 @@ test({ name: 'settings route - configurations list yours first, roles attached' 
       ...CONFIG.ai,
       profiles: {
         scout: { provider: 'ollama', model: 'llama3', baseUrl: 'http://localhost:11434' },
-        'default-opus-5': { provider: 'openai', model: 'gpt-5.5' },
+        'default-opus-5.5': { provider: 'openai', model: 'gpt-5.5' },
       },
     },
   })
@@ -401,7 +401,7 @@ test({ name: 'settings route - configurations list yours first, roles attached' 
         roles: [],
       },
       {
-        name: 'default-opus-5',
+        name: 'default-opus-5.5',
         builtin: false,
         provider: 'openai',
         model: 'gpt-5.5',
@@ -409,10 +409,10 @@ test({ name: 'settings route - configurations list yours first, roles attached' 
         overrides: true,
       },
       {
-        name: 'default-opus-5',
+        name: 'default-opus-5.5',
         builtin: true,
         provider: 'anthropic',
-        model: 'claude-opus-5',
+        model: 'claude-opus-5-5',
         options: { effort: 'xhigh' },
         roles: ['Thinking'],
       },
@@ -478,7 +478,7 @@ test({ name: 'settings route - deleting removes yours and refuses the built-ins'
 
   const del = (name: string) => app.request(`http://localhost/settings/_api/profile/${name}`, { method: 'DELETE' })
   const gone = await del('scout')
-  const builtin = await del('default-opus-5')
+  const builtin = await del('default-opus-5.5')
   const unknown = await del('nope')
   assert({
     given: 'a delete of yours, a built-in, and an unknown name',
@@ -545,18 +545,18 @@ test({ name: 'choiceLabel - two profiles on one model carry their effort; a lone
       model: 'claude-fable-5-1',
       options: { effort: 'high', thinking: { type: 'adaptive' } },
     },
-    'default-opus-5': { provider: 'anthropic', model: 'claude-opus-5', options: { effort: 'xhigh' } },
+    'default-opus-5.5': { provider: 'anthropic', model: 'claude-opus-5-5', options: { effort: 'xhigh' } },
     'default-gpt-5.5': { provider: 'openai', model: 'gpt-5.5', options: { reasoningEffort: 'xhigh' } },
     mine: { provider: 'openai', model: 'gpt-5.5' },
   } as unknown as Parameters<typeof choiceLabel>[1]
   assert({
-    given: 'a catalog where Fable 5.1 appears twice, once at each effort, and Opus 5 once',
+    given: 'a catalog where Fable 5.1 appears twice, once at each effort, and Opus 5.5 once',
     should: 'tell the twins apart by effort and leave the lone model bare',
     actual: Object.keys(all).map((name) => choiceLabel(name, all)),
     expected: [
       'Claude Fable 5.1 · xhigh',
       'Claude Fable 5.1 · high',
-      'Claude Opus 5',
+      'Claude Opus 5.5',
       'GPT 5.5 · xhigh',
       'GPT 5.5 · mine',
     ],

@@ -54,7 +54,7 @@ test('preset effort is inherited, overridden for one call, and never mutated', (
     actual: resolveProfile(
       defineProfile({
         provider: 'anthropic',
-        model: 'claude-opus-5',
+        model: 'claude-opus-5-5',
         options: { effort: 'medium', thinking: { type: 'adaptive' } },
       }),
       { effort: 'max', temperature: 0 },
@@ -102,9 +102,9 @@ function modelId(m: ResolvedModel['model']): string {
 test('aiModel resolves a role to its baseline profile model', () => {
   assert({
     given: 'the reasoning role',
-    should: 'resolve to the opus-5 profile model',
+    should: 'resolve to the opus-5.5 profile model',
     actual: modelId(aiModel('reasoning').model),
-    expected: 'claude-opus-5',
+    expected: 'claude-opus-5-5',
   })
   assert({
     given: 'the fast role',
@@ -131,7 +131,7 @@ test('aiModelId exposes the model id behind a role', () => {
     given: 'the reasoning role',
     should: 'return the canonical model id for recording in output',
     actual: aiModelId('reasoning'),
-    expected: 'claude-opus-5',
+    expected: 'claude-opus-5-5',
   })
 })
 
@@ -199,10 +199,10 @@ test('resolveProfile applies sampling overrides on non-thinking profiles', () =>
   })
 })
 
-// Guarded on the live reasoning profile: opus 5 rejects temperature/topP/topK outright,
+// Guarded on the live reasoning profile: Opus 5.5 rejects temperature/topP/topK outright,
 // so a leak here is a 400 in production, not a quality nudge.
 test('resolveProfile drops sampling overrides when the profile enables thinking', () => {
-  const resolved = aiModelByProfile('default-opus-5', { temperature: 0, maxOutputTokens: 4096 })
+  const resolved = aiModelByProfile('default-opus-5.5', { temperature: 0, maxOutputTokens: 4096 })
 
   assert({
     given: 'a temperature override on a thinking profile',
@@ -218,13 +218,13 @@ test('resolveProfile drops sampling overrides when the profile enables thinking'
   })
 })
 
-test('default-opus-5 profile resolves to opus 5 with effort/thinking options', () => {
-  const resolved = aiModelByProfile('default-opus-5')
+test('default-opus-5.5 profile resolves to opus 5.5 with effort/thinking options', () => {
+  const resolved = aiModelByProfile('default-opus-5.5')
   assert({
-    given: 'the default-opus-5 profile',
+    given: 'the default-opus-5.5 profile',
     should: 'resolve to claude-opus-5',
     actual: modelId(resolved.model),
-    expected: 'claude-opus-5',
+    expected: 'claude-opus-5-5',
   })
   assert({
     given: 'its effort option',
@@ -300,13 +300,13 @@ test('default-fable-5.1-high profile resolves to fable 5.1 at effort high', () =
   })
 })
 
-test('default-opus-5-medium profile resolves to opus 5 at effort medium', () => {
-  const resolved = aiModelByProfile('default-opus-5-medium')
+test('default-opus-5.5-medium profile resolves to opus 5.5 at effort medium', () => {
+  const resolved = aiModelByProfile('default-opus-5.5-medium')
   assert({
-    given: 'the default-opus-5-medium profile',
+    given: 'the default-opus-5.5-medium profile',
     should: 'resolve to claude-opus-5',
     actual: modelId(resolved.model),
-    expected: 'claude-opus-5',
+    expected: 'claude-opus-5-5',
   })
   assert({
     given: 'its effort option',

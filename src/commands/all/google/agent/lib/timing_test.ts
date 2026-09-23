@@ -4,7 +4,7 @@ import { formatDuration, formatTiming, timingLines } from './timing.ts'
 test('mission timing formatting', async (t) => {
   await t.step('reads as one line and as a record block', () => {
     const timing = {
-      profile: 'default-opus-5',
+      profile: 'default-opus-5.5',
       steps: 28,
       wallMs: 182_000,
       modelMs: 40_000,
@@ -16,7 +16,7 @@ test('mission timing formatting', async (t) => {
       should: 'say what ran, how long, and where the time went',
       actual: formatTiming(timing),
       expected:
-        '28 steps in 3m02s on default-opus-5 — model 40s, tools 2m20s: inspect_doc_visually 3× 58s, batch_update_doc 17× 45s',
+        '28 steps in 3m02s on default-opus-5.5 — model 40s, tools 2m20s: inspect_doc_visually 3× 58s, batch_update_doc 17× 45s',
     })
     assert({
       given: 'the same mission',

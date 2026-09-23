@@ -202,7 +202,7 @@ export interface ModelRow {
   role: string
   /** The role in plain words: Thinking, Quick, … */
   label: string
-  /** `Claude Opus 5 · Anthropic` */
+  /** `Claude Opus 5.5 · Anthropic` */
   value: string
   /** The configuration the role points at, by name */
   profile: string
@@ -615,7 +615,7 @@ function modelRows(host: SettingsHost, config: SkyConfig): ModelRow[] {
 
 // ── The AI pane's rows ──────────────────────────────────────────────────
 
-/** claude-opus-5 → Claude Opus 5 · claude-haiku-4-5 → Claude Haiku 4.5 · gpt-5.5 → GPT 5.5 */
+/** claude-opus-5-5 → Claude Opus 5.5 · claude-haiku-4-5 → Claude Haiku 4.5 · gpt-5.5 → GPT 5.5 */
 export function prettyModel(id: string): string {
   const joined = id
     .split(/[-/]/)

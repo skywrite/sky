@@ -36,7 +36,7 @@ export function presetEffort(profile: EffortProfile): Effort | null {
 export function effortLevels(profile: EffortProfile): readonly Effort[] {
   if (profile.provider === 'anthropic') {
     // https://platform.claude.com/docs/en/build-with-claude/effort
-    if (/^claude-(?:opus-(?:5|4-[78])|sonnet-5|fable-5(?:-1)?|mythos-5(?:-1)?)(?:$|-\d{8}$)/.test(profile.model))
+    if (/^claude-(?:opus-(?:5(?:-5)?|4-[78])|sonnet-5|fable-5(?:-1)?|mythos-5(?:-1)?)(?:$|-\d{8}$)/.test(profile.model))
       return EFFORTS
     if (/^claude-(?:opus|sonnet)-4-6(?:$|-\d{8}$)/.test(profile.model)) return ['low', 'medium', 'high', 'max']
   }

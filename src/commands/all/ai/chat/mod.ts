@@ -56,7 +56,7 @@ const params = {
     short: 'm',
     optional: true,
   }),
-  reasoning: Flag.string('Reasoning model profile for chat turns (e.g. default-opus-5, default-local-reasoning)', {
+  reasoning: Flag.string('Reasoning model profile for chat turns (e.g. default-opus-5.5, default-local-reasoning)', {
     long: 'ai-reasoning',
     short: 'r',
     default: () => roleProfile('reasoning'),
@@ -248,7 +248,7 @@ export default class AiChatTask extends Command {
     usage: [
       'sky ai:chat                              # Use your Thinking preset',
       'sky ai:chat -m "What should I focus on?" # Start with initial message',
-      'sky ai:chat --ai-reasoning default-opus-5 --ai-effort high',
+      'sky ai:chat --ai-reasoning default-opus-5.5 --ai-effort high',
       'sky ai:chat --ai-max-context 100000      # Limit notebook context',
       'sky ai:chat -r default-local-reasoning   # Use local LM Studio model',
       'sky ai:chat -r default-local-reasoning -f default-local-fast  # Local reasoning + local fast',

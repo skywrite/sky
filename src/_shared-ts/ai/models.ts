@@ -23,7 +23,7 @@ import { PROFILES } from './defaultProfiles.ts'
  *
  * Three tiers:
  *   call site -> role      `aiModel('reasoning')`      semantic, stable, model-agnostic
- *   role      -> profile   `reasoning: 'opus-5'`       the swap point
+ *   role      -> profile   `reasoning: 'opus-5.5'`     the swap point
  *   profile   -> provider + model + options            the tuned, comparable unit
  *
  * `provider` + `model` are the uniform identity;
@@ -107,7 +107,7 @@ export type ProfileName = keyof typeof PROFILES
 
 /** Role -> profile pointers. The swap point: repoint a role to move every call site that uses it. */
 export const ROLES = {
-  reasoning: 'default-opus-5',
+  reasoning: 'default-opus-5.5',
   fast: 'default-haiku-4.5',
   balanced: 'default-sonnet-5',
   vision: 'default-sonnet-5',
@@ -177,7 +177,10 @@ const SAMPLING_KEYS = ['temperature', 'topP', 'topK'] as const
 function thinkingEnabled(profile: ModelProfile): boolean {
   // These models reason by default even when a custom preset omits thinking.
   if (profile.provider === 'openai' && /^gpt-6-astra(?:$|-)/.test(profile.model)) return true
-  if (profile.provider === 'anthropic' && /^claude-(?:opus-5|sonnet-5|fable-5(?:-1)?)(?:$|-\d{8}$)/.test(profile.model))
+  if (
+    profile.provider === 'anthropic' &&
+    /^claude-(?:opus-5(?:-5)?|sonnet-5|fable-5(?:-1)?)(?:$|-\d{8}$)/.test(profile.model)
+  )
     return true
   const thinking = (profile.options as { thinking?: { type?: string } } | undefined)?.thinking
   return thinking !== undefined && thinking.type !== 'disabled'
@@ -239,7 +242,7 @@ export function aiModel(role: Role, overrides?: ModelOverrides): ResolvedModel {
 
 /**
  * The model id a role currently resolves to, in canonical API form
- * (e.g. "claude-opus-5") — for call sites that record the model identity
+ * (e.g. "claude-opus-5-5") — for call sites that record the model identity
  * in their output (summary headings, logs, provenance notes). Mirrors
  * aiModel's resolution: configured role -> effective preset.
  */

@@ -196,7 +196,7 @@ export type ChatSessionFactory = (
 export interface ModelChoice {
   /** Profile name — what a thread is set to */
   name: string
-  /** `Claude Opus 5` */
+  /** `Claude Opus 5.5` */
   label: string
   /** `Anthropic` — the picker groups by it */
   provider: string

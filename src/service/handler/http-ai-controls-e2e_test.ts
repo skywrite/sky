@@ -245,7 +245,7 @@ test(
       await page.getByRole('button', { name: '＋ New preset', exact: true }).click()
       await page.getByRole('textbox', { name: 'Preset name', exact: true }).fill('deep-work')
       await page.getByRole('combobox', { name: 'Preset model', exact: true }).click()
-      await page.getByRole('option', { name: 'Claude Opus 5 · anthropic', exact: true }).click()
+      await page.getByRole('option', { name: 'Claude Opus 5.5 · anthropic', exact: true }).click()
       await page
         .getByRole('radiogroup', { name: 'Effort', exact: true })
         .getByRole('radio', { name: 'Max', exact: true })
@@ -256,7 +256,7 @@ test(
         given: 'a new named preset created with separate model and effort controls',
         should: 'save its model and default effort',
         actual: [config.ai.profiles?.['deep-work']?.model, config.ai.profiles?.['deep-work']?.options?.effort],
-        expected: ['claude-opus-5', 'max'],
+        expected: ['claude-opus-5-5', 'max'],
       })
       await page.setViewportSize({ width: 390, height: 844 })
       await page.getByRole('heading', { name: 'Models', exact: true }).scrollIntoViewIfNeeded()
@@ -285,7 +285,7 @@ test(
         actual: [await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), errors],
         expected: [false, []],
       })
-      config.ai.profiles!['default-opus-5'] = { provider: 'anthropic', model: 'claude-haiku-4-5' }
+      config.ai.profiles!['default-opus-5.5'] = { provider: 'anthropic', model: 'claude-haiku-4-5' }
       await page.reload()
       await toggle.click()
       await page.getByRole('button', { name: 'Use preset default', exact: true }).click()

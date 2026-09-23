@@ -57,7 +57,7 @@
       },
       {
         "command": "transcript.summarize",
-        "title": "Summarize Transcript (claude-opus-5)"
+        "title": "Summarize Transcript (claude-opus-5-5)"
       },
       {
         "command": "lifts.insert",
@@ -65,11 +65,11 @@
       },
       {
         "command": "attachment.summarize",
-        "title": "Summarize Attachment (claude-opus-5)"
+        "title": "Summarize Attachment (claude-opus-5-5)"
       },
       {
         "command": "attachment.summarizeAll",
-        "title": "Summarize All Attachments (claude-opus-5)"
+        "title": "Summarize All Attachments (claude-opus-5-5)"
       }
     ],
     "keybindings": [

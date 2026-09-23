@@ -1,13 +1,13 @@
 ---
 created: 2026-08-09
-updated: 2026-09-07
+updated: 2026-09-22
 ---
 
 # google:agent — the mission loop and its reliability ladder
 
-A mission is one `streamText` run (`mod.ts`): `MISSION_PROFILE` — Opus 5
-at medium effort (`default-opus-5-medium`) — with the agent tools, or the
-profile named by `--reasoning` (`default-opus-5` for full depth,
+A mission is one `streamText` run (`mod.ts`): `MISSION_PROFILE` — Opus 5.5
+at medium effort (`default-opus-5.5-medium`) — with the agent tools, or the
+profile named by `--reasoning` (`default-opus-5.5` for full depth,
 `default-sonnet-5` for no thinking), up to `MAX_STEPS = 48` steps, final
 text = the report. A mission executes a brief the chat model already
 wrote, so it needs Opus's hands without Opus's deliberation. Measured on one

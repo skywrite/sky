@@ -50,10 +50,10 @@ const MAX_STEPS = 48
  * brief: Opus 5 at xhigh took 19m28s for 25 steps, 19m05s of it thinking
  * (~46 s a step), and built the doc right; Qwen 3.8 on Cerebras took 4m49s,
  * probed request formats against the live doc and emptied two tabs.
- * `--ai-reasoning default-opus-5` is the full-depth run; `default-sonnet-5`
+ * `--ai-reasoning default-opus-5.5` is the full-depth run; `default-sonnet-5`
  * the no-thinking one.
  */
-const MISSION_PROFILE = 'default-opus-5-medium'
+const MISSION_PROFILE = 'default-opus-5.5-medium'
 /**
  * The watchdog counts EVERY stream frame: includeRawChunks surfaces the
  * provider's raw SSE events, so Anthropic's keep-alive pings re-arm it even
@@ -83,7 +83,7 @@ const params = {
   data: Flag.string('Path to a local CSV/text file appended to the mission as data', { short: 'd' }),
   images: Flag.string('Directory of images offered to the mission (backgrounds, logos)', { short: 'i' }),
   account: Flag.string('Google account (email or unique part of it)', { short: 'a' }),
-  reasoning: Flag.string('Model profile that runs the mission (e.g. default-opus-5-medium, default-sonnet-5)', {
+  reasoning: Flag.string('Model profile that runs the mission (e.g. default-opus-5.5-medium, default-sonnet-5)', {
     long: 'ai-reasoning',
     short: 'r',
     default: () => MISSION_PROFILE,
@@ -151,7 +151,7 @@ export default class GoogleAgentTask extends Command {
     const { output, secrets } = context
 
     // The mission's model is a profile, picked per run. The default is Opus
-    // at medium effort; `--ai-reasoning default-opus-5` is the full-depth run.
+    // at medium effort; `--ai-reasoning default-opus-5.5` is the full-depth run.
     // An unknown name fails here, before any Google work.
     let missionProfile: ModelProfile
     try {

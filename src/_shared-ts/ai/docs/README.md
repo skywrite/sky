@@ -1,6 +1,6 @@
 ---
 created: 2026-09-01
-updated: 2026-09-17
+updated: 2026-09-22
 ---
 
 # Model registry — roles, profiles, providers
@@ -10,7 +10,7 @@ updated: 2026-09-17
 - **role** — `aiModel('reasoning')`. Semantic and stable; the four roles
   (`reasoning`, `fast`, `balanced`, `vision`) have shipped defaults in `ROLES`;
   `ai.roles` assigns them to presets in the user's configuration.
-- **profile** — `default-opus-5`. A named provider + model + options tuple.
+- **profile** — `default-opus-5.5`. A named provider + model + options tuple.
   The shipped set is `defaultProfiles.ts`; a person's own come from
   `ai.profiles` in `~/.sky/config.jsonc` (config wins on a name clash).
 - **provider** — the AI-SDK provider the profile resolves through
@@ -87,7 +87,8 @@ first caller is the web chat's experimental preflight; see the
   (`ai.roles`) changes its default; `ROLES` remains the shipped fallback.
 - Superseded profiles stay in the catalog unless explicitly retired: a
   person's config or a command flag may still name them. The retired
-  built-ins are Opus 4.6/4.8, Sonnet 4.6, GPT-4o, and GPT-5.5.
+  built-ins are Opus 5 (2026-09-22), Opus 4.6/4.8, Sonnet 4.6, GPT-4o,
+  and GPT-5.5.
 - GPT-6 Astra has `default-gpt-6-astra-low`, `default-gpt-6-astra-high`, and
   `default-gpt-6-astra-xhigh`, all using priority processing. The model
   id and reasoning efforts follow the
@@ -120,6 +121,9 @@ Tokens only; the invoice prices them.
 
 ## Notes
 
+- [2026-09-22](2026-09-22-opus-5-5-default.md) — Opus 5.5 replaces Opus 5 in
+  the catalog and takes the `reasoning` role; the AI SDK moves to the release
+  that knows the model's always-on thinking and no forced tool choice.
 - [2026-09-17](2026-09-17-typesafe-jev.md) — TypeSafe's Jev joins, key
   first: a keychain-keyed client, the key checked with TypeSafe and stored
   from Settings → Connections; the keychain fetch leaves the Cerebras
