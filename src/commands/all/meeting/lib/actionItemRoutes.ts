@@ -76,11 +76,8 @@ export interface RouteRunner {
 }
 
 /**
- * Write the item where the route says. The list is named on every call: a
- * composed command inherits its caller's arguments, and meeting:new's
- * category — "Professional Complete", the list a meeting is filed under —
- * would otherwise reach next:add and day:todo:add as theirs, which have no
- * list by that name.
+ * Write the item where the route says. Each call supplies its own category
+ * or list so it cannot inherit meeting:new's "Professional Complete".
  */
 export async function executeActionItemRoute(route: ActionItemRoute, tasks: RouteRunner): Promise<void> {
   const result =
@@ -93,7 +90,7 @@ export async function executeActionItemRoute(route: ActionItemRoute, tasks: Rout
             when: route.when,
             category: 'Professional',
           })
-        : await tasks.run('day:todo:add', { task: route.task, when: route.when, category: 'Professional Todos' })
+        : await tasks.run('day:todo:add', { task: route.task, when: route.when, category: 'Professional' })
   if (!result.ok) {
     throw new Error(result.message ?? `${route.kind === 'next' ? 'next:add' : 'day:todo:add'} failed`)
   }

@@ -54,12 +54,12 @@ test('actionItemRoutes: where each placement goes', async () => {
   })
 })
 
-test('actionItemRoutes: the list commands are told their list', async () => {
+test('actionItemRoutes: the list commands are told their category or list', async () => {
   const calls: [string, Record<string, unknown> | undefined][] = []
   const tasks = {
     run: (name: string, args?: Record<string, unknown>) => {
       calls.push([name, args])
-      return Promise.resolve({ ok: name !== 'day:todo:add' || args?.category === 'Professional Todos' })
+      return Promise.resolve({ ok: name !== 'day:todo:add' || args?.category === 'Professional' })
     },
   }
   const when = new PlainDate('2026-03-12')
@@ -67,11 +67,11 @@ test('actionItemRoutes: the list commands are told their list', async () => {
   await executeActionItemRoute({ kind: 'todo', task: 'Call back', when, destination: 'Tomorrow · Todos' }, tasks)
   assert({
     given: 'a Next route and a Todo route',
-    should: 'name the list on each call instead of leaving it to inheritance',
+    should: 'specify the destination category or list on each call instead of leaving it to inheritance',
     actual: calls,
     expected: [
       ['next:add', { task: 'Send the sheet', category: 'Next' }],
-      ['day:todo:add', { task: 'Call back', when, category: 'Professional Todos' }],
+      ['day:todo:add', { task: 'Call back', when, category: 'Professional' }],
     ],
   })
   let failed: string | null = null
@@ -111,14 +111,14 @@ test('actionItemRoutes: a composed run would otherwise inherit the meeting categ
   const todo = await resolveCommandArgs({
     description: DayTodoAddTask.description,
     callerArgs,
-    overrides: { task: 'x', when: new PlainDate('2026-03-12'), category: 'Professional Todos' },
+    overrides: { task: 'x', when: new PlainDate('2026-03-12'), category: 'Professional' },
     callerDepth: 0,
   })
   assert({
     given: "next:add and day:todo:add resolved inside meeting:new's scope",
-    should: 'take the meeting category unless told their own list — which the routes now do',
+    should: 'take the meeting category unless told their own category or list — which the routes now do',
     actual: [inherited.category, next.category, todo.category],
-    expected: ['Professional Complete', 'Next', 'Professional Todos'],
+    expected: ['Professional Complete', 'Next', 'Professional'],
   })
 })
 

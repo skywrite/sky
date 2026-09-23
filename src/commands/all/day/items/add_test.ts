@@ -174,7 +174,7 @@ test('day:todo:add - adds sent at once for next week all reach the schedule', as
     await Promise.all(
       TASKS.map((task) =>
         new DayTodoAddTask().run({
-          args: { task, category: 'Professional Todos', link: undefined, when: DAY.addDays(1) },
+          args: { task, category: 'Professional', link: undefined, when: DAY.addDays(1) },
           ...call(context),
         }),
       ),

@@ -29,7 +29,7 @@ test('CLI adds prepare missing current-week days and schedule every type beyond 
     for (const when of [TODAY, LATER]) {
       await new AddTodo().run({
         ...notebook,
-        args: { task: 'Review Atlas', category: 'Professional Todos', when, link: undefined },
+        args: { task: 'Review Atlas', category: 'Professional', when, link: undefined },
       })
       await new AddReminder().run({ ...notebook, args: { task: 'Water the plants', when, link: undefined } })
       for (const time of [undefined, '25:30']) {

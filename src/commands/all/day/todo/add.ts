@@ -1,5 +1,5 @@
 import { taskLinkLabel } from '#commands/lib/linkLabel.ts'
-import { ArgOrFlag, categoryTodo, Command, CommandResult, dayFlag, Flag } from '#commands/mod.ts'
+import { ArgOrFlag, category, Command, CommandResult, dayFlag, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { fileTaskItems } from '#lib/nbfs/fileTaskItems.ts'
 import { commandPlanningDate } from '#lib/nbfs/taskDestination.ts'
@@ -7,7 +7,7 @@ import type { Link } from '#shared/models/Markdown/Link/mod.ts'
 
 const params = {
   task: ArgOrFlag.string('Task to add', { short: 't', required: true }),
-  category: categoryTodo(),
+  category: category(),
   link: Flag.string('Link for task', { short: 'l' }),
   when: dayFlag({ short: 'w' }),
 }
@@ -49,7 +49,8 @@ export default class DayTodoAddTask extends Command {
       taskWithLink = `${task} [${commandDesc}][]`
     }
 
-    const filed = await fileTaskItems(config, commandPlanningDate(context), when, category, [taskWithLink], linkMap)
+    const list = `${category} Todos`
+    const filed = await fileTaskItems(config, commandPlanningDate(context), when, list, [taskWithLink], linkMap)
     if (filed === 'schedule') output.log(`Added to schedule for ${when.ymd}`)
     return CommandResult.success()
   }

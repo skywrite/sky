@@ -1,6 +1,6 @@
 ---
 created: 2026-09-03
-updated: 2026-09-20
+updated: 2026-09-23
 ---
 
 # meeting:new — the action items
@@ -47,7 +47,7 @@ answer, so the ledger can say each one in words.
 A past date cannot be scheduled; it is treated as no day. Dated items use the shared
 [date-routing rule](../../day/docs/README.md#task-dates-choose-their-destination),
 through `day:items:add` for commitments and `day:todo:add` for todos. Undated
-items run `next:add`; each command is told its list explicitly. The
+items run `next:add`; each route specifies its destination explicitly. The
 ledger prints one line per item — `✓ item → Tomorrow · Todos`,
 `✓ item → Fri 13 Mar · Commitments`, `✓ item → Mon 16 Mar · schedule`,
 `✓ item → Next` — or `✗ item — reason`, and ticks the count.
@@ -89,7 +89,7 @@ source survives moves between days, the schedule, and Next.
 item, come from `universal/dates/whenLabel/mod.ts`, so the terminal's hint,
 the ledger, and the page's chips say the same thing.
 
-## A list is named on every call
+## Routes override the meeting category
 
 A composed command inherits its caller's arguments before its own defaults
 apply (`commands/lib/core/resolveCommandArgs.ts`). `meeting:new` carries a
@@ -97,8 +97,9 @@ apply (`commands/lib/core/resolveCommandArgs.ts`). `meeting:new` carries a
 and `next:add` and `day:todo:add` have a `category` of their own with a
 different meaning. Left to inheritance, `next:add` looked for a list called
 "Professional Complete" in the Next file and failed, and every accepted
-undated item was lost. The routes now name the list on each call
-(`category: 'Next'`, `category: 'Professional Todos'`);
+undated item was lost. The routes override the category on each call:
+`category: 'Next'` selects the Next list, while `category: 'Professional'`
+lets `day:todo:add` choose `Professional Todos`.
 `lib/actionItemRoutes_test.ts` pins both the inheritance and the cure.
 
 ## Narrative
