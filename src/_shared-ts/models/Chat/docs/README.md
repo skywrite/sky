@@ -1,6 +1,6 @@
 ---
 created: 2026-09-01
-updated: 2026-09-10
+updated: 2026-09-23
 ---
 
 # Chat model — the pieces under every chat host
@@ -70,7 +70,20 @@ quiet. The Google agent's mission tools sit behind the same guard
 (`google/agent/lib/tools.ts`), notes and refusals only; its own step cap
 ends a mission. Read the [2026-09-06 note](2026-09-06-a-turn-that-stops-says-so.md).
 
+A **Stop** from the host is the turn's abort signal. The SDK hands it to
+every tool call, and the chat wrapper (`commands/lib/chat/notebookTools.ts`)
+runs the command on a scope forked with it, so the command sees the Stop as
+`context.signal` — and so does every command that one composes. The engine
+still waits for a running tool to settle before the turn ends, because a
+tool that writes may be mid-write. So a command that never reads its signal
+holds the Stop until it finishes on its own. That is the command's defect,
+not the engine's: a loop that makes one call per item checks the signal per
+item, as `slack:unread` does per conversation. Read the
+[2026-09-23 note](2026-09-23-stop-reaches-the-command.md).
+
 ## Notes
+
+- [2026-09-23 — Stop reaches the command](2026-09-23-stop-reaches-the-command.md): the turn's abort signal rides into the command's context; a long loop checks it per item; the page names the tool a Stop waits on.
 
 - [2026-09-07 — files clipped into web chat](../../../../service/handler/chat/docs/2026-09-07-files-clipped-into-chat.md): a session can accept native document parts with a user message and retain their attachment metadata through recovery.
 

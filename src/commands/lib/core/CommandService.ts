@@ -147,6 +147,23 @@ export default class CommandService {
   }
 
   /**
+   * The same scope with a host's Stop on it: every command run here, and
+   * every command those compose, sees the signal as `context.signal`. A
+   * signal the scope already carries still counts — either one aborting
+   * aborts the run.
+   */
+  withSignal(signal: AbortSignal): CommandService {
+    const inherited = this.context.signal
+    const combined = inherited && inherited !== signal ? AbortSignal.any([inherited, signal]) : signal
+    return new CommandService(
+      this.context.fork({ signal: combined }),
+      this.currentArgs,
+      this.rawArgs,
+      this.currentTaskName,
+    )
+  }
+
+  /**
    * Load a task class by name (with caching).
    *
    * Task classes are loaded from `commands/all/${filePath}.ts` and cached

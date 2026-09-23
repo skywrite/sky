@@ -35,10 +35,13 @@ type SearchChannelHint = {
   sortTs: number
 }
 
+/** Conversations a scan checks when `--max` is not given: the most recent, one Slack call each. */
+const DEFAULT_SCAN = 40
+
 const params = {
   token: Flag.string('Slack user token (or set SLACK_USER_TOKEN env var)', { short: 't' }),
   limit: Flag.number('Max messages per channel', { short: 'l', default: 5 }),
-  max: Flag.number('Max conversations to scan (default: all)'),
+  max: Flag.number(`Max conversations to scan, most recent first (default ${DEFAULT_SCAN}; 0 = all)`),
   channelsOnly: Flag.bool('Only show channel messages, skip DMs'),
   dmsOnly: Flag.bool('Only show DM messages, skip channels'),
   search: Flag.bool('Use search.messages path (experimental)'),
@@ -62,7 +65,7 @@ export default class SlackUnreadTask extends Command {
     const { output, env } = context
     const token = args.token || env.SLACK_USER_TOKEN
     const limit = args.limit ?? 5
-    const maxConversations = args.max
+    const maxConversations = args.max === undefined ? DEFAULT_SCAN : args.max === 0 ? undefined : args.max
     const { channelsOnly, dmsOnly, search, debug } = args
 
     if (!token) {
@@ -99,7 +102,7 @@ export default class SlackUnreadTask extends Command {
         const searchUnread = await tryFetchUnreadViaSearch({
           client,
           limit,
-          maxMessages: maxConversations ?? 150,
+          maxMessages: args.max || 150,
           dmsOnly: dmsOnly ?? false,
           channelsOnly: channelsOnly ?? false,
           debug: debug ?? false,
@@ -138,6 +141,7 @@ export default class SlackUnreadTask extends Command {
           let page = 0
 
           do {
+            if (context.signal?.aborted) break
             page++
             const response = await client.users.conversations({
               types: typesStr,
@@ -170,6 +174,7 @@ export default class SlackUnreadTask extends Command {
 
         const conversationsResult = { channels: allChannels }
 
+        if (context.signal?.aborted) return CommandResult.fail('Stopped')
         let conversations = dedupeConversations(conversationsResult.channels || [])
         output.log(`Found ${conversations.length} conversations`)
 
@@ -192,6 +197,7 @@ export default class SlackUnreadTask extends Command {
         const searchHints = await tryFetchUnreadSearchChannelHints({
           client,
           maxChannels: Math.min(maxConversations ?? 250, 500),
+          signal: context.signal,
           dmsOnly: dmsOnly ?? false,
           channelsOnly: channelsOnly ?? false,
           debug: debug ?? false,
@@ -267,8 +273,10 @@ export default class SlackUnreadTask extends Command {
             `No unread metadata in users.conversations; checking ${toCheck.length} most recent via conversations.info/history...`,
           )
         } else {
+          const scope =
+            toCheck.length < scanPool.length ? `${toCheck.length} of ${scanPool.length}` : `${toCheck.length}`
           output.log(
-            `Checking ${toCheck.length} prioritized conversations (${unreadCandidates.length} metadata-unread, ${searchHintCount} search hints, ${unknownCandidates.length} metadata-unknown)...`,
+            `Checking ${scope} prioritized conversations, most recent first (${unreadCandidates.length} metadata-unread, ${searchHintCount} search hints, ${unknownCandidates.length} metadata-unknown)...`,
           )
         }
 
@@ -278,6 +286,8 @@ export default class SlackUnreadTask extends Command {
 
         for (const candidate of toCheck) {
           const { conversation } = candidate
+          // One Slack call per conversation: a Stop lands between two of them.
+          if (context.signal?.aborted) return CommandResult.fail('Stopped')
 
           try {
             if (!conversation.id) continue
@@ -549,6 +559,7 @@ async function tryFetchUnreadViaSearch({
 async function tryFetchUnreadSearchChannelHints({
   client,
   maxChannels,
+  signal,
   dmsOnly,
   channelsOnly,
   debug,
@@ -556,6 +567,7 @@ async function tryFetchUnreadSearchChannelHints({
 }: {
   client: WebClient
   maxChannels: number
+  signal?: AbortSignal
   dmsOnly: boolean
   channelsOnly: boolean
   debug: boolean
@@ -572,6 +584,7 @@ async function tryFetchUnreadSearchChannelHints({
     let page = 1
 
     while (hints.size < maxChannels) {
+      if (signal?.aborted) break
       const response = await client.search.messages({
         query,
         count: perPage,

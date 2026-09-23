@@ -250,3 +250,36 @@ test("CommandService.run() marks the child command's boundaries on its output", 
     ],
   })
 })
+
+test('CommandService.withSignal() puts a host Stop on every command it runs', async () => {
+  const output = new BufferedOutput()
+  const service = new CommandService(CommandContext.test(config).fork({ output }))
+  const host = new AbortController()
+  const scoped = service.withSignal(host.signal)
+  const before = await scoped.run('test:context')
+  host.abort()
+  const after = await scoped.run('test:context')
+  const plain = await service.run('test:context')
+  assert({
+    given: 'a scope forked with a host signal',
+    should: 'show the signal to its commands, aborted once the host aborts, and leave the original scope alone',
+    actual: [before.data?.hasSignal, before.data?.signalAborted, after.data?.signalAborted, plain.data?.hasSignal],
+    expected: [true, false, true, false],
+  })
+})
+
+test('CommandService.withSignal() keeps a signal the scope already carries', () => {
+  const inherited = new AbortController()
+  const host = new AbortController()
+  const service = new CommandService(CommandContext.test(config).fork({ signal: inherited.signal }))
+  const scoped = service.withSignal(host.signal)
+  const seen = [scoped.context.signal?.aborted]
+  inherited.abort()
+  seen.push(scoped.context.signal?.aborted)
+  assert({
+    given: 'a scope with its own signal, forked with a host signal',
+    should: 'abort when either one does',
+    actual: seen,
+    expected: [false, true],
+  })
+})

@@ -93,6 +93,8 @@ export interface CreateNotebookToolsOptions {
    * ai:chat cross-references them in the saved transcript's rel.
    */
   onExternalFiles?: (toolName: string, files: ExternalFileRef[]) => void
+  /** The host's Stop for this one call: the command sees it as `context.signal`. */
+  signal?: AbortSignal
 }
 
 /**
@@ -266,7 +268,9 @@ export async function runToolCommand(
       .filter(Boolean)
       .join('\n\n')
   }
-  const runCommand = () => tasks.run(entry.commandName, args)
+  // A Stop from the host reaches the command through its context signal.
+  const scoped = options.signal ? tasks.withSignal(options.signal) : tasks
+  const runCommand = () => scoped.run(entry.commandName, args)
   const run = () =>
     entry.commandName === 'ai:research' && options.researchContext
       ? researchContext.run(options.researchContext, runCommand)
@@ -358,7 +362,9 @@ export async function createNotebookTools(
     tools[entry.toolName] = tool({
       description: entry.description,
       inputSchema: jsonSchema<Record<string, unknown>>(schema),
-      execute: (input: Record<string, unknown>) => runToolCommand(tasks, entry, input, options),
+      // The SDK hands each call the turn's abort signal; the command gets it as its own.
+      execute: (input: Record<string, unknown>, call?: { abortSignal?: AbortSignal }) =>
+        runToolCommand(tasks, entry, input, { ...options, signal: call?.abortSignal }),
     })
   }
 

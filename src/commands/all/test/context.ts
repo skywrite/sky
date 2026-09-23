@@ -65,6 +65,8 @@ export default class TestContextTask extends Command {
       hasConfig: !!context.config,
       hasEnv: !!context.env,
       hasOutput: !!context.output,
+      hasSignal: Boolean(context.signal),
+      signalAborted: context.signal?.aborted ?? false,
     })
   }
 }

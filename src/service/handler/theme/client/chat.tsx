@@ -1,11 +1,13 @@
 import { ActionIcon, Button, Menu, Textarea, Tooltip } from '@mantine/core'
 import {
   Fragment,
+  createContext,
   type ClipboardEvent,
   type KeyboardEvent,
   type ReactNode,
   type RefObject,
   useCallback,
+  useContext,
   useEffect,
   useMemo,
   useReducer,
@@ -1399,11 +1401,27 @@ function elapsedLabel(seconds: number): string {
  * including calls that produce no command activity. Completion keeps
  * an open inspector in place so the user's selection survives.
  */
+/** True while the person's Stop waits on a running tool — every run chip on the page reads it. */
+const StoppingContext = createContext(false)
+
+/** What a Stop is waiting on, by tool name — or the plain label when no tool runs. */
+function stoppingLabel(runs: Run[]): string {
+  const waiting = runs.filter((run) => run.status === null).map((run) => toolDisplayName(run.tool))
+  return waiting.length ? `Stopping… waiting for ${waiting.join(', ')}` : 'Stopping response…'
+}
+
 function RunView({ run }: { run: Run }) {
   const [open, setOpen] = useState(false)
   const running = run.status === null
-  const progressLabel =
-    run.phase === 'preparing' ? 'Preparing inputs' : run.phase === 'waiting' ? 'Waiting for approval' : 'Running'
+  // A Stop reaches the command through its signal; until the run ends, the chip says what the wait is.
+  const stopping = useContext(StoppingContext) && running
+  const progressLabel = stopping
+    ? 'Stopping'
+    : run.phase === 'preparing'
+      ? 'Preparing inputs'
+      : run.phase === 'waiting'
+        ? 'Waiting for approval'
+        : 'Running'
   // Keep an explicitly opened inspector and its text selection through completion.
   const seconds = useElapsed(run.started, running)
   const took = run.finished === undefined ? undefined : Math.max(0, Math.floor((run.finished - run.started) / 1000))
@@ -1480,7 +1498,7 @@ function RunView({ run }: { run: Run }) {
           )}
           {running && (
             <p role="status">
-              {progressLabel} - {elapsedLabel(seconds)}
+              {stopping ? 'Stopping, the reply ends when this run does' : progressLabel} - {elapsedLabel(seconds)}
             </p>
           )}
           {count > 0 && (
@@ -1845,7 +1863,8 @@ export function ThreadColumn({
           <ApprovalCard approval={card} answered={card.approved} />
         </Fragment>
       ))
-  return (
+  // A wrapper element would re-indent the whole transcript; the body stays put.
+  const body = (
     <div ref={transcript} className="sky-chat-transcript">
       {writing.drafts
         .filter((draft) => draft.turn === 0)
@@ -2012,6 +2031,7 @@ export function ThreadColumn({
       {state.phase === 'saving' && <ChatActivity active text="saving" />}
     </div>
   )
+  return <StoppingContext.Provider value={chat.stopping}>{body}</StoppingContext.Provider>
 }
 
 export interface ComposerAttach {
@@ -2194,7 +2214,7 @@ export function Composer({
               label={
                 state.phase === 'busy' ? (
                   chat.stopping ? (
-                    'Stopping response…'
+                    stoppingLabel(state.runs)
                   ) : (
                     'Stop response'
                   )

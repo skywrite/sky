@@ -1,6 +1,6 @@
 ---
 created: 2026-09-10
-updated: 2026-09-11
+updated: 2026-09-23
 ---
 
 # Chat prompt and tools
@@ -30,6 +30,9 @@ bounded tool results and model requests are described in
 - Output: ASCII, short sentences, no banned devices, drafts as blockquotes.
 
 ## Notes
+
+- A Stop reaches the command: `runToolCommand` runs it on a scope carrying the call's abort signal.
+  [2026-09-23 — Stop reaches the command](../../../../_shared-ts/models/Chat/docs/2026-09-23-stop-reaches-the-command.md)
 
 - Test the premise before the response, and weigh saved chats as past output:
   [2026-09-10 — past chats are not evidence](2026-09-10-past-chats-are-not-evidence.md)

@@ -1,6 +1,6 @@
 ---
 created: 2026-09-01
-updated: 2026-09-22
+updated: 2026-09-23
 ---
 
 # Chat over HTTP — a thread, its tuning, and the story of its context
@@ -237,8 +237,11 @@ a person can see and touch:
   aborts that thread's model request and releases pending approvals, including
   from a reloaded page. The partial reply is kept with a stopped notice in
   recovery and the transcript. Completed tool results remain in model history;
-  unfinished calls and approval requests do not. A tool already writing that
-  cannot abort must settle before another turn can begin. Context preparation
+  unfinished calls and approval requests do not. The command behind a running
+  tool receives the Stop as its context signal and ends at its next check; a
+  tool already writing that cannot abort must settle before another turn can
+  begin. While one still runs, its chip reads Stopping and the button names
+  the tool it waits on. Context preparation
   checks cancellation before generation. Closing the browser stream alone
   does not stop a turn: navigation and connection recovery still follow it.
 - **Progress and the queries behind a reply.** A compact activity row sits

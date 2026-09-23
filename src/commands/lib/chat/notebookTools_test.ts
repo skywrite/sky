@@ -388,3 +388,32 @@ test('runToolCommand - blank strings never reach the command', async () => {
     actual: seen,
   })
 })
+
+test('runToolCommand - a host signal scopes the command run', async () => {
+  const seen: string[] = []
+  const host = new AbortController()
+  const scoped = {
+    run: () => {
+      seen.push('scoped.run')
+      return Promise.resolve(CommandResult.success({}))
+    },
+  }
+  const tasks = {
+    withSignal: (signal: AbortSignal) => {
+      seen.push(signal === host.signal ? 'withSignal(host)' : 'withSignal(other)')
+      return scoped
+    },
+    run: () => {
+      seen.push('run')
+      return Promise.resolve(CommandResult.success({}))
+    },
+  } as unknown as CommandService
+  await runToolCommand(tasks, ENTRY, {}, { signal: host.signal })
+  await runToolCommand(tasks, ENTRY, {})
+  assert({
+    given: 'a call carrying the turn signal, then one without',
+    should: 'run the first on a scope forked with that signal and the second on the plain scope',
+    actual: seen,
+    expected: ['withSignal(host)', 'scoped.run', 'run'],
+  })
+})
