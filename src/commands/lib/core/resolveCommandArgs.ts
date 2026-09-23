@@ -45,14 +45,22 @@ export async function resolveCommandArgs({
     transformed = callerArgs
   }
 
-  // Overrides pass through unchanged — a calling command already holds parsed
-  // values, and server handlers are expected to parse before calling in.
+  // Preserve already-normalized overrides from composing commands, including
+  // strings whose custom parser would otherwise transform them a second time.
   const finalArgs = { ...transformed, ...overrides }
 
-  // stringOrBool overrides are presence signals rather than parsed values, so
-  // the spread above would hand the command the caller's `true` where it
-  // expects the resolved string. Re-resolve those through the schema.
   for (const [name, def] of Object.entries(params ?? {}) as [string, ParamDef][]) {
+    // Chat and voice tools supply dates as JSON strings. Keep the parsed date
+    // instead of replacing it with the raw override in the spread above.
+    if (
+      (def.type === 'plainDate' || def.type === 'plainDateTime' || def.type === 'zonedDateTime') &&
+      typeof overrides?.[name] === 'string'
+    ) {
+      finalArgs[name] = transformed[name]
+    }
+
+    // stringOrBool overrides are presence signals rather than parsed values,
+    // so resolve the caller's `true` to the string the command expects.
     if (def.type === 'stringOrBool' && def.schema && name in finalArgs) {
       const resolved = def.schema.safeParse(finalArgs[name])
       if (resolved.success) finalArgs[name] = resolved.data
