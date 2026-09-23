@@ -17,6 +17,7 @@ import { type Kept, undoKeep } from './files.tsx'
 import { ImportDialog, ImportMain, useFileDrop, useImportQueue, useImports } from './import.tsx'
 import { OutboxMain } from './outbox.tsx'
 import { outboxItemOf, outboxLegacyItemPath } from './outboxRoutes.ts'
+import { PeopleMain, peopleRouteOf } from './people.tsx'
 import { SearchWorkspace } from './search.tsx'
 import { RestartPending } from './serviceStatus.tsx'
 import { SettingsMain, useSettingsBoot } from './settings.tsx'
@@ -90,6 +91,7 @@ function Canvas() {
   const isAudition = path === '/voice/audition'
   const settingsSection = settingsSectionOf(path)
   const isSettings = settingsSection !== null
+  const peopleRoute = peopleRouteOf(path)
   const isClock = path === '/clock'
   // /week is this week, /week/<id> another.
   const weekId = weekIdOf(path)
@@ -136,7 +138,7 @@ function Canvas() {
     (currentChat?.parent ? 'New branch' : 'New chat')
   useEffect(() => {
     // The outbox sets its own title: the list, or the open item's.
-    if (isOutbox) return
+    if (isOutbox || peopleRoute) return
     document.title = threadId
       ? `sky:chat - ${chatTitle}`
       : isAudition
@@ -144,7 +146,7 @@ function Canvas() {
         : isStreaks
           ? 'sky · streaks'
           : 'sky'
-  }, [threadId, chatTitle, isAudition, isStreaks, isOutbox])
+  }, [threadId, chatTitle, isAudition, isStreaks, isOutbox, peopleRoute])
   const isToday = dayYmd === null
   const others = threads.filter((t) => !t.id.startsWith('day-'))
   const onDayPage =
@@ -152,6 +154,7 @@ function Canvas() {
     importId === null &&
     !isAudition &&
     !isSettings &&
+    !peopleRoute &&
     !isClock &&
     !isAutomations &&
     !isOutbox &&
@@ -247,11 +250,24 @@ function Canvas() {
               <div className="sky-side-label">Explorer</div>
               <Tree file={explorerFile} onOpen={(file) => navigate(fileHref(file))} />
             </>
-          ) : settingsSection ? (
+          ) : settingsSection || peopleRoute ? (
             <>
               <button type="button" className="sky-thread" onClick={() => navigate('/')}>
                 <span>‹ Today</span>
               </button>
+              <a
+                href="/people"
+                className="sky-thread sky-settings-link sky-people-nav"
+                data-active={Boolean(peopleRoute)}
+                aria-current={peopleRoute ? 'page' : undefined}
+                onClick={(event) => {
+                  if (event.button || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+                  event.preventDefault()
+                  navigate('/people')
+                }}
+              >
+                People &amp; Orgs
+              </a>
               <div className="sky-side-label">Settings</div>
               <SettingsNav section={settingsSection} navigate={navigate} />
             </>
@@ -388,7 +404,15 @@ function Canvas() {
             </Button>
           )}
           <SidebarUtilities
-            active={isAutomations ? 'automations' : explorerFile !== null ? 'explorer' : isSettings ? 'settings' : null}
+            active={
+              isAutomations
+                ? 'automations'
+                : explorerFile !== null
+                  ? 'explorer'
+                  : isSettings || peopleRoute
+                    ? 'settings'
+                    : null
+            }
             navigate={navigate}
           />
         </div>
@@ -432,6 +456,8 @@ function Canvas() {
             onOpen={(name) => navigate(`/automations/${encodeURIComponent(name)}`)}
             onNew={() => navigate('/automations/new')}
           />
+        ) : peopleRoute ? (
+          <PeopleMain key={path} route={peopleRoute} navigate={navigate} />
         ) : settingsSection ? (
           <SettingsMain
             section={settingsSection}

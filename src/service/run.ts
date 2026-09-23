@@ -4,6 +4,7 @@ import { sweepTotals, syncGmailFollowAccounts } from '#commands/all/google/email
 import CommandContext from '#commands/lib/core/CommandContext.ts'
 import CommandService from '#commands/lib/core/CommandService.ts'
 import { automationPassInput, createAutomationProcess } from '#lib/automations/process.ts'
+import { createLinkedInHost } from '#lib/linkedin/mod.ts'
 import { getDarwinIdleMs, openFdCount, readSystemTimezone } from '#lib/sys/mod.ts'
 import { routeAISDKWarningsToLog } from '#shared/ai/errorLog.ts'
 import * as config from '#shared/config.ts'
@@ -164,6 +165,12 @@ const server = createServer({
   chat: createChatHost(config, env.toObject()),
   voice: createVoiceHost(config, env.toObject()),
   settings: createSettingsHost(),
+  people: {
+    peopleDir: config.DIR_PEOPLE,
+    orgsDir: config.DIR_ORGS,
+    stateDir: config.DIR_STATE,
+    linkedIn: createLinkedInHost(config, env.toObject()),
+  },
   clock: createClockHost(config, env.toObject()),
   meetings: createMeetingsHost(config, () => server.markdownStore, store),
   automations: createAutomationsHost(config, env.toObject()),

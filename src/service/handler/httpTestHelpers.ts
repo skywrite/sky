@@ -12,6 +12,7 @@ import type { ClockRoutesOptions } from './clock/mod.ts'
 import { createHttpApp } from './http.ts'
 import type { ImportRoutesOptions } from './import/mod.ts'
 import type { OutboxRoutesOptions } from './outbox/mod.ts'
+import type { PeopleOptions } from './people/types.ts'
 import type { SettingsRoutesOptions } from './settings/mod.ts'
 import type { StreaksRoutesOptions } from './streaks/mod.ts'
 import type { TrackingRoutesOptions } from './tracking/mod.ts'
@@ -31,6 +32,7 @@ function createTestYoga(): YogaServerInstance<object, object> {
 export function createTestHttpApp(
   markdownDirs: string[],
   options: {
+    store?: Store
     markdownStore?: MarkdownStore | null
     now?: () => ZonedDateTime
     chat?: ChatRoutesOptions
@@ -44,6 +46,7 @@ export function createTestHttpApp(
     tracking?: TrackingRoutesOptions
     streaks?: StreaksRoutesOptions
     outbox?: OutboxRoutesOptions
+    people?: PeopleOptions
     imports?: ImportRoutesOptions
     userDataDir?: string
     /** Where a dropped file's original is looked for; a test points this at its own folders, Spotlight off */
@@ -52,7 +55,7 @@ export function createTestHttpApp(
 ) {
   const markdownBaseDir = path.join(markdownDirs[0]!, '..')
   return createHttpApp({
-    store: new Store(),
+    store: options.store ?? new Store(),
     yoga: createTestYoga(),
     markdownStore: options.markdownStore ?? null,
     markdownBaseDir,
@@ -69,6 +72,7 @@ export function createTestHttpApp(
     tracking: options.tracking,
     streaks: options.streaks,
     outbox: options.outbox,
+    people: options.people,
     imports: options.imports,
     // Never the real user-data directory: what a test stores stays in its temp notebook.
     userDataDir: options.userDataDir ?? path.join(markdownBaseDir, '.user-data'),

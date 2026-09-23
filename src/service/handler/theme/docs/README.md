@@ -1,6 +1,6 @@
 ---
 created: 2026-09-03
-updated: 2026-09-14
+updated: 2026-09-23
 ---
 
 # The web app's shell and client
@@ -71,6 +71,8 @@ Tracking's check-ins, history, capture review, and file mutations follow the
 [tracking workflow](../../../../lib/tracking/docs/README.md).
 Streaks opens from the day's **View all streaks** link. Its history and day-file
 writes follow the [streaks contract](../../streaks/docs/README.md).
+People & Orgs uses the settings sidebar above the Settings heading; its notebook
+files and browser import follow the [profile contract](../../people/docs/README.md).
 
 Shared foundations load before feature styles. Keep the import order
 explicit and check overlapping selectors when changing it. Properties in

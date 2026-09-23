@@ -44,6 +44,7 @@ import type { ClockRoutesOptions } from './handler/clock/mod.ts'
 import { createHttpApp } from './handler/http.ts'
 import type { ImportRoutesOptions } from './handler/import/mod.ts'
 import type { OutboxRoutesOptions } from './handler/outbox/mod.ts'
+import type { PeopleOptions } from './handler/people/types.ts'
 import type { SettingsRoutesOptions } from './handler/settings/mod.ts'
 import type { StreaksRoutesOptions } from './handler/streaks/mod.ts'
 import type { TrackingRoutesOptions } from './handler/tracking/mod.ts'
@@ -94,6 +95,7 @@ export interface ServerOptions {
   /** The automations page's host; absent, /automations/_api is not served */
   automations?: AutomationsRoutesOptions
   outbox?: OutboxRoutesOptions
+  people?: PeopleOptions
   workstreams?: WorkstreamsRoutesOptions
   tracking?: TrackingRoutesOptions
   streaks?: StreaksRoutesOptions
@@ -267,6 +269,7 @@ export function createServer(options: ServerOptions): Server {
       meetings: options.meetings,
       automations,
       outbox: options.outbox,
+      people: options.people,
       workstreams: options.workstreams,
       tracking: options.tracking,
       streaks: options.streaks,

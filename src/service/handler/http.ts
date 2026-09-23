@@ -42,6 +42,9 @@ import {
 } from './markdown-preview/mod.ts'
 import { createMeetingRoutes } from './meetings/mod.ts'
 import { type OutboxRoutesOptions, createOutboxRoutes } from './outbox/mod.ts'
+import { createPeopleRoutes } from './people/mod.ts'
+import { createPeopleStore } from './people/store.ts'
+import { profileHref, type PeopleOptions } from './people/types.ts'
 import { createSearchRoutes } from './search/mod.ts'
 import { createSettingsRoutes, type SettingsRoutesOptions } from './settings/mod.ts'
 import { createStreaksRoutes, type StreaksRoutesOptions } from './streaks/mod.ts'
@@ -92,6 +95,7 @@ export interface HttpHandlerOptions {
   /** The automations page's host; absent, /automations/_api is not served */
   automations?: AutomationsRoutesOptions
   outbox?: OutboxRoutesOptions
+  people?: PeopleOptions
   workstreams?: WorkstreamsRoutesOptions
   tracking?: TrackingRoutesOptions
   streaks?: StreaksRoutesOptions
@@ -129,6 +133,15 @@ export function createHttpApp(options: HttpHandlerOptions): Hono {
 
   const app = new Hono()
   const links = createLinks(markdownStore, markdownBaseDir, markdownDirs)
+  const profiles =
+    options.people && markdownStore
+      ? createPeopleStore(markdownStore, markdownBaseDir, markdownDirs, {
+          ...options.people,
+          scores:
+            options.people.scores ??
+            (() => scoresFrom(store.getPeopleWithScores(), store.getOrganizationsWithScores(), [])),
+        })
+      : null
 
   // CORS middleware
   app.use(
@@ -198,6 +211,9 @@ export function createHttpApp(options: HttpHandlerOptions): Hono {
   // The page itself is /settings, below.
   if (settings) {
     app.route('/settings/_api', createSettingsRoutes(settings))
+  }
+  if (options.people) {
+    app.route('/people/_api', createPeopleRoutes(profiles, options.people))
   }
 
   // The clock page's data: the two clocks and the converter. The page itself is /clock, below.
@@ -598,6 +614,20 @@ export function createHttpApp(options: HttpHandlerOptions): Hono {
     if (c.req.path.startsWith('/settings/_api/')) return c.json(jsend.fail({ message: 'Not found.' }), 404)
     return c.html(renderAppHtml('sky'))
   })
+
+  for (const root of ['/people', '/orgs']) {
+    app.get(root, (c) => c.html(renderAppHtml('sky · People & Orgs')))
+    app.get(`${root}/*`, async (c) => {
+      if (c.req.path === `${root}/_api` || c.req.path.startsWith(`${root}/_api/`))
+        return c.json({ message: 'Not found.' }, 404)
+      const route = decodeRoutePath(c.req.url, `${root}/`)
+      if (profiles && route && (route.includes('/') || route.endsWith('.md'))) {
+        const profile = await profiles.resolveRoute(root === '/people' ? 'person' : 'org', route)
+        if (profile) return c.redirect(profileHref(profile) + new URL(c.req.url).search, 308)
+      }
+      return c.html(renderAppHtml('sky · People & Orgs'))
+    })
+  }
 
   // The clock: notebook time against the world's. Its data lives under /clock/_api/….
   app.get('/clock', (c) => {

@@ -6,9 +6,15 @@ const GROUPS: Array<{ label: SettingsGroup; pages: SettingsSection[] }> = [
   { label: 'AI', pages: ['models', 'voice', 'prompts'] },
 ]
 
-export function SettingsNav({ section, navigate }: { section: SettingsSection; navigate: (path: string) => void }) {
+export function SettingsNav({
+  section,
+  navigate,
+}: {
+  section: SettingsSection | null
+  navigate: (path: string) => void
+}) {
   const [open, setOpen] = useState({ Me: true, AI: true })
-  const group = SETTINGS_PAGES[section].group
+  const group = section ? SETTINGS_PAGES[section].group : null
   useEffect(() => {
     if (group) setOpen((current) => ({ ...current, [group]: true }))
   }, [group, section])

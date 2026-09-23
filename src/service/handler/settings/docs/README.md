@@ -16,6 +16,9 @@ normal app's: sections in the sidebar (the way Explorer swaps in the
 file tree), plain words, no plumbing keys. The design boards live in
 the "Sky Settings" canvas artifact.
 
+People & Orgs appears above the Settings heading in this sidebar. Its pages and
+record storage are owned by [People & Orgs](../../people/docs/README.md).
+
 Settings use one level of navigation: Appearance; Me (About me, Writing style);
 AI (Models, Voice, Prompts); Connections; Notebook; Advanced; Experimental; About Sky.
 Group labels open their first page; the adjacent disclosure toggles their children.
