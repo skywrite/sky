@@ -40,24 +40,22 @@ export interface CompleteItemRef {
 }
 
 export default class DayDocument extends ListDocument {
-  private _day: PlainDate
+  private readonly _day: PlainDate | undefined
   private _ymd = ''
 
   /** Preferred key order for day document YAML frontmatter */
   static override yamlKeyOrder = ['started', 'ended', 'location', 'tz']
 
   constructor({ yaml, day, markdown }: DayConstructorOptions) {
-    if (day && !markdown) {
+    if (markdown === undefined) {
+      day ??= PlainDate.today()
       const ymd = day.ymd
       const dayWordShort = day.dayShort
       markdown = `\n# **${ymd} - ${dayWordShort}**\n`
-    } else if (!day && markdown) {
-      day = extractDayFromMarkdown(markdown) ?? PlainDate.today()
-    } else if (!day && !markdown) {
-      day = PlainDate.today()
-      const ymd = day.ymd
-      const dayWordShort = day.dayShort
-      markdown = `\n# **${ymd} - ${dayWordShort}**\n`
+    } else {
+      // Existing content, including an empty file, must never acquire today's
+      // identity: writeDay uses this date to choose the file it overwrites.
+      day ??= extractDayFromMarkdown(markdown)
     }
 
     let yamlObj: Record<string, unknown> = {}
@@ -71,15 +69,16 @@ export default class DayDocument extends ListDocument {
 
     super(yamlObj, markdown)
 
-    this._day = day as PlainDate
+    this._day = day
   }
 
   get day(): PlainDate {
+    if (!this._day) throw new Error('Day document has no valid date heading')
     return this._day
   }
 
   get dayWordShort(): string {
-    return this._day.dayShort
+    return this.day.dayShort
   }
 
   /**
@@ -542,9 +541,13 @@ export default class DayDocument extends ListDocument {
     return `DayDocument<${this.YMD}>`
   }
 
-  static override fromMarkdown(contentsWithOptionalYamlHeader: string): DayDocument {
+  static override fromMarkdown(contentsWithOptionalYamlHeader: string, expectedDay?: PlainDate): DayDocument {
     const { yaml, markdown } = splitYamlMarkdown(contentsWithOptionalYamlHeader)
-    return new DayDocument({ yaml, markdown })
+    const doc = new DayDocument({ yaml, markdown })
+    if (expectedDay && doc.day.ymd !== expectedDay.ymd) {
+      throw new Error(`Day heading date ${doc.day.ymd} does not match requested date ${expectedDay.ymd}`)
+    }
+    return doc
   }
 
   static createPastDay(day: PlainDate, yaml?: string): DayDocument {

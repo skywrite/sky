@@ -19,5 +19,5 @@ import normalizeToPlainDate from './normalizeToPlainDate.ts'
 export default async function readDay(day: PlainDate | string, timeDir = DIR_TIME): Promise<DayDocument> {
   const plainDate = normalizeToPlainDate(day)
   const filePath = path.join(timeDir, dayFile(plainDate))
-  return DayDocument.fromMarkdown(await readTextFile(filePath))
+  return DayDocument.fromMarkdown(await readTextFile(filePath), plainDate)
 }
