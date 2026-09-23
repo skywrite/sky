@@ -1,21 +1,31 @@
-import type { CommandArgs, CommandDescription } from '#commands/lib/commands.d.ts'
-import { Command, CommandResult } from '#commands/mod.ts'
+import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
+import { Command, CommandResult, dayArg } from '#commands/mod.ts'
 import { readTextFile } from '#shared/fs/mod.ts'
 import { exists } from '#shared/fs/mod.ts'
 import ListDocument from '#shared/models/Markdown/ListDocument/mod.ts'
 import { readDay, writeDay } from '#shared/nbfs/mod.ts'
-import PlainDate from '#shared/universal/dates/nbdt/PlainDate/mod.ts'
+import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import extractDayItems from '../_extractDayItems.ts'
+
+const params = { day: dayArg() }
+type Params = InferParams<typeof params>
+
+declare module '#commands/lib/core/CommandTypesRegistry.ts' {
+  interface CommandTypesRegistry {
+    'day:reminders:update': { params: Params; result: undefined }
+  }
+}
 
 export default class DayRemindersUpdateTask extends Command {
   static override description: CommandDescription = {
     name: 'day:reminders:update',
     description: 'Extract recurring reminders into day.',
+    params,
   }
 
-  async run({ context }: CommandArgs): Promise<CommandResult> {
+  async run({ context, args }: CommandArgs<Params>): Promise<CommandResult> {
     const { config, output } = context
-    const plainDate = PlainDate.today()
+    const plainDate = args.day ?? PlainDate.today()
 
     const remindersFile = config.FILE_REMINDERS as string
     if (!remindersFile) {
@@ -31,16 +41,16 @@ export default class DayRemindersUpdateTask extends Command {
     const remindersMarkdown = await readTextFile(remindersFile)
     const remindersDoc = ListDocument.fromMarkdown(remindersMarkdown)
 
-    // Extract reminders matching today's patterns
+    // Match reminders against the requested day.
     const reminderItems = extractDayItems(remindersDoc, plainDate)
 
     if (reminderItems.length === 0) {
-      output.log('No reminders match today')
+      output.log(`No reminders match ${plainDate.ymd}`)
       return CommandResult.success()
     }
 
-    // Read today's day file
-    let dayObj = await readDay(plainDate)
+    // Read the requested day's file.
+    let dayObj = await readDay(plainDate, config.DIR_TIME)
 
     // Get existing reminders to avoid duplicates
     const existingReminders = dayObj.lists.find((l) => l.title === 'Reminders')?.items ?? []
@@ -52,7 +62,7 @@ export default class DayRemindersUpdateTask extends Command {
       }
     }
 
-    await writeDay(dayObj)
+    await writeDay(dayObj, config.DIR_TIME)
 
     output.log(`Added ${reminderItems.length} reminders`)
     return CommandResult.success()

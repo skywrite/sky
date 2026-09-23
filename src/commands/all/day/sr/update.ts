@@ -20,9 +20,9 @@ export default class DaySrUpdateTask extends Command {
 
   async run({ tasks, args }: CommandArgs<Params>): Promise<CommandResult> {
     return tasks.runSequential([
-      ['day:recurring:update'],
+      ['day:recurring:update', { day: args.day }],
       ['day:schedule:update', { day: args.day }],
-      ['day:reminders:update'],
+      ['day:reminders:update', { day: args.day }],
     ])
   }
 }
