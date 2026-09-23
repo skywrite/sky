@@ -1,6 +1,6 @@
 ---
 created: 2026-09-03
-updated: 2026-09-20
+updated: 2026-09-23
 ---
 
 # The day's items, the day's rail, and the day's files
@@ -217,6 +217,9 @@ Narrative: [2026-09-06 — videos and chat branches in the day](2026-09-06-video
 Document navigation: [2026-09-08 — saved chat titles open their documents](2026-09-08-saved-chat-document-links.md).
 
 ## The rail
+
+Calendar event types, manual corrections and missing-record expectations follow
+the [shared classification contract](../../../../lib/calendarClassification/docs/README.md).
 
 A day has the Details rail a document has (`theme/client/rail.ts` holds the
 one rule for opening it: a third column on a wide window, remembered; an

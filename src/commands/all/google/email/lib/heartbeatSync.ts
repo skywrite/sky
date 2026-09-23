@@ -1,5 +1,5 @@
 import type { CommandService } from '#commands/mod.ts'
-import { hasGmailScope, listAccountEmails, loadAccountTokens, loadOAuthClient } from '#lib/google/mod.ts'
+import { hasGmailScope, listAccountEmails, loadAccountTokens } from '#lib/google/mod.ts'
 import type { StoredTokens } from '#lib/google/mod.ts'
 import type { SecretsProvider } from '#lib/secrets/SecretsProvider.ts'
 
@@ -96,9 +96,7 @@ export async function syncGmailFollowAccounts(opts: {
 }): Promise<GmailSyncSweep> {
   const { secrets, tasks, label, limit = HEARTBEAT_THREAD_LIMIT } = opts
 
-  const oauthClient = await loadOAuthClient(secrets)
-  if (!oauthClient) return { ran: [], skipped: [], unavailable: 'no Google OAuth client stored' }
-
+  // Each account refreshes with its own pair; the sync command resolves it per account.
   const emails = await listAccountEmails(secrets)
   if (emails.length === 0) return { ran: [], skipped: [], unavailable: 'no Google accounts authorized' }
 

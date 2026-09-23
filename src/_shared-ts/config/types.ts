@@ -28,6 +28,10 @@ export interface SkyConfig {
   slack: {
     workspace?: string
   }
+  calendar?: {
+    /** Separate meeting invitations from informational events using Jev. */
+    classifyEvents?: boolean
+  }
   /** The web pages' own preferences — the settings page writes these. */
   web: {
     theme?: 'system' | 'light' | 'dark'

@@ -1,4 +1,4 @@
-import { Button, FileButton } from '@mantine/core'
+import { ActionIcon, Button, FileButton, Menu, UnstyledButton } from '@mantine/core'
 import { type DragEvent, Fragment, type ReactNode, useEffect, useState } from 'react'
 import type { DayData, ThreadSummary } from './day.tsx'
 import { DayChatResume } from './dayChatResume.tsx'
@@ -7,6 +7,7 @@ import { fileHref } from './explorer.tsx'
 import { filesHref, type Kept, moveIn, readListing } from './files.tsx'
 import { type ImportJob, importStateWord, type MeetingImport, useFileDrop } from './import.tsx'
 import { RailToggle } from './railToggle.tsx'
+import { refusalOf } from './settingsBlocks.tsx'
 
 /**
  * The rail beside a day: what is around the day rather than in its
@@ -20,6 +21,12 @@ import { RailToggle } from './railToggle.tsx'
 // -----------------------------------------------------------------------------
 
 export interface ScheduledMeeting {
+  classification?: {
+    key: string
+    type: 'meeting' | 'notification' | 'uncertain'
+    source: 'automatic' | 'manual' | 'fallback'
+  }
+  calendarUrl?: string
   title: string
   /** `HH:MM`; empty for an all-day event */
   start: string
@@ -39,9 +46,13 @@ export interface DaySchedule {
   read: boolean
   errors: string[]
   meetings: ScheduledMeeting[]
+  notifications?: ScheduledMeeting[]
+  hideNotifications?: boolean
+  classificationWarning?: string
 }
 
 const SCHEDULE_MS = 60_000
+const SCHEDULE_CHANGED = 'sky:schedule-changed'
 
 /** The day's schedule, re-read every minute so "now" moves; null until the first answer. */
 export function useSchedule(ymd: string | null): DaySchedule | null {
@@ -52,32 +63,52 @@ export function useSchedule(ymd: string | null): DaySchedule | null {
     let alive = true
     let timer: ReturnType<typeof setTimeout> | undefined
     let request: AbortController | undefined
+    let version = 0
     const update = (body: DaySchedule) => {
       if (!alive) return
       setSchedule((previous) =>
-        !body.read && previous?.meetings.length ? { ...previous, read: false, stale: true, errors: body.errors } : body,
+        !body.read && (previous?.meetings.length || previous?.notifications?.length)
+          ? {
+              ...previous,
+              read: false,
+              stale: true,
+              errors: body.errors,
+              hideNotifications: body.hideNotifications ?? previous.hideNotifications,
+            }
+          : body,
       )
     }
     const read = async () => {
-      request = new AbortController()
+      const current = ++version
+      clearTimeout(timer)
+      request?.abort()
+      const controller = new AbortController()
+      request = controller
       // Initial loading can need two serialized Keychain reads and a token write.
-      const deadline = setTimeout(() => request?.abort(), 90_000)
+      const deadline = setTimeout(() => controller.abort(), 90_000)
       try {
-        const response = await fetch(`/day/${ymd}/schedule`, { signal: request.signal })
+        const response = await fetch(`/day/${ymd}/schedule`, { signal: controller.signal })
         if (!response.ok) throw new Error('Calendar unavailable')
-        update((await response.json()) as DaySchedule)
+        const body = (await response.json()) as DaySchedule
+        if (current === version) update(body)
       } catch {
-        update({ read: false, errors: ['Calendar refresh failed. Sky will retry.'], meetings: [] })
+        if (current === version)
+          update({ read: false, errors: ['Calendar refresh failed. Sky will retry.'], meetings: [] })
       } finally {
         clearTimeout(deadline)
-        if (alive) timer = setTimeout(read, SCHEDULE_MS)
+        if (alive && current === version) timer = setTimeout(read, SCHEDULE_MS)
       }
     }
+    const refresh = (event: Event) => {
+      if ((event as CustomEvent<string>).detail === ymd) void read()
+    }
+    window.addEventListener(SCHEDULE_CHANGED, refresh)
     void read()
     return () => {
       alive = false
       clearTimeout(timer)
       request?.abort()
+      window.removeEventListener(SCHEDULE_CHANGED, refresh)
     }
   }, [ymd])
   return schedule
@@ -155,7 +186,24 @@ function MeetingRow({
   ymd: string
   onImportMeeting?: (files: File[], meeting: MeetingImport) => void
 }) {
-  const canDrop = Boolean(onImportMeeting && m.state === 'past' && !m.record && !m.allDay && m.start)
+  const notification = m.classification?.type === 'notification'
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const changeType = async (type: 'meeting' | 'notification' | null) => {
+    if (!m.classification) return
+    setBusy(true)
+    setError(null)
+    const response = await fetch(`/day/${ymd}/schedule/type`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key: m.classification.key, type }),
+    }).catch(() => null)
+    const refusal = await refusalOf(response)
+    if (refusal) setError(refusal)
+    else window.dispatchEvent(new CustomEvent(SCHEDULE_CHANGED, { detail: ymd }))
+    setBusy(false)
+  }
+  const canDrop = Boolean(!notification && onImportMeeting && m.state === 'past' && !m.record && !m.allDay && m.start)
   const drop = useFileDrop(canDrop, (files) => onImportMeeting?.(files, { title: m.title, when: `${ymd} ${m.start}` }))
   return (
     <div
@@ -167,31 +215,83 @@ function MeetingRow({
       {...drop.handlers}
     >
       <span className="sky-dr-time">{m.allDay ? 'all day' : m.start}</span>
-      <span className="sky-dr-label">{m.title || '(untitled)'}</span>
-      <span className="sky-dr-mark">
-        {drop.dragging ? (
-          'drop to import'
-        ) : m.state === 'past' ? (
-          m.record ? (
-            <a href={fileHref(m.record.path)}>{m.record.inline ? 'noted' : 'filed'}</a>
+      <span className="sky-dr-label" title={m.title}>
+        {m.title || '(untitled)'}
+      </span>
+      <span className="sky-dr-event-actions">
+        <span className="sky-dr-mark">
+          {drop.dragging ? (
+            'drop to import'
+          ) : notification ? (
+            m.state === 'now' ? (
+              'now'
+            ) : m.state === 'next' ? (
+              lengthWords(m.start, m.end)
+            ) : (
+              ''
+            )
+          ) : m.state === 'past' ? (
+            m.record ? (
+              <a href={fileHref(m.record.path)}>{m.record.inline ? 'noted' : 'filed'}</a>
+            ) : (
+              'no record'
+            )
+          ) : m.state === 'now' ? (
+            m.joinUrl ? (
+              <a href={m.joinUrl} target="_blank" rel="noopener noreferrer">
+                join
+              </a>
+            ) : (
+              'now'
+            )
           ) : (
-            'no record'
-          )
-        ) : m.state === 'now' ? (
-          m.joinUrl ? (
-            <a href={m.joinUrl} target="_blank" rel="noopener noreferrer">
-              join
-            </a>
-          ) : (
-            'now'
-          )
-        ) : (
-          lengthWords(m.start, m.end)
+            lengthWords(m.start, m.end)
+          )}
+        </span>
+        {m.classification && (
+          <Menu position="bottom-end" withinPortal>
+            <Menu.Target>
+              <ActionIcon
+                size={24}
+                variant="subtle"
+                aria-label={`Change type for ${m.title || 'untitled event'}`}
+                title="Change type"
+                disabled={busy}
+              >
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                  <circle cx="3" cy="8" r="1.3" />
+                  <circle cx="8" cy="8" r="1.3" />
+                  <circle cx="13" cy="8" r="1.3" />
+                </svg>
+              </ActionIcon>
+            </Menu.Target>
+            <Menu.Dropdown>
+              <Menu.Label>Change type for this event</Menu.Label>
+              <Menu.Item onClick={() => void changeType('meeting')}>Meeting</Menu.Item>
+              <Menu.Item onClick={() => void changeType('notification')}>Family notification or reminder</Menu.Item>
+              {m.classification.source === 'manual' && (
+                <Menu.Item onClick={() => void changeType(null)}>Use automatic classification</Menu.Item>
+              )}
+              {m.calendarUrl && (
+                <>
+                  <Menu.Divider />
+                  <Menu.Item component="a" href={m.calendarUrl} target="_blank" rel="noopener noreferrer">
+                    Open in Google Calendar
+                  </Menu.Item>
+                </>
+              )}
+            </Menu.Dropdown>
+          </Menu>
         )}
       </span>
       {(m.who.length > 0 || m.state === 'now') && (
         <span className="sky-dr-who">
           {[whoLine(m.who), m.state === 'now' && !m.allDay ? `until ${m.end}` : ''].filter(Boolean).join(' · ')}
+        </span>
+      )}
+      {error && (
+        <span className="sky-dr-event-error" role="alert">
+          {error}
         </span>
       )}
     </div>
@@ -209,20 +309,47 @@ function ScheduleSection({
 }) {
   const drop = useFileDrop(Boolean(onImportMeeting), (files) => onImportMeeting?.(files, { day: ymd }))
   return (
-    <Section title="Meetings" count={schedule?.meetings.length} drop={onImportMeeting ? drop : undefined}>
-      {schedule && !schedule.read && (
-        <p className="sky-rail-empty">
-          {schedule.stale ? 'Showing the last available schedule. ' : ''}
-          {schedule.errors[0] ?? 'Calendar not read.'} <a href="/settings/connections">Connections</a>
-        </p>
+    <>
+      <Section
+        title="Meetings"
+        count={schedule?.meetings.length}
+        drop={onImportMeeting ? drop : undefined}
+        extra={
+          schedule?.classificationWarning && (
+            <UnstyledButton
+              className="sky-rail-browse"
+              title={schedule.classificationWarning}
+              aria-label="Retry calendar sorting"
+              onClick={() => window.dispatchEvent(new CustomEvent(SCHEDULE_CHANGED, { detail: ymd }))}
+            >
+              Retry sorting
+            </UnstyledButton>
+          )
+        }
+      >
+        {schedule && !schedule.read && (
+          <p className="sky-rail-empty">
+            {schedule.stale ? 'Showing the last available schedule. ' : ''}
+            {schedule.errors[0] ?? 'Calendar not read.'} <a href="/settings/connections">Connections</a>
+          </p>
+        )}
+        {schedule?.read && schedule.meetings.length === 0 && <p className="sky-rail-empty">No meetings.</p>}
+        {schedule?.meetings.map((m, i) => (
+          <Fragment key={m.classification?.key ?? `${ymd}-${m.start}-${i}`}>
+            <MeetingRow meeting={m} ymd={ymd} onImportMeeting={onImportMeeting} />
+          </Fragment>
+        ))}
+      </Section>
+      {schedule?.hideNotifications === false && Boolean(schedule.notifications?.length) && (
+        <Section title="Family & reminders" count={schedule?.notifications?.length}>
+          {schedule?.notifications?.map((m) => (
+            <Fragment key={m.classification?.key}>
+              <MeetingRow meeting={m} ymd={ymd} />
+            </Fragment>
+          ))}
+        </Section>
       )}
-      {schedule?.read && schedule.meetings.length === 0 && <p className="sky-rail-empty">No meetings.</p>}
-      {schedule?.meetings.map((m, i) => (
-        <Fragment key={`${ymd}-${m.start}-${i}`}>
-          <MeetingRow meeting={m} ymd={ymd} onImportMeeting={onImportMeeting} />
-        </Fragment>
-      ))}
-    </Section>
+    </>
   )
 }
 

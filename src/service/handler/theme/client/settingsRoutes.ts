@@ -78,7 +78,8 @@ export function settingsSectionOf(path: string): SettingsSection | null {
   if (path !== '/settings' && !path.startsWith('/settings/')) return null
   const clean = path.replace(/\/$/, '')
   for (const [id, page] of Object.entries(SETTINGS_PAGES)) {
-    if (clean === page.href || (id === 'prompts' && clean.startsWith(`${page.href}/`))) return id as SettingsSection
+    if (clean === page.href || ((id === 'prompts' || id === 'connections') && clean.startsWith(`${page.href}/`)))
+      return id as SettingsSection
   }
   if (clean === '/settings/ai') return 'models'
   if (clean === '/settings/appearance') return 'appearance'
@@ -87,6 +88,19 @@ export function settingsSectionOf(path: string): SettingsSection | null {
   if (clean === '/settings/writing-voice') return 'writing-voice'
   if (clean === '/settings/prompts' || clean.startsWith('/settings/prompts/')) return 'prompts'
   return 'appearance'
+}
+
+/** The connections that have a page of their own under Connections. */
+export const CONNECTION_PAGES = ['google'] as const
+export type ConnectionPage = (typeof CONNECTION_PAGES)[number]
+
+export function connectionHref(page: ConnectionPage): string {
+  return `${settingsHref('connections')}/${page}`
+}
+
+export function connectionPageOf(path: string): ConnectionPage | null {
+  const clean = path.replace(/\/$/, '')
+  return CONNECTION_PAGES.find((page) => clean === connectionHref(page)) ?? null
 }
 
 export function promptHref(id?: string): string {

@@ -6,9 +6,73 @@ import { createScanners } from '../../scanner/scan.ts'
 import type { PersonScore } from '../../scoring/ScoringStore.ts'
 import { Store } from '../../store.ts'
 import type { MeetingRow } from './record.ts'
-import { createScheduleRoutes, type DaySchedule, scheduleOf } from './schedule.ts'
+import { createScheduleRoutes, type DaySchedule, type ScheduleHost, scheduleOf } from './schedule.ts'
 
 const DAY = '2026-01-27'
+
+test('family notifications do not consume meeting records or count as meetings', () => {
+  const schedule = scheduleOf({
+    day: DAY,
+    events: [event('Atlas sync', '10:00', '10:30')],
+    notifications: [
+      {
+        ...event('School closure', '10:00', '11:00'),
+        classification: { key: 'a'.repeat(64), type: 'notification', source: 'automatic' },
+      },
+    ],
+    records: [record('Atlas notes', '10:00')],
+    clock: { date: DAY, time: '18:00' },
+    read: true,
+    errors: [],
+  })
+  assert({
+    given: 'a family notice and a meeting at the same time',
+    should: 'reserve the notebook record for the meeting and retain the notice separately',
+    actual: [
+      schedule.meetings.length,
+      schedule.meetings[0].record?.title,
+      schedule.notifications?.map((row) => [row.title, row.record, row.joinUrl, row.classification?.type]),
+    ],
+    expected: [1, 'Atlas notes', [['School closure', null, null, 'notification']]],
+  })
+})
+
+test('event type corrections validate identity and type, and report stale events and write failures', async () => {
+  const writes: unknown[] = []
+  const key = 'a'.repeat(64)
+  const host: ScheduleHost = async () => ({ read: true, meetings: [], errors: [] })
+  host.setType = async (day, id, type) => {
+    writes.push([day.ymd, id, type])
+    if (id !== key) return false
+    if (type === 'notification') throw new Error('Storage unavailable')
+    return true
+  }
+  const app = createScheduleRoutes(host)
+  const send = (body: unknown, day = DAY) =>
+    app.request(`/${day}/schedule/type`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+  const statuses: number[] = []
+  for (const body of [
+    { key, type: 'meeting' },
+    { key, type: null },
+    { key, type: 'unknown' },
+    { key: '../escape', type: 'meeting' },
+    { key: 'b'.repeat(64), type: 'meeting' },
+    { key, type: 'notification' },
+  ]) {
+    statuses.push((await send(body)).status)
+  }
+  statuses.push((await send({ key, type: 'meeting' }, 'not-a-day')).status)
+  assert({
+    given: 'valid corrections, malformed input, a vanished event and a failed save',
+    should: 'save only valid requests and return actionable errors for everything else',
+    actual: [statuses, writes.length],
+    expected: [[200, 200, 400, 400, 404, 500, 404], 4],
+  })
+})
 
 function attendee(email: string, name?: string, self = false): CalendarEvent['attendees'][number] {
   return { email, name, self, response: 'accepted' }

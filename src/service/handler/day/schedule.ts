@@ -8,8 +8,16 @@ import * as path from 'node:path'
 import { Hono } from 'hono'
 import { START_TOLERANCE_MINUTES } from '#commands/all/day/meeting/lib/meetingCheck.ts'
 import { fetchDayMeetings } from '#commands/all/google/calendar/lib/dayMeetings.ts'
+import {
+  classificationDir,
+  setCalendarEventType,
+  type CalendarEventType,
+  type ClassifiedCalendarEvent,
+  type EventClassification,
+} from '#lib/calendarClassification/mod.ts'
 import type { CalendarEvent } from '#lib/google/mod.ts'
 import { KeychainSecretsProvider } from '#lib/secrets/KeychainSecretsProvider.ts'
+import { loadSkyConfig } from '#shared/config/loader.ts'
 import type PeopleStore from '#shared/models/Store/PeopleStore/mod.ts'
 import { dayDir, fetchNow } from '#shared/nbfs/mod.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
@@ -22,6 +30,8 @@ import { buildDayRecord, type MeetingRow } from './record.ts'
 export type ScheduleState = 'past' | 'now' | 'next'
 
 export interface ScheduledMeeting {
+  classification?: EventClassification
+  calendarUrl?: string
   title: string
   /** `HH:MM`; empty for an all-day event */
   start: string
@@ -40,6 +50,9 @@ export interface DaySchedule {
   read: boolean
   errors: string[]
   meetings: ScheduledMeeting[]
+  notifications?: ScheduledMeeting[]
+  hideNotifications?: boolean
+  classificationWarning?: string
 }
 
 /** The notebook clock the states are judged by; extended hours legal. */
@@ -49,7 +62,9 @@ export interface ScheduleClock {
 }
 
 /** Answers one day's schedule. Never throws. */
-export type ScheduleHost = (day: PlainDate) => Promise<DaySchedule>
+export type ScheduleHost = ((day: PlainDate) => Promise<DaySchedule>) & {
+  setType?: (day: PlainDate, key: string, type: CalendarEventType | null) => Promise<boolean>
+}
 
 /** `HH:MM` (extended hours legal) to minutes. */
 function minutesOf(time: string): number {
@@ -81,7 +96,10 @@ function stateOf(event: CalendarEvent, day: string, clock: ScheduleClock): Sched
 /** The schedule from sources already read. Pure. */
 export function scheduleOf(input: {
   day: string
-  events: CalendarEvent[]
+  events: ClassifiedCalendarEvent[]
+  notifications?: ClassifiedCalendarEvent[]
+  hideNotifications?: boolean
+  classificationWarning?: string
   records: MeetingRow[]
   clock: ScheduleClock
   read: boolean
@@ -106,6 +124,8 @@ export function scheduleOf(input: {
   }
   const meetings = input.events.map(
     (event): ScheduledMeeting => ({
+      classification: event.classification,
+      calendarUrl: event.htmlLink,
       title: event.title,
       start: event.allDay ? '' : event.start.slice(11, 16),
       end: event.allDay ? '' : event.end.slice(11, 16),
@@ -133,7 +153,28 @@ export function scheduleOf(input: {
       (a.allDay ? -1 : a.start ? minutesOf(a.start) : Infinity) -
       (b.allDay ? -1 : b.start ? minutesOf(b.start) : Infinity),
   )
-  return { read: input.read, errors: input.errors, meetings }
+  const notifications = (input.notifications ?? []).map(
+    (event): ScheduledMeeting => ({
+      title: event.title,
+      start: event.allDay ? '' : event.start.slice(11, 16),
+      end: event.allDay ? '' : event.end.slice(11, 16),
+      allDay: event.allDay,
+      who: attendeeNames(event.attendees),
+      joinUrl: null,
+      state: stateOf(event, input.day, input.clock),
+      record: null,
+      classification: event.classification,
+      calendarUrl: event.htmlLink,
+    }),
+  )
+  return {
+    read: input.read,
+    errors: input.errors,
+    meetings,
+    notifications,
+    hideNotifications: input.hideNotifications === true,
+    classificationWarning: input.classificationWarning,
+  }
 }
 
 /**
@@ -149,10 +190,12 @@ export function createDayScheduleHost(options: {
   scores?: Pick<Store, 'getPeopleWithScores'>
 }): ScheduleHost {
   const secrets = new KeychainSecretsProvider()
-  return async (day) => {
+  const schedule: ScheduleHost = async (day) => {
     const [calendar, record] = await Promise.all([
       fetchDayMeetings(secrets, day, options.timeDir).catch((err: unknown) => ({
         meetings: [] as CalendarEvent[],
+        notifications: [] as ClassifiedCalendarEvent[],
+        classificationWarning: undefined,
         errors: [err instanceof Error ? err.message : String(err)],
       })),
       buildDayRecord({
@@ -167,14 +210,25 @@ export function createDayScheduleHost(options: {
     return scheduleOf({
       day: day.ymd,
       events: calendar.meetings,
+      notifications: calendar.notifications,
+      hideNotifications: loadSkyConfig().calendar?.classifyEvents === true,
+      classificationWarning: calendar.classificationWarning,
       records: record?.meetings ?? [],
       clock: { date: now.plainDate.ymd, time: now.time },
-      read: calendar.meetings.length > 0 || calendar.errors.length === 0,
+      read: calendar.meetings.length > 0 || calendar.notifications.length > 0 || calendar.errors.length === 0,
       errors: calendar.errors,
       people: options.people,
       personScores: options.scores?.getPeopleWithScores(),
     })
   }
+  schedule.setType = async (day, key, type) => {
+    const current = await schedule(day)
+    if (![...current.meetings, ...(current.notifications ?? [])].some((event) => event.classification?.key === key))
+      return false
+    await setCalendarEventType(classificationDir(loadSkyConfig().userDataDir), key, type)
+    return true
+  }
+  return schedule
 }
 
 /** `GET /:ymd/schedule` — the day's schedule; 404 for anything that is not a day. */
@@ -184,6 +238,25 @@ export function createScheduleRoutes(schedule: ScheduleHost): Hono {
     const ymd = c.req.param('ymd')
     if (!isDay(ymd)) return c.json({ error: `not a day: ${ymd}` }, 404)
     return c.json(await schedule(new PlainDate(ymd)))
+  })
+  app.post('/:ymd/schedule/type', async (c) => {
+    const ymd = c.req.param('ymd')
+    if (!isDay(ymd)) return c.json({ message: 'Invalid day.' }, 404)
+    if (!schedule.setType) return c.json({ message: 'Calendar corrections are unavailable.' }, 503)
+    const body = (await c.req.json().catch(() => null)) as { key?: unknown; type?: unknown } | null
+    if (
+      typeof body?.key !== 'string' ||
+      !/^[a-f0-9]{64}$/.test(body.key) ||
+      (body.type !== 'meeting' && body.type !== 'notification' && body.type !== null)
+    ) {
+      return c.json({ message: 'Choose a meeting, a notification, or automatic classification.' }, 400)
+    }
+    try {
+      const saved = await schedule.setType(new PlainDate(ymd), body.key, body.type)
+      return saved ? c.json({ ok: true }) : c.json({ message: 'This calendar event is no longer on this day.' }, 404)
+    } catch {
+      return c.json({ message: 'Could not save the event type. Try again.' }, 500)
+    }
   })
   return app
 }

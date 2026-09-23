@@ -570,3 +570,57 @@
   flex-direction: column;
   gap: 28px;
 }
+
+/* a connection page's plain list: the chats a check left out, one per line */
+.sky-set-list {
+  margin: 4px 0 8px;
+  padding-left: 22px;
+  font-size: 15px;
+  line-height: 1.7;
+}
+
+/* The Google setup's checklist: a step in progress reads strong, a done one settles. */
+.sky-set-checklist {
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.sky-set-sub .sky-set-steps {
+  margin: 8px 0;
+}
+.sky-set-checklist li {
+  display: flex;
+  gap: 6px;
+  color: var(--sky-dim);
+}
+.sky-set-checklist li[data-state='doing'] {
+  color: var(--sky-text);
+  font-weight: 600;
+}
+.sky-set-checklist li[data-state='done'] {
+  color: var(--sky-text);
+}
+.sky-set-checklist li > span:first-child {
+  display: inline-block;
+  width: 1em;
+  text-align: center;
+}
+.sky-set-needs-you {
+  margin: 12px 0 0;
+  font-size: 16px;
+}
+.sky-set-needs-you strong {
+  display: block;
+}
+
+/* On a phone an account row's controls sit under its lines, never beside a sliver of them. */
+@media (max-width: 640px) {
+  .sky-set-google .sky-set-txt {
+    min-width: 100%;
+  }
+}
+/* A row's second and third lines under its label: a box left unticked, who set it up. */
+.sky-set-sub .sky-set-line {
+  display: block;
+  margin-top: 2px;
+}

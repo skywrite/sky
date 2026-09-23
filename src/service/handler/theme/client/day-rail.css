@@ -121,6 +121,18 @@
   white-space: nowrap;
 }
 
+.sky-dr-event-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.sky-dr-event-error {
+  grid-column: 2 / -1;
+  color: var(--mantine-color-red-7);
+  font-size: 12.5px;
+}
+
 .sky-dr-mark a {
   color: var(--sky-accent);
   text-decoration: none;
@@ -208,7 +220,7 @@
   color: var(--mantine-color-red-7);
 }
 
-/* Browse, at the File Attachments heading's right edge: a link in the page's type, not the heading's */
+/* Heading actions use the page's type. */
 .sky-rail-sec-h .sky-rail-browse {
   margin-left: auto;
   font-family: var(--mantine-font-family);

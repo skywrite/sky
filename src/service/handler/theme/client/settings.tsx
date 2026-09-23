@@ -16,9 +16,10 @@ import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
 import { AboutMePane } from './settingsAboutMe.tsx'
 import { Block, mono, refusalOf, Row, UNREACHABLE } from './settingsBlocks.tsx'
 import { ConnectionsPane } from './settingsConnections.tsx'
+import { GoogleMain } from './settingsGoogle.tsx'
 import { AIPane } from './settingsModels.tsx'
 import { PromptsMain } from './settingsPrompts.tsx'
-import { SETTINGS_PAGES, type SettingsSection } from './settingsRoutes.ts'
+import { connectionPageOf, SETTINGS_PAGES, type SettingsSection } from './settingsRoutes.ts'
 import { whenSpeakersWarm } from './speakers.ts'
 import { CALLS_URL } from './voice.tsx'
 import { WritingVoicePane } from './writingVoice.tsx'
@@ -63,6 +64,7 @@ export interface ConfigView {
 }
 
 export interface SettingsData {
+  calendar: { classifyEvents: boolean }
   theme: Theme
   textSize: TextSize
   voice: { current: string; researcherCurrent: string; groups: { male: string[]; female: string[] } }
@@ -706,6 +708,8 @@ export function SettingsMain({
   const { data, note, change, reload } = useSettings()
   const page = SETTINGS_PAGES[section]
   if (section === 'prompts') return <PromptsMain path={path} navigate={navigate} back={back} />
+  if (section === 'connections' && connectionPageOf(path) === 'google')
+    return <GoogleMain navigate={navigate} settings={data} onSettingsChanged={reload} />
 
   return (
     <div className="sky-main">
@@ -754,7 +758,7 @@ export function SettingsMain({
             ) : section === 'models' ? (
               <AIPane data={data} reload={reload} />
             ) : section === 'connections' ? (
-              <ConnectionsPane />
+              <ConnectionsPane navigate={navigate} />
             ) : section === 'notebook' ? (
               <NotebookPane data={data} change={change} />
             ) : section === 'advanced' ? (

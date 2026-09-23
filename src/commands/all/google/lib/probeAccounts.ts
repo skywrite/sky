@@ -1,4 +1,4 @@
-import { GoogleClient, getFile, loadOAuthClient } from '#lib/google/mod.ts'
+import { GoogleClient, getFile, loadAccountClient } from '#lib/google/mod.ts'
 import type { SecretsProvider } from '#lib/secrets/SecretsProvider.ts'
 
 /**
@@ -12,11 +12,11 @@ export async function probeAccountsForFile(
   emails: string[],
   fileId: string,
 ): Promise<string[]> {
-  const oauthClient = await loadOAuthClient(secrets)
-  if (!oauthClient) return []
   const visible: string[] = []
   for (const email of emails) {
     try {
+      const oauthClient = await loadAccountClient(secrets, email)
+      if (!oauthClient) continue
       const client = new GoogleClient({ secrets, email, client: oauthClient })
       await getFile(client, fileId)
       visible.push(email)

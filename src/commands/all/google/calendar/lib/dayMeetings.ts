@@ -1,10 +1,11 @@
+import { classifyDayEvents, type ClassifiedCalendarEvent } from '#lib/calendarClassification/mod.ts'
 import {
   GoogleClient,
   hasCalendarScope,
   listAccountEmails,
   listEvents,
   loadAccountTokens,
-  loadOAuthClient,
+  loadAccountClient,
   meetingDropReason,
 } from '#lib/google/mod.ts'
 import type { CalendarEvent } from '#lib/google/mod.ts'
@@ -18,7 +19,9 @@ export interface DayMeetings {
   /** The day's saved IANA zone, falling back to the notebook's current zone, then the system zone. */
   timeZone: string
   /** The day's events that count as meetings, oldest first. */
-  meetings: CalendarEvent[]
+  meetings: ClassifiedCalendarEvent[]
+  notifications: ClassifiedCalendarEvent[]
+  classificationWarning?: string
   /** The day's events the meeting policy excludes, with the reason. */
   dropped: Array<{ event: CalendarEvent; reason: string }>
   /** Accounts that could not be queried (no grant, missing scope, API failure) — the caller decides severity. */
@@ -44,13 +47,8 @@ export async function fetchDayMeetings(
   const timeZone = await dayTimezone(day, timeDir).catch(
     async () => (await readSystemTimezone()) ?? currentTimezoneIANA(),
   )
-  const result: DayMeetings = { timeZone, meetings: [], dropped: [], errors: [] }
+  const result: DayMeetings = { timeZone, meetings: [], notifications: [], dropped: [], errors: [] }
 
-  const oauthClient = await loadOAuthClient(secrets)
-  if (!oauthClient) {
-    result.errors.push('No Google OAuth client stored. Run: sky google:auth')
-    return result
-  }
   const accounts = await listAccountEmails(secrets)
   if (accounts.length === 0) {
     result.errors.push('No Google accounts are authorized yet. Run: sky google:auth')
@@ -65,6 +63,11 @@ export async function fetchDayMeetings(
     const tokens = await loadAccountTokens(secrets, email)
     if (!tokens || !hasCalendarScope(tokens)) {
       result.errors.push(`${email}: stored grant lacks calendar access. Run: sky google:auth`)
+      continue
+    }
+    const oauthClient = await loadAccountClient(secrets, email)
+    if (!oauthClient) {
+      result.errors.push(`${email}: no OAuth client stored for this account. Run: sky google:auth`)
       continue
     }
     const client = new GoogleClient({ secrets, email, client: oauthClient })
@@ -83,6 +86,10 @@ export async function fetchDayMeetings(
     if (reason) result.dropped.push({ event, reason })
     else result.meetings.push(event)
   }
+  const classified = await classifyDayEvents(result.meetings, secrets)
+  result.meetings = classified.meetings
+  result.notifications = classified.notifications
+  result.classificationWarning = classified.warning
   return result
 }
 

@@ -74,6 +74,8 @@ export function buildAuthUrl(options: {
   challenge: string
   state: string
   scopes?: string[]
+  /** The account expected to grant — Google skips its chooser when this is signed in. */
+  loginHint?: string
 }): string {
   const url = new URL(GOOGLE_AUTH_URL)
   url.searchParams.set('client_id', options.clientId)
@@ -83,6 +85,7 @@ export function buildAuthUrl(options: {
   url.searchParams.set('code_challenge', options.challenge)
   url.searchParams.set('code_challenge_method', 'S256')
   url.searchParams.set('state', options.state)
+  if (options.loginHint) url.searchParams.set('login_hint', options.loginHint)
   // offline + consent: Google only issues a refresh token on a consenting grant
   url.searchParams.set('access_type', 'offline')
   url.searchParams.set('prompt', 'consent')

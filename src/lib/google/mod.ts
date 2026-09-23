@@ -17,21 +17,52 @@ export type { OAuthClient, PkcePair, TokenResponse } from './oauth.ts'
 export { startLoopback } from './loopback.ts'
 export type { LoopbackServer } from './loopback.ts'
 
-export { GOOGLE_CLOUD_SETUP_STEPS, GOOGLE_UNVERIFIED_APP_NOTE } from './setup.ts'
+export {
+  APP_NAME,
+  GOOGLE_APIS,
+  GOOGLE_CLOUD_SETUP,
+  GOOGLE_CLOUD_SETUP_STEPS,
+  GOOGLE_CONSOLE_URL,
+  GOOGLE_UNVERIFIED_APP_NOTE,
+  enableApisUrl,
+} from './setup.ts'
+export type { SetupStep, SetupStepKey } from './setup.ts'
 
 export {
   CLIENT_ENTRY_NAME,
   GOOGLE_SECRETS_CATEGORY,
   deleteAccountTokens,
+  hasAnyOAuthClient,
+  isClientEntryName,
   listAccountEmails,
+  loadAccountClient,
   loadAccountTokens,
+  loadDefaultClient,
   loadOAuthClient,
+  loadProjectClient,
   parseStoredTokens,
+  projectClientEntryName,
   saveAccountTokens,
   saveOAuthClient,
+  saveProjectClient,
   serializeStoredTokens,
 } from './tokens.ts'
 export type { StoredTokens } from './tokens.ts'
+
+export {
+  startCloudSetup,
+  WINDOW_CLOSED_MESSAGE,
+  initialState as initialSetupState,
+  leftoverProjects,
+} from './cloudSetup/mod.ts'
+export type {
+  CloudSetupOptions,
+  CloudSetupRun,
+  CloudSetupState,
+  NeedsYou,
+  SetupPhaseKey,
+  SetupPhaseView,
+} from './cloudSetup/mod.ts'
 
 export { AccountResolutionError, AmbiguousAccountError, resolveAccountEmail } from './accounts.ts'
 

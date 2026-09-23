@@ -2,12 +2,17 @@ import { TestSecretsProvider } from '#lib/secrets/TestSecretsProvider.ts'
 import { assert, test } from '#test'
 import {
   deleteAccountTokens,
+  hasAnyOAuthClient,
   listAccountEmails,
+  loadAccountClient,
   loadAccountTokens,
   loadOAuthClient,
+  loadProjectClient,
   parseStoredTokens,
+  projectClientEntryName,
   saveAccountTokens,
   saveOAuthClient,
+  saveProjectClient,
   serializeStoredTokens,
 } from './tokens.ts'
 
@@ -66,14 +71,81 @@ test('account tokens roundtrip', async () => {
 test('listAccountEmails', async () => {
   const secrets = new TestSecretsProvider()
   await saveOAuthClient(secrets, { clientId: 'id', clientSecret: 'sec' })
+  await saveProjectClient(secrets, 'atlas-123456', { clientId: 'id-p', clientSecret: 'sec-p' })
   await saveAccountTokens(secrets, 'zed@example.com', { refreshToken: 'rt-z', scopes: [] })
   await saveAccountTokens(secrets, 'jane@example.com', { refreshToken: 'rt-j', scopes: [] })
 
   assert({
-    given: 'a client entry and two accounts',
+    given: 'a shared client, a client Sky made, and two accounts',
     should: 'list only account emails, sorted',
     expected: ['jane@example.com', 'zed@example.com'],
     actual: await listAccountEmails(secrets),
+  })
+})
+
+test('the client that refreshes an account', async () => {
+  const secrets = new TestSecretsProvider()
+  assert({
+    given: 'an empty keychain',
+    should: 'have no client of any kind',
+    expected: false,
+    actual: await hasAnyOAuthClient(secrets),
+  })
+
+  await saveProjectClient(secrets, 'atlas-123456', { clientId: 'id-p', clientSecret: 'sec-p' })
+  await saveAccountTokens(secrets, 'jane@example.com', {
+    refreshToken: 'rt-j',
+    scopes: [],
+    client: projectClientEntryName('atlas-123456'),
+    setup: { projectId: 'atlas-123456', at: '2026-01-02T03:04:05.000Z' },
+  })
+  await saveAccountTokens(secrets, 'zed@example.com', { refreshToken: 'rt-z', scopes: [] })
+
+  assert({
+    given: 'only a client Sky made',
+    should: 'count as a client',
+    expected: true,
+    actual: await hasAnyOAuthClient(secrets),
+  })
+  assert({
+    given: 'an account whose grant names the client Sky made',
+    should: 'refresh with that pair',
+    expected: { clientId: 'id-p', clientSecret: 'sec-p' },
+    actual: await loadAccountClient(secrets, 'jane@example.com'),
+  })
+  assert({
+    given: 'an account whose grant names no client, with no shared client stored',
+    should: 'have none',
+    expected: null,
+    actual: await loadAccountClient(secrets, 'zed@example.com'),
+  })
+
+  await saveOAuthClient(secrets, { clientId: 'id-s', clientSecret: 'sec-s' })
+  assert({
+    given: 'the shared client stored too',
+    should: 'serve the account that names no client, and leave the other on its own pair',
+    expected: [
+      { clientId: 'id-s', clientSecret: 'sec-s' },
+      { clientId: 'id-p', clientSecret: 'sec-p' },
+      { clientId: 'id-p', clientSecret: 'sec-p' },
+    ],
+    actual: [
+      await loadAccountClient(secrets, 'zed@example.com'),
+      await loadAccountClient(secrets, 'jane@example.com'),
+      await loadProjectClient(secrets, 'atlas-123456'),
+    ],
+  })
+  assert({
+    given: 'the grant with a client and a setup',
+    should: 'keep both through the keychain',
+    expected: {
+      refreshToken: 'rt-j',
+      accessToken: undefined,
+      scopes: [],
+      client: 'client:atlas-123456',
+      setup: { projectId: 'atlas-123456', at: '2026-01-02T03:04:05.000Z' },
+    },
+    actual: await loadAccountTokens(secrets, 'jane@example.com'),
   })
 })
 

@@ -16,12 +16,17 @@ import { Button, PasswordInput, SegmentedControl, TextInput } from '@mantine/cor
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
 import { SECRET_FIELDS, secretFieldError, type SecretField } from '../../settings/secretValidation.ts'
 import { Block, mono, refusalOf, Row, UNREACHABLE } from './settingsBlocks.tsx'
+import { connectionHref } from './settingsRoutes.ts'
 
 // ── What the service answers (mirrors handler/settings/connections.ts) ──
 
 interface GoogleAccountRow {
   email: string
   grants: string[]
+  /** What it should cover but does not — a box left unticked */
+  missing: string[]
+  /** Set when Sky made the Google Cloud side itself */
+  setup?: { projectId: string; at: string }
 }
 
 interface SecretRow {
@@ -35,7 +40,7 @@ interface SecretRow {
 
 export interface ConnectionsData {
   accessError?: string
-  google: { client: boolean; accounts: GoogleAccountRow[]; setup: string[] }
+  google: { client: boolean; accounts: GoogleAccountRow[]; leftovers: string[]; setup: string[] }
   secrets: SecretRow[]
 }
 
@@ -76,14 +81,14 @@ type TypeSafeStatus = {
   error?: string
 }
 
-const API = '/settings/_api/connections'
+export const API = '/settings/_api/connections'
 
 /** The sign-in is asked after this often while the tab is open. */
 const SIGN_IN_POLL_MS = 1500
 
 // ── Talking to the service ──────────────────────────────────────────
 
-function postJson(url: string, body: unknown): Promise<Response | null> {
+export function postJson(url: string, body: unknown): Promise<Response | null> {
   return fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -98,7 +103,7 @@ function removeSecret(category: string, name: string): Promise<string | null> {
     .then(refusalOf)
 }
 
-function useConnections() {
+export function useConnections() {
   const [data, setData] = useState<ConnectionsData | null>(null)
   const [note, setNote] = useState<string | null>(null)
 
@@ -410,153 +415,24 @@ function BeeperRow() {
   )
 }
 
-// ── Google: the sign-in, run from here ──────────────────────────────
+// ── Google: the rows lead to Google's own page ──────────────────────
 
-function useGoogleSignIn(onDone: (email: string) => void) {
-  const [waiting, setWaiting] = useState<{ id: string; url: string } | null>(null)
-  const [warn, setWarn] = useState<string | null>(null)
-  const timer = useRef<number | null>(null)
-
-  const stop = useCallback(() => {
-    if (timer.current) window.clearInterval(timer.current)
-    timer.current = null
-    setWaiting(null)
-  }, [])
-
-  useEffect(() => stop, [stop])
-
-  const start = useCallback(async () => {
-    setWarn(null)
-    // The tab opens on the click itself; after the round trip a browser may refuse to.
-    const tab = window.open('', '_blank')
-    const r = await postJson(`${API}/google/connect`, {})
-    const refusal = await refusalOf(r)
-    if (refusal || !r) {
-      tab?.close()
-      setWarn(refusal ?? UNREACHABLE)
-      return
-    }
-    const started = (await r.json()) as { id: string; url: string }
-    if (tab) tab.location.href = started.url
-    setWaiting(started)
-    timer.current = window.setInterval(async () => {
-      const res = await fetch(`${API}/google/connect/${started.id}`).catch(() => null)
-      if (!res?.ok) return
-      const state = (await res.json()) as ConnectState
-      if (state.status === 'waiting') return
-      stop()
-      if (state.status === 'done') onDone(state.email)
-      else setWarn(state.message)
-    }, SIGN_IN_POLL_MS)
-  }, [onDone, stop])
-
-  return { waiting, warn, start, cancel: stop }
-}
-
-function ClientForm({ steps, onSaved, onCancel }: { steps: string[]; onSaved: () => void; onCancel: () => void }) {
-  const [clientId, setClientId] = useState('')
-  const [clientSecret, setClientSecret] = useState('')
-  const [warn, setWarn] = useState<string | null>(null)
-  const [busy, setBusy] = useState(false)
-
-  const save = async () => {
-    setBusy(true)
-    const refusal = await refusalOf(await postJson(`${API}/google/client`, { clientId, clientSecret }))
-    setBusy(false)
-    if (refusal) setWarn(refusal)
-    else onSaved()
-  }
-
-  return (
-    <div className="sky-set-form">
-      <p className="sky-set-sub">
-        Sky signs in to Google as an app of your own. Making one takes about ten minutes, once:
-      </p>
-      <ol className="sky-set-steps">
-        {steps.map((step) => (
-          <li key={step}>{step}</li>
-        ))}
-      </ol>
-      <div className="sky-set-form-grid">
-        <TextInput
-          size="sm"
-          label="Client ID"
-          value={clientId}
-          onChange={(e) => setClientId(e.currentTarget.value)}
-          placeholder="…apps.googleusercontent.com"
-          classNames={{ input: 'sky-set-mono-input' }}
-        />
-        <PasswordInput
-          size="sm"
-          label="Client secret"
-          value={clientSecret}
-          onChange={(e) => setClientSecret(e.currentTarget.value)}
-        />
-      </div>
-      {warn && <p className="sky-set-warn">{warn}</p>}
-      <div className="sky-set-form-foot">
-        <Button
-          size="sm"
-          variant="primary"
-          disabled={busy || !clientId.trim() || !clientSecret.trim()}
-          onClick={() => void save()}
-        >
-          Save to keychain
-        </Button>
-        <Button size="sm" disabled={busy} onClick={onCancel}>
-          Cancel
-        </Button>
-      </div>
-    </div>
-  )
-}
-
-function AccountsBlock({ data, reload }: { data: ConnectionsData; reload: () => void }) {
+function AccountsBlock({ data, navigate }: { data: ConnectionsData; navigate: (to: string) => void }) {
   const { google } = data
-  const [hint, setHint] = useState<string | null>(null)
-  const [confirming, setConfirming] = useState<string | null>(null)
-  /** `add` saves the client, then signs in; `change` only saves */
-  const [clientForm, setClientForm] = useState<'add' | 'change' | null>(null)
-  const signIn = useGoogleSignIn(
-    useCallback(
-      (email: string) => {
-        setHint(`Connected ${email}.`)
-        reload()
-      },
-      [reload],
-    ),
-  )
-
-  const add = () => {
-    setHint(null)
-    if (google.client) void signIn.start()
-    else setClientForm('add')
-  }
-
-  const remove = async (email: string) => {
-    setConfirming(null)
-    const refusal = await removeSecret('google', email)
-    setHint(refusal ?? `Removed ${email}. To revoke the grant itself: myaccount.google.com/permissions.`)
-    reload()
-  }
-
-  const clientSaved = () => {
-    const then = clientForm
-    setClientForm(null)
-    reload()
-    if (then === 'add') void signIn.start()
-  }
-
+  const toGoogle = () => navigate(connectionHref('google'))
   return (
     <Block head="Accounts">
       <SlackRow />
       <BeeperRow />
       {google.accounts.length === 0 && (
-        <Row label="Google" sub="Mail, Calendar, Drive and Docs.">
+        <Row label="Google" sub="Mail, Calendar, Drive and Docs. Sign in, tick the boxes — Sky sets up the rest." last>
           <span className="sky-set-off">Not connected</span>
+          <Button size="compact-sm" variant="primary" onClick={toGoogle}>
+            Connect
+          </Button>
         </Row>
       )}
-      {google.accounts.map((account) => (
+      {google.accounts.map((account, index) => (
         <Fragment key={account.email}>
           <Row
             label="Google"
@@ -572,50 +448,22 @@ function AccountsBlock({ data, reload }: { data: ConnectionsData; reload: () => 
                     ))}
                   </span>
                 )}
+                {account.missing.length > 0 && (
+                  <span className="sky-set-line sky-set-warn">
+                    {account.missing.join(' and ')} not ticked — connect again.
+                  </span>
+                )}
               </>
             }
+            last={index === google.accounts.length - 1}
           >
             <span className="sky-set-status">Connected</span>
-            {confirming === account.email ? (
-              <Button size="compact-sm" variant="danger" onClick={() => void remove(account.email)}>
-                Really remove
-              </Button>
-            ) : (
-              <Button size="compact-sm" onClick={() => setConfirming(account.email)}>
-                Remove
-              </Button>
-            )}
+            <Button size="compact-sm" aria-label="Google settings" onClick={toGoogle}>
+              ›
+            </Button>
           </Row>
         </Fragment>
       ))}
-      <Row label="Google Cloud client" sub="The app Sky signs in as. Set once." last>
-        {google.client ? <span className="sky-set-status">Set</span> : <span className="sky-set-off">Not set</span>}
-        <Button size="compact-sm" onClick={() => setClientForm(clientForm ? null : 'change')}>
-          {google.client ? 'Change' : 'Add'}
-        </Button>
-      </Row>
-      {clientForm && <ClientForm steps={google.setup} onSaved={clientSaved} onCancel={() => setClientForm(null)} />}
-      {signIn.waiting ? (
-        <div className="sky-set-foot sky-set-wait">
-          <span>
-            Finish signing in, in the tab that opened.{' '}
-            <a href={signIn.waiting.url} target="_blank" rel="noreferrer">
-              Open the Google page
-            </a>
-          </span>
-          <Button size="compact-sm" onClick={signIn.cancel}>
-            Cancel
-          </Button>
-        </div>
-      ) : (
-        <div className="sky-set-foot">
-          <Button size="sm" variant="primary" onClick={add}>
-            ＋ Add Google account
-          </Button>
-        </div>
-      )}
-      {signIn.warn && <p className="sky-set-warn">{signIn.warn}</p>}
-      {hint && <p className="sky-set-note">{hint}</p>}
     </Block>
   )
 }
@@ -813,7 +661,7 @@ function SecretForm({
 
 // ── TypeSafe: the key for Jev, checked with TypeSafe ────────────────
 
-function useTypeSafe() {
+export function useTypeSafe() {
   const [status, setStatus] = useState<TypeSafeStatus | null>(null)
   const [busy, setBusy] = useState(false)
   const [warn, setWarn] = useState<string | null>(null)
@@ -1043,7 +891,7 @@ function KeychainBlock({ secrets, reload }: { secrets: SecretRow[]; reload: () =
 
 // ── The pane ────────────────────────────────────────────────────────
 
-export function ConnectionsPane() {
+export function ConnectionsPane({ navigate }: { navigate: (to: string) => void }) {
   const { data, note, reload } = useConnections()
   const [restoring, setRestoring] = useState(false)
   const [restoreError, setRestoreError] = useState<string | null>(null)
@@ -1085,7 +933,7 @@ export function ConnectionsPane() {
       )}
       {data && (
         <>
-          <AccountsBlock data={data} reload={reload} />
+          <AccountsBlock data={data} navigate={navigate} />
           <KeychainBlock secrets={data.secrets} reload={reload} />
         </>
       )}

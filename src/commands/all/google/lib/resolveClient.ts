@@ -4,7 +4,7 @@ import {
   AmbiguousAccountError,
   GoogleClient,
   listAccountEmails,
-  loadOAuthClient,
+  loadAccountClient,
   resolveAccountEmail,
 } from '#lib/google/mod.ts'
 import type { SecretsProvider } from '#lib/secrets/SecretsProvider.ts'
@@ -20,11 +20,6 @@ export async function resolveGoogleClient(options: {
   requested?: string
   interactive: boolean
 }): Promise<GoogleClient> {
-  const oauthClient = await loadOAuthClient(options.secrets)
-  if (!oauthClient) {
-    throw new AccountResolutionError('No Google OAuth client stored. Run: sky google:auth')
-  }
-
   const stored = await listAccountEmails(options.secrets)
   let email: string
   try {
@@ -39,5 +34,10 @@ export async function resolveGoogleClient(options: {
     email = selected
   }
 
+  // The pair that issued the grant — an account Sky set up has its own.
+  const oauthClient = await loadAccountClient(options.secrets, email)
+  if (!oauthClient) {
+    throw new AccountResolutionError(`No Google OAuth client stored for ${email}. Run: sky google:auth`)
+  }
   return new GoogleClient({ secrets: options.secrets, email, client: oauthClient })
 }

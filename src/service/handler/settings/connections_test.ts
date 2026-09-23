@@ -143,6 +143,7 @@ function hostWith(seed: Record<string, SecretEntry> = seeded()) {
     google: {
       connect: () => Promise.resolve(signIn),
       connection: (id) => (id === SIGN_IN.id ? { status: 'waiting' } : null),
+      setup: { start: () => null, state: () => null, continue: () => false, cancel: () => false },
     },
     slack: {
       status: () => {
@@ -202,9 +203,9 @@ test({ name: 'connections route - the payload is presence, never a value' }, asy
 
   assert({
     given: 'a keychain with the Google client and one account',
-    should: 'answer the client as present and the account with its grants',
+    should: 'answer the client as present and the account with its grants, naming the box left unticked',
     actual: [response.status, data.google.client, data.google.accounts],
-    expected: [200, true, [{ email: 'jane@example.com', grants: ['Mail', 'Calendar', 'Drive'] }]],
+    expected: [200, true, [{ email: 'jane@example.com', grants: ['Mail', 'Calendar', 'Drive'], missing: ['Docs'] }]],
   })
   assert({
     given: 'the rest of the keychain',

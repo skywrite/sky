@@ -32,6 +32,7 @@ test(
       },
     )
     const settings: SettingsData = {
+      calendar: { classifyEvents: false },
       theme: 'light',
       experimental: { contextPreflight: false, workstreams: false },
       textSize: 'default',

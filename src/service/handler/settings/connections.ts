@@ -19,9 +19,11 @@
 import { Hono } from 'hono'
 import { BEEPER_SECRETS_CATEGORY } from '#lib/beeper/secrets.ts'
 import {
-  CLIENT_ENTRY_NAME,
+  type CloudSetupState,
   GOOGLE_CLOUD_SETUP_STEPS,
   GOOGLE_SECRETS_CATEGORY,
+  hasAnyOAuthClient,
+  leftoverProjects,
   listAccountEmails,
   loadAccountTokens,
   saveOAuthClient,
@@ -42,6 +44,10 @@ export interface GoogleAccountRow {
   email: string
   /** What the grant covers: Mail, Calendar, Drive, Docs */
   grants: string[]
+  /** What it should cover but does not — a box left unticked */
+  missing: string[]
+  /** Set when Sky made the Google Cloud side itself: which project, and when */
+  setup?: { projectId: string; at: string }
 }
 
 /** One keychain entry — its name and type, never its value. */
@@ -60,9 +66,11 @@ export interface SecretRow {
 export interface ConnectionsData {
   accessError?: string
   google: {
-    /** The OAuth client pair is stored — a sign-in can start */
+    /** A client pair is stored — shared, or one Sky made — so a plain sign-in can start */
     client: boolean
     accounts: GoogleAccountRow[]
+    /** Projects Sky made in earlier tries that no account uses — a sweep shuts them down */
+    leftovers: string[]
     /** The one-time Google Cloud steps, for the client form */
     setup: string[]
   }
@@ -87,6 +95,9 @@ export type GoogleConnectState =
   | { status: 'waiting' }
   | { status: 'done'; email: string }
   | { status: 'failed'; message: string }
+
+/** Sky's automated Google Cloud setup, as the page reads it — see lib/google/cloudSetup. */
+export type GoogleSetupState = CloudSetupState
 
 /** Beeper Desktop on this Mac, and Sky's grant to it. */
 export type BeeperStatus = {
@@ -131,10 +142,19 @@ export interface ConnectionsHost {
   /** The model providers, by id and in plain words — a key stored under one is named after it */
   providers: () => Array<{ id: string; label: string }>
   google: {
-    /** Starts a sign-in: the URL for the browser and an id to ask after; null when no client is stored */
-    connect: () => Promise<{ id: string; url: string } | null>
+    /** Starts a sign-in: the URL for the browser and an id to ask after; null when no client is stored. An email means that account, again. */
+    connect: (options?: { email?: string }) => Promise<{ id: string; url: string } | null>
     /** How a sign-in is going; null for an id this process never issued */
     connection: (id: string) => GoogleConnectState | null
+    setup: {
+      /** Starts Sky's automated setup in a window — or only its sweep of leftovers; null while one is already running */
+      start: (options?: { tidy?: boolean }) => { id: string } | null
+      /** How it is going; null for an id this process never issued */
+      state: (id: string) => GoogleSetupState | null
+      /** The person did the waiting step by hand — look again */
+      continue: (id: string) => boolean
+      cancel: (id: string) => boolean
+    }
   }
   slack: {
     status: () => Promise<SlackStatus>
@@ -208,7 +228,6 @@ export function secretRow(index: IndexEntry, entry: SecretEntry | null, provider
 export async function describeConnections(host: ConnectionsHost): Promise<ConnectionsData> {
   const { secrets } = host
   const index = await secrets.list()
-  const has = (category: string, name: string) => index.some((e) => e.category === category && e.name === name)
   let accessError: string | undefined
   const unavailable = (error: unknown) => {
     accessError = error instanceof Error ? error.message : 'Keychain access is unavailable.'
@@ -216,10 +235,16 @@ export async function describeConnections(host: ConnectionsHost): Promise<Connec
   }
 
   const accounts = await Promise.all(
-    (await listAccountEmails(secrets)).map(async (email) => ({
-      email,
-      grants: grantsOf(await loadAccountTokens(secrets, email).catch(unavailable)),
-    })),
+    (await listAccountEmails(secrets)).map(async (email) => {
+      const tokens = await loadAccountTokens(secrets, email).catch(unavailable)
+      const grants = grantsOf(tokens)
+      return {
+        email,
+        grants,
+        missing: tokens ? GRANTS.map(([, label]) => label).filter((label) => !grants.includes(label)) : [],
+        ...(tokens?.setup ? { setup: tokens.setup } : {}),
+      }
+    }),
   )
 
   const providers = new Map(host.providers().map((provider) => [provider.id, provider.label]))
@@ -237,7 +262,12 @@ export async function describeConnections(host: ConnectionsHost): Promise<Connec
 
   return {
     ...(accessError ? { accessError } : {}),
-    google: { client: has(GOOGLE_SECRETS_CATEGORY, CLIENT_ENTRY_NAME), accounts, setup: [...GOOGLE_CLOUD_SETUP_STEPS] },
+    google: {
+      client: await hasAnyOAuthClient(secrets),
+      accounts,
+      leftovers: await leftoverProjects(secrets, ''),
+      setup: [...GOOGLE_CLOUD_SETUP_STEPS],
+    },
     secrets: rows,
   }
 }
@@ -465,8 +495,10 @@ export function createConnectionsRoutes(host: ConnectionsHost): Hono {
 
   // A sign-in: the URL the browser opens, and an id to ask after.
   app.post('/google/connect', async (c) => {
+    const body = (await c.req.json().catch(() => null)) as { email?: unknown } | null
+    const email = typeof body?.email === 'string' && body.email.trim() ? body.email.trim() : undefined
     try {
-      const started = await host.google.connect()
+      const started = await host.google.connect(email ? { email } : {})
       if (!started) return c.json({ message: 'Save the Google Cloud client first.' }, 409)
       return c.json(started)
     } catch (err) {
@@ -476,6 +508,28 @@ export function createConnectionsRoutes(host: ConnectionsHost): Hono {
   app.get('/google/connect/:id', (c) => {
     const state = host.google.connection(c.req.param('id'))
     return state ? c.json(state) : c.json({ message: 'no such sign-in' }, 404)
+  })
+
+  // Sky's automated setup: a window to sign in to, the console done for the person, then the grant.
+  app.post('/google/setup', async (c) => {
+    const body = (await c.req.json().catch(() => null)) as { tidy?: unknown } | null
+    const started = host.google.setup.start(body?.tidy === true ? { tidy: true } : {})
+    if (!started) return c.json({ message: 'A Google setup is already running — finish it in its window.' }, 409)
+    return c.json(started)
+  })
+  app.get('/google/setup/:id', (c) => {
+    const state = host.google.setup.state(c.req.param('id'))
+    return state ? c.json(state) : c.json({ message: 'no such setup' }, 404)
+  })
+  app.post('/google/setup/:id/continue', (c) => {
+    return host.google.setup.continue(c.req.param('id'))
+      ? c.json({ ok: true })
+      : c.json({ message: 'no such setup' }, 404)
+  })
+  app.post('/google/setup/:id/cancel', (c) => {
+    return host.google.setup.cancel(c.req.param('id'))
+      ? c.json({ ok: true })
+      : c.json({ message: 'no such setup' }, 404)
   })
 
   return app

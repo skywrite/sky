@@ -75,7 +75,7 @@ test({ name: 'settings view - every value, with where it came from' }, () => {
     given: 'the sections',
     should: 'read in the file order, with nothing left for Other',
     actual: view.sections.map((section) => section.id),
-    expected: ['notebook', 'commands', 'ai', 'web', 'slack', 'service'],
+    expected: ['notebook', 'commands', 'ai', 'web', 'slack', 'calendar', 'service'],
   })
   assert({
     given: 'a path the file sets',

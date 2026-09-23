@@ -17,11 +17,15 @@ import {
   fetchAccountEmail,
   generatePkce,
   GOOGLE_SCOPES,
-  loadOAuthClient,
+  loadAccountTokens,
+  loadAccountClient,
+  loadDefaultClient,
   randomState,
   saveAccountTokens,
+  startCloudSetup,
   startLoopback,
 } from '#lib/google/mod.ts'
+import type { CloudSetupRun } from '#lib/google/mod.ts'
 import { KeychainSecretsProvider } from '#lib/secrets/KeychainSecretsProvider.ts'
 import { createSecret, updateEntry } from '#lib/secrets/marshal.ts'
 import type { SecretsProvider } from '#lib/secrets/SecretsProvider.ts'
@@ -57,9 +61,13 @@ function googleSignIn(secrets: SecretsProvider): ConnectionsHost['google'] {
   const states = new Map<string, GoogleConnectState>()
   return {
     connection: (id) => states.get(id) ?? null,
-    async connect() {
-      const client = await loadOAuthClient(secrets)
-      if (!client) return null
+    async connect(options = {}) {
+      // An account connecting again keeps the pair that issued its grant; a new one takes the default.
+      const own = options.email ? await loadAccountClient(secrets, options.email) : null
+      const ownName = own && options.email ? (await loadAccountTokens(secrets, options.email))?.client : undefined
+      const picked = own ? { name: ownName, client: own } : await loadDefaultClient(secrets)
+      if (!picked) return null
+      const { client } = picked
       const pkce = await generatePkce()
       const state = randomState()
       const loopback = await startLoopback(state)
@@ -68,6 +76,7 @@ function googleSignIn(secrets: SecretsProvider): ConnectionsHost['google'] {
         redirectUri: loopback.redirectUri,
         challenge: pkce.challenge,
         state,
+        ...(options.email ? { loginHint: options.email } : {}),
       })
       const id = randomUUID()
       states.set(id, { status: 'waiting' })
@@ -82,10 +91,13 @@ function googleSignIn(secrets: SecretsProvider): ConnectionsHost['google'] {
           })
           if (!tokens.refresh_token) throw new Error('Google returned no refresh token — try again')
           const email = await fetchAccountEmail(tokens.access_token)
+          const previous = await loadAccountTokens(secrets, email)
           await saveAccountTokens(secrets, email, {
             refreshToken: tokens.refresh_token,
             accessToken: tokens.access_token,
             scopes: (tokens.scope ?? GOOGLE_SCOPES.join(' ')).split(' '),
+            ...(picked.name && picked.name !== 'client' ? { client: picked.name } : {}),
+            ...(previous?.setup ? { setup: previous.setup } : {}),
           })
           states.set(id, { status: 'done', email })
         } catch (err) {
@@ -96,6 +108,44 @@ function googleSignIn(secrets: SecretsProvider): ConnectionsHost['google'] {
         }
       })()
       return { id, url }
+    },
+    setup: googleSetup(secrets),
+  }
+}
+
+/**
+ * Sky's automated Google Cloud setup, run from the page: one window at a
+ * time, its state polled by id. The finished run stays askable a while so
+ * the page can show how it ended; the person's Continue and Cancel land on
+ * the live run.
+ */
+function googleSetup(secrets: SecretsProvider): ConnectionsHost['google']['setup'] {
+  const runs = new Map<string, CloudSetupRun>()
+  let live: CloudSetupRun | null = null
+  return {
+    start(options = {}) {
+      if (live) return null
+      const run = startCloudSetup({ secrets, agreedToTerms: true, ...(options.tidy ? { tidyOnly: true } : {}) })
+      live = run
+      runs.set(run.id, run)
+      void run.finished.finally(() => {
+        if (live === run) live = null
+        setTimeout(() => runs.delete(run.id), CONNECT_KEEP_MS).unref()
+      })
+      return { id: run.id }
+    },
+    state: (id) => runs.get(id)?.state() ?? null,
+    continue(id) {
+      const run = runs.get(id)
+      if (!run) return false
+      run.continue()
+      return true
+    },
+    cancel(id) {
+      const run = runs.get(id)
+      if (!run) return false
+      run.cancel()
+      return true
     },
   }
 }

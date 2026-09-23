@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import { readlink, rm } from 'node:fs/promises'
+import { mkdir, readlink, rm, writeFile } from 'node:fs/promises'
 import * as path from 'node:path'
 import process from 'node:process'
 import { chromium } from 'playwright'
@@ -147,6 +147,23 @@ async function clearProfileLock(profileDir: string, takeover: boolean): Promise<
 }
 
 /**
+ * A profile Sky drives never offers to save a password — the person signs
+ * in to it once and the bubble is noise — and never asks to restore pages
+ * after a run stopped it. Chromium reads these from the profile's
+ * Preferences file, written once before the first launch.
+ */
+async function quietProfilePreferences(profileDir: string): Promise<void> {
+  const file = path.join(profileDir, 'Default', 'Preferences')
+  if (await exists(file)) return
+  await mkdir(path.dirname(file), { recursive: true })
+  const prefs = {
+    credentials_enable_service: false,
+    profile: { password_manager_enabled: false, exit_type: 'Normal' },
+  }
+  await writeFile(file, JSON.stringify(prefs), 'utf8')
+}
+
+/**
  * Open a persistent browser profile, hand the caller a {@link BrowserSession},
  * and always close the browser afterward. Headless by default; pass
  * `headless: false` for an interactive sign-in window. Pass `takeover: true`
@@ -154,13 +171,21 @@ async function clearProfileLock(profileDir: string, takeover: boolean): Promise<
  * crashed run is killed instead of blocking the launch.
  */
 export async function withPersistentBrowser<T>(
-  opts: { profileDir: string; headless?: boolean; timeoutMs?: number; takeover?: boolean },
+  opts: {
+    profileDir: string
+    headless?: boolean
+    timeoutMs?: number
+    takeover?: boolean
+    /** A particular browser binary; otherwise the first installed Chromium-family browser */
+    executablePath?: string
+  },
   fn: (session: BrowserSession, context: BrowserContext) => Promise<T>,
 ): Promise<T> {
-  const executablePath = await findChromiumBrowser()
+  const executablePath = opts.executablePath ?? (await findChromiumBrowser())
   if (!executablePath) throw new NoBrowserError()
 
   await clearProfileLock(opts.profileDir, opts.takeover ?? false)
+  await quietProfilePreferences(opts.profileDir)
 
   const context = await chromium.launchPersistentContext(opts.profileDir, {
     executablePath,

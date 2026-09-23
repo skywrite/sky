@@ -11,6 +11,8 @@ const params = {
 type Params = InferParams<typeof params>
 type Result = {
   meetings: CalendarEvent[]
+  notifications: CalendarEvent[]
+  classificationWarning?: string
   dropped: Array<{ event: CalendarEvent; reason: string }>
   errors: string[]
 }
@@ -33,9 +35,13 @@ export default class GoogleCalendarEventsTask extends Command {
     const { output, secrets, config } = context
     const { day } = args
 
-    const { timeZone, meetings, dropped, errors } = await fetchDayMeetings(secrets, day, <string>config.DIR_TIME)
+    const { timeZone, meetings, notifications, classificationWarning, dropped, errors } = await fetchDayMeetings(
+      secrets,
+      day,
+      <string>config.DIR_TIME,
+    )
 
-    if (errors.length > 0 && meetings.length === 0 && dropped.length === 0) {
+    if (errors.length > 0 && meetings.length === 0 && notifications.length === 0 && dropped.length === 0) {
       return CommandResult.fail(errors.join('\n'))
     }
 
@@ -44,17 +50,22 @@ export default class GoogleCalendarEventsTask extends Command {
     for (const event of meetings) {
       output.log(`    ${formatEventWhen(event)}  ${event.title || '(untitled)'}${formatEventWho(event)}`)
     }
+    if (notifications.length > 0) {
+      output.log('\n  Family notifications and reminders\n')
+      for (const event of notifications)
+        output.log(`    ${formatEventWhen(event)}  ${event.title || '(untitled)'}${formatEventWho(event)}`)
+    }
     if (dropped.length > 0) {
       output.log('')
       for (const { event, reason } of dropped) {
         output.log(colors.dim(`    [${reason}] ${formatEventWhen(event)}  ${event.title || '(untitled)'}`))
       }
     }
-    for (const error of errors) {
+    for (const error of [...errors, ...(classificationWarning ? [classificationWarning] : [])]) {
       output.log(colors.yellow(`\n  Warning: ${error}`))
     }
     output.log('')
 
-    return CommandResult.success({ meetings, dropped, errors })
+    return CommandResult.success({ meetings, notifications, classificationWarning, dropped, errors })
   }
 }

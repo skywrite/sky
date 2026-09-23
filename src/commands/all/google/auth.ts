@@ -1,8 +1,10 @@
 import * as p from '@clack/prompts'
 import open from 'open'
+import type { OutputHandler } from '#commands/lib/output/OutputHandler.ts'
 import { Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import {
+  APP_NAME,
   AccountResolutionError,
   GOOGLE_CLOUD_SETUP_STEPS,
   GOOGLE_SCOPES,
@@ -19,13 +21,17 @@ import {
   resolveAccountEmail,
   saveAccountTokens,
   saveOAuthClient,
+  startCloudSetup,
   startLoopback,
 } from '#lib/google/mod.ts'
+import type { CloudSetupState, SetupPhaseKey } from '#lib/google/mod.ts'
+import type { SecretsProvider } from '#lib/secrets/SecretsProvider.ts'
 
 const params = {
   list: Flag.bool('List authorized accounts', { short: 'l', default: false }),
   remove: Flag.string('Remove a stored account (email or unique part of it)'),
-  setup: Flag.bool('Print the one-time Google Cloud walkthrough', { default: false }),
+  setup: Flag.bool('Let Sky set up the Google Cloud side in a browser, then sign in', { default: false }),
+  manual: Flag.bool('Print the console walkthrough and paste a client of your own', { default: false }),
   print: Flag.bool('Print the authorization URL instead of opening the browser', { default: false }),
 }
 
@@ -40,10 +46,10 @@ declare module '#commands/lib/core/CommandTypesRegistry.ts' {
 
 const SETUP_WALKTHROUGH = [
   '',
-  'One-time Google Cloud setup (~10 minutes, once ever)',
+  'One-time Google Cloud setup by hand (~10 minutes, once ever)',
   '',
   ...GOOGLE_CLOUD_SETUP_STEPS.map((step, index) => `  ${index + 1}. ${step}`),
-  `  ${GOOGLE_CLOUD_SETUP_STEPS.length + 1}. Run sky google:auth and paste the client ID and secret when prompted.`,
+  `  ${GOOGLE_CLOUD_SETUP_STEPS.length + 1}. Paste the client ID and secret below.`,
   '     They are stored in the OS keychain (google/client), never in files.',
   '',
   GOOGLE_UNVERIFIED_APP_NOTE,
@@ -51,21 +57,33 @@ const SETUP_WALKTHROUGH = [
   '',
 ].join('\n')
 
+const TERMS_NOTE = [
+  '',
+  'Sky opens a window for you to sign in, then sets up the Google Cloud side itself:',
+  `a private project, the APIs Sky uses, an app named "${APP_NAME}", and its key — about two minutes.`,
+  "On your behalf it agrees to Google Cloud's Terms of Service and the API Services User Data Policy:",
+  '  https://cloud.google.com/terms',
+  '  https://developers.google.com/terms/api-services-user-data-policy',
+  '',
+].join('\n')
+
 export default class GoogleAuthTask extends Command {
   static override description: CommandDescription = {
     name: 'google:auth',
-    description: 'Authorize a Google account for Docs/Sheets/Slides/Drive access.',
+    description: 'Connect a Google account for Mail, Calendar, Drive and Docs.',
     descriptionLong: [
-      'Runs the OAuth installed-app flow (loopback + PKCE) against your own',
-      'Google Cloud OAuth client. Everything lands in the OS keychain: the',
-      'client pair as google/client, per-account tokens under the account',
-      'email. Run once per account; tokens refresh silently afterwards.',
+      'Runs the OAuth installed-app flow (loopback + PKCE). With no client',
+      'stored, Sky sets up the Google Cloud side in a browser window first —',
+      'or pastes one of your own with --manual. Everything lands in the OS',
+      'keychain: the client pairs as google/client and google/client:<project>,',
+      'per-account tokens under the account email. Tokens refresh silently.',
     ],
     usage: [
       'sky google:auth',
+      'sky google:auth --setup',
+      'sky google:auth --manual',
       'sky google:auth --list',
       'sky google:auth --remove jane@example.com',
-      'sky google:auth --setup',
     ],
     params,
   }
@@ -73,21 +91,17 @@ export default class GoogleAuthTask extends Command {
   async run({ args, context }: CommandArgs<Params>): Promise<CommandResult<Result>> {
     const { output, secrets } = context
 
-    if (args.setup) {
-      output.log(SETUP_WALKTHROUGH)
-      return CommandResult.success({})
-    }
-
     if (args.list) {
       const accounts = await listAccountEmails(secrets)
       if (accounts.length === 0) {
-        output.log('No Google accounts authorized yet. Run: sky google:auth')
+        output.log('No Google accounts connected yet. Run: sky google:auth')
         return CommandResult.success({ accounts })
       }
       for (const email of accounts) {
         const tokens = await loadAccountTokens(secrets, email)
         const scopeCount = tokens ? `${tokens.scopes.length} scopes` : 'unreadable entry'
-        output.log(`${email}  (${scopeCount})`)
+        const made = tokens?.setup ? `, set up by sky in ${tokens.setup.projectId}` : ''
+        output.log(`${email}  (${scopeCount}${made})`)
       }
       return CommandResult.success({ accounts })
     }
@@ -107,9 +121,16 @@ export default class GoogleAuthTask extends Command {
     }
 
     let client = await loadOAuthClient(secrets)
+    if (args.setup || (!client && !args.manual)) {
+      if (!client && !args.setup) {
+        output.log('\nNo Google Cloud client stored yet — Sky can make one for you.')
+        output.log('To paste a client of your own instead: sky google:auth --manual')
+      }
+      return runSetup(output, secrets)
+    }
+
     if (!client) {
-      output.log('\nNo OAuth client stored yet (keychain entry google/client).')
-      output.log('Need one? Walkthrough: sky google:auth --setup\n')
+      output.log(SETUP_WALKTHROUGH)
       const clientId = await p.text({ message: 'OAuth client ID:' })
       if (p.isCancel(clientId) || !clientId.trim()) return CommandResult.fail('Cancelled')
       const clientSecret = await p.password({ message: 'OAuth client secret:' })
@@ -157,5 +178,61 @@ export default class GoogleAuthTask extends Command {
     } finally {
       loopback.close()
     }
+  }
+}
+
+/**
+ * The automated setup, printed as it goes: each step as it starts and
+ * finishes, the two moments the window needs the person, and — when Sky
+ * could not do a step — the written step with a Continue prompt.
+ */
+async function runSetup(output: OutputHandler, secrets: SecretsProvider): Promise<CommandResult<Result>> {
+  output.log(TERMS_NOTE)
+  const agreed = await p.confirm({ message: 'Go ahead?' })
+  if (p.isCancel(agreed) || !agreed) return CommandResult.fail('Cancelled')
+
+  const run = startCloudSetup({ secrets, agreedToTerms: true })
+  const printed = new Map<SetupPhaseKey, string>()
+  let lastWait = ''
+  const report = (state: CloudSetupState) => {
+    for (const step of state.steps) {
+      if (step.state === 'todo' || printed.get(step.key) === step.state) continue
+      printed.set(step.key, step.state)
+      output.log(step.state === 'doing' ? `◦ ${step.label}…` : `  ✓ ${step.label}`)
+    }
+    if (state.needsYou && !state.needsYou.instruction && state.needsYou.message !== lastWait) {
+      lastWait = state.needsYou.message
+      output.log(`  → ${state.needsYou.message}`)
+    }
+  }
+  report(run.state())
+  const unsubscribe = run.onChange(report)
+
+  // A step Sky could not do is the person's; Continue asks Sky to look again.
+  const askContinue = async (state: CloudSetupState) => {
+    const wait = state.needsYou
+    if (!wait?.instruction) return
+    output.log(`\n  ${wait.message}`)
+    output.log(`  How: ${wait.instruction}\n`)
+    const done = await p.confirm({ message: 'Done — should Sky look again?' })
+    if (p.isCancel(done) || !done) run.cancel()
+    else run.continue()
+  }
+  let asking: Promise<void> = Promise.resolve()
+  const unsubscribeAsk = run.onChange((state) => {
+    if (state.needsYou?.instruction) asking = asking.then(() => askContinue(state))
+  })
+
+  try {
+    const final = await run.finished
+    await asking
+    if (final.status === 'done' && final.email) {
+      output.log(`\nConnected ${final.email} — tokens stored in the keychain (google/${final.email})`)
+      return CommandResult.success({ email: final.email })
+    }
+    return CommandResult.fail(final.message ?? 'The setup did not finish')
+  } finally {
+    unsubscribe()
+    unsubscribeAsk()
   }
 }

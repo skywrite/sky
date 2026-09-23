@@ -16,6 +16,53 @@ import {
 
 // The routes are what is under test: the host is scripted, never the machine.
 
+test('calendar classification is read live and accepts only boolean settings writes', async () => {
+  const config = structuredClone(CONFIG)
+  const { host } = hostWith(config)
+  const writes: unknown[] = []
+  host.write = async (key, value) => {
+    writes.push([key, value])
+    if (key === 'calendar.classifyEvents') config.calendar = { classifyEvents: value === 'true' }
+  }
+  const app = await appWith(host)
+  const read = async () => ((await (await app.request('/settings/_api/settings')).json()) as SettingsData).calendar
+  const before = await read()
+  const on = await post(app, '/settings/_api/set', { key: 'calendar.classifyEvents', value: 'true' })
+  const enabled = await read()
+  const invalid = await post(app, '/settings/_api/set', { key: 'calendar.classifyEvents', value: 'yes' })
+  const malformed = await post(app, '/settings/_api/set', { key: 'calendar.classifyEvents', value: true })
+  const off = await post(app, '/settings/_api/set', { key: 'calendar.classifyEvents', value: 'false' })
+  assert({
+    given: 'classification switched on and off while the service stays running',
+    should: 'read the latest value, reject invalid writes and use the boolean persistence path',
+    actual: [
+      before,
+      on.status,
+      enabled,
+      invalid.status,
+      malformed.status,
+      off.status,
+      await read(),
+      BOOLEAN_KEYS.has('calendar.classifyEvents'),
+      writes,
+    ],
+    expected: [
+      { classifyEvents: false },
+      200,
+      { classifyEvents: true },
+      400,
+      400,
+      200,
+      { classifyEvents: false },
+      true,
+      [
+        ['calendar.classifyEvents', 'true'],
+        ['calendar.classifyEvents', 'false'],
+      ],
+    ],
+  })
+})
+
 test('roles select presets and effort edits preserve all other preset settings', async () => {
   const config = structuredClone(CONFIG)
   config.ai.profiles = {
@@ -499,7 +546,11 @@ test({ name: 'settings route - connections ride along when the host has a keycha
     connections: {
       secrets,
       providers: () => [],
-      google: { connect: () => Promise.resolve(null), connection: () => null },
+      google: {
+        connect: () => Promise.resolve(null),
+        connection: () => null,
+        setup: { start: () => null, state: () => null, continue: () => false, cancel: () => false },
+      },
       slack: {
         status: () => Promise.resolve({ installed: false }),
         reconnect: () => Promise.resolve({ installed: false }),

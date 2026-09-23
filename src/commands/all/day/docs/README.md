@@ -1,6 +1,6 @@
 ---
 created: 2026-08-29
-updated: 2026-09-22
+updated: 2026-09-23
 ---
 
 # Day commands
@@ -59,6 +59,9 @@ by that operation. Schedule writers share one lock across dates and categories;
 when a source/day lock is also needed, take it before the schedule lock.
 
 ## The meeting check
+
+Calendar event types and notification exclusions follow the
+[shared classification contract](../../../../lib/calendarClassification/docs/README.md).
 
 `day:meeting:check <day>` cross-references the day's Google Calendar
 meetings against the notebook's meeting records and warns about the ones

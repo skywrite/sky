@@ -1,6 +1,6 @@
 ---
 created: 2026-08-30
-updated: 2026-09-17
+updated: 2026-09-23
 ---
 
 # Settings — the web's settings section
@@ -76,6 +76,22 @@ Pages:
   `beeper/desktop`, a token made in Beeper is accepted instead, and the row
   lists the networks Beeper carries; its grant stays out of the keychain
   list below. See `lib/beeper/docs/README.md`.
+- **Connections → Google** — `/settings/connections/google`
+  includes the Calendar classification switch; see the
+  [classification contract](../../../../lib/calendarClassification/docs/README.md).
+  (`theme/client/settingsGoogle.tsx`; routes under `/google/…` in
+  `connections.ts`). Connect shows what the person agrees to, then Sky
+  sets up the Google Cloud side itself in a window they sign in to and the
+  page follows the run as a checklist (`lib/google/cloudSetup/docs/README.md`).
+  A connected account shows what its grant covers, names a box left
+  unticked with Connect again (the pair that already served it), and says
+  which project Sky set up for it. Add another account runs the same setup
+  again — every account gets its own private connection, because a pair one
+  account granted to may be shut to another (a work client is often
+  restricted to its organization) and the page cannot tell in advance.
+  Advanced keeps the developer's path: paste a client of your own, which
+  signs in at once. The Google row on the Connections page leads here since
+  2026-09-22.
   Since 2026-09-17 the Keychain card opens with a TypeSafe API key row:
   Add pastes the key, the service asks TypeSafe to list its models with
   it, and only an accepted key is stored as `typesafe/main`; the row says

@@ -50,6 +50,8 @@ export interface Endless {
 }
 
 export interface MeetingCheck {
+  notifications?: CalendarEvent[]
+  classificationWarning?: string
   /** The day checked, YYYY-MM-DD */
   day: string
   /** IANA zone the calendar day was evaluated in; null when the calendar never answered */
@@ -67,7 +69,13 @@ export interface MeetingCheck {
 
 /** The three sources, each already fetched or failed. */
 export interface MeetingCheckSources {
-  calendar: { timeZone: string | null; meetings: CalendarEvent[]; errors: string[] }
+  calendar: {
+    timeZone: string | null
+    meetings: CalendarEvent[]
+    notifications?: CalendarEvent[]
+    classificationWarning?: string
+    errors: string[]
+  }
   /** The notebook's meetings, or null when the service could not answer */
   notebook: NotebookMeeting[] | null
   /** Start-only records from the day's events folder */
@@ -93,7 +101,8 @@ function recordOf(event: CalendarEvent, notebook: NotebookMeeting[]): NotebookMe
 export function compareDayMeetings(day: string, sources: MeetingCheckSources): MeetingCheck {
   const { calendar, notebook, events } = sources
   // Account errors alongside meetings still make a check; errors alone do not.
-  const calendarRead = calendar.meetings.length > 0 || calendar.errors.length === 0
+  const calendarRead =
+    calendar.meetings.length > 0 || Boolean(calendar.notifications?.length) || calendar.errors.length === 0
   const meetings: CheckedMeeting[] = calendarRead
     ? calendar.meetings.map((event) => ({ event, record: notebook ? recordOf(event, notebook) : null }))
     : []
@@ -113,6 +122,8 @@ export function compareDayMeetings(day: string, sources: MeetingCheckSources): M
     calendarRead,
     notebookRead: notebook !== null,
     meetings,
+    notifications: calendar.notifications,
+    classificationWarning: calendar.classificationWarning,
     endless,
     errors: calendar.errors,
   }
@@ -299,6 +310,13 @@ export function renderMeetingCheck(check: MeetingCheck, now: CheckClock): string
         'A meeting that is not logged is one the notebook knows nothing about: say so when it comes up, and never invent what happened in it.',
     )
   }
+
+  if (check.notifications?.length) {
+    lines.push('', 'Family notifications and reminders — no meeting record expected:')
+    for (const event of check.notifications)
+      lines.push(`- ${formatEventWhen(event)} ${event.title || '(untitled)'}${formatEventWho(event, NAMED_ATTENDEES)}`)
+  }
+  if (check.classificationWarning) lines.push('', check.classificationWarning)
 
   if (check.endless.length > 0) {
     const items = check.endless.map((e) => `${e.start} ${e.label}${e.kind === 'event' ? ' (event)' : ''}`)

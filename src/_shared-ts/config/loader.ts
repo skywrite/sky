@@ -86,6 +86,7 @@ function defaults(): SkyConfig {
     },
     bins: {},
     slack: {},
+    calendar: { classifyEvents: false },
     web: {},
     voice: {},
     experimental: { workstreams: false },
@@ -134,6 +135,9 @@ export function loadSkyConfig(configPath = SKY_CONFIG_PATH): SkyConfig {
     if (parsed.commands?.day?.end) config.commands.day.end = parsed.commands.day.end
     if (parsed.bins) config.bins = { ...config.bins, ...parsed.bins }
     if (parsed.slack?.workspace) config.slack.workspace = parsed.slack.workspace
+    if (typeof parsed.calendar?.classifyEvents === 'boolean') {
+      config.calendar = { classifyEvents: parsed.calendar.classifyEvents }
+    }
     if (parsed.web?.theme && ['system', 'light', 'dark'].includes(parsed.web.theme)) config.web.theme = parsed.web.theme
     if (parsed.web?.textSize && ['default', 'large'].includes(parsed.web.textSize)) {
       config.web.textSize = parsed.web.textSize

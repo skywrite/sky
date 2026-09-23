@@ -8,7 +8,7 @@ import {
   listAccountEmails,
   listEvents,
   loadAccountTokens,
-  loadOAuthClient,
+  loadAccountClient,
 } from '#lib/google/mod.ts'
 import type { SecretsProvider } from '#lib/secrets/SecretsProvider.ts'
 import { readSystemTimezone } from '#lib/sys/mod.ts'
@@ -38,7 +38,7 @@ export function createGoogleCalendarHost(options: {
     return found
   }
   const clientFor = async (email: string) => {
-    const client = await loadOAuthClient(secrets)
+    const client = await loadAccountClient(secrets, email)
     if (!client) throw new Error('Connect Google Calendar in Settings → Connections.')
     return new GoogleClient({ secrets, email, client })
   }

@@ -95,6 +95,7 @@ const SECTIONS: ReadonlyArray<{ id: string; title: string; keys: string[]; group
   },
   { id: 'web', title: 'Web', keys: ['web.theme', 'web.textSize', 'voice.voice', 'voice.researcherVoice'] },
   { id: 'slack', title: 'Slack', keys: ['slack.workspace'] },
+  { id: 'calendar', title: 'Calendar', keys: ['calendar.classifyEvents'] },
   { id: 'service', title: 'Service', keys: ['server.port'] },
 ]
 
@@ -236,6 +237,7 @@ export interface ProfileInput {
 
 /** Everything the page shows, in one payload. */
 export interface SettingsData {
+  calendar: { classifyEvents: boolean }
   theme: Theme
   textSize: TextSize
   voice: { current: string; researcherCurrent: string; groups: Record<'male' | 'female', readonly string[]> }
@@ -301,6 +303,7 @@ export type SettingsRoutesOptions = SettingsHost
 
 /** The keys the page may write, and where each lives in the file. */
 export const SETTABLE_KEYS = {
+  'calendar.classifyEvents': ['calendar', 'classifyEvents'],
   'web.theme': ['web', 'theme'],
   'web.textSize': ['web', 'textSize'],
   'voice.voice': ['voice', 'voice'],
@@ -319,6 +322,7 @@ export type SettableKey = keyof typeof SETTABLE_KEYS
 
 /** Keys written as true/false, not text — the page sends the words, the file keeps the value. */
 export const BOOLEAN_KEYS: ReadonlySet<SettableKey> = new Set<SettableKey>([
+  'calendar.classifyEvents',
   'experimental.contextPreflight',
   'experimental.workstreams',
 ])
@@ -351,6 +355,7 @@ async function refuse(host: SettingsHost, key: SettableKey, value: string): Prom
         : 'Choose an available preset.'
     case 'experimental.contextPreflight':
     case 'experimental.workstreams':
+    case 'calendar.classifyEvents':
       return value === 'true' || value === 'false' ? null : 'on is true, off is false'
   }
 }
@@ -361,6 +366,7 @@ async function settingsData(host: SettingsHost): Promise<SettingsData> {
   const [editors, memoryNotes, about] = await Promise.all([host.editors(), host.memoryNotes(), host.about()])
   return {
     theme: config.web.theme ?? 'system',
+    calendar: { classifyEvents: config.calendar?.classifyEvents === true },
     textSize: config.web.textSize ?? 'default',
     voice: host.voices(),
     models: modelRows(host, config),

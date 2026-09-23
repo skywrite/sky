@@ -5,6 +5,32 @@ import { compareDayMeetings, type NotebookMeeting, renderMeetingCheck } from './
 const DAY = '2026-01-27'
 const ZONE = 'Europe/London'
 
+test('classified notifications remain in calendar context without missing-meeting reminders', () => {
+  const check = compareDayMeetings(DAY, {
+    calendar: {
+      timeZone: ZONE,
+      meetings: [],
+      notifications: [event('08:00', '09:00', 'School closure')],
+      errors: ['Another account unavailable'],
+    },
+    notebook: [],
+    events: [],
+  })
+  const text = renderMeetingCheck(check, { date: DAY, time: '18:00' })
+  assert({
+    given: 'an informational event and an unavailable second account',
+    should: 'keep the readable notice in context without treating it as an unrecorded meeting',
+    actual: [
+      check.calendarRead,
+      check.meetings.length,
+      text.includes('School closure'),
+      text.includes('no meeting record expected'),
+      text.includes('not logged'),
+    ],
+    expected: [true, 0, true, true, false],
+  })
+})
+
 function event(start: string, end: string, title: string, others: string[] = ['Jane Doe']): CalendarEvent {
   return {
     id: `${start}-${title}`,
