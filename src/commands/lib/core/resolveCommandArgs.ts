@@ -50,10 +50,14 @@ export async function resolveCommandArgs({
   const finalArgs = { ...transformed, ...overrides }
 
   for (const [name, def] of Object.entries(params ?? {}) as [string, ParamDef][]) {
-    // Chat and voice tools supply dates as JSON strings. Keep the parsed date
-    // instead of replacing it with the raw override in the spread above.
+    // Raw callers can encode dates, booleans and numbers as strings. Keep
+    // their parsed values instead of restoring strings in the spread above.
     if (
-      (def.type === 'plainDate' || def.type === 'plainDateTime' || def.type === 'zonedDateTime') &&
+      (def.type === 'plainDate' ||
+        def.type === 'plainDateTime' ||
+        def.type === 'zonedDateTime' ||
+        def.type === 'bool' ||
+        def.type === 'number') &&
       typeof overrides?.[name] === 'string'
     ) {
       finalArgs[name] = transformed[name]
