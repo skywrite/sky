@@ -10,7 +10,7 @@ import type { CommandTypesRegistry } from './CommandTypesRegistry.ts'
 import type { Prompt } from './Prompt.ts'
 import { resolveCommandArgs } from './resolveCommandArgs.ts'
 
-// Both execution paths accept input-side overrides, with defaults and inherited
+// Registered calls accept input-side overrides, with defaults and inherited
 // arguments supplying omitted values. Handlers still read the resolved params.
 type CommandOverrides<K extends keyof CommandTypesRegistry> = CommandTypesRegistry[K] extends { paramsIn: infer I }
   ? Partial<I>
@@ -20,6 +20,13 @@ type CommandOverrides<K extends keyof CommandTypesRegistry> = CommandTypesRegist
 // otherwise an invalid typed call could fall through to runtime-only checking.
 type UnregisteredCommandName<K extends string> = K &
   ([Extract<K, keyof CommandTypesRegistry>] extends [never] ? unknown : never)
+
+type CommandCall<K extends string> =
+  | readonly [commandName: K, argsOverride?: undefined]
+  | {
+      [N in Extract<K, keyof CommandTypesRegistry>]: readonly [commandName: N, argsOverride?: CommandOverrides<N>]
+    }[Extract<K, keyof CommandTypesRegistry>]
+  | readonly [commandName: Exclude<K, keyof CommandTypesRegistry>, argsOverride?: Record<string, unknown>]
 
 /**
  * CommandService provides task composition and orchestration capabilities.
@@ -379,7 +386,11 @@ export default class CommandService {
    * }
    * ```
    */
-  async runSequential(tasks: Array<[string, Record<string, unknown>?]>): Promise<CommandResult> {
+  // Infer each name independently of its arguments, then check the pair. A
+  // dynamic command elsewhere in the batch must not widen every step's name.
+  async runSequential<const Names extends readonly string[]>(tasks: {
+    [I in keyof Names]: readonly [commandName: Names[I], argsOverride?: unknown] & NoInfer<CommandCall<Names[I]>>
+  }): Promise<CommandResult> {
     for (const [commandName, args] of tasks) {
       const result = await this.run(commandName, args)
 
