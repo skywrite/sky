@@ -10,6 +10,17 @@ import type { CommandTypesRegistry } from './CommandTypesRegistry.ts'
 import type { Prompt } from './Prompt.ts'
 import { resolveCommandArgs } from './resolveCommandArgs.ts'
 
+// Both execution paths accept input-side overrides, with defaults and inherited
+// arguments supplying omitted values. Handlers still read the resolved params.
+type CommandOverrides<K extends keyof CommandTypesRegistry> = CommandTypesRegistry[K] extends { paramsIn: infer I }
+  ? Partial<I>
+  : Partial<CommandTypesRegistry[K]['params']>
+
+// The loose overload must reject registered literals and unions containing one;
+// otherwise an invalid typed call could fall through to runtime-only checking.
+type UnregisteredCommandName<K extends string> = K &
+  ([Extract<K, keyof CommandTypesRegistry>] extends [never] ? unknown : never)
+
 /**
  * CommandService provides task composition and orchestration capabilities.
  *
@@ -221,23 +232,15 @@ export default class CommandService {
    * ```
    */
   // Overload 1: Registered task - fully typed params and result.
-  // Overrides use the entry's input-side `paramsIn` when declared (params
-  // whose write shape is wider than what run() reads, e.g. stringOrBool),
-  // falling back to `params`.
   async run<K extends keyof CommandTypesRegistry>(
     commandName: K,
-    argsOverride?: NoInfer<
-      CommandTypesRegistry[K] extends { paramsIn: infer I } ? Partial<I> : Partial<CommandTypesRegistry[K]['params']>
-    >,
+    argsOverride?: NoInfer<CommandOverrides<K>>,
   ): Promise<CommandResult<CommandTypesRegistry[K]['result']>>
 
-  // Dynamic names and unregistered commands retain runtime validation. Infer
-  // the name even when a result type is supplied: a plain string overload
-  // would also accept registered commands whose typed arguments were invalid.
-  // Extract rejects unions containing a registered name as well as literals.
+  // Dynamic names and unregistered commands retain runtime validation.
   // deno-lint-ignore no-explicit-any
   async run<K extends string, T = any>(
-    commandName: K & ([Extract<K, keyof CommandTypesRegistry>] extends [never] ? unknown : never),
+    commandName: UnregisteredCommandName<K>,
     argsOverride?: Record<string, unknown>,
   ): Promise<CommandResult<T>>
 
@@ -408,16 +411,16 @@ export default class CommandService {
    * @yields Prompt objects from the subtask
    * @returns CommandResult from the executed task
    */
-  // Overload 1: Registered task - fully typed params and result
+  // Registered tasks use the same input and result contract as run().
   runWithPrompts<K extends keyof CommandTypesRegistry>(
     commandName: K,
-    argsOverride?: Partial<CommandTypesRegistry[K]['params']>,
+    argsOverride?: NoInfer<CommandOverrides<K>>,
   ): AsyncGenerator<Prompt, CommandResult<CommandTypesRegistry[K]['result']>, string>
 
-  // Overload 2: Unregistered task - loose typing
+  // Dynamic names and unregistered commands retain runtime validation.
   // deno-lint-ignore no-explicit-any
-  runWithPrompts<T = any>(
-    commandName: string,
+  runWithPrompts<K extends string, T = any>(
+    commandName: UnregisteredCommandName<K>,
     argsOverride?: Record<string, unknown>,
   ): AsyncGenerator<Prompt, CommandResult<T>, string>
 
