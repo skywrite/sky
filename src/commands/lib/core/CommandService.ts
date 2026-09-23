@@ -28,6 +28,12 @@ type CommandCall<K extends string> =
     }[Extract<K, keyof CommandTypesRegistry>]
   | readonly [commandName: Exclude<K, keyof CommandTypesRegistry>, argsOverride?: Record<string, unknown>]
 
+// Infer each name independently of its arguments, then check the pair. A
+// dynamic command elsewhere in the batch must not widen every step's name.
+type CommandBatch<Names extends readonly string[]> = {
+  [I in keyof Names]: readonly [commandName: Names[I], argsOverride?: unknown] & NoInfer<CommandCall<Names[I]>>
+}
+
 /**
  * CommandService provides task composition and orchestration capabilities.
  *
@@ -323,7 +329,8 @@ export default class CommandService {
    * Run multiple tasks in parallel.
    *
    * All tasks are started simultaneously and executed in parallel.
-   * All tasks complete (wait-all) even if some fail - no fail-fast behavior.
+   * Returned fail/error results are collected alongside successful results.
+   * A thrown error rejects the batch; other started tasks continue running.
    *
    * This is useful for independent operations that can run concurrently:
    * - Fetching data from multiple APIs
@@ -348,11 +355,10 @@ export default class CommandService {
    * }
    * ```
    */
-  async runParallel(tasks: Array<[string, Record<string, unknown>?]>): Promise<CommandResult[]> {
+  async runParallel<const Names extends readonly string[]>(tasks: CommandBatch<Names>): Promise<CommandResult[]> {
     const promises = tasks.map(([commandName, args]) => this.run(commandName, args))
 
-    // Wait for all tasks to complete (no fail-fast)
-    // This ensures all async operations finish cleanly
+    // Preserve input order even when commands finish in a different order.
     return await Promise.all(promises)
   }
 
@@ -386,11 +392,7 @@ export default class CommandService {
    * }
    * ```
    */
-  // Infer each name independently of its arguments, then check the pair. A
-  // dynamic command elsewhere in the batch must not widen every step's name.
-  async runSequential<const Names extends readonly string[]>(tasks: {
-    [I in keyof Names]: readonly [commandName: Names[I], argsOverride?: unknown] & NoInfer<CommandCall<Names[I]>>
-  }): Promise<CommandResult> {
+  async runSequential<const Names extends readonly string[]>(tasks: CommandBatch<Names>): Promise<CommandResult> {
     for (const [commandName, args] of tasks) {
       const result = await this.run(commandName, args)
 

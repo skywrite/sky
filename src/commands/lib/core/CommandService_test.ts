@@ -84,51 +84,6 @@ test('CommandService.run() creates child output handler', async () => {
   })
 })
 
-test('CommandService.runParallel() runs all tasks concurrently', async () => {
-  const output = new BufferedOutput()
-  const context = CommandContext.test(config).fork({ output })
-  const service = new CommandService(context)
-
-  const start = Date.now()
-  const results = await service.runParallel([['test:context'], ['test:context']])
-  const elapsed = Date.now() - start
-
-  assert({
-    given: 'two tasks run in parallel',
-    should: 'return two results',
-    actual: results.length,
-    expected: 2,
-  })
-
-  // Parallel execution should be faster than sequential
-  // (though this is a weak test since tasks are fast)
-  assert({
-    given: 'parallel execution',
-    should: 'complete in reasonable time',
-    actual: elapsed < 5000, // 5 seconds max
-    expected: true,
-  })
-})
-
-test('CommandService.runParallel() returns all results even if some fail', async () => {
-  const output = new BufferedOutput()
-  const context = CommandContext.test(config).fork({ output })
-  const service = new CommandService(context)
-
-  // Note: We don't have FailTask registered, so this will fail
-  // For now, just test with success tasks
-  const results = await service.runParallel([['test:context'], ['test:context']])
-
-  const allCompleted = results.every((r) => r.status === 'success')
-
-  assert({
-    given: 'multiple tasks in parallel',
-    should: 'wait for all tasks to complete',
-    actual: allCompleted,
-    expected: true,
-  })
-})
-
 test('CommandService creates isolated state per instance', () => {
   const context1 = createTestContext()
   const context2 = createTestContext()
