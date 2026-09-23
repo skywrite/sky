@@ -80,6 +80,7 @@ function paramToJSONSchema(param: ParamDef): Record<string, unknown> {
     }
   }
 
+  if (type === 'stringArray') return { type: 'array', items: { type: 'string' }, description }
   return { type: param.jsonType, description }
 }
 

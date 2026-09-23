@@ -5,7 +5,7 @@ import { z } from 'zod'
 import { clearTranscriptRun } from '#commands/all/audio/transcript/lib/transcriptRun.ts'
 import type { OutputHandler } from '#commands/lib/output/OutputHandler.ts'
 import { Command, CommandPlatform, CommandResult, Flag, whenNBTime } from '#commands/mod.ts'
-import type { Args, CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
+import type { Args, CommandArgs, CommandDescription, InferParams, InferParamsInput } from '#commands/mod.ts'
 import { DayDirFileWriter } from '#lib/nbfs/mod.ts'
 import openEditor from '#lib/shell/openEditor.ts'
 import slugify from '#lib/string/slugify.ts'
@@ -52,10 +52,10 @@ const params = {
     'Split a --from-video recording into one entry per subject: bare --split groups automatically, --split="Health, Faith" extracts those entries plus a remainder',
     { bareValue: 'auto' },
   ),
-  types: Flag.string(typesDescription, {
-    parse: (val) => val.split(',').map((s) => s.trim()) as unknown as string,
-    default: () => ['Mood'] as unknown as string,
-    schema: z.any() as z.ZodType<string>,
+  types: Flag.stringArray(typesDescription, {
+    parse: (val) => val.split(','),
+    default: () => ['Mood'],
+    schema: z.array(z.string().trim().min(1)).min(1),
   }),
   when: whenNBTime(),
 }
@@ -64,7 +64,11 @@ type Params = InferParams<typeof params>
 
 declare module '#commands/lib/core/CommandTypesRegistry.ts' {
   interface CommandTypesRegistry {
-    'journal:new': { params: Params; result: { files: string[] } | undefined }
+    'journal:new': {
+      params: Params
+      paramsIn: InferParamsInput<typeof params>
+      result: { files: string[] } | undefined
+    }
   }
 }
 
@@ -79,7 +83,7 @@ export default class JournalNewTask extends Command {
   async run({ args, context, tasks }: CommandArgs<Params>): Promise<CommandResult> {
     const { config, output } = context
     const { when, all, ai, inspectInitialContext, dryRun, fromAudio, fromVideo } = args
-    const types = args.types as unknown as JournalType[]
+    const types = args.types
 
     // A recorded video takes its own route: extract audio, transcribe, then
     // section and summarize. Unlike --from-audio it needs no --types, because
@@ -105,7 +109,7 @@ export default class JournalNewTask extends Command {
     const useAudioPipeline = fromAudio !== undefined
 
     if (useAudioPipeline) {
-      const journalType = types[0] as JournalType
+      const journalType = types[0]
 
       // Delegate to audio:transcript:clean which handles: transcribe → clean
       const cleanResult = await tasks.run('audio:transcript:clean', {
@@ -237,7 +241,7 @@ Return ONLY a JSON object with the fields that should be updated. Rules:
     }
 
     const validTypes = journalTypes.filter((type: string) => {
-      if (!JournalTypes.includes(<JournalType>type)) {
+      if (!JournalTypes.includes(type)) {
         output.log(`WARN: ${type} is not a valid journal type.`)
         return false
       }

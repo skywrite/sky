@@ -50,6 +50,13 @@ export async function resolveCommandArgs({
   const finalArgs = { ...transformed, ...overrides }
 
   for (const [name, def] of Object.entries(params ?? {}) as [string, ParamDef][]) {
+    // A list's validated output is authoritative for strings, arrays and
+    // defaults. Restoring an override here would undo parsing or validation.
+    if (def.type === 'stringArray') {
+      finalArgs[name] = transformed[name]
+      continue
+    }
+
     // Raw callers can encode dates, booleans and numbers as strings. Keep
     // their parsed values instead of restoring strings in the spread above.
     if (

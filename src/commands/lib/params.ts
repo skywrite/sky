@@ -25,10 +25,18 @@ import { PlainDate, PlainDateTime, ZonedDateTime } from '#universal/dates/nbdt/m
 export type ParamKind = 'arg' | 'flag' | 'arg-or-flag'
 
 /** Supported parameter types */
-export type ParamType = 'string' | 'number' | 'bool' | 'stringOrBool' | 'plainDate' | 'plainDateTime' | 'zonedDateTime'
+export type ParamType =
+  | 'string'
+  | 'stringArray'
+  | 'number'
+  | 'bool'
+  | 'stringOrBool'
+  | 'plainDate'
+  | 'plainDateTime'
+  | 'zonedDateTime'
 
 /** JSON type for tool-schema generation */
-export type ParamJsonType = 'string' | 'number' | 'boolean'
+export type ParamJsonType = 'string' | 'array' | 'number' | 'boolean'
 
 /** Options for defining a parameter */
 export type ParamOptions<T> = {
@@ -108,19 +116,23 @@ type InferParamType<P extends ParamDef> =
 
 /**
  * Input-side type of a param: what the CLI or a composing command may write.
- * Differs from InferParamType only for stringOrBool, whose boolean presence
- * signal (true → bareValue, false → absent) is resolved before run() sees it.
+ * stringOrBool resolves boolean presence signals; stringArray accepts a
+ * string to parse or an existing list. Handlers receive the resolved types.
  */
 type InferParamInputType<P extends ParamDef> = P extends { bareValue: string }
   ? P extends { optional: true }
     ? string | boolean | undefined
     : string | boolean
-  : InferParamType<P>
+  : P extends { type: 'stringArray' }
+    ? P extends { optional: true }
+      ? string | string[] | undefined
+      : string | string[]
+    : InferParamType<P>
 
 /**
  * Input-side types for a params record — use for `paramsIn` in a command's
  * CommandTypesRegistry entry when any param accepts a wider write shape than
- * run() reads (currently: stringOrBool).
+ * run() reads (stringOrBool and stringArray).
  */
 export type InferParamsInput<P extends ParamsRecord> = {
   [K in keyof P]: InferParamInputType<P[K]>
@@ -228,6 +240,21 @@ function createBuilder<K extends ParamKind>(kind: K) {
       options?: O,
     ): BuilderReturn<string, O, K> {
       return buildParam('string', 'string', description, z.coerce.string(), options)
+    },
+
+    /**
+     * A string becomes a one-item list unless a custom parse hook splits it.
+     * Arrays, including repeated CLI flags, are already lists: validate them
+     * without reapplying the string parser. Declare paramsIn via InferParamsInput
+     * to accept both input forms while handlers read string[].
+     */
+    stringArray<O extends ParamOptions<string[]> = ParamOptions<string[]>>(
+      description: string,
+      options?: O,
+    ): BuilderReturn<string[], O, K> & { type: 'stringArray' } {
+      const param = buildParam('stringArray', 'array', description, z.array(z.string()), options)
+      param.parse ??= (raw) => [raw]
+      return Object.assign(param, { type: 'stringArray' as const })
     },
 
     number<O extends ParamOptions<number> = ParamOptions<number>>(

@@ -148,10 +148,9 @@ export default async function transformTypedParamsArgs(
       }
     }
 
-    // Reject duplicate flags (mri turns repeated --flag into an array)
-    // TODO: support an 'array' param type (e.g. Flag.array('...')) that accepts
-    // repeated flags like --tag="a" --tag="b" → ["a", "b"]
-    if (Array.isArray(rawValue) && param.type !== 'bool') {
+    // mri turns repeated flags into arrays. List params accept that shape;
+    // scalar params still reject duplicates.
+    if (Array.isArray(rawValue) && param.type !== 'bool' && param.type !== 'stringArray') {
       throw new Error(`Flag "--${param.long ?? camelToKebab(name)}" was specified multiple times`)
     }
 
@@ -218,6 +217,10 @@ export default async function transformTypedParamsArgs(
  * Process a single value - apply parse function if needed.
  */
 async function processValue(rawValue: unknown, param: ParamDef): Promise<unknown> {
+  // List parsers only consume strings. Arrays go straight to validation;
+  // invalid scalar inputs must fail the schema rather than reach a string hook.
+  if (param.type === 'stringArray' && typeof rawValue !== 'string') return rawValue
+
   // If parse function exists and value needs parsing
   if (param.parse && needsParsing(rawValue)) {
     return await param.parse(rawValue as string)

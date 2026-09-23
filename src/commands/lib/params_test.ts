@@ -1,6 +1,6 @@
 import { assert, test } from '#test'
 import { PlainDateTime, ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
-import { Arg, ArgOrFlag, Flag, type InferParams, type ParamDef } from './params.ts'
+import { Arg, ArgOrFlag, Flag, type InferParams, type InferParamsInput, type ParamDef } from './params.ts'
 
 // -----------------------------------------------------------------------------
 // Builder Tests
@@ -449,3 +449,32 @@ test('Flag.bool accepts only canonical boolean spellings', () => {
     expected: true,
   })
 })
+
+// These checks are compiled by dev:check; invalid assignments must remain errors.
+function _verifyStringArrayTypes() {
+  const params = {
+    defaulted: Flag.stringArray('Defaulted list', { default: () => ['Mood'] }),
+    optional: Flag.stringArray('Optional list'),
+    required: Flag.stringArray('Required list', { required: true }),
+  }
+  type Resolved = InferParams<typeof params>
+  type Input = InferParamsInput<typeof params>
+
+  const arrays: Resolved = { defaulted: ['Mood'], optional: undefined, required: ['Health'] }
+  const overrides: Partial<Input>[] = [{}, { defaulted: 'Mood, Health' }, { defaulted: ['Mood', 'Health'] }]
+
+  // @ts-expect-error resolved list parameters cannot be strings
+  const unresolved: Resolved['defaulted'] = 'Mood'
+  // @ts-expect-error a defaulted list is guaranteed inside the handler
+  const absent: Resolved['defaulted'] = undefined
+  // @ts-expect-error required list parameters cannot be undefined
+  const missing: Resolved['required'] = undefined
+  // @ts-expect-error inputs must be strings or string arrays
+  const invalidInput: Input['defaulted'] = 123
+  // @ts-expect-error array elements must be strings
+  const invalidElement: Input['defaulted'] = ['Mood', 123]
+  // @ts-expect-error defaults use the resolved array type
+  Flag.stringArray('Types', { default: 'Mood' })
+  // @ts-expect-error parse hooks must produce arrays
+  Flag.stringArray('Types', { parse: (value) => value })
+}

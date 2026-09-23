@@ -2,6 +2,7 @@
  * Tests for JSON Schema generation from task param definitions
  */
 
+import { z } from 'zod'
 import { Arg, Flag } from '#commands/mod.ts'
 import type { CommandDescription } from '#commands/mod.ts'
 import { assert, test } from '#test'
@@ -42,6 +43,18 @@ test('jsonSchema - boolean param produces type: boolean', () => {
     should: 'produce type boolean',
     actual: schema.properties.verbose.type,
     expected: 'boolean',
+  })
+})
+
+test('jsonSchema - string arrays keep their item schema when a custom transform cannot be exported', () => {
+  const schema = schemaFor({
+    names: Flag.stringArray('Names', { schema: z.array(z.string()).transform((values) => values) }),
+  })
+  assert({
+    given: 'a string-array schema with a transform that JSON Schema cannot represent',
+    should: 'still describe an array of strings to tools',
+    actual: schema.properties.names,
+    expected: { type: 'array', items: { type: 'string' }, description: 'Names' },
   })
 })
 
