@@ -1,6 +1,6 @@
 ---
 created: 2026-09-03
-updated: 2026-09-23
+updated: 2026-09-24
 ---
 
 # meeting:new — the action items
@@ -102,8 +102,35 @@ undated item was lost. The routes override the category on each call:
 lets `day:todo:add` choose `Professional Todos`.
 `lib/actionItemRoutes_test.ts` pins both the inheritance and the cure.
 
+## A few questions after the check
+
+Once the names are settled and the write-up checked, `meeting:new` may ask
+up to three questions, so the notes say what was said and what was meant.
+Voice memos only: a memo is the person's own words, which they can
+clarify; a transcript is everyone's, which they cannot.
+Each is about one thing the write-up could not tell: decided or thought
+aloud, which reading was meant, what a referent was, something missed.
+Never what happens next, never who should own something or by when, never
+the clock. Every question quotes the words it is about.
+
+Each question is drafted knowing the answers before it, so a "decided" can
+call for its scope and a "still a thought" closes that thread. Every
+question can be skipped; Esc in the terminal, or Skip the rest on the page,
+ends them. What was answered is folded into the write-up where the fact
+belongs, marked "Clarified after the meeting"; what was skipped stays as
+heard. When the fold fails, the answers go under a heading of their own,
+never lost. The exchange is kept in the run record (`questions`), so a run
+picked up again never asks twice. The action items come from the
+extraction before the questions.
+
+The step is `audio/transcript/lib/clarify.ts`; the prompts are
+`audio/transcript/prompts/transcript-question.prompt.md` and
+`transcript-fold.prompt.md`. Unattended runs ask nothing.
+
 ## Narrative
 
+- `2026-09-24-a-few-questions-to-get-the-notes-right.md` — why the
+  questions are about the meeting as it happened, never what comes next.
 - `2026-09-03-a-nested-command-inherits-its-callers-flags.md` — the lost
   action items, and why the routes name their lists.
 - `2026-09-03-action-items-land-on-days.md` — from "everything goes to

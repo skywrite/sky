@@ -75,8 +75,12 @@ as the file's clock, which the pipeline resolves the words against and
 falls back on when they give no time. Either way the write-up says what
 was settled, and the check's time field shows it (`startArgs.ts`).
 
-Three stops need the person, and each is the CLI's own prompt given a form:
+Four stops need the person, and each is the CLI's own prompt given a form:
 the names review (`form`), the write-up corrections (`text`, in a loop),
+the clarifying questions after a voice memo (`text`, one at a time under
+the `questions` stage: the words above each question, Skip answers
+nothing, Skip the rest answers null and ends them;
+`commands/all/meeting/docs/README.md`),
 and the action items (`place`: tick what you'll own, and a chip on every
 row says when it happens — Today, Tomorrow, a day this week, another day,
 a time, or the Next list; one chip in the lead sentence moves the whole

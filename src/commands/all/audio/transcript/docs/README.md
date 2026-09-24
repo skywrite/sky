@@ -122,13 +122,15 @@ and a rerun of the same file picks up where the last one stopped.
   first when it starts: `raw` (the transcription), `analysis` (what the
   model found), `review` (the person's answers), `writeup`, `extract` (the
   fields — rewritten after every round of corrections, so a rerun shows the
-  corrected ones), and `filed` (the document on disk, with the action items
-  still to accept). Each carries the notebook time it was kept at.
+  corrected ones), `questions` (the clarifying questions asked after the
+  check, and the write-up with the answers folded in), and `filed` (the
+  document on disk, with the action items still to accept). Each carries the notebook time it was kept at.
 - **What a rerun skips and what it still asks.** The transcription, the
   analysis and the two write-up calls are skipped when kept. The names
   review is skipped only when a person answered it; a review nobody was
   there for, or one quit early, is asked again. The write-up check is always
-  asked, with the kept fields on screen, so nothing is retyped.
+  asked, with the kept fields on screen, so nothing is retyped. Questions
+  already settled — answered, skipped, or none to ask — are not asked again.
 - **Filed is filed.** Once `meeting:new` has written the meeting and its day
   item it keeps `filed`; a rerun that finds it does not write a second
   meeting — it says so, offers the action items that were left, and ends.

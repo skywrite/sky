@@ -1441,7 +1441,7 @@ function CorrectionsExchange({
   d: Derived
   job: ImportJob
   history: { question: string; answer: string }[]
-  onAnswer: (answer: string) => void
+  onAnswer: (answer: string | null) => void
 }) {
   const [value, setValue] = useState('')
   // What the door streamed under the step it is checking: the write-up, or the conversation read off a screenshot or out of text.
@@ -1449,6 +1449,11 @@ function CorrectionsExchange({
   const { source } = job.readback
   const conversation =
     source === 'image' || (job.fields?.kind === 'message' && (source === 'text' || source === 'selection'))
+  // The clarifying questions after the check: the words above each question, three at most,
+  // every one skippable. Skip the rest answers null, which ends them.
+  const questions = (d.stage ?? job.stage)?.id === 'questions'
+  const quote = questions ? (prompt.prompt.hint?.[0] ?? null) : null
+  const message = questions ? prompt.prompt.message : prompt.prompt.message.replace(/\s*\(.*\)\s*$/, '')
   const send = (text: string) => onAnswer(text)
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === 'Enter' && !event.shiftKey) {
@@ -1458,17 +1463,25 @@ function CorrectionsExchange({
   }
   return (
     <>
-      <Block head={conversation ? 'Check the conversation' : 'Check the write-up'} mini="what sky read out of it">
-        <div className="sky-lead" style={{ marginBottom: 8 }}>
-          Read it over. Then say what's wrong, in your own words or by field.
-        </div>
-        <Fields fields={d.fields} />
-        {writeup && (
-          <div style={{ marginTop: 18 }}>
-            <Markdown raw={writeup} />
+      {questions ? (
+        <Block head="A few questions" mini="to get the notes right">
+          <div className="sky-lead" style={{ marginBottom: 8 }}>
+            Each one is about something sky could not tell from the words. Answer in a phrase, or skip it.
           </div>
-        )}
-      </Block>
+        </Block>
+      ) : (
+        <Block head={conversation ? 'Check the conversation' : 'Check the write-up'} mini="what sky read out of it">
+          <div className="sky-lead" style={{ marginBottom: 8 }}>
+            Read it over. Then say what's wrong, in your own words or by field.
+          </div>
+          <Fields fields={d.fields} />
+          {writeup && (
+            <div style={{ marginTop: 18 }}>
+              <Markdown raw={writeup} />
+            </div>
+          )}
+        </Block>
+      )}
       <div className="sky-exchange">
         {history.map((h, i) => (
           <Fragment key={i}>
@@ -1476,13 +1489,14 @@ function CorrectionsExchange({
               <div className="sky-say-who">sky</div>
               <div className="sky-say">{h.question}</div>
             </div>
-            <div className="sky-say-user">{h.answer || 'Looks right'}</div>
+            <div className="sky-say-user">{h.answer || (questions ? 'Skipped' : 'Looks right')}</div>
           </Fragment>
         ))}
         <div>
           <div className="sky-say-who">sky</div>
-          <div className="sky-say">{prompt.prompt.message.replace(/\s*\(.*\)\s*$/, '')}</div>
-          {prompt.prompt.hint && prompt.prompt.hint.length > 0 && (
+          {quote && <div className="sky-say-quote">{quote}</div>}
+          <div className="sky-say">{message}</div>
+          {!questions && prompt.prompt.hint && prompt.prompt.hint.length > 0 && (
             <div className="sky-say-ex">{prompt.prompt.hint.join(' · ')}</div>
           )}
         </div>
@@ -1508,8 +1522,9 @@ function CorrectionsExchange({
             />
           </div>
           <Button variant="primary" onClick={() => send(value.trim())}>
-            {value.trim() ? 'Apply' : 'Looks right'}
+            {value.trim() ? (questions ? 'Answer' : 'Apply') : questions ? 'Skip' : 'Looks right'}
           </Button>
+          {questions && <Button onClick={() => onAnswer(null)}>Skip the rest</Button>}
         </div>
       </div>
     </>

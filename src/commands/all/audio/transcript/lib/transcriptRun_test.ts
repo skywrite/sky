@@ -79,6 +79,7 @@ test('resume() names the next step from what is done', async () => {
     [['analysis', 'review'], 'Writing it up'],
     [['review', 'writeup'], 'Writing it up'],
     [['writeup', 'extract'], 'Checking the write-up'],
+    [['extract', 'questions'], 'Filing'],
     [['extract', 'filed'], 'Action items'],
   ]
   assert({

@@ -3,6 +3,7 @@ import * as path from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import openEditor from 'open-editor'
 import colors from 'picocolors'
+import { clarify } from '#commands/all/audio/transcript/lib/clarify.ts'
 import {
   type Checkpoint,
   clockLabel,
@@ -157,6 +158,9 @@ export default class MeetingNewTask extends Command {
         ...(fromVoiceMemo !== undefined ? [{ id: 'transcribe', label: 'Transcribing' }] : []),
         { id: 'names', label: 'Checking names' },
         { id: 'writeup', label: 'Writing it up' },
+        ...(fromVoiceMemo !== undefined && context.prompt.interactive
+          ? [{ id: 'questions', label: 'A few questions' }]
+          : []),
         { id: 'file', label: 'Filing' },
         ...(willRouteActions ? [{ id: 'actions', label: 'Action items' }] : []),
       ])
@@ -204,6 +208,25 @@ export default class MeetingNewTask extends Command {
       // bare name pins none. Auto-rel additions stay out — they resolve by
       // the score prior anchoring sets aside.
       anchors = [...data.who, ...data.rel]
+
+      // A few questions, so the notes say what was said and what was meant:
+      // each skippable, never more than three, the answers folded into the
+      // write-up. Voice memos only: a memo is the person's own words, which
+      // they can clarify; a transcript is everyone's, which they cannot. The
+      // action items below come from the extraction before the questions.
+      // See audio/transcript/lib/clarify.ts.
+      if (fromVoiceMemo !== undefined && context.prompt.interactive && !context.signal?.aborted) {
+        const clarified = await clarify({
+          transcript: data.cleanedText,
+          summary: data.body,
+          prompt: context.prompt,
+          output,
+          run,
+          now: runOptions.now,
+          signal: context.signal,
+        })
+        body = clarified.summary
+      }
 
       // The extract call is the primary source of action items — it resolves
       // relative due phrases ("Friday") to dates. The deterministic section

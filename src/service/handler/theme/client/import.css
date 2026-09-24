@@ -381,6 +381,13 @@
   color: var(--sky-dim);
 }
 
+/* the words a clarifying question is about */
+.sky-say-quote {
+  font-style: italic;
+  color: var(--sky-dim);
+  margin-bottom: 4px;
+}
+
 .sky-say-user {
   align-self: flex-end;
   max-width: 70%;

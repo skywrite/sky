@@ -78,6 +78,22 @@ export interface ExtractStage {
   actionItems: unknown
 }
 
+/** One clarifying question: the words it was about, the question, and the answer; null when skipped */
+export interface Exchange {
+  quote: string
+  question: string
+  answer: string | null
+}
+
+/** The questions asked after the write-up check, and the write-up with the answers folded in */
+export interface QuestionsStage {
+  exchange: Exchange[]
+  /** The folded write-up; null when nothing was answered, or nothing is folded yet */
+  summary: string | null
+  /** True once the questions ended: answered, skipped, or none to ask */
+  done: boolean
+}
+
 /** The document on disk, and what was still to do after it */
 export interface FiledStage {
   /** Absolute path of the filed document */
@@ -92,13 +108,14 @@ export interface StageData {
   review: ReviewStage
   writeup: WriteupStage
   extract: ExtractStage
+  questions: QuestionsStage
   filed: FiledStage
 }
 
 export type RunStage = keyof StageData
 
 /** In the order the pipeline reaches them */
-export const STAGES: RunStage[] = ['raw', 'analysis', 'review', 'writeup', 'extract', 'filed']
+export const STAGES: RunStage[] = ['raw', 'analysis', 'review', 'writeup', 'extract', 'questions', 'filed']
 
 export interface Checkpoint<S extends RunStage> {
   /** Notebook time the stage finished, YYYY-MM-DD HH:MM */
@@ -149,6 +166,7 @@ export async function sha256Of(filePath: string): Promise<string> {
 export function nextStep(done: RunStage[]): string | null {
   const has = (stage: RunStage) => done.includes(stage)
   if (has('filed')) return 'Action items'
+  if (has('questions')) return 'Filing'
   if (has('extract')) return 'Checking the write-up'
   if (has('writeup') || has('review')) return 'Writing it up'
   if (has('analysis') || has('raw')) return 'Checking names'
