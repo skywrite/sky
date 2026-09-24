@@ -40,7 +40,8 @@ type Params = InferParams<typeof params>
 
 declare module '#commands/lib/core/CommandTypesRegistry.ts' {
   interface CommandTypesRegistry {
-    'day:start': { params: Params; result: undefined }
+    // Startup failures preserve the child command's data.
+    'day:start': { params: Params; result: unknown }
   }
 }
 
@@ -66,21 +67,16 @@ export default class DayStartTask extends Command {
 
     await ensureDay(targetDate, config.DIR_TIME)
 
-    // Run configurable startup commands in parallel (day.start in config)
+    // Wait for every startup writer before returning, including when one fails.
     const startResults = await Promise.allSettled(
-      config.DAY_START_COMMANDS.map((cmd) =>
-        tasks.run(cmd, { day: targetDate }).catch((err: Error) => {
-          // Command may not exist (e.g., moved to sky-extras without commandDirs configured)
-          console.warn(`  [day:start] ${cmd}: ${err.message}`)
-          return CommandResult.fail(err.message)
-        }),
-      ),
+      config.DAY_START_COMMANDS.map((cmd) => tasks.run(cmd, { day: targetDate })),
     )
 
     for (const result of startResults) {
       if (result.status === 'rejected') {
-        return CommandResult.error(result.reason as Error, 'Task failed')
+        return CommandResult.error(result.reason instanceof Error ? result.reason : String(result.reason))
       }
+      if (!result.value.ok) return result.value
     }
 
     // These tasks modify the Day file, so run them sequentially
