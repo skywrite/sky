@@ -65,6 +65,8 @@ export interface ConfigView {
 
 export interface SettingsData {
   calendar: { classifyEvents: boolean }
+  /** Each Google account's category, by lower-case email; an account not listed files as Professional */
+  google?: { accountCategories: Record<string, 'Professional' | 'Personal'> }
   theme: Theme
   textSize: TextSize
   voice: { current: string; researcherCurrent: string; groups: { male: string[]; female: string[] } }

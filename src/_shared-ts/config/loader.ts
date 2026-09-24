@@ -4,7 +4,7 @@ import * as path from 'node:path'
 import process from 'node:process'
 import { parse } from 'jsonc-parser'
 import { DEFAULT_LAYOUT_PATTERN, LAYOUT_PATTERNS, layoutByPattern } from '../nbfs/layout/registry.ts'
-import type { SkyConfig } from './types.ts'
+import type { GoogleAccountCategory, SkyConfig } from './types.ts'
 
 export const SKY_CONFIG_DIR = path.join(os.homedir(), '.sky')
 export const SKY_CONFIG_PATH = path.join(SKY_CONFIG_DIR, 'config.jsonc')
@@ -33,6 +33,16 @@ function detectCodeDir(): string {
 
 function expandTilde(p: string): string {
   return p.startsWith('~/') ? path.join(os.homedir(), p.slice(2)) : p
+}
+
+/** Google accounts' categories as the file lists them: emails in lower case, any other value dropped. */
+function accountCategories(value: unknown): Record<string, GoogleAccountCategory> | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  const categories: Record<string, GoogleAccountCategory> = {}
+  for (const [email, category] of Object.entries(value)) {
+    if (category === 'Professional' || category === 'Personal') categories[email.trim().toLowerCase()] = category
+  }
+  return Object.keys(categories).length > 0 ? categories : null
 }
 
 /**
@@ -138,6 +148,8 @@ export function loadSkyConfig(configPath = SKY_CONFIG_PATH): SkyConfig {
     if (typeof parsed.calendar?.classifyEvents === 'boolean') {
       config.calendar = { classifyEvents: parsed.calendar.classifyEvents }
     }
+    const byAccount = accountCategories(parsed.google?.accountCategories)
+    if (byAccount) config.google = { accountCategories: byAccount }
     if (parsed.web?.theme && ['system', 'light', 'dark'].includes(parsed.web.theme)) config.web.theme = parsed.web.theme
     if (parsed.web?.textSize && ['default', 'large'].includes(parsed.web.textSize)) {
       config.web.textSize = parsed.web.textSize

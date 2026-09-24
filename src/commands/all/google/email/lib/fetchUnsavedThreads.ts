@@ -3,12 +3,13 @@ import * as path from 'node:path'
 import type { CommandService } from '#commands/mod.ts'
 import { DIR_BASE } from '#config'
 import type { GoogleClient } from '#lib/google/mod.ts'
-import { getAttachment, getMessage, threadIdToDecimal } from '#lib/google/mod.ts'
+import { accountCategory, getAttachment, getMessage, threadIdToDecimal } from '#lib/google/mod.ts'
 import type { GmailMessage } from '#lib/google/mod.ts'
 import { DayDirFileWriter } from '#lib/nbfs/mod.ts'
 import { autoRelMessage } from '#lib/notebook/enrich/autoRel.ts'
 import { autoTagMessage } from '#lib/notebook/enrich/autoTag.ts'
 import { summarizeTranscript } from '#lib/notebook/enrich/summarize.ts'
+import type { GoogleAccountCategory } from '#shared/config/types.ts'
 import { readTextFile, writeTextFile } from '#shared/fs/mod.ts'
 import EmailDocument from '#shared/models/Email/mod.ts'
 import type { FollowMessage } from '#shared/models/Follow/mod.ts'
@@ -178,6 +179,8 @@ export async function fetchUnsavedThreads(
   // Follow names minted this run — two new threads must never share one.
   const mintedFollowNames = new Set<string>()
   let savedCount = 0
+  // Every day entry this run writes goes under the account's side, as chosen on the Google settings page.
+  const category = accountCategory(client.email)
 
   for (const [threadId, threadMessages] of byThread) {
     const threadEntries: { date: string; path: string }[] = []
@@ -261,6 +264,7 @@ export async function fetchUnsavedThreads(
           followFile,
           tags,
           rel,
+          category,
           tasks,
           output,
         })
@@ -378,15 +382,18 @@ type WriteContext = {
   tags: string | undefined
   /** String (an email:new param) or array (patched onto the written file). */
   rel: unknown
+  /** The day list a new day entry goes under — the account's side of the day. */
+  category: GoogleAccountCategory
   tasks: CommandService
   output: Output
 }
 
-async function writeMessage(
+/** Save one message: continue the thread's file for the day, or start one with its day entry. Exported for tests. */
+export async function writeMessage(
   message: ConvertedMessage,
   ctx: WriteContext,
 ): Promise<{ date: string; path: string } | null> {
-  const { threadId, createdEntries, previous, summary, followFile, tags, rel, tasks, output } = ctx
+  const { threadId, createdEntries, previous, summary, followFile, tags, rel, category, tasks, output } = ctx
   const { msg, from, to, cc, msgWhen, when } = message
   const dateStr = when.plainDate.toString()
 
@@ -431,6 +438,7 @@ async function writeMessage(
     ...(attachments.length > 0 ? { attachments } : {}),
     markdown,
     noEditor: true,
+    category,
   })
 
   if (!result.ok || !result.data) {

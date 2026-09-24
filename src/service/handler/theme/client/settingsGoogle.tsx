@@ -7,10 +7,12 @@
  * its organization), and the page cannot tell in advance. A connected
  * account shows what it covers and names a box left unticked; Connect again
  * signs in with the pair that already served it. Pasting a client of your
- * own stays, under Advanced, and signs in with it at once.
+ * own stays, under Advanced, and signs in with it at once. Each account
+ * says which side of the day its saved mail is filed under: Professional,
+ * as before, or Personal.
  */
 
-import { Button, PasswordInput, Switch, TextInput } from '@mantine/core'
+import { Button, PasswordInput, SegmentedControl, Switch, TextInput } from '@mantine/core'
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
 import { saveSetting, type SettingsData } from './settings.tsx'
 import { Block, refusalOf, Row, UNREACHABLE } from './settingsBlocks.tsx'
@@ -510,6 +512,69 @@ function AdvancedBlock({
   )
 }
 
+type AccountCategory = 'Professional' | 'Personal'
+
+const CATEGORIES: Array<{ value: AccountCategory; label: string }> = [
+  { value: 'Professional', label: 'Professional' },
+  { value: 'Personal', label: 'Personal' },
+]
+
+/** Each account's side of the day: where the mail Sky saves from it is filed. */
+function CategoryBlock({
+  data,
+  settings,
+  onChanged,
+}: {
+  data: ConnectionsData
+  settings: SettingsData | null
+  onChanged: () => void
+}) {
+  // The choice being saved shows at once; the page's settings catch up when the file has it.
+  const [saving, setSaving] = useState<{ email: string; category: AccountCategory } | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const accounts = data.google.accounts
+  if (accounts.length === 0) return null
+  const chosen = (email: string): AccountCategory =>
+    saving?.email === email
+      ? saving.category
+      : (settings?.google?.accountCategories[email.toLowerCase()] ?? 'Professional')
+  const save = async (email: string, category: AccountCategory) => {
+    setSaving({ email, category })
+    setError(null)
+    const refusal = await refusalOf(await postJson('/settings/_api/google/category', { email, category }))
+    if (refusal) setError(refusal)
+    else await onChanged()
+    setSaving(null)
+  }
+  return (
+    <div className="sky-set-google">
+      <Block
+        head="Professional or personal"
+        note="Mail Sky saves from an account is filed under this side of your day."
+      >
+        {accounts.map((account, index) => (
+          <Fragment key={account.email}>
+            <Row label={account.email} last={index === accounts.length - 1}>
+              <SegmentedControl
+                aria-label={`Side of the day for ${account.email}`}
+                value={chosen(account.email)}
+                disabled={!settings || saving !== null}
+                onChange={(value) => void save(account.email, value as AccountCategory)}
+                data={CATEGORIES}
+              />
+            </Row>
+          </Fragment>
+        ))}
+        {error && (
+          <p className="sky-set-warn" role="alert">
+            {error}
+          </p>
+        )}
+      </Block>
+    </div>
+  )
+}
+
 function CalendarBlock({ settings, onChanged }: { settings: SettingsData | null; onChanged: () => void }) {
   const { status, warn } = useTypeSafe()
   const [busy, setBusy] = useState(false)
@@ -610,6 +675,7 @@ export function GoogleMain({
           setStarting={setStarting}
         />
       )}
+      {data && <CategoryBlock data={data} settings={settings} onChanged={onSettingsChanged} />}
       <CalendarBlock settings={settings} onChanged={onSettingsChanged} />
       {data && (
         <AdvancedBlock

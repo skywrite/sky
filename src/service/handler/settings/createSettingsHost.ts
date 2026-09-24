@@ -100,6 +100,10 @@ export function createSettingsHost(): SettingsRoutesOptions {
       setConfigValue([...SETTABLE_KEYS[key]], BOOLEAN_KEYS.has(key) ? value === 'true' : value)
       return Promise.resolve()
     },
+    writeAccountCategory: (email, category) => {
+      setConfigValue(['google', 'accountCategories', email], category)
+      return Promise.resolve()
+    },
     connections: createConnectionsHost(),
     aboutMe: createAboutMeHost(notebookConfig),
     prompts: createPromptCatalog(),

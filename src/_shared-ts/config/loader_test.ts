@@ -87,3 +87,56 @@ test('saving the Workstreams switch preserves other experimental preferences and
     await rm(dir, { recursive: true, force: true })
   }
 })
+
+test('Google accounts keep the category the file gives them, by lower-case email', async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'sky-google-config-'))
+  const file = path.join(dir, 'config.jsonc')
+  try {
+    const missing = loadSkyConfig(file).google
+    await writeFile(
+      file,
+      JSON.stringify({
+        google: {
+          accountCategories: {
+            'Jane.Doe@Example.com': 'Personal',
+            'jane@atlas.example': 'Professional',
+            'sam@example.com': 'personal',
+            'bob@example.com': true,
+          },
+        },
+      }),
+    )
+    const listed = loadSkyConfig(file).google
+    await writeFile(file, JSON.stringify({ google: { accountCategories: ['jane@example.com'] } }))
+    const malformed = loadSkyConfig(file).google
+    await writeFile(file, '{\n  // Keep my theme.\n  "web": { "theme": "dark" }\n}\n')
+    setConfigValue(['google', 'accountCategories', 'jane.doe@example.com'], 'Personal', file)
+    const text = await readFile(file, 'utf8')
+    assert({
+      given:
+        'no file, a file listing accounts with valid and invalid values, a list instead of a map, then a page write',
+      should:
+        'keep only Professional and Personal under lower-case emails, and write the email as one key beside the comments',
+      actual: [
+        missing,
+        listed,
+        malformed,
+        loadSkyConfig(file).google,
+        parse(text).google,
+        loadSkyConfig(file).web.theme,
+        text.includes('// Keep my theme.'),
+      ],
+      expected: [
+        undefined,
+        { accountCategories: { 'jane.doe@example.com': 'Personal', 'jane@atlas.example': 'Professional' } },
+        undefined,
+        { accountCategories: { 'jane.doe@example.com': 'Personal' } },
+        { accountCategories: { 'jane.doe@example.com': 'Personal' } },
+        'dark',
+        true,
+      ],
+    })
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})

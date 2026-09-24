@@ -1,3 +1,6 @@
+/** The side of the day file a Google account's saved mail is filed under. */
+export type GoogleAccountCategory = 'Professional' | 'Personal'
+
 export interface AiProfileConfig {
   provider: string
   model: string
@@ -31,6 +34,10 @@ export interface SkyConfig {
   calendar?: {
     /** Separate meeting invitations from informational events using Jev. */
     classifyEvents?: boolean
+  }
+  google?: {
+    /** Each account's category, by its email in lower case; an account not listed files as Professional. */
+    accountCategories?: Record<string, GoogleAccountCategory>
   }
   /** The web pages' own preferences — the settings page writes these. */
   web: {

@@ -214,3 +214,33 @@ test({ name: 'settings view - groups list their entries; unknown keys keep a pla
     expected: [{ key: 'labs.pond', value: 'on', source: 'default' }],
   })
 })
+
+test({ name: 'settings view - Google accounts list under Google, an email with dots credited to the file' }, () => {
+  const accountCategories = { 'jane.doe@example.com': 'Personal' as const }
+  const config = configWith({ google: { accountCategories } })
+  const file = {
+    text: FILE.text,
+    parsed: { ...FILE.parsed, google: { accountCategories } } as Partial<SkyConfig>,
+  }
+  const view = describeConfig(snapshotWith({ config, file }))
+  const bare = describeConfig(snapshotWith())
+
+  assert({
+    given: 'an account the file gives a category',
+    should: 'list it under Google, after Slack, with the file as its source',
+    actual: [
+      view.sections.map((section) => section.id),
+      view.sections.find((section) => section.id === 'google')?.rows,
+    ],
+    expected: [
+      ['notebook', 'commands', 'ai', 'web', 'slack', 'google', 'calendar', 'service'],
+      [{ key: 'google.accountCategories.jane.doe@example.com', value: 'Personal', source: 'file' }],
+    ],
+  })
+  assert({
+    given: 'no Google accounts in the configuration',
+    should: 'show no empty Google section',
+    actual: bare.sections.some((section) => section.id === 'google'),
+    expected: false,
+  })
+})

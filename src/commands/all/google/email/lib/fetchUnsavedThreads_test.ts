@@ -1,6 +1,7 @@
+import type { CommandService } from '#commands/mod.ts'
 import { assert, test } from '#test'
-import { PlainDate } from '#universal/dates/nbdt/mod.ts'
-import { captureSections, previousRefOrNone, sameDayCapture } from './fetchUnsavedThreads.ts'
+import { PlainDate, PlainDateTime } from '#universal/dates/nbdt/mod.ts'
+import { captureSections, previousRefOrNone, sameDayCapture, writeMessage } from './fetchUnsavedThreads.ts'
 
 const CUR = new PlainDate(2026, 8, 14)
 
@@ -151,4 +152,45 @@ test('previousRefOrNone stays quiet when there is no previous capture', () => {
     actual: previousRefOrNone(undefined, CUR, output),
   })
   assert({ given: 'no previous capture', should: 'warn about nothing', expected: 0, actual: lines.length })
+})
+
+test('a new day entry goes under the side of the day its account files under', async () => {
+  const { output } = collector()
+  const calls: Array<[string, Record<string, unknown>]> = []
+  const tasks = {
+    run: (name: string, args: Record<string, unknown>) => {
+      calls.push([name, args])
+      return Promise.resolve({ ok: true, data: { filePath: '09-30_email_Jane-Doe_Atlas-kickoff.md' } })
+    },
+  } as unknown as CommandService
+  const when = PlainDateTime.fromString('2026-08-14 09:30')
+  const message = {
+    msg: { subject: 'Atlas kickoff', downloadedAttachments: [] },
+    from: 'Jane Doe <jane@example.com>',
+    to: 'Sam Rivera <sam@example.com>',
+    cc: '',
+    markdown: 'Kickoff plan attached.',
+    msgWhen: when,
+    when,
+  } as unknown as Parameters<typeof writeMessage>[0]
+
+  const written = await writeMessage(message, {
+    threadId: '1790000000000000001',
+    createdEntries: new Map(),
+    previous: undefined,
+    summary: 'Atlas kickoff',
+    followFile: undefined,
+    tags: undefined,
+    rel: undefined,
+    category: 'Personal',
+    tasks,
+    output,
+  })
+
+  assert({
+    given: 'a first message of the day from an account filed as Personal',
+    should: 'create the capture through email:new with that category, so its day entry lands in Personal Complete',
+    actual: [calls.map(([name, args]) => [name, args['category']]), written?.date],
+    expected: [[['email:new', 'Personal']], '2026-08-14'],
+  })
 })

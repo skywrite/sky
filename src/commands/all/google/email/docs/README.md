@@ -1,6 +1,6 @@
 ---
 created: 2026-08-30
-updated: 2026-09-07
+updated: 2026-09-23
 ---
 
 # google:email
@@ -33,8 +33,14 @@ console call; service and composed calls return account ambiguity errors.
 Capture/follow operations still synchronize user labels across replies
 by default. System labels are never synchronized by the listing helper.
 
+A capture's day entry goes under its account's side of the day: the
+Professional or Personal choice on the Google settings page, kept in
+`config.jsonc` as `google.accountCategories`. An account with no choice
+files as Professional.
+
 Dated narratives:
 
+- [2026-09-23 — mail files under its account's side of the day](2026-09-23-mail-files-under-its-accounts-side.md)
 - [2026-09-07 — Gmail stays draft-only](2026-09-07-draft-only.md)
 - [2026-09-06 — complete context and read-only listings](2026-09-06-read-limits-and-labels.md)
 - [2026-08-30 — reading threads and drafting replies](2026-08-30-read-and-reply-drafts.md)

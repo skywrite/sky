@@ -66,6 +66,8 @@ export type {
 
 export { AccountResolutionError, AmbiguousAccountError, resolveAccountEmail } from './accounts.ts'
 
+export { accountCategory } from './accountCategory.ts'
+
 export { GoogleApiError, GoogleClient } from './client.ts'
 export type { GoogleClientOptions } from './client.ts'
 

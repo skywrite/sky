@@ -95,6 +95,10 @@ Pages:
   Advanced keeps the developer's path: paste a client of your own, which
   signs in at once. The Google row on the Connections page leads here since
   2026-09-22.
+  Since 2026-09-23 a "Professional or personal" card gives each connected
+  account the side of the day its saved mail is filed under. The choice is
+  `google.accountCategories` in `config.jsonc`, keyed by lower-case email; see
+  `commands/all/google/email/docs/README.md`.
   Since 2026-09-17 the Keychain card opens with a TypeSafe API key row:
   Add pastes the key, the service asks TypeSafe to list its models with
   it, and only an accepted key is stored as `typesafe/main`; the row says
@@ -149,6 +153,11 @@ detected editors, on/off for the Experimental switches, which
 (`_shared-ts/config/write.ts`): jsonc-parser edits the text, so the
 comments `sky init` wrote survive; the write is atomic. The client
 applies changes optimistically and falls back to a reload on refusal.
+
+`POST /settings/_api/google/category { email, category }` writes one
+account's side, since an email is a key `SETTABLE_KEYS` cannot list. It
+takes an address with one @ and no spaces, and only Professional or
+Personal.
 
 The service process keeps its boot-time `#config`; everything the page
 serves is read fresh per request (`load()`), and the voice is resolved

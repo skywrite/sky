@@ -18,7 +18,7 @@ import type { WritingDraftStore } from '#lib/writingVoice/drafts.ts'
 import { DEFAULT_WRITING_VOICE_PROFILE } from '#lib/writingVoice/model.ts'
 import type { ModelProfile } from '#shared/ai/models.ts'
 import { ENV_OVERRIDES } from '#shared/config/loader.ts'
-import type { SkyConfig } from '#shared/config/types.ts'
+import type { GoogleAccountCategory, SkyConfig } from '#shared/config/types.ts'
 import type { PromptCatalog } from '#shared/prompts/catalog.ts'
 import { isEffort, optionsWithEffort } from '#universal/ai/effort.ts'
 import { createAboutMeRoutes, type AboutMeHost } from './aboutMe.ts'
@@ -95,6 +95,7 @@ const SECTIONS: ReadonlyArray<{ id: string; title: string; keys: string[]; group
   },
   { id: 'web', title: 'Web', keys: ['web.theme', 'web.textSize', 'voice.voice', 'voice.researcherVoice'] },
   { id: 'slack', title: 'Slack', keys: ['slack.workspace'] },
+  { id: 'google', title: 'Google', keys: [], groups: ['google.accountCategories'] },
   { id: 'calendar', title: 'Calendar', keys: ['calendar.classifyEvents'] },
   { id: 'service', title: 'Service', keys: ['server.port'] },
 ]
@@ -154,10 +155,11 @@ export function describeConfig(snapshot: ConfigSnapshot): ConfigView {
   const unplaced = new Map(leaves.map((leaf) => [leaf.path.join('.'), leaf]))
   unplaced.delete('version')
 
+  // The leaf's own path, when there is one: a key segment may hold a dot, an account's email does.
   const row = (key: string, leaf: Leaf | undefined): ConfigRow => ({
     key,
     value: leaf ? withHome(leaf.value, snapshot.home) : null,
-    ...sourceOf(key.split('.'), snapshot),
+    ...sourceOf(leaf?.path ?? key.split('.'), snapshot),
   })
 
   const sections: ConfigSection[] = []
@@ -174,7 +176,8 @@ export function describeConfig(snapshot: ConfigSnapshot): ConfigView {
         unplaced.delete(key)
       }
     }
-    sections.push({ id: spec.id, title: spec.title, rows })
+    // A section of groups alone, with nothing in them, has nothing to show.
+    if (rows.length > 0) sections.push({ id: spec.id, title: spec.title, rows })
   }
   if (unplaced.size > 0) {
     sections.push({ id: 'other', title: 'Other', rows: [...unplaced].map(([key, leaf]) => row(key, leaf)) })
@@ -238,6 +241,8 @@ export interface ProfileInput {
 /** Everything the page shows, in one payload. */
 export interface SettingsData {
   calendar: { classifyEvents: boolean }
+  /** Each Google account's category, by lower-case email; an account not listed files as Professional */
+  google?: { accountCategories: Record<string, GoogleAccountCategory> }
   theme: Theme
   textSize: TextSize
   voice: { current: string; researcherCurrent: string; groups: Record<'male' | 'female', readonly string[]> }
@@ -290,6 +295,8 @@ export interface SettingsHost {
   about: () => Promise<SettingsData['about']>
   /** One settable key into the config file */
   write: (key: SettableKey, value: string) => Promise<void>
+  /** Writes google.accountCategories.<email> into the file */
+  writeAccountCategory: (email: string, category: GoogleAccountCategory) => Promise<void>
   /** Opens a folder, or the config file, on this machine */
   reveal: (target: RevealTarget) => Promise<void>
   /** Accounts and keys over the keychain; absent, /connections is not served */
@@ -367,6 +374,7 @@ async function settingsData(host: SettingsHost): Promise<SettingsData> {
   return {
     theme: config.web.theme ?? 'system',
     calendar: { classifyEvents: config.calendar?.classifyEvents === true },
+    google: { accountCategories: { ...config.google?.accountCategories } },
     textSize: config.web.textSize ?? 'default',
     voice: host.voices(),
     models: modelRows(host, config),
@@ -419,6 +427,23 @@ export function createSettingsRoutes(options: SettingsRoutesOptions): Hono {
     if (refusal) return c.json({ message: refusal }, 400)
     try {
       await options.write(key as SettableKey, body.value)
+      return c.json({ ok: true })
+    } catch (err) {
+      return c.json({ message: err instanceof Error ? err.message : String(err) }, 500)
+    }
+  })
+
+  // A Google account's category — the side of the day its saved mail files under.
+  app.post('/google/category', async (c) => {
+    const body = (await c.req.json().catch(() => null)) as { email?: unknown; category?: unknown } | null
+    const email = typeof body?.email === 'string' ? body.email.trim().toLowerCase() : ''
+    if (!ACCOUNT_EMAIL.test(email)) return c.json({ message: 'expected the email of a Google account' }, 400)
+    const category = body?.category
+    if (category !== 'Professional' && category !== 'Personal') {
+      return c.json({ message: 'category must be Professional or Personal' }, 400)
+    }
+    try {
+      await options.writeAccountCategory(email, category)
       return c.json({ ok: true })
     } catch (err) {
       return c.json({ message: err instanceof Error ? err.message : String(err) }, 500)
@@ -550,6 +575,9 @@ export function createSettingsRoutes(options: SettingsRoutesOptions): Hono {
 
 /** Letters, digits, dots, dashes, underscores — a config key that needs no quoting games. */
 export const PROFILE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/
+
+/** An account's email as the keychain names it: one @, no spaces, short enough to be an address. */
+const ACCOUNT_EMAIL = /^[^\s@]{1,64}@[^\s@]{1,190}$/
 
 function writingVoiceSettings(host: SettingsHost, config: SkyConfig): SettingsData['writingVoice'] {
   // User definitions override built-ins with the same name, as they do in the writer.

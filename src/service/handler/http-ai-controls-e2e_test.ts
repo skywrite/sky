@@ -71,6 +71,7 @@ test(
         if (key.startsWith('ai.roles.'))
           config.ai.roles![key.slice('ai.roles.'.length) as keyof NonNullable<SkyConfig['ai']['roles']>] = value
       },
+      writeAccountCategory: async () => {},
     }
     const fixture = fileChatHost(root)
     config.ai.profiles!['custom-effort'] = {

@@ -63,6 +63,38 @@ test('calendar classification is read live and accepts only boolean settings wri
   })
 })
 
+test('a Google account category is read live and saved only as Professional or Personal for an address', async () => {
+  const config = structuredClone(CONFIG)
+  const { host, categoryWrites } = hostWith(config)
+  host.writeAccountCategory = async (email, category) => {
+    categoryWrites.push([email, category])
+    config.google = { accountCategories: { ...config.google?.accountCategories, [email]: category } }
+  }
+  const app = await appWith(host)
+  const read = async () => ((await (await app.request('/settings/_api/settings')).json()) as SettingsData).google
+  const route = '/settings/_api/google/category'
+  const before = await read()
+  const saved = await post(app, route, { email: ' Jane.Doe@Example.com ', category: 'Personal' })
+  const after = await read()
+  const lowercase = await post(app, route, { email: 'jane.doe@example.com', category: 'personal' })
+  const spaced = await post(app, route, { email: 'jane doe', category: 'Personal' })
+  const missing = await post(app, route, { category: 'Professional' })
+  assert({
+    given: 'an account set to Personal, then a lower-case category, an email with a space, and no email',
+    should: 'serve the choice under the lower-case email and refuse the rest without writing',
+    actual: [before, saved.status, after, lowercase.status, spaced.status, missing.status, categoryWrites],
+    expected: [
+      { accountCategories: {} },
+      200,
+      { accountCategories: { 'jane.doe@example.com': 'Personal' } },
+      400,
+      400,
+      400,
+      [['jane.doe@example.com', 'Personal']],
+    ],
+  })
+})
+
 test('roles select presets and effort edits preserve all other preset settings', async () => {
   const config = structuredClone(CONFIG)
   config.ai.profiles = {
@@ -163,6 +195,7 @@ function hostWith(config: SkyConfig = CONFIG) {
   const reveals: string[] = []
   const profileWrites: Array<[string, ProfileInput]> = []
   const profileDeletes: string[] = []
+  const categoryWrites: Array<[string, string]> = []
   const snapshot: ConfigSnapshot = {
     path: `${HOME}/.sky/config.jsonc`,
     home: HOME,
@@ -204,12 +237,16 @@ function hostWith(config: SkyConfig = CONFIG) {
       writes.push([key, value])
       return Promise.resolve()
     },
+    writeAccountCategory: (email, category) => {
+      categoryWrites.push([email, category])
+      return Promise.resolve()
+    },
     reveal: (target) => {
       reveals.push(target)
       return Promise.resolve()
     },
   }
-  return { host, writes, reveals, profileWrites, profileDeletes }
+  return { host, writes, reveals, profileWrites, profileDeletes, categoryWrites }
 }
 
 async function appWith(settings?: SettingsRoutesOptions) {

@@ -121,8 +121,10 @@ test(
         disconnect: () => Promise.resolve(),
       },
     }
+    const accountCategories: Record<string, 'Professional' | 'Personal'> = {}
     const settings: SettingsData = {
       calendar: { classifyEvents: false },
+      google: { accountCategories },
       theme: 'light',
       experimental: { contextPreflight: false, workstreams: false },
       textSize: 'default',
@@ -151,6 +153,13 @@ test(
       if (input.key !== 'calendar.classifyEvents') return c.json({ message: 'Unexpected setting' }, 400)
       if (refuseCalendarSave) return c.json({ message: 'Could not save the calendar setting.' }, 500)
       settings.calendar.classifyEvents = input.value === 'true'
+      return c.json({ ok: true })
+    })
+    const categoryPosts: unknown[] = []
+    app.post('/settings/_api/google/category', async (c) => {
+      const input = (await c.req.json()) as { email: string; category: 'Professional' | 'Personal' }
+      categoryPosts.push(input)
+      accountCategories[input.email.toLowerCase()] = input.category
       return c.json({ ok: true })
     })
     app.route('/settings/_api/connections', createConnectionsRoutes(host))
@@ -271,6 +280,35 @@ test(
       await accountRow.getByRole('button', { name: 'Connect again' }).waitFor()
       const accountSub = await accountRow.locator('.sky-set-sub').first().innerText()
       await capture('6-google-connected')
+
+      // The account's side of the day: Professional until chosen, then Personal — saved, and read back after a reload.
+      const sideLabel = 'Side of the day for jane@example.com'
+      const side = page.locator(`[aria-label="${sideLabel}"]`)
+      const chosenSide = () =>
+        page.evaluate(
+          (label) => document.querySelector<HTMLInputElement>(`[aria-label="${label}"] input:checked`)?.value ?? null,
+          sideLabel,
+        )
+      await side.waitFor()
+      const sideBefore = await chosenSide()
+      const saved = page.waitForResponse((response) => response.url().endsWith('/settings/_api/google/category'))
+      await side.getByText('Personal', { exact: true }).click()
+      await saved
+      await page.reload()
+      await side.waitFor()
+      await page.waitForFunction(
+        (label) =>
+          document.querySelector<HTMLInputElement>(`[aria-label="${label}"] input:checked`)?.value === 'Personal',
+        sideLabel,
+      )
+      const sideAfter = await chosenSide()
+      await capture('6b-google-side-of-the-day')
+      assert({
+        given: 'a connected account, Personal chosen for it, and the page reloaded',
+        should: 'show Professional until chosen, save the choice once, and read Personal back',
+        actual: [sideBefore, categoryPosts, sideAfter],
+        expected: ['Professional', [{ email: 'jane@example.com', category: 'Personal' }], 'Personal'],
+      })
 
       await page.getByRole('button', { name: '‹ Connections' }).click()
       await googleRow.getByRole('button', { name: 'Google settings' }).waitFor()
