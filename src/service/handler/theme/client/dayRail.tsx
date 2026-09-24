@@ -54,6 +54,17 @@ export interface DaySchedule {
 const SCHEDULE_MS = 60_000
 const SCHEDULE_CHANGED = 'sky:schedule-changed'
 
+async function saveEventType(ymd: string, key: string, type: 'meeting' | 'notification' | null) {
+  const response = await fetch(`/day/${ymd}/schedule/type`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ key, type }),
+  }).catch(() => null)
+  const error = await refusalOf(response)
+  if (!error) window.dispatchEvent(new CustomEvent(SCHEDULE_CHANGED, { detail: ymd }))
+  return error
+}
+
 /** The day's schedule, re-read every minute so "now" moves; null until the first answer. */
 export function useSchedule(ymd: string | null): DaySchedule | null {
   const [schedule, setSchedule] = useState<DaySchedule | null>(null)
@@ -181,26 +192,24 @@ function MeetingRow({
   meeting: m,
   ymd,
   onImportMeeting,
+  onDismiss,
 }: {
   meeting: ScheduledMeeting
   ymd: string
   onImportMeeting?: (files: File[], meeting: MeetingImport) => void
+  onDismiss?: (meeting: ScheduledMeeting) => void
 }) {
   const notification = m.classification?.type === 'notification'
+  const canDismiss = m.classification?.type === 'uncertain' && !m.record && Boolean(onDismiss)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const changeType = async (type: 'meeting' | 'notification' | null) => {
     if (!m.classification) return
     setBusy(true)
     setError(null)
-    const response = await fetch(`/day/${ymd}/schedule/type`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ key: m.classification.key, type }),
-    }).catch(() => null)
-    const refusal = await refusalOf(response)
+    const refusal = await saveEventType(ymd, m.classification.key, type)
     if (refusal) setError(refusal)
-    else window.dispatchEvent(new CustomEvent(SCHEDULE_CHANGED, { detail: ymd }))
+    else if (type === 'notification') onDismiss?.(m)
     setBusy(false)
   }
   const canDrop = Boolean(!notification && onImportMeeting && m.state === 'past' && !m.record && !m.allDay && m.start)
@@ -268,7 +277,12 @@ function MeetingRow({
             <Menu.Dropdown>
               <Menu.Label>Change type for this event</Menu.Label>
               <Menu.Item onClick={() => void changeType('meeting')}>Meeting</Menu.Item>
-              <Menu.Item onClick={() => void changeType('notification')}>Family notification or reminder</Menu.Item>
+              <Menu.Item
+                title={canDismiss ? 'Save as a family notification or reminder' : undefined}
+                onClick={() => void changeType('notification')}
+              >
+                {canDismiss ? 'Dismiss' : 'Family notification or reminder'}
+              </Menu.Item>
               {m.classification.source === 'manual' && (
                 <Menu.Item onClick={() => void changeType(null)}>Use automatic classification</Menu.Item>
               )}
@@ -308,6 +322,26 @@ function ScheduleSection({
   onImportMeeting?: (files: File[], meeting: MeetingImport) => void
 }) {
   const drop = useFileDrop(Boolean(onImportMeeting), (files) => onImportMeeting?.(files, { day: ymd }))
+  const [dismissed, setDismissed] = useState<ScheduledMeeting | null>(null)
+  const [undoBusy, setUndoBusy] = useState(false)
+  const [undoError, setUndoError] = useState<string | null>(null)
+  useEffect(() => {
+    setDismissed(null)
+    setUndoError(null)
+  }, [ymd])
+  const undo = async () => {
+    if (!dismissed?.classification) return
+    setUndoBusy(true)
+    const previous = dismissed.classification
+    const error = await saveEventType(
+      ymd,
+      previous.key,
+      previous.source === 'manual' && previous.type !== 'uncertain' ? previous.type : null,
+    )
+    setUndoError(error)
+    if (!error) setDismissed(null)
+    setUndoBusy(false)
+  }
   return (
     <>
       <Section
@@ -336,9 +370,30 @@ function ScheduleSection({
         {schedule?.read && schedule.meetings.length === 0 && <p className="sky-rail-empty">No meetings.</p>}
         {schedule?.meetings.map((m, i) => (
           <Fragment key={m.classification?.key ?? `${ymd}-${m.start}-${i}`}>
-            <MeetingRow meeting={m} ymd={ymd} onImportMeeting={onImportMeeting} />
+            <MeetingRow
+              meeting={m}
+              ymd={ymd}
+              onImportMeeting={onImportMeeting}
+              onDismiss={(meeting) => {
+                setDismissed(meeting)
+                setUndoError(null)
+              }}
+            />
           </Fragment>
         ))}
+        {dismissed && (
+          <div className="sky-dr-correction" role="status">
+            <span title={dismissed.title}>Saved as reminder</span>
+            <Button size="compact-xs" variant="secondary" loading={undoBusy} onClick={() => void undo()}>
+              Undo
+            </Button>
+          </div>
+        )}
+        {undoError && (
+          <p className="sky-dr-event-error" role="alert">
+            {undoError}
+          </p>
+        )}
       </Section>
       {schedule?.hideNotifications === false && Boolean(schedule.notifications?.length) && (
         <Section title="Family & reminders" count={schedule?.notifications?.length}>

@@ -1,6 +1,6 @@
 ---
 created: 2026-09-23
-updated: 2026-09-23
+updated: 2026-09-24
 ---
 
 # Calendar entries and meeting expectations
@@ -23,9 +23,15 @@ awareness of an activity, closure or reminder. A family planning call can be
 a meeting; a shared invitation alone does not establish participation.
 
 Jev receives the event's account, title, description, organizer, guests,
-times, location and presence of a video link. State text is evidence, never
-instructions. Jev chooses between meetings and notifications based on the
-kind of activity; it does not need proof of the owner's attendance. Uncertainty
+owner RSVP, times, location and presence of a video link. The owner's name
+and family section come from `journal/about-me.md`; freeform profiles supply
+complete family-related paragraphs. Missing profiles need no setup. State
+text is evidence, never instructions. The question is whether the owner has
+an interaction worth a meeting record. A family member's therapy, appointment
+or lesson is scheduling context, including terse titles. Accepting an invite
+or providing transportation does not turn it into the owner's meeting. RSVP
+is evidence, not a gate: an unanswered work invitation can still be a meeting.
+Family planning calls and parent-teacher conferences remain meetings. Uncertainty
 comes from a selected probability below 0.8, rather than a third competing
 label or an additional confidence gate. TypeSafe's confidence summarizes the
 distribution and is not the selected label's probability. An incomplete guest
@@ -49,6 +55,19 @@ from overwriting a person's choice. These are internal lookup keys, not
 user-content IDs. Each atomic file write affects only one event or judgment.
 
 The day's Change type menu corrects **this occurrence**, or restores automatic
-classification. Manual corrections still apply with automation off. The API
+classification. Uncertain events without a record also offer **Dismiss**, which
+saves a notification correction, with Undo available even when reminders are
+hidden. Manual corrections still apply with automation off. The API
 accepts only keys present in that day's current calendar-backed schedule;
 local-only notebook records cannot be reclassified by this endpoint.
+
+Corrections include a compact snapshot taken from the provider event on the
+server. Up to four relevant corrections from the same account and calendar
+ride later judgments as examples, selected by recurring series or overlapping
+title words. They inform the model rather than creating a blanket rule for a
+person or series. Only explicit owner corrections teach; automatic judgments
+never do. Resetting to automatic removes the example in the same atomic write.
+Profile and relevant example changes invalidate cached judgments too. An older
+correction without a snapshot still overrides its occurrence. Oversized events
+still accept corrections but do not become examples. This is local preference
+memory supplied with classification requests, not model fine-tuning.

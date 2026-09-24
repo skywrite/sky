@@ -137,6 +137,30 @@ test(
 
         if (screenshots) await page.screenshot({ path: path.join(screenshots, 'calendar-rail.png') })
 
+        await page.getByRole('button', { name: 'Change type for Catch up', exact: true }).click()
+        await page.getByRole('menuitem', { name: 'Dismiss', exact: true }).click()
+        await page.locator(`${NOTICES} .sky-dr-label`, { hasText: 'Catch up' }).waitFor()
+        await refresh()
+        await page.waitForResponse((response) => response.url().endsWith('/schedule'))
+        assert({
+          given: 'the owner dismisses an uncertain event and the calendar refreshes',
+          should: 'save it as a reminder, remove its missing-record expectation, and offer Undo',
+          actual: [
+            overrides.get('c'.repeat(64)),
+            await page.locator(`${MEETINGS} .sky-dr-label`, { hasText: 'Catch up' }).count(),
+            await page.getByRole('button', { name: 'Undo', exact: true }).count(),
+          ],
+          expected: ['notification', 0, 1],
+        })
+        await page.getByRole('button', { name: 'Undo', exact: true }).click()
+        await page.locator(`${MEETINGS} .sky-dr-label`, { hasText: 'Catch up' }).waitFor()
+        assert({
+          given: 'Undo after dismissing an automatically classified event',
+          should: 'remove the correction so automatic classification applies again',
+          actual: overrides.size,
+          expected: 0,
+        })
+
         await page.locator(`${NOTICES} .sky-dr-label`).evaluate((node) => {
           const selection = window.getSelection()!
           const range = document.createRange()
@@ -178,6 +202,22 @@ test(
           ],
           expected: ['2', 0],
         })
+        await page.getByRole('button', { name: 'Change type for Catch up', exact: true }).click()
+        await page.getByRole('menuitem', { name: 'Dismiss', exact: true }).click()
+        await page.locator(`${MEETINGS} .sky-dr-label`, { hasText: 'Catch up' }).waitFor({ state: 'detached' })
+        await page.reload()
+        await page.getByRole('button', { name: 'Show details' }).click()
+        await page.locator(`${MEETINGS} .sky-dr-label`).waitFor()
+        assert({
+          given: 'a dismissed event with reminders hidden and a page reload on a phone',
+          should: 'keep the saved reminder out of Meetings',
+          actual: [
+            await page.locator(`${MEETINGS} .sky-rail-count`).innerText(),
+            await page.getByText('Catch up', { exact: true }).count(),
+          ],
+          expected: ['1', 0],
+        })
+        overrides.delete('c'.repeat(64))
         hideNotifications = false
         await refresh()
         await page.locator(`${NOTICES} .sky-dr-label`).waitFor()

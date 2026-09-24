@@ -142,6 +142,16 @@
   text-decoration: underline;
 }
 
+.sky-dr-correction {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 8px;
+  color: var(--sky-dim);
+  font-size: 12.5px;
+}
+
 .sky-dr-who {
   grid-column: 2 / -1;
   font-size: 12.5px;

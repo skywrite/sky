@@ -9,6 +9,7 @@ import { Hono } from 'hono'
 import { START_TOLERANCE_MINUTES } from '#commands/all/day/meeting/lib/meetingCheck.ts'
 import { fetchDayMeetings } from '#commands/all/google/calendar/lib/dayMeetings.ts'
 import {
+  calendarEventKey,
   classificationDir,
   setCalendarEventType,
   type CalendarEventType,
@@ -222,10 +223,10 @@ export function createDayScheduleHost(options: {
     })
   }
   schedule.setType = async (day, key, type) => {
-    const current = await schedule(day)
-    if (![...current.meetings, ...(current.notifications ?? [])].some((event) => event.classification?.key === key))
-      return false
-    await setCalendarEventType(classificationDir(loadSkyConfig().userDataDir), key, type)
+    const current = await fetchDayMeetings(secrets, day, options.timeDir)
+    const event = [...current.meetings, ...current.notifications].find((event) => calendarEventKey(event) === key)
+    if (!event) return false
+    await setCalendarEventType(classificationDir(loadSkyConfig().userDataDir), key, type, event)
     return true
   }
   return schedule

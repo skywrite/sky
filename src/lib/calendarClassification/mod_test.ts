@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import * as path from 'node:path'
 import type { CalendarEvent } from '#lib/google/calendar.ts'
@@ -7,6 +7,7 @@ import { TestSecretsProvider } from '#lib/secrets/TestSecretsProvider.ts'
 import { createTypeSafeClient } from '#shared/ai/typesafe/client.ts'
 import type { AIUsageRecord } from '#shared/ai/usageLog.ts'
 import { assert, test } from '#test'
+import type { CalendarOwnerContext } from './context.ts'
 import { calendarEventKey, classifyCalendarEvents, setCalendarEventType } from './mod.ts'
 
 const event = (id: string, title = id): CalendarEvent => ({
@@ -38,7 +39,16 @@ function answer(type: 'meeting' | 'notification', probability = 0.98, confidence
 }
 async function fixture() {
   const dir = await mkdtemp(path.join(tmpdir(), 'sky-calendar-classification-'))
-  const calls: Array<{ state: { title: string; description: string }; questions: unknown }> = []
+  const calls: Array<{
+    state: {
+      title: string
+      description: string
+      owner: CalendarOwnerContext
+      selfResponse: string | null
+      correctedExamples: Array<{ type: string; event: { title: string; selfResponse: string | null } }>
+    }
+    questions: unknown
+  }> = []
   const usage: AIUsageRecord[] = []
   const control = {
     response: (_signal?: AbortSignal | null): Response | Promise<Response> => answer('notification'),
@@ -52,11 +62,12 @@ async function fixture() {
       return control.response(init?.signal)
     }) as typeof fetch,
   })
-  const classify = (events: CalendarEvent[], enabled = true) =>
+  const classify = (events: CalendarEvent[], enabled = true, owner?: CalendarOwnerContext) =>
     classifyCalendarEvents(events, {
       dir,
       enabled,
       client,
+      owner,
       prepare: async () => {
         control.preparations += 1
       },
@@ -100,6 +111,92 @@ test('calendar classification caches Jev judgments, invalidates edits, and keeps
         3,
         ['typesafe', 'typesafe', 'typesafe'],
         'Discuss the school plan together.',
+      ],
+    })
+  } finally {
+    await f.clean()
+  }
+})
+
+test('owner relationships and RSVP reach the classifier and invalidate judgments when changed', async () => {
+  const f = await fixture()
+  try {
+    const owner = { name: 'Jane Doe', family: 'Children: Alex and Sam. Partner: Jordan.' }
+    const lesson = { ...event('lesson', 'Alex voice'), selfResponse: 'needsAction' as const }
+    await f.classify([lesson], true, owner)
+    await f.classify([{ ...lesson, selfResponse: 'accepted' }], true, owner)
+    const changed = { ...owner, family: 'Alex is a colleague. Sam is my child.' }
+    await f.classify([{ ...lesson, selfResponse: 'accepted' }], true, changed)
+    await f.classify(
+      [
+        {
+          ...lesson,
+          selfResponse: undefined,
+          attendees: [...lesson.attendees, { email: lesson.account, self: true, response: 'tentative' }],
+        },
+      ],
+      true,
+      owner,
+    )
+    assert({
+      given: 'household context, a changed owner RSVP, a corrected relationship, and an RSVP in the guest list',
+      should: 'supply each as evidence and reassess the event instead of reusing an obsolete judgment',
+      actual: f.calls.map(({ state }) => [state.owner, state.selfResponse]),
+      expected: [
+        [owner, 'needsAction'],
+        [owner, 'accepted'],
+        [changed, 'accepted'],
+        [owner, 'tentative'],
+      ],
+    })
+  } finally {
+    await f.clean()
+  }
+})
+
+test('saved corrections teach similar events, survive edits, and disappear from evidence when reset', async () => {
+  const f = await fixture()
+  try {
+    const lesson = { ...event('lesson', 'Alex voice'), selfResponse: 'accepted' as const, recurringEventId: 'lessons' }
+    const key = calendarEventKey(lesson)
+    const next = { ...lesson, id: 'next-lesson', title: 'Singing lesson' }
+    f.control.response = () => answer('meeting')
+    await f.classify([next])
+    await setCalendarEventType(f.dir, key, 'notification', lesson)
+    const saved = JSON.parse(await readFile(path.join(f.dir, 'overrides', `${key}.json`), 'utf8'))
+    const changed = await f.classify([{ ...lesson, title: 'Updated lesson' }])
+    const learned = await f.classify([next])
+    await f.classify([
+      event('unrelated', 'Atlas review'),
+      { ...next, account: 'another@example.com' },
+      { ...next, calendarId: 'other' },
+    ])
+    const examples = f.calls.map(({ state }) =>
+      state.correctedExamples.map((example) => [example.type, example.event.title, example.event.selfResponse]),
+    )
+    await setCalendarEventType(f.dir, key, null)
+    await f.classify([next])
+    const reset = JSON.parse(await readFile(path.join(f.dir, 'overrides', `${key}.json`), 'utf8'))
+    assert({
+      given:
+        'a dismissed lesson, its renamed next occurrence, unrelated events, and restoring automatic classification',
+      should:
+        'persist the correction and use it as scoped evidence without forcing other labels, then remove it completely',
+      actual: [
+        saved.type,
+        changed.notifications[0].classification?.source,
+        learned.meetings[0].classification?.type,
+        examples,
+        f.calls.length,
+        reset,
+      ],
+      expected: [
+        'notification',
+        'manual',
+        'meeting',
+        [[], [['notification', 'Alex voice', 'accepted']], [], [], []],
+        5,
+        { type: null },
       ],
     })
   } finally {
