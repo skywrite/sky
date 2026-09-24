@@ -7,7 +7,7 @@ import { loadImageForAI } from './loadImage.ts'
 
 const PROMPT_FILE = new URL('../prompts/extract-from-image.prompt.md', import.meta.url).pathname
 
-const MessageSchema = z.object({
+export const MessageSchema = z.object({
   sender: z
     .string()
     .describe(

@@ -177,7 +177,7 @@ function Canvas() {
   // A file the rail's pad kept with the day: the toast holds Undo for a moment.
   const [kept, setKept] = useState<Kept[]>([])
   const queue = useImportQueue((job) => openImport(job.id))
-  const drop = useFileDrop(onDayPage, queue.take)
+  const drop = useFileDrop(onDayPage, queue.take, queue.takeText)
   const undoKept = () => {
     const held = kept
     setKept([])

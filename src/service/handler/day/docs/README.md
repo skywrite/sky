@@ -320,7 +320,8 @@ reload.
 - **Drop anywhere else and it is an import** — the page, and the rail's
   other sections too; only the pad keeps. The import dialog opens (see
   `../../import/docs/README.md`): a transcript, a recording or a screenshot
-  of a conversation goes to its door, and a file no door takes is refused
+  of a conversation goes to its door, text dragged out of another app is
+  asked about the same way, and a file no door takes is refused
   there and leaves with Remove. A recording over the transcription cap, or
   a screenshot over the vision model's, is refused before it uploads. The
   dialog never keeps; the pad does.

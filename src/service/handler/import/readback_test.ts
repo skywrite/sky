@@ -5,6 +5,7 @@ import {
   lengthLabel,
   readAudio,
   readImage,
+  readSelection,
   readSrt,
   readText,
   readTranscript,
@@ -127,9 +128,39 @@ test('readText', () => {
   const back = readText('[0:00] Jane: Morning.\n[0:12] Alex: Morning.\n[11:40] Jane: Done.', 'notes.txt')
   assert({
     given: 'stamped speaker lines',
-    should: 'read the stamps for the length and offer a meeting',
+    should: 'read the stamps for the length and offer a meeting first, then a message',
     actual: [back.summary, back.kinds, back.refusal],
-    expected: ['Notetaker text · 12 minutes · 3 stamped turns', ['meeting'], null],
+    expected: ['Notetaker text · 12 minutes · 3 stamped turns', ['meeting', 'message'], null],
+  })
+})
+
+test('readSelection', () => {
+  const chat = 'Jane Doe 10:32 AM\nAre we still on for Thursday?\n\nAlex Chen 10:34 AM\nYes, 7 at the usual place.\n'
+  const back = readSelection(chat)
+  assert({
+    given: 'a conversation dragged out of a messaging app',
+    should: 'count its lines, show its first words, and offer a message first',
+    actual: [back.source, back.summary, back.detail, back.kinds, back.refusal],
+    expected: [
+      'selection',
+      'Text · 4 lines',
+      'Jane Doe 10:32 AM Are we still on for Thursday? Alex Chen 10:34 AM Yes, 7 at the usual place.',
+      ['message', 'meeting'],
+      null,
+    ],
+  })
+  const transcript = readSelection('[0:00] Jane: Morning.\n[0:12] Alex: Morning.\n[11:40] Jane: Done.')
+  assert({
+    given: "a notetaker's stamped lines dragged in",
+    should: 'read their length and offer a meeting first',
+    actual: [transcript.summary, transcript.kinds],
+    expected: ['Text · 3 lines · 12 minutes · 3 stamped turns', ['meeting', 'message']],
+  })
+  assert({
+    given: 'a WebVTT body dragged in as text',
+    should: 'send it to the transcript door as a file',
+    actual: readSelection(VTT).refusal,
+    expected: 'The text is a WebVTT transcript — save it as .vtt and drop the file.',
   })
 })
 

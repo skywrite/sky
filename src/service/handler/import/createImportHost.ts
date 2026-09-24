@@ -25,6 +25,7 @@ import { dayDir, fetchNowSync } from '#shared/nbfs/mod.ts'
 import { PlainDate, PlainDateTime, ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
 import type { CalendarMatch, ImportJob, ImportRoutesOptions, Listen, RunOutcome, StagedFile } from './mod.ts'
 import {
+  opening,
   type ReadBack,
   readAudio,
   readImage,
@@ -41,7 +42,6 @@ import { startOnSavedDay } from './startOnSavedDay.ts'
 
 /** How long a recording sky listens to before guessing what it is. */
 const LISTEN_SECONDS = 45
-const OPENING_CHARS = 200
 
 const GUESS: Record<RecordingKind, string> = {
   meeting: 'Sounds like a meeting recap.',
@@ -49,14 +49,6 @@ const GUESS: Record<RecordingKind, string> = {
   note: 'Sounds like a note to keep.',
   message: 'Sounds like a message to send.',
   event: 'Sounds like something that happened.',
-}
-
-/** The first words, cut at a word. */
-function opening(text: string): string {
-  const flat = text.replace(/\s+/g, ' ').trim()
-  if (flat.length <= OPENING_CHARS) return flat
-  const cut = flat.slice(0, OPENING_CHARS)
-  return `${cut.slice(0, cut.lastIndexOf(' ') > 40 ? cut.lastIndexOf(' ') : OPENING_CHARS)}…`
 }
 
 /** One word from a small model: which door the opening words point at. */
@@ -147,9 +139,10 @@ export function createImportHost(config: typeof ConfigModule, env: Record<string
   }
 
   const calendar = async (when: string, readback: ReadBack): Promise<CalendarMatch | null> => {
-    // A screenshot is a conversation and an .srt is a video, not a meeting:
-    // the calendar has nothing to say about either.
-    if (readback.source === 'image' || readback.source === 'srt') return null
+    // A screenshot or a dragged text is a conversation, and an .srt a video,
+    // not a meeting; and a dragged text's time is only when it was dropped.
+    // The calendar has nothing to say about any of them.
+    if (readback.source === 'image' || readback.source === 'srt' || readback.source === 'selection') return null
     const day = new PlainDate(when.slice(0, 10))
     const start = minutesOf(when.slice(11))
     const check = await checkDayMeetings(secrets, day, config.DIR_TIME)

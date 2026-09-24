@@ -1,6 +1,6 @@
 /**
  * Meeting from a file — the service's side of dropping a transcript, a
- * recording or a screenshot on the day.
+ * recording, a screenshot or a dragged text on the day.
  *
  * A drop becomes a job: the upload staged under the user-data directory,
  * read back at once (length, speakers, turns; for a recording the first
@@ -37,7 +37,7 @@ import {
   type StartFields,
   summarize,
 } from './jobs.ts'
-import { KINDS, type ReadBack, sourceOf } from './readback.ts'
+import { KINDS, type ReadBack, readSelection, sourceOf } from './readback.ts'
 
 export type {
   CalendarMatch,
@@ -87,13 +87,17 @@ export interface ImportRoutesOptions {
   journalTypes: string[]
 }
 
-/** "Voice memo 9:14", "Screenshot 7:44", or the file's name without its extension. */
+/** "Voice memo 9:14", "Screenshot 7:44", "Text 16:02", or the file's name without its extension. */
 function titleOf(file: StagedFile, readback: ReadBack, when: string): string {
   const time = when.slice(11).replace(/^0/, '')
   if (readback.source === 'audio') return `Voice memo ${time}`
   if (readback.source === 'image') return `Screenshot ${time}`
+  if (readback.source === 'selection') return `Text ${time}`
   return file.name.replace(/\.[^.]+$/, '')
 }
+
+/** What a dragged text is staged as: a file like any other, for the door to read. */
+const SELECTION_FILE = 'selection.txt'
 
 /** What a parked question is about, for the row. */
 function promptTitle(prompt: PromptOnWire): string {
@@ -206,13 +210,20 @@ export function createImportRoutes(options: ImportRoutesOptions): Hono {
   const notFound = (c: { json: (body: unknown, status: 404) => Response }) => c.json({ message: 'no such import' }, 404)
 
   // A file arrives: staged, read back, and — for a recording — listened to.
+  // Text dragged onto the day arrives as a `text` field instead, and is
+  // staged as a file of its own.
   app.post('/', async (c) => {
     await loaded
     const body = await c.req.raw.formData().catch(() => null)
     const uploads = body?.getAll('file') ?? []
-    if (uploads.length === 0 || !uploads.every((upload): upload is File => upload instanceof File)) {
+    if (!uploads.every((upload): upload is File => upload instanceof File)) {
       return c.json({ message: 'a file is required' }, 400)
     }
+    const field = uploads.length === 0 ? body?.get('text') : null
+    // Multipart sends every line break in a field as CRLF; the text had its own.
+    const selection = typeof field === 'string' ? field.replace(/\r\n?/g, '\n') : null
+    if (uploads.length === 0 && selection === null) return c.json({ message: 'a file is required' }, 400)
+    if (selection !== null && !selection.trim()) return c.json({ message: 'the text is empty' }, 400)
     const empty = uploads.find((upload) => upload.size === 0)
     if (empty) return c.json({ message: uploads.length > 1 ? `${empty.name} is empty` : 'the file is empty' }, 400)
     if (uploads.length > 1 && uploads.some((upload) => sourceOf(upload.name) !== 'image')) {
@@ -227,6 +238,13 @@ export function createImportRoutes(options: ImportRoutesOptions): Hono {
     const modified = body?.getAll('lastModified') ?? []
     const names = new Set(['job.json'])
     try {
+      if (selection !== null) {
+        // No file clock: the proposal is the moment it was dropped.
+        const bytes = new TextEncoder().encode(selection)
+        await writeFile(path.join(dir, SELECTION_FILE), bytes, { flag: 'wx' })
+        files.push({ name: SELECTION_FILE, size: bytes.byteLength, lastModified: null })
+        readbacks.push(readSelection(selection))
+      }
       for (const [index, upload] of uploads.entries()) {
         // The image command accepts comma-separated paths. Keep staged names
         // unambiguous, and never overwrite a same-named screenshot in the group.

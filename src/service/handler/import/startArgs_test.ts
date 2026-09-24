@@ -164,3 +164,44 @@ test('startArgs() — a screenshot', () => {
     expected: ['/tmp/memo.m4a', undefined],
   })
 })
+
+test('startArgs() — text, from a .txt or dragged onto the day', () => {
+  const run = (source: 'text' | 'selection', kind: 'message' | 'meeting') => {
+    const start = startArgs({ ...memo, source }, fields({ kind }), '/tmp/imports/j1/chat.txt')
+    return {
+      command: start.command,
+      text: start.args.fromText,
+      others: [start.args.fromAudio, start.args.fromImage, start.args.fromVoiceMemo],
+      when: String(start.args.when),
+      clock: start.args.clock,
+      rawArgs: start.rawArgs,
+    }
+  }
+  const message = (clock: string | undefined) => ({
+    command: 'message:new',
+    text: '/tmp/imports/j1/chat.txt',
+    others: [undefined, undefined, undefined],
+    when: PROPOSED,
+    clock,
+    rawArgs: { _: [] },
+  })
+  assert({
+    given: 'a .txt and a dragged text, each filed as a message with the when left as proposed',
+    should: 'run message:new by its text door, with nothing stated',
+    actual: [run('text', 'message'), run('selection', 'message')],
+    expected: [message(undefined), message(undefined)],
+  })
+  assert({
+    given: 'the same two filed as a meeting',
+    should: "go in by the meeting's text door; only the file's clock goes as a clock, never the moment of a drop",
+    actual: [run('text', 'meeting'), run('selection', 'meeting')].map(({ command, text, clock }) => ({
+      command,
+      text,
+      clock,
+    })),
+    expected: [
+      { command: 'meeting:new', text: '/tmp/imports/j1/chat.txt', clock: PROPOSED },
+      { command: 'meeting:new', text: '/tmp/imports/j1/chat.txt', clock: undefined },
+    ],
+  })
+})

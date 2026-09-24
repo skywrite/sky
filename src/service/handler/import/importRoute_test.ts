@@ -410,6 +410,59 @@ test('POST /import refuses a file sky does not take, and start refuses it too', 
   assert({ given: 'an empty file', should: 'be refused outright', actual: empty.status, expected: 400 })
 })
 
+test('POST /import takes text dragged onto the day, and starts it as a message', async () => {
+  const w = await world()
+  const app = createTestHttpApp([path.join(w.notebook, 'time')], { imports: w.options })
+  const text = 'Jane Doe: Are we still on for Thursday?\nAlex Chen: Yes, 7 at the usual place.\n'
+  const form = new FormData()
+  form.append('text', text)
+  const response = await app.request('/import', { method: 'POST', body: form })
+  const { job } = (await response.json()) as { job: ImportJob }
+  const staged = (await readdir(path.join(w.dir, job.id))).filter((f) => !f.endsWith('.tmp'))
+  const video = await postJson(app, `/import/${job.id}/start`, { kind: 'video', when: job.suggestedWhen })
+  const message = await postJson(app, `/import/${job.id}/start`, { kind: 'message', when: job.suggestedWhen })
+  const start = startArgs({ ...w.runs[0], source: w.runs[0].readback.source }, w.runs[0].fields!, w.paths[0])
+  assert({
+    given: 'a conversation dragged onto the day',
+    should: 'stage it as a file, read it back as text offering a message first, and start message:new on it',
+    actual: {
+      status: response.status,
+      source: job.readback.source,
+      summary: job.readback.summary,
+      kinds: job.readback.kinds,
+      title: job.title,
+      lastModified: job.file.lastModified,
+      staged: staged.sort(),
+      content: await readFile(path.join(w.dir, job.id, 'selection.txt'), 'utf8'),
+      video: video.status,
+      message: message.status,
+      command: [start.command, start.args.fromText],
+    },
+    expected: {
+      status: 201,
+      source: 'selection',
+      summary: 'Text · 2 lines',
+      kinds: ['message', 'meeting'],
+      title: 'Text 9:31',
+      lastModified: null,
+      staged: ['job.json', 'selection.txt'],
+      content: text,
+      video: 400,
+      message: 200,
+      command: ['message:new', path.join(w.dir, job.id, 'selection.txt')],
+    },
+  })
+  const blank = new FormData()
+  blank.append('text', '  \n')
+  const empty = await app.request('/import', { method: 'POST', body: blank })
+  assert({
+    given: 'nothing but whitespace dragged in',
+    should: 'be refused outright',
+    actual: [empty.status, ((await empty.json()) as { message: string }).message],
+    expected: [400, 'the text is empty'],
+  })
+})
+
 test("POST /import reads a video's .srt, offers it as a video only, and starts it as one", async () => {
   const w = await world()
   const app = createTestHttpApp([path.join(w.notebook, 'time')], { imports: w.options })

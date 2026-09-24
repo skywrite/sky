@@ -33,11 +33,11 @@ import { LinksInput } from './links.tsx'
 import { renderStatic } from './wysiwyg/render.ts'
 
 /**
- * Meeting from a file. A transcript, a recording, a screenshot or a video's
- * .srt dropped on the day becomes an import: the dialog says what sky read
- * in it and settles what it is and when; the Running block shows it working;
- * its own page shows the work as it happens and the questions it stops to
- * ask.
+ * Meeting from a file. A transcript, a recording, a screenshot, a video's
+ * .srt, or text dragged out of another app, dropped on the day becomes an
+ * import: the dialog says what sky read in it and settles what it is and
+ * when; the Running block shows it working; its own page shows the work as
+ * it happens and the questions it stops to ask.
  */
 
 // -----------------------------------------------------------------------------
@@ -52,7 +52,8 @@ export interface ImportJob {
   file: { name: string; size: number; lastModified: number | null }
   files?: ImportJob['file'][]
   readback: {
-    source: 'transcript' | 'srt' | 'text' | 'audio' | 'image'
+    /** `selection` is text dragged onto the day */
+    source: 'transcript' | 'srt' | 'text' | 'audio' | 'image' | 'selection'
     kinds: ImportKind[]
     summary: string
     detail: string | null
@@ -203,10 +204,11 @@ export function useImports(): ImportJob[] {
   return imports
 }
 
-/** The upload, with its bytes as progress — the one bar whose math is real. */
+/** The upload, with its bytes as progress — the one bar whose math is real. A dragged text goes up as `text`. */
 export function uploadImport(
   files: File[],
   onProgress: (fraction: number) => void,
+  text?: string,
 ): Promise<{ job: ImportJob; options: ImportOptions }> {
   return new Promise((resolve, reject) => {
     const form = new FormData()
@@ -214,6 +216,7 @@ export function uploadImport(
       form.append('file', file, file.name)
       form.append('lastModified', String(file.lastModified))
     }
+    if (text !== undefined) form.append('text', text)
     const xhr = new XMLHttpRequest()
     xhr.open('POST', '/import')
     xhr.upload.onprogress = (e) => {
@@ -350,41 +353,92 @@ function refusedBeforeUpload(file: File): string | null {
   return null
 }
 
-/** The nearest drop target owns the file: page, Meetings section, individual meeting, or Files pad. */
-export function useFileDrop(enabled: boolean, onFiles: (files: File[]) => void) {
-  const [dragging, setDragging] = useState(false)
+/** What a drag holds that a drop here can take: files, or text dragged out of another app. */
+export type Dragged = 'files' | 'text'
+
+/**
+ * Files go to the nearest drop target: page, Meetings section, individual
+ * meeting, or Files pad. Text is taken only where `onText` is given — the
+ * page — and never from a drag that began on the page itself, a link, or
+ * over a field that takes the text as typing.
+ */
+export function useFileDrop(enabled: boolean, onFiles: (files: File[]) => void, onText?: (text: string) => void) {
+  const [dragging, setDragging] = useState<Dragged | false>(false)
   const depth = useRef(0)
-  const hasFiles = (event: DragEvent) => Array.from(event.dataTransfer?.types ?? []).includes('Files')
-  const ownsDrop = (event: DragEvent) => {
-    const target =
-      event.target instanceof Element
-        ? event.target.closest('[data-drop-pad], [data-meeting-drop], [data-meetings-drop]')
-        : null
-    return !target || target === event.currentTarget
+  const within = useRef(false)
+  const takesText = Boolean(onText)
+  useEffect(() => {
+    if (!takesText) return
+    const start = () => {
+      within.current = true
+    }
+    const end = () => {
+      within.current = false
+    }
+    window.addEventListener('dragstart', start)
+    window.addEventListener('dragend', end)
+    window.addEventListener('drop', end)
+    // A drag's source re-rendered away never says it ended; the mouse moving again does — no mouse
+    // events arrive while any drag is under way.
+    window.addEventListener('mousemove', end)
+    return () => {
+      window.removeEventListener('dragstart', start)
+      window.removeEventListener('dragend', end)
+      window.removeEventListener('drop', end)
+      window.removeEventListener('mousemove', end)
+    }
+  }, [takesText])
+  const held = (event: DragEvent): Dragged | null => {
+    const types = Array.from(event.dataTransfer?.types ?? [])
+    if (types.includes('Files')) return 'files'
+    // A dragged link or image carries its URL; a selection does not.
+    if (takesText && !within.current && types.includes('text/plain') && !types.includes('text/uri-list')) return 'text'
+    return null
+  }
+  const ownsDrop = (event: DragEvent, what: Dragged) => {
+    const target = event.target instanceof Element ? event.target : null
+    if (what === 'text')
+      return !target?.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"])')
+    const owner = target?.closest('[data-drop-pad], [data-meeting-drop], [data-meetings-drop]') ?? null
+    return !owner || owner === event.currentTarget
   }
   const onDragEnter = (event: DragEvent) => {
-    if (!enabled || !hasFiles(event)) return
-    event.preventDefault()
+    const what = held(event)
+    if (!enabled || !what) return
     depth.current += 1
-    setDragging(ownsDrop(event))
+    const owns = ownsDrop(event, what)
+    // Text over a field is the field's to take, so the browser keeps it.
+    if (what === 'files' || owns) event.preventDefault()
+    setDragging(owns ? what : false)
   }
   const onDragOver = (event: DragEvent) => {
-    if (!enabled || !hasFiles(event)) return
-    event.preventDefault()
-    setDragging(ownsDrop(event))
-    if (ownsDrop(event)) event.dataTransfer.dropEffect = 'copy'
+    const what = held(event)
+    if (!enabled || !what) return
+    const owns = ownsDrop(event, what)
+    if (what === 'files' || owns) event.preventDefault()
+    setDragging(owns ? what : false)
+    if (owns) event.dataTransfer.dropEffect = 'copy'
   }
   const onDragLeave = (event: DragEvent) => {
-    if (!enabled || !hasFiles(event)) return
+    if (!enabled || !held(event)) return
     depth.current = Math.max(0, depth.current - 1)
     if (depth.current === 0) setDragging(false)
   }
   const onDrop = (event: DragEvent) => {
-    if (!enabled || !hasFiles(event)) return
-    event.preventDefault()
+    const what = held(event)
+    if (!enabled || !what) return
     depth.current = 0
     setDragging(false)
-    if (!ownsDrop(event)) return
+    const owns = ownsDrop(event, what)
+    if (what === 'text') {
+      if (!owns) return
+      event.preventDefault()
+      const text = event.dataTransfer.getData('text/plain')
+      if (text.trim()) onText?.(text)
+      return
+    }
+    event.preventDefault()
+    if (!owns) return
     const list = event.dataTransfer?.files
     const files: File[] = list ? Array.from(list) : []
     if (files.length > 0) onFiles(files)
@@ -392,7 +446,7 @@ export function useFileDrop(enabled: boolean, onFiles: (files: File[]) => void) 
   return { dragging: enabled && dragging, handlers: { onDragEnter, onDragOver, onDragLeave, onDrop } }
 }
 
-export function DropOverlay() {
+export function DropOverlay({ what = 'files' }: { what?: Dragged }) {
   return (
     <div className="sky-drop" aria-hidden="true">
       <div className="sky-drop-inner">
@@ -413,10 +467,17 @@ export function DropOverlay() {
             />
           </svg>
         </div>
-        <div className="sky-drop-title">Drop it on the day</div>
+        <div className="sky-drop-title">{what === 'text' ? 'Drop the text on the day' : 'Drop it on the day'}</div>
         <div className="sky-drop-sub">
-          Sky files it: a transcript (.vtt), a video's transcript (.srt), a voice memo, a notetaker's text (.txt), or a
-          screenshot of a conversation. To keep a file with the day as it is, open Files and drop it on the pad.
+          {what === 'text' ? (
+            'Sky asks what it is — a conversation or a meeting — then files it.'
+          ) : (
+            <>
+              Sky files it: a transcript (.vtt), a video's transcript (.srt), a voice memo, a notetaker's text (.txt),
+              or a screenshot of a conversation. To keep a file with the day as it is, open Files and drop it on the
+              pad.
+            </>
+          )}
         </div>
       </div>
     </div>
@@ -432,6 +493,8 @@ export type MeetingImport = { title: string; when: string; day?: never } | { day
 
 interface QueuedImport {
   files: File[]
+  /** Text dragged onto the day, in place of files */
+  text?: string
   meeting: MeetingImport | null
 }
 
@@ -473,9 +536,12 @@ export function useImportQueue(onStarted: (job: ImportJob) => void) {
     setQueue((q) => [...q, ...imports])
   }
 
+  /** Text dragged onto the day is an import too: the dialog asks what it is. */
+  const takeText = (text: string) => setQueue((q) => [...q, { files: [], text, meeting: null }])
+
   useEffect(() => {
     if (pending || again || queue.length === 0) return
-    const [{ files, meeting }, ...rest] = queue
+    const [{ files, text, meeting }, ...rest] = queue
     setQueue(rest)
     const key = crypto.randomUUID()
     let refusal: string | null = null
@@ -486,10 +552,10 @@ export function useImportQueue(onStarted: (job: ImportJob) => void) {
         break
       }
     }
-    setPending({ key, files, meeting, fraction: 0, job: null, options: null, error: refusal })
+    setPending({ key, files, text, meeting, fraction: 0, job: null, options: null, error: refusal })
     if (refusal) return
     const patch = (change: (p: Pending) => Pending) => setPending((p) => (p && p.key === key ? change(p) : p))
-    uploadImport(files, (fraction) => patch((p) => ({ ...p, fraction })))
+    uploadImport(files, (fraction) => patch((p) => ({ ...p, fraction })), text)
       .then(({ job, options }) => patch((p) => ({ ...p, fraction: 1, job, options })))
       .catch((err: Error) => patch((p) => ({ ...p, error: err.message })))
   }, [queue, pending, again])
@@ -501,6 +567,7 @@ export function useImportQueue(onStarted: (job: ImportJob) => void) {
 
   return {
     take,
+    takeText,
     pending,
     again,
     /** Bring a failed import back to the dialog */
@@ -574,6 +641,10 @@ function whenNote(source: ImportJob['readback']['source'], proposed: boolean, la
       return proposed
         ? `when the ${count > 1 ? 'first screenshot' : 'screenshot'} was taken · ${label} · a time ${count > 1 ? 'they show' : 'it shows'} wins`
         : `yours · wins over what the ${count > 1 ? 'screenshots show' : 'screenshot shows'}`
+    case 'selection':
+      return proposed
+        ? `when you dropped it · ${label} · a time it shows wins`
+        : 'yours · wins over what the text shows'
     default:
       return proposed
         ? `from the file's time and length · ${label} · a time it states wins`
@@ -599,6 +670,9 @@ function nextLine(
     if (count > 1)
       return `Sky reads all ${count} screenshots as one conversation, checks what it read with you, and files one message under the day.`
     return 'Sky reads the conversation off the screenshot, checks what it read with you, and files it as a message under the day.'
+  }
+  if (kind === 'message' && (source === 'text' || source === 'selection')) {
+    return 'Sky reads the conversation out of the text, checks what it read with you, and files it as a message under the day.'
   }
   const heard =
     source === 'audio'
@@ -694,14 +768,14 @@ function ConfirmBody({
   const [error, setError] = useState<string | null>(null)
 
   // The read-back lands once the upload finishes; sky's guess a little later. Neither overrides a hand.
+  // Until a hand chooses, the kind is the guess, else the read-back's first: the kind set while the
+  // upload ran was only a placeholder.
   useEffect(() => {
     if (!live) return
     setFields((f) => ({
       ...f,
       when: f.when || proposedWhen || live.suggestedWhen,
-      kind: touched
-        ? f.kind
-        : (live.listen?.kind ?? (live.readback.kinds.includes(f.kind) ? f.kind : (live.readback.kinds[0] ?? f.kind))),
+      kind: touched ? f.kind : (live.listen?.kind ?? live.readback.kinds[0] ?? f.kind),
     }))
   }, [live, touched, proposedWhen])
 
@@ -709,22 +783,25 @@ function ConfirmBody({
   const refusal = live?.readback.refusal ?? pending?.error ?? null
   const files = live ? (live.files ?? [live.file]) : (pending?.files ?? [])
   const count = files.length
-  const source = live?.readback.source ?? 'audio'
+  const source = live?.readback.source ?? (pending?.text !== undefined ? 'selection' : 'audio')
+  const selection = source === 'selection'
   const sourceWord =
     source === 'audio'
       ? 'a voice memo'
       : source === 'text'
         ? 'a text file'
-        : source === 'image'
-          ? count > 1
-            ? `${count} screenshots`
-            : 'a screenshot'
-          : 'a transcript'
+        : source === 'selection'
+          ? 'dropped text'
+          : source === 'image'
+            ? count > 1
+              ? `${count} screenshots`
+              : 'a screenshot'
+            : 'a transcript'
   // The title says what this makes — "New meeting from a transcript" — and follows the choice below.
   const title = refusal
-    ? `Sky cannot take ${count > 1 ? 'these files' : 'this file'}`
+    ? `Sky cannot take ${selection ? 'this text' : count > 1 ? 'these files' : 'this file'}`
     : uploading
-      ? `New from ${count > 1 ? `${count} files` : 'a file'}`
+      ? `New from ${selection ? 'dropped text' : count > 1 ? `${count} files` : 'a file'}`
       : `New ${KIND_LABEL[fields.kind].toLowerCase()} from ${sourceWord}`
 
   const start = async () => {
@@ -748,7 +825,8 @@ function ConfirmBody({
     }
   }
 
-  const size = files.reduce((total, file) => total + file.size, 0)
+  const size =
+    files.length > 0 ? files.reduce((total, file) => total + file.size, 0) : new Blob([pending?.text ?? '']).size
   const calendar = meeting ? null : live?.calendar
 
   return (
@@ -756,7 +834,7 @@ function ConfirmBody({
       {phone && <div className="sky-sheet-handle" />}
       <div className="sky-confirm-title">{title}</div>
       <div className="sky-confirm-file">
-        {count > 1 ? `${count} files` : files[0]?.name} · {sizeLabel(size)}
+        {selection ? 'Dropped text' : count > 1 ? `${count} files` : files[0]?.name} · {sizeLabel(size)}
       </div>
       {count > 1 && (
         <ul className="sky-confirm-files" aria-label="Screenshots">
@@ -773,7 +851,12 @@ function ConfirmBody({
       {live && !refusal && (
         <>
           <div className="sky-confirm-read">{live.readback.summary}</div>
-          {live.readback.detail && <div className="sky-lead">{live.readback.detail}</div>}
+          {live.readback.detail &&
+            (selection ? (
+              <div className="sky-confirm-opening">Starts: “{live.readback.detail}”</div>
+            ) : (
+              <div className="sky-lead">{live.readback.detail}</div>
+            ))}
           {source === 'audio' && !live.listen && (
             <div className="sky-confirm-guess">Listening to the first minute…</div>
           )}
@@ -1361,9 +1444,11 @@ function CorrectionsExchange({
   onAnswer: (answer: string) => void
 }) {
   const [value, setValue] = useState('')
-  // What the door streamed under the step it is checking: the write-up, or the conversation read off a screenshot.
+  // What the door streamed under the step it is checking: the write-up, or the conversation read off a screenshot or out of text.
   const writeup = d.text[(d.stage ?? job.stage)?.id ?? 'writeup'] ?? d.text['writeup']
-  const conversation = job.readback.source === 'image'
+  const { source } = job.readback
+  const conversation =
+    source === 'image' || (job.fields?.kind === 'message' && (source === 'text' || source === 'selection'))
   const send = (text: string) => onAnswer(text)
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === 'Enter' && !event.shiftKey) {

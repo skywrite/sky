@@ -3,9 +3,10 @@
  * its arguments, and — kept apart — what the person actually said.
  *
  * A recording can be filed as any kind; each door takes it as --from-audio,
- * the meeting door as --from-voice-memo. A transcript and a notetaker's
- * text are meetings. A screenshot is a message, by --from-image. An .srt is
- * a video, by --from-srt.
+ * the meeting door as --from-voice-memo. A transcript is a meeting. Text —
+ * a .txt, or a text dragged onto the day — is a meeting or a message, each
+ * by --from-text. A screenshot is a message, by --from-image. An .srt is a
+ * video, by --from-srt.
  *
  * The dialog's When arrives either as sky's own proposal, untouched, or as
  * a value the person changed or chose by dropping on a calendar slot.
@@ -14,7 +15,8 @@
  * argument, which the doors read as a stated start that wins over anything
  * the words say. The proposal goes as what it is, the file's clock: the
  * pipeline gives the model that fact to resolve the words against, and
- * falls back on it only when the words give no time.
+ * falls back on it only when the words give no time. A dragged text has
+ * no clock of its own — its proposal is when it was dropped — so none goes.
  */
 
 import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
@@ -22,7 +24,7 @@ import type { StartFields } from './jobs.ts'
 import type { ReadBack } from './readback.ts'
 
 export interface StartContext {
-  /** What was staged: a recording, a transcript, a video's .srt, a notetaker's text, or a screenshot */
+  /** What was staged: a recording, a transcript, a video's .srt, a notetaker's text, a screenshot, or a dragged text */
   source: ReadBack['source']
   /** The pipeline's record key for the file; null when the host keeps none */
   runKey: string | null
@@ -49,6 +51,7 @@ export function startArgs(job: StartContext, fields: StartFields, input: string 
   const proposedWhen = day ? `${day} ${job.suggestedWhen.split(' ')[1]}` : job.suggestedWhen
   const stated = fields.whenStated === true || fields.when !== proposedWhen
   const rawArgs = stated ? { _: [], when: fields.when } : { _: [] }
+  const text = job.source === 'text' || job.source === 'selection'
   switch (fields.kind) {
     case 'meeting':
       return {
@@ -56,7 +59,7 @@ export function startArgs(job: StartContext, fields: StartFields, input: string 
         args: {
           ...(job.source === 'transcript'
             ? { fromZoomVtt: filePath }
-            : job.source === 'text'
+            : text
               ? { fromText: filePath }
               : { fromVoiceMemo: filePath }),
           category,
@@ -64,7 +67,7 @@ export function startArgs(job: StartContext, fields: StartFields, input: string 
           fresh,
           run: job.runKey ?? undefined,
           ...(day ? { day } : {}),
-          ...(stated ? {} : { clock: job.suggestedWhen }),
+          ...(stated || job.source === 'selection' ? {} : { clock: job.suggestedWhen }),
         },
         rawArgs,
       }
@@ -80,7 +83,11 @@ export function startArgs(job: StartContext, fields: StartFields, input: string 
       return {
         command: 'message:new',
         args: {
-          ...(job.source === 'image' ? { fromImage: filePaths.join(',') } : { fromAudio: filePath }),
+          ...(job.source === 'image'
+            ? { fromImage: filePaths.join(',') }
+            : text
+              ? { fromText: filePath }
+              : { fromAudio: filePath }),
           category,
           when,
           fresh,

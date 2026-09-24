@@ -26,7 +26,7 @@ import { DayRail } from './dayRail.tsx'
 import { DayTracking } from './dayTracking.tsx'
 import { fileHref, resolvePath } from './explorer.tsx'
 import { type Kept, KeptToast } from './files.tsx'
-import { acceptsImports, DropOverlay, type ImportJob, type MeetingImport } from './import.tsx'
+import { acceptsImports, type Dragged, DropOverlay, type ImportJob, type MeetingImport } from './import.tsx'
 import { useRail } from './rail.ts'
 import { RailToggle } from './railToggle.tsx'
 import { DayStreaks } from './streaks.tsx'
@@ -1083,8 +1083,8 @@ export function DayView({
   onOpenSaved?: (chat: string) => void
   onOpenImport?: (id: string) => void
   onImportMeeting?: (files: File[], meeting: MeetingImport) => void
-  /** Files are held over the page */
-  dragging?: boolean
+  /** Files, or text, are held over the page */
+  dragging?: Dragged | false
   onImportFiles?: (files: File[]) => void
   /** Files just kept: the toast holds Undo for a moment */
   kept?: Kept[]
@@ -1398,7 +1398,7 @@ export function DayView({
         </Fragment>
       )}
 
-      {dragging && <DropOverlay />}
+      {dragging && <DropOverlay what={dragging} />}
     </div>
   )
   return (

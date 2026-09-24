@@ -1,6 +1,6 @@
 ---
 created: 2026-09-01
-updated: 2026-09-12
+updated: 2026-09-23
 ---
 
 # Meeting from a file — the import
@@ -11,7 +11,8 @@ Design notes for `src/service/handler/import/` and the page that fronts it,
 ## What is built
 
 A transcript, a recording, a screenshot or a video's `.srt` dropped on the
-day page becomes an **import job**: the upload is staged under `<user-data>/imports/<id>/`,
+day page becomes an **import job**, and so does text dragged onto it out of
+another app: the upload is staged under `<user-data>/imports/<id>/`,
 read back at once, and, on Start, the matching command runs inside the
 service the way the terminal runs it. Everything the job says travels as
 server-sent events.
@@ -21,7 +22,8 @@ server-sent events.
   count from zero, so it says nothing about the clock); a `.txt` for its
   stamped turns; a recording for its size (its length comes from the container, probed by
   the host); a screenshot for its size and its pixels (`lib/media/image`
-  reads the header). A file sky does not take, or cannot, gets a sentence.
+  reads the header); a dragged text for its lines and its first words.
+  A file sky does not take, or cannot, gets a sentence.
 - `jobs.ts` — the job store: memory first, a `job.json` beside each upload
   so a restart still knows what was there (a job that was running when the
   service died reads as failed, with the file kept). A filed import and a
@@ -50,7 +52,8 @@ One door for every file kind. The kind picks the command:
 | --- | --- |
 | `.vtt` | `meeting:new --from-zoom-vtt` |
 | `.srt` | `video:new --from-srt` — a video's transcript; a Loom's, a caption file's |
-| `.txt` | `meeting:new --from-text` |
+| `.txt` | the kind chosen in the dialog: `meeting:new --from-text` (first), or `message:new --from-text` — a chat's export |
+| text dragged in | the same two doors on the text, staged as `selection.txt`: a message first, a meeting first when its lines carry a notetaker's stamps |
 | audio | the kind chosen in the dialog: `meeting:new --from-voice-memo`, or `journal:new`, `notes:new`, `message:new`, `event:new` with `--from-audio` |
 | image | `message:new --from-image` — a screenshot of a conversation |
 
@@ -86,7 +89,9 @@ grouped by day, with the day a link away. Where an item lands is
 asks for corrections in the same loop; the platform is a `select` when the
 screenshot did not say. The screenshot moves into the day's attachments
 without a question — the upload was sky's staging copy, not the person's
-file — where the terminal asks.
+file — where the terminal asks. A text filed as a message goes the same
+way: the conversation read out of it, one check, and the text kept with
+the message.
 
 A run that stops — a failure, a cancel, a restart — leaves the pipeline's
 run record behind, keyed by the file's bytes at upload. Opening the job
@@ -100,7 +105,7 @@ record itself is the transcript pipeline's: see
 
 | Route | Does |
 | --- | --- |
-| `POST /import` | multipart `file` (+ `lastModified`), repeated in matching order for a screenshot group → one job, read back |
+| `POST /import` | multipart `file` (+ `lastModified`), repeated in matching order for a screenshot group → one job, read back; or a `text` field alone for a dragged text |
 | `GET /import` | the rows for the Running block |
 | `GET /import/:id` | one job, plus the journal types the dialog offers |
 | `GET /import/:id/events` | SSE: every event so far, then live until the job settles |
@@ -172,6 +177,14 @@ cap, or a screenshot over the vision model's, is refused before its bytes
 go up, in the read-back's own sentence.
 Keeping a file with the day as it is — a PDF, a Zoom video, anything — is
 the Files pad's job, never this dialog's: `../../day/docs/README.md`.
+
+Text dragged onto the day comes through the same dialog, which asks what
+it is. The page takes a drag carrying `text/plain` and no `text/uri-list`,
+so a dragged link or image is not an import. It ignores a drag that began
+on the page itself, and leaves text let go in a field to the field. The
+When it proposes is the moment of the drop: a dragged text has no clock
+of its own, so none goes to the meeting door, and the calendar is not
+asked.
 
 ## Dropping on a meeting
 

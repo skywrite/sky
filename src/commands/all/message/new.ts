@@ -1,14 +1,17 @@
 /**
- * A message filed under the day: typed in, dictated as a recording, or read
- * off screenshots of the conversation. The two pipelines ask their questions
- * through `context.prompt` — the terminal answers with a prompt, the web's
- * import page with a form — and report their steps through `output.plan`
- * and `output.stage`, so a host can draw the work as it happens.
+ * A message filed under the day: typed in, dictated as a recording, read
+ * off screenshots of the conversation, or read out of its text. The
+ * pipelines ask their questions through `context.prompt` — the terminal
+ * answers with a prompt, the web's import page with a form — and report
+ * their steps through `output.plan` and `output.stage`, so a host can draw
+ * the work as it happens.
  */
 
 import { copyFile, mkdir, rename, stat } from 'node:fs/promises'
 import * as path from 'node:path'
 import colors from 'picocolors'
+import { desktopFilesByExt } from '#commands/all/audio/transcript/lib/desktopFiles.ts'
+import { isRtf } from '#commands/all/audio/transcript/lib/plainText.ts'
 import { clearTranscriptRun } from '#commands/all/audio/transcript/lib/transcriptRun.ts'
 import { validateAnyArgFlagExists } from '#commands/cli/mod.ts'
 import {
@@ -24,13 +27,14 @@ import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod
 import { DayDirFileWriter, messageFileName, writeDayItems } from '#lib/nbfs/mod.ts'
 import openEditor from '#lib/shell/openEditor.ts'
 import slugify from '#lib/string/slugify.ts'
-import { exists } from '#shared/fs/mod.ts'
+import { exists, readTextFile } from '#shared/fs/mod.ts'
 import MessageDocument from '#shared/models/Message/mod.ts'
 import dayAttachmentsDir from '#shared/nbfs/dayAttachmentsDir.ts'
 import { extractTypedTime, labelledTimeRaw } from '#universal/dates/extractTypedTime.ts'
 import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import { applyParticipantCorrections, extractTypedParticipants } from './_lib/applyCorrections.ts'
 import { extractMessageFromImage, renderDialogue, senderSummary } from './_lib/extractFromImage.ts'
+import { extractMessageFromText } from './_lib/extractFromText.ts'
 import { findScreenshotsOnDesktop } from './_lib/findScreenshotOnDesktop.ts'
 import { parseCorrections } from './_lib/parseCorrections.ts'
 
@@ -75,6 +79,41 @@ async function keepWithDay(context: CommandArgs['context'], message: string): Pr
   return (await context.prompt.confirm({ message })) ?? false
 }
 
+/**
+ * The conversation's text for --from-text: the file named, or the newest
+ * .txt on the Desktop. The flag owns .txt — a conversation saved as RTF is
+ * refused with the one-liner that converts it, never unwrapped here.
+ */
+async function readConversationText(
+  flag: string,
+  output: CommandArgs['context']['output'],
+): Promise<{ path: string; text: string } | { error: string }> {
+  // A valueless --from-text gives boolean true at runtime
+  let textPath: string
+  if (typeof flag === 'string' && flag !== 'true') {
+    textPath = path.resolve(flag)
+  } else {
+    const found = await desktopFilesByExt(['.txt'])
+    if (found.length === 0) {
+      return { error: 'No .txt file found on Desktop. Specify a path: --from-text /path/to/conversation.txt' }
+    }
+    textPath = found[0].path
+    output.log(colors.cyan(`Found: ${path.basename(textPath)}`))
+  }
+  const name = path.basename(textPath)
+  if (path.extname(textPath).toLowerCase() !== '.txt') {
+    return {
+      error: `--from-text requires a .txt file, got: ${name} — convert it first: textutil -convert txt "${textPath}"`,
+    }
+  }
+  if (!(await exists(textPath))) return { error: `File not found: ${textPath}` }
+  const text = await readTextFile(textPath)
+  if (isRtf(text))
+    return { error: `--from-text: ${name} is RTF, not plain text — convert it first: textutil -convert txt` }
+  if (!text.trim()) return { error: `--from-text: ${name} is empty` }
+  return { path: textPath, text }
+}
+
 const params = {
   to: ArgOrFlag.string('Channel or person', { short: 't' }),
   from: Flag.string('Who the communication was from', { short: 'f' }),
@@ -85,7 +124,10 @@ const params = {
     optional: true,
   }),
   fromAudio: Flag.string('Path to audio file, or omit path to search Desktop', { optional: true }),
-  aiContext: Flag.string('Additional context for AI image extraction', { optional: true }),
+  fromText: Flag.string('Path to a .txt of the conversation, or omit path to use the newest .txt on the Desktop', {
+    optional: true,
+  }),
+  aiContext: Flag.string('Additional context for AI extraction from screenshots or text', { optional: true }),
   when: whenNBTime(),
   category: categoryComplete(),
   fresh: Flag.bool('Start over: forget what an earlier run of the recording already produced', { default: false }),
@@ -100,12 +142,15 @@ export default class MessageNewTask extends Command {
     name: 'message:new',
     description: 'Create new communication.',
     params,
-    postProcess: [validateAnyArgFlagExists('to', 'from', 'fromImage', 'fromAudio')],
+    postProcess: [validateAnyArgFlagExists('to', 'from', 'fromImage', 'fromAudio', 'fromText')],
   }
 
   async run({ args, context, tasks, rawArgs }: CommandArgs<Params>): Promise<CommandResult<Result>> {
     const { output, config, prompt } = context
-    let { when, to, from, medium, summary, category, fromImage, fromAudio, aiContext } = args
+    let { when, to, from, medium, summary, category, fromImage, fromAudio, fromText, aiContext } = args
+    if ([fromAudio, fromImage, fromText].filter((flag) => flag !== undefined).length > 1) {
+      return CommandResult.fail('Use only one of --from-audio, --from-image or --from-text')
+    }
     let body: string | undefined
     let attachmentFiles: string[] = []
     let audioRel: string[] | undefined
@@ -165,14 +210,21 @@ export default class MessageNewTask extends Command {
       }
     }
 
-    // --from-image pipeline
+    // --from-image / --from-text pipelines: the conversation read off
+    // screenshots of it, or out of its text
     const useImagePipeline = fromImage !== undefined
+    const useTextPipeline = fromText !== undefined
 
-    if (useImagePipeline) {
-      // 1. Resolve image path(s) (valueless --from-image gives boolean true at runtime)
+    if (useImagePipeline || useTextPipeline) {
+      // 1. Read the text, or resolve image path(s) (valueless --from-image gives boolean true at runtime)
       const hasExplicitPath = typeof fromImage === 'string' && fromImage !== 'true'
-      let imagePaths: string[]
-      if (hasExplicitPath) {
+      let imagePaths: string[] = []
+      let conversation: { path: string; text: string } | null = null
+      if (useTextPipeline) {
+        const read = await readConversationText(fromText, output)
+        if ('error' in read) return CommandResult.fail(read.error)
+        conversation = read
+      } else if (hasExplicitPath) {
         imagePaths = fromImage
           .split(',')
           .map((s) => s.trim())
@@ -222,15 +274,25 @@ export default class MessageNewTask extends Command {
         imagePaths = withMtime.map((x) => x.ip)
       }
 
-      // 2. Extract conversation from image(s)
-      const label = imagePaths.length === 1 ? 'screenshot' : `${imagePaths.length} screenshots`
+      // 2. Read the conversation off the screenshot(s), or out of the text
+      const label = conversation
+        ? 'conversation'
+        : imagePaths.length === 1
+          ? 'screenshot'
+          : `${imagePaths.length} screenshots`
       output.plan([
         { id: 'read', label: `Reading the ${label}` },
         { id: 'check', label: 'Checking it with you' },
         { id: 'file', label: 'Filing' },
       ])
       output.stage('read', `Reading the ${label}`)
-      output.log(colors.gray(`Extracting conversation from ${label}...`))
+      output.log(
+        colors.gray(
+          conversation
+            ? `Reading the conversation in ${path.basename(conversation.path)}...`
+            : `Extracting conversation from ${label}...`,
+        ),
+      )
       const participants = [from, to].filter(Boolean)
       const hints = [
         participants.length > 0
@@ -238,10 +300,10 @@ export default class MessageNewTask extends Command {
           : '',
         aiContext ?? '',
       ].filter(Boolean)
-      const extraction = await extractMessageFromImage(imagePaths, {
-        aiContext: hints.length > 0 ? hints.join(' ') : undefined,
-        now: `${when}`,
-      })
+      const extractOptions = { aiContext: hints.length > 0 ? hints.join(' ') : undefined, now: `${when}` }
+      const extraction = conversation
+        ? await extractMessageFromText(conversation.text, extractOptions)
+        : await extractMessageFromImage(imagePaths, extractOptions)
       if (context.signal?.aborted) return CommandResult.fail('Cancelled')
 
       // 3. Apply extracted values (CLI flags override AI)
@@ -250,8 +312,8 @@ export default class MessageNewTask extends Command {
       summary = summary || extraction.summary
       let messages = extraction.messages
 
-      // A visible timestamp beats the clock: `when` defaults to now, which is when
-      // the screenshot got filed, not when the conversation happened. rawArgs is
+      // A stated timestamp beats the clock: `when` defaults to now, which is when
+      // the screenshot or the text got filed, not when the conversation happened. rawArgs is
       // the parse before defaults are applied, so a `when` key there means the user
       // typed --when and meant it — that always wins over what the model read.
       if (extraction.when && rawArgs.when === undefined) {
@@ -294,7 +356,7 @@ export default class MessageNewTask extends Command {
         output.log(colors.white(`  Medium:   ${medium}`))
         output.log(colors.white(`  Summary:  ${summary ?? '(none)'}`))
         output.log(colors.white(`  When:     ${when}`))
-        output.log(colors.white(`  Images:   ${imagePaths.length}`))
+        if (!conversation) output.log(colors.white(`  Images:   ${imagePaths.length}`))
         if (extraction.continuityNotes) {
           output.log(colors.yellow(`  Notes:    ${extraction.continuityNotes}`))
         }
@@ -372,8 +434,13 @@ export default class MessageNewTask extends Command {
 
       body = renderDialogue(messages)
 
-      // 6. The screenshots go with the message
-      const moveLabel = imagePaths.length === 1 ? 'Move screenshot to attachments?' : 'Move screenshots to attachments?'
+      // 6. The screenshots, or the text, go with the message
+      const sources = conversation ? [conversation.path] : imagePaths
+      const moveLabel = conversation
+        ? `Move ${path.basename(conversation.path)} to attachments?`
+        : imagePaths.length === 1
+          ? 'Move screenshot to attachments?'
+          : 'Move screenshots to attachments?'
       if (await keepWithDay(context, moveLabel)) {
         const messageDate = when.plainDate
         const whoStr = from && to ? `${from}-to-${to}` : from || to || ''
@@ -384,10 +451,10 @@ export default class MessageNewTask extends Command {
         const attachDir = path.join(config.DIR_ATTACHMENTS as string, dayAttachmentsDir(messageDate))
         await mkdir(attachDir, { recursive: true })
 
-        for (let i = 0; i < imagePaths.length; i++) {
-          const ip = imagePaths[i]
+        for (let i = 0; i < sources.length; i++) {
+          const ip = sources[i]
           const ext = path.extname(ip)
-          const indexSuffix = imagePaths.length > 1 ? `_${i + 1}` : ''
+          const indexSuffix = sources.length > 1 ? `_${i + 1}` : ''
           const newFileName = `${messageDate}_${slugify(medium as string, {
             preserveCase: true,
           })}${whoSlugPart}${summarySlugPart}${indexSuffix}${ext}`
@@ -398,7 +465,13 @@ export default class MessageNewTask extends Command {
           })
           attachmentFiles.push(newFileName)
         }
-        output.log(colors.gray(`Moved ${attachmentFiles.length} screenshot(s) to ${attachDir}\n`))
+        output.log(
+          colors.gray(
+            conversation
+              ? `Moved ${path.basename(conversation.path)} to ${attachDir}\n`
+              : `Moved ${attachmentFiles.length} screenshot(s) to ${attachDir}\n`,
+          ),
+        )
       }
     }
 
@@ -407,7 +480,7 @@ export default class MessageNewTask extends Command {
       return CommandResult.fail('Missing required flag: --medium (-m)')
     }
 
-    if (useAudioPipeline || useImagePipeline) output.stage('file', 'Filing')
+    if (useAudioPipeline || useImagePipeline || useTextPipeline) output.stage('file', 'Filing')
 
     const date = when.plainDate
 

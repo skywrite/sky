@@ -5,9 +5,9 @@
  * speakers and turns; a notetaker's text for its stamped turns; a recording
  * only for its size here — its length comes from the file's own container,
  * which the host probes; a screenshot for its size and the pixels its
- * header states. The result is what the confirm dialog says back, and the
- * refusals are the sentences a file that cannot be imported gets instead of
- * a wait.
+ * header states; text dragged onto the day for its lines and its first
+ * words. The result is what the confirm dialog says back, and the refusals
+ * are the sentences a file that cannot be imported gets instead of a wait.
  */
 
 import * as path from 'node:path'
@@ -19,7 +19,8 @@ import ZoomVTT from '#commands/all/audio/transcript/lib/ZoomVTT/mod.ts'
 export type RecordingKind = 'meeting' | 'journal' | 'note' | 'message' | 'event'
 /** Those, and a video, which comes in as its transcript. */
 export type ImportKind = RecordingKind | 'video'
-export type ImportSource = 'transcript' | 'srt' | 'text' | 'audio' | 'image'
+/** What arrived: a file of one of five kinds, or text dragged onto the day (`selection`). */
+export type ImportSource = 'transcript' | 'srt' | 'text' | 'audio' | 'image' | 'selection'
 
 export const RECORDING_KINDS: RecordingKind[] = ['meeting', 'journal', 'note', 'message', 'event']
 export const KINDS: ImportKind[] = [...RECORDING_KINDS, 'video']
@@ -34,6 +35,16 @@ export const IMAGE_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.webp', '.gif', '.hei
 
 /** The model takes 10 MB of base64 per image; that is this many bytes of file. */
 export const IMAGE_LIMIT_BYTES = 7.5 * 1024 * 1024
+
+const OPENING_CHARS = 200
+
+/** The first words, cut at a word. */
+export function opening(text: string): string {
+  const flat = text.replace(/\s+/g, ' ').trim()
+  if (flat.length <= OPENING_CHARS) return flat
+  const cut = flat.slice(0, OPENING_CHARS)
+  return `${cut.slice(0, cut.lastIndexOf(' ') > 40 ? cut.lastIndexOf(' ') : OPENING_CHARS)}…`
+}
 
 export interface ReadBack {
   source: ImportSource
@@ -134,7 +145,11 @@ export function readSrt(text: string, name: string): ReadBack {
   }
 }
 
-/** A .txt: a notetaker's copy of speaker lines, and nothing wrapped. */
+/**
+ * A .txt: a notetaker's copy of speaker lines, and nothing wrapped. Offered
+ * as a meeting first, and as a message: a conversation saved as text, a
+ * chat's export, is a .txt too.
+ */
 export function readText(text: string, name: string): ReadBack {
   if (ZoomVTT.isVtt(text)) return refused('text', `${name} is a WebVTT transcript — save it as .vtt.`)
   if (SRT.isSrt(text)) return refused('text', `${name} is an SRT transcript — save it as .srt.`)
@@ -146,9 +161,41 @@ export function readText(text: string, name: string): ReadBack {
   const parts = ['Notetaker text', length, stamps.length > 0 ? `${stamps.length} stamped turns` : null]
   return {
     source: 'text',
-    kinds: ['meeting'],
+    kinds: ['meeting', 'message'],
     summary: parts.filter((p): p is string => Boolean(p)).join(' · '),
     detail: null,
+    durationMinutes: minutes,
+    clockStartSeconds: null,
+    speakers: [],
+    refusal: null,
+  }
+}
+
+/**
+ * Text dragged onto the day: most often a conversation selected in a
+ * messaging app, so a message comes first — unless its lines carry a
+ * notetaker's stamps, which make it a meeting's transcript. Its detail is
+ * its first words, since a selection has no name to show.
+ */
+export function readSelection(text: string): ReadBack {
+  if (ZoomVTT.isVtt(text))
+    return refused('selection', 'The text is a WebVTT transcript — save it as .vtt and drop the file.')
+  if (SRT.isSrt(text)) return refused('selection', 'The text is an SRT transcript — save it as .srt and drop the file.')
+  const lines = text.split('\n').filter((line) => line.trim()).length
+  const stamps = turnStamps(text)
+  const minutes = stampedDurationMinutes(stamps)
+  const length = minutes === null ? null : lengthLabel(minutes * 60)
+  const parts = [
+    'Text',
+    `${lines} line${lines === 1 ? '' : 's'}`,
+    length,
+    stamps.length > 0 ? `${stamps.length} stamped turns` : null,
+  ]
+  return {
+    source: 'selection',
+    kinds: stamps.length > 0 ? ['meeting', 'message'] : ['message', 'meeting'],
+    summary: parts.filter((p): p is string => Boolean(p)).join(' · '),
+    detail: opening(text),
     durationMinutes: minutes,
     clockStartSeconds: null,
     speakers: [],
