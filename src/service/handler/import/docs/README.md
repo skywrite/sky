@@ -54,7 +54,7 @@ One door for every file kind. The kind picks the command:
 | `.srt` | `video:new --from-srt` — a video's transcript; a Loom's, a caption file's |
 | `.txt` | the kind chosen in the dialog: `meeting:new --from-text` (first), or `message:new --from-text` — a chat's export |
 | text dragged in | the same two doors on the text, staged as `selection.txt`: a message first, a meeting first when its lines carry a notetaker's stamps |
-| audio | the kind chosen in the dialog: `meeting:new --from-voice-memo`, or `journal:new`, `notes:new`, `message:new`, `event:new` with `--from-audio` |
+| audio | the kind chosen in the dialog: `meeting:new` and `event:new` with `--from-voice-memo`, or `journal:new`, `notes:new`, `message:new` with `--from-audio` |
 | image | `message:new --from-image` — a screenshot of a conversation |
 
 Screenshots dropped or selected together form one import and one message.
@@ -157,6 +157,9 @@ the command's own plan.
 
 ## Narrative
 
+- `2026-09-24-an-event-from-a-voice-memo.md` — the event door takes
+  `--from-voice-memo` as the meeting door does; `--from-audio` stays as
+  its alias.
 - `2026-09-06-finished-imports-leave.md` — what a filed import and a
   refused file leave behind, and when they go.
 - `2026-09-01-meeting-from-a-file.md` — the design, the seams, what changed

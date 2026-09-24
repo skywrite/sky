@@ -11,8 +11,11 @@ import { actionKindRel } from '#shared/nbfs/mod.ts'
 import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 
 const params = {
-  what: Arg.string('Event summary/description (optional with --from-audio)', { optional: true }),
-  fromAudio: Flag.string('Path to audio file, or omit path to search Desktop', {
+  what: Arg.string('Event summary/description (optional with --from-voice-memo)', { optional: true }),
+  // The dialog and the meeting door call the recording a voice memo.
+  // The older --from-audio spelling still parses, as the key's alias.
+  fromAudio: Flag.string('Path to a voice memo about the event, or omit path to search Desktop', {
+    long: 'from-voice-memo',
     short: 'a',
     optional: true,
   }),
@@ -40,7 +43,7 @@ export default class EventNewTask extends Command {
     /** The pipeline's run record, forgotten once the event is filed */
     let runKey: string | null = null
 
-    // Handle --from-audio pipeline via audio:transcript:summary
+    // Handle --from-voice-memo pipeline via audio:transcript:summary
     const useAudioPipeline = fromAudio !== undefined
 
     if (useAudioPipeline) {
@@ -74,7 +77,7 @@ export default class EventNewTask extends Command {
 
     // Validate required fields for non-audio path
     if (!what) {
-      return CommandResult.fail('Missing required argument: what (or use --from-audio)')
+      return CommandResult.fail('Missing required argument: what (or use --from-voice-memo)')
     }
 
     const whenDate = when.plainDate

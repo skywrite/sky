@@ -2,11 +2,11 @@
  * What a start of an import runs: the door command for the kind chosen,
  * its arguments, and — kept apart — what the person actually said.
  *
- * A recording can be filed as any kind; each door takes it as --from-audio,
- * the meeting door as --from-voice-memo. A transcript is a meeting. Text —
- * a .txt, or a text dragged onto the day — is a meeting or a message, each
- * by --from-text. A screenshot is a message, by --from-image. An .srt is a
- * video, by --from-srt.
+ * A recording can be filed as any kind: the meeting and event doors take it
+ * as --from-voice-memo, the rest as --from-audio. A transcript is a meeting.
+ * Text — a .txt, or a text dragged onto the day — is a meeting or a message,
+ * each by --from-text. A screenshot is a message, by --from-image. An .srt is
+ * a video, by --from-srt.
  *
  * The dialog's When arrives either as sky's own proposal, untouched, or as
  * a value the person changed or chose by dropping on a calendar slot.
@@ -95,7 +95,7 @@ export function startArgs(job: StartContext, fields: StartFields, input: string 
         rawArgs,
       }
     case 'event':
-      return { command: 'event:new', args: { fromAudio: filePath, category, when, fresh }, rawArgs }
+      return { command: 'event:new', args: { fromVoiceMemo: filePath, category, when, fresh }, rawArgs }
     case 'video':
       return {
         command: 'video:new',

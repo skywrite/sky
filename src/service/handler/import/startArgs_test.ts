@@ -105,6 +105,13 @@ test('startArgs() — the other doors', () => {
     actual: { command: note.command, rawArgs: note.rawArgs },
     expected: { command: 'notes:new', rawArgs: { _: [], when: '2026-01-27 09:30' } },
   })
+  const event = startArgs(memo, fields({ kind: 'event' }), '/tmp/memo.m4a')
+  assert({
+    given: 'a memo filed as an event',
+    should: 'run event:new by its voice-memo door, named as the meeting door names it',
+    actual: { command: event.command, memo: event.args.fromVoiceMemo, audio: event.args.fromAudio },
+    expected: { command: 'event:new', memo: '/tmp/memo.m4a', audio: undefined },
+  })
 })
 
 test("startArgs() — a video's transcript", () => {
