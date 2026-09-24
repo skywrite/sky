@@ -111,7 +111,10 @@ clarify; a transcript is everyone's, which they cannot.
 Each is about one thing the write-up could not tell: decided or thought
 aloud, which reading was meant, what a referent was, something missed.
 Never what happens next, never who should own something or by when, never
-the clock. Every question quotes the words it is about.
+the clock, never a name. The drafter is told every known person,
+organization, project and glossary term that appears in the words, and a
+question it drafts about one of them is dropped before it is asked. Every
+question quotes the words it is about.
 
 Each question is drafted knowing the answers before it, so a "decided" can
 call for its scope and a "still a thought" closes that thread. Every

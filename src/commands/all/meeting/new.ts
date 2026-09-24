@@ -3,7 +3,7 @@ import * as path from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import openEditor from 'open-editor'
 import colors from 'picocolors'
-import { clarify } from '#commands/all/audio/transcript/lib/clarify.ts'
+import { clarify, loadKnownNames } from '#commands/all/audio/transcript/lib/clarify.ts'
 import {
   type Checkpoint,
   clockLabel,
@@ -223,6 +223,7 @@ export default class MeetingNewTask extends Command {
           output,
           run,
           now: runOptions.now,
+          known: await loadKnownNames(context.notebookNow.date),
           signal: context.signal,
         })
         body = clarified.summary

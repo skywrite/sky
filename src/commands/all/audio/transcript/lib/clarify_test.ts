@@ -4,7 +4,15 @@ import type { Prompter, TextPrompt } from '#commands/lib/prompt/Prompter.ts'
 import { UnattendedPrompter } from '#commands/lib/prompt/UnattendedPrompter.ts'
 import { makeTempDir } from '#shared/fs/mod.ts'
 import { assert, test } from '#test'
-import { appended, clarify, type DraftInput, type FoldInput, type NextQuestion } from './clarify.ts'
+import {
+  appended,
+  clarify,
+  type DraftInput,
+  type FoldInput,
+  isKnownName,
+  knownInWords,
+  type NextQuestion,
+} from './clarify.ts'
 import { TranscriptRun } from './transcriptRun.ts'
 
 const NOW = '2026-01-27 09:31'
@@ -260,5 +268,73 @@ test('clarify() — a fold that comes back empty lands the answers under their o
       '## Clarified after the meeting\n- Decided, or still a thought?\n  Decided.. Clarified after the meeting.\n',
     ),
     expected: true,
+  })
+})
+
+const KNOWN = {
+  people: ['Alex Chen', 'Jane Doe'],
+  orgs: ['Atlas', 'Quantum Labs'],
+  projects: ['Beta Launch'],
+  terms: ['Friday demos'],
+}
+
+test('knownInWords() and isKnownName() — what the words mention, and what a quote is', () => {
+  const found = knownInWords(KNOWN, 'Alex said the Atlas deal moves. The Friday demos too.')
+  assert({
+    given: 'the known names and some words',
+    should: 'keep only the names the words mention',
+    actual: found,
+    expected: { people: [], orgs: ['Atlas'], projects: [], terms: ['Friday demos'] },
+  })
+  assert({
+    given: 'quotes that are a name and nothing else, a name inside a phrase, and something else',
+    should: 'call only the bare names, so a name like a common word cannot swallow a real question',
+    actual: [
+      isKnownName('“Sam Rivera”', { ...KNOWN, people: ['Sam Rivera'] }),
+      isKnownName('the Atlas.', KNOWN),
+      isKnownName('board readiness with Atlas', KNOWN),
+      isKnownName('the budget figure', { ...KNOWN, orgs: ['Figure'] }),
+      isKnownName('I want to move the whole launch', KNOWN),
+    ],
+    expected: [true, true, false, false, false],
+  })
+})
+
+test('clarify() — a question drafted about a known name is dropped, and the drafter sees the names', async () => {
+  const drafts: DraftInput[] = []
+  const script: Array<NextQuestion | null> = [
+    { quote: 'the Atlas', question: 'What does "the Atlas" refer to here?' },
+    QUESTIONS[0],
+    null,
+  ]
+  const m = model()
+  const { output, lines } = quiet()
+  const result = await clarify({
+    transcript: 'The Atlas deal. I want to move the whole launch.',
+    summary: SUMMARY,
+    prompt: person(['Decided.']),
+    output,
+    run: null,
+    now: () => NOW,
+    known: KNOWN,
+    draft: (input) => {
+      drafts.push(input)
+      return Promise.resolve(script.shift() ?? null)
+    },
+    fold: m.fold,
+  })
+  assert({
+    given: 'a first draft about a known organization, then a real question',
+    should: 'drop the first without asking, ask the second, and hand the drafter the names in the words',
+    actual: {
+      asked: result.exchange.map((e) => e.question),
+      known: drafts[0]?.known,
+      dropped: lines.some((l) => l.includes('Dropped a question about a known name: the Atlas')),
+    },
+    expected: {
+      asked: ['Decided, or still a thought?'],
+      known: { people: [], orgs: ['Atlas'], projects: [], terms: ['Friday demos'] },
+      dropped: true,
+    },
   })
 })

@@ -37,6 +37,15 @@ exchange lives in the run record as the `questions` stage. The page
 shows the words above each question, with Skip, Answer, and Skip the rest;
 the terminal takes Enter to skip one and Esc to end them.
 
+## Later the same day
+
+The first real runs asked what a well-known organization was, and whether
+two people in the notebook were the same person. The drafter had been
+given the words and the write-up, and nothing the notebook knows. Now it
+gets every known person, organization, project and glossary term that
+appears in the words, with the rule that a name is never a question, and
+the step drops any question whose quote is a known name.
+
 ## Not done
 
 The action items still come from the extraction before the questions.

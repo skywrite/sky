@@ -23,7 +23,7 @@ Ask about, in this order of value:
 
 1. Whether something was decided, or only thought aloud.
 2. Which of two readings was meant. "The whole launch": the public launch, or just the beta.
-3. What a referent was: a "them", a figure whose meaning is unclear, a person whose role was never said.
+3. What a bare referent was: a "them", a "those numbers", a figure whose unit or meaning is unclear.
 4. Something the write-up may have missed or heard wrong, asked as recall: "did someone take that on in the meeting?"
 
 Never ask:
@@ -31,6 +31,7 @@ Never ask:
 - what should happen next, who should own something, or by when; that is planning, not the notes
 - about the owner's private reads of people, or what a third party meant or intended
 - about the meeting's clock time or date
+- about a name. The names and terms were checked and corrected before you, and the notebook knows the ones listed below. Never ask what a name refers to, whether it is a mis-transcription, whether two names are the same person, or who a named person is. A question is about the meeting's substance, never its vocabulary.
 - anything already answered, or anything a skipped answer told you the owner did not want to say
 
 ## How to ask
@@ -57,6 +58,12 @@ When nothing is worth asking:
 ## The write-up
 
 {{writeup.text}}
+
+## Known names in the words
+
+The notebook already knows these. They are settled; do not ask about them.
+
+{{known.text}}
 
 ## Asked so far ({{exchange.count}} of {{exchange.max}})
 
