@@ -11,6 +11,11 @@ import { assert, test } from '#test'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import { fetchDayMeetings } from './dayMeetings.ts'
 
+/** A day file as the notebook writes one: its frontmatter, then the heading that names its date. */
+function dayFileText(day: PlainDate, frontmatter: string): string {
+  return `---\n${frontmatter}\n---\n\n# **${day.ymd} - ${day.dayShort}**\n`
+}
+
 test('calendar day timezone falls back for missing days and new notebooks', async () => {
   const timeDir = await makeTempDir({ prefix: 'sky-calendar-timezone-' })
   const systemZone = spyOn(sys, 'readSystemTimezone').mockResolvedValue('America/Los_Angeles')
@@ -22,15 +27,15 @@ test('calendar day timezone falls back for missing days and new notebooks', asyn
     const newNotebook = await zone()
     await outputFile(
       path.join(timeDir, dayFile(today)),
-      `---\ndate: ${today.ymd}\nstarted: 07:00\ntz: Europe/London\n---\n`,
+      dayFileText(today, `date: ${today.ymd}\nstarted: 07:00\ntz: Europe/London`),
     )
     const missingDay = await zone()
     await outputFile(
       path.join(timeDir, dayFile(day)),
-      `---\ndate: ${day.ymd}\nstarted: 07:00\ntz: America/Chicago\n---\n`,
+      dayFileText(day, `date: ${day.ymd}\nstarted: 07:00\ntz: America/Chicago`),
     )
     const savedDay = await zone()
-    await outputFile(path.join(timeDir, dayFile(day)), `---\ndate: ${day.ymd}\nstarted: 07:00\n---\n`)
+    await outputFile(path.join(timeDir, dayFile(day)), dayFileText(day, `date: ${day.ymd}\nstarted: 07:00`))
     assert({
       given: 'a new notebook, a missing day, a saved day in another zone, and a legacy day without tz',
       should: 'use the system, current notebook, saved day, and day-model default zones respectively',
@@ -66,7 +71,7 @@ test('calendar events belong to the date in the saved day timezone', async () =>
     })
   }) as typeof fetch)
   try {
-    await outputFile(path.join(timeDir, dayFile(day)), `---\ndate: ${day.ymd}\ntz: America/Chicago\n---\n`)
+    await outputFile(path.join(timeDir, dayFile(day)), dayFileText(day, `date: ${day.ymd}\ntz: America/Chicago`))
     await saveOAuthClient(secrets, { clientId: 'mock-client', clientSecret: 'mock-secret' })
     await saveAccountTokens(secrets, 'owner@example.com', {
       accessToken: 'mock-access',
