@@ -4,14 +4,11 @@ import {
   backfillMissingMessages,
   laterBrowserLink,
   laterChannelLabel,
-  laterChannelMatches,
   laterConversationKind,
   laterGroupKey,
   laterIsThreadReply,
   laterItemLink,
-  laterMatchableName,
   renderLaterRow,
-  resolveRowMemberNames,
   resolveRowMentions,
   resolveStaleChannels,
 } from './list.ts'
@@ -56,120 +53,6 @@ test('laterChannelLabel picks the right conversation label', () => {
     should: 'fall back to the id',
     actual: laterChannelLabel(item({})),
     expected: 'C0123ABCDEF',
-  })
-})
-
-test('laterChannelMatches scopes by exact conversation name', () => {
-  assert({
-    given: 'the bare channel name',
-    should: 'match',
-    actual: laterChannelMatches(item({ channel_name: 'general' }), 'general'),
-    expected: true,
-  })
-  assert({
-    given: 'a #-prefixed, differently-cased query with spaces',
-    should: 'match after normalizing',
-    actual: laterChannelMatches(item({ channel_name: 'general' }), ' #General '),
-    expected: true,
-  })
-  assert({
-    given: 'a substring of the name',
-    should: 'not match — exact only',
-    actual: laterChannelMatches(item({ channel_name: 'general' }), 'gen'),
-    expected: false,
-  })
-  assert({
-    given: 'a DM person query',
-    should: 'match the DM by its person name',
-    actual: laterChannelMatches(item({ channel_id: 'D0123ABCDEF', channel_name: 'jane.doe' }), 'jane.doe'),
-    expected: true,
-  })
-  assert({
-    given: 'an item with no channel name (stale id)',
-    should: 'never match',
-    actual: laterChannelMatches(item({}), 'general'),
-    expected: false,
-  })
-})
-
-test('laterChannelMatches supports star patterns across conversation names', () => {
-  const cases: Array<[string, string, boolean]> = [
-    [' #Atlas-* ', 'atlas-api', true],
-    ['#atlas-*', '#ATLAS-design', true],
-    ['atlas-*', 'atlas-', true],
-    ['atlas-*', 'old-atlas-api', false],
-    ['atlas-*', 'atlas', false],
-    ['*-updates', 'atlas-updates', true],
-    ['*-updates', 'atlas-updates-old', false],
-    ['atlas-*-updates', 'atlas-api-updates', true],
-    ['atlas-**-updates', 'atlas-api-updates', true],
-    ['*atlas*updates*', 'team-atlas-api-updates-archive', true],
-    ['*atlas*updates*', 'updates-atlas', false],
-    ['*', 'general', true],
-    ['Jane *', 'Jane Doe', true],
-    ['mpdm-jane--*', 'mpdm-jane--john-1', true],
-  ]
-  for (const [query, name, expected] of cases) {
-    assert({
-      given: `the pattern ${query} and conversation ${name}`,
-      should: 'match the whole name with stars allowing zero or more characters',
-      actual: laterChannelMatches(item({ channel_name: name }), query),
-      expected,
-    })
-  }
-  assert({
-    given: 'a wildcard matching every named conversation',
-    should: 'still exclude unreachable items with no channel name',
-    actual: laterChannelMatches(item({}), '*'),
-    expected: false,
-  })
-})
-
-test('laterChannelMatches treats punctuation as literal text in wildcard queries', () => {
-  const cases: Array<[string, string, boolean]> = [
-    ['jane.doe*', 'jane.doe (guest)', true],
-    ['jane.doe*', 'janeXdoe', false],
-    ['jane[team]*', 'jane[team] smith', true],
-    ['jane[team]*', 'janet smith', false],
-    ['jane?*', 'jane doe', false],
-    ['jane+*', 'jane+doe', true],
-    ['(jane|john)*', 'john', false],
-    ['jane\\doe*', 'jane\\doe (guest)', true],
-  ]
-  for (const [query, name, expected] of cases) {
-    assert({
-      given: `the pattern ${query} and conversation ${name}`,
-      should: 'interpret only the star as a wildcard',
-      actual: laterChannelMatches(item({ channel_name: name }), query),
-      expected,
-    })
-  }
-})
-
-test('laterMatchableName renders the form --channel matches', () => {
-  assert({
-    given: 'a named channel',
-    should: 'prefix #',
-    actual: laterMatchableName(item({ channel_name: 'general' })),
-    expected: '#general',
-  })
-  assert({
-    given: 'a DM (D-prefixed id)',
-    should: 'use the bare person name',
-    actual: laterMatchableName(item({ channel_id: 'D0123ABCDEF', channel_name: 'jane.doe' })),
-    expected: 'jane.doe',
-  })
-  assert({
-    given: 'a group DM',
-    should: 'keep the raw slug — member names never match',
-    actual: laterMatchableName(item({ channel_name: 'mpdm-alice--bob.smith--carol-1' })),
-    expected: 'mpdm-alice--bob.smith--carol-1',
-  })
-  assert({
-    given: 'no channel name',
-    should: 'be undefined',
-    actual: laterMatchableName(item({})),
-    expected: undefined,
   })
 })
 
@@ -531,73 +414,6 @@ test('resolveRowMentions substitutes names into row bodies in place', async () =
     should: 'stay bodyless',
     actual: bodyless.message,
     expected: undefined,
-  })
-})
-
-test('resolveRowMemberNames prefers live membership and excludes self', async () => {
-  const inBoot = item({ channel_id: 'C0GROUPLIVE', channel_name: 'mpdm-alice--bob.smith--carol-1' })
-  const notInBoot = item({
-    channel_id: 'C0GROUPCOLD',
-    channel_name: 'mpdm-alice--dana-1',
-    ts: '1750000001.000100',
-  })
-  const askedUsers: string[][] = []
-  const askedHandles: string[][] = []
-  const members = await resolveRowMemberNames(
-    [
-      { item: inBoot },
-      { item: notInBoot },
-      { item: item({ channel_name: 'general', ts: '1750000002.000100' }) },
-      { item: item({ channel_id: 'D0123ABCDEF', channel_name: 'jane.doe', ts: '1750000003.000100' }) },
-    ],
-    'https://atlas.slack.com',
-    {
-      // live membership covers the first group and carries the session user;
-      // the second group predates the boot payload's window
-      membership: async () => ({
-        selfId: 'U0SELF00001',
-        membersByChannel: new Map([['C0GROUPLIVE', ['U0SELF00001', 'U0ALICE0001', 'U0DANA00001']]]),
-      }),
-      users: async (ids) => {
-        askedUsers.push(ids.sort())
-        return new Map([
-          ['U0ALICE0001', 'Alice Doe'],
-          ['U0DANA00001', 'Dana Roe'],
-        ])
-      },
-      handles: async (handles) => {
-        askedHandles.push(handles.sort())
-        return new Map([['alice', 'Alice Doe']])
-      },
-    },
-  )
-  assert({
-    given: 'one boot-covered group and one older group among other rows',
-    should: 'resolve member ids minus self, and slug handles only for the uncovered group',
-    actual: { askedUsers, askedHandles },
-    expected: { askedUsers: [['U0ALICE0001', 'U0DANA00001']], askedHandles: [['alice', 'dana']] },
-  })
-  assert({
-    given: 'the resolved map',
-    should: 'key member names by conversation id, slug fallback keeping raw handles for misses',
-    actual: { live: members.get('C0GROUPLIVE'), cold: members.get('C0GROUPCOLD') },
-    expected: { live: ['Alice Doe', 'Dana Roe'], cold: ['Alice Doe', 'dana'] },
-  })
-
-  let membershipCalls = 0
-  await resolveRowMemberNames([{ item: item({ channel_name: 'general' }) }], 'https://atlas.slack.com', {
-    membership: async () => {
-      membershipCalls++
-      return { membersByChannel: new Map() }
-    },
-    users: async () => new Map(),
-    handles: async () => new Map(),
-  })
-  assert({
-    given: 'no group rows at all',
-    should: 'skip the membership fetch entirely',
-    actual: membershipCalls,
-    expected: 0,
   })
 })
 

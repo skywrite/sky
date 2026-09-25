@@ -14,14 +14,25 @@ import { mpdmMemberHandles } from './mpdmMembers.ts'
 import { slackApiCall, slackEdgeApiCall } from './slack-api.ts'
 import type { ConversationType } from './types.ts'
 
+export type SlackUserProfile = { id?: string; name: string; aliases: string[] }
+
+/** Keep every human-readable spelling; choosing a display name must not discard searchable aliases. */
+function userProfile(user: Record<string, unknown>, fallbackId?: string): SlackUserProfile | undefined {
+  const profile = (user.profile ?? {}) as Record<string, unknown>
+  const aliases = [
+    ...new Set(
+      [user.real_name, profile.real_name, user.display_name, profile.display_name, user.name]
+        .filter((value): value is string => typeof value === 'string' && Boolean(value.trim()))
+        .map((value) => value.trim()),
+    ),
+  ]
+  if (aliases.length === 0) return undefined
+  return { id: typeof user.id === 'string' ? user.id : fallbackId, name: aliases[0], aliases }
+}
+
 /** Display name from a raw Slack user object — same precedence as parseUser. */
 function pickUserName(user: Record<string, unknown>): string | undefined {
-  const profile = (user.profile ?? {}) as Record<string, unknown>
-  const candidates = [user.real_name, profile.real_name, profile.display_name, user.name]
-  for (const value of candidates) {
-    if (typeof value === 'string' && value) return value
-  }
-  return undefined
+  return userProfile(user)?.name
 }
 
 /** The enterprise id behind the keychain session (Grid orgs), or undefined outside Grid. */
@@ -42,6 +53,7 @@ export async function resolveUserNames(
   workspaceUrl?: string,
   api: typeof slackApiCall = slackApiCall,
   edge: typeof slackEdgeApiCall = slackEdgeApiCall,
+  profiles?: Map<string, SlackUserProfile>,
 ): Promise<Map<string, string>> {
   const userNames = new Map<string, string>()
   if (userIds.length === 0) return userNames
@@ -53,13 +65,26 @@ export async function resolveUserNames(
       for (const user of results) {
         const id = typeof user.id === 'string' ? user.id : undefined
         const name = pickUserName(user)
-        if (id && name) userNames.set(id, name)
+        if (id && name) {
+          userNames.set(id, name)
+          const profile = userProfile(user, id)
+          if (profile) profiles?.set(id, profile)
+        }
       }
     }
   }
   const missing = userIds.filter((id) => !userNames.has(id))
-  await Promise.all(missing.map((id) => resolveUserName(id, userNames, workspaceUrl)))
+  await Promise.all(missing.map((id) => resolveUserName(id, userNames, workspaceUrl, profiles, api)))
   return userNames
+}
+
+export async function resolveUserProfiles(
+  userIds: string[],
+  workspaceUrl: string,
+): Promise<Map<string, SlackUserProfile>> {
+  const profiles = new Map<string, SlackUserProfile>()
+  await resolveUserNames(userIds, workspaceUrl, slackApiCall, slackEdgeApiCall, profiles)
+  return profiles
 }
 
 /**
@@ -71,6 +96,8 @@ export async function resolveUserName(
   userId: string,
   userNames: Map<string, string>,
   workspaceUrl?: string,
+  profiles?: Map<string, SlackUserProfile>,
+  api: typeof slackApiCall = slackApiCall,
 ): Promise<string | undefined> {
   let name = userNames.get(userId)
   if (name) return name
@@ -82,12 +109,14 @@ export async function resolveUserName(
       hasFullName = !!(user.real_name || user.display_name)
       name = parseUser(user)
       if (name) userNames.set(userId, name)
+      const profile = userProfile(user as Record<string, unknown>, userId)
+      if (profile) profiles?.set(userId, profile)
     } catch {
       /* skip */
     }
   }
   if (!hasFullName && workspaceUrl) {
-    const json = await slackApiCall(workspaceUrl, 'users.info', { user: userId })
+    const json = await api(workspaceUrl, 'users.info', { user: userId })
     if (json) {
       const user = json.user as Record<string, unknown> | undefined
       const profile = user?.profile as Record<string, string> | undefined
@@ -96,12 +125,51 @@ export async function resolveUserName(
         name = fullName
         userNames.set(userId, name)
       }
+      const resolved = user ? userProfile(user, userId) : undefined
+      if (resolved) {
+        resolved.aliases = [...new Set([...resolved.aliases, ...(profiles?.get(userId)?.aliases ?? [])])]
+        profiles?.set(userId, resolved)
+      }
     }
   }
   return name
 }
 
-export type DmMembership = { selfId?: string; membersByChannel: Map<string, string[]> }
+export type SlackConversationIdentity = { kind?: ConversationType; name?: string; memberIds?: string[] }
+
+export function parseConversationIdentity(
+  channel: Record<string, unknown>,
+  section?: string,
+): SlackConversationIdentity {
+  const name = typeof channel.name === 'string' ? channel.name : undefined
+  const kind =
+    channel.is_im === true || section === 'ims'
+      ? 'dm'
+      : channel.is_mpim === true || section === 'mpims'
+        ? 'group'
+        : channel.is_channel === true || channel.is_group === true
+          ? 'channel'
+          : mpdmMemberHandles(name).length > 0
+            ? 'group'
+            : section === 'groups'
+              ? 'channel'
+              : undefined
+  const memberIds =
+    kind === 'dm' && typeof channel.user === 'string'
+      ? [channel.user]
+      : Array.isArray(channel.members) &&
+          channel.members.every((id) => typeof id === 'string') &&
+          (typeof channel.num_members !== 'number' || channel.members.length >= channel.num_members)
+        ? (channel.members as string[])
+        : undefined
+  return { kind, name, memberIds }
+}
+
+export type DmMembership = {
+  selfId?: string
+  membersByChannel: Map<string, string[]>
+  conversations?: Map<string, SlackConversationIdentity>
+}
 
 /**
  * Live member ids of the session user's DMs and group DMs, from the client
@@ -115,6 +183,7 @@ export async function fetchDmMembership(
   api: typeof slackApiCall = slackApiCall,
 ): Promise<DmMembership> {
   const membersByChannel = new Map<string, string[]>()
+  const conversations = new Map<string, SlackConversationIdentity>()
   const boot = await api(workspaceUrl, 'client.userBoot', {})
   if (!boot) return { membersByChannel }
   const self = boot.self as Record<string, unknown> | undefined
@@ -124,13 +193,13 @@ export async function fetchDmMembership(
     if (!Array.isArray(section)) continue
     for (const channel of section as Record<string, unknown>[]) {
       const id = typeof channel.id === 'string' ? channel.id : undefined
-      const members = Array.isArray(channel.members)
-        ? (channel.members as unknown[]).filter((m): m is string => typeof m === 'string')
-        : []
+      const identity = parseConversationIdentity(channel, key)
+      const members = identity.memberIds ?? []
+      if (id) conversations.set(id, identity)
       if (id && members.length > 0) membersByChannel.set(id, members)
     }
   }
-  return { selfId, membersByChannel }
+  return { selfId, membersByChannel, conversations }
 }
 
 export type ChannelInfo = { name?: string; members?: string[]; detectedType?: ConversationType }
@@ -266,6 +335,7 @@ export async function resolveHandleNames(
   workspaceUrl?: string,
   api: typeof slackApiCall = slackApiCall,
   edge: typeof slackEdgeApiCall = slackEdgeApiCall,
+  profiles?: Map<string, SlackUserProfile>,
 ): Promise<Map<string, string>> {
   const names = new Map<string, string>()
   if (handles.length === 0 || !workspaceUrl) return names
@@ -280,7 +350,11 @@ export async function resolveHandleNames(
           (user) => typeof user.name === 'string' && user.name.toLowerCase() === handle.toLowerCase(),
         )
         const name = hit ? pickUserName(hit) : undefined
-        if (name) names.set(handle, name)
+        if (name) {
+          names.set(handle, name)
+          const profile = hit ? userProfile(hit) : undefined
+          if (profile) profiles?.set(handle, profile)
+        }
       }),
     )
     return names
@@ -296,7 +370,11 @@ export async function resolveHandleNames(
       const handle = typeof member.name === 'string' ? wanted.get(member.name.toLowerCase()) : undefined
       if (!handle || names.has(handle)) continue
       const name = pickUserName(member)
-      if (name) names.set(handle, name)
+      if (name) {
+        names.set(handle, name)
+        const profile = userProfile(member)
+        if (profile) profiles?.set(handle, profile)
+      }
     }
     if (names.size >= wanted.size) break
     const meta = (json.response_metadata ?? {}) as Record<string, unknown>
@@ -305,6 +383,15 @@ export async function resolveHandleNames(
     cursor = next
   }
   return names
+}
+
+export async function resolveHandleProfiles(
+  handles: string[],
+  workspaceUrl: string,
+): Promise<Map<string, SlackUserProfile>> {
+  const profiles = new Map<string, SlackUserProfile>()
+  await resolveHandleNames(handles, workspaceUrl, slackApiCall, slackEdgeApiCall, profiles)
+  return profiles
 }
 
 /** Resolve mpdm slug handles to display names; the handle itself is the fallback. */

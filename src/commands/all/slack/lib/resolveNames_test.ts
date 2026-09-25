@@ -1,5 +1,12 @@
 import { assert, test } from '#test'
-import { fetchDmMembership, resolveHandleNames, resolveUsergroupNames, resolveUserNames } from './resolveNames.ts'
+import {
+  fetchDmMembership,
+  parseConversationIdentity,
+  resolveHandleNames,
+  resolveUsergroupNames,
+  resolveUserNames,
+  type SlackUserProfile,
+} from './resolveNames.ts'
 
 test('fetchDmMembership: harvests member ids and the self id from the boot payload', async () => {
   const membership = await fetchDmMembership('https://atlas.slack.com', async (_url, method) => {
@@ -304,4 +311,71 @@ test('resolveUsergroupNames: degrades to an empty map', async () => {
     actual: calls,
     expected: 0,
   })
+})
+
+test('user resolution retains full names, display names, and handles for selectors', async () => {
+  const profiles = new Map<string, SlackUserProfile>()
+  const user = { id: 'U0JANE', name: 'jane.doe', real_name: 'Jane Doe', profile: { display_name: 'JD' } }
+  await resolveUserNames(
+    ['U0JANE'],
+    'https://atlas.slack.com',
+    async () => ({ enterprise_id: 'E0ATLAS' }),
+    async () => ({ results: [user] }),
+    profiles,
+  )
+  assert({
+    given: 'a profile whose full name, display name, and handle differ',
+    should: 'retain every spelling under the stable user ID',
+    actual: profiles.get('U0JANE'),
+    expected: { id: 'U0JANE', name: 'Jane Doe', aliases: ['Jane Doe', 'JD', 'jane.doe'] },
+  })
+  const handles = new Map<string, SlackUserProfile>()
+  await resolveHandleNames(
+    ['jane.doe'],
+    'https://atlas.slack.com',
+    async () => ({ enterprise_id: 'E0ATLAS' }),
+    async () => ({ results: [user] }),
+    handles,
+  )
+  assert({
+    given: 'the same profile found by its handle',
+    should: 'retain the same user identity and aliases',
+    actual: handles.get('jane.doe'),
+    expected: profiles.get('U0JANE'),
+  })
+})
+
+test('conversation metadata preserves DM types and direct-message user fields', async () => {
+  assert({
+    given: 'a Slack Connect DM with a C-prefixed id',
+    should: 'use the API type and counterpart instead of guessing from the id',
+    actual: parseConversationIdentity({ id: 'C0CONNECT', is_im: true, user: 'U0JANE' }),
+    expected: { kind: 'dm', name: undefined, memberIds: ['U0JANE'] },
+  })
+  const boot = await fetchDmMembership('https://atlas.slack.com', async () => ({
+    self: { id: 'U0SELF' },
+    ims: [{ id: 'C0CONNECT', user: 'U0JANE' }],
+    mpims: [{ id: 'C0GROUP', members: ['U0SELF', 'U0JANE', 'U0JOHN'] }],
+    channels: [{ id: 'C0CHANNEL', is_channel: true, name: 'general' }],
+  }))
+  assert({
+    given: 'boot sections with ims, mpims, and channels',
+    should: 'preserve authoritative kinds even without per-record type flags',
+    actual: [...boot.conversations!.values()].map((value) => value.kind),
+    expected: ['channel', 'dm', 'group'],
+  })
+  assert({
+    given: 'a real channel whose name resembles a group slug',
+    should: 'prefer the API type over its name',
+    actual: parseConversationIdentity({ is_channel: true, name: 'mpdm-jane--john-1' }).kind,
+    expected: 'channel',
+  })
+  for (const members of [['U0JANE', 42], ['U0JANE']]) {
+    assert({
+      given: 'malformed or visibly incomplete membership metadata',
+      should: 'leave membership unresolved rather than discarding missing participants',
+      actual: parseConversationIdentity({ is_mpim: true, members, num_members: 3 }).memberIds,
+      expected: undefined,
+    })
+  }
 })

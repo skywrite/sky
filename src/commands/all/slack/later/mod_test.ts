@@ -1,6 +1,8 @@
 import { spyOn } from 'bun:test'
 import stripAnsi from 'strip-ansi'
 import type { AgentSlackLaterItem } from '#commands/all/slack/cli/lib/agent-slack/types.ts'
+import { mpdmMemberHandles } from '#commands/all/slack/lib/mpdmMembers.ts'
+import * as names from '#commands/all/slack/lib/resolveNames.ts'
 import CommandContext from '#commands/lib/core/CommandContext.ts'
 import CommandService from '#commands/lib/core/CommandService.ts'
 import { BufferedOutput } from '#commands/lib/output/BufferedOutput.ts'
@@ -40,6 +42,7 @@ async function fixture(
     captured: capture.LaterCaptureRow[]
     opened: capture.LaterCaptureRow[]
     hydrated: capture.LaterCaptureRow[]
+    displayed: capture.LaterCaptureRow[]
     fetchCalls: () => number
   }) => Promise<void>,
   items = queue(),
@@ -54,6 +57,29 @@ async function fixture(
   const captured: capture.LaterCaptureRow[] = []
   const opened: capture.LaterCaptureRow[] = []
   const hydrated: capture.LaterCaptureRow[] = []
+  const displayed: capture.LaterCaptureRow[] = []
+  const render = list.renderLaterRow
+  const identities = new Map<string, names.SlackConversationIdentity>()
+  const profiles = new Map<string, names.SlackUserProfile>()
+  for (const entry of items) {
+    const kind = list.laterConversationKind(entry)
+    if (kind === 'unknown') continue
+    const members =
+      kind === 'channel'
+        ? []
+        : (memberNames.get(entry.channel_id) ??
+          (kind === 'dm' ? [entry.channel_name!] : mpdmMemberHandles(entry.channel_name)))
+    const memberIds = members.map((name, index) => {
+      const id = `${entry.channel_id}-user-${index}`
+      profiles.set(id, { id, name, aliases: [name, name.split(' ')[0], name.toLowerCase().replaceAll(' ', '.')] })
+      return id
+    })
+    identities.set(entry.channel_id, {
+      kind,
+      name: entry.channel_name?.replace(/^#/, ''),
+      memberIds: kind === 'group' ? ['U0SELF', ...memberIds] : memberIds,
+    })
+  }
   const fetch = spyOn(list, 'fetchInProgressLater').mockResolvedValue({
     list: { items, counts: { in_progress: 100 } },
   })
@@ -67,7 +93,17 @@ async function fixture(
       hydrated.push(...(rows as capture.LaterCaptureRow[]))
     }),
     spyOn(list, 'resolveRowMentions').mockResolvedValue(undefined),
-    spyOn(list, 'resolveRowMemberNames').mockResolvedValue(memberNames),
+    spyOn(list, 'renderLaterRow').mockImplementation((row, index, rowContext) => {
+      displayed.push(row)
+      return render(row, index, rowContext)
+    }),
+    spyOn(names, 'fetchDmMembership').mockResolvedValue({
+      selfId: 'U0SELF',
+      membersByChannel: new Map(),
+      conversations: identities,
+    }),
+    spyOn(names, 'resolveUserProfiles').mockResolvedValue(profiles),
+    spyOn(names, 'resolveHandleProfiles').mockResolvedValue(new Map()),
     spyOn(capture, 'captureLaterItems').mockImplementation(async (rows) => {
       captured.push(...rows)
       return {
@@ -124,6 +160,7 @@ async function fixture(
       captured,
       opened,
       hydrated,
+      displayed,
       fetchCalls: () => fetch.mock.calls.length,
     })
   } finally {
@@ -151,7 +188,7 @@ test('slack:later filters before the preview limit and keeps listing read-only',
       should: 'retain the channel in the re-run hint and leave Slack and the notebook untouched',
       actual: [
         output.hasLog('#general'),
-        output.hasLog('sky slack:later --channel atlas --capture-batch 5'),
+        output.hasLog("sky slack:later --channel '#atlas' --capture-batch 5"),
         captured,
         opened,
       ],
@@ -212,7 +249,7 @@ test('slack:later wildcard listing and capture stay within the matching conversa
         result.data?.matched,
         result.data?.remaining,
         hydrated.map((r) => r.item.ts),
-        output.hasLog("--channel 'atlas-*' --sort channel --capture-batch 5"),
+        output.hasLog("--channel '#atlas-*' --sort channel --capture-batch 5"),
       ],
       expected: [3, 3, [items[4].ts, items[2].ts, items[3].ts], true],
     })
@@ -238,7 +275,7 @@ test('slack:later never falls back to the global queue when a channel has no mat
         captured,
         opened,
         hydrated,
-        output.hasLog('present: #atlas, #general'),
+        output.hasLog('#atlas — channel, 3 items') && output.hasLog('#general — channel, 25 items'),
       ],
       expected: [0, 0, [], [], [], true],
     })
@@ -499,4 +536,135 @@ test('slack:later:day keeps explicit capture indexes and the former all spelling
       expected: [item('atlas', 30).ts, item('atlas', 40).ts, item('atlas', 50).ts],
     })
   })
+})
+
+test('both Later commands keep previews, captures, and opens inside the selected conversation types', async () => {
+  const items = [
+    item('Jane-news', 10, 'C0NEWS'),
+    item('Jane Doe', 20, 'D0JANE'),
+    item('mpdm-jane--john-1', 30, 'C0GROUP'),
+  ]
+  await fixture(
+    async ({ invoke, invokeDay, hydrated, displayed, captured, opened, output }) => {
+      for (const run of [invoke, invokeDay]) {
+        for (const [channel, expected] of [
+          ['#J*', ['C0NEWS']],
+          ['@J*', ['D0JANE']],
+          ['J*', ['C0NEWS', 'D0JANE', 'C0GROUP']],
+        ] as Array<[string, string[]]>) {
+          hydrated.length = 0
+          displayed.length = 0
+          const preview = await run({ channel })
+          const displayedIds = displayed.map((row) => row.item.channel_id)
+          assert({
+            given: `${channel} listing`,
+            should: 'show only the selected types and preserve the prefix in its rerun hint',
+            actual: [
+              preview.ok,
+              hydrated.map((row) => row.item.channel_id),
+              output.hasLog(`--channel '${channel.toLowerCase()}'`),
+            ],
+            expected: [true, expected, true],
+          })
+          for (const action of [
+            { captureAll: true, open: 'landed' },
+            { captureBatch: 10, open: 'landed' },
+            { open: '10' },
+          ]) {
+            hydrated.length = 0
+            displayed.length = 0
+            captured.length = 0
+            opened.length = 0
+            const result = await run({ channel, ...action })
+            assert({
+              given: `${channel} with ${JSON.stringify(action)}`,
+              should: 'act on exactly the conversations shown in the preview',
+              actual: [
+                result.ok,
+                displayed.map((row) => row.item.channel_id),
+                captured.map((row) => row.item.channel_id),
+                opened.map((row) => row.item.channel_id),
+              ],
+              expected: [true, displayedIds, action.open === 'landed' ? displayedIds : [], displayedIds],
+            })
+          }
+        }
+      }
+    },
+    items,
+    new Map([['C0GROUP', ['Jane Doe', 'John Roe']]]),
+  )
+})
+
+test('both Later commands capture group display names in either order and exclude larger groups', async () => {
+  const items = [
+    item('mpdm-stale--slug-1', 10, 'C0PAIR'),
+    item('mpdm-jane--john--alex-1', 20, 'C0LARGER'),
+    item('mpdm-stale--slug-1', 30, 'C0PAIR'),
+  ]
+  await fixture(
+    async ({ invoke, invokeDay, hydrated, captured, opened, output }) => {
+      for (const run of [invoke, invokeDay]) {
+        hydrated.length = 0
+        captured.length = 0
+        opened.length = 0
+        const result = await run({ channel: ' john.roe , Jane ', captureAll: true, open: 'landed' })
+        assert({
+          given: 'current participant aliases in reversed order with a larger group also saved',
+          should: 'capture and open exactly the pair, using readable output',
+          actual: [
+            result.data?.matched,
+            hydrated.map((row) => row.item.ts),
+            captured.map((row) => row.item.ts),
+            opened.map((row) => row.item.ts),
+            output.hasLog('Jane Doe, John Roe — group DM, 2 items'),
+          ],
+          expected: [2, [items[0].ts, items[2].ts], [items[0].ts, items[2].ts], [items[0].ts, items[2].ts], true],
+        })
+      }
+      captured.length = 0
+      await invokeDay({ channel: 'John Roe, Jane Doe', capture: '2' })
+      assert({
+        given: 'an explicit index inside the selected group on a day',
+        should: 'capture only the displayed second item',
+        actual: captured.map((row) => row.item.ts),
+        expected: [items[2].ts],
+      })
+    },
+    items,
+    new Map([
+      ['C0PAIR', ['Jane Doe', 'John Roe']],
+      ['C0LARGER', ['Jane Doe', 'John Roe', 'Alex Doe']],
+    ]),
+  )
+})
+
+test('both Later commands stop ambiguous exact names before any capture or open', async () => {
+  const items = [item('Jane Doe', 10, 'D0JANE'), item('Jane Doe', 20, 'D0OTHER')]
+  await fixture(async ({ invoke, invokeDay, hydrated, captured, opened }) => {
+    for (const run of [invoke, invokeDay]) {
+      for (const action of [{ captureAll: true }, { captureBatch: 2 }, { open: '2' }]) {
+        const result = await run({ channel: '@Jane Doe', ...action })
+        assert({
+          given: 'two people with the same exact name',
+          should: 'return choices without hydrating, capturing, or opening anything',
+          actual: [
+            result.failed,
+            result.message?.includes("--channel 'D0JANE'"),
+            hydrated.length,
+            captured.length,
+            opened.length,
+          ],
+          expected: [true, true, 0, 0, 0],
+        })
+      }
+    }
+    await invoke({ channel: 'D0OTHER', captureAll: true })
+    assert({
+      given: 'the explicit ID from the ambiguity message',
+      should: 'capture only that chosen conversation',
+      actual: captured.map((row) => row.item.channel_id),
+      expected: ['D0OTHER'],
+    })
+  }, items)
 })

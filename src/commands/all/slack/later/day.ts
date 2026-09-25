@@ -8,22 +8,20 @@ import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod
 import { convertToNotebookTimezone } from '#shared/nbfs/mod.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import { captureLaterItems, openInSlack } from './lib/capture.ts'
+import { resolveLaterConversations } from './lib/conversations.ts'
 import {
   backfillMissingMessages,
   fetchInProgressLater,
   laterCapturable,
-  laterChannelMatches,
   laterGroupKey,
   laterItemLink,
-  laterMatchableName,
-  normalizeChannelQuery,
   renderLaterLabel,
   renderLaterRow,
-  resolveRowMemberNames,
   resolveRowMentions,
   resolveStaleChannels,
 } from './lib/list.ts'
 import { parseSelection } from './lib/pick.ts'
+import { parseConversationQuery, selectConversations } from './lib/select.ts'
 
 const params = {
   date: Arg.string("Day to fetch (YYYY-MM-DD) — the origin message's notebook day. Defaults to today.", {
@@ -31,7 +29,7 @@ const params = {
   }),
   savedOn: Flag.bool('Match the day you saved the item instead of the message day', { default: false }),
   channel: Flag.string(
-    'Filter conversations by #name, DM person, or group-DM slug; supports * wildcards (quote patterns)',
+    'Filter by #channel, @person, exact group participants, or conversation ID; supports * (quote patterns)',
     {
       optional: true,
     },
@@ -54,7 +52,7 @@ const params = {
 type Params = InferParams<typeof params>
 
 /** Shell-quote a value for the re-run hint — DM names carry spaces; plain names stay bare. */
-const quoteArg = (value: string): string => (/^[\w.#-]+$/.test(value) ? value : `'${value.replaceAll("'", "'\\''")}'`)
+const quoteArg = (value: string): string => (/^[\w.-]+$/.test(value) ? value : `'${value.replaceAll("'", "'\\''")}'`)
 
 type DayItem = {
   item: AgentSlackLaterItem
@@ -99,9 +97,13 @@ export default class SlackLaterDayTask extends Command {
       'alphabetical, each under its own header; --sort-time flattens back to',
       'one chronological list. Numbering follows the printed order either way,',
       'so --capture indexes always mean what you see. --channel narrows the',
-      'day by conversation name: #name or name for channels, the person for DMs,',
-      'or the raw slug for group DMs. Matching ignores case and is exact unless',
-      'you use * for any sequence of characters. Quote patterns, e.g.',
+      'day by conversation: #name matches only channels; @person matches only',
+      'one-to-one DMs; comma-separated names match exactly those other group',
+      'participants, in any order. People match display names, full names, or',
+      'handles. Bare names search all types; IDs and raw group slugs also work.',
+      'Ambiguous exact names require a prefix or ID. Matching ignores case and',
+      'surrounding spaces; * allows partial names and multiple conversations.',
+      'Counts and ambiguity checks cover fetched items. Quote patterns, e.g.',
       "--channel '#atlas-*', so the shell passes them through. The capture and",
       'open flags act on that scoped list. Clickable links and --open use the',
       'app.slack.com browser client, skipping the "open the app" page; piped',
@@ -151,10 +153,13 @@ export default class SlackLaterDayTask extends Command {
     }
     const dayStr = day.toString()
 
-    const channelQuery = args.channel === undefined ? undefined : normalizeChannelQuery(args.channel)
-    if (channelQuery === '') {
-      return CommandResult.fail(`Invalid --channel: ${args.channel} (use a conversation name like #atlas)`)
+    const query = args.channel === undefined ? undefined : parseConversationQuery(args.channel)
+    if (args.channel !== undefined && !query) {
+      return CommandResult.fail(
+        `Invalid --channel: ${args.channel} (use #channel, @person, group participants, or an ID)`,
+      )
     }
+    const channelQuery = query?.text
 
     if (args.captureAll && (args.capture !== undefined || args.captureBatch !== undefined)) {
       return CommandResult.fail('Use only one of --capture-all, --capture, or --capture-batch')
@@ -217,7 +222,13 @@ export default class SlackLaterDayTask extends Command {
     const onDay = dayItems
       .filter((d) => (args.savedOn ? d.savedDay === dayStr : d.messageDay === dayStr))
       .sort((a, b) => (a.item.ts < b.item.ts ? -1 : 1))
-    const matched = channelQuery === undefined ? onDay : onDay.filter((d) => laterChannelMatches(d.item, channelQuery))
+    const conversations = await resolveLaterConversations(
+      onDay.map((row) => row.item),
+      workspace,
+    )
+    const selection = selectConversations(conversations, query)
+    if (selection.error) return CommandResult.fail(selection.error)
+    const matched = onDay.filter((row) => selection.ids.has(row.item.channel_id))
 
     output.log(
       `Saved-later items for ${dayStr} (${args.savedOn ? 'saved that day' : 'message day'}` +
@@ -225,18 +236,10 @@ export default class SlackLaterDayTask extends Command {
         `): ${colors.bold(String(matched.length))} matched of ${list.items.length} fetched` +
         (list.counts.in_progress !== undefined ? colors.dim(` (${list.counts.in_progress} in progress total)`) : ''),
     )
-    // A scoped run that matches nothing usually means a name typo — show what
-    // the day actually has, in the form --channel matches
-    if (channelQuery !== undefined && matched.length === 0 && onDay.length > 0) {
-      const present = [...new Set(onDay.flatMap((d) => laterMatchableName(d.item) ?? []))].sort()
-      output.log(colors.dim(`No later items there that day — present: ${present.join(', ')}`))
-    }
+    for (const line of selection.lines) output.log(line)
     const stale = resolveStaleChannels(list.items)
     await backfillMissingMessages(matched)
-    const [, groupMembers] = await Promise.all([
-      resolveRowMentions(matched, workspace),
-      resolveRowMemberNames(matched, workspace),
-    ])
+    await resolveRowMentions(matched, workspace)
 
     // Default order groups by conversation (channels first, then people,
     // alphabetical; time within each) — one context switch per conversation,
@@ -246,7 +249,7 @@ export default class SlackLaterDayTask extends Command {
       const keys = new Map<string, string>()
       for (const d of matched) {
         if (!keys.has(d.item.channel_id)) {
-          keys.set(d.item.channel_id, laterGroupKey(d.item, groupMembers.get(d.item.channel_id)))
+          keys.set(d.item.channel_id, laterGroupKey(d.item, undefined, conversations.get(d.item.channel_id)))
         }
       }
       matched.sort((a, b) => {
@@ -262,11 +265,11 @@ export default class SlackLaterDayTask extends Command {
       if (!args.sortTime && d.item.channel_id !== headerGroup) {
         headerGroup = d.item.channel_id
         output.log('')
-        output.log(`  ${renderLaterLabel(d.item, { stale, groupMembers })}`)
+        output.log(`  ${renderLaterLabel(d.item, { stale, conversations })}`)
       }
       const rowContext = args.sortTime
-        ? { stale, groupMembers }
-        : { stale, groupMembers, omitLabel: true, indent: '    ' }
+        ? { stale, conversations }
+        : { stale, conversations, omitLabel: true, indent: '    ' }
       for (const line of renderLaterRow({ ...d, timeLabel: d.timeLabel.slice(11) }, index, rowContext)) {
         output.log(line)
       }
@@ -279,7 +282,7 @@ export default class SlackLaterDayTask extends Command {
         .filter((d) => laterCapturable(d.item))
         .slice(0, openCount)
         .map((d) => ({ ...d, timeLabel: d.timeLabel.slice(11) }))
-      await openInSlack(toOpen, output, { groupMembers })
+      await openInSlack(toOpen, output, { conversations })
       return CommandResult.success({
         day: dayStr,
         fetched: list.items.length,
@@ -370,7 +373,7 @@ export default class SlackLaterDayTask extends Command {
       await delay(500)
     }
     // Slack last, so the user lands there ready to respond
-    if (openBare) await openInSlack(outcome.openRows, output, { groupMembers })
+    if (openBare) await openInSlack(outcome.openRows, output, { conversations })
 
     return CommandResult.success({
       day: dayStr,

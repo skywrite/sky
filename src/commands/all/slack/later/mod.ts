@@ -5,28 +5,26 @@ import { formatSlackTimestamp } from '#commands/all/slack/lib/mod.ts'
 import { Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { captureLaterItems, openInSlack } from './lib/capture.ts'
+import { resolveLaterConversations } from './lib/conversations.ts'
 import {
   backfillMissingMessages,
   fetchInProgressLater,
   laterCapturable,
-  laterChannelMatches,
   laterGroupKey,
   laterItemLink,
-  laterMatchableName,
-  normalizeChannelQuery,
   renderLaterLabel,
   renderLaterRow,
-  resolveRowMemberNames,
   resolveRowMentions,
   resolveStaleChannels,
 } from './lib/list.ts'
+import { parseConversationQuery, selectConversations } from './lib/select.ts'
 
 /** Default preview size; --all shows every fetched matching item. */
 const MAX_LISTED = 20
 
 const params = {
   channel: Flag.string(
-    'Filter conversations by #name, DM person, or group-DM slug; supports * wildcards (quote patterns)',
+    'Filter by #channel, @person, exact group participants, or conversation ID; supports * (quote patterns)',
     {
       optional: true,
     },
@@ -88,11 +86,15 @@ export default class SlackLaterTask extends Command {
       'day-scoped view of the same queue.',
       'Unavailable channels are hidden by default; --include-unavailable shows',
       'them too, within the same listing limit. They remain in the queue.',
-      '--channel narrows listing, capture, and open by conversation name: #name',
-      'or name for channels, the person for DMs, or the raw group-DM slug.',
-      'Matching ignores case and is exact unless you use * for any sequence of',
-      "characters. Quote patterns, e.g. --channel '#atlas-*', so the shell",
-      'passes them through. Channel counts cover the fetched items (--limit).',
+      '--channel scopes listing, capture, and open identically: #name matches',
+      'only channels; @person matches only one-to-one DMs. Comma-separated',
+      'names match exactly those other group participants, in any order.',
+      'People match display names, full names, or handles. Bare names search',
+      'all conversation types. Matching ignores case and surrounding spaces;',
+      '* explicitly allows partial names and multiple conversations. Quote',
+      "patterns, e.g. --channel '#atlas-*'. Ambiguous exact names require a",
+      'prefix or conversation ID. Raw group-DM slugs also remain supported.',
+      'Counts and ambiguity checks cover fetched items (--limit).',
       '',
       '--capture-batch N captures the first N through slack:follow:message: live',
       'threads are captured AND followed for new replies; threads quiet past',
@@ -119,6 +121,8 @@ export default class SlackLaterTask extends Command {
       'sky slack:later --sort channel --all',
       'sky slack:later --sort channel --capture-batch 5',
       'sky slack:later --channel atlas',
+      "sky slack:later --channel '@Jane*'",
+      "sky slack:later --channel 'Jane Doe, John Roe'",
       "sky slack:later --channel '#atlas-*' --all",
       "sky slack:later --channel '#atlas-*' --capture-batch 5",
       "sky slack:later --channel '#atlas-*' --capture-all",
@@ -134,10 +138,13 @@ export default class SlackLaterTask extends Command {
   async run({ args, context, tasks }: CommandArgs<Params>): Promise<CommandResult<Result>> {
     const { output, systemNow } = context
 
-    const channelQuery = args.channel === undefined ? undefined : normalizeChannelQuery(args.channel)
-    if (channelQuery === '') {
-      return CommandResult.fail(`Invalid --channel: ${args.channel} (use a conversation name like #atlas)`)
+    const query = args.channel === undefined ? undefined : parseConversationQuery(args.channel)
+    if (args.channel !== undefined && !query) {
+      return CommandResult.fail(
+        `Invalid --channel: ${args.channel} (use #channel, @person, group participants, or an ID)`,
+      )
     }
+    const channelQuery = query?.text
     const sort = args.sort ?? 'time'
     if (sort !== 'time' && sort !== 'channel') {
       return CommandResult.fail(`Invalid --sort: ${sort} (use "time" or "channel")`)
@@ -180,10 +187,13 @@ export default class SlackLaterTask extends Command {
     const fetched = await fetchInProgressLater(args.limit)
     if ('error' in fetched) return CommandResult.fail(fetched.error)
     const { list } = fetched
+    const conversations = await resolveLaterConversations(list.items, workspace)
+    const selection = selectConversations(conversations, query)
+    if (selection.error) return CommandResult.fail(selection.error)
 
     // Start chronologically; channel grouping retains time order within each conversation.
     const queue = list.items
-      .filter((item) => channelQuery === undefined || laterChannelMatches(item, channelQuery))
+      .filter((item) => selection.ids.has(item.channel_id))
       .sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0))
       .map((item) => ({
         item,
@@ -200,18 +210,12 @@ export default class SlackLaterTask extends Command {
         (channelQuery === undefined ? ' fetched' : ` matched of ${list.items.length} fetched`) +
         (list.counts.in_progress !== undefined ? colors.dim(` (${list.counts.in_progress} in progress total)`) : ''),
     )
-    if (channelQuery !== undefined && queue.length === 0 && list.items.length > 0) {
-      const present = [...new Set(list.items.flatMap((item) => laterMatchableName(item) ?? []))].sort()
-      output.log(colors.dim(`No later items there in this fetch — present: ${present.join(', ') || '(none named)'}`))
-    }
-    // Resolve group-DM display names before sorting the full queue, so the
-    // preview and every action agree on which conversations come first.
-    const sortedGroupMembers = sortByChannel ? await resolveRowMemberNames(queue, workspace) : undefined
+    for (const line of selection.lines) output.log(line)
     if (sortByChannel) {
       const keys = new Map<string, string>()
       for (const { item } of queue) {
         if (!keys.has(item.channel_id)) {
-          keys.set(item.channel_id, laterGroupKey(item, sortedGroupMembers?.get(item.channel_id)))
+          keys.set(item.channel_id, laterGroupKey(item, undefined, conversations.get(item.channel_id)))
         }
       }
       queue.sort((a, b) => {
@@ -232,20 +236,17 @@ export default class SlackLaterTask extends Command {
         ? visible
         : visible.slice(0, Math.max(MAX_LISTED, args.captureBatch ?? 0, openCount ?? 0))
     await backfillMissingMessages(shown)
-    const [, groupMembers] = await Promise.all([
-      resolveRowMentions(shown, workspace),
-      sortedGroupMembers ?? resolveRowMemberNames(shown, workspace),
-    ])
+    await resolveRowMentions(shown, workspace)
     let headerGroup: string | undefined
     for (const [index, d] of shown.entries()) {
       if (sortByChannel && d.item.channel_id !== headerGroup) {
         headerGroup = d.item.channel_id
         output.log('')
-        output.log(`  ${renderLaterLabel(d.item, { stale, groupMembers })}`)
+        output.log(`  ${renderLaterLabel(d.item, { stale, conversations })}`)
       }
       const rowContext = sortByChannel
-        ? { stale, groupMembers, omitLabel: true, indent: '    ' }
-        : { stale, groupMembers }
+        ? { stale, conversations, omitLabel: true, indent: '    ' }
+        : { stale, conversations }
       for (const line of renderLaterRow(d, index, rowContext)) output.log(line)
     }
     if (shown.length < visible.length) {
@@ -256,7 +257,7 @@ export default class SlackLaterTask extends Command {
     // items stay saved, so Slack's Later badge still marks them
     if (openCount !== undefined) {
       const toOpen = queue.filter((d) => laterCapturable(d.item)).slice(0, openCount)
-      await openInSlack(toOpen, output, { groupMembers })
+      await openInSlack(toOpen, output, { conversations })
       return CommandResult.success({
         fetched: list.items.length,
         inProgressTotal: list.counts.in_progress,
@@ -329,7 +330,7 @@ export default class SlackLaterTask extends Command {
       await delay(500)
     }
     // Slack last, so the user lands there ready to respond
-    if (openBare) await openInSlack(outcome.openRows, output, { groupMembers })
+    if (openBare) await openInSlack(outcome.openRows, output, { conversations })
 
     return CommandResult.success({
       fetched: list.items.length,

@@ -10,15 +10,9 @@ import { runAgentSlack } from '#commands/all/slack/lib/agentSlack.ts'
 import { oneLine } from '#commands/all/slack/lib/mod.ts'
 import { mpdmMemberHandles } from '#commands/all/slack/lib/mpdmMembers.ts'
 import resolveContent from '#commands/all/slack/lib/resolveContent.ts'
-import {
-  type DmMembership,
-  fetchDmMembership,
-  resolveChannelNames,
-  resolveHandleNames,
-  resolveUsergroupNames,
-  resolveUserNames,
-} from '#commands/all/slack/lib/resolveNames.ts'
+import { resolveChannelNames, resolveUsergroupNames, resolveUserNames } from '#commands/all/slack/lib/resolveNames.ts'
 import hyperlink from '#lib/terminal/hyperlink.ts'
+import type { LaterConversation } from './conversations.ts'
 
 /** Fetch and parse the in-progress items from Slack's Later list. */
 export async function fetchInProgressLater(limit: number): Promise<{ list: AgentSlackLaterList } | { error: string }> {
@@ -53,37 +47,6 @@ export function laterChannelLabel(item: AgentSlackLaterItem, members?: string[])
   const groupHandles = mpdmMemberHandles(name)
   if (groupHandles.length > 0) return (members?.length ? members : groupHandles).join(', ')
   return name ? (isDm ? name : `#${name}`) : item.channel_id
-}
-
-/** The form --channel matching compares on: trimmed, #-stripped, lowercased. */
-export function normalizeChannelQuery(name: string): string {
-  return name.trim().replace(/^#/, '').toLowerCase()
-}
-
-/** Match a normalized conversation name; only * is special, matching zero or more characters. */
-export function laterChannelMatches(item: AgentSlackLaterItem, query: string): boolean {
-  if (!item.channel_name) return false
-  const name = normalizeChannelQuery(item.channel_name)
-  const normalizedQuery = normalizeChannelQuery(query)
-  if (!normalizedQuery.includes('*')) return name === normalizedQuery
-  // Treat punctuation in DM names literally so it cannot broaden a capture.
-  const pattern = normalizedQuery
-    .split(/\*+/)
-    .map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
-    .join('.*')
-  return new RegExp(`^${pattern}$`, 'su').test(name)
-}
-
-/**
- * The name a --channel query would have to give to match this item: #name for
- * channels, the person for DMs, the raw slug for group DMs. Unlike
- * laterChannelLabel this never substitutes group members — their names don't
- * match, the slug does.
- */
-export function laterMatchableName(item: AgentSlackLaterItem): string | undefined {
-  const name = item.channel_name?.replace(/^#/, '')
-  if (!name) return undefined
-  return laterConversationKind(item) === 'channel' ? `#${name}` : name
 }
 
 /** Permalink to a later item's origin message. */
@@ -130,9 +93,9 @@ const GROUP_RANK: Record<LaterConversationKind, number> = { channel: 0, dm: 1, g
  * suffix keeps two same-named conversations from interleaving. Sort by this
  * key, then ts, so a conversation's items stay in reading order.
  */
-export function laterGroupKey(item: AgentSlackLaterItem, members?: string[]): string {
-  const label = laterChannelLabel(item, members).replace(/^#/, '').toLowerCase()
-  return `${GROUP_RANK[laterConversationKind(item)]}:${label}:${item.channel_id}`
+export function laterGroupKey(item: AgentSlackLaterItem, members?: string[], conversation?: LaterConversation): string {
+  const label = (conversation?.label ?? laterChannelLabel(item, members)).replace(/^#/, '').toLowerCase()
+  return `${GROUP_RANK[conversation?.kind ?? laterConversationKind(item)]}:${label}:${item.channel_id}`
 }
 
 /** What a dead conversation id resolved to, inferred from timestamp twins in the same fetch. */
@@ -230,74 +193,6 @@ const liveMentionResolvers = (workspace: string): MentionResolvers => ({
   usergroups: (ids) => resolveUsergroupNames(ids, workspace),
 })
 
-/** Group-DM member-name sources, injectable for tests. */
-export type GroupMemberResolvers = {
-  membership: () => Promise<DmMembership>
-  users: (ids: string[]) => Promise<Map<string, string>>
-  handles: (handles: string[]) => Promise<Map<string, string>>
-}
-
-const liveGroupMemberResolvers = (workspace: string): GroupMemberResolvers => ({
-  membership: () => fetchDmMembership(workspace),
-  users: (ids) => resolveUserNames(ids, workspace),
-  handles: (handles) => resolveHandleNames(handles, workspace),
-})
-
-/**
- * Display names for each group-DM row's head line, keyed by conversation id,
- * with the session user excluded (like Slack's own header). Names come from
- * live membership — mpdm slugs are creation-time state, so renames, moved
- * conversations, and later-added members never reach them. Rows the boot
- * payload doesn't cover fall back to name-resolved slug handles; rows that
- * resolve nowhere keep the raw slug label via the renderer's fallback.
- */
-export async function resolveRowMemberNames(
-  rows: Array<{ item: AgentSlackLaterItem }>,
-  workspace: string,
-  resolvers: GroupMemberResolvers = liveGroupMemberResolvers(workspace),
-): Promise<Map<string, string[]>> {
-  const groupRows = rows.filter((row) => laterConversationKind(row.item) === 'group')
-  const members = new Map<string, string[]>()
-  if (groupRows.length === 0) return members
-
-  const { selfId, membersByChannel } = await resolvers.membership()
-  const rowIds = new Map<string, string[]>()
-  const wantedUserIds = new Set<string>()
-  for (const row of groupRows) {
-    const ids = (membersByChannel.get(row.item.channel_id) ?? []).filter((id) => id !== selfId)
-    rowIds.set(row.item.channel_id, ids)
-    for (const id of ids) wantedUserIds.add(id)
-  }
-  const userNames = wantedUserIds.size > 0 ? await resolvers.users([...wantedUserIds]) : new Map<string, string>()
-
-  const slugHandles = new Set<string>()
-  for (const row of groupRows) {
-    const names = (rowIds.get(row.item.channel_id) ?? [])
-      .map((id) => userNames.get(id))
-      .filter((name): name is string => Boolean(name))
-    if (names.length > 0) {
-      members.set(row.item.channel_id, names)
-    } else {
-      for (const handle of mpdmMemberHandles(row.item.channel_name?.replace(/^#/, ''))) slugHandles.add(handle)
-    }
-  }
-
-  if (slugHandles.size > 0) {
-    const handleNames = await resolvers.handles([...slugHandles])
-    for (const row of groupRows) {
-      if (members.has(row.item.channel_id)) continue
-      const handles = mpdmMemberHandles(row.item.channel_name?.replace(/^#/, ''))
-      if (handles.length > 0) {
-        members.set(
-          row.item.channel_id,
-          handles.map((handle) => handleNames.get(handle) || handle),
-        )
-      }
-    }
-  }
-  return members
-}
-
 /**
  * Replace mention ids in the rows' message bodies with names, in place — the
  * agent-slack export renders `<@U…>` as a bare `@U…` id and leaves `<#C…>`
@@ -322,9 +217,11 @@ export async function resolveRowMentions(
 }
 
 export type LaterRowContext = {
+  /** The same resolved records used for filtering and sorting. */
+  conversations?: Map<string, LaterConversation>
   /** Dead-id resolutions from resolveStaleChannels; without one, unnamed rows fall back to the raw id */
   stale?: Map<string, StaleChannelInfo>
-  /** Group-DM member names by conversation id, from resolveRowMemberNames; labels fall back to slug handles */
+  /** Group-DM member names by conversation id, for standalone row rendering; labels fall back to slug handles */
   groupMembers?: Map<string, string[]>
   maxSnippet?: number
   /**
@@ -347,12 +244,16 @@ export type LaterRowContext = {
  */
 export function renderLaterLabel(
   item: AgentSlackLaterItem,
-  context: Pick<LaterRowContext, 'stale' | 'groupMembers'> = {},
+  context: Pick<LaterRowContext, 'stale' | 'groupMembers' | 'conversations'> = {},
 ): string {
-  const kind = laterConversationKind(item)
+  const conversation = context.conversations?.get(item.channel_id)
+  const kind = conversation?.kind ?? laterConversationKind(item)
   if (kind !== 'unknown') {
-    return colors.bold(KIND_COLOR[kind](laterChannelLabel(item, context.groupMembers?.get(item.channel_id))))
+    return colors.bold(
+      KIND_COLOR[kind](conversation?.label ?? laterChannelLabel(item, context.groupMembers?.get(item.channel_id))),
+    )
   }
+  if (item.channel_name && conversation) return `${conversation.label} (type unavailable)`
   const staleInfo = context.stale?.get(item.channel_id)
   if (staleInfo?.name) {
     const note = staleInfo.duplicateTs.has(item.ts) ? 'duplicate save — stale channel id' : 'stale channel id'
