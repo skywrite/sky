@@ -11,9 +11,12 @@
 import { Button, Checkbox } from '@mantine/core'
 import { useMediaQuery } from '@mantine/hooks'
 import { Fragment, type MouseEvent, useCallback, useEffect, useRef, useState } from 'react'
+import { isNoteDocument } from '#commands/all/notes/lib/documentInput.ts'
 import { Cross } from './day.tsx'
+import { DocumentImportNotice } from './documentImport.tsx'
 import { fileHref } from './explorer.tsx'
 import { dayFileHref, type DayListing, filesHref, type ListedBy, readListing } from './files.tsx'
+import type { ImportJob } from './import.tsx'
 import { post, sizeLabel } from './keep.ts'
 import { revealOpacity, useSwipeToDelete } from './swipe.ts'
 
@@ -246,6 +249,7 @@ function FileRow({
   onPick,
   onOpenFolder,
   onRemove,
+  onCreateNote,
 }: {
   ymd: string
   entry: Entry
@@ -255,6 +259,7 @@ function FileRow({
   onPick: (entry: Entry) => void
   onOpenFolder: (folder: string) => void
   onRemove: (entry: Entry) => void
+  onCreateNote?: (entry: Entry) => void
 }) {
   const swipe = useSwipeToDelete(() => onRemove(entry))
   useEffect(() => {
@@ -331,6 +336,11 @@ function FileRow({
                 {entry.listedBy.title}
               </a>
             )}
+            {!selecting && !entry.folder && !entry.listedBy && isNoteDocument(entry.name) && onCreateNote && (
+              <Button size="compact-xs" onClick={() => onCreateNote(entry)}>
+                Create note
+              </Button>
+            )}
           </span>
         </span>
         <span className="sky-fsize">{size}</span>
@@ -343,7 +353,25 @@ function FileRow({
 // The page
 // -----------------------------------------------------------------------------
 
-export function DayFilesMain({ ymd, folder, go }: { ymd: string; folder: string; go: (to: string) => void }) {
+export function DayFilesMain({
+  ymd,
+  folder,
+  go,
+  onCreateNote,
+  importNotice,
+  onDismissImportNotice = () => {},
+  importDialogOpen = false,
+  onOpenImport = () => {},
+}: {
+  ymd: string
+  folder: string
+  go: (to: string) => void
+  onCreateNote?: (ymd: string, relative: string, name: string) => Promise<void>
+  importNotice?: ImportJob
+  onDismissImportNotice?: (id: string) => void
+  importDialogOpen?: boolean
+  onOpenImport?: (id: string) => void
+}) {
   const { listing, missing, problem, reload } = useListing(ymd, folder)
   const phone = useMediaQuery('(max-width: 900px)') ?? false
   const [selecting, setSelecting] = useState(false)
@@ -522,6 +550,15 @@ export function DayFilesMain({ ymd, folder, go }: { ymd: string; folder: string;
                       onPick={pick}
                       onOpenFolder={openFolder}
                       onRemove={(target) => void remove([target])}
+                      onCreateNote={
+                        onCreateNote
+                          ? (target) => {
+                              void onCreateNote(ymd, target.path, target.name).catch((error) =>
+                                setTrouble((error as Error).message),
+                              )
+                            }
+                          : undefined
+                      }
                     />
                   </Fragment>
                 ))}
@@ -545,6 +582,16 @@ export function DayFilesMain({ ymd, folder, go }: { ymd: string; folder: string;
             <span className="sky-undo-fill" />
           </span>
         </div>
+      )}
+      {importNotice && (
+        <Fragment key={importNotice.id}>
+          <DocumentImportNotice
+            job={importNotice}
+            blocked={Boolean(toast) || importDialogOpen}
+            onDismiss={onDismissImportNotice}
+            onOpen={onOpenImport}
+          />
+        </Fragment>
       )}
     </div>
   )

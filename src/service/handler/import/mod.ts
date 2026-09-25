@@ -17,8 +17,9 @@ import { mkdir, rm, utimes, writeFile } from 'node:fs/promises'
 import * as path from 'node:path'
 import { Hono } from 'hono'
 import { streamSSE } from 'hono/streaming'
+import { documentWorkWhen } from '#commands/all/notes/lib/documentInput.ts'
 import type { RunEvent } from '#commands/lib/core/runCommand.ts'
-import { instantNow } from '#universal/dates/nbdt/mod.ts'
+import { instantNow, PlainDate } from '#universal/dates/nbdt/mod.ts'
 import { hold } from '../../activity.ts'
 import { safeAttachmentName } from '../attachments/mod.ts'
 import { linkValues } from '../links/mod.ts'
@@ -55,7 +56,7 @@ export type {
 export type { ImportKind, ImportSource, ReadBack } from './readback.ts'
 export type { RunEvent } from '#commands/lib/core/runCommand.ts'
 
-export type RunOutcome = { ok: true; file: string | null } | { ok: false; message: string }
+export type RunOutcome = { ok: true; file: string | null } | { ok: false; message: string; file?: string | null }
 
 export interface ImportRoutesOptions {
   links?: ImportLinksHost
@@ -152,8 +153,16 @@ function parseStart(body: unknown, readback: ReadBack): StartFields | string {
   const kind = typeof b.kind === 'string' ? b.kind : ''
   if (!KINDS.includes(kind as StartFields['kind'])) return `kind must be one of ${KINDS.join(', ')}`
   if (!readback.kinds.includes(kind as StartFields['kind'])) return `this file cannot be filed as a ${kind}`
-  const when = typeof b.when === 'string' ? b.when.trim() : ''
-  if (!WHEN.test(when)) return 'when must be YYYY-MM-DD HH:MM'
+  let when = typeof b.when === 'string' ? b.when.trim() : ''
+  if (readback.source === 'document') {
+    try {
+      when = documentWorkWhen(when).toString()
+    } catch (error) {
+      return (error as Error).message
+    }
+    if (typeof b.summary !== 'string' || !b.summary.trim() || /[\r\n]/.test(b.summary))
+      return 'Describe the work in one line.'
+  } else if (!WHEN.test(when)) return 'when must be YYYY-MM-DD HH:MM'
   const category = b.category === 'Personal' ? 'Personal' : 'Professional'
   const journalType = typeof b.journalType === 'string' && b.journalType.trim() ? b.journalType.trim() : null
   if (kind === 'journal' && !journalType) return 'a journal needs a type'
@@ -165,6 +174,9 @@ function parseStart(body: unknown, readback: ReadBack): StartFields | string {
     category,
     journalType,
     fresh: b.fresh === true,
+    ...(readback.source === 'document'
+      ? { summary: (b.summary as string).trim(), body: typeof b.body === 'string' ? b.body : '' }
+      : {}),
   }
 }
 
@@ -215,6 +227,19 @@ export function createImportRoutes(options: ImportRoutesOptions): Hono {
   app.post('/', async (c) => {
     await loaded
     const body = await c.req.raw.formData().catch(() => null)
+    const filingDay = body?.get('day')
+    if (filingDay !== null && filingDay !== undefined) {
+      try {
+        if (
+          typeof filingDay !== 'string' ||
+          !/^\d{4}-\d{2}-\d{2}$/.test(filingDay) ||
+          new PlainDate(filingDay).toString() !== filingDay
+        )
+          throw new Error('Invalid day')
+      } catch {
+        return c.json({ message: 'Choose a valid day.' }, 400)
+      }
+    }
     const uploads = body?.getAll('file') ?? []
     if (!uploads.every((upload): upload is File => upload instanceof File)) {
       return c.json({ message: 'a file is required' }, 400)
@@ -279,10 +304,11 @@ export function createImportRoutes(options: ImportRoutesOptions): Hono {
             kinds: refused < 0 ? ['message'] : [],
             refusal: refused < 0 ? null : `${files[refused].name}: ${readbacks[refused].refusal}`,
           }
-    const suggestedWhen = options.suggestWhen(file, readback)
+    const suggestedWhen =
+      readback.source === 'document' && typeof filingDay === 'string' ? filingDay : options.suggestWhen(file, readback)
     // Keyed once, now: a filed run moves the upload on, and the key must outlive it.
     const kept =
-      readback.refusal || files.length > 1 || !options.record
+      readback.refusal || readback.source === 'document' || files.length > 1 || !options.record
         ? null
         : await options.record({ path: filePath, key: null }).catch(() => null)
     const job: ImportJob = {
@@ -352,6 +378,7 @@ export function createImportRoutes(options: ImportRoutesOptions): Hono {
     // dialog opening again is when that is looked at.
     if (
       options.record &&
+      job.readback.source !== 'document' &&
       (job.files?.length ?? 1) === 1 &&
       (job.state === 'failed' || job.state === 'cancelled') &&
       !job.readback.refusal
@@ -429,16 +456,26 @@ export function createImportRoutes(options: ImportRoutesOptions): Hono {
     if (job.state === 'running' || job.state === 'needs-you') {
       return c.json({ message: 'this import is already running' }, 409)
     }
+    if (job.state === 'done') return c.json({ message: 'This import is already filed.' }, 409)
     if (job.readback.refusal) return c.json({ message: job.readback.refusal }, 400)
     const fields = parseStart(await c.req.json().catch(() => null), job.readback)
     if (typeof fields === 'string') return c.json({ message: fields }, 400)
 
+    if (job.readback.source === 'document' && job.fields) {
+      // A retry finishes the capture already saved, even after a restart or cancellation.
+      if (JSON.stringify({ ...fields, fresh: false }) !== JSON.stringify({ ...job.fields, fresh: false })) {
+        return c.json({ message: 'Retry with the saved details, then edit the note after it finishes.' }, 400)
+      }
+    }
     job.fields = fields
+    if (fields.summary) job.title = fields.summary
     job.plan = null
     job.stage = null
     job.tick = null
-    job.result = null
-    job.linked = []
+    if (job.readback.source !== 'document') {
+      job.result = null
+      job.linked = []
+    }
     job.linkError = null
     job.error = null
     job.line = 'Starting…'
@@ -479,6 +516,12 @@ export function createImportRoutes(options: ImportRoutesOptions): Hono {
             await store.setState(record, 'done')
           })
         } else {
+          if (outcome.file) {
+            await withLinks(record.job.id, async () => {
+              record.job.result = { file: outcome.file! }
+              await saveLinks(record)
+            })
+          }
           record.job.error = outcome.message
           record.job.line = outcome.message
           await store.setState(record, 'failed')

@@ -53,6 +53,8 @@ export interface StartFields {
   journalType: string | null
   /** Start over: forget the earlier run's record */
   fresh: boolean
+  summary?: string
+  body?: string
 }
 
 /** The step a command says it is on, in its own words. */

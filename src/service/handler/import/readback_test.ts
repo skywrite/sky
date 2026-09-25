@@ -45,10 +45,18 @@ test('sourceOf', () => {
   assert({
     given: 'file names of each kind',
     should: 'point at the door family, or nowhere',
-    actual: ['call.VTT', 'talk.srt', 'notes.txt', 'memo.m4a', 'song.MP3', 'chat.png', 'photo.HEIC', 'deck.pdf'].map(
-      sourceOf,
-    ),
-    expected: ['transcript', 'srt', 'text', 'audio', 'audio', 'image', 'image', null],
+    actual: [
+      'call.VTT',
+      'talk.srt',
+      'notes.txt',
+      'memo.m4a',
+      'song.MP3',
+      'chat.png',
+      'photo.HEIC',
+      'deck.pdf',
+      'archive.zip',
+    ].map(sourceOf),
+    expected: ['transcript', 'srt', 'text', 'audio', 'audio', 'image', 'image', 'document', null],
   })
 })
 
@@ -216,9 +224,9 @@ test('lengthLabel and readUnknown', () => {
   assert({
     given: 'a file of a kind sky does not take',
     should: 'say so and name what it does take',
-    actual: readUnknown('deck.pdf').refusal,
+    actual: readUnknown('archive.zip').refusal,
     expected:
-      "Sky doesn't take .pdf files. Drop a Zoom transcript (.vtt), a video's .srt, a voice memo, a notetaker's .txt, or a screenshot of a conversation.",
+      "Sky doesn't take .zip files. Drop a PDF, Office or Markdown document, a Zoom transcript (.vtt), a video's .srt, a voice memo, a notetaker's .txt, or a screenshot of a conversation.",
   })
 })
 

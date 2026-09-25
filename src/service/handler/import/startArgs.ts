@@ -19,6 +19,7 @@
  * no clock of its own — its proposal is when it was dropped — so none goes.
  */
 
+import { documentWorkWhen } from '#commands/all/notes/lib/documentInput.ts'
 import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import type { StartFields } from './jobs.ts'
 import type { ReadBack } from './readback.ts'
@@ -30,6 +31,7 @@ export interface StartContext {
   runKey: string | null
   /** The when sky proposed, notebook time, YYYY-MM-DD HH:MM */
   suggestedWhen: string
+  id?: string
 }
 
 export interface StartArgs {
@@ -43,6 +45,22 @@ export interface StartArgs {
 export function startArgs(job: StartContext, fields: StartFields, input: string | string[]): StartArgs {
   const filePaths = typeof input === 'string' ? [input] : input
   const filePath = filePaths[0]
+  if (job.source === 'document') {
+    const work = documentWorkWhen(fields.when)
+    return {
+      command: 'notes:new',
+      args: {
+        fromFile: filePath,
+        summary: fields.summary,
+        body: fields.body,
+        workWhen: work.toString(),
+        when: work.datetime,
+        category: `${fields.category} Complete`,
+        run: job.id,
+      },
+      rawArgs: { _: [], when: work.datetime.toString() },
+    }
+  }
   const when = PlainDateTime.fromString(fields.when)
   const category = `${fields.category} Complete`
   const { fresh } = fields

@@ -14,13 +14,14 @@ import * as path from 'node:path'
 import { isRtf, stampedDurationMinutes, turnStamps } from '#commands/all/audio/transcript/lib/plainText.ts'
 import SRT from '#commands/all/audio/transcript/lib/SRT/mod.ts'
 import ZoomVTT from '#commands/all/audio/transcript/lib/ZoomVTT/mod.ts'
+import { isNoteDocument } from '#commands/all/notes/lib/documentInput.ts'
 
 /** The kinds a recording may be filed as: every door that takes audio. */
 export type RecordingKind = 'meeting' | 'journal' | 'note' | 'message' | 'event'
 /** Those, and a video, which comes in as its transcript. */
 export type ImportKind = RecordingKind | 'video'
 /** What arrived: a file of one of five kinds, or text dragged onto the day (`selection`). */
-export type ImportSource = 'transcript' | 'srt' | 'text' | 'audio' | 'image' | 'selection'
+export type ImportSource = 'transcript' | 'srt' | 'text' | 'audio' | 'image' | 'selection' | 'document'
 
 export const RECORDING_KINDS: RecordingKind[] = ['meeting', 'journal', 'note', 'message', 'event']
 export const KINDS: ImportKind[] = [...RECORDING_KINDS, 'video']
@@ -70,7 +71,21 @@ export function sourceOf(name: string): ImportSource | null {
   if (ext === '.txt') return 'text'
   if (AUDIO_EXTENSIONS.includes(ext)) return 'audio'
   if (IMAGE_EXTENSIONS.includes(ext)) return 'image'
+  if (isNoteDocument(name)) return 'document'
   return null
+}
+
+export function readDocument(name: string): ReadBack {
+  return {
+    source: 'document',
+    kinds: ['note'],
+    summary: `${path.extname(name).slice(1).toUpperCase()} document`,
+    detail: null,
+    durationMinutes: null,
+    clockStartSeconds: null,
+    speakers: [],
+    refusal: null,
+  }
 }
 
 /** "47 minutes", "4 min 12 s", "under a minute" */
@@ -246,6 +261,6 @@ export function readUnknown(name: string): ReadBack {
   const ext = path.extname(name).toLowerCase() || 'that kind of'
   return refused(
     'text',
-    `Sky doesn't take ${ext} files. Drop a Zoom transcript (.vtt), a video's .srt, a voice memo, a notetaker's .txt, or a screenshot of a conversation.`,
+    `Sky doesn't take ${ext} files. Drop a PDF, Office or Markdown document, a Zoom transcript (.vtt), a video's .srt, a voice memo, a notetaker's .txt, or a screenshot of a conversation.`,
   )
 }

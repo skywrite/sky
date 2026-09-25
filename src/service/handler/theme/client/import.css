@@ -1,5 +1,24 @@
 /* ============ meeting from a file ============ */
 
+.sky-document-capture {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  margin: 20px 0;
+}
+
+.sky-document-when {
+  display: grid;
+  grid-template-columns: 150px minmax(0, 1fr);
+  gap: 16px;
+}
+
+@media (max-width: 480px) {
+  .sky-document-when {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* the drop overlay over the day */
 .sky-drop {
   position: absolute;

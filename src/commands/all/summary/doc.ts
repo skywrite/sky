@@ -94,7 +94,7 @@ export default class SummaryDocTask extends Command {
     output.log(`Calling Claude (${model})...`)
     let response: string
     try {
-      response = await this.summarize(model, systemPrompt, userPrompt, document, args.effort)
+      response = await this.summarize(model, systemPrompt, userPrompt, document, args.effort, context.signal)
     } catch (err) {
       return CommandResult.error(err as Error, 'Failed to call Claude API')
     }
@@ -121,9 +121,11 @@ export default class SummaryDocTask extends Command {
     userPrompt: string,
     document: LoadedDocument,
     effort?: import('#universal/ai/effort.ts').EffortOverride,
+    signal?: AbortSignal,
   ): Promise<string> {
     if (document.kind === 'text') {
       const result = await generateText({
+        abortSignal: signal,
         ...aiModelByProfile(model, { temperature: 0, effort }),
         instructions: systemPrompt,
         prompt: `${userPrompt}\n---\n\n${document.text}`,
@@ -132,6 +134,7 @@ export default class SummaryDocTask extends Command {
     }
 
     const result = await generateText({
+      abortSignal: signal,
       ...aiModelByProfile(model, { temperature: 0, effort }),
       instructions: systemPrompt,
       messages: [

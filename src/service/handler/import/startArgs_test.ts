@@ -13,6 +13,43 @@ const fields = (over: Partial<StartFields>): StartFields => ({
   ...over,
 })
 
+test('a document starts a timed note with the work wording and a stable retry identity', () => {
+  const start = startArgs(
+    { source: 'document', runKey: null, suggestedWhen: '2025-01-01', id: 'import-one' },
+    fields({
+      kind: 'note',
+      when: '2026-01-27 23:30 - 25:30',
+      summary: 'Worked on the Atlas report',
+      body: 'Revised the asks.',
+    }),
+    '/tmp/Atlas.pdf',
+  )
+  assert({
+    given: 'a document with a work range on a different day from the file proposal',
+    should: 'pass the range and user wording to notes:new without an audio pipeline',
+    actual: {
+      command: start.command,
+      fromFile: start.args.fromFile,
+      fromAudio: start.args.fromAudio,
+      when: String(start.args.when),
+      workWhen: start.args.workWhen,
+      summary: start.args.summary,
+      body: start.args.body,
+      run: start.args.run,
+    },
+    expected: {
+      command: 'notes:new',
+      fromFile: '/tmp/Atlas.pdf',
+      fromAudio: undefined,
+      when: '2026-01-27 23:30',
+      workWhen: '2026-01-27 23:30 - 25:30',
+      summary: 'Worked on the Atlas report',
+      body: 'Revised the asks.',
+      run: 'import-one',
+    },
+  })
+})
+
 test('startArgs() — a when left as sky proposed it', () => {
   const start = startArgs(memo, fields({}), '/tmp/memo.m4a')
   assert({

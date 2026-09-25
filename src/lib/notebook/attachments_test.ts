@@ -7,6 +7,26 @@ import { copyFileDedup, copyToDayAttachments } from './attachments.ts'
 
 const DAY = new PlainDate('2026-01-27')
 
+test('concurrent attachment copies publish whole files without overwriting', async () => {
+  const source = await tmp()
+  const destination = await tmp()
+  await writeFile(path.join(source, 'one.pdf'), 'first report')
+  await writeFile(path.join(source, 'two.pdf'), 'second report')
+  const copied = await Promise.all(
+    ['one.pdf', 'two.pdf', 'one.pdf'].map((name) => copyFileDedup(path.join(source, name), destination, 'Atlas.pdf')),
+  )
+  assert({
+    given: 'three overlapping captures with a shared filename',
+    should: 'deduplicate equal bytes and preserve distinct bytes',
+    actual: [
+      (await names(destination)).length,
+      copied[0] === copied[2],
+      await Promise.all(copied.map((name) => readFile(path.join(destination, name!), 'utf8'))),
+    ],
+    expected: [2, true, ['first report', 'second report', 'first report']],
+  })
+})
+
 async function tmp(): Promise<string> {
   return makeTempDir({ prefix: 'sky-attachments-' })
 }

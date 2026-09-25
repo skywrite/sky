@@ -4,11 +4,12 @@ import EventNewTask from './new.ts'
 
 const params = EventNewTask.description.params!
 const MEMO = '/tmp/memo.m4a'
+const when = '2026-01-27 09:30'
 
 test('event:new — a voice memo comes in by --from-voice-memo, or by --from-audio, its alias', async () => {
-  const dialog = await transformTypedParamsArgs(params, { _: ['event:new'], 'from-voice-memo': MEMO })
-  const older = await transformTypedParamsArgs(params, { _: ['event:new'], 'from-audio': MEMO })
-  const host = await transformTypedParamsArgs(params, { _: ['event:new'], fromVoiceMemo: MEMO })
+  const dialog = await transformTypedParamsArgs(params, { _: ['event:new'], when, 'from-voice-memo': MEMO })
+  const older = await transformTypedParamsArgs(params, { _: ['event:new'], when, 'from-audio': MEMO })
+  const host = await transformTypedParamsArgs(params, { _: ['event:new'], when, fromVoiceMemo: MEMO })
   assert({
     given: "the dialog's spelling, the older one, and the key the import host sends",
     should: 'all name the same recording',
@@ -20,6 +21,7 @@ test('event:new — a voice memo comes in by --from-voice-memo, or by --from-aud
   try {
     await transformTypedParamsArgs(params, {
       _: ['event:new'],
+      when,
       'from-voice-memo': MEMO,
       'from-audio': '/tmp/other.m4a',
     })

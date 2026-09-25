@@ -12,6 +12,7 @@ import { DayView, useDay, useThreads } from './day.tsx'
 import type { ChatCloseNotice } from './dayChatClose.tsx'
 import { DayFilesMain, filesRouteOf, shortLabel } from './dayFiles.tsx'
 import { useItemHelpChat } from './dayItemHelp.tsx'
+import { useDocumentNotices } from './documentImport.tsx'
 import { DocView, explorerFileOf, fileHref, Tree } from './explorer.tsx'
 import { type Kept, undoKeep } from './files.tsx'
 import { ImportDialog, ImportMain, useFileDrop, useImportQueue, useImports } from './import.tsx'
@@ -115,13 +116,15 @@ function Canvas() {
   // '' is the explorer itself, a path is a file open in it, null is any other page.
   const explorerFile = explorerFileOf(path)
   const threads = useThreads()
-  // Files dropped on the day: each one uploaded, confirmed, started — then its own page.
-  const imports = useImports()
+  const { imports, started: importStarted } = useImports()
+  const documentNotices = useDocumentNotices(imports)
   // A saved/ended chat or a finished import changes the files behind the day's record.
   const dayRefreshKey = [
     path,
     ...threads.map((thread) => `${thread.id}:${thread.saved ?? ''}`).sort(),
-    ...imports.map((job) => `${job.id}:${job.state}`).sort(),
+    ...imports
+      .map((job) => `${job.id}:${job.state}:${job.readback.source === 'document' ? (job.stage?.id ?? '') : ''}`)
+      .sort(),
   ].join('\u0000')
   const day = useDay(dayYmd, dayRefreshKey)
   const clock = useClockNow()
@@ -178,6 +181,11 @@ function Canvas() {
     explorerFile === null
   const showDateNav = onDayPage || isWeek || isStreaks || filesRoute !== null
   const activeDayYmd = filesRoute?.ymd ?? dayYmd
+  const dayImports = importRows.filter((job) =>
+    job.readback.source === 'document'
+      ? (job.fields?.when ?? job.suggestedWhen).slice(0, 10) === (activeDayYmd ?? day?.today.ymd)
+      : isToday,
+  )
   const todayActive = isStreaks || (onDayPage && isToday) || (showDateNav && !isWeek && activeDayYmd === day?.today.ymd)
   const tomorrowYmd = day ? new PlainDate(day.today.ymd).addDays(1).ymd : null
   const tomorrowActive = showDateNav && !isWeek && tomorrowYmd !== null && activeDayYmd === tomorrowYmd
@@ -187,7 +195,18 @@ function Canvas() {
   const openImport = (id: string) => navigate(`/import/${id}`)
   // A file the rail's pad kept with the day: the toast holds Undo for a moment.
   const [kept, setKept] = useState<Kept[]>([])
-  const queue = useImportQueue((job) => openImport(job.id))
+  const [importGeneration, setImportGeneration] = useState(0)
+  const queue = useImportQueue((job) => {
+    importStarted(job)
+    documentNotices.started(job)
+    setImportGeneration((generation) => generation + 1)
+    if (job.readback.source !== 'document') openImport(job.id)
+    else {
+      const targetDay = job.fields?.when.slice(0, 10)
+      if ((onDayPage || filesRoute) && targetDay && targetDay !== (activeDayYmd ?? day?.today.ymd))
+        navigate(`/${targetDay}`)
+    }
+  }, activeDayYmd ?? day?.today.ymd)
   const drop = useFileDrop(onDayPage, queue.take, queue.takeText)
   const undoKept = () => {
     const held = kept
@@ -446,7 +465,16 @@ function Canvas() {
         {explorerFile !== null ? (
           <DocView file={explorerFile} />
         ) : filesRoute ? (
-          <DayFilesMain ymd={filesRoute.ymd} folder={filesRoute.folder} go={navigate} />
+          <DayFilesMain
+            ymd={filesRoute.ymd}
+            folder={filesRoute.folder}
+            go={navigate}
+            onCreateNote={queue.takeExisting}
+            importNotice={documentNotices.notice}
+            onDismissImportNotice={documentNotices.dismiss}
+            importDialogOpen={Boolean(queue.pending || queue.again)}
+            onOpenImport={openImport}
+          />
         ) : isWeek ? (
           <WeekMain
             id={weekId}
@@ -494,7 +522,7 @@ function Canvas() {
         ) : isAudition ? (
           <AuditionMain back={{ label: 'Chat', onClick: newChat }} />
         ) : importId ? (
-          <Fragment key={importId}>
+          <Fragment key={`${importId}:${importGeneration}`}>
             <ImportMain
               id={importId}
               back={{ label: 'Today', onClick: () => navigate('/') }}
@@ -525,7 +553,10 @@ function Canvas() {
             navigate={navigate}
             day={day}
             threads={others}
-            imports={isToday ? importRows : []}
+            imports={dayImports}
+            importNotice={documentNotices.notice}
+            onDismissImportNotice={documentNotices.dismiss}
+            importDialogOpen={Boolean(queue.pending || queue.again)}
             chatNotice={chatNotices[0]}
             onDismissChatNotice={dismissChatNotice}
             onOpen={openThread}

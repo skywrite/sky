@@ -28,6 +28,7 @@ import {
   opening,
   type ReadBack,
   readAudio,
+  readDocument,
   readImage,
   readSrt,
   readText,
@@ -109,6 +110,7 @@ export function createImportHost(config: typeof ConfigModule, env: Record<string
     if (source === 'srt') return readSrt(await readTextFile(filePath), name)
     if (source === 'text') return readText(await readTextFile(filePath), name)
     if (source === 'image') return readImage(size, await imageSize(filePath).catch(() => null))
+    if (source === 'document') return readDocument(name)
     const info = await probeMedia(filePath).catch(() => null)
     return readAudio(size, info?.durationSeconds ?? null)
   }
@@ -117,6 +119,7 @@ export function createImportHost(config: typeof ConfigModule, env: Record<string
   // way the start is that less the length, spelled in notebook time. A
   // transcript whose cues stamp the time of day says itself when it began.
   const suggestWhen = (file: StagedFile, readback: ReadBack): string => {
+    if (readback.source === 'document') return notebookWhen(ZonedDateTime.now(), config.DIR_TIME).slice(0, 10)
     const end = file.lastModified ?? Date.now()
     if (readback.clockStartSeconds !== null) {
       return notebookWhen(startOnSavedDay(end, readback.clockStartSeconds), config.DIR_TIME)
@@ -142,7 +145,7 @@ export function createImportHost(config: typeof ConfigModule, env: Record<string
     // A screenshot or a dragged text is a conversation, and an .srt a video,
     // not a meeting; and a dragged text's time is only when it was dropped.
     // The calendar has nothing to say about any of them.
-    if (readback.source === 'image' || readback.source === 'srt' || readback.source === 'selection') return null
+    if (['image', 'srt', 'selection', 'document'].includes(readback.source)) return null
     const day = new PlainDate(when.slice(0, 10))
     const start = minutesOf(when.slice(11))
     const check = await checkDayMeetings(secrets, day, config.DIR_TIME)
@@ -190,13 +193,14 @@ export function createImportHost(config: typeof ConfigModule, env: Record<string
     // A when the person changed goes as stated, and the command keeps it over
     // anything the words say; left as proposed, it goes as the file's clock.
     const { command, args, rawArgs } = startArgs(
-      { source: job.readback.source, runKey: job.runKey, suggestedWhen: job.suggestedWhen },
+      { source: job.readback.source, runKey: job.runKey, suggestedWhen: job.suggestedWhen, id: job.id },
       fields,
       filePaths,
     )
     const result = yield* runCommand(command, { context: CommandContext.server(config, env), args, rawArgs, signal })
-    if (!result.ok) return { ok: false, message: result.message ?? `${command} did not finish` }
-    return { ok: true, file: filedPath(result.data, PlainDateTime.fromString(fields.when), config) }
+    const file = filedPath(result.data, PlainDateTime.fromString(fields.when.slice(0, 16)), config)
+    if (!result.ok) return { ok: false, message: result.message ?? `${command} did not finish`, file }
+    return { ok: true, file }
   }
 
   return {

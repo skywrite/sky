@@ -8,9 +8,9 @@
  * one copy and one name; a different file wanting the same name gets `_2`.
  */
 
-import { createHash } from 'node:crypto'
-import { existsSync } from 'node:fs'
-import { copyFile, mkdir, readFile } from 'node:fs/promises'
+import { createHash, randomUUID } from 'node:crypto'
+import { constants, existsSync } from 'node:fs'
+import { copyFile, link, mkdir, readFile, unlink } from 'node:fs/promises'
 import * as path from 'node:path'
 import type { Attachment } from '#shared/models/Markdown/Document/attachment.ts'
 import dayAttachmentsDir from '#shared/nbfs/dayAttachmentsDir.ts'
@@ -38,29 +38,26 @@ export async function copyFileDedup(
 
   const ext = path.extname(desiredFileName)
   const stem = desiredFileName.slice(0, -ext.length || undefined)
-  let targetName = desiredFileName
-  let targetPath = path.join(attachDir, targetName)
-
-  if (existsSync(targetPath)) {
-    const sourceHash = await sha256File(sourcePath)
-    const targetHash = await sha256File(targetPath)
-    if (sourceHash === targetHash) return targetName
-
-    // Different content, find a unique name
-    let counter = 2
-    do {
-      targetName = `${stem}_${counter}${ext}`
-      targetPath = path.join(attachDir, targetName)
-      if (existsSync(targetPath)) {
-        const existingHash = await sha256File(targetPath)
-        if (existingHash === sourceHash) return targetName
+  const temporary = path.join(attachDir, `.attachment-${randomUUID()}.tmp`)
+  try {
+    await copyFile(sourcePath, temporary, constants.COPYFILE_EXCL)
+    let sourceHash: string | undefined
+    for (let counter = 1; ; counter++) {
+      const targetName = counter === 1 ? desiredFileName : `${stem}_${counter}${ext}`
+      const targetPath = path.join(attachDir, targetName)
+      try {
+        // Publish complete bytes atomically; concurrent captures must never overwrite a namesake.
+        await link(temporary, targetPath)
+        return targetName
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
+        sourceHash ??= await sha256File(temporary)
+        if ((await sha256File(targetPath)) === sourceHash) return targetName
       }
-      counter++
-    } while (existsSync(targetPath))
+    }
+  } finally {
+    await unlink(temporary).catch(() => {})
   }
-
-  await copyFile(sourcePath, targetPath)
-  return targetName
 }
 
 export interface CopyToDayAttachmentsInput {

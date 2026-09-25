@@ -6,7 +6,7 @@ import { makeTempDir } from '#shared/fs/mod.ts'
 import { assert, test } from '#test'
 import { createTestHttpApp } from '../httpTestHelpers.ts'
 import type { ImportEvent, ImportJob, ImportRoutesOptions, RunOutcome } from './mod.ts'
-import { readAudio, readImage, readSrt, readTranscript, readUnknown, sourceOf } from './readback.ts'
+import { readAudio, readDocument, readImage, readSrt, readTranscript, readUnknown, sourceOf } from './readback.ts'
 import { startArgs } from './startArgs.ts'
 
 // The routes over a scripted world: the read-back is real (it is pure), the
@@ -63,6 +63,7 @@ async function world(): Promise<World & { dir: string; notebook: string }> {
       if (name.endsWith('.vtt')) return readTranscript(await readFile(filePath, 'utf8'), name)
       if (name.endsWith('.srt')) return readSrt(await readFile(filePath, 'utf8'), name)
       if (name.endsWith('.m4a')) return readAudio(size, 252)
+      if (sourceOf(name) === 'document') return readDocument(name)
       if (sourceOf(name) === 'image') return readImage(size, { width: 1200, height: 2400 })
       return readUnknown(name)
     },
@@ -390,19 +391,73 @@ test('POST /import stages a transcript and reads it back', async () => {
   })
 })
 
+test('a document import keeps the selected day, validates work times, and exposes a saved note after failure', async () => {
+  const w = await world()
+  const filed = 'time/2026/W05/01-27/actions/notes/Atlas-report.md'
+  let attempts = 0
+  w.options.run = async function* () {
+    yield { type: 'line', text: 'The note is saved.', level: 'log', command: 'notes:new', depth: 1 }
+    return ++attempts === 1
+      ? { ok: false, file: filed, message: 'Synthetic summary failure' }
+      : { ok: true, file: filed }
+  }
+  const app = createTestHttpApp([path.join(w.notebook, 'time')], { imports: w.options })
+  const form = upload('Atlas-report.pdf', '%PDF synthetic', 1_000_000)
+  form.append('day', '2026-01-27')
+  const uploaded = await app.request('/import', { method: 'POST', body: form })
+  const { job } = (await uploaded.json()) as { job: ImportJob }
+  const start = {
+    kind: 'note',
+    when: '2026-01-27 15:30 - 16:30',
+    summary: 'Worked on the Atlas report',
+    body: 'Revised the recommendations.',
+  }
+  const invalid = await postJson(app, `/import/${job.id}/start`, { ...start, when: '2026-01-27 16:30 - 15:30' })
+  assert({
+    given: 'a PDF with an old modified time and a selected filing day',
+    should: 'offer a note on that day and reject a reversed work range',
+    actual: [job.readback.source, job.readback.kinds, job.suggestedWhen, job.runKey, invalid.status],
+    expected: ['document', ['note'], '2026-01-27', null, 400],
+  })
+  await postJson(app, `/import/${job.id}/start`, start)
+  await events(
+    await app.request(`/import/${job.id}/events`),
+    (event) => event.type === 'state' && event.state === 'failed',
+  )
+  const failed = (await (await app.request(`/import/${job.id}`)).json()).job as ImportJob
+  assert({
+    given: 'a failure after the note is saved',
+    should: 'retain the saved path and work wording for retry',
+    actual: [failed.result, failed.fields?.when, failed.fields?.summary],
+    expected: [{ file: filed }, start.when, start.summary],
+  })
+  const retry = await postJson(app, `/import/${job.id}/start`, start)
+  await events(
+    await app.request(`/import/${job.id}/events`),
+    (event) => event.type === 'state' && event.state === 'done',
+  )
+  const duplicate = await postJson(app, `/import/${job.id}/start`, start)
+  assert({
+    given: 'retrying then starting an already completed import',
+    should: 'allow the retry and reject a duplicate start',
+    actual: [retry.status, duplicate.status, attempts],
+    expected: [200, 409, 2],
+  })
+})
+
 test('POST /import refuses a file sky does not take, and start refuses it too', async () => {
   const w = await world()
   const app = createTestHttpApp([path.join(w.notebook, 'time')], { imports: w.options })
-  const response = await app.request('/import', { method: 'POST', body: upload('deck.pdf', 'not really a pdf') })
+  const response = await app.request('/import', { method: 'POST', body: upload('archive.zip', 'not really a pdf') })
   const { job } = (await response.json()) as { job: ImportJob }
   const start = await postJson(app, `/import/${job.id}/start`, { kind: 'meeting', when: '2026-01-27 09:31' })
   assert({
-    given: 'a .pdf',
+    given: 'a .zip',
     should: 'be a failed job with the sentence, which cannot be started',
     actual: [job.state, job.error, start.status],
     expected: [
       'failed',
-      "Sky doesn't take .pdf files. Drop a Zoom transcript (.vtt), a video's .srt, a voice memo, a notetaker's .txt, or a screenshot of a conversation.",
+      "Sky doesn't take .zip files. Drop a PDF, Office or Markdown document, a Zoom transcript (.vtt), a video's .srt, a voice memo, a notetaker's .txt, or a screenshot of a conversation.",
       400,
     ],
   })

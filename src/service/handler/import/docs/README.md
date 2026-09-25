@@ -1,6 +1,6 @@
 ---
 created: 2026-09-01
-updated: 2026-09-23
+updated: 2026-09-25
 ---
 
 # Meeting from a file — the import
@@ -10,7 +10,7 @@ Design notes for `src/service/handler/import/` and the page that fronts it,
 
 ## What is built
 
-A transcript, a recording, a screenshot or a video's `.srt` dropped on the
+A document, a transcript, a recording, a screenshot or a video's `.srt` dropped on the
 day page becomes an **import job**, and so does text dragged onto it out of
 another app: the upload is staged under `<user-data>/imports/<id>/`,
 read back at once, and, on Start, the matching command runs inside the
@@ -22,7 +22,8 @@ server-sent events.
   count from zero, so it says nothing about the clock); a `.txt` for its
   stamped turns; a recording for its size (its length comes from the container, probed by
   the host); a screenshot for its size and its pixels (`lib/media/image`
-  reads the header); a dragged text for its lines and its first words.
+  reads the header); a dragged text for its lines and its first words;
+  a document for its format, leaving the work time to the person.
   A file sky does not take, or cannot, gets a sentence.
 - `jobs.ts` — the job store: memory first, a `job.json` beside each upload
   so a restart still knows what was there (a job that was running when the
@@ -56,12 +57,31 @@ One door for every file kind. The kind picks the command:
 | text dragged in | the same two doors on the text, staged as `selection.txt`: a message first, a meeting first when its lines carry a notetaker's stamps |
 | audio | the kind chosen in the dialog: `meeting:new` and `event:new` with `--from-voice-memo`, or `journal:new`, `notes:new`, `message:new` with `--from-audio` |
 | image | `message:new --from-image` — a screenshot of a conversation |
+| `.pdf`, `.docx`, `.pptx`, `.xlsx`, `.md` | `notes:new --from-file` — a note about work, with the document attached and summarized |
 
 Screenshots dropped or selected together form one import and one message.
 The dialog lists every file, and the job keeps the complete group when reopened.
 Other file kinds remain separate imports. Each screenshot retains its capture
 time so `message:new` can read the conversation in capture order; size limits
 apply to each image, and a refused image blocks the whole group.
+
+Document imports open **Record work** with an editable activity suggested from
+the filename, the viewed day, an empty work-time field, and optional notes.
+The person supplies the time or range; neither the document's dates nor its
+modified time may supply the work time. Add to day saves the note and attachment
+before summarizing and enriching it, and opens the chosen day if it was changed.
+The dialog shows summarization progress and explains that it is safe to close;
+closing it leaves the work running. Completion uses the same temporary bottom
+notification surface as a saved chat, with Open note or a failure's retry path.
+The Files page's Create note action uses this same flow.
+
+Document retries use the import job's identity, not the file's content hash:
+the same PDF can represent separate work sessions. `notes/lib/fromDocument.ts`
+keeps a checkpoint under `note-imports/` in user data, preserving the allocated
+readable filename, summary, and enrichment. A failed summary returns the saved
+note's path, so the import can save explicit links and offer Open note and
+Retry summary. Retrying appends the summary once to the current note, preserving
+the person's edits. A successful retry reconnects the import page's event feed.
 
 The dialog settles **what** (for audio, sky's guess from the first minute
 is preselected) and **when** (proposed from the file's time and length,
@@ -109,11 +129,11 @@ record itself is the transcript pipeline's: see
 
 | Route | Does |
 | --- | --- |
-| `POST /import` | multipart `file` (+ `lastModified`), repeated in matching order for a screenshot group → one job, read back; or a `text` field alone for a dragged text |
+| `POST /import` | multipart `file` (+ `lastModified`), repeated in matching order for a screenshot group → one job, read back; optional `day` selects a document's work day; or a `text` field alone for a dragged text |
 | `GET /import` | the rows for the Running block |
 | `GET /import/:id` | one job, plus the journal types the dialog offers |
 | `GET /import/:id/events` | SSE: every event so far, then live until the job settles |
-| `POST /import/:id/start` | `{kind, when, whenStated?, dayStated?, category?, journalType?, fresh?}` — runs the door command; `fresh` starts over |
+| `POST /import/:id/start` | `{kind, when, whenStated?, dayStated?, category?, journalType?, fresh?, summary?, body?}` — runs the door command; document notes require `summary` and accept a range in `when`; `fresh` starts a transcript pipeline over |
 | `POST /import/:id/answer` | `{promptId, answer}` |
 | `POST /import/:id/cancel`, `/remove` | abandon the run; forget the job and its file |
 

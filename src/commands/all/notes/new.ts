@@ -19,10 +19,15 @@ import { autoTagMessage } from '#lib/notebook/enrich/autoTag.ts'
 import slugify from '#lib/string/slugify.ts'
 import { actionKindRel } from '#shared/nbfs/mod.ts'
 import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
+import { notesFromDocument } from './lib/fromDocument.ts'
 import { notesFromImage } from './lib/fromImage.ts'
 
 const params = {
   summary: ArgOrFlag.string('Summary / Header of Notes', { short: 's', optional: true }),
+  fromFile: Flag.string('Document to attach and summarize', { optional: true }),
+  workWhen: Flag.string('Work date and time, optionally a range: 2026-01-27 15:30 - 16:30', { optional: true }),
+  body: Flag.string('Additional notes about the work', { optional: true }),
+  run: Flag.string('Note import identity for resuming a saved note', { optional: true }),
   fromAudio: Flag.string('Path to audio file, or omit path to search Desktop', {
     short: 'a',
     optional: true,
@@ -54,6 +59,39 @@ export default class NotesNewTask extends Command {
 
   async run({ args, context, tasks, rawArgs }: CommandArgs<Params>): Promise<CommandResult<Result>> {
     const { output } = context
+    if (args.fromFile !== undefined) {
+      if (args.fromAudio !== undefined || args.fromImage !== undefined) {
+        return CommandResult.fail('Use only one of --from-file, --from-audio, or --from-image.')
+      }
+      output.plan([
+        { id: 'save', label: 'Saving the note and attachment' },
+        { id: 'summary', label: 'Summarizing the attachment' },
+        { id: 'tags', label: 'Adding tags and links' },
+      ])
+      return notesFromDocument({
+        source: args.fromFile,
+        summary: args.summary,
+        when: args.workWhen ?? args.when.toString(),
+        body: args.body,
+        category: args.category,
+        run: args.run,
+        config: context.config,
+        signal: context.signal,
+        stage: (id, label) => output.stage(id, label),
+        summarize: async (file) => {
+          const result = await tasks.run('summary:doc', { file })
+          if (!result.ok || !result.data) throw new Error(result.message ?? 'Could not summarize the attachment.')
+          return result.data.summary
+        },
+        enrich: async (input) => {
+          const [tags, rel] = await Promise.all([
+            args.noAutoTag ? undefined : autoTagMessage(input, NOTES_ENRICH),
+            args.noAutoRel ? undefined : autoRelMessage(input, NOTES_ENRICH),
+          ])
+          return { tags, rel }
+        },
+      })
+    }
     let { summary, when, category, fromAudio, fromImage, aiContext } = args
     let body = ''
     let rel: string[] | undefined

@@ -1,5 +1,5 @@
 import './import.css'
-import { ActionIcon, Button, Drawer, Modal, Popover, Textarea } from '@mantine/core'
+import { ActionIcon, Button, Drawer, Modal, Popover, Textarea, TextInput } from '@mantine/core'
 import { useMediaQuery } from '@mantine/hooks'
 import {
   type DragEvent,
@@ -13,6 +13,13 @@ import {
   useRef,
   useState,
 } from 'react'
+import {
+  documentActivity,
+  documentWorkWhen,
+  isNoteDocument,
+  NOTE_DOCUMENT_EXTENSIONS,
+  workDurationLabel,
+} from '#commands/all/notes/lib/documentInput.ts'
 import type { PlaceAnswer, PlaceItem, PlacePrompt } from '#commands/lib/prompt/Prompter.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import {
@@ -25,8 +32,9 @@ import {
   shortDate,
   weekdayName,
 } from '#universal/dates/whenLabel/mod.ts'
+import { DocumentSummaryDialog } from './documentImport.tsx'
 import { fileHref } from './explorer.tsx'
-import { sizeLabel } from './files.tsx'
+import { dayFileHref, sizeLabel } from './files.tsx'
 import { DocumentRail } from './frontmatter/Rail.tsx'
 import { useFrontmatter } from './frontmatter/useFrontmatter.ts'
 import { LinksInput } from './links.tsx'
@@ -53,7 +61,7 @@ export interface ImportJob {
   files?: ImportJob['file'][]
   readback: {
     /** `selection` is text dragged onto the day */
-    source: 'transcript' | 'srt' | 'text' | 'audio' | 'image' | 'selection'
+    source: 'transcript' | 'srt' | 'text' | 'audio' | 'image' | 'selection' | 'document'
     kinds: ImportKind[]
     summary: string
     detail: string | null
@@ -81,6 +89,8 @@ export interface ImportJob {
     dayStated?: boolean
     category: 'Professional' | 'Personal'
     journalType: string | null
+    summary?: string
+    body?: string
   } | null
   state: ImportState
   /** The steps the command announced, in the words a person reads */
@@ -185,15 +195,25 @@ async function post<T>(url: string, body: unknown): Promise<T> {
 }
 
 /** The rows for Running and the sidebar, re-read every few seconds like the threads. */
-export function useImports(): ImportJob[] {
+export function useImports() {
   const [imports, setImports] = useState<ImportJob[]>([])
+  const version = useRef(0)
+  const started = useCallback((job: ImportJob) => {
+    // A response already in flight must not erase the import that just started.
+    version.current++
+    setImports((previous) => [job, ...previous.filter((item) => item.id !== job.id)])
+  }, [])
   useEffect(() => {
     let alive = true
-    const read = () =>
-      fetch('/import')
+    const read = () => {
+      const request = ++version.current
+      void fetch('/import')
         .then((r) => (r.ok ? r.json() : { imports: [] }))
-        .then((body) => alive && setImports((body as { imports: ImportJob[] }).imports))
+        .then((body) => {
+          if (alive && request === version.current) setImports((body as { imports: ImportJob[] }).imports)
+        })
         .catch(() => {})
+    }
     void read()
     const timer = setInterval(read, 2500)
     return () => {
@@ -201,7 +221,7 @@ export function useImports(): ImportJob[] {
       clearInterval(timer)
     }
   }, [])
-  return imports
+  return { imports, started }
 }
 
 /** The upload, with its bytes as progress — the one bar whose math is real. A dragged text goes up as `text`. */
@@ -209,6 +229,7 @@ export function uploadImport(
   files: File[],
   onProgress: (fraction: number) => void,
   text?: string,
+  day?: string,
 ): Promise<{ job: ImportJob; options: ImportOptions }> {
   return new Promise((resolve, reject) => {
     const form = new FormData()
@@ -217,6 +238,7 @@ export function uploadImport(
       form.append('lastModified', String(file.lastModified))
     }
     if (text !== undefined) form.append('text', text)
+    if (day) form.append('day', day)
     const xhr = new XMLHttpRequest()
     xhr.open('POST', '/import')
     xhr.upload.onprogress = (e) => {
@@ -258,6 +280,7 @@ export function useImportFeed(id: string | null): ImportFeed {
   useEffect(() => {
     if (!id) return
     let alive = true
+    let source: EventSource | null = null
     setJob(null)
     setEvents([])
     setMissing(false)
@@ -268,13 +291,14 @@ export function useImportFeed(id: string | null): ImportFeed {
         const b = body as { job: ImportJob; options: ImportOptions }
         setJob(b.job)
         setOptions(b.options)
+        subscribe()
       })
       .catch(() => alive && setMissing(true))
 
     // The stream replays from the start on every connection; seq keeps it one list.
-    const source = new EventSource(`/import/${id}/events`)
     const seen = new Set<number>()
     const onEvent = (raw: MessageEvent) => {
+      if (!alive) return
       const event = JSON.parse(raw.data as string) as ImportEvent
       if (seen.has(event.seq)) return
       seen.add(event.seq)
@@ -283,7 +307,7 @@ export function useImportFeed(id: string | null): ImportFeed {
         setJob((prev) =>
           prev ? { ...prev, state: event.state, line: event.line, result: event.result, error: event.error } : prev,
         )
-        if (SETTLED.has(event.state)) source.close()
+        if (SETTLED.has(event.state)) source?.close()
       } else if (event.type === 'links') {
         setJob((prev) => (prev ? { ...prev, links: event.links, linkError: event.error } : prev))
       } else if (event.type === 'listen') {
@@ -298,24 +322,28 @@ export function useImportFeed(id: string | null): ImportFeed {
         setJob((prev) => (prev ? { ...prev, tick: event.tick } : prev))
       }
     }
-    for (const type of [
-      'links',
-      'listen',
-      'calendar',
-      'plan',
-      'stage',
-      'tick',
-      'line',
-      'text',
-      'prompt',
-      'answered',
-      'state',
-    ]) {
-      source.addEventListener(type, onEvent as EventListener)
+    const subscribe = () => {
+      // Install the snapshot before replay: a fast completion must not be lost while job is still null.
+      source = new EventSource(`/import/${id}/events`)
+      for (const type of [
+        'links',
+        'listen',
+        'calendar',
+        'plan',
+        'stage',
+        'tick',
+        'line',
+        'text',
+        'prompt',
+        'answered',
+        'state',
+      ]) {
+        source.addEventListener(type, onEvent as EventListener)
+      }
     }
     return () => {
       alive = false
-      source.close()
+      source?.close()
     }
   }, [id, generation])
 
@@ -334,7 +362,16 @@ const TRANSCRIBE_CAP = 25 * 1024 * 1024
 const IMAGE_CAP = 7.5 * 1024 * 1024
 
 export function acceptsImports(): string {
-  return ['.vtt', '.srt', '.txt', ...RECORDING_EXTS, ...IMAGE_EXTS, 'audio/*', 'image/*'].join(',')
+  return [
+    '.vtt',
+    '.srt',
+    '.txt',
+    ...NOTE_DOCUMENT_EXTENSIONS,
+    ...RECORDING_EXTS,
+    ...IMAGE_EXTS,
+    'audio/*',
+    'image/*',
+  ].join(',')
 }
 
 /** A recording or a screenshot over its cap is refused before its bytes go up, in the read-back's words. */
@@ -473,9 +510,8 @@ export function DropOverlay({ what = 'files' }: { what?: Dragged }) {
             'Sky asks what it is — a conversation or a meeting — then files it.'
           ) : (
             <>
-              Sky files it: a transcript (.vtt), a video's transcript (.srt), a voice memo, a notetaker's text (.txt),
-              or a screenshot of a conversation. To keep a file with the day as it is, open Files and drop it on the
-              pad.
+              Record work on a document, or import a transcript, voice memo, or conversation. To keep a file with the
+              day as it is, drop it on the File attachments pad.
             </>
           )}
         </div>
@@ -496,6 +532,7 @@ interface QueuedImport {
   /** Text dragged onto the day, in place of files */
   text?: string
   meeting: MeetingImport | null
+  day?: string
 }
 
 interface Pending extends QueuedImport {
@@ -510,13 +547,13 @@ interface Pending extends QueuedImport {
  * Each drop's screenshots stay together as one conversation. Other files
  * are uploaded and confirmed one at a time, then the next import comes up.
  */
-export function useImportQueue(onStarted: (job: ImportJob) => void) {
+export function useImportQueue(onStarted: (job: ImportJob) => void, day?: string) {
   const [queue, setQueue] = useState<QueuedImport[]>([])
   const [pending, setPending] = useState<Pending | null>(null)
   const [again, setAgain] = useState<ImportJob | null>(null)
 
   /** Every file dropped on the day is an import; the Files pad keeps files on its own. */
-  const take = (files: File[], meeting: MeetingImport | null = null) => {
+  const take = (files: File[], meeting: MeetingImport | null = null, filingDay = day) => {
     const screenshots = files.filter((file) => IMAGE_EXTS.some((ext) => file.name.toLowerCase().endsWith(ext)))
     const imports: QueuedImport[] = []
     for (const file of files) {
@@ -526,6 +563,7 @@ export function useImportQueue(onStarted: (job: ImportJob) => void) {
       }
       imports.push({
         files: [file],
+        day: filingDay,
         meeting:
           ['.vtt', '.txt', ...RECORDING_EXTS].some((ext) => file.name.toLowerCase().endsWith(ext)) ||
           file.type.startsWith('audio/')
@@ -541,7 +579,7 @@ export function useImportQueue(onStarted: (job: ImportJob) => void) {
 
   useEffect(() => {
     if (pending || again || queue.length === 0) return
-    const [{ files, text, meeting }, ...rest] = queue
+    const [{ files, text, meeting, day }, ...rest] = queue
     setQueue(rest)
     const key = crypto.randomUUID()
     let refusal: string | null = null
@@ -552,10 +590,10 @@ export function useImportQueue(onStarted: (job: ImportJob) => void) {
         break
       }
     }
-    setPending({ key, files, text, meeting, fraction: 0, job: null, options: null, error: refusal })
+    setPending({ key, files, text, meeting, day, fraction: 0, job: null, options: null, error: refusal })
     if (refusal) return
     const patch = (change: (p: Pending) => Pending) => setPending((p) => (p && p.key === key ? change(p) : p))
-    uploadImport(files, (fraction) => patch((p) => ({ ...p, fraction })), text)
+    uploadImport(files, (fraction) => patch((p) => ({ ...p, fraction })), text, day)
       .then(({ job, options }) => patch((p) => ({ ...p, fraction: 1, job, options })))
       .catch((err: Error) => patch((p) => ({ ...p, error: err.message })))
   }, [queue, pending, again])
@@ -567,13 +605,21 @@ export function useImportQueue(onStarted: (job: ImportJob) => void) {
 
   return {
     take,
+    takeExisting: async (ymd: string, relative: string, name: string) => {
+      const response = await fetch(dayFileHref(ymd, relative))
+      if (!response.ok) throw new Error('The attachment could not be opened.')
+      take([new File([await response.blob()], name)], null, ymd)
+    },
     takeText,
     pending,
     again,
     /** Bring a failed import back to the dialog */
     startAgain: (job: ImportJob) => setAgain(job),
     onStarted: (job: ImportJob) => {
-      close()
+      if (job.readback.source === 'document') {
+        if (again) setAgain(job)
+        else setPending((current) => (current ? { ...current, job } : current))
+      } else close()
       onStarted(job)
     },
     onDismiss: close,
@@ -587,6 +633,8 @@ type Fields = {
   journalType: string
   /** Start over rather than pick up an earlier run of the file */
   fresh: boolean
+  summary: string
+  body: string
 }
 
 function Pills<T extends string>({
@@ -666,6 +714,8 @@ function nextLine(
   journalType: string,
   count: number,
 ): string {
+  if (source === 'document')
+    return 'Sky will save your note and attachment, summarize the document, and add tags. You can keep working while it runs.'
   if (source === 'image') {
     if (count > 1)
       return `Sky reads all ${count} screenshots as one conversation, checks what it read with you, and files one message under the day.`
@@ -742,18 +792,23 @@ function ConfirmBody({
   job: ImportJob | null
   options: ImportOptions | null
   todayYmd: string | null
-  onStart: (fields: Fields) => void
+  onStart: (job: ImportJob) => void
   onCancel: () => void
   phone: boolean
 }) {
   const feed = useImportFeed(job?.id ?? null)
   const live = feed.job ?? job
   const kinds = live?.readback.kinds ?? []
+  const documentInput =
+    live?.readback.source === 'document' || Boolean(pending?.files[0] && isNoteDocument(pending.files[0].name))
+  const retryDocument = documentInput && Boolean(job?.fields)
   const meeting = pending?.meeting
   // A section drop chooses the day; the file supplies only the editable clock time.
-  const proposedWhen =
-    meeting?.when ?? (meeting?.day && live ? `${meeting.day} ${live.suggestedWhen.split(' ')[1]}` : live?.suggestedWhen)
-  const whenStated = Boolean(meeting?.when || job?.fields?.whenStated)
+  const proposedWhen = documentInput
+    ? `${pending?.day ?? live?.suggestedWhen.slice(0, 10) ?? todayYmd ?? ''} `
+    : (meeting?.when ??
+      (meeting?.day && live ? `${meeting.day} ${live.suggestedWhen.split(' ')[1]}` : live?.suggestedWhen))
+  const whenStated = documentInput || Boolean(meeting?.when || job?.fields?.whenStated)
   const dayStated = Boolean(meeting?.day || job?.fields?.dayStated)
   const [touched, setTouched] = useState(Boolean(meeting || job?.fields))
   const [fields, setFields] = useState<Fields>({
@@ -762,8 +817,12 @@ function ConfirmBody({
     category: job?.fields?.category ?? 'Professional',
     journalType: job?.fields?.journalType ?? options?.journalTypes[0] ?? 'Reflection',
     fresh: false,
+    summary:
+      job?.fields?.summary ?? (documentInput ? documentActivity(job?.file.name ?? pending?.files[0]?.name ?? '') : ''),
+    body: job?.fields?.body ?? '',
   })
   const [starting, setStarting] = useState(false)
+  const [started, setStarted] = useState(false)
   const [linkBusy, setLinkBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -774,7 +833,7 @@ function ConfirmBody({
     if (!live) return
     setFields((f) => ({
       ...f,
-      when: f.when || proposedWhen || live.suggestedWhen,
+      when: f.when.trim() ? f.when : (proposedWhen ?? live.suggestedWhen),
       kind: touched ? f.kind : (live.listen?.kind ?? live.readback.kinds[0] ?? f.kind),
     }))
   }, [live, touched, proposedWhen])
@@ -784,6 +843,14 @@ function ConfirmBody({
   const files = live ? (live.files ?? [live.file]) : (pending?.files ?? [])
   const count = files.length
   const source = live?.readback.source ?? (pending?.text !== undefined ? 'selection' : 'audio')
+  let workDuration: string | null = null
+  if (documentInput) {
+    try {
+      workDuration = workDurationLabel(documentWorkWhen(fields.when).durationMinutes)
+    } catch {
+      /* Incomplete input stays editable. */
+    }
+  }
   const selection = source === 'selection'
   const sourceWord =
     source === 'audio'
@@ -802,14 +869,22 @@ function ConfirmBody({
     ? `Sky cannot take ${selection ? 'this text' : count > 1 ? 'these files' : 'this file'}`
     : uploading
       ? `New from ${selection ? 'dropped text' : count > 1 ? `${count} files` : 'a file'}`
-      : `New ${KIND_LABEL[fields.kind].toLowerCase()} from ${sourceWord}`
+      : documentInput
+        ? retryDocument
+          ? 'Finish the note'
+          : 'Record work'
+        : `New ${KIND_LABEL[fields.kind].toLowerCase()} from ${sourceWord}`
 
   const start = async () => {
     if (!live || starting || linkBusy) return
     setStarting(true)
     setError(null)
     try {
-      await post(`/import/${live.id}/start`, {
+      if (documentInput) {
+        documentWorkWhen(fields.when)
+        if (!fields.summary.trim()) throw new Error('Describe the work in one line.')
+      }
+      const { job: started } = await post<{ job: ImportJob }>(`/import/${live.id}/start`, {
         kind: fields.kind,
         when: fields.when.trim(),
         whenStated,
@@ -817,8 +892,14 @@ function ConfirmBody({
         category: fields.category,
         journalType: fields.kind === 'journal' ? fields.journalType : undefined,
         fresh: fields.fresh,
+        ...(documentInput ? { summary: fields.summary, body: fields.body } : {}),
       })
-      onStart(fields)
+      if (documentInput) {
+        setStarted(true)
+        feed.refresh()
+      }
+      setStarting(false)
+      onStart(started)
     } catch (err) {
       setError((err as Error).message)
       setStarting(false)
@@ -828,6 +909,18 @@ function ConfirmBody({
   const size =
     files.length > 0 ? files.reduce((total, file) => total + file.size, 0) : new Blob([pending?.text ?? '']).size
   const calendar = meeting ? null : live?.calendar
+
+  if (documentInput && started && job)
+    return (
+      <div className={`sky-confirm${phone ? ' sky-sheet' : ''}`}>
+        {phone && <div className="sky-sheet-handle" />}
+        <DocumentSummaryDialog
+          job={live?.state === 'new' ? job : (live ?? job)}
+          onClose={onCancel}
+          onRetry={() => setStarted(false)}
+        />
+      </div>
+    )
 
   return (
     <div className={`sky-confirm${phone ? ' sky-sheet' : ''}`}>
@@ -866,38 +959,92 @@ function ConfirmBody({
               <div className="sky-confirm-guess">{live.listen.guess}</div>
             </>
           )}
-          <Pills
-            label={kinds.length > 1 ? 'What is it?' : 'This becomes'}
-            inline={false}
-            options={kinds.map((k) => ({ value: k, label: KIND_LABEL[k] }))}
-            value={fields.kind}
-            onChange={(kind) => {
-              setTouched(true)
-              setFields((f) => ({ ...f, kind }))
-            }}
-          />
-          <div className="sky-choice-inline">
-            <span className="sky-choice-label">When</span>
-            <input
-              className="sky-when-input"
-              value={fields.when}
-              aria-label="When"
-              onChange={(e) => setFields((f) => ({ ...f, when: e.target.value }))}
-            />
-            <span className="sky-when-note">
-              {fields.kind === 'meeting' &&
-              dayStated &&
-              !whenStated &&
-              fields.when.split(' ')[1] === live.suggestedWhen.split(' ')[1]
-                ? 'Day chosen here; a meeting time stated in the file wins over the suggested time.'
-                : whenNote(
-                    source,
-                    !whenStated && fields.when === live.suggestedWhen,
-                    whenLabel(live.suggestedWhen, todayYmd),
-                    count,
-                  )}
-            </span>
-          </div>
+          {documentInput ? (
+            <div className="sky-document-capture">
+              <TextInput
+                label="What did you do?"
+                value={fields.summary}
+                disabled={retryDocument}
+                onChange={(event) => {
+                  const summary = event.currentTarget.value
+                  setFields((f) => ({ ...f, summary }))
+                }}
+              />
+              <div className="sky-document-when">
+                <TextInput
+                  label="Day"
+                  type="date"
+                  value={fields.when.slice(0, 10)}
+                  disabled={retryDocument}
+                  onChange={(event) => {
+                    const day = event.currentTarget.value
+                    setFields((f) => ({ ...f, when: `${day} ${f.when.slice(11)}` }))
+                  }}
+                />
+                <TextInput
+                  label="When"
+                  inputWrapperOrder={['label', 'input', 'description', 'error']}
+                  placeholder="15:30 - 16:30"
+                  value={fields.when.slice(11)}
+                  disabled={retryDocument}
+                  description={
+                    workDuration ?? 'A start time, or a start and end. Extended hours such as 25:30 work too.'
+                  }
+                  onChange={(event) => {
+                    const time = event.currentTarget.value
+                    setFields((f) => ({ ...f, when: `${f.when.slice(0, 10)} ${time}` }))
+                  }}
+                />
+              </div>
+              <Textarea
+                label="Additional notes"
+                description="Optional"
+                autosize
+                minRows={2}
+                value={fields.body}
+                disabled={retryDocument}
+                onChange={(event) => {
+                  const body = event.currentTarget.value
+                  setFields((f) => ({ ...f, body }))
+                }}
+              />
+            </div>
+          ) : (
+            <>
+              <Pills
+                label={kinds.length > 1 ? 'What is it?' : 'This becomes'}
+                inline={false}
+                options={kinds.map((k) => ({ value: k, label: KIND_LABEL[k] }))}
+                value={fields.kind}
+                onChange={(kind) => {
+                  setTouched(true)
+                  setFields((f) => ({ ...f, kind }))
+                }}
+              />
+              <div className="sky-choice-inline">
+                <span className="sky-choice-label">When</span>
+                <input
+                  className="sky-when-input"
+                  value={fields.when}
+                  aria-label="When"
+                  onChange={(e) => setFields((f) => ({ ...f, when: e.target.value }))}
+                />
+                <span className="sky-when-note">
+                  {fields.kind === 'meeting' &&
+                  dayStated &&
+                  !whenStated &&
+                  fields.when.split(' ')[1] === live.suggestedWhen.split(' ')[1]
+                    ? 'Day chosen here; a meeting time stated in the file wins over the suggested time.'
+                    : whenNote(
+                        source,
+                        !whenStated && fields.when === live.suggestedWhen,
+                        whenLabel(live.suggestedWhen, todayYmd),
+                        count,
+                      )}
+                </span>
+              </div>
+            </>
+          )}
           {meeting?.when && <div className="sky-when-cal">For “{meeting.title || '(untitled)'}” on your calendar</div>}
           {calendar && (
             <div className="sky-when-cal">
@@ -908,7 +1055,7 @@ function ConfirmBody({
               {calendar.who.length > 0 ? ` · ${calendar.who.join(', ')}` : ''}
             </div>
           )}
-          {fields.kind === 'journal' ? (
+          {retryDocument ? null : fields.kind === 'journal' ? (
             <Pills
               label="Type"
               options={(options?.journalTypes ?? []).map((t) => ({ value: t, label: t }))}
@@ -928,7 +1075,7 @@ function ConfirmBody({
           )}
           <ImportLinks job={live} onBusy={setLinkBusy} />
           <div className="sky-confirm-next">{nextLine(fields.kind, source, fields.journalType, count)}</div>
-          {live.resume && (
+          {live.resume && !documentInput && (
             <div className="sky-confirm-resume">
               {fields.fresh
                 ? `Starts over. The run from ${whenLabel(live.resume.started, todayYmd)} is forgotten.`
@@ -949,7 +1096,7 @@ function ConfirmBody({
         <Button onClick={onCancel}>{refusal ? 'Remove' : 'Cancel'}</Button>
         {!refusal && (
           <Button variant="primary" onClick={() => void start()} disabled={!live || starting || linkBusy}>
-            {starting ? 'Starting…' : 'Start'}
+            {starting ? 'Starting…' : documentInput ? (retryDocument ? 'Retry summary' : 'Add to day') : 'Start'}
           </Button>
         )}
       </div>
@@ -989,9 +1136,6 @@ export function ImportDialog({
     if (job && (job.state === 'new' || job.readback.refusal)) void post(`/import/${job.id}/remove`, {}).catch(() => {})
     onDismiss()
   }
-  const started = () => {
-    if (job) onStarted(job)
-  }
   // Keyed by the file: the next one up starts with its own fields.
   const body = (
     <Fragment key={pending?.key ?? again?.id ?? 'none'}>
@@ -1000,7 +1144,7 @@ export function ImportDialog({
         job={job}
         options={options ?? againOptions}
         todayYmd={todayYmd}
-        onStart={started}
+        onStart={onStarted}
         onCancel={cancel}
         phone={phone}
       />
@@ -2206,7 +2350,7 @@ function FiledDetails({ file }: { file: string }) {
   return (
     <Block head="Details" mini="the file's front matter">
       <div className="sky-lead" style={{ marginBottom: 8 }}>
-        Fix what the transcript got wrong. Changes write to the file.
+        Edit the saved details. Changes write to the file.
       </div>
       <DocumentRail state={state} file={file} outline={[]} />
       {saveError && (
@@ -2323,16 +2467,16 @@ export function ImportMain({
               Cancel
             </Button>
           )}
-          {job?.state === 'done' && job.result && (
+          {job?.result && (
             <Button size="sm" variant="primary" component="a" href={fileHref(job.result.file)}>
-              Open it
+              {job.readback.source === 'document' ? 'Open note' : 'Open it'}
             </Button>
           )}
           {(job?.state === 'failed' || job?.state === 'cancelled') && (
             <>
               {!job.readback.refusal && (
                 <Button size="sm" variant="primary" onClick={() => onStartAgain(job)}>
-                  Start again
+                  {job.readback.source === 'document' ? 'Retry summary' : 'Start again'}
                 </Button>
               )}
               <Button size="sm" onClick={remove}>

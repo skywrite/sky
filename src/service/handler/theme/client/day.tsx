@@ -1,5 +1,6 @@
 import { ActionIcon, Button, Tooltip } from '@mantine/core'
 import { Fragment, type ReactNode, useEffect, useRef, useState } from 'react'
+import { documentWorkWhen, workDurationLabel } from '#commands/all/notes/lib/documentInput.ts'
 import { PlainDate, PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import { dayItemKey, type CommitmentOrder } from '../../day/organizingTypes.ts'
 import { comparePlanItems } from '../../day/planningTypes.ts'
@@ -25,6 +26,7 @@ import {
 import { useDayPlanning } from './dayPlanning.tsx'
 import { DayRail } from './dayRail.tsx'
 import { DayTracking } from './dayTracking.tsx'
+import { DocumentImportNotice } from './documentImport.tsx'
 import { fileHref, resolvePath } from './explorer.tsx'
 import { type Kept, KeptToast } from './files.tsx'
 import { acceptsImports, type Dragged, DropOverlay, type ImportJob, type MeetingImport } from './import.tsx'
@@ -206,6 +208,15 @@ function minutesOf(time: string | null): number | null {
 /** `09:30` reads as `9:30`; ranges keep both ends readable. */
 export function clock(when: string): string {
   return when.replace(/\b0(\d:\d\d)/g, '$1')
+}
+
+function noteDuration(day: string, when: string | null): string | null {
+  if (!when) return null
+  try {
+    return workDurationLabel(documentWorkWhen(`${day} ${when}`).durationMinutes)
+  } catch {
+    return null
+  }
 }
 
 /** Frontmatter says `slack`; the page says `Slack`. */
@@ -1055,6 +1066,9 @@ export function DayView({
   day,
   threads,
   imports = [],
+  importNotice,
+  onDismissImportNotice = () => {},
+  importDialogOpen = false,
   chatNotice,
   onDismissChatNotice = () => {},
   onOpen,
@@ -1075,6 +1089,9 @@ export function DayView({
   threads: ThreadSummary[]
   /** Files dropped on the day, running or done — rows beside the threads */
   imports?: ImportJob[]
+  importNotice?: ImportJob
+  onDismissImportNotice?: (id: string) => void
+  importDialogOpen?: boolean
   chatNotice?: ChatCloseNotice
   onDismissChatNotice?: (id: string) => void
   onOpen: (id: string) => void
@@ -1361,7 +1378,7 @@ export function DayView({
                     <Block head="Notes" mini={String(record.notes.length)}>
                       {record.notes.map((row) => (
                         <Fragment key={row.path}>
-                          <DocLine when={row.when}>
+                          <DocLine when={row.when} tag={noteDuration(view!.day.ymd, row.when)}>
                             <a href={fileHref(row.path)}>{row.title}</a>
                           </DocLine>
                         </Fragment>
@@ -1424,6 +1441,25 @@ export function DayView({
             notice={chatNotice}
             blocked={Boolean(checkOff.undo || planning.toast || organize.undo || organize.error || kept.length)}
             onDismiss={onDismissChatNotice}
+          />
+        </Fragment>
+      )}
+
+      {importNotice && (
+        <Fragment key={importNotice.id}>
+          <DocumentImportNotice
+            job={importNotice}
+            blocked={Boolean(
+              checkOff.undo ||
+              planning.toast ||
+              organize.undo ||
+              organize.error ||
+              kept.length ||
+              chatNotice ||
+              importDialogOpen,
+            )}
+            onDismiss={onDismissImportNotice}
+            onOpen={onOpenImport}
           />
         </Fragment>
       )}
