@@ -115,7 +115,7 @@ export default class GoogleAgentTask extends Command {
       'read/leave/reply-to comments, suggest tracked edits in Docs, and build',
       'spreadsheets with live formulas, styling and native charts embeddable',
       'into decks as linked charts. Progress streams as it works; touched',
-      `files are recorded in the notebook under ${actionKindRel('doc')}/.`,
+      `files are recorded in the notebook under ${actionKindRel('googleDoc')}/.`,
     ],
     usage: [
       'sky google:agent "Create a doc titled Atlas Q3 Plan with: ..."',

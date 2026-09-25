@@ -1,6 +1,6 @@
 ---
 created: 2026-08-09
-updated: 2026-09-22
+updated: 2026-09-23
 ---
 
 # google:agent — the mission loop and its reliability ladder
@@ -96,6 +96,14 @@ The closing line and notebook record retain profile, steps, model/tool time,
 and per-tool counts, now with a trace ID and overlap/other measurements.
 `lib/timing.ts` is a compatibility export for the record format. The command
 trace also covers preparation and cleanup outside the mission's model loop.
+
+## The notebook record
+
+A mission that touched files leaves one record in the notebook, under the
+day's `actions/google-docs/` folder, named by time, medium and title
+(`lib/artifact.ts`). Docs, Slides and Sheets share the folder; the medium
+tag tells them apart. The folder is named once, in the notebook's kind
+table ([nbfs](../../../../../../docs/nbfs.md)).
 
 ## Fonts and sizes by role
 

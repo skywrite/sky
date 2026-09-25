@@ -5,15 +5,15 @@ import type { MissionFile } from './tools.ts'
 test('docArtifactFileName', () => {
   assert({
     given: 'a mission time and doc title',
-    should: 'produce a chronological actions/docs path',
-    expected: 'actions/docs/09-15_gdoc_Atlas-Q3-Plan.md',
+    should: 'produce a chronological actions/google-docs path',
+    expected: 'actions/google-docs/09-15_gdoc_Atlas-Q3-Plan.md',
     actual: docArtifactFileName('09:15', 'Atlas Q3 Plan'),
   })
 
   assert({
     given: 'a slides mission',
     should: 'tag the medium as gslides',
-    expected: 'actions/docs/14-05_gslides_Atlas-Pitch.md',
+    expected: 'actions/google-docs/14-05_gslides_Atlas-Pitch.md',
     actual: docArtifactFileName('14:05', 'Atlas Pitch', artifactMedium('slides')),
   })
 })

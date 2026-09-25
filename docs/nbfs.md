@@ -1,6 +1,6 @@
 ---
 created: 2026-07-28
-updated: 2026-09-20
+updated: 2026-09-23
 ---
 
 # Notebook time and the notebook filesystem
@@ -66,6 +66,7 @@ and `ai:chat` all depend on it.
     messages/                  # sky message:new, slack:new, email
     notes/                     # sky notes:new
     ai-chats/                  # saved sky ai:chat conversations
+    google-docs/               # sky google:agent mission records
 ```
 
 Every kind folder under `actions/` is named once, in `ACTION_KIND_DIRS`. `dayActionDir(kind, date)`

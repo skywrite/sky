@@ -15,6 +15,7 @@ const KIND_LABELS: Record<string, string> = {
   [AI_CHATS_DIR]: 'AI chat',
   [ACTION_KIND_DIRS.note]: 'Note',
   [ACTION_KIND_DIRS.event]: 'Event',
+  [ACTION_KIND_DIRS.googleDoc]: 'Google doc',
   decisions: 'Decision',
   ideas: 'Idea',
 }

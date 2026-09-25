@@ -14,8 +14,8 @@ export const ACTIONS_DIR = 'actions'
  */
 export const ACTION_KIND_DIRS = {
   chat: 'ai-chats',
-  doc: 'docs',
   event: 'events',
+  googleDoc: 'google-docs',
   image: 'images',
   meeting: 'meetings',
   message: 'messages',
