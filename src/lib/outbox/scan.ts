@@ -290,28 +290,38 @@ export async function scanOutbox(options: {
                     JSON.stringify({ ...analysis, itemRevision: current?.revision ?? null }),
                   )
                 }
-                let proposal = await propose({
-                  conversation: limitations.length
-                    ? { ...conversation, limitations: [...new Set([...conversation.limitations, ...limitations])] }
-                    : conversation,
-                  preferences,
-                  examples,
-                  today,
-                  now,
-                  range,
-                  triggerSources: refs,
-                  priorResponse: current
-                    ? {
-                        status: current.status,
-                        draft: current.draft,
-                        delivery: current.delivery,
-                        responseHistory: current.responseHistory,
-                        reviews: current.reviews.slice(-4),
-                      }
-                    : undefined,
-                  requests,
-                  requestCache,
-                })
+                let proposal: DraftProposal = analysis?.stamp.screen?.skipped
+                  ? {
+                      action: 'ignore',
+                      title: 'No reply needed from you',
+                      situation: '',
+                      reasoning: 'The saved conversation does not leave an outstanding response or decision with you.',
+                      questions: [],
+                      draft: '',
+                      requestPlans: [],
+                    }
+                  : await propose({
+                      conversation: limitations.length
+                        ? { ...conversation, limitations: [...new Set([...conversation.limitations, ...limitations])] }
+                        : conversation,
+                      preferences,
+                      examples,
+                      today,
+                      now,
+                      range,
+                      triggerSources: refs,
+                      priorResponse: current
+                        ? {
+                            status: current.status,
+                            draft: current.draft,
+                            delivery: current.delivery,
+                            responseHistory: current.responseHistory,
+                            reviews: current.reviews.slice(-4),
+                          }
+                        : undefined,
+                      requests,
+                      requestCache,
+                    })
                 if (requestIds?.length) {
                   const planned = proposal.requestPlans?.map(({ id }) => id) ?? []
                   if (

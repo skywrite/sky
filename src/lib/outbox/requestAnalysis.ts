@@ -4,6 +4,7 @@ import type { ResolvedModel } from '#shared/ai/models.ts'
 import { readPromptFile } from '#shared/prompts/load.ts'
 import { renderPromptFile } from '#shared/prompts/mod.ts'
 import { AnalysisCache, modelVersion, REQUEST_ANALYSIS_POLICY } from './analysisCache.ts'
+import type { ConversationScreen } from './conversationScreen.ts'
 import { hash, withLock } from './files.ts'
 import { conversationChunks, HISTORY_SOURCE_CHARS } from './history.ts'
 import { outboxModel } from './model.ts'
@@ -159,6 +160,7 @@ export function createRequestAnalyzer(options: {
   model?: () => ResolvedModel
   initiatives?: OwnerInitiative[]
   today?: string
+  screen?: ConversationScreen
 }): RequestAnalyzer {
   const resolve = options.model ?? outboxModel
   const attention = createRequestAttention({ ...options, model: resolve })
@@ -169,7 +171,8 @@ export function createRequestAnalyzer(options: {
   )
   const readingVersion = async () =>
     hash(JSON.stringify([REQUEST_ANALYSIS_POLICY, options.ownerContext, modelVersion(resolve()), await prompts]))
-  const version = async () => hash(JSON.stringify([await readingVersion(), await attention.version()]))
+  const version = async () =>
+    hash(JSON.stringify([await readingVersion(), await attention.version(), await options.screen?.version()]))
   return {
     version,
     analyze: async ({ conversation, prior, now }) => {
@@ -177,6 +180,12 @@ export function createRequestAnalyzer(options: {
       return withLock(path.join(cache.dir, 'read.lock'), async () => {
         const [extractInstructions, reconcileInstructions] = await prompts
         const analysisVersion = await version()
+        const screen = await options.screen?.assess({ conversation, prior, cache })
+        if (screen?.skipped)
+          return {
+            requests: [],
+            stamp: { version: analysisVersion, sourceVersion: conversation.version, updated: now, units: 0, screen },
+          }
         const units = requestUnits(conversation)
         const allUnits = new Map(units.map((unit) => [unit.id, unit]))
         const states = new Map<string, State>()
@@ -380,7 +389,13 @@ export function createRequestAnalyzer(options: {
           if (!states.has(old.id)) records.push({ ...old, present: false, response: undefined })
         return {
           requests: await attention.assess(conversation, records, cache),
-          stamp: { version: analysisVersion, sourceVersion: conversation.version, updated: now, units: reviewed },
+          stamp: {
+            version: analysisVersion,
+            sourceVersion: conversation.version,
+            updated: now,
+            units: reviewed,
+            ...(screen ? { screen } : {}),
+          },
         }
       })
     },

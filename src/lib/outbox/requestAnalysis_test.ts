@@ -2,11 +2,15 @@ import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promis
 import { tmpdir } from 'node:os'
 import * as path from 'node:path'
 import { MockLanguageModelV4 } from 'ai/test'
+import { createSecret } from '#lib/secrets/marshal.ts'
+import { TestSecretsProvider } from '#lib/secrets/TestSecretsProvider.ts'
 import type { VoiceWriter } from '#lib/writingVoice/types.ts'
+import { createTypeSafeClient } from '#shared/ai/typesafe/client.ts'
 import Document from '#shared/models/Markdown/Document/mod.ts'
 import { resolveTimeRef } from '#shared/nbfs/timeRef.ts'
 import { assert, test } from '#test'
 import { AnalysisCache, MAX_ANALYSIS_INPUT_CHARS } from './analysisCache.ts'
+import { createConversationScreen, type ConversationScreen } from './conversationScreen.ts'
 import { hash } from './files.ts'
 import { HISTORY_SOURCE_CHARS } from './history.ts'
 import { readScanProgress } from './progress.ts'
@@ -169,14 +173,14 @@ async function fixture() {
       `source: Slack\nref:\n  link: ${LINK}\nmessages:\n${refs.map((ref) => `  - date: ${ref.slice(0, 10)}\n    path: ${ref}`).join('\n')}\n`,
     )
   await follow([REF])
-  const run = (range: ScanRange = FOUR_HOURS, write?: VoiceWriter) =>
+  const run = (range: ScanRange = FOUR_HOURS, write?: VoiceWriter, screen?: ConversationScreen) =>
     scanOutbox({
       store,
       sources,
       today: TODAY,
       now: NOW,
       range,
-      analyze: createRequestAnalyzer({ stateDir, ownerContext: 'I am Alex Example.', model: model.resolve }),
+      analyze: createRequestAnalyzer({ stateDir, ownerContext: 'I am Alex Example.', model: model.resolve, screen }),
       propose: createTriage('I am Alex Example.', model.resolve, write),
     })
   const item = async () => (await store.list())[0]
@@ -208,6 +212,145 @@ const active = (item: OutboxRecord) =>
     .requests!.filter((request) => item.requestIds!.includes(request.id))
     .map((request) => request.summary)
     .sort()
+
+function screening() {
+  const calls: unknown[] = []
+  const control = { probability: 0.001, fail: false, beforeReply: async () => {} }
+  const client = createTypeSafeClient({
+    secrets: new TestSecretsProvider({ 'typesafe/main': createSecret('tsk-test-key') }),
+    fetch: (async (_url, init) => {
+      calls.push(JSON.parse(String(init?.body)))
+      await control.beforeReply()
+      if (control.fail) return new Response('Unavailable', { status: 503 })
+      return Response.json({
+        model: 'jev-test',
+        answers: Object.fromEntries(
+          ['direct_request', 'active_exchange', 'owner_commitment', 'initiative_decision', 'uncertain_context'].map(
+            (key) => [key, { type: 'noul', noul: key === 'direct_request' ? control.probability : 0.001 }],
+          ),
+        ),
+        usage: { input_tokens: 100, output_tokens: 0 },
+      })
+    }) as typeof fetch,
+  })
+  return {
+    calls,
+    control,
+    screen: () =>
+      createConversationScreen(client, {
+        ownerContext: '---\nname: Alex Example\n---\nI lead Example Company.',
+        today: TODAY,
+        sink: () => {},
+      }),
+  }
+}
+
+test('A quiet Jev screen skips all language-model work, then new asks and later replies are fully accounted for', async () => {
+  const f = await fixture()
+  const jev = screening()
+  try {
+    const body = message(`${TODAY} 09:00`, 'The service update is complete. FYI only.')
+    await f.write(REF, body)
+    const quiet = await f.run(FOUR_HOURS, undefined, jev.screen())
+    const initial = await f.item()
+    await f.run(WEEK, undefined, jev.screen())
+    const progress = await readScanProgress(f.store)
+    assert({
+      given: 'a confident negative screen followed by a wider search range',
+      should: 'skip extraction, reconciliation and drafting, persist the verdict, and reuse it across ranges',
+      actual: [
+        quiet.ignored,
+        quiet.failed,
+        f.model.calls.length,
+        jev.calls.length,
+        initial.requests,
+        initial.requestAnalysis?.units,
+        initial.requestAnalysis?.screen?.skipped,
+        progress?.checks[0].reason.includes('response or decision'),
+      ],
+      expected: [1, 0, 0, 1, [], 0, true, true],
+    })
+    jev.control.probability = 0.99
+    await f.write(REF, `${body}\n\n${message(`${TODAY} 10:00`, ask('A'))}`)
+    const incoming = await f.run(FOUR_HOURS, undefined, jev.screen())
+    const opened = await f.item()
+    assert({
+      given: 'a personal request added after the quiet result',
+      should: 'read and prepare it using the existing item identity',
+      actual: [incoming.prepared, active(opened), opened.id === initial.id, jev.calls.length, f.model.calls.length > 0],
+      expected: [1, ['A'], true, 2, true],
+    })
+    jev.control.probability = 0.001
+    await f.write(
+      REF,
+      `${body}\n\n${message(`${TODAY} 10:00`, ask('A'))}\n\n${message(`${TODAY} 11:00`, answer('A'), true)}`,
+    )
+    const answered = await f.run(FOUR_HOURS, undefined, jev.screen())
+    const closed = await f.item()
+    assert({
+      given: 'a later owner answer to an already tracked request',
+      should: 'bypass screening and retain verified per-request resolution evidence',
+      actual: [
+        answered.answered,
+        jev.calls.length,
+        closed.requests?.[0].status,
+        closed.requests?.[0].resolution?.quote,
+      ],
+      expected: [1, 2, 'resolved', answer('A')],
+    })
+  } finally {
+    await f.clean()
+  }
+})
+
+test('Jev uncertainty or an unavailable provider keeps normal request analysis and drafting', async () => {
+  for (const fail of [false, true]) {
+    const f = await fixture()
+    const jev = screening()
+    try {
+      jev.control.probability = 0.5
+      jev.control.fail = fail
+      await f.write(REF, message(`${TODAY} 09:00`, ask('A')))
+      const report = await f.run(FOUR_HOURS, undefined, jev.screen())
+      const item = await f.item()
+      assert({
+        given: fail ? 'an unavailable TypeSafe provider' : 'an uncertain ownership assessment',
+        should: 'prepare the same grounded reply without failing or hiding the request',
+        actual: [report.prepared, report.failed, active(item), item.draft, jev.calls.length],
+        expected: [1, 0, ['A'], answer('A'), 1],
+      })
+    } finally {
+      await f.clean()
+    }
+  }
+})
+
+test('A new message arriving during a negative screen invalidates it before publication', async () => {
+  const f = await fixture()
+  const jev = screening()
+  try {
+    await f.write(REF, message(`${TODAY} 09:00`, 'The update is complete.'))
+    jev.control.beforeReply = () => f.write(REF, message(`${TODAY} 09:00`, ask('A')))
+    const changed = await f.run(FOUR_HOURS, undefined, jev.screen())
+    assert({
+      given: 'a personal request arrives while Jev is screening the older capture',
+      should: 'keep the conversation pending without publishing the obsolete negative result',
+      actual: [changed.failed, changed.ignored, changed.pending, (await f.store.list()).length],
+      expected: [1, 0, 1, 0],
+    })
+    jev.control.beforeReply = async () => {}
+    jev.control.probability = 0.99
+    const retry = await f.run(FOUR_HOURS, undefined, jev.screen())
+    assert({
+      given: 'a retry over the changed capture',
+      should: 'screen the new evidence and prepare the request',
+      actual: [retry.prepared, retry.failed, active(await f.item()), jev.calls.length],
+      expected: [1, 0, ['A'], 2],
+    })
+  } finally {
+    await f.clean()
+  }
+})
 
 test('Reconciliation repairs a shortened citation once and reuses only the verified receipt', async () => {
   const f = await fixture()

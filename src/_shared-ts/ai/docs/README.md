@@ -75,6 +75,8 @@ builds its client there and asks through `typesafe/systemOne.ts`, which
 records each request in the usage log under provider `typesafe`. The
 first caller is the web chat's experimental preflight; see the
 [2026-09-17](2026-09-17-typesafe-jev.md) note.
+The [Outbox conversation screen](../../../lib/outbox/docs/README.md#finding-responses-and-decisions)
+also uses Jev to skip clearly irrelevant conversations before request extraction.
 
 ## Catalog policy
 

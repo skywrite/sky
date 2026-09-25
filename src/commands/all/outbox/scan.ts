@@ -1,5 +1,6 @@
 import { Command, CommandResult } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription } from '#commands/mod.ts'
+import { createConversationScreen } from '#lib/outbox/conversationScreen.ts'
 import { describeOutboxScan } from '#lib/outbox/describeScan.ts'
 import { readOptional } from '#lib/outbox/files.ts'
 import { OUTBOX_MODEL_PROFILE, outboxModelId } from '#lib/outbox/model.ts'
@@ -10,6 +11,7 @@ import { scanOutbox } from '#lib/outbox/scan.ts'
 import { createTriage } from '#lib/outbox/triage.ts'
 import { OutboxError, type ScanReport } from '#lib/outbox/types.ts'
 import { createWritingVoice } from '#lib/writingVoice/runtime.ts'
+import { createTypeSafeClient } from '#shared/ai/typesafe/client.ts'
 
 declare module '#commands/lib/core/CommandTypesRegistry.ts' {
   interface CommandTypesRegistry {
@@ -44,6 +46,11 @@ export default class OutboxScan extends Command {
           ownerContext,
           initiatives,
           today: context.systemNow.date,
+          screen: createConversationScreen(createTypeSafeClient({ secrets: context.secrets }), {
+            ownerContext,
+            initiatives,
+            today: context.systemNow.date,
+          }),
         }),
         propose: createTriage(ownerContext, undefined, (input) => voice.draft(input)),
         model: outboxModelId(),

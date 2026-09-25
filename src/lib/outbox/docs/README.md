@@ -1,6 +1,6 @@
 ---
 created: 2026-09-06
-updated: 2026-09-20
+updated: 2026-09-22
 ---
 
 # Outbox — decisions prepared from saved conversations
@@ -16,6 +16,10 @@ The worker checks a chosen **date and time range** in saved Slack and email mess
 Coverage is the existing captures, not every message in the connected accounts. Discovery inventories the notebook's message collections and caches source timestamps and thread identities in `sources.json`. Actual message headings take precedence over `when:` and the filing date, so a capture filed on another day can still match. An undated capture on a selected day is included conservatively; a partial-day selection exposes its uncertain time. Stable references survive notebook layout changes. Follow records, `previous:` links, and matching saved Slack thread identities supply earlier **and later** context. Later replies can resolve selected requests without introducing unrelated out-of-range asks. Merged follows have no automatic native destination.
 
 ## Finding responses and decisions
+
+`conversationScreen.ts` asks TypeSafe's Jev before request extraction, using the existing attention prompt, owner profile, active initiatives, current local date, and the complete linked conversation. Five independent questions cover the four ownership bases below and ambiguous context. Only when every probability is below 0.2 does the scan skip extraction and drafting. A possible obligation or uncertain answer continues through the full evidence-based pipeline. A missing TypeSafe key, invalid answer, or provider failure also falls back; the call has a three-second timeout with no retries, and a failed provider is bypassed for the rest of that check.
+
+The screen never replaces an existing request ledger, even when its requests were previously resolved or archived: later replies must still be reconciled and can reopen an ask. Human review state and legacy items also bypass it. Missing history, an unidentified owner, or context exceeding the bounded input size uses the full reader rather than screening a truncated thread. Validated screen receipts live under `analysis/<conversation-hash>/screens/`; their fingerprints include all supplied evidence, policy, model selector, owner context, initiatives and local date, independently of the selected range. A screened result records zero extraction units and retains Jev's model, probabilities and duration in `requestAnalysis.screen`; it is a relevance judgment, not proof of an inventoried or resolved request. Source and item revision checks still gate publication.
 
 Check now accounts for individual requests before preparing one proposed reply per changed conversation, using the Outbox model profile in `model.ts`. Extraction inventories potential owner requests; reconciliation matches answers, withdrawals, and changed requirements to each ask. These passes receive the complete linked history in bounded portions and owner context from `journal/about-me.md`, independently of the selected range. Range selection then uses each request's actual origin time. An existing active review carries its outstanding requests across range changes. Thus widening from four hours to seven days can select more requests and conversations without enlarging the reading unit or diluting an overlapping request's context.
 

@@ -44,11 +44,25 @@ export const RequestRecordSchema = z.object({
   response: RequestResponseSchema.optional(),
   attention: RequestAttentionSchema.optional(),
 })
+export const ConversationScreenSchema = z.object({
+  model: z.string().min(1),
+  ms: z.number().int().nonnegative(),
+  probabilities: z.object({
+    direct_request: z.number().min(0).max(1),
+    active_exchange: z.number().min(0).max(1),
+    owner_commitment: z.number().min(0).max(1),
+    initiative_decision: z.number().min(0).max(1),
+    uncertain_context: z.number().min(0).max(1),
+  }),
+  skipped: z.boolean(),
+})
+export type ConversationScreenVerdict = z.infer<typeof ConversationScreenSchema>
 export const RequestAnalysisStampSchema = z.object({
   version: z.string(),
   sourceVersion: z.string(),
   updated: z.string(),
   units: z.number().int().nonnegative(),
+  screen: ConversationScreenSchema.optional(),
 })
 export type RequestCitation = z.infer<typeof RequestCitationSchema>
 export type RequestReport = z.infer<typeof RequestReportSchema>
