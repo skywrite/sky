@@ -359,7 +359,7 @@ function Canvas() {
                   <div className="sky-side-label">Week</div>
                   <button
                     type="button"
-                    className="sky-thread"
+                    className="sky-thread sky-side-week"
                     data-active={isWeek && (weekId === '' || weekId === thisWeek?.id)}
                     aria-current={isWeek && (weekId === '' || weekId === thisWeek?.id) ? 'page' : undefined}
                     onClick={() => navigate('/week')}
@@ -375,7 +375,7 @@ function Canvas() {
                   {thisWeek && (
                     <button
                       type="button"
-                      className="sky-thread"
+                      className="sky-thread sky-side-week"
                       data-active={isWeek && weekId === thisWeek.next.id}
                       aria-current={isWeek && weekId === thisWeek.next.id ? 'page' : undefined}
                       onClick={() => navigate(weekHref(thisWeek.next.id))}

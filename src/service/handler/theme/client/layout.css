@@ -251,6 +251,20 @@ a.sky-thread {
   flex: none;
 }
 
+.sky-side-week {
+  flex-wrap: wrap;
+  row-gap: 0;
+}
+
+.sky-side-week > span:first-child {
+  flex-shrink: 0;
+}
+
+.sky-side-week .sky-meta {
+  max-width: 100%;
+  white-space: normal;
+}
+
 .sky-thread[data-empty='true'] {
   color: var(--sky-dim);
   cursor: default;
