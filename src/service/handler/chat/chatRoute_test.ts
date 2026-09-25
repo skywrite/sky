@@ -2466,16 +2466,25 @@ test({ name: 'chat route - a saved chat opens as a thread to continue, once' }, 
 
   assert({
     given: 'a chat saved and ended, then opened twice by its path, and a path with no chat',
-    should: 'make one thread with the saved turns and title, find it the second time, and refuse the missing one',
+    should: 'make one thread with the saved turns, title and day, find it the second time, and refuse the missing one',
     actual: {
       created: first.status,
       sameThread: second.id === id && second.opened === false,
       turns: thread.turns.length,
       title: thread.title,
       saved: thread.saved,
+      day: thread.day,
       missing: missing.status,
     },
-    expected: { created: 201, sameThread: true, turns: 2, title: saved.summary, saved: chat, missing: 404 },
+    expected: {
+      created: 201,
+      sameThread: true,
+      turns: 2,
+      title: saved.summary,
+      saved: chat,
+      day: START.plainDate.ymd,
+      missing: 404,
+    },
   })
 })
 

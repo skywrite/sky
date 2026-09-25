@@ -386,6 +386,11 @@
   overflow-wrap: anywhere;
 }
 
+/* The way back names a day, not only Today; it keeps its width and the title yields. */
+.sky-chat-head .sky-chat-back {
+  flex-shrink: 0;
+}
+
 /* The document action stays readable beside the conversation controls on a phone. */
 @media (max-width: 900px) {
   .sky-chat-head {

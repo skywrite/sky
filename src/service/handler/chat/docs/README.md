@@ -520,6 +520,10 @@ a person can see and touch:
   tuning chosen for the thread, in the browser and in the service. Every
   thread the service ends takes its browser draft with it, reply threads
   included. See [2026-09-13](2026-09-13-discard-what-was-never-sent.md).
+  Ending a thread returns the page to the day the thread belongs to: today
+  for a new chat, the chat's own day for one continued from an earlier day
+  or left open since then. The header's back button names that day and
+  goes there too. See [2026-09-23](2026-09-23-a-chat-returns-to-its-day.md).
 
 
 The `timeline.ts` derivation: the seed entry counts what the baseline
@@ -585,6 +589,14 @@ failed check reads as usual. See
   removing the copy.
 
 ## Verified
+
+- 2026-09-23 — a chat returns to its day. Route test: a saved chat opened
+  to continue reports its day on the thread. Browser test on the real day
+  page: a chat continued from an earlier day names that day on its back
+  button, and Save & close lands on that day with the save noted there.
+  Live: a chat saved two days back, opened to continue as a temporary
+  thread, read "‹ Mon, Sep 21" in the header, and Discard landed on that
+  day's page with the notice; nothing was written.
 
 - 2026-09-20 — delete from here. Route tests on real sessions with a
   scripted model: a delete from the second of three questions leaves one

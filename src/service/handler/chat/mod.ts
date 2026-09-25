@@ -1222,6 +1222,8 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
       inherited: thread.session.inherited,
       fixed: fixedMessages(thread.session),
       saved: savedOf(thread, baseDir),
+      // The day the thread belongs to and files under — the page returns there when the thread ends
+      day: thread.session.startTime.plainDate.ymd,
       branches: await savedBranchesOf(savedOf(thread, baseDir), baseDir),
       turns: thread.session.turns,
       branchPoints: branchPoints(thread.session.turns),

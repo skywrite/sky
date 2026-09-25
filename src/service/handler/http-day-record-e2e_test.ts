@@ -4,7 +4,7 @@ import * as path from 'node:path'
 import { setUserSpeakerLabel } from '#shared/models/Chat/document/mod.ts'
 import { dayAIChatsDir, dayDir, dayFile } from '#shared/nbfs/mod.ts'
 import { assert, test } from '#test'
-import { PlainDate } from '#universal/dates/nbdt/mod.ts'
+import { PlainDate, ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
 import { runWysiwygE2e } from './httpWysiwygE2eTestHelpers.ts'
 import type { ThreadSummary } from './theme/client/day.tsx'
 
@@ -16,6 +16,8 @@ const ROOT = `${CHAT_DIR}/09-00_Atlas-planning.md`
 const BRANCH = `${CHAT_DIR}/09-00_Atlas-planning/10-00_Board-outline.md`
 const LEAF = `${CHAT_DIR}/09-00_Atlas-planning/10-00_Board-outline/11-00_Budget [questions].md`
 const VIDEO = path.posix.join('time', dayDir(DAY), 'actions/videos/Loom_Atlas.md')
+const EARLIER = new PlainDate('2026-01-26')
+const EARLIER_CHAT = path.posix.join('time', dayAIChatsDir(EARLIER), '09-00_Atlas-kickoff.md')
 const VIDEO_MD = `---
 from: Jane Doe
 to: Atlas Team
@@ -31,9 +33,9 @@ summary: Atlas launch walkthrough
 The recording walks through the launch checklist and next steps.
 `
 
-function chat(title: string, parent?: { chat: string; turn: number }): string {
+function chat(title: string, parent?: { chat: string; turn: number }, created = DAY.ymd): string {
   return `---
-created: 2026-01-27
+created: ${created}
 summary: ${title}
 turns: 1
 ${parent ? `parent:\n  chat: ${parent.chat}\n  turn: ${parent.turn}\n` : ''}---
@@ -63,11 +65,15 @@ test(
         tempPrefix: 'day-record-',
         file: path.posix.join('time', dayFile(DAY)),
         day: true,
+        // The day under test is today; the earlier day's chat must read as another day's.
+        now: new ZonedDateTime('2026-01-27T12:00:00', 'UTC'),
         files: {
           [ROOT]: chat('Atlas planning'),
           [BRANCH]: chat('Board outline', { chat: ROOT, turn: 1 }),
           [LEAF]: chat('Budget questions', { chat: BRANCH, turn: 2 }),
           [VIDEO]: VIDEO_MD,
+          [path.posix.join('time', dayFile(EARLIER))]: `---\ndate: ${EARLIER.ymd}\n---\n\n# **${EARLIER.ymd}**\n`,
+          [EARLIER_CHAT]: chat('Atlas kickoff', undefined, EARLIER.ymd),
         },
       },
       async ({ page, origin, file, errors }) => {
@@ -75,13 +81,15 @@ test(
         const opened: string[] = []
         await page.route('**/chat', (route) => route.fulfill({ json: { threads } }))
         await page.route('**/chat/open', (route) => {
-          opened.push(route.request().postDataJSON().chat)
-          return route.fulfill({ json: { id: 'continued-chat' } })
+          const chat = route.request().postDataJSON().chat
+          opened.push(chat)
+          return route.fulfill({ json: { id: chat === EARLIER_CHAT ? 'earlier-chat' : 'continued-chat' } })
         })
         await page.route('**/chat/continued-chat', (route) =>
           route.fulfill({
             json: {
               saved: opened.at(-1),
+              day: DAY.ymd,
               turns: [
                 { role: 'user', content: 'Help me plan the next steps.' },
                 { role: 'assistant', content: 'Start with a short checklist and assign each action.' },
@@ -92,6 +100,26 @@ test(
             },
           }),
         )
+        await page.route('**/chat/earlier-chat', (route) =>
+          route.fulfill({
+            json: {
+              saved: EARLIER_CHAT,
+              day: EARLIER.ymd,
+              turns: [
+                { role: 'user', content: 'Help me plan the next steps.' },
+                { role: 'assistant', content: 'Start with a short checklist and assign each action.' },
+              ],
+              documents: 0,
+              kept: 0,
+              busy: false,
+            },
+          }),
+        )
+        const ended: Array<{ save: boolean }> = []
+        await page.route('**/chat/earlier-chat/end', (route) => {
+          ended.push(route.request().postDataJSON())
+          return route.fulfill({ json: { saved: { summary: 'Atlas kickoff', exchanges: 1 }, ended: ['earlier-chat'] } })
+        })
         await page.route('**/chat/*/settings', (route) =>
           route.fulfill({
             json: {
@@ -283,6 +311,25 @@ test(
         })
         await openDocument.click()
         await page.waitForURL(`${origin}${leafUrl}`)
+
+        await page.setViewportSize({ width: 1500, height: 1000 })
+        await page.goto(`${origin}/${EARLIER.ymd}`)
+        await page
+          .locator('.sky-day-chat')
+          .filter({ hasText: 'Atlas kickoff' })
+          .getByRole('button', { name: 'Continue chat', exact: true })
+          .click()
+        await page.waitForURL(`${origin}/thread/earlier-chat`)
+        await page.getByRole('button', { name: 'Mon, Jan 26' }).waitFor()
+        await page.getByRole('button', { name: 'Save & close', exact: true, disabled: false }).click()
+        await page.waitForURL(`${origin}/${EARLIER.ymd}`)
+        await page.locator('.sky-chat-close-toast').filter({ hasText: 'Chat saved' }).waitFor()
+        assert({
+          given: 'a chat continued from an earlier day, saved and closed',
+          should: 'name that day on the way back, and return to it with the save noted there',
+          actual: { ended, path: new URL(page.url()).pathname },
+          expected: { ended: [{ save: true }], path: `/${EARLIER.ymd}` },
+        })
         assert({ given: 'the video and chat day view', should: 'raise no page errors', actual: errors, expected: [] })
       },
     )

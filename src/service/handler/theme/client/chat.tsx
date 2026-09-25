@@ -196,6 +196,8 @@ export interface ThreadState {
   fixed: number
   /** The saved chat this thread continues, relative to the notebook root; null for one with no file yet */
   saved: string | null
+  /** The day the thread belongs to and files under, `YYYY-MM-DD`; null until read back from the service */
+  day: string | null
   /** The branches filed beside that chat */
   branches: SavedBranch[]
   /** The thread has been read back from the service (or found not to exist there) */
@@ -243,6 +245,7 @@ type Action =
       fixed?: number
       parent?: ThreadParent | null
       saved?: string | null
+      day?: string | null
       branches?: SavedBranch[]
       interrupted?: Interrupted | null
     }
@@ -322,6 +325,7 @@ function initial(id: string): ThreadState {
     parent: null,
     fixed: 0,
     saved: null,
+    day: null,
     branches: [],
     loaded: false,
     gather: null,
@@ -357,7 +361,8 @@ function reduce(state: ThreadState, action: Action): ThreadState {
     case 'loaded': {
       // A read-back that lands after the person already typed must not
       // erase what they sent; the service holds it either way.
-      if (state.turns.length > 0) return { ...state, loaded: true, documents: state.documents ?? action.documents }
+      if (state.turns.length > 0)
+        return { ...state, loaded: true, documents: state.documents ?? action.documents, day: action.day ?? state.day }
       // A turn still running on the service — from another page, or one
       // that reloaded mid-turn — shows as busy; its held calls show as cards.
       const approvals = action.approvals ?? []
@@ -371,6 +376,7 @@ function reduce(state: ThreadState, action: Action): ThreadState {
         fixed: action.fixed ?? 0,
         parent: action.parent ?? null,
         saved: action.saved ?? null,
+        day: action.day ?? null,
         branches: action.branches ?? [],
         approvals,
         answered: action.answered ?? [],
@@ -646,6 +652,7 @@ interface ThreadBody {
   fixed?: number
   parent?: ThreadParent | null
   saved?: string | null
+  day?: string
   branches?: SavedBranch[]
   pending?: Approval[]
   answered?: Answered[]
@@ -778,6 +785,7 @@ export function useChat(id: string) {
           fixed: body.fixed ?? 0,
           parent: body.parent ?? null,
           saved: body.saved ?? null,
+          day: body.day ?? null,
           branches: body.branches ?? [],
           interrupted: interruptedOf(body),
         })
@@ -2348,7 +2356,7 @@ export function ChatMain({
   return (
     <div className="sky-main" data-temporary={state.settings?.saves === false}>
       <header className="sky-head sky-chat-head">
-        <Button size="sm" onClick={back.onClick} style={{ marginLeft: -10 }}>
+        <Button size="sm" className="sky-chat-back" onClick={back.onClick} style={{ marginLeft: -10 }}>
           ‹ {back.label}
         </Button>
         <span className="sky-title" title={title}>

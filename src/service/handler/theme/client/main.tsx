@@ -10,7 +10,7 @@ import { ChatMain, threadTitle, useChat } from './chat.tsx'
 import { ClockAmbient, ClockMain, useClockNow } from './clock.tsx'
 import { DayView, useDay, useThreads } from './day.tsx'
 import type { ChatCloseNotice } from './dayChatClose.tsx'
-import { DayFilesMain, filesRouteOf } from './dayFiles.tsx'
+import { DayFilesMain, filesRouteOf, shortLabel } from './dayFiles.tsx'
 import { useItemHelpChat } from './dayItemHelp.tsx'
 import { DocView, explorerFileOf, fileHref, Tree } from './explorer.tsx'
 import { type Kept, undoKeep } from './files.tsx'
@@ -138,6 +138,14 @@ function Canvas() {
     threads.find((thread) => thread.id === threadId)?.title ??
     (currentChat ? threadTitle(currentChat.turns, currentChat.inherited) : null) ??
     (currentChat?.parent ? 'New branch' : 'New chat')
+  // The day the chat belongs to, from the page's own read-back, else the
+  // list. A chat from an earlier day — continued from its file, or left open
+  // since — goes back to that day when it ends or the person steps back.
+  const chatDay = currentChat?.day ?? threads.find((thread) => thread.id === threadId)?.day ?? null
+  const chatHome =
+    chatDay && day && chatDay !== day.today.ymd
+      ? { path: `/${chatDay}`, label: shortLabel(chatDay) }
+      : { path: '/', label: 'Today' }
   useEffect(() => {
     // The outbox sets its own title: the list, or the open item's.
     if (isOutbox || peopleRoute || placesRoute !== null) return
@@ -206,7 +214,7 @@ function Canvas() {
     const id = chat.state.id
     const title = chatTitle
     const saving = chat.end(chat.state.settings?.saves !== false)
-    navigate('/')
+    navigate(chatHome.path)
     void saving.then((result) => {
       if (result) setChatNotices((prev) => [...prev.filter((n) => n.id !== id), { id, title, ...result }])
     })
@@ -498,7 +506,7 @@ function Canvas() {
             <ChatMain
               chat={chat}
               title={chatTitle}
-              back={{ label: 'Today', onClick: () => navigate('/') }}
+              back={{ label: chatHome.label, onClick: () => navigate(chatHome.path) }}
               onEnd={endThread}
               branches={[
                 ...branchesOf(threadId).map((b) => ({ id: b.id, title: b.title, turn: b.parent?.turn ?? 0 })),
