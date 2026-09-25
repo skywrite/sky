@@ -4,7 +4,16 @@ import { readTextFile } from '#shared/fs/mod.ts'
 import TrackingDocument from '#shared/models/Tracking/mod.ts'
 import { assert, test } from '#test'
 import PlainDate from '#universal/dates/nbdt/PlainDate/mod.ts'
-import { appendRecord, dayLetter, formatHeader, formatRow, hasEntryForDate, recordFilePath } from './records.ts'
+import { readTrackingCsv } from './csv.ts'
+import {
+  appendRecord,
+  appendRecordContents,
+  dayLetter,
+  formatHeader,
+  formatRow,
+  hasEntryForDate,
+  recordFilePath,
+} from './records.ts'
 
 const TEST_DIR = '/tmp/track-records-test'
 
@@ -76,6 +85,35 @@ test('formatRow: bare numbers/times, quoted text, ragged tail', () => {
     should: 'escape it CSV-style',
     expected: 'M, 6:05, 180, "felt ""off"" today"',
     actual: formatRow(WEIGHT, MONDAY, { time: '6:05', lbs: '180', notes: 'felt "off" today' }),
+  })
+  assert({
+    given: 'a comma inside a number answer',
+    should: 'quote it so the row keeps its columns',
+    expected: 'M, 6:05, "1,200"',
+    actual: formatRow(WEIGHT, MONDAY, { time: '6:05', lbs: '1,200', notes: '' }),
+  })
+  assert({
+    given: 'a quote inside a time answer',
+    should: 'quote and escape it instead of writing it bare',
+    expected: 'M, "6:05""", 180',
+    actual: formatRow(WEIGHT, MONDAY, { time: '6:05"', lbs: '180', notes: '' }),
+  })
+})
+
+test('appendRecordContents: a comma in a bare-typed answer survives the round trip', () => {
+  const contents = appendRecordContents(null, WEIGHT, MONDAY, { time: '6:05', lbs: '1,200', notes: '' })
+  const table = readTrackingCsv(contents, MONDAY)
+  assert({
+    given: 'a number answer carrying a comma',
+    should: 'read back as one cell in its own column',
+    expected: ['2026-08-17', '6:05', '1,200'],
+    actual: table.rows[0],
+  })
+  assert({
+    given: 'the same file',
+    should: 'raise no ragged-row warning',
+    expected: [],
+    actual: table.warnings,
   })
 })
 

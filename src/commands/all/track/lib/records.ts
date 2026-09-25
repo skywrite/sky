@@ -58,7 +58,8 @@ const QUOTED_TYPES: ReadonlySet<string> = new Set(['range', 'word', 'text'])
 
 function formatField(column: TrackingColumn, value: string): string {
   if (value === '') return ''
-  return QUOTED_TYPES.has(column.type) ? `"${value.replaceAll('"', '""')}"` : value
+  // A bare cell ends at the next comma, whatever its column type says.
+  return QUOTED_TYPES.has(column.type) || /[,"]/.test(value) ? quoteCsv(value) : value
 }
 
 /**
