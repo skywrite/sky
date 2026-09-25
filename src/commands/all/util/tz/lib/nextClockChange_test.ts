@@ -4,6 +4,10 @@ import { nextClockChange } from './nextClockChange.ts'
 // Fixed anchor so these pin real tz-database transitions rather than moving with the clock.
 const FROM = new Date('2026-07-28T12:00:00Z')
 
+// Morocco's rules change often, and tz releases rewrite its future dates (2026c ends the
+// Ramadan shifts in September 2026), so its case pins a past transition every release agrees on.
+const CASABLANCA_FROM = new Date('2025-07-28T12:00:00Z')
+
 // "<instant> <signed delta>", so each case pins both when the clock moves and which way.
 function changeAt(timezone: string, from: Date = FROM, horizonDays?: number): string {
   const change = nextClockChange(timezone, from, horizonDays)
@@ -43,10 +47,10 @@ test(`nextClockChange() finds southern-hemisphere spring transitions`, () => {
 
 test(`nextClockChange() covers offset changes that are not ordinary DST`, () => {
   assert({
-    given: 'Casablanca, which shifts around Ramadan rather than on a DST schedule',
+    given: 'Casablanca, which shifted around Ramadan rather than on a DST schedule',
     should: 'report the change anyway',
-    expected: '2027-02-07T02:00:00.000Z -1',
-    actual: changeAt('Africa/Casablanca'),
+    expected: '2026-02-15T02:00:00.000Z -1',
+    actual: changeAt('Africa/Casablanca', CASABLANCA_FROM),
   })
 })
 
