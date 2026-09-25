@@ -1,14 +1,27 @@
 import { randomUUID } from 'node:crypto'
+import process from 'node:process'
+import { BEEPER_SYNC_STATE, type BeeperSyncOutcome } from '#commands/all/beeper/inbox/sync.ts'
 import { reimportSlackFromBrave, slackAuthStatus, slackProfileName } from '#commands/all/slack/lib/authStatus.ts'
+import CommandContext from '#commands/lib/core/CommandContext.ts'
+import CommandService from '#commands/lib/core/CommandService.ts'
+import * as notebookConfig from '#config'
 import { SLACK_WORKSPACE } from '#config'
 import {
+  type BeeperAccount,
   BeeperClient,
   BeeperError,
   beeperInfo,
   deleteBeeperGrant,
   grantExpired,
+  isSlackAccount,
   loadBeeperGrant,
+  loadBeeperSyncState,
+  markKnown,
+  networkOf,
+  previewBeeper,
+  reconcileAccountRules,
   saveBeeperGrant,
+  saveBeeperSyncState,
   startBeeperSignIn,
 } from '#lib/beeper/mod.ts'
 import {
@@ -38,6 +51,7 @@ import {
   TYPESAFE_SECRET,
 } from '#shared/ai/typesafe/client.ts'
 import {
+  type BeeperAccountRow,
   type BeeperConnectState,
   type BeeperStatus,
   type ConnectionsHost,
@@ -179,17 +193,56 @@ async function slackReconnect(): Promise<SlackStatus> {
  * opens in the browser, and the grant lands in the keychain. A token made in
  * Beeper's own settings is accepted too.
  */
-function beeperConnection(secrets: SecretsProvider): ConnectionsHost['beeper'] {
+function beeperConnection(
+  secrets: SecretsProvider,
+  stateFile: string,
+  runCheck: () => Promise<BeeperSyncOutcome | null>,
+): ConnectionsHost['beeper'] {
   const states = new Map<string, BeeperConnectState>()
+
+  /** Beeper's accounts as rows, with the rules from the state file; rules for accounts seen the first time are written. */
+  const rows = async (accounts: BeeperAccount[]): Promise<BeeperAccountRow[]> => {
+    const state = await loadBeeperSyncState(stateFile)
+    if (reconcileAccountRules(state, accounts)) await saveBeeperSyncState(stateFile, state)
+    return accounts
+      .filter((account) => !isSlackAccount(account))
+      .map((account) => {
+        const rule = state.accounts[account.accountID]
+        const network = networkOf(account)
+        return {
+          id: account.accountID,
+          network,
+          status: account.status ?? 'unknown',
+          save: rule?.save ?? false,
+          groups: rule?.groups ?? false,
+          holdUnknown: rule?.holdUnknown ?? true,
+          chosen: rule?.chosen ?? false,
+          chats: Object.values(state.chats).filter((chat) => chat.network === network).length,
+        }
+      })
+  }
+
+  /** The grant and the running app, or why the page cannot go further. */
+  const ready = async (): Promise<BeeperClient | null> => {
+    const grant = await loadBeeperGrant(secrets)
+    if (!grant || grantExpired(grant) || !(await beeperInfo())) return null
+    return new BeeperClient(grant.token)
+  }
+
   return {
     async status() {
       const info = await beeperInfo()
       const grant = await loadBeeperGrant(secrets)
+      const state = await loadBeeperSyncState(stateFile)
       const base: BeeperStatus = {
         running: Boolean(info),
         ...(info?.app?.version ? { version: info.app.version } : {}),
         connected: Boolean(grant),
         accounts: [],
+        ...(state.lastRun ? { lastRun: state.lastRun } : {}),
+        held: Object.entries(state.held)
+          .map(([chat, entry]) => ({ chat, ...entry }))
+          .sort((a, b) => b.at.localeCompare(a.at)),
       }
       if (!grant) return base
       if (grantExpired(grant))
@@ -197,17 +250,52 @@ function beeperConnection(secrets: SecretsProvider): ConnectionsHost['beeper'] {
       const known: BeeperStatus = { ...base, ...(grant.expiresAt ? { expiresAt: grant.expiresAt } : {}) }
       if (!info) return known
       try {
-        const accounts = await new BeeperClient(grant.token).accounts()
-        return {
-          ...known,
-          accounts: accounts.map((account) => ({
-            network: account.network?.trim() || account.accountID,
-            status: account.status ?? 'unknown',
-          })),
-        }
+        return { ...known, accounts: await rows(await new BeeperClient(grant.token).accounts()) }
       } catch (error) {
         if (error instanceof BeeperError && error.kind === 'unauthorized') return { ...known, expired: true }
         return { ...known, error: error instanceof Error ? error.message : 'Beeper could not list its accounts.' }
+      }
+    },
+    async rule(id, change) {
+      const state = await loadBeeperSyncState(stateFile)
+      const rule = state.accounts[id]
+      if (!rule) return false
+      if (change.save !== undefined) rule.save = change.save
+      if (change.groups !== undefined) rule.groups = change.groups
+      if (change.holdUnknown !== undefined) rule.holdUnknown = change.holdUnknown
+      rule.chosen = true
+      await saveBeeperSyncState(stateFile, state)
+      return true
+    },
+    async preview() {
+      const client = await ready()
+      if (!client) return null
+      const state = await loadBeeperSyncState(stateFile)
+      const preview = await previewBeeper({ client, state, now: new Date().toISOString() })
+      await saveBeeperSyncState(stateFile, state)
+      return preview
+    },
+    async keep(chat) {
+      const state = await loadBeeperSyncState(stateFile)
+      if (!markKnown(state, chat)) return false
+      await saveBeeperSyncState(stateFile, state)
+      return true
+    },
+    async open(chat) {
+      const client = await ready()
+      if (!client) return null
+      return (await client.focus({ chatID: chat })).success
+    },
+    async check() {
+      const outcome = await runCheck()
+      if (!outcome) return { ran: false, reason: 'The check could not run.' }
+      if ('unavailable' in outcome) return { ran: false, reason: outcome.unavailable }
+      return {
+        ran: true,
+        chats: outcome.chats,
+        messages: outcome.messages,
+        files: outcome.files.length,
+        complete: outcome.complete,
       }
     },
     async connect() {
@@ -283,12 +371,21 @@ function typesafeConnection(secrets: SecretsProvider): ConnectionsHost['typesafe
 /** Connections over the real machine: the keychain, the model providers, agent-slack, Google's, Beeper's and TypeSafe's keys. */
 export function createConnectionsHost(): ConnectionsHost {
   const secrets = new KeychainSecretsProvider()
+  // Check now runs the same command the heartbeat runs, in this process.
+  const runCheck = async (): Promise<BeeperSyncOutcome | null> => {
+    const env = Object.fromEntries(
+      Object.entries(process.env).filter((pair): pair is [string, string] => typeof pair[1] === 'string'),
+    )
+    const result = await new CommandService(CommandContext.server(notebookConfig, env)).run('beeper:inbox:sync', {})
+    if (result.status !== 'success') throw new Error(result.message ?? 'The check failed.')
+    return result.data ?? null
+  }
   return {
     secrets,
     providers: () => KNOWN_PROVIDERS.map((id) => ({ id, label: PROVIDER_LABEL[id] ?? id })),
     google: googleSignIn(secrets),
     slack: { status: slackStatus, reconnect: slackReconnect },
-    beeper: beeperConnection(secrets),
+    beeper: beeperConnection(secrets, BEEPER_SYNC_STATE, runCheck),
     typesafe: typesafeConnection(secrets),
   }
 }

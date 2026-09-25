@@ -1,6 +1,6 @@
 ---
 created: 2026-09-16
-updated: 2026-09-16
+updated: 2026-09-22
 ---
 
 # Beeper — every chat on this Mac, saved as messages
@@ -61,10 +61,47 @@ own notion of what matters), reactions, deleted and hidden messages, and
 every Slack account, since agent-slack already captures Slack and a second
 copy would duplicate each thread.
 
-State lives in `state/beeper/sync.json`: the last run's instant, and per
-chat its cursor, the ids of recent messages (so a re-run never writes a
-message twice), and the day → file map. The first run reaches back thirty
-days; a chat limit per run leaves the rest for the next tick.
+## Each network has a switch
+
+Since 2026-09-22 every chat account Beeper carries has a rule, kept by
+Beeper's account id: `save` (new messages are saved) and `groups` (group
+chats too). A network seen for the first time waits with both off until
+the person switches it on under Settings › Connections › Beeper; a network
+Sky was already saving when rules arrived stays on, groups included, so an
+upgrade changes nothing. `judgeChat` is the one place that decides a chat's
+fate — the capture and the page's preview both ask it — and its reasons are
+the words the page shows: `Signal is off`, `groups are off for Signal`,
+`read-only`, `muted`, `archived`, `low priority`. The capture reports the
+first three chat by chat; Beeper's own filing stays quiet.
+
+`preview.ts` is the page's "Show what a check would save": every chat in
+Beeper's three piles from the last month, muted ones included, each with
+its verdict and reason. It fetches no messages and writes nothing but the
+rules for accounts it meets for the first time.
+
+## Unknown senders are held
+
+A third rule per network, `holdUnknown`, on for every network the person
+switches on from now (off for a network Sky was already saving): a
+one-to-one chat whose other side has no name in the contacts — Beeper
+shows a number, an address or a handle instead (`unknownSender`) — and in
+which the person never wrote is **held**: no file, no day entry, no cursor,
+just an entry in the state's `held` map with the sender as Beeper names
+them, the newest message's first line, its instant and a count. The page
+lists them under "Held for a look" with Save (the chat's sender counts as
+known from then on, `markKnown`, and a check runs at once, pulling the
+month in) and Open in Beeper. Writing back yourself does the same
+without the button. Held entries older than the backfill fall off. The
+preview marks such chats `held: unknown sender`; it cannot see who wrote,
+so a chat the person answered reads as held there and is saved by the
+check.
+
+State lives in `state/beeper/sync.json`: the last run's instant, the rules
+above, the held chats, the last run itself (counts, what it left out and
+why, which networks were off) for the page, and per chat its cursor, the
+ids of recent messages (so a re-run never writes a message twice), `known`
+once the person said Save, and the day → file map. The first run reaches back thirty days; a chat limit per run
+leaves the rest for the next tick.
 
 ## Outbox
 
@@ -81,13 +118,18 @@ Beeper brings the app forward on the chat.
 ## Verification
 
 - Unit: `bun test lib/beeper/` (text, client, sign-in with a real loopback,
-  and the capture against a scripted Beeper and a temporary notebook);
-  `lib/outbox/sources_test.ts` for admission and joining;
-  `service/handler/outbox/beeper_test.ts` for placement rules;
-  `service/handler/settings/connections_test.ts` for the page's routes.
+  the capture against a scripted Beeper and a temporary notebook, the
+  rules, the hold and the preview); `lib/outbox/sources_test.ts` for
+  admission and joining; `service/handler/outbox/beeper_test.ts` for
+  placement rules; `service/handler/settings/connections_test.ts` for the
+  routes.
+- Browser: `SKY_BROWSER_TESTS=1 bun test service/handler/http-beeper-page-e2e_test.ts`
+  walks the page over a scripted host; `SKY_BEEPER_SCREENSHOTS=<dir>`
+  keeps captures.
 - Live: `sky beeper:auth --status` lists the networks; `sky beeper:inbox:sync
   --dry-run` shows what a run would save.
 
 ## Notes
 
+- [2026-09-22 — Each network has a switch](2026-09-22-each-network-has-a-switch.md).
 - [2026-09-16 — Beeper brings the other chats in](2026-09-16-beeper-brings-the-other-chats-in.md).

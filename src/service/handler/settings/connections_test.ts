@@ -60,9 +60,60 @@ const BEEPER: BeeperStatus = {
   version: '4.3.0',
   connected: true,
   accounts: [
-    { network: 'WhatsApp', status: 'connected' },
-    { network: 'Signal', status: 'connected' },
+    {
+      id: 'wa1',
+      network: 'WhatsApp',
+      status: 'connected',
+      save: true,
+      groups: true,
+      holdUnknown: false,
+      chosen: true,
+      chats: 4,
+    },
+    {
+      id: 'sg1',
+      network: 'Signal',
+      status: 'connected',
+      save: false,
+      groups: false,
+      holdUnknown: true,
+      chosen: false,
+      chats: 0,
+    },
   ],
+  held: [
+    {
+      chat: '!held1',
+      network: 'WhatsApp',
+      who: '+1 (555) 010-2277',
+      first: 'Reply STOP to end.',
+      at: '2026-03-11T09:00:00Z',
+      count: 2,
+    },
+  ],
+  lastRun: {
+    at: '2026-03-11T13:00:00Z',
+    chats: 2,
+    messages: 3,
+    files: 2,
+    skipped: [{ chat: 'Atlas launch team', reason: 'groups are off for WhatsApp' }],
+    accountsOff: ['Signal'],
+    complete: true,
+  },
+}
+const BEEPER_PREVIEW = {
+  rows: [
+    { chat: 'Maya Okafor', network: 'WhatsApp', group: false, pile: 'primary' as const, save: true },
+    {
+      chat: 'Priya Natarajan',
+      network: 'Signal',
+      group: false,
+      pile: 'primary' as const,
+      save: false,
+      reason: 'Signal is off',
+    },
+  ],
+  complete: true,
 }
 const BEEPER_SIGN_IN = { id: 'b1', url: 'http://127.0.0.1:23373/oauth/authorize?state=s' }
 
@@ -132,6 +183,8 @@ test('connections explains a failed recovery and allows a fresh attempt', async 
 function hostWith(seed: Record<string, SecretEntry> = seeded()) {
   const secrets = new TestSecretsProvider(seed)
   const slackCalls: string[] = []
+  const beeperRules: string[] = []
+  let beeperRunning = true
   let signIn: { id: string; url: string } | null = SIGN_IN
   const host: ConnectionsHost = {
     secrets,
@@ -165,6 +218,23 @@ function hostWith(seed: Record<string, SecretEntry> = seeded()) {
         return { ok: true }
       },
       disconnect: () => secrets.delete('beeper', 'desktop'),
+      rule: (id, change) => {
+        beeperRules.push(`${id} ${JSON.stringify(change)}`)
+        return Promise.resolve(id === 'sg1' || id === 'wa1')
+      },
+      preview: () => Promise.resolve(beeperRunning ? BEEPER_PREVIEW : null),
+      check: () => {
+        beeperRules.push('check')
+        return Promise.resolve({ ran: true as const, chats: 2, messages: 3, files: 2, complete: true })
+      },
+      keep: (chat) => {
+        beeperRules.push(`keep ${chat}`)
+        return Promise.resolve(chat === '!held1')
+      },
+      open: (chat) => {
+        beeperRules.push(`open ${chat}`)
+        return Promise.resolve(beeperRunning ? chat === '!held1' : null)
+      },
     },
     typesafe: {
       status: () => Promise.resolve(TYPESAFE),
@@ -180,7 +250,10 @@ function hostWith(seed: Record<string, SecretEntry> = seeded()) {
   const withoutClient = () => {
     signIn = null
   }
-  return { app, host, secrets, slackCalls, withoutClient }
+  const closeBeeper = () => {
+    beeperRunning = false
+  }
+  return { app, host, secrets, slackCalls, beeperRules, withoutClient, closeBeeper }
 }
 
 type App = ReturnType<typeof hostWith>['app']
@@ -467,6 +540,77 @@ test('connections - TypeSafe reports its key, stores one TypeSafe accepts, and f
       [200, VALUES.typesafe],
       [false, false],
       [200, null],
+    ],
+  })
+})
+
+test('connections - the Beeper page changes a rule, previews a check, and runs one', async () => {
+  const { app, beeperRules, closeBeeper } = hostWith()
+  const headers = { 'Content-Type': 'application/json' }
+  const status = (await (await app.request('/beeper')).json()) as BeeperStatus
+  const on = await app.request('/beeper/accounts/sg1', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ save: true }),
+  })
+  const groups = await app.request('/beeper/accounts/wa1', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ groups: false }),
+  })
+  const empty = await app.request('/beeper/accounts/wa1', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ save: 'yes' }),
+  })
+  const unknown = await app.request('/beeper/accounts/nope', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ save: true }),
+  })
+  const preview = await app.request('/beeper/preview')
+  const check = await app.request('/beeper/check', { method: 'POST', headers, body: '{}' })
+  const kept = await app.request('/beeper/held/!held1/keep', { method: 'POST', headers, body: '{}' })
+  const notHeld = await app.request('/beeper/held/nope/keep', { method: 'POST', headers, body: '{}' })
+  const opened = await app.request('/beeper/held/!held1/open', { method: 'POST', headers, body: '{}' })
+  closeBeeper()
+  const closed = await app.request('/beeper/preview')
+  const closedOpen = await app.request('/beeper/held/!held1/open', { method: 'POST', headers, body: '{}' })
+  assert({
+    given: 'the Beeper page routes over a scripted host',
+    should:
+      'carry each account’s rule, the last run and the held chats; change a rule; refuse a bad or unknown one; preview, check, keep and open',
+    actual: [
+      [
+        status.accounts.map((row) => `${row.network} ${row.save ? 'on' : 'off'}${row.holdUnknown ? ' holds' : ''}`),
+        status.lastRun?.accountsOff,
+        status.held.map((entry) => entry.who),
+      ],
+      [on.status, groups.status, empty.status, unknown.status],
+      beeperRules,
+      [preview.status, ((await preview.json()) as { rows: unknown[] }).rows.length],
+      [check.status, await check.json()],
+      [kept.status, ((await kept.json()) as { ran: boolean }).ran, notHeld.status, opened.status],
+      [closed.status, ((await closed.json()) as { message: string }).message, closedOpen.status],
+    ],
+    expected: [
+      [['WhatsApp on', 'Signal off holds'], ['Signal'], ['+1 (555) 010-2277']],
+      [200, 200, 400, 404],
+      [
+        'sg1 {"save":true}',
+        'wa1 {"groups":false}',
+        'nope {"save":true}',
+        'check',
+        'keep !held1',
+        'check',
+        'keep nope',
+        'open !held1',
+        'open !held1',
+      ],
+      [200, 2],
+      [200, { ran: true, chats: 2, messages: 3, files: 2, complete: true }],
+      [200, true, 404, 200],
+      [409, 'Open Beeper Desktop first.', 409],
     ],
   })
 })

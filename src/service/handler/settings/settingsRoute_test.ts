@@ -593,11 +593,16 @@ test({ name: 'settings route - connections ride along when the host has a keycha
         reconnect: () => Promise.resolve({ installed: false }),
       },
       beeper: {
-        status: () => Promise.resolve({ running: false, connected: false, accounts: [] }),
+        status: () => Promise.resolve({ running: false, connected: false, accounts: [], held: [] }),
         connect: () => Promise.resolve(null),
         connection: () => null,
         token: () => Promise.resolve({ ok: false, message: 'no Beeper here' }),
         disconnect: () => Promise.resolve(),
+        rule: () => Promise.resolve(false),
+        preview: () => Promise.resolve(null),
+        check: () => Promise.resolve({ ran: false, reason: 'no Beeper here' }),
+        keep: () => Promise.resolve(false),
+        open: () => Promise.resolve(null),
       },
       typesafe: {
         status: () => Promise.resolve({ connected: false, models: [] }),

@@ -109,11 +109,16 @@ test(
         reconnect: () => Promise.resolve({ installed: false }),
       },
       beeper: {
-        status: () => Promise.resolve({ running: false, connected: false, accounts: [] }),
+        status: () => Promise.resolve({ running: false, connected: false, accounts: [], held: [] }),
         connect: () => Promise.resolve(null),
         connection: () => null,
         token: () => Promise.resolve({ ok: false, message: 'no Beeper here' }),
         disconnect: () => Promise.resolve(),
+        rule: () => Promise.resolve(false),
+        preview: () => Promise.resolve({ rows: [], complete: true }),
+        check: () => Promise.resolve({ ran: false as const, reason: 'no Beeper here' }),
+        keep: () => Promise.resolve(false),
+        open: () => Promise.resolve(null),
       },
       typesafe: {
         status: () => Promise.resolve({ connected: typesafeConnected, models: typesafeConnected ? ['jev-test'] : [] }),

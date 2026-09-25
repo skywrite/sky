@@ -7,7 +7,7 @@ import MessageDocument from '#shared/models/Message/document/mod.ts'
 import { dayAttachmentsDir, dayDir, dayFile, writeDay } from '#shared/nbfs/mod.ts'
 import { assert, test } from '#test'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
-import { type BeeperSource, loadBeeperSyncState, syncBeeper } from './capture.ts'
+import { type BeeperSource, loadBeeperSyncState, markKnown, syncBeeper } from './capture.ts'
 import type { BeeperChat, BeeperMessage, ChatSearch } from './client.ts'
 
 type World = { chats: BeeperChat[]; messages: Record<string, BeeperMessage[]>; asset: string }
@@ -158,6 +158,16 @@ test('beeper capture - chats land as one saved message per chat per day, then gr
   const messagesOf = async (day: string) =>
     (await readdir(path.join(timeDir, dayDir(PlainDate.fromString(day)), 'actions', 'messages')).catch(() => [])).sort()
   const options = { timeDir, attachmentsDir, stateFile, timezone: 'UTC', dayTimezone: async () => 'UTC' }
+  // WhatsApp is switched on, groups included, the way the settings page would leave it.
+  await mkdir(path.dirname(stateFile), { recursive: true })
+  await writeFile(
+    stateFile,
+    JSON.stringify({
+      version: 1,
+      chats: {},
+      accounts: { whatsapp: { network: 'WhatsApp', save: true, groups: true, holdUnknown: false, chosen: true } },
+    }),
+  )
   try {
     const dry = await syncBeeper({ ...options, client: beeperWith(world), now: '2026-03-11T13:00:00Z', dryRun: true })
     const afterDry = await messagesOf('2026-03-10')
@@ -302,6 +312,234 @@ test('beeper capture - chats land as one saved message per chat per day, then gr
         true,
         [{ file: '2026-03-11_WhatsApp_budget.png' }],
         [1, 0, 0, true],
+      ],
+    })
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('beeper capture - each network has a switch: new ones wait, a network already saved stays on, groups need choosing', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'sky-beeper-rules-'))
+  const timeDir = path.join(root, 'time')
+  const attachmentsDir = path.join(root, 'attachments')
+  const stateFile = path.join(root, 'state', 'beeper', 'sync.json')
+  const world: World = {
+    asset: '',
+    chats: [
+      {
+        id: 'c1',
+        accountID: 'whatsapp',
+        network: 'WhatsApp',
+        title: 'Maya Okafor',
+        type: 'single',
+        participants: { items: [{ id: 'u1', fullName: 'Maya Okafor' }] },
+        lastActivity: '2026-03-11T08:05:00Z',
+      },
+      {
+        id: 'c2',
+        accountID: 'whatsapp',
+        network: 'WhatsApp',
+        title: 'Atlas launch team',
+        type: 'group',
+        lastActivity: '2026-03-11T07:55:00Z',
+      },
+      {
+        id: 'c5',
+        accountID: 'signal',
+        network: 'Signal',
+        title: 'Priya Natarajan',
+        type: 'single',
+        lastActivity: '2026-03-11T09:10:00Z',
+      },
+    ],
+    messages: {
+      c1: [message('c1', '0001', '2026-03-11T08:05:00Z', 'Lunch?')],
+      c2: [message('c2', '0001', '2026-03-11T07:55:00Z', 'Launch is Tuesday')],
+      c5: [message('c5', '0001', '2026-03-11T09:10:00Z', 'Sent the deck', { accountID: 'signal' })],
+    },
+  }
+  const client = beeperWith(world)
+  const accounts = client.accounts
+  client.accounts = async () => [
+    ...(await accounts()),
+    { accountID: 'signal', network: 'Signal', status: 'connected', user: { id: 'me3' } },
+  ]
+  // Before rules existed, Sky was saving WhatsApp: the state knows a WhatsApp chat.
+  await mkdir(path.dirname(stateFile), { recursive: true })
+  await writeFile(
+    stateFile,
+    JSON.stringify({
+      version: 1,
+      lastSync: '2026-03-10T12:00:00Z',
+      chats: { c0: { title: 'Old chat', network: 'WhatsApp', seen: [], files: {} } },
+    }),
+  )
+  const options = { timeDir, attachmentsDir, stateFile, timezone: 'UTC', dayTimezone: async () => 'UTC' }
+  try {
+    const upgraded = await syncBeeper({ ...options, client, now: '2026-03-11T13:00:00Z' })
+    const afterUpgrade = await loadBeeperSyncState(stateFile)
+    const rulesAfterUpgrade = structuredClone(afterUpgrade.accounts)
+    afterUpgrade.accounts.whatsapp!.groups = false
+    afterUpgrade.accounts.signal = { network: 'Signal', save: true, groups: false, holdUnknown: false, chosen: true }
+    await writeFile(stateFile, JSON.stringify(afterUpgrade))
+    const chosen = await syncBeeper({ ...options, client, now: '2026-03-11T14:00:00Z' })
+    const final = await loadBeeperSyncState(stateFile)
+    assert({
+      given: 'a state that was saving WhatsApp before rules existed, and a Signal account seen for the first time',
+      should:
+        'keep WhatsApp on with groups, leave Signal off until chosen, then honour the choices and remember the run',
+      actual: [
+        rulesAfterUpgrade,
+        [upgraded.chats, upgraded.messages, upgraded.accountsOff, upgraded.skipped],
+        [chosen.chats, chosen.messages, chosen.accountsOff, chosen.skipped],
+        final.lastRun && {
+          at: final.lastRun.at,
+          chats: final.lastRun.chats,
+          messages: final.lastRun.messages,
+          skipped: final.lastRun.skipped,
+          accountsOff: final.lastRun.accountsOff,
+        },
+      ],
+      expected: [
+        {
+          whatsapp: { network: 'WhatsApp', save: true, groups: true, holdUnknown: false, chosen: false },
+          signal: { network: 'Signal', save: false, groups: false, holdUnknown: true, chosen: false },
+        },
+        [2, 2, ['Signal'], []],
+        [2, 1, [], [{ chat: 'Atlas launch team', reason: 'groups are off for WhatsApp' }]],
+        {
+          at: '2026-03-11T14:00:00Z',
+          chats: 2,
+          messages: 1,
+          skipped: [{ chat: 'Atlas launch team', reason: 'groups are off for WhatsApp' }],
+          accountsOff: [],
+        },
+      ],
+    })
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('beeper capture - a text from someone with no name in the contacts is held, not saved, until the person says Save or writes back', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'sky-beeper-held-'))
+  const timeDir = path.join(root, 'time')
+  const attachmentsDir = path.join(root, 'attachments')
+  const stateFile = path.join(root, 'state', 'beeper', 'sync.json')
+  const world: World = {
+    asset: '',
+    chats: [
+      {
+        id: 'c1',
+        accountID: 'whatsapp',
+        network: 'WhatsApp',
+        title: 'Maya Okafor',
+        type: 'single',
+        participants: { items: [{ id: 'u1', fullName: 'Maya Okafor', phoneNumber: '+1 555 010 1000' }] },
+        lastActivity: '2026-03-11T08:05:00Z',
+      },
+      {
+        id: 'c6',
+        accountID: 'whatsapp',
+        network: 'WhatsApp',
+        title: '+1 (555) 010-2277',
+        type: 'single',
+        participants: { items: [{ id: 'u6', fullName: '+1 (555) 010-2277', phoneNumber: '+15550102277' }] },
+        lastActivity: '2026-03-11T09:00:00Z',
+      },
+      {
+        id: 'c7',
+        accountID: 'whatsapp',
+        network: 'WhatsApp',
+        title: 'dana_k',
+        type: 'single',
+        participants: { items: [{ id: 'u7', username: 'dana_k' }] },
+        lastActivity: '2026-03-11T09:30:00Z',
+      },
+    ],
+    messages: {
+      c1: [message('c1', '0001', '2026-03-11T08:05:00Z', 'Lunch?')],
+      c6: [
+        message(
+          'c6',
+          '0001',
+          '2026-03-11T08:50:00Z',
+          'Hi JP, this is Dana with the Atlas campaign. Can we count on you?',
+          {
+            senderID: 'u6',
+            senderName: '+1 (555) 010-2277',
+          },
+        ),
+        message('c6', '0002', '2026-03-11T09:00:00Z', 'Reply STOP to end.', {
+          senderID: 'u6',
+          senderName: '+1 (555) 010-2277',
+        }),
+      ],
+      c7: [
+        message('c7', '0001', '2026-03-11T09:20:00Z', 'Hey, new number — still on for Saturday?', {
+          senderID: 'u7',
+          senderName: 'dana_k',
+        }),
+        message('c7', '0002', '2026-03-11T09:30:00Z', 'Yes! See you then.', { isSender: true }),
+      ],
+    },
+  }
+  await mkdir(path.dirname(stateFile), { recursive: true })
+  await writeFile(
+    stateFile,
+    JSON.stringify({
+      version: 1,
+      chats: {},
+      accounts: { whatsapp: { network: 'WhatsApp', save: true, groups: false, holdUnknown: true, chosen: true } },
+    }),
+  )
+  const options = { timeDir, attachmentsDir, stateFile, timezone: 'UTC', dayTimezone: async () => 'UTC' }
+  try {
+    const first = await syncBeeper({ ...options, client: beeperWith(world), now: '2026-03-11T13:00:00Z' })
+    const afterFirst = await loadBeeperSyncState(stateFile)
+    const filesAfterFirst = (
+      await readdir(path.join(timeDir, dayDir(PlainDate.fromString('2026-03-11')), 'actions', 'messages'))
+    ).sort()
+    const heldAfterFirst = structuredClone(afterFirst.held)
+    const c6AfterFirst = structuredClone(afterFirst.chats.c6)
+    // The person says Save on the held chat; the next check pulls its month in.
+    markKnown(afterFirst, 'c6')
+    await writeFile(stateFile, JSON.stringify(afterFirst))
+    const second = await syncBeeper({ ...options, client: beeperWith(world), now: '2026-03-11T14:00:00Z' })
+    const afterSecond = await loadBeeperSyncState(stateFile)
+    const filesAfterSecond = (
+      await readdir(path.join(timeDir, dayDir(PlainDate.fromString('2026-03-11')), 'actions', 'messages'))
+    ).sort()
+    assert({
+      given: 'a named contact, a bare number that only ever wrote in, and a handle the person answered',
+      should:
+        'save the contact and the answered handle, hold the bare number with no file and no cursor, then save it once marked known',
+      actual: [
+        [first.chats, first.messages, first.held],
+        heldAfterFirst,
+        c6AfterFirst,
+        filesAfterFirst.map((f) => f.replace(/^\d{2}-\d{2}_whatsapp_/, '').replace(/_[^_]*\.md$/, '')),
+        [second.chats, second.messages, second.held, Object.keys(afterSecond.held)],
+        [afterSecond.chats.c6?.known, Boolean(afterSecond.chats.c6?.cursor)],
+        filesAfterSecond.length,
+      ],
+      expected: [
+        [3, 3, [{ chat: '+1 (555) 010-2277', network: 'WhatsApp' }]],
+        {
+          c6: {
+            network: 'WhatsApp',
+            who: '+1 (555) 010-2277',
+            first: 'Reply STOP to end.',
+            at: '2026-03-11T09:00:00Z',
+            count: 2,
+          },
+        },
+        undefined,
+        ['Maya', 'danak'],
+        [3, 2, [], []],
+        [true, true],
+        3,
       ],
     })
   } finally {

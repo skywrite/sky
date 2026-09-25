@@ -11,7 +11,7 @@ import MessageDocument from '#shared/models/Message/document/mod.ts'
 import { computePreviousRef, dayAttachmentsDir, dayTimezone, readDay, writeDay } from '#shared/nbfs/mod.ts'
 import { toTimeRef } from '#shared/nbfs/timeRef.ts'
 import { calendarLocal, Instant, PlainDate, type PlainDateTime } from '#universal/dates/nbdt/mod.ts'
-import type { BeeperAccount, BeeperAttachment, BeeperChat, BeeperClient, BeeperMessage } from './client.ts'
+import type { BeeperAccount, BeeperAttachment, BeeperChat, BeeperClient, BeeperMessage, BeeperUser } from './client.ts'
 import { beeperText } from './text.ts'
 
 /**
@@ -51,15 +51,63 @@ export type BeeperSyncResult = {
   /** Time refs of the files written or extended. */
   files: string[]
   skipped: { chat: string; reason: string }[]
+  /** Networks left to agent-slack. */
   accountsSkipped: string[]
+  /** Networks whose switch is off. */
+  accountsOff: string[]
+  /** Chats from unknown senders held back this run, by how Beeper names the sender. */
+  held: { chat: string; network: string }[]
   notes: string[]
   /** False when the chat limit cut the run short; the next run continues. */
   complete: boolean
 }
 
+/**
+ * What Sky does with one of Beeper's chat accounts. A network the person has
+ * not chosen yet waits with `save` off; `groups` off keeps that network to
+ * one-to-one chats. `chosen` is set the first time the person decides.
+ */
+export const AccountRuleSchema = z.object({
+  network: z.string().default(''),
+  save: z.boolean().default(false),
+  groups: z.boolean().default(false),
+  /** A one-to-one chat from someone with no name in the contacts is held for a look, not saved. */
+  holdUnknown: z.boolean().default(true),
+  chosen: z.boolean().default(false),
+})
+export type AccountRule = z.infer<typeof AccountRuleSchema>
+
+/** A chat held back: who wrote, what they opened with, and how much has come. */
+export const HeldChatSchema = z.object({
+  network: z.string().default(''),
+  /** How Beeper names the sender: a number or a handle, since there is no contact */
+  who: z.string().default(''),
+  /** The newest message's first line */
+  first: z.string().default(''),
+  /** The newest message's instant */
+  at: z.string(),
+  /** Messages in the last month */
+  count: z.number().default(0),
+})
+export type HeldChat = z.infer<typeof HeldChatSchema>
+
+/** The last run, kept for the settings page. */
+export const LastRunSchema = z.object({
+  at: z.string(),
+  chats: z.number().default(0),
+  messages: z.number().default(0),
+  files: z.number().default(0),
+  skipped: z.array(z.object({ chat: z.string(), reason: z.string() })).default([]),
+  accountsOff: z.array(z.string()).default([]),
+  complete: z.boolean().default(true),
+})
+export type LastRun = z.infer<typeof LastRunSchema>
+
 const ChatStateSchema = z.object({
   title: z.string().default(''),
   network: z.string().default(''),
+  /** The person said Save on a held chat: its sender counts as known from then on */
+  known: z.boolean().optional(),
   cursor: z.string().optional(),
   seen: z.array(z.string()).default([]),
   /** Day → the file that day, as `time/...` path. */
@@ -69,24 +117,124 @@ export const BeeperSyncStateSchema = z.object({
   version: z.literal(1),
   lastSync: z.string().optional(),
   chats: z.record(z.string(), ChatStateSchema).default({}),
+  /** By Beeper's account id. */
+  accounts: z.record(z.string(), AccountRuleSchema).default({}),
+  /** By chat id: chats from unknown senders, waiting for a look. */
+  held: z.record(z.string(), HeldChatSchema).default({}),
+  lastRun: LastRunSchema.optional(),
 })
 export type BeeperSyncState = z.infer<typeof BeeperSyncStateSchema>
 type ChatState = z.infer<typeof ChatStateSchema>
 
 const SEEN_LIMIT = 400
+/** The last run remembers this many left-out chats. */
+const SKIPPED_LIMIT = 60
 /** Chats are re-listed this far behind the last run: a message can arrive after its own timestamp. */
 const OVERLAP_MS = 6 * 3_600_000
 const SUMMARY_CHARS = 80
 const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024
 
+const EMPTY_STATE = (): BeeperSyncState => ({ version: 1, chats: {}, accounts: {}, held: {} })
+
 export async function loadBeeperSyncState(file: string): Promise<BeeperSyncState> {
-  if (!(await exists(file))) return { version: 1, chats: {} }
+  if (!(await exists(file))) return EMPTY_STATE()
   const parsed = BeeperSyncStateSchema.safeParse(JSON.parse(await readTextFile(file)))
-  return parsed.success ? parsed.data : { version: 1, chats: {} }
+  return parsed.success ? parsed.data : EMPTY_STATE()
 }
 
-async function saveState(file: string, state: BeeperSyncState): Promise<void> {
+export async function saveBeeperSyncState(file: string, state: BeeperSyncState): Promise<void> {
   await outputFile(file, `${JSON.stringify(state, null, 2)}\n`)
+}
+const saveState = saveBeeperSyncState
+
+export function networkOf(account: BeeperAccount): string {
+  return account.network?.trim() || account.accountID
+}
+
+/**
+ * Every account Beeper carries gets a rule. An account seen for the first time
+ * waits, off — except when the notebook already holds chats of its network,
+ * which means Sky was saving it before rules existed: that one stays on,
+ * groups included, so an upgrade changes nothing. Slack accounts get no rule;
+ * agent-slack owns them. True when a rule was added.
+ */
+export function reconcileAccountRules(state: BeeperSyncState, accounts: BeeperAccount[]): boolean {
+  let changed = false
+  for (const account of accounts) {
+    if (isSlackAccount(account)) continue
+    const network = networkOf(account)
+    const known = state.accounts[account.accountID]
+    if (known) {
+      if (known.network !== network) {
+        known.network = network
+        changed = true
+      }
+      continue
+    }
+    const saving = Object.values(state.chats).some((chat) => chat.network === network)
+    state.accounts[account.accountID] = { network, save: saving, groups: saving, holdUnknown: !saving, chosen: false }
+    changed = true
+  }
+  return changed
+}
+
+/** The person said Save on a held chat: from now on its sender is known, and the next check saves it. */
+export function markKnown(state: BeeperSyncState, chatID: string): boolean {
+  const held = state.held[chatID]
+  if (!held) return false
+  const chat = state.chats[chatID] ?? { title: held.who, network: held.network, seen: [], files: {} }
+  state.chats[chatID] = { ...chat, known: true }
+  delete state.held[chatID]
+  return true
+}
+
+export type ChatVerdict = { save: true } | { save: false; reason: string; quiet?: boolean }
+
+const PHONE_LIKE = /^\+?[\d\s().-]{7,}$/
+
+/** A name Beeper made up for someone with no contact: a number, an address, a handle. */
+function nameless(name: string, person: BeeperUser | undefined): boolean {
+  const plain = name.trim()
+  if (!plain) return true
+  if (PHONE_LIKE.test(plain) || plain.includes('@')) return true
+  const same = (value: string | undefined) => Boolean(value && value.trim().toLowerCase() === plain.toLowerCase())
+  return same(person?.phoneNumber) || same(person?.username) || same(person?.email)
+}
+
+/**
+ * The other side of a one-to-one chat when the contacts have no name for
+ * them — as Beeper shows them, a number or a handle — or null when the chat
+ * is a group or the person is named.
+ */
+export function unknownSender(chat: BeeperChat, account: BeeperAccount | undefined): string | null {
+  if (chat.type === 'group') return null
+  const other = chat.participants?.items.find((person) => !person.isSelf && person.id !== account?.user?.id)
+  const name = other?.fullName?.trim() || chat.title.trim()
+  if (!nameless(name, other)) return null
+  return name || other?.phoneNumber?.trim() || other?.username?.trim() || other?.email?.trim() || chat.id
+}
+
+/**
+ * Whether a chat is saved, and if not, why — the one place that decides, for
+ * the capture and for the settings page's preview alike. `quiet` marks the
+ * reasons the capture does not report one by one: Beeper's own filing.
+ */
+export function judgeChat(
+  chat: BeeperChat,
+  account: BeeperAccount | undefined,
+  rule: AccountRule | undefined,
+): ChatVerdict {
+  if (account && isSlackAccount(account))
+    return { save: false, reason: 'saved through Sky’s Slack connection', quiet: true }
+  if (!account) return { save: false, reason: 'its account is not captured' }
+  const network = networkOf(account)
+  if (!rule?.save) return { save: false, reason: `${network} is off`, quiet: true }
+  if (chat.isReadOnly) return { save: false, reason: 'read-only' }
+  if (chat.isArchived) return { save: false, reason: 'archived', quiet: true }
+  if (chat.isLowPriority) return { save: false, reason: 'low priority', quiet: true }
+  if (chat.isMuted) return { save: false, reason: 'muted', quiet: true }
+  if (chat.type === 'group' && !rule.groups) return { save: false, reason: `groups are off for ${network}` }
+  return { save: true }
 }
 
 /** Slack already reaches the notebook through agent-slack; a second copy would duplicate every thread. */
@@ -252,6 +400,8 @@ export async function syncBeeper(options: BeeperSyncOptions): Promise<BeeperSync
     files: [],
     skipped: [],
     accountsSkipped: [],
+    accountsOff: [],
+    held: [],
     notes: [],
     complete: true,
   }
@@ -276,28 +426,32 @@ export async function syncBeeper(options: BeeperSyncOptions): Promise<BeeperSync
   }
 
   const accounts = new Map<string, BeeperAccount>()
-  for (const account of await options.client.accounts()) {
+  const listed = await options.client.accounts()
+  const rulesChanged = reconcileAccountRules(state, listed)
+  if (rulesChanged && !options.dryRun) await saveState(options.stateFile, state)
+  for (const account of listed) {
     if (isSlackAccount(account)) {
-      result.accountsSkipped.push(account.network?.trim() || account.accountID)
+      result.accountsSkipped.push(networkOf(account))
       continue
     }
+    if (!state.accounts[account.accountID]?.save) result.accountsOff.push(networkOf(account))
     accounts.set(account.accountID, account)
+  }
+
+  for (const [id, entry] of Object.entries(state.held)) {
+    if ((instantMs(entry.at) ?? 0) < boundaryMs) delete state.held[id]
   }
 
   const chats = await activeChats(options.client, Instant.fromEpochMilliseconds(sinceMs).toString(), chatLimit)
   result.complete = chats.complete
   for (const chat of chats.items) {
     const label = chat.title || chat.id
-    if (!accounts.has(chat.accountID)) {
-      result.skipped.push({ chat: label, reason: 'its account is not captured' })
-      continue
-    }
-    if (chat.isReadOnly) {
-      result.skipped.push({ chat: label, reason: 'read-only' })
-      continue
-    }
-    if (chat.isArchived || chat.isLowPriority) continue
     const account = accounts.get(chat.accountID)
+    const verdict = judgeChat(chat, account, state.accounts[chat.accountID])
+    if (!verdict.save) {
+      if (!verdict.quiet) result.skipped.push({ chat: label, reason: verdict.reason })
+      continue
+    }
     const chatState: ChatState = state.chats[chat.id] ?? { title: '', network: '', seen: [], files: {} }
     const network = chat.network.trim() || account?.network?.trim() || 'Beeper'
     const fetched = await newMessages(options.client, chat, chatState, boundaryMs, messageLimit)
@@ -309,6 +463,31 @@ export async function syncBeeper(options: BeeperSyncOptions): Promise<BeeperSync
       .filter((entry): entry is { message: BeeperMessage; at: number } => entry.at !== null && entry.at >= boundaryMs)
       .sort((a, b) => a.at - b.at || a.message.sortKey.localeCompare(b.message.sortKey))
     result.chats += 1
+
+    // Someone with no name in the contacts, never answered: held for a look,
+    // nothing written, no cursor kept — so a Save later pulls the whole month.
+    const rule = state.accounts[chat.accountID]
+    const who = rule?.holdUnknown && !chatState.known ? unknownSender(chat, account) : null
+    if (who && !fetched.messages.some((message) => message.isSender)) {
+      const newest = fresh.at(-1)?.message ?? fetched.messages.find(keep)
+      if (newest) {
+        state.held[chat.id] = {
+          network,
+          who,
+          first: summarize(beeperText(newest.text), 'Message'),
+          at: newest.timestamp,
+          count: fetched.messages.filter(keep).length,
+        }
+        result.held.push({ chat: who, network })
+        if (!options.dryRun) await saveState(options.stateFile, state)
+      }
+      continue
+    }
+    if (state.held[chat.id]) {
+      delete state.held[chat.id]
+      if (!options.dryRun) await saveState(options.stateFile, state)
+    }
+
     if (!fresh.length) {
       if (!options.dryRun) {
         state.chats[chat.id] = {
@@ -449,6 +628,7 @@ export async function syncBeeper(options: BeeperSyncOptions): Promise<BeeperSync
       state.chats[chat.id] = {
         title: chat.title,
         network,
+        ...(chatState.known ? { known: true } : {}),
         ...(fetched.cursor ? { cursor: fetched.cursor } : {}),
         seen: ids.slice(-SEEN_LIMIT),
         files: chatState.files,
@@ -458,6 +638,15 @@ export async function syncBeeper(options: BeeperSyncOptions): Promise<BeeperSync
   }
   if (!options.dryRun) {
     if (result.complete) state.lastSync = options.now
+    state.lastRun = {
+      at: options.now,
+      chats: result.chats,
+      messages: result.messages,
+      files: result.files.length,
+      skipped: result.skipped.slice(0, SKIPPED_LIMIT),
+      accountsOff: result.accountsOff,
+      complete: result.complete,
+    }
     await saveState(options.stateFile, state)
   }
   return result

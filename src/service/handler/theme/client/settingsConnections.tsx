@@ -64,7 +64,7 @@ type BeeperStatus = {
   connected: boolean
   expired?: boolean
   expiresAt?: string
-  accounts: { network: string; status: string }[]
+  accounts: { id: string; network: string; status: string; save: boolean; chosen: boolean }[]
   error?: string
 }
 
@@ -317,11 +317,23 @@ function useBeeper() {
   return { status, busy, warn, hint, connect, saveToken, disconnect }
 }
 
-function BeeperRow() {
-  const { status, busy, warn, hint, connect, saveToken, disconnect } = useBeeper()
+/** The row's one line: which networks are saved, and which wait for a decision. */
+export function beeperSummary(accounts: BeeperStatus['accounts']): string {
+  const saving = accounts.filter((account) => account.save).map((account) => account.network)
+  const waiting = accounts.filter((account) => !account.save && !account.chosen).map((account) => account.network)
+  const parts: string[] = []
+  if (saving.length) parts.push(`Saving ${saving.join(', ')}.`)
+  if (waiting.length)
+    parts.push(`${waiting.join(', ')} ${waiting.length === 1 ? 'is new and waits' : 'are new and wait'} for you.`)
+  if (!parts.length)
+    parts.push(accounts.length ? 'Nothing saved yet. Choose what to save.' : 'Beeper has no chat accounts yet.')
+  return parts.join(' ')
+}
+
+function BeeperRow({ navigate }: { navigate: (to: string) => void }) {
+  const { status, busy, warn, hint, connect, saveToken } = useBeeper()
   const [tokenForm, setTokenForm] = useState(false)
   const [token, setToken] = useState('')
-  const networks = [...new Set(status?.accounts.map((account) => account.network) ?? [])]
   const live = Boolean(status?.connected && !status?.expired)
   const sub = !status
     ? warn
@@ -330,11 +342,9 @@ function BeeperRow() {
     : status.expired
       ? 'The connection ran out. Connect again to keep saving messages.'
       : status.connected
-        ? networks.length
-          ? networks.join(' · ')
-          : status.running
-            ? 'Connected. Beeper has no chat accounts yet.'
-            : 'Connected. Open Beeper Desktop to keep saving messages.'
+        ? status.running
+          ? beeperSummary(status.accounts)
+          : 'Connected. Open Beeper Desktop to keep saving messages.'
         : status.running
           ? 'WhatsApp, iMessage, Signal and the other chats Beeper Desktop carries, saved as messages.'
           : 'Beeper Desktop is not running on this Mac. Open it to connect.'
@@ -365,8 +375,8 @@ function BeeperRow() {
             <span className="sky-set-off">Not connected</span>
           ))}
         {status && live && (
-          <Button size="compact-sm" disabled={busy} onClick={() => void disconnect()}>
-            Disconnect
+          <Button size="compact-sm" aria-label="Beeper settings" onClick={() => navigate(connectionHref('beeper'))}>
+            ›
           </Button>
         )}
         {status && !live && status.running && (
@@ -423,7 +433,7 @@ function AccountsBlock({ data, navigate }: { data: ConnectionsData; navigate: (t
   return (
     <Block head="Accounts">
       <SlackRow />
-      <BeeperRow />
+      <BeeperRow navigate={navigate} />
       {google.accounts.length === 0 && (
         <Row label="Google" sub="Mail, Calendar, Drive and Docs. Sign in, tick the boxes — Sky sets up the rest." last>
           <span className="sky-set-off">Not connected</span>

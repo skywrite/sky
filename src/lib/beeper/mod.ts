@@ -32,5 +32,29 @@ export {
   saveBeeperGrant,
 } from './secrets.ts'
 export { beeperText, decodeEntities } from './text.ts'
-export { BeeperSyncStateSchema, isSlackAccount, loadBeeperSyncState, syncBeeper } from './capture.ts'
-export type { BeeperSource, BeeperSyncOptions, BeeperSyncResult, BeeperSyncState } from './capture.ts'
+export {
+  AccountRuleSchema,
+  BeeperSyncStateSchema,
+  HeldChatSchema,
+  isSlackAccount,
+  judgeChat,
+  loadBeeperSyncState,
+  markKnown,
+  networkOf,
+  reconcileAccountRules,
+  saveBeeperSyncState,
+  syncBeeper,
+  unknownSender,
+} from './capture.ts'
+export type {
+  AccountRule,
+  BeeperSource,
+  BeeperSyncOptions,
+  BeeperSyncResult,
+  BeeperSyncState,
+  ChatVerdict,
+  HeldChat,
+  LastRun,
+} from './capture.ts'
+export { previewBeeper } from './preview.ts'
+export type { BeeperPreview, BeeperPreviewSource, PreviewPile, PreviewRow } from './preview.ts'

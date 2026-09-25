@@ -14,6 +14,7 @@
 import { Button, SegmentedControl, Select, useMantineColorScheme } from '@mantine/core'
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
 import { AboutMePane } from './settingsAboutMe.tsx'
+import { BeeperMain } from './settingsBeeper.tsx'
 import { Block, mono, refusalOf, Row, UNREACHABLE } from './settingsBlocks.tsx'
 import { ConnectionsPane } from './settingsConnections.tsx'
 import { GoogleMain } from './settingsGoogle.tsx'
@@ -710,6 +711,7 @@ export function SettingsMain({
   const { data, note, change, reload } = useSettings()
   const page = SETTINGS_PAGES[section]
   if (section === 'prompts') return <PromptsMain path={path} navigate={navigate} back={back} />
+  if (section === 'connections' && connectionPageOf(path) === 'beeper') return <BeeperMain navigate={navigate} />
   if (section === 'connections' && connectionPageOf(path) === 'google')
     return <GoogleMain navigate={navigate} settings={data} onSettingsChanged={reload} />
 

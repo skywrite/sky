@@ -76,9 +76,22 @@ Pages:
   `createConnectionsHost.ts`, the pane in `theme/client/settingsConnections.tsx`).
   Since 2026-09-16 the Accounts block carries a Beeper row: Connect runs
   the desktop app's own approval page and stores the grant as
-  `beeper/desktop`, a token made in Beeper is accepted instead, and the row
-  lists the networks Beeper carries; its grant stays out of the keychain
-  list below. See `lib/beeper/docs/README.md`.
+  `beeper/desktop`, a token made in Beeper is accepted instead, and its
+  grant stays out of the keychain list below. See `lib/beeper/docs/README.md`.
+  Since 2026-09-22 a connected Beeper row reads which networks are saved
+  and which wait, and leads to Beeper's own page.
+- **Connections → Beeper** — `/settings/connections/beeper`, the first
+  connection with a page of its own (`theme/client/settingsBeeper.tsx` in
+  the shell `settingsConnectionPage.tsx`; routes under `/beeper/…` in
+  `connections.ts`). A connection's page carries what Sky does with it:
+  status, a card per network with three switches (save, groups, hold
+  texts from unknown senders), the chats held for a look with Save and
+  Open in Beeper, the last check with what it left out and why, Check now,
+  and a preview of what the next check would save. The rules live beside the
+  capture's state in `state/beeper/sync.json`, not in `config.jsonc`,
+  because they key on Beeper's account ids. Every connection gets a page
+  this way as it grows rules of its own (ruled 2026-09-22); Slack stays a
+  row until then.
 - **Connections → Google** — `/settings/connections/google`
   includes the Calendar classification switch; see the
   [classification contract](../../../../lib/calendarClassification/docs/README.md).

@@ -17,6 +17,7 @@
  */
 
 import { Hono } from 'hono'
+import type { BeeperPreview, HeldChat, LastRun } from '#lib/beeper/mod.ts'
 import { BEEPER_SECRETS_CATEGORY } from '#lib/beeper/secrets.ts'
 import {
   type CloudSetupState,
@@ -99,6 +100,24 @@ export type GoogleConnectState =
 /** Sky's automated Google Cloud setup, as the page reads it — see lib/google/cloudSetup. */
 export type GoogleSetupState = CloudSetupState
 
+/** One chat account Beeper carries, with what Sky does with it. */
+export type BeeperAccountRow = {
+  /** Beeper's account id, the key for the rule */
+  id: string
+  network: string
+  status: string
+  /** New messages are saved */
+  save: boolean
+  /** Group chats are saved too */
+  groups: boolean
+  /** A one-to-one chat from someone with no name in the contacts is held for a look */
+  holdUnknown: boolean
+  /** The person has decided at least once; until then the row reads as new */
+  chosen: boolean
+  /** Chats of this account the notebook holds */
+  chats: number
+}
+
 /** Beeper Desktop on this Mac, and Sky's grant to it. */
 export type BeeperStatus = {
   /** The desktop app answers */
@@ -109,11 +128,23 @@ export type BeeperStatus = {
   /** The stored grant no longer works: past its expiry, or refused by Beeper */
   expired?: boolean
   expiresAt?: string
-  /** The chat accounts Beeper carries, when it could be asked */
-  accounts: { network: string; status: string }[]
+  /** The chat accounts Beeper carries, when it could be asked; Slack accounts stay out */
+  accounts: BeeperAccountRow[]
   /** Why the accounts could not be listed, in plain words */
   error?: string
+  /** The last check, when one has run */
+  lastRun?: LastRun
+  /** Chats from unknown senders, held for a look, newest first */
+  held: (HeldChat & { chat: string })[]
 }
+
+/** What the person may change about one account. */
+export type BeeperRuleChange = { save?: boolean; groups?: boolean; holdUnknown?: boolean }
+
+/** What a check-now run came to. */
+export type BeeperCheckOutcome =
+  | { ran: true; chats: number; messages: number; files: number; complete: boolean }
+  | { ran: false; reason: string }
 
 /** How a Beeper sign-in started from the page is going. */
 export type BeeperConnectState =
@@ -169,6 +200,16 @@ export interface ConnectionsHost {
     /** Store a token made in Beeper; a refusal names what went wrong */
     token: (token: string) => Promise<{ ok: true } | { ok: false; message: string }>
     disconnect: () => Promise<void>
+    /** Change what Sky does with one account; false when the account is unknown */
+    rule: (id: string, change: BeeperRuleChange) => Promise<boolean>
+    /** What a check would do, chat by chat; null when the app is not running */
+    preview: () => Promise<BeeperPreview | null>
+    /** Run a check now */
+    check: () => Promise<BeeperCheckOutcome>
+    /** Save a held chat from now on: its sender counts as known; false when nothing is held under that id */
+    keep: (chat: string) => Promise<boolean>
+    /** Bring Beeper Desktop to the front on a chat; null when the app is not running */
+    open: (chat: string) => Promise<boolean | null>
   }
   typesafe: {
     status: () => Promise<TypeSafeStatus>
@@ -420,6 +461,60 @@ export function createConnectionsRoutes(host: ConnectionsHost): Hono {
     try {
       await host.beeper.disconnect()
       return c.json({ ok: true })
+    } catch (err) {
+      return c.json(message(err), 500)
+    }
+  })
+  // What Sky does with one of Beeper's accounts: save it or not, groups or not.
+  app.post('/beeper/accounts/:id', async (c) => {
+    const body = (await c.req.json().catch(() => null)) as {
+      save?: unknown
+      groups?: unknown
+      holdUnknown?: unknown
+    } | null
+    const change: BeeperRuleChange = {
+      ...(typeof body?.save === 'boolean' ? { save: body.save } : {}),
+      ...(typeof body?.groups === 'boolean' ? { groups: body.groups } : {}),
+      ...(typeof body?.holdUnknown === 'boolean' ? { holdUnknown: body.holdUnknown } : {}),
+    }
+    if (!Object.keys(change).length) return c.json({ message: 'expected { save }, { groups } or { holdUnknown }' }, 400)
+    try {
+      const known = await host.beeper.rule(c.req.param('id'), change)
+      return known ? c.json({ ok: true }) : c.json({ message: 'Beeper does not carry that account.' }, 404)
+    } catch (err) {
+      return c.json(message(err), 500)
+    }
+  })
+  app.get('/beeper/preview', async (c) => {
+    try {
+      const preview = await host.beeper.preview()
+      return preview ? c.json(preview) : c.json({ message: 'Open Beeper Desktop first.' }, 409)
+    } catch (err) {
+      return c.json(message(err), 500)
+    }
+  })
+  app.post('/beeper/check', async (c) => {
+    try {
+      return c.json(await host.beeper.check())
+    } catch (err) {
+      return c.json(message(err), 500)
+    }
+  })
+  // A held chat the person wants after all: known from now on, and checked right away.
+  app.post('/beeper/held/:chat/keep', async (c) => {
+    try {
+      const kept = await host.beeper.keep(c.req.param('chat'))
+      if (!kept) return c.json({ message: 'Nothing is held under that chat.' }, 404)
+      return c.json(await host.beeper.check())
+    } catch (err) {
+      return c.json(message(err), 500)
+    }
+  })
+  app.post('/beeper/held/:chat/open', async (c) => {
+    try {
+      const opened = await host.beeper.open(c.req.param('chat'))
+      if (opened === null) return c.json({ message: 'Open Beeper Desktop first.' }, 409)
+      return opened ? c.json({ ok: true }) : c.json({ message: 'Beeper could not open this chat.' }, 503)
     } catch (err) {
       return c.json(message(err), 500)
     }

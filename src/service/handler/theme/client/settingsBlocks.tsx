@@ -21,7 +21,7 @@ export function Block({
   children,
 }: {
   key?: Key | null
-  head?: string
+  head?: ReactNode
   note?: string
   children: ReactNode
 }) {
@@ -42,6 +42,7 @@ export function Row({
   children,
   last,
 }: {
+  key?: Key | null
   label: ReactNode
   sub?: ReactNode
   children?: ReactNode

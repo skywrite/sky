@@ -91,7 +91,7 @@ export function settingsSectionOf(path: string): SettingsSection | null {
 }
 
 /** The connections that have a page of their own under Connections. */
-export const CONNECTION_PAGES = ['google'] as const
+export const CONNECTION_PAGES = ['beeper', 'google'] as const
 export type ConnectionPage = (typeof CONNECTION_PAGES)[number]
 
 export function connectionHref(page: ConnectionPage): string {

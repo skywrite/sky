@@ -34,9 +34,11 @@ export default class BeeperInboxSyncTask extends Command {
       'Asks Beeper Desktop which chats in the primary inbox moved since the',
       'last run and saves their new messages, one file per chat per day, in',
       'the shape Slack and Gmail captures use. Your own messages are saved too,',
-      'so Outbox can tell when you answered. Muted, archived, low-priority and',
-      'read-only chats stay out; Slack accounts stay out because agent-slack',
-      'already captures them.',
+      'so Outbox can tell when you answered. Only networks switched on under',
+      'Settings → Connections → Beeper are saved; a network seen for the first',
+      'time waits, off, and groups stay out until chosen. Muted, archived,',
+      'low-priority and read-only chats stay out; Slack accounts stay out',
+      'because agent-slack already captures them.',
       'Designed to run on the heartbeat. Idempotent and non-interactive.',
     ],
     usage: ['sky beeper:inbox:sync', 'sky beeper:inbox:sync --days 7', 'sky beeper:inbox:sync --dry-run'],
@@ -67,6 +69,8 @@ export default class BeeperInboxSyncTask extends Command {
         log: (line) => output.log(line),
       })
       if (result.accountsSkipped.length) output.log(`Left to agent-slack: ${result.accountsSkipped.join(', ')}`)
+      if (result.accountsOff.length) output.log(`Switched off in Settings: ${result.accountsOff.join(', ')}`)
+      for (const held of result.held) output.log(`Held for a look: ${held.chat} (${held.network})`)
       for (const skipped of result.skipped) output.log(`Skipped ${skipped.chat}: ${skipped.reason}`)
       for (const note of result.notes) output.log(note)
       output.log(
