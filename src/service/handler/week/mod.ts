@@ -26,7 +26,9 @@ import DayDocument from '#shared/models/Day/document/mod.ts'
 import { dayFile, fetchNowSync, readDay, weekDir } from '#shared/nbfs/mod.ts'
 import { PlainDate, Week, ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
 import { hold } from '../../activity.ts'
+import { dayEnd } from '../day/ended.ts'
 import isDay from '../day/isDay.ts'
+import type { DayCommands } from '../day/mod.ts'
 import { captureWeekGoal, WeekCaptureError } from './capture.ts'
 import { type CheckinGoal, parseCheckins, statusesFor, type WeekCheckins } from './checkins.ts'
 import { parseWeekPlan, type PlanGoal, type WeekPlan } from './plan.ts'
@@ -40,12 +42,10 @@ import {
   type WeekQueue,
 } from './queue.ts'
 
-/** The commands the page can run; production runs them in-process, tests script them. */
-export interface WeekCommands {
+/** The commands the pages can run; production runs them in-process, tests script them. */
+export interface WeekCommands extends DayCommands {
   /** day:start for the day waiting to begin */
   startDay: (day: PlainDate) => Promise<void>
-  /** day:end for a day that was never ended */
-  endDay: (day: PlainDate) => Promise<void>
 }
 
 export interface WeekRoutesOptions {
@@ -55,7 +55,7 @@ export interface WeekRoutesOptions {
   timeDir: string
   /** The notebook clock — production reads the last started day; tests script it */
   now?: () => ZonedDateTime
-  /** Without a host the start and end routes are not served */
+  /** Without a host the start route is not served */
   commands?: WeekCommands
   /** Local retry receipts and locks for direct captures; outside the synced notebook by default. */
   captureStateDir?: string
@@ -84,6 +84,7 @@ export interface WeekDayRow {
   exists: boolean
   /** `HH:MM` from the day file */
   started: string | null
+  /** The end as a person reads it: `22:10`, `25:40` past midnight, or `Jan 29, 21:30` for a later sitting */
   ended: string | null
   perfect: boolean
   /** The notebook's current day */
@@ -169,7 +170,8 @@ async function dayRow(day: PlainDate, clock: Clock, options: WeekRoutesOptions):
     try {
       const doc = await readDay(day, options.timeDir)
       started = doc.started?.time ?? null
-      ended = doc.ended?.time ?? null
+      // The end on the day's own clock: 25:40 after midnight, a date once a later sitting stamped it
+      ended = dayEnd(doc).endedClock
       perfect = doc.yaml['perfect'] === true
     } catch {
       // An unreadable day file is a day with nothing to say
@@ -336,21 +338,13 @@ export function createWeekRoutes(options: WeekRoutesOptions): Hono {
     return c.json(await buildWeekView(options, week.toString()))
   })
 
-  // The day waiting to begin, and a day that was never ended.
+  // The day waiting to begin. A day never ended ends through the day's own End dialog.
   app.post('/:id/day/:ymd/start', async (c) => {
     const week = weekOf(c)
     if (week instanceof Response) return week
     const ymd = c.req.param('ymd')
     if (!isDay(ymd)) return c.json({ error: `not a day: ${ymd}` }, 404)
     return command(c, week, (commands) => commands.startDay(new PlainDate(ymd)))
-  })
-
-  app.post('/:id/day/:ymd/end', async (c) => {
-    const week = weekOf(c)
-    if (week instanceof Response) return week
-    const ymd = c.req.param('ymd')
-    if (!isDay(ymd)) return c.json({ error: `not a day: ${ymd}` }, 404)
-    return command(c, week, (commands) => commands.endDay(new PlainDate(ymd)))
   })
 
   // Something for the week: into the queue, or under a day when one is picked.

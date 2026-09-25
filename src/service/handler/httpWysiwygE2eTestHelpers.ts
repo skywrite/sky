@@ -18,6 +18,7 @@ import type { ChatRoutesOptions } from './chat/mod.ts'
 import { createTestHttpApp } from './httpTestHelpers.ts'
 import type { ImportRoutesOptions } from './import/mod.ts'
 import { readText, readTranscript, readUnknown, sourceOf } from './import/readback.ts'
+import type { WeekCommands } from './week/mod.ts'
 
 interface TestContext {
   skip: (message?: string) => void
@@ -132,6 +133,8 @@ export async function runWysiwygE2e(
     imports?: Partial<ImportRoutesOptions>
     /** A real chat host with a scripted model, for browser conversation tests. */
     chat?: (notebookBaseDir: string, userDataDir: string) => ChatRoutesOptions
+    /** Day start and end as the pages run them, scripted over the temp notebook */
+    week?: (notebookBaseDir: string) => WeekCommands
   },
   run: (fixture: WysiwygE2eFixture) => Promise<void>,
 ) {
@@ -175,6 +178,7 @@ export async function runWysiwygE2e(
         mostImportant: options.mostImportant,
         now: options.now ? () => options.now! : undefined,
         ...(options.chat ? { chat: options.chat(notebookBaseDir, userDataDir) } : {}),
+        ...(options.week ? { week: options.week(notebookBaseDir) } : {}),
       },
     )
     browser = await launchChromiumOrSkip(t)

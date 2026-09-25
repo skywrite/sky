@@ -1,11 +1,12 @@
 import { ActionIcon, Button, Tooltip } from '@mantine/core'
 import { Fragment, type ReactNode, useEffect, useRef, useState } from 'react'
-import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
+import { PlainDate, PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import { dayItemKey, type CommitmentOrder } from '../../day/organizingTypes.ts'
 import { comparePlanItems } from '../../day/planningTypes.ts'
 import { type ChatCloseNotice, DayChatClose } from './dayChatClose.tsx'
 import { DayChatResume } from './dayChatResume.tsx'
 import { chatState, chatTurnCount, type DayChatRow, dayChatRows } from './dayChats.ts'
+import { EndDayDialog, LockIcon } from './dayEnd.tsx'
 import { DayItemEditing, InlineItemEditor, ItemDetailsIcon, useItemEditing } from './dayItemEditing.tsx'
 import { DayItemHelp, ItemHelpButton } from './dayItemHelp.tsx'
 import { DayItemNotes, itemNotes } from './dayItemNotes.tsx'
@@ -93,8 +94,14 @@ export interface DayDocRow {
 }
 
 export interface DayRecord {
+  /** `HH:MM` the day started; null for a day that never did */
+  started: string | null
   ended: boolean
   endedAt: string | null
+  /** The end as it reads: `22:41`, `25:40` past midnight, or `Jan 29, 21:30` for a later sitting */
+  endedClock: string | null
+  /** Ended with every planned item done */
+  perfect: boolean
   manualOrder?: string[]
   commitmentsOrder?: CommitmentOrder
   mostImportant: DayItem[]
@@ -428,20 +435,13 @@ function StaticCheck({ done }: { done: boolean }) {
 function EndedBadge({ at }: { at: string | null }) {
   return (
     <Tooltip
-      label={
-        at ? `Ended at ${clock(at.slice(11, 16))}. Tasks are read-only.` : 'This day has ended. Tasks are read-only.'
-      }
+      label={at ? `Ended at ${clock(at)}. Tasks are read-only.` : 'This day has ended. Tasks are read-only.'}
       withArrow
       events={{ hover: true, focus: true, touch: true }}
     >
       <span className="sky-day-ended" tabIndex={0}>
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-          <g stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-            <rect x="5" y="10" width="14" height="11" rx="2.5" />
-            <path d="M8 10V7a4 4 0 1 1 8 0v3M12 14.5v2.5" />
-          </g>
-        </svg>
-        Ended
+        <LockIcon />
+        {at ? `Ended ${clock(at)}` : 'Ended'}
       </span>
     </Tooltip>
   )
@@ -1098,8 +1098,14 @@ export function DayView({
   // Checking a box answers with the fresh view; it lands here, over the prop.
   const [view, setView] = useState<DayData | null>(day)
   useEffect(() => setView(day), [day])
-  const endedAt = view?.record.endedAt ?? null
+  const endedClock = view?.record.endedClock ?? null
   const ended = view?.record.ended ?? false
+  // A started day can end once the calendar has moved past it — never the day still under way.
+  // The same rule the week page's End follows: after midnight, or the next morning before a new start.
+  const canEnd = Boolean(
+    view?.day.dayRelativePath && view.record.started && !ended && view.day.ymd < (view.planningToday ?? view.today.ymd),
+  )
+  const [ending, setEnding] = useState(false)
   const checkOff = useCheckOff(view?.day.ymd ?? '', setView, ended)
   const planning = useDayPlanning(view, setView, checkOff.dismissUndo, checkOff.undo)
   const organize = useDayOrganizing(
@@ -1152,16 +1158,40 @@ export function DayView({
                 </ActionIcon>
               )}
             </span>
-            {(ended || totalTasks > 0) && (
-              <span className="sky-day-progress" role="status" aria-atomic="true">
-                {ended && <EndedBadge at={endedAt} />}
-                {ended && totalTasks > 0 && <span aria-hidden="true">·</span>}
-                {totalTasks > 0 && (
-                  <span>
-                    {completedTasks} of {count(totalTasks, 'task')} complete
+            {(ended || totalTasks > 0 || canEnd) && (
+              <div className="sky-day-statusline">
+                {canEnd && !isToday && (
+                  <>
+                    <span className="sky-day-open">Not ended</span>
+                    {totalTasks > 0 && <span aria-hidden="true">·</span>}
+                  </>
+                )}
+                {(ended || totalTasks > 0) && (
+                  <span className="sky-day-progress" role="status" aria-atomic="true">
+                    {ended && <EndedBadge at={endedClock} />}
+                    {ended && totalTasks > 0 && <span aria-hidden="true">·</span>}
+                    {totalTasks > 0 && (
+                      <span>
+                        {completedTasks} of {count(totalTasks, 'task')} complete
+                      </span>
+                    )}
+                    {ended && view?.record.perfect && (
+                      <>
+                        <span aria-hidden="true">·</span>
+                        <span className="sky-day-perfect">Perfect day</span>
+                      </>
+                    )}
                   </span>
                 )}
-              </span>
+                {canEnd && view && (
+                  <>
+                    {totalTasks > 0 && <span aria-hidden="true">·</span>}
+                    <Button size="compact-sm" leftSection={<LockIcon />} onClick={() => setEnding(true)}>
+                      End {new PlainDate(view.day.ymd).dayLong}
+                    </Button>
+                  </>
+                )}
+              </div>
             )}
             <nav className="sky-tabs">
               {onImportFiles && (
@@ -1398,6 +1428,9 @@ export function DayView({
         </Fragment>
       )}
 
+      {ending && view && (
+        <EndDayDialog ymd={view.day.ymd} view={view} onView={setView} onClose={() => setEnding(false)} />
+      )}
       {dragging && <DropOverlay what={dragging} />}
     </div>
   )

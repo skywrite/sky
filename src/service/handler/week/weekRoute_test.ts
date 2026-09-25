@@ -460,51 +460,54 @@ test({ name: 'week route - a backlog line moves into the queue' }, async () => {
   })
 })
 
-test({ name: 'week route - start and end run the host; bulk week creation is unavailable' }, async () => {
-  const { base, timeDir } = await weekNotebook()
-  const calls: string[] = []
-  const commands: WeekCommands = {
-    startDay: async (day: PlainDate) => {
-      calls.push(`start ${day.ymd}`)
-    },
-    endDay: async (day: PlainDate) => {
-      calls.push(`end ${day.ymd}`)
-      if (day.ymd === '2026-09-01') throw new Error('day:end did not finish')
-    },
-  }
-  const app = createWeekRoutes({ markdownBaseDir: base, timeDir, now: NOW, commands })
-  const bare = createWeekRoutes({ markdownBaseDir: base, timeDir, now: NOW })
+test(
+  { name: 'week route - start runs the host; ending moved to the day, bulk week creation is unavailable' },
+  async () => {
+    const { base, timeDir } = await weekNotebook()
+    const calls: string[] = []
+    const commands: WeekCommands = {
+      startDay: async (day: PlainDate) => {
+        calls.push(`start ${day.ymd}`)
+        if (day.ymd === '2026-09-03') throw new Error('day:start did not finish')
+      },
+      endDay: async (day: PlainDate) => {
+        calls.push(`end ${day.ymd}`)
+      },
+    }
+    const app = createWeekRoutes({ markdownBaseDir: base, timeDir, now: NOW, commands })
+    const bare = createWeekRoutes({ markdownBaseDir: base, timeDir, now: NOW })
 
-  const started = await post(app, '/2026-W36/day/2026-09-04/start')
-  const ended = await post(app, '/2026-W36/day/2026-09-02/end')
-  const failed = await post(app, '/2026-W36/day/2026-09-01/end')
-  const removed = await app.request('/2026-W37/create', { method: 'POST' })
-  const notADay = await post(app, '/2026-W36/day/tomorrow/start')
-  const notAWeek = await post(app, '/week-36/day/2026-09-04/start')
-  const noHost = await post(bare, '/2026-W36/day/2026-09-04/start')
+    const started = await post(app, '/2026-W36/day/2026-09-04/start')
+    const failed = await post(app, '/2026-W36/day/2026-09-03/start')
+    const retiredEnd = await app.request('/2026-W36/day/2026-09-02/end', { method: 'POST' })
+    const removed = await app.request('/2026-W37/create', { method: 'POST' })
+    const notADay = await post(app, '/2026-W36/day/tomorrow/start')
+    const notAWeek = await post(app, '/week-36/day/2026-09-04/start')
+    const noHost = await post(bare, '/2026-W36/day/2026-09-04/start')
 
-  assert({
-    given: 'start/end hosts, a failing end, the retired create route, and requests with no host or bad names',
-    should: 'run each day command once, reject bulk creation, and report failures',
-    actual: {
-      calls,
-      statuses: [
-        started.status,
-        ended.status,
-        failed.status,
-        removed.status,
-        notADay.status,
-        notAWeek.status,
-        noHost.status,
-      ],
-      failure: failed.error,
-      viewId: started.view?.id,
-    },
-    expected: {
-      calls: ['start 2026-09-04', 'end 2026-09-02', 'end 2026-09-01'],
-      statuses: [200, 200, 502, 404, 404, 404, 501],
-      failure: 'day:end did not finish',
-      viewId: '2026-W36',
-    },
-  })
-})
+    assert({
+      given: 'a start host, a failing start, the retired end and create routes, and requests with no host or bad names',
+      should: 'run each start once, leave ending to the day routes, reject bulk creation, and report failures',
+      actual: {
+        calls,
+        statuses: [
+          started.status,
+          failed.status,
+          retiredEnd.status,
+          removed.status,
+          notADay.status,
+          notAWeek.status,
+          noHost.status,
+        ],
+        failure: failed.error,
+        viewId: started.view?.id,
+      },
+      expected: {
+        calls: ['start 2026-09-04', 'start 2026-09-03'],
+        statuses: [200, 502, 404, 404, 404, 404, 501],
+        failure: 'day:start did not finish',
+        viewId: '2026-W36',
+      },
+    })
+  },
+)

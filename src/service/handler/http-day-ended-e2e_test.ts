@@ -59,7 +59,7 @@ test(
         await page.getByRole('tooltip').waitFor()
         assert({
           given: 'an ended day with both finished and unfinished tasks',
-          should: 'show the padlock, Ended label and a readable explanation',
+          should: 'show the padlock, the Ended label with its time, and a readable explanation',
           actual: {
             label: await badge.innerText(),
             icons: await badge.locator('svg').count(),
@@ -67,10 +67,10 @@ test(
             count: await page.locator('.sky-day-progress').innerText(),
           },
           expected: {
-            label: 'Ended',
+            label: 'Ended 21:30',
             icons: 1,
             explanation: 'Ended at 21:30. Tasks are read-only.',
-            count: 'Ended\n·\n1 of 4 tasks complete',
+            count: 'Ended 21:30\n·\n1 of 4 tasks complete',
           },
         })
 
@@ -138,7 +138,7 @@ test(
           given: 'a day whose lists have been cleared after ending',
           should: 'keep the Ended indicator even without a task count and produce no browser errors',
           actual: { progress: await page.locator('.sky-day-progress').innerText(), errors },
-          expected: { progress: 'Ended', errors: [] },
+          expected: { progress: 'Ended 21:30', errors: [] },
         })
       },
     )

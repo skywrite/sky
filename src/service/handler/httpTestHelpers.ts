@@ -17,6 +17,7 @@ import type { SettingsRoutesOptions } from './settings/mod.ts'
 import type { StreaksRoutesOptions } from './streaks/mod.ts'
 import type { TrackingRoutesOptions } from './tracking/mod.ts'
 import type { VoiceRoutesOptions } from './voice/mod.ts'
+import type { WeekCommands } from './week/mod.ts'
 import type { WorkstreamsRoutesOptions } from './workstreams/mod.ts'
 
 function createTestYoga(): YogaServerInstance<object, object> {
@@ -48,6 +49,8 @@ export function createTestHttpApp(
     outbox?: OutboxRoutesOptions
     people?: PeopleOptions
     imports?: ImportRoutesOptions
+    /** Day start and end as the pages run them; a test scripts them over its temp notebook */
+    week?: WeekCommands
     userDataDir?: string
     /** Where a dropped file's original is looked for; a test points this at its own folders, Spotlight off */
     keep?: KeepOptions
@@ -74,6 +77,7 @@ export function createTestHttpApp(
     outbox: options.outbox,
     people: options.people,
     imports: options.imports,
+    week: options.week,
     // Never the real user-data directory: what a test stores stays in its temp notebook.
     userDataDir: options.userDataDir ?? path.join(markdownBaseDir, '.user-data'),
     keep: options.keep,

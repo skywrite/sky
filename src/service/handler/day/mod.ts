@@ -18,6 +18,7 @@ import { listDayChats } from '#shared/models/Chat/ChatStore/mod.ts'
 import { dayAIChatsDir, dayDir, dayFile, fetchNowSync } from '#shared/nbfs/mod.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import { formatDateLabel } from '../home/today.ts'
+import { buildDayEnding, type DayEnding } from './ending.ts'
 import { createDayFilesRoutes, type DayFilesOptions } from './files.ts'
 import isDay from './isDay.ts'
 import { createItemRoutes } from './item.ts'
@@ -36,6 +37,8 @@ export interface DayRoutesOptions {
   /** Test seam — production reads the notebook clock */
   today?: () => PlainDate
   planningToday?: () => PlainDate
+  /** Runs day:end for the End dialog; without it the end route stays off */
+  commands?: DayCommands
   /** Test seam — production reads about-me.md */
   ownerNames?: string[]
   /** The day's files live under the user-data directory; without it the files routes stay off */
@@ -46,6 +49,12 @@ export interface DayRoutesOptions {
   /** Test seam for a failed planning write. */
   writePlanning?: ItemRoutesOptions['writePlanning']
   mostImportant?: MostImportantAI
+}
+
+/** The day commands the page runs in-process. */
+export interface DayCommands {
+  /** day:end, run the moment End is pressed — exactly as the terminal runs it */
+  endDay: (day: PlainDate) => Promise<void>
 }
 
 /** A day in the sidebar: what to call it, and the short stamp beside it. */
@@ -166,6 +175,14 @@ export async function buildDayView(options: DayRoutesOptions, ymd?: string): Pro
   }
 }
 
+/** What the End dialog shows for one day: the records missing an end time. */
+function dayEnding(options: DayRoutesOptions, day: PlainDate): Promise<DayEnding> {
+  return buildDayEnding({
+    dayDirPath: path.join(options.timeDir, dayDir(day)),
+    markdownBaseDir: options.markdownBaseDir,
+  })
+}
+
 export function createDayRoutes(options: DayRoutesOptions): Hono {
   const app = new Hono()
   app.onError((error, c) =>
@@ -180,6 +197,29 @@ export function createDayRoutes(options: DayRoutesOptions): Hono {
     if (!isDay(ymd)) return c.json({ error: `not a day: ${ymd}` }, 404)
     return c.json(await buildDayView(options, ymd))
   })
+  // Ending the day: what the End dialog shows, then day:end the moment End is pressed.
+  app.get('/:ymd/end', async (c) => {
+    const ymd = c.req.param('ymd')
+    if (!isDay(ymd)) return c.json({ error: `not a day: ${ymd}` }, 404)
+    return c.json(await dayEnding(options, new PlainDate(ymd)))
+  })
+  const commands = options.commands
+  if (commands) {
+    app.post('/:ymd/end', async (c) => {
+      const ymd = c.req.param('ymd')
+      if (!isDay(ymd)) return c.json({ error: `not a day: ${ymd}` }, 404)
+      const view = await buildDayView(options, ymd)
+      if (view.record.ended) return c.json({ error: 'This day has already ended.', view }, 409)
+      if (!view.record.started)
+        return c.json({ error: 'This day never started, so it has no end to record.', view }, 409)
+      try {
+        await commands.endDay(new PlainDate(ymd))
+      } catch (error) {
+        return c.json({ error: (error as Error).message, view: await buildDayView(options, ymd) }, 422)
+      }
+      return c.json(await buildDayView(options, ymd))
+    })
+  }
   // The day view's writes to one item — checkbox, delete, undo — each answering with the fresh view.
   app.route(
     '/',

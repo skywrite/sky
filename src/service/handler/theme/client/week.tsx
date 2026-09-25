@@ -1,6 +1,7 @@
 import { Button } from '@mantine/core'
 import { Fragment, type KeyboardEvent, useCallback, useEffect, useState } from 'react'
 import { Block, clock, Cross } from './day.tsx'
+import { EndDayDialog, LockIcon } from './dayEnd.tsx'
 import { fileHref } from './explorer.tsx'
 
 /**
@@ -261,7 +262,7 @@ function DaysBlock({
               <span className="sky-wstate" data-tone="warn">
                 not ended
               </span>
-              <Button size="sm" loading={busy === `end:${d.ymd}`} onClick={() => onEnd(d)}>
+              <Button size="sm" leftSection={<LockIcon />} onClick={() => onEnd(d)}>
                 End {d.weekday}
               </Button>
             </>
@@ -598,8 +599,10 @@ export function WeekMain({
   /** The notebook changed under a button — the shell re-reads what it shows of the week */
   onChanged?: () => void
 }) {
-  const { view, setView } = useWeek(id)
+  const { view, setView, reload } = useWeek(id)
   const [busy, setBusy] = useState<string | null>(null)
+  // A day never ended ends through the day's own dialog, which asks first
+  const [ending, setEnding] = useState<string | null>(null)
   const [note, setNote] = useState<string | null>(null)
 
   /** A write to the week routes; the fresh view lands, or the reason it did not. */
@@ -671,7 +674,7 @@ export function WeekMain({
               busy={busy}
               onOpenDay={(d) => onOpenDay(d.ymd, d.today)}
               onStart={(d) => void send(`start:${d.ymd}`, `/day/${d.ymd}/start`)}
-              onEnd={(d) => void send(`end:${d.ymd}`, `/day/${d.ymd}/end`)}
+              onEnd={(d) => setEnding(d.ymd)}
             />
           )}
           {view?.queue && <QueueBlock queue={view.queue} days={view.days} actions={actions} />}
@@ -689,6 +692,16 @@ export function WeekMain({
           {view?.checkins && <CheckinBlock checkins={view.checkins} />}
         </div>
       </div>
+      {ending && (
+        <EndDayDialog
+          ymd={ending}
+          onClose={() => setEnding(null)}
+          onEnded={() => {
+            reload()
+            onChanged?.()
+          }}
+        />
+      )}
     </div>
   )
 }

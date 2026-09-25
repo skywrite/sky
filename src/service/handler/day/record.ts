@@ -67,9 +67,15 @@ export interface VideoRow extends DayDocRow {
 }
 
 export interface DayRecord {
+  /** `HH:MM` the day started; null for a day that never did, which has no end to record */
+  started: string | null
   ended: boolean
   /** Recorded end in the day's timezone; null when open or the time cannot be read. */
   endedAt: string | null
+  /** The end as the page reads it: `22:41`, `25:40` past midnight, or a date once it fell past the next noon */
+  endedClock: string | null
+  /** Ended with every planned item done — the file's `perfect: true` */
+  perfect: boolean
   manualOrder?: string[]
   commitmentsOrder?: CommitmentOrder
   mostImportant: DayItem[]
@@ -170,7 +176,7 @@ function categoryOf(heading: string): string | null {
 const H1 = /^#\s+(.+?)\s*$/m
 
 /** The document's own name: its heading first — a meeting's H1 is its name, its summary the gist. */
-function titleOf(doc: Document, filePath: string): string {
+export function titleOf(doc: Document, filePath: string): string {
   const heading = doc.markdown.match(H1)?.[1]
   if (heading) return heading.replace(/\*\*/g, '').trim()
   const title = doc.yaml['title']
@@ -213,8 +219,11 @@ function journalRow(row: DayDocRow): DayDocRow {
 
 export async function buildDayRecord(input: DayRecordInput): Promise<DayRecord> {
   const record: DayRecord = {
+    started: null,
     ended: false,
     endedAt: null,
+    endedClock: null,
+    perfect: false,
     mostImportant: [],
     commitments: [],
     todos: [],

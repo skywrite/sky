@@ -1,0 +1,101 @@
+/* Ending a day: the header's End, the dialog that asks first, and the ended day's marks. */
+
+/* The line under the date: whether the day ended, its count, and End beside them. */
+.sky-day-statusline {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  font-size: 14px;
+  line-height: 1.4;
+  color: var(--sky-dim);
+}
+
+.sky-day-open {
+  color: var(--sky-amber);
+}
+
+.sky-day-perfect {
+  color: var(--sky-green);
+  font-weight: 550;
+}
+
+.sky-end-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sky-end-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.sky-end-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 36px;
+  font-size: 16.5px;
+}
+
+.sky-end-row .sky-when {
+  flex: none;
+  min-width: 42px;
+  font-size: 15px;
+  color: var(--sky-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.sky-end-row .sky-ptext {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.sky-end-row[data-done] .sky-ptext {
+  color: var(--sky-dim);
+  text-decoration: line-through;
+}
+
+.sky-end-note {
+  font-size: 15px;
+  color: var(--sky-dim);
+}
+
+.sky-end-flag {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 16px;
+  color: var(--sky-text-2);
+}
+
+.sky-end-flag .sky-confirm-link {
+  font-size: 15px;
+}
+
+.sky-end-perfect {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 17px;
+  font-weight: 550;
+  color: var(--sky-green);
+}
+
+.sky-end-perfect .sky-check-box {
+  flex: none;
+}
+
+.sky-end .sky-confirm-title:focus {
+  outline: none;
+}
+
+.sky-end-error {
+  color: var(--sky-amber);
+  font-size: 16px;
+}
