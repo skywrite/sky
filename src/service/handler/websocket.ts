@@ -10,6 +10,7 @@ import type { IncomingMessage } from 'node:http'
 import type { Duplex } from 'node:stream'
 import { type WebSocket, WebSocketServer } from 'ws'
 import type { Store } from '../store.ts'
+import { isLocalRequest } from './localRequest.ts'
 
 /**
  * Create a WebSocket server for GraphQL subscriptions.
@@ -28,6 +29,24 @@ export function createWebSocketHandler(store: Store) {
 
   function handleUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer) {
     if (req.url !== '/graphql') return
+    // The same rule as every HTTP route (see localRequest.ts)
+    const header = (name: string) => {
+      const value = req.headers[name]
+      return Array.isArray(value) ? value[0] : value
+    }
+    const local = isLocalRequest({
+      url: `http://${req.headers.host ?? ''}${req.url}`,
+      method: req.method ?? 'GET',
+      origin: header('origin'),
+      site: header('sec-fetch-site'),
+      mode: header('sec-fetch-mode'),
+      dest: header('sec-fetch-dest'),
+    })
+    if (!local) {
+      socket.write('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n')
+      socket.destroy()
+      return
+    }
 
     wss.handleUpgrade(req, socket, head, (ws: WebSocket) => {
       console.log('WebSocket client connected')

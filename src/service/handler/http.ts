@@ -8,7 +8,6 @@ import { readFile } from 'node:fs/promises'
 import * as path from 'node:path'
 import type { YogaServerInstance } from 'graphql-yoga'
 import { Hono } from 'hono'
-import { cors } from 'hono/cors'
 import type { CalendarSchedulerHost } from '#lib/calendarScheduler/types.ts'
 import type { MostImportantAI } from '#lib/mostImportant/types.ts'
 import { planningDate } from '#lib/nbfs/taskDestination.ts'
@@ -30,6 +29,7 @@ import { createExplorerRoutes, explorerHref } from './explorer/mod.ts'
 import { searchNotebook } from './home/mod.ts'
 import { createImportRoutes, type ImportRoutesOptions } from './import/mod.ts'
 import { createLinks } from './links/mod.ts'
+import { localRequestsOnly } from './localRequest.ts'
 import {
   decodeRoutePath,
   exportMarkdownPreviewPdf,
@@ -147,21 +147,8 @@ export function createHttpApp(options: HttpHandlerOptions): Hono {
         })
       : null
 
-  // CORS middleware
-  app.use(
-    '*',
-    cors({
-      origin: '*',
-      allowMethods: ['GET', 'POST', 'OPTIONS'],
-      allowHeaders: ['Content-Type'],
-    }),
-  )
-
-  // Add Access-Control-Allow-Private-Network (not supported by Hono's cors middleware)
-  app.use('*', async (c, next) => {
-    await next()
-    c.res.headers.set('Access-Control-Allow-Private-Network', 'true')
-  })
+  // Sky's own pages and programs on this Mac; see localRequest.ts
+  app.use('*', localRequestsOnly())
 
   // GraphQL HTTP queries (WebSocket upgrades handled at server level)
   app.all('/graphql', async (c) => {

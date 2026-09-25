@@ -452,6 +452,8 @@ export function createYogaInstance(
       resolvers: createResolvers(store, markdownStore, docRoots),
     }),
     plugins: [truncationExtensionsPlugin],
+    // The HTTP app decides which requests arrive (localRequest.ts); GraphQL adds no cross-origin headers.
+    cors: false,
     // Localhost single-user service: expose real resolver errors to clients.
     // Yoga's default masking rewrites them to "Unexpected error.", which made
     // ai:chat context failures undiagnosable from the CLI side.
