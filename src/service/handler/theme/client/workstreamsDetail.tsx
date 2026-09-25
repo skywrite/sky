@@ -23,6 +23,7 @@ import {
   type WorkstreamRun,
 } from '#lib/workstreams/types.ts'
 import { fileHref } from './explorer.tsx'
+import { outboxHref } from './outboxRoutes.ts'
 import { RenderedHtml } from './renderedHtml.tsx'
 import { workstreamRequest } from './workstreams.tsx'
 import type { CanvasRelationship } from './workstreamsCanvas.tsx'
@@ -284,11 +285,7 @@ export function WorkstreamDetail({
                 Accept next step
               </Button>
             ) : activity.outboxId ? (
-              <Button
-                size="xs"
-                variant="primary-quiet"
-                onClick={() => navigate(`/outbox?item=${encodeURIComponent(activity.outboxId!)}`)}
-              >
+              <Button size="xs" variant="primary-quiet" onClick={() => navigate(outboxHref(activity.outboxId!))}>
                 Open in Outbox ↗
               </Button>
             ) : missingResults.length > 0 ? (
@@ -430,7 +427,7 @@ export function WorkstreamDetail({
                 </Button>
               )}
               {activity.outboxId ? (
-                <Button size="xs" onClick={() => navigate(`/outbox?item=${encodeURIComponent(activity.outboxId!)}`)}>
+                <Button size="xs" onClick={() => navigate(outboxHref(activity.outboxId!))}>
                   Open in Outbox ↗
                 </Button>
               ) : (
@@ -1165,7 +1162,7 @@ export function WorkstreamDetail({
               )
               setCommunication(null)
               notice('Message prepared in Outbox for review.')
-              if (response.item) navigate(`/outbox?item=${encodeURIComponent(response.item.id)}`)
+              if (response.item) navigate(outboxHref(response.item.id))
             })
           }
         />

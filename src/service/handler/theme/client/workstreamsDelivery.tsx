@@ -8,6 +8,7 @@ import type {
   ReportDeliveryTarget,
 } from '#lib/workstreams/delivery.ts'
 import type { Reporting, WorkstreamRecord } from '#lib/workstreams/types.ts'
+import { outboxHref } from './outboxRoutes.ts'
 import { RenderedHtml } from './renderedHtml.tsx'
 import { workstreamRequest } from './workstreams.tsx'
 import {
@@ -167,7 +168,7 @@ export function WorkstreamReports({
                         : 'View report'}
                   </Button>
                   {latest.outboxId && (
-                    <Button size="xs" onClick={() => navigate(`/outbox?item=${encodeURIComponent(latest.outboxId!)}`)}>
+                    <Button size="xs" onClick={() => navigate(outboxHref(latest.outboxId!))}>
                       Outbox ↗
                     </Button>
                   )}
@@ -528,7 +529,7 @@ function ReportReview({
                     size="sm"
                     onClick={() => {
                       onClose()
-                      navigate(`/outbox?item=${encodeURIComponent(item.outboxId!)}`)
+                      navigate(outboxHref(item.outboxId!))
                     }}
                   >
                     Open in Outbox ↗

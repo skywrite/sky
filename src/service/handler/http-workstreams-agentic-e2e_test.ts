@@ -14,6 +14,7 @@ import { ReportingSchema, WorkstreamSchema } from '#lib/workstreams/types.ts'
 import { env } from '#shared/sys/mod.ts'
 import { assert, test } from '#test'
 import { createTestHttpApp } from './httpTestHelpers.ts'
+import { outboxHref } from './theme/client/outboxRoutes.ts'
 
 const NOW = '2025-03-15 12:00'
 const FEEDBACK = 'Jane Doe confirms that the focused pilot is ready.'
@@ -458,7 +459,8 @@ test(
         expected: [0, true],
       })
       await modal().getByRole('button', { name: 'Open in Outbox ↗', exact: true }).click()
-      await page.waitForURL(`**/outbox?item=${encodeURIComponent(emailReport.outboxId!)}`)
+      // The item's own page. This fixture mounts no Outbox API, so the page itself is checked in the workstreams flow test.
+      await page.waitForURL(`**${outboxHref(emailReport.outboxId!)}`)
       assert({
         given: 'the complete integrated delegation and delivery flow',
         should: 'raise no browser errors',
