@@ -1,6 +1,6 @@
 ---
 created: 2026-08-30
-updated: 2026-09-06
+updated: 2026-09-25
 ---
 
 # Explorer — the notebook's files as pages
@@ -21,6 +21,11 @@ files it holds, one row per entry; `/explorer` itself lists the roots.
   `GET /explorer/_api/doc` is one file rendered — frontmatter kept
   aside, comments left out, relative images and file links pointed at
   the file API.
+- `remove.ts` — Delete, the last item of the ⋯ menu.
+  `POST /explorer/_api/remove` moves the file to the Trash and takes every
+  line of its day that links to it off the day file; `POST …/undo` puts
+  both back while the toast still holds Undo. See
+  `2026-09-25-delete-from-the-menu.md`.
 - `theme/client/explorer.tsx` — the tree, the reading column, and the
   editor mount. The column resolves its path as a file first, then as
   a directory, and re-reads whichever it shows every few seconds, so a
@@ -56,8 +61,16 @@ while editing, with readable titles, date/type filters and chat branch context.
   a middle click still opens a tab.
 - The buttons in the header — Edit, the ⋯ menu, and the rail's chevron
   while the rail is folded — belong to a file. A directory's page has none.
+- Nothing is deleted outright: Delete is a move to the Trash, undone from
+  the toast, and the day whose line pointed at the file lets the line go
+  rather than keep a link to nothing.
 
 ## Verified
+
+2026-09-25: Delete in the ⋯ menu — the file to the Trash, its lines off
+its day, the page turned to the folder, Undo for a moment. Route unit
+tests (5), typecheck and `dev:check`, and a headless run through the menu
+and the toast's Undo; see `2026-09-25-delete-from-the-menu.md`.
 
 2026-09-06: Links shares the VS Code extension's project source: visible
 folders directly under `projects/open`, named by folder, including ones

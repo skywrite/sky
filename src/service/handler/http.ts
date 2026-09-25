@@ -111,6 +111,8 @@ export interface HttpHandlerOptions {
   userDataDir: string
   /** Where a file's original is looked for before its bytes are copied in: the Desktop and Downloads, then Spotlight, unless said */
   keep?: KeepOptions
+  /** Where a deleted file goes — the Mac's Trash by default; a test points this at its own folder */
+  trashDir?: string
 }
 
 /**
@@ -133,6 +135,7 @@ export function createHttpApp(options: HttpHandlerOptions): Hono {
     imports,
     userDataDir,
     keep,
+    trashDir,
   } = options
 
   const app = new Hono()
@@ -169,7 +172,7 @@ export function createHttpApp(options: HttpHandlerOptions): Hono {
         planningToday: options.now ? () => planningDate(options.now!()) : undefined,
         // End on the day runs the same in-process day:end the week page's buttons did
         commands: week,
-        files: { userDataDir, timeDir: chat.timeDir, markdownBaseDir },
+        files: { userDataDir, timeDir: chat.timeDir, markdownBaseDir, trashDir },
         schedule: createDayScheduleHost({
           timeDir: chat.timeDir,
           markdownBaseDir,
@@ -686,7 +689,20 @@ export function createHttpApp(options: HttpHandlerOptions): Hono {
 
   // The explorer: the notebook's files as a tree, any one of them open to read.
   // Its data lives under /explorer/_api/…; the page is /explorer, or /explorer/<file>.
-  app.route('/explorer/_api', createExplorerRoutes({ markdownBaseDir, markdownDirs }))
+  app.route(
+    '/explorer/_api',
+    createExplorerRoutes({
+      markdownBaseDir,
+      markdownDirs,
+      // Delete from the ⋯ menu: the Trash, and the day whose line pointed at the file
+      remove: {
+        userDataDir,
+        timeDir: chat?.timeDir ?? path.join(markdownBaseDir, 'time'),
+        trashDir,
+        lockDir: options.workstreams?.store.stateDir,
+      },
+    }),
+  )
   app.get('/explorer', (c) => {
     return c.html(renderAppHtml('sky'))
   })

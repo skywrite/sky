@@ -55,6 +55,8 @@ export function createTestHttpApp(
     userDataDir?: string
     /** Where a dropped file's original is looked for; a test points this at its own folders, Spotlight off */
     keep?: KeepOptions
+    /** Where a deleted file goes; a test's own folder */
+    trashDir?: string
   } = {},
 ) {
   const markdownBaseDir = path.join(markdownDirs[0]!, '..')
@@ -83,5 +85,7 @@ export function createTestHttpApp(
     // Never the real user-data directory: what a test stores stays in its temp notebook.
     userDataDir: options.userDataDir ?? path.join(markdownBaseDir, '.user-data'),
     keep: options.keep,
+    // Never the Mac's Trash: what a test deletes stays in its temp notebook.
+    trashDir: options.trashDir ?? path.join(markdownBaseDir, '.trash'),
   })
 }

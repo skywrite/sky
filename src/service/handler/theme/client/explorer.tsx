@@ -9,6 +9,16 @@ import {
   useRef,
   useState,
 } from 'react'
+import {
+  announceChanged,
+  removedLine,
+  RemovedToast,
+  type RemoveToast,
+  removeFile,
+  TOAST_MS,
+  undoRemove,
+  useDirChanges,
+} from './explorerDelete.tsx'
 import { IdentityLine } from './frontmatter/Identity.tsx'
 import { useOutline } from './frontmatter/outline.ts'
 import { DocumentRail } from './frontmatter/Rail.tsx'
@@ -80,6 +90,11 @@ function ancestorsOf(file: string): string[] {
   return parts.map((_, i) => parts.slice(0, i + 1).join('/'))
 }
 
+/** The directory a file sits in: `a/b/c.md` → `a/b`; '' at the roots. */
+function parentOf(file: string): string {
+  return file.split('/').slice(0, -1).join('/')
+}
+
 function encodeSegments(file: string): string {
   return file.split('/').map(encodeURIComponent).join('/')
 }
@@ -96,16 +111,33 @@ export function Tree({ file, onOpen }: { file: string; onOpen: (path: string) =>
   const [open, setOpen] = useState<Set<string>>(() => new Set(ancestorsOf(file)))
   const asked = useRef(new Set<string>())
 
-  // Each directory is listed once, the first time it is needed.
-  const load = useCallback((dir: string) => {
-    if (asked.current.has(dir)) return
-    asked.current.add(dir)
-    setDirs((prev) => ({ ...prev, [dir]: 'loading' }))
+  const list = useCallback((dir: string) => {
     fetch(`/explorer/_api/dir${dir ? `?path=${encodeURIComponent(dir)}` : ''}`)
       .then(async (r) => (r.ok ? ((await r.json()) as Listing).entries : 'missing'))
       .catch((): Known => 'missing')
       .then((known) => setDirs((prev) => ({ ...prev, [dir]: known })))
   }, [])
+
+  // Each directory is listed once, the first time it is needed…
+  const load = useCallback(
+    (dir: string) => {
+      if (asked.current.has(dir)) return
+      asked.current.add(dir)
+      setDirs((prev) => ({ ...prev, [dir]: 'loading' }))
+      list(dir)
+    },
+    [list],
+  )
+
+  // …and again, in place, when a file was deleted from it or put back.
+  useDirChanges(
+    useCallback(
+      (dir: string) => {
+        if (asked.current.has(dir)) list(dir)
+      },
+      [list],
+    ),
+  )
 
   useEffect(() => load(''), [load])
 
@@ -513,7 +545,7 @@ function DirListing({ entries }: { entries: ExplorerEntry[] }) {
   )
 }
 
-export function DocView({ file }: { file: string }) {
+export function DocView({ file, go }: { file: string; go: (to: string) => void }) {
   // Editing is per file — turning the page ends it.
   const [editingFile, setEditingFile] = useState<string | null>(null)
   const editing = file !== '' && editingFile === file
@@ -609,6 +641,44 @@ export function DocView({ file }: { file: string }) {
     }
   }
 
+  // Delete: the file goes to the Trash and its day lets go of its line; the page turns to the
+  // directory it was in, with a toast that holds Undo for a moment.
+  const [toast, setToast] = useState<RemoveToast | null>(null)
+  const [removing, setRemoving] = useState(false)
+  useEffect(() => {
+    if (!toast) return
+    const timer = window.setTimeout(() => setToast(null), TOAST_MS)
+    return () => window.clearTimeout(timer)
+  }, [toast])
+  const remove = async () => {
+    if (removing || !file) return
+    setRemoving(true)
+    try {
+      const removed = await removeFile(file)
+      announceChanged(parentOf(file))
+      setToast({ key: Date.now(), text: removedLine(file, removed.day), file, moveId: removed.moveId })
+      const dir = parentOf(file)
+      go(dir ? fileHref(dir) : '/explorer')
+    } catch (err) {
+      say(err instanceof Error ? err.message : 'Could not delete the file')
+    } finally {
+      setRemoving(false)
+    }
+  }
+  const undo = async () => {
+    const held = toast
+    if (!held?.moveId) return
+    setToast(null)
+    try {
+      await undoRemove(held.moveId)
+      announceChanged(parentOf(held.file))
+      go(fileHref(held.file))
+    } catch (err) {
+      const text = err instanceof Error ? err.message : 'Could not put the file back'
+      setToast({ key: Date.now(), text, file: held.file, moveId: null })
+    }
+  }
+
   return (
     <div ref={viewRef} className="sky-main sky-main-rail" data-rail={railOpen ? 'open' : 'closed'}>
       <div className="sky-doc-column">
@@ -692,6 +762,15 @@ export function DocView({ file }: { file: string }) {
                     Export PDF
                   </Menu.Item>
                   <Menu.Item onClick={() => void copyPath()}>Copy path</Menu.Item>
+                  {/* Delete belongs to reading: while editing, Done first — the editor has the file. */}
+                  {!editing && (
+                    <>
+                      <Menu.Divider />
+                      <Menu.Item className="sky-menu-danger" disabled={removing} onClick={() => void remove()}>
+                        Delete
+                      </Menu.Item>
+                    </>
+                  )}
                 </Menu.Dropdown>
               </Menu>
             </nav>
@@ -729,6 +808,11 @@ export function DocView({ file }: { file: string }) {
       {file && !missing && railOpen && (editing || doc) ? (
         <DocumentRail state={frontmatter} file={file} day={doc?.day ?? null} outline={outline} onToggle={toggleRail} />
       ) : null}
+      {toast && (
+        <Fragment key={toast.key}>
+          <RemovedToast toast={toast} onUndo={() => void undo()} />
+        </Fragment>
+      )}
     </div>
   )
 }

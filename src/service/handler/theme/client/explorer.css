@@ -19,6 +19,16 @@
   overflow-wrap: anywhere;
 }
 
+/* The toast after Delete sits low in the column, like the day's Files page's, and wide for the names it carries. */
+.sky-main-rail > .sky-doc-undo {
+  bottom: 40px;
+  max-width: min(92%, 960px);
+}
+
+.sky-main-rail > .sky-doc-undo[data-failed='true'] .sky-undo-text {
+  color: var(--sky-action-danger);
+}
+
 /* The tree: one row per entry, a directory unfolds in place. */
 .sky-tree {
   display: flex;

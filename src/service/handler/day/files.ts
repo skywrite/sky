@@ -12,7 +12,6 @@
 import { randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
-import * as os from 'node:os'
 import * as path from 'node:path'
 import { Hono } from 'hono'
 import { copyFileDedup } from '#lib/notebook/attachments.ts'
@@ -26,14 +25,15 @@ import {
   cleanName,
   cleanRelativePath,
   createKeeper,
+  defaultTrashDir,
   factsOf,
   kindOf,
   type ListedFile,
   type ListedFolder,
   listFolder,
   measureFolder,
-  moveFile,
   moveRequestOf,
+  trashFile,
 } from '../attachments/keep.ts'
 import { formatDateLabel } from '../home/today.ts'
 import isDay from './isDay.ts'
@@ -183,10 +183,7 @@ async function listedByName(options: DayFilesOptions, day: PlainDate): Promise<M
 }
 
 export function createDayFilesRoutes(options: DayFilesOptions): Hono {
-  const home = os.homedir()
-  const trashDir =
-    options.trashDir ??
-    (process.platform === 'darwin' ? path.join(home, '.Trash') : path.join(options.userDataDir, 'trash'))
+  const trashDir = options.trashDir ?? defaultTrashDir(options.userDataDir)
   const keeper = createKeeper({ searchDirs: options.searchDirs, spotlight: options.spotlight })
   const reveal = options.reveal ?? openInFinder
   const app = new Hono()
@@ -304,13 +301,7 @@ export function createDayFilesRoutes(options: DayFilesOptions): Hono {
     if (!info) return c.json({ message: 'no such file' }, 404)
     const folder = info.isDirectory()
     const files = folder ? (await measureFolder(source)).files : 1
-    await mkdir(trashDir, { recursive: true })
-    const name = path.basename(rel)
-    const ext = folder ? '' : path.extname(name)
-    const stem = name.slice(0, name.length - ext.length)
-    let target = path.join(trashDir, name)
-    if (existsSync(target)) target = path.join(trashDir, `${stem}_${Date.now()}${ext}`)
-    await moveFile(source, target)
+    const target = await trashFile(source, trashDir)
     return c.json({ ok: true, moveId: keeper.remember(source, target), folder, files })
   })
 

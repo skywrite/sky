@@ -463,7 +463,7 @@ function Canvas() {
 
       <SearchWorkspace route={path + search} onNavigate={navigate}>
         {explorerFile !== null ? (
-          <DocView file={explorerFile} />
+          <DocView file={explorerFile} go={navigate} />
         ) : filesRoute ? (
           <DayFilesMain
             ymd={filesRoute.ymd}

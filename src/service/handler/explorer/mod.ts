@@ -18,12 +18,15 @@ import {
   resolveMarkdownPreviewRequest,
   toNotebookRelativePath,
 } from '../markdown-preview/request.ts'
+import { createRemoveRoutes, type ExplorerRemoveOptions } from './remove.ts'
 
 export interface ExplorerRoutesOptions {
   /** The notebook root that every path is relative to */
   markdownBaseDir: string
   /** The directories the explorer shows — its roots */
   markdownDirs: string[]
+  /** Where a deleted file goes, and which day lets go of its line; without this the ⋯ menu's Delete has no route */
+  remove?: ExplorerRemoveOptions
 }
 
 export interface ExplorerEntry {
@@ -115,6 +118,9 @@ async function readDoc(
   param: string,
   options: ExplorerRoutesOptions,
 ): Promise<{ ok: true; doc: ExplorerDoc } | Refusal | { ok: false; status: 404; message: string }> {
+  // The column asks for a path as a file before it asks for it as a directory: a directory is not here, not wrong.
+  if (param && path.extname(param).toLowerCase() !== '.md')
+    return { ok: false, status: 404, message: `no file at ${param}` }
   const request = resolveMarkdownPreviewRequest(param, undefined, options.markdownBaseDir, options.markdownDirs)
   if (!request.ok) return request
   try {
@@ -161,6 +167,9 @@ export function createExplorerRoutes(options: ExplorerRoutesOptions): Hono {
     if (!result.ok) return c.json({ message: result.message }, result.status)
     return c.json(result.doc)
   })
+
+  // POST /remove, POST /undo → Delete from the ⋯ menu, and its Undo
+  if (options.remove) app.route('/', createRemoveRoutes(options, options.remove))
 
   return app
 }

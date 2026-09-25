@@ -40,6 +40,8 @@ export interface WysiwygE2eFixture {
   userDataDir: string
   /** Stands in for Downloads: the look for a dropped file's original checks here, and nowhere else. */
   downloads: string
+  /** Stands in for the Trash: a deleted file lands here. */
+  trash: string
   /** Uncaught page errors and console errors so far — an assertion can demand none. */
   errors: string[]
 }
@@ -146,6 +148,7 @@ export async function runWysiwygE2e(
     const file = path.join(notebookBaseDir, relativePath)
     const userDataDir = path.join(notebookBaseDir, 'user-data')
     const downloads = path.join(notebookBaseDir, 'Downloads')
+    const trash = path.join(notebookBaseDir, '.trash')
     await mkdir(path.dirname(file), { recursive: true })
     await mkdir(downloads)
     await writeFile(file, options.initialMarkdown)
@@ -174,6 +177,7 @@ export async function runWysiwygE2e(
         userDataDir,
         markdownStore,
         keep: { searchDirs: [downloads], spotlight: false },
+        trashDir: trash,
         ...(options.day ? dayHosts(notebookBaseDir, userDataDir, options.imports) : {}),
         mostImportant: options.mostImportant,
         now: options.now ? () => options.now! : undefined,
@@ -190,7 +194,7 @@ export async function runWysiwygE2e(
       if (message.type() === 'error' && !message.text().includes('404')) errors.push(`console: ${message.text()}`)
     })
     try {
-      await run({ origin: server.origin, page, file, relativePath, userDataDir, downloads, errors })
+      await run({ origin: server.origin, page, file, relativePath, userDataDir, downloads, trash, errors })
     } finally {
       if (errors.length > 0) console.error(`[e2e page errors]\n${errors.join('\n')}`)
     }

@@ -215,7 +215,8 @@ interface Move {
   expires: number
 }
 
-function sweep<T extends { expires: number }>(map: Map<string, T>): void {
+/** Forget what has expired: a look, a move, or anything else remembered for a while. */
+export function sweep<T extends { expires: number }>(map: Map<string, T>): void {
   const now = Date.now()
   for (const [key, value] of map) if (value.expires < now) map.delete(key)
 }
@@ -284,6 +285,26 @@ export async function moveFile(from: string, to: string): Promise<void> {
       await unlink(from)
     }
   }
+}
+
+/** Where a removed file goes: the Mac's Trash, or a `trash` folder under the user-data directory elsewhere. */
+export function defaultTrashDir(userDataDir: string): string {
+  return process.platform === 'darwin' ? path.join(os.homedir(), '.Trash') : path.join(userDataDir, 'trash')
+}
+
+/**
+ * Out to the Trash, where the file can still be put back by hand: a name the
+ * Trash already holds gets the moment stamped on. Returns where it landed.
+ */
+export async function trashFile(source: string, trashDir: string): Promise<string> {
+  await mkdir(trashDir, { recursive: true })
+  const name = path.basename(source)
+  const ext = (await stat(source)).isDirectory() ? '' : path.extname(name)
+  const stem = name.slice(0, name.length - ext.length)
+  let target = path.join(trashDir, name)
+  if (existsSync(target)) target = path.join(trashDir, `${stem}_${Date.now()}${ext}`)
+  await moveFile(source, target)
+  return target
 }
 
 /**
