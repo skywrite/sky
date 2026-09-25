@@ -1,6 +1,9 @@
 import { rm } from 'node:fs/promises'
 import * as path from 'node:path'
+import { simulateReadableStream } from 'ai'
+import { MockLanguageModelV3 } from 'ai/test'
 import type { AIErrorEntry } from '#shared/ai/errorLog.ts'
+import { InputTokenLimitError } from '#shared/ai/inputTokenLimit.ts'
 import type { ResolvedModel } from '#shared/ai/models.ts'
 import { exists, makeTempDir, readTextFile } from '#shared/fs/mod.ts'
 import type { PreflightVerdict } from '#shared/models/Chat/document/ContextLog/mod.ts'
@@ -117,6 +120,70 @@ async function makeSession(over: Partial<ChatSessionOptions> = {}) {
 }
 
 const types = (events: ChatSessionEvent[]) => events.map((e) => e.type)
+
+test('a session recovers capacity, reports the reduction, and keeps it through recovery', async () => {
+  let requests = 0
+  const model = new MockLanguageModelV3({
+    provider: 'anthropic.messages',
+    doStream: async () => {
+      if (requests++ === 0) throw new InputTokenLimitError(9000, 1000)
+      return {
+        stream: simulateReadableStream<any>({
+          chunks: [
+            { type: 'stream-start', warnings: [] },
+            { type: 'text-start', id: 't' },
+            { type: 'text-delta', id: 't', delta: 'Here is the summary.' },
+            { type: 'text-end', id: 't' },
+            {
+              type: 'finish',
+              finishReason: { unified: 'stop', raw: undefined },
+              usage: {
+                inputTokens: { total: 1, noCache: 1, cacheRead: 0, cacheWrite: 0 },
+                outputTokens: { total: 1, text: 1, reasoning: 0 },
+              },
+            },
+          ],
+        }),
+      }
+    },
+  })
+  const { session, events, errors, tmp } = await makeSession({
+    model: { model },
+    invokeModel: undefined,
+    contextTokens: 25_000,
+    tools: async () => ({ tools: {}, toolApproval: {} }),
+  })
+  try {
+    await session.start()
+    const report = await session.send('Summarize the notebook.')
+    const recovered = await loadResumeSession(path.join(tmp, 'autosave.md'), { baseDir: BASE_DIR, snapshot: true })
+    assert({
+      given: 'the provider rejects the first assembled request',
+      should: 'answer on retry, keep the allowance, and save the reduction for the reply and Context panel',
+      actual: {
+        requests,
+        reply: report.text,
+        errors: errors.length,
+        preference: session.contextTokens,
+        disclosed: !!report.adjustment && types(events).includes('context-adjusted'),
+        saved: recovered.state.contextLog[0].adjustment,
+        requestBudget: recovered.state.contextLog[0].stats?.requestBudget !== undefined,
+      },
+      expected: {
+        requests: 2,
+        reply: 'Here is the summary.',
+        errors: 0,
+        preference: 25_000,
+        disclosed: true,
+        saved: report.adjustment,
+        requestBudget: true,
+      },
+    })
+  } finally {
+    await session.end({ save: false })
+    await rm(tmp, { recursive: true, force: true })
+  }
+})
 
 test('ChatSession Stop before context preserves turn numbering and the next context gathering', async () => {
   const { session, model, producerCalls, errors, tmp } = await makeSession()

@@ -20,6 +20,7 @@ export const PROFILES = {
   'default-fable-5.1': defineProfile({
     provider: 'anthropic',
     model: 'claude-fable-5-1',
+    contextWindow: 1_000_000,
     options: { effort: 'xhigh', thinking: { type: 'adaptive' } },
   }),
   // Same model one effort rung down: the API's default depth, for work that does
@@ -27,6 +28,7 @@ export const PROFILES = {
   'default-fable-5.1-high': defineProfile({
     provider: 'anthropic',
     model: 'claude-fable-5-1',
+    contextWindow: 1_000_000,
     options: { effort: 'high', thinking: { type: 'adaptive' } },
   }),
   'default-fable-5': defineProfile({

@@ -45,6 +45,40 @@ Place subjects and country creation follow the shared
 New turns in a resumed chat can append place links even when other entity
 relationships are already present.
 
+## Fitting a conversation to its model
+
+The notebook slider is an estimated retrieval allowance, not the size of the
+whole request. `ChatEngine/requestBudget.ts` checks each SDK model call,
+including tool steps and approval continuations. Instructions, the conversation,
+tool definitions and results must fit together with room for output. Declared
+profile windows travel with the resolved model; an undeclared window can also
+be learned from a provider's context-length rejection.
+
+Claude requests are counted after the SDK has serialized their actual payload,
+through `ai/inputTokenLimit.ts` and the provider's fetch adapter. This avoids
+maintaining a second serializer for tools, thinking and native attachments.
+The guard is scoped to one provider call so it cannot affect other chats or
+tools' nested agents. The actual output allowance and a small margin are
+reserved. Other providers use a conservative estimate. If Claude's separate
+[counting endpoint](https://platform.claude.com/docs/en/build-with-claude/token-counting)
+is unavailable or cannot count a supported generation input, a context-length
+rejection still triggers the same bounded retry.
+
+Capacity reductions reassemble notebook retrieval by relevance first, keeping
+the person's allowance and document pins. If more room is needed, older textual
+tool results become explicitly labelled excerpts. User messages, instructions,
+native attachments, and tool call/result pairs are preserved. The SDK's and
+engine's original history is never shortened: excerpts exist only in the
+outgoing request. A retry repeats only a rejected model request, never a tool
+that already executed. Irreducible oversize input receives a useful capacity
+error rather than silent message deletion.
+
+The final kept set replaces the current turn's context statistics and cut
+records. `stats.requestBudget` distinguishes the effective retrieval cap from
+the selected `budget`; `adjustment` records the reduction for the reply and
+Context timeline, including after recovery. This is distinct from `usage`,
+which sums billed tokens over every model step and is not a window measurement.
+
 ## When the engine ends a turn
 
 A tool loop ends in one of two hands. The model's: it writes, and the

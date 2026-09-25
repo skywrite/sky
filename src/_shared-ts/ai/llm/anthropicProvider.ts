@@ -1,5 +1,6 @@
 import { createAnthropic } from '@ai-sdk/anthropic'
 import { logAIError } from '#shared/ai/errorLog.ts'
+import { withAnthropicTokenCount } from '#shared/ai/inputTokenLimit.ts'
 import { withStreamIdleGuard } from './idleGuardFetch.ts'
 
 /**
@@ -27,17 +28,19 @@ const noTimeoutFetch = ((input: RequestInfo | URL, init?: RequestInit) =>
 const STREAM_IDLE_MS = 90_000
 
 export const anthropic = createAnthropic({
-  fetch: withStreamIdleGuard(noTimeoutFetch, {
-    idleMs: STREAM_IDLE_MS,
-    attempts: 3,
-    onIdle: (event) =>
-      void logAIError({
-        source: 'anthropic-provider',
-        stage: 'stream-idle',
-        message:
-          event.phase === 'response'
-            ? `no response for ${Math.round(event.idleMs / 1000)}s (attempt ${event.attempt}) — ${event.retrying ? 'retrying' : 'giving up'}`
-            : `stream went silent for ${Math.round(event.idleMs / 1000)}s mid-response — aborted`,
-      }),
-  }),
+  fetch: withAnthropicTokenCount(
+    withStreamIdleGuard(noTimeoutFetch, {
+      idleMs: STREAM_IDLE_MS,
+      attempts: 3,
+      onIdle: (event) =>
+        void logAIError({
+          source: 'anthropic-provider',
+          stage: 'stream-idle',
+          message:
+            event.phase === 'response'
+              ? `no response for ${Math.round(event.idleMs / 1000)}s (attempt ${event.attempt}) — ${event.retrying ? 'retrying' : 'giving up'}`
+              : `stream went silent for ${Math.round(event.idleMs / 1000)}s mid-response — aborted`,
+        }),
+    }),
+  ),
 })

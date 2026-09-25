@@ -85,6 +85,8 @@ export interface ModelProfile<P extends Provider = Provider> {
 /** Resolver output — spread directly into generateText / generateObject / streamText. */
 export interface ResolvedModel {
   model: LanguageModel
+  /** Total request capacity, carried to chat's per-request guard. */
+  contextWindow?: number
   temperature?: number
   maxOutputTokens?: number
   topP?: number
@@ -203,6 +205,7 @@ export function resolveProfile(profile: ModelProfile, overrides?: ModelOverrides
   const base = languageModelFor(profile)
   const resolved: ResolvedModel = {
     model: typeof base === 'string' ? base : wrapLanguageModel({ model: base, middleware: usageMeter(profile) }),
+    ...(profile.contextWindow === undefined ? {} : { contextWindow: profile.contextWindow }),
   }
   const common = resolved as unknown as Record<string, unknown>
   const providerOptions: Record<string, JSONValue> = {}

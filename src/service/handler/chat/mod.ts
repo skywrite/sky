@@ -1247,6 +1247,9 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
       ],
       usage: [...thread.usage].map(([at, usage]) => ({ at, ...usage })),
       timings: [...thread.timings].map(([at, text]) => ({ at, text })),
+      adjustments: thread.session.contextLog.flatMap((entry) =>
+        entry.adjustment ? [{ at: entry.turn * 2 - 1, adjustment: entry.adjustment }] : [],
+      ),
     })
   })
 

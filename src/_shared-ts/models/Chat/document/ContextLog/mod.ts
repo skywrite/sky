@@ -47,6 +47,7 @@ import type { QueryTruncation } from '#shared/models/DomainCollection/query/reso
 import type { MemoryOpOutcome } from '#shared/models/Memory/write.ts'
 import type { PersonOpOutcome } from '#shared/models/Person/write.ts'
 import type { TimingDetail } from '#shared/timing/summary.ts'
+import type { ContextAdjustment } from '#universal/ai/contextAdjustment.ts'
 import type { Effort } from '#universal/ai/effort.ts'
 import { readChatRecovery, type ChatRecovery } from '../../ChatStore/recovery.ts'
 import type { ChatStatistics } from '../statistics.ts'
@@ -94,6 +95,8 @@ export interface TurnStats {
   docTokens: number
   /** Token budget ceiling in effect this turn */
   budget?: number
+  /** Smaller admission budget needed for the complete model request; budget remains the user's allowance. */
+  requestBudget?: number
   /** Scoring-semantics tag (see Chat/ChatContext/score.ts SCORING) */
   scoring?: string
   /** Baseline seeding strategy when not the default raw sweep (opt-in 'summary') */
@@ -189,6 +192,7 @@ export interface ContextTurnLog {
   settings?: TurnSettings
   /** The preflight's verdict on the message, when the host ran one */
   preflight?: PreflightVerdict
+  adjustment?: ContextAdjustment
 }
 
 const MARKER = '<!-- CONTEXT-LOG'
@@ -217,6 +221,7 @@ export function serializeContextLog(entries: ContextTurnLog[], details?: Context
     if (entry.timing) fields.push(`      "timing": ${JSON.stringify(entry.timing)}`)
     if (entry.settings) fields.push(`      "settings": ${JSON.stringify(entry.settings)}`)
     if (entry.preflight) fields.push(`      "preflight": ${JSON.stringify(entry.preflight)}`)
+    if (entry.adjustment) fields.push(`      "adjustment": ${JSON.stringify(entry.adjustment)}`)
     lines.push(fields.join(',\n'))
     lines.push(i < entries.length - 1 ? '    },' : '    }')
   })

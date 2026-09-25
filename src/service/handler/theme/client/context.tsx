@@ -1,5 +1,6 @@
 import { Button, TextInput } from '@mantine/core'
 import { Fragment, type KeyboardEvent, useCallback, useEffect, useState } from 'react'
+import { contextAdjustmentText, type ContextAdjustment } from '#universal/ai/contextAdjustment.ts'
 import { toolDisplayName } from '#universal/ai/toolDisplay.ts'
 import { GraphQLQueries } from './chatActivity.tsx'
 import { fileHref } from './explorer.tsx'
@@ -17,7 +18,6 @@ import { fileHref } from './explorer.tsx'
  * Every move reassembles the context at once, so the list is always what
  * the next message will be answered from.
  */
-
 export interface ContextDoc {
   path: string
   tokens: number
@@ -33,6 +33,7 @@ export interface TurnStats {
   excluded: number
   docTokens: number
   budget?: number
+  requestBudget?: number
   reused?: boolean
 }
 
@@ -48,6 +49,7 @@ const percent = (p: number) => `${Math.round(p * 100)}%`
 
 /** One turn of the story — mirrors handler/chat/timeline.ts. */
 export interface TimelineEntry {
+  adjustment?: ContextAdjustment
   turn: number
   when: string | null
   kind: 'seed' | 'grew' | 'same' | 'closed' | 'skipped' | 'failed'
@@ -235,6 +237,7 @@ function Entry({ entry, last }: { entry: TimelineEntry; last: boolean }) {
           <span>{title}</span>
         </div>
         {line && <div className="sky-tl-txt">{line}</div>}
+        {entry.adjustment && <div className="sky-tl-sub">{contextAdjustmentText(entry.adjustment)}</div>}
         {searches && <div className="sky-tl-sub">{searches}</div>}
         {judged && <div className="sky-tl-sub">{judged}</div>}
         <GraphQLQueries queries={entry.queries ?? []} />

@@ -38,6 +38,7 @@ import { formatPersonOpLine } from '#shared/models/Person/write.ts'
 import { ACTIONS_DIR, AI_CHATS_DIR, dayAIChatsDir, fetchNow } from '#shared/nbfs/mod.ts'
 import truncate from '#shared/strings/truncate.ts'
 import { timingLine } from '#shared/timing/summary.ts'
+import { contextAdjustmentText } from '#universal/ai/contextAdjustment.ts'
 import { presetEffort } from '#universal/ai/effort.ts'
 import { fitBudget } from '#universal/ai/readingBudget.ts'
 import { toolDisplayName } from '#universal/ai/toolDisplay.ts'
@@ -460,6 +461,10 @@ export default class AiChatTask extends Command {
           return
         case 'context-gathering':
           output.log(colors.dim('Gathering context...'))
+          return
+        case 'context-adjusted':
+          closeStreamedLine()
+          output.log(colors.dim(contextAdjustmentText(event.adjustment)))
           return
         case 'context-rebuilt':
           renderContextReport(event.report)

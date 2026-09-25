@@ -17,6 +17,7 @@ import {
 import type { WritingDraftView } from '#lib/writingVoice/draftTypes.ts'
 import { splitChatFiles } from '#universal/ai/chatFiles.ts'
 import { splitChatImages } from '#universal/ai/chatImages.ts'
+import { contextAdjustmentText, type ContextAdjustment } from '#universal/ai/contextAdjustment.ts'
 import { effortLabel, type Effort, type EffortOverride } from '#universal/ai/effort.ts'
 import { splitSources, withSources } from '#universal/ai/sources.ts'
 import type { TokenUsage } from '#universal/ai/tokenUsage.ts'
@@ -91,6 +92,7 @@ export interface Turn {
   /** What the reply cost, in tokens, every step summed */
   usage?: TokenUsage
   timing?: string
+  adjustment?: ContextAdjustment
   /** The profile that answered, as the settings name it */
   model?: string
   /** Captured from the model that answered; preset edits cannot relabel old replies. */
@@ -289,6 +291,7 @@ type Action =
       modelLabel?: string
       effort?: Effort
       timing?: string
+      adjustment?: ContextAdjustment
       branchPoint?: BranchPoint
     }
   | { type: 'failed'; id: string; message: string; timing?: string }
@@ -568,6 +571,7 @@ function reduce(state: ThreadState, action: Action): ThreadState {
           note: r.note ?? state.provenance ?? undefined,
           usage: action.usage ?? r.usage,
           timing: action.timing ?? r.timing,
+          adjustment: action.adjustment ?? r.adjustment,
           model: action.model ?? r.model,
           modelLabel: action.modelLabel ?? r.modelLabel,
           effort: action.effort ?? r.effort,
@@ -661,6 +665,7 @@ interface ThreadBody {
   /** Each reply's counts and the profile that answered, by turn index */
   usage?: Array<TokenUsage & { at: number; model: string; modelLabel?: string; effort?: Effort }>
   timings?: Array<{ at: number; text: string }>
+  adjustments?: Array<{ at: number; adjustment: ContextAdjustment }>
   interrupted?: { message: string; when?: string | null } | null
 }
 
@@ -686,6 +691,7 @@ function turnsOf(body: ThreadBody): Turn[] {
       modelLabel: usageAt.get(i)?.modelLabel,
       effort: usageAt.get(i)?.effort,
       timing: body.timings?.find((entry) => entry.at === i)?.text,
+      adjustment: body.adjustments?.find((entry) => entry.at === i)?.adjustment,
       branchPoint: body.branchPoints?.[i] ?? undefined,
     }
   })
@@ -1028,6 +1034,9 @@ export function useChat(id: string) {
             case 'model-start':
               dispatch({ id, type: 'gather', text: 'thinking' })
               break
+            case 'context-adjusted':
+              dispatch({ id, type: 'gather', text: contextAdjustmentText(d.adjustment as ContextAdjustment) })
+              break
             case 'text-delta':
               dispatch({ id, type: 'delta', text: d.text as string })
               break
@@ -1079,6 +1088,7 @@ export function useChat(id: string) {
                   sources: sources.length > 0 ? sources : undefined,
                   usage: d.usage as TokenUsage | undefined,
                   timing: d.timingText as string | undefined,
+                  adjustment: d.adjustment as ContextAdjustment | undefined,
                   model: d.model as string | undefined,
                   modelLabel: d.modelLabel as string | undefined,
                   effort: d.effort as Effort | undefined,
@@ -2668,6 +2678,7 @@ export function TurnView({
           </div>
         )}
         <ChatImages images={images} />
+        {turn.adjustment && !streaming && <p className="sky-fate">{contextAdjustmentText(turn.adjustment)}</p>}
         {turn.sources && turn.sources.length > 0 && !streaming && <SourcesFold sources={turn.sources} />}
         {runs && runs.length > 0 && <RunList runs={runs} folded={!streaming} />}
         {turn.error && <span className="sky-fate">turn failed — {turn.error}</span>}

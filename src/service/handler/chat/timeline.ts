@@ -17,6 +17,7 @@ import type {
   TurnStats,
 } from '#shared/models/Chat/document/ContextLog/mod.ts'
 import type { ConversationMessage } from '#shared/models/Chat/type.d.ts'
+import type { ContextAdjustment } from '#universal/ai/contextAdjustment.ts'
 
 /**
  * What a turn did to the context: `seed` gathered the baseline, `grew`
@@ -28,6 +29,7 @@ import type { ConversationMessage } from '#shared/models/Chat/type.d.ts'
 export type TimelineKind = 'seed' | 'grew' | 'same' | 'closed' | 'skipped' | 'failed'
 
 export interface TimelineEntry {
+  adjustment?: ContextAdjustment
   turn: number
   /** Notebook stamp of the message that started the turn, `HH:MM`; null when unstamped */
   when: string | null
@@ -105,6 +107,7 @@ export function timelineOf(log: ContextTurnLog[], turns: ConversationMessage[]):
     }
     if (entry.stats) item.stats = entry.stats
     if (entry.preflight) item.preflight = entry.preflight
+    if (entry.adjustment) item.adjustment = entry.adjustment
     if (kind === 'seed') item.found = entry.universe?.length ?? 0
     out.push(item)
   }

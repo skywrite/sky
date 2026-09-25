@@ -178,6 +178,9 @@ export function ChatControls({
               This model supports up to {thousands(STOPS[reach])} of notebook context.
             </p>
           )}
+          <p className="sky-chat-controls-note">
+            An estimated notebook allowance. Sky reads less when needed to leave room for the conversation and reply.
+          </p>
         </section>
       </div>
       {chat.tuningError && (

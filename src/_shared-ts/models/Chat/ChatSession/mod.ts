@@ -29,6 +29,7 @@ import truncate from '#shared/strings/truncate.ts'
 import { currentTimingSpan, thrownOutcome, TimingSpan } from '#shared/timing/mod.ts'
 import { timingDetail, type TimingDetail } from '#shared/timing/summary.ts'
 import { type ChatImage, withChatImages } from '#universal/ai/chatImages.ts'
+import type { ContextAdjustment } from '#universal/ai/contextAdjustment.ts'
 import type { Effort } from '#universal/ai/effort.ts'
 import { withSources } from '#universal/ai/sources.ts'
 import type { PlainDate, PlainDateTime } from '#universal/dates/nbdt/mod.ts'
@@ -205,6 +206,7 @@ export interface StartReport {
 }
 
 export interface TurnReport {
+  adjustment?: ContextAdjustment
   stopped?: boolean
   timing?: TimingDetail
   context: TurnContextReport
@@ -340,7 +342,10 @@ export default class ChatSession {
     this.engine = new ChatEngine({
       model: opts.model,
       approvalHandler: opts.approvalHandler,
-      onEvent: (event) => this.emit(event),
+      onEvent: (event) => {
+        if (event.type === 'context-adjusted') this.context.recordTurnAdjustment(event.adjustment)
+        this.emit(event)
+      },
       invokeModel: opts.invokeModel,
     })
     if (seed) this.engine.seedConversation(seed.conversation, seed.modelMessages)
@@ -759,6 +764,17 @@ export default class ChatSession {
       const result = await this.engine.runTurn({
         abortSignal,
         instructions: [this.systemPrompt, this.contextPrompt, ...(instructions ? [instructions] : [])],
+        notebook: {
+          instructions: this.contextPrompt,
+          tokens: this.context.log.findLast((entry) => entry.stats)?.stats?.docTokens ?? 0,
+          fit: (tokens) => {
+            const rebuilt = this.context.fitForRequest(tokens)
+            this.contextPrompt = buildContextPrompt(this.opts.ambient, rebuilt.activityMarkdown)
+            context.rebuilt = rebuilt
+            this.emit({ type: 'context-rebuilt', report: rebuilt })
+            return { instructions: this.contextPrompt, tokens: rebuilt.stats?.docTokens ?? 0 }
+          },
+        },
         tools,
         toolApproval,
       })
@@ -801,6 +817,7 @@ export default class ChatSession {
       await this.logError({ source: 'ai:chat', stage: 'turn', message, question: userMessage })
     }
 
+    report.adjustment = this.context.log.at(-1)?.adjustment
     return report
   }
 

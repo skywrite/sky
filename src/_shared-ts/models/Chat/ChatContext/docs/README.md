@@ -1,6 +1,6 @@
 ---
 created: 2026-08-15
-updated: 2026-09-09
+updated: 2026-09-22
 ---
 
 # ChatContext admission — one scorer, question-conditioned policy
@@ -11,6 +11,9 @@ Per-turn timing is stored with the context log by the session; see
 Full query sets also travel as `context-queries` progress events, including
 initial queries with zero matches. The web presentation and read-back
 contract live in the [chat HTTP notes](../../../../../service/handler/chat/docs/2026-09-06-queries-beside-the-wait.md).
+
+Fitting the final model request can lower retrieval below the selected allowance;
+see [conversation capacity](../../docs/README.md#fitting-a-conversation-to-its-model).
 
 The baseline and retrieval honor the conversation boundaries described in
 [reply threads](../../../../../service/handler/chat/docs/README.md#reply-threads),

@@ -22,6 +22,7 @@ import {
   type SystemModelMessage,
   type ToolSet,
   type UserContent,
+  wrapLanguageModel,
 } from 'ai'
 import type { ResolvedModel } from '#shared/ai/models.ts'
 import { cachedInstructions, cacheTailStep, withCacheTail } from '#shared/ai/promptCache.ts'
@@ -31,10 +32,12 @@ import truncate from '#shared/strings/truncate.ts'
 import { thrownOutcome, TimingSpan, withTiming } from '#shared/timing/mod.ts'
 import { installTimingTelemetry } from '#shared/timing/sdk.ts'
 import { timingSummary, type TimingSummary } from '#shared/timing/summary.ts'
+import type { ContextAdjustment } from '#universal/ai/contextAdjustment.ts'
 import { PlainDate, PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import type { ToolCallRecord } from '../document/ContextLog/mod.ts'
 import type { ConversationMessage } from '../type.d.ts'
 import { RepetitionGuard, guardTools } from './repetitionGuard.ts'
+import { requestBudgetMiddleware, type RequestNotebook } from './requestBudget.ts'
 import { stoppedReply, stoppedToolMessages, untilAborted } from './stop.ts'
 import { observeTools, ToolProgress, type ToolExecutionEvent } from './toolExecution.ts'
 import { turnErrorMessage } from './turnErrorMessage.ts'
@@ -82,6 +85,7 @@ export type ChatEngineEvent =
   | { type: 'text-delta'; text: string }
   | { type: 'tool-call'; toolName: string; toolCallId?: string; input: unknown }
   | { type: 'turn-complete'; toolRecords: ToolCallRecord[] }
+  | { type: 'context-adjusted'; adjustment: ContextAdjustment }
 
 /** Why the engine ended a tool loop: the step cap, or the repetition guard. */
 export type TurnCut = 'steps' | 'repetition'
@@ -199,6 +203,7 @@ export interface RunTurnOptions {
   abortSignal?: AbortSignal
   /** Prompt-cache segments — each gets its own breakpoint (base system prompt, context prompt). */
   instructions: string[]
+  notebook?: RequestNotebook
   /** Tool set for this turn — hosts may rebuild it every turn (the CLI does). */
   tools: Record<string, unknown>
   toolApproval: ToolApprovalConfig
@@ -458,6 +463,17 @@ export default class ChatEngine {
     // consumes the stream and rejects on a mid-stream error, which the
     // caller's try/catch handles. Shape mirrors the old generateText
     // result so the approval loop and downstream rendering are unchanged.
+    const guardedModel =
+      this.invokeModel || typeof this.model.model === 'string'
+        ? this.model.model
+        : wrapLanguageModel({
+            model: this.model.model,
+            middleware: requestBudgetMiddleware({
+              contextWindow: this.model.contextWindow,
+              notebook: opts.notebook,
+              onAdjustment: (adjustment) => emit({ type: 'context-adjusted', adjustment }),
+            }),
+          })
     const invoke: ModelInvoker =
       this.invokeModel ??
       (async ({ instructions, messages, sink, abortSignal }) => {
@@ -492,6 +508,7 @@ export default class ChatEngine {
         const closingDone: StopCondition<ToolSet> = ({ steps }) => closingAt !== undefined && steps.length > closingAt
         const stream = streamText({
           ...this.model,
+          model: guardedModel,
           abortSignal,
           instructions,
           messages,

@@ -29,6 +29,7 @@ import { Document } from '#shared/models/Markdown/mod.ts'
 import { MEMORY_PATH_SEGMENT } from '#shared/models/Memory/mod.ts'
 import { isAIChatPath, parseTimePath, weekDir } from '#shared/nbfs/mod.ts'
 import type { TimingDetail } from '#shared/timing/summary.ts'
+import type { ContextAdjustment } from '#universal/ai/contextAdjustment.ts'
 import type { Effort } from '#universal/ai/effort.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import { ancestorsOf } from '../ChatStore/mod.ts'
@@ -743,6 +744,11 @@ export default class ChatContext {
     else this.contextLog.push({ turn: this.turnNumber, queries: [...this.queries], usage })
   }
 
+  recordTurnAdjustment(adjustment: ContextAdjustment): void {
+    const entry = this.contextLog.findLast((e) => e.turn === this.turnNumber)
+    if (entry) entry.adjustment = adjustment
+  }
+
   /**
    * The settings the turn runs under, on its log entry — the model, preset,
    * and effort the host set, and the reading budget in force. Stamped before
@@ -823,6 +829,20 @@ export default class ChatContext {
   /** Reassemble now, between turns, after a change by hand. Not a turn: nothing is logged. */
   reassemble(): RebuildReport {
     return this.rebuild(undefined, false)
+  }
+
+  /** Refit retrieval for this request, preserving the preference and this turn's provenance. */
+  fitForRequest(tokens: number): RebuildReport {
+    const report = this.rebuild(undefined, false, Math.min(this.maxTokens, tokens))
+    const entry = this.contextLog.findLast((e) => e.turn === this.turnNumber)
+    if (entry) {
+      entry.stats = report.stats
+      const records = new Map([...report.kept, ...report.cut].map((record) => [record.path, record]))
+      if (entry.universe) entry.universe = entry.universe.map((record) => records.get(record.path) ?? record)
+      else entry.pruned = report.cut
+      if (entry.diff) entry.diff = entry.diff.map((record) => records.get(record.path) ?? record)
+    }
+    return report
   }
 
   // ---------------------------------------------------------------------------
@@ -949,7 +969,7 @@ export default class ChatContext {
   }
 
   /** Reassemble the context from the current universe and record the turn log. */
-  private rebuild(newPaths: string[] | undefined, record: boolean): RebuildReport {
+  private rebuild(newPaths: string[] | undefined, record: boolean, requestBudget = this.maxTokens): RebuildReport {
     const prevPaths = new Set(this.contextPaths)
     this.contextPaths = this.collection?.paths ?? []
 
@@ -975,7 +995,7 @@ export default class ChatContext {
           this.userExcludes,
           'excluded by you',
         ),
-        maxTokens: this.maxTokens,
+        maxTokens: requestBudget,
         floorFraction: CHAT_SCORE.floorFraction,
         reserve: this.sweepReserve(),
       })
@@ -1014,6 +1034,7 @@ export default class ChatContext {
         excluded: assembler.excluded.length,
         docTokens: assembler.totalTokens,
         budget: this.maxTokens,
+        ...(requestBudget < this.maxTokens ? { requestBudget } : {}),
         scoring: SCORING,
       }
       if (this.sweep) {

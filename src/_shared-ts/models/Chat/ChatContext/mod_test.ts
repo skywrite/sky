@@ -5,6 +5,7 @@ import { Document } from '#shared/models/Markdown/mod.ts'
 import { assert, test } from '#test'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import type { ContextTurnLog } from '../document/ContextLog/mod.ts'
+import { serializeContextLog, splitContextLog } from '../document/ContextLog/mod.ts'
 import type { ResumeState } from '../document/resume.ts'
 import ChatContext, { type ChatContextOptions, type ProducerResult } from './mod.ts'
 
@@ -42,6 +43,47 @@ async function fixtureDoc(absPath: string): Promise<{ doc: Document; path: strin
 
 const ok = <T>(value: T): ProducerResult<T> => ({ ok: true, value })
 const fail = (message: string): ProducerResult<never> => ({ ok: false, message })
+
+test('request fitting preserves the selected notebook allowance and saves the actual kept set', async () => {
+  const { context } = makeContext({
+    maxTokens: 25_000,
+    fetchContext: fetchFake({ today: [FIX.day, FIX.journal], goals: [FIX.goal] }),
+  })
+  await context.seedBaseline()
+  const first = await context.firstTurn('Review the notebook.')
+  context.recordTurnSettings({ model: 'test-model' })
+  const fitted = context.fitForRequest(0)
+  const adjustment = { notebookTokens: fitted.stats!.docTokens, shortenedToolResults: 0 }
+  context.recordTurnAdjustment(adjustment)
+  const [saved] = splitContextLog(serializeContextLog(context.log)).entries
+  assert({
+    given: 'a full request that leaves room only for pinned notebook material',
+    should: 'keep pins, reduce other retrieval, retain the preference and serialize the fitted provenance',
+    actual: {
+      reduced: fitted.kept.length < first.rebuilt!.kept.length,
+      pinned: fitted.kept.some((doc) => doc.pinned),
+      preference: context.budget,
+      setting: saved.settings?.contextTokens,
+      requestBudget: saved.stats?.requestBudget,
+      kept: saved.universe
+        ?.filter((doc) => !doc.cut)
+        .map((doc) => doc.path)
+        .sort(),
+      adjustment: saved.adjustment,
+      turns: context.log.length,
+    },
+    expected: {
+      reduced: true,
+      pinned: true,
+      preference: 25_000,
+      setting: 25_000,
+      requestBudget: 0,
+      kept: fitted.kept.map((doc) => doc.path).sort(),
+      adjustment,
+      turns: 1,
+    },
+  })
+})
 
 /** Producers that a test overrides per scenario; defaults produce nothing. */
 function makeContext(overrides: Partial<ChatContextOptions> = {}) {

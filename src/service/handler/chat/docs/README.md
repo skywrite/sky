@@ -278,6 +278,10 @@ a person can see and touch:
   stops past it stay drawn, grayed, and a budget above them drops to that
   stop — on the page, in the routes, and behind `sky ai:chat
   --ai-max-context`, which says so ([2026-09-05](2026-09-05-the-budget-is-a-slider.md)).
+  The selected allowance stays fixed when the complete model request needs less
+  notebook material. A notice under the reply and in Context records that
+  reduction; the [chat model](../../../../_shared-ts/models/Chat/docs/README.md#fitting-a-conversation-to-its-model)
+  owns request counting and fitting, including tool-loop growth.
   Every message POST carries `{ message, profile, effort, contextTokens, saves }`
   captured from the composer, including connection retries. These choices
   are required (effort may be omitted by older clients): a client that omits
