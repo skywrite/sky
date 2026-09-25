@@ -22,7 +22,6 @@ function setup(
     question?: string
     maxBytes?: number
     chunkBytes?: number
-    maxDownloadBytes?: number
     signal?: AbortSignal
   } = {},
 ) {
@@ -44,11 +43,27 @@ function setup(
     maxCalls: 8,
     maxBytes: 24_000,
     chunkBytes: 12_000,
-    maxDownloadBytes: 2_000_000,
     ...overrides,
   })
   return { tools, trace, webTrace }
 }
+
+test('voice web pages retain content beyond the former page and shared download limits', async () => {
+  let requests = 0
+  const source = 'a'.repeat(6_100_000) + 'Final evidence.'
+  const state = setup(async () => {
+    requests++
+    return new Response(source, { headers: { 'content-type': 'text/plain' } })
+  })
+  const first = (await state.tools.read_web_page.execute!({ url: PAGE }, EXECUTION)) as Result
+  const last = (await state.tools.read_web_page.execute!({ url: PAGE, offsetBytes: 6_100_000 }, EXECUTION)) as Result
+  assert({
+    given: 'a source larger than the former one-megabyte page limit and six-megabyte download budget',
+    should: 'retain its final evidence while limiting only the text returned to the model',
+    actual: [first.ok, first.text?.length, last.text, last.truncated, requests, state.webTrace.downloadedBytes],
+    expected: [true, 12_000, 'Final evidence.', false, 1, Buffer.byteLength(source)],
+  })
+})
 
 test('voice web tools distinguish configuration, auth, provider, malformed, and empty search results', async () => {
   const outcomes: unknown[] = []
@@ -172,29 +187,26 @@ test('voice web reads distinguish blocked, unsupported, empty, and unavailable p
   })
 })
 
-test('voice web reads cap downloaded and evidence bytes without splitting UTF-8 characters', async () => {
-  let cancelled = false
+test('voice web reads keep the full response while bounding Unicode-safe evidence excerpts', async () => {
   const state = setup(
     async () =>
       new Response(
         new ReadableStream({
           start(controller) {
             controller.enqueue(new TextEncoder().encode('aaa🧭' + 'x'.repeat(100)))
-          },
-          cancel() {
-            cancelled = true
+            controller.close()
           },
         }),
         { headers: { 'content-type': 'text/plain' } },
       ),
-    { maxBytes: 5, chunkBytes: 5, maxDownloadBytes: 20 },
+    { maxBytes: 5, chunkBytes: 5 },
   )
   const result = (await state.tools.read_web_page.execute!({ url: PAGE }, EXECUTION)) as Result
   assert({
-    given: 'a long open stream and a four-byte character at the evidence boundary',
-    should: 'cancel after the download cap and preserve complete evidence characters',
-    actual: [result.text, result.truncated, state.trace.bytes, state.webTrace.downloadedBytes, cancelled],
-    expected: ['aaa', true, 3, 20, true],
+    given: 'a full response and a four-byte character at the evidence boundary',
+    should: 'retain the entire download while preserving complete evidence characters',
+    actual: [result.text, result.truncated, state.trace.bytes, state.webTrace.downloadedBytes],
+    expected: ['aaa', true, 3, 107],
   })
 })
 
@@ -222,21 +234,20 @@ test('voice web cancellation aborts the network call and is not converted into s
   })
 })
 
-test('parallel voice page reads share the download cap without counting the same allowance twice', async () => {
+test('parallel voice page reads share the model evidence budget without cutting off downloaded content', async () => {
   const secondPage = 'https://example.com/second'
-  const state = setup(async () => new Response('x'.repeat(20), { headers: { 'content-type': 'text/plain' } }), {
+  const state = setup(async () => new Response('x'.repeat(80), { headers: { 'content-type': 'text/plain' } }), {
     question: `Read ${PAGE} and ${secondPage}`,
-    maxBytes: 100,
+    maxBytes: 20,
     chunkBytes: 50,
-    maxDownloadBytes: 20,
   })
   const results = (await Promise.all([
     state.tools.read_web_page.execute!({ url: PAGE }, EXECUTION),
     state.tools.read_web_page.execute!({ url: secondPage }, EXECUTION),
   ])) as Result[]
   assert({
-    given: 'two concurrent twenty-byte page reads and a shared twenty-byte download limit',
-    should: 'retain at most twenty bytes and report the competing read as budget-limited, not an empty page',
+    given: 'two concurrent reads with a shared twenty-byte model evidence budget',
+    should: 'download the complete first page, return one excerpt, and report exhaustion of the evidence budget',
     actual: [
       state.webTrace.downloadedBytes,
       state.trace.bytes,
@@ -244,11 +255,11 @@ test('parallel voice page reads share the download cap without counting the same
       results.filter((result) => !result.ok).map((result) => result.code),
       state.webTrace.urls.size,
     ],
-    expected: [20, 20, ['x'.repeat(20)], ['budget'], 1],
+    expected: [80, 20, ['x'.repeat(20)], ['budget'], 1],
   })
 })
 
-test('voice web reads continue cached UTF-8 excerpts after the download allowance is exhausted', async () => {
+test('voice web reads continue cached UTF-8 excerpts without repeating the download', async () => {
   let requests = 0
   const source = 'aaa🧭bbb more evidence'
   const state = setup(
@@ -256,7 +267,7 @@ test('voice web reads continue cached UTF-8 excerpts after the download allowanc
       requests++
       return new Response(source, { headers: { 'content-type': 'text/plain' } })
     },
-    { maxBytes: 100, chunkBytes: 5, maxDownloadBytes: Buffer.byteLength(source) },
+    { maxBytes: 100, chunkBytes: 5 },
   )
   const chunks: string[] = []
   let offsetBytes: number | undefined = 0
@@ -267,9 +278,39 @@ test('voice web reads continue cached UTF-8 excerpts after the download allowanc
     offsetBytes = result.nextOffsetBytes
   }
   assert({
-    given: 'a relevant passage beyond the first five-byte excerpt, with a Unicode boundary and no download budget left',
+    given: 'a relevant passage beyond the first five-byte excerpt with a Unicode boundary',
     should: 'read successive cached excerpts without splitting characters or fetching the same page again',
     actual: [chunks.join(''), requests, state.trace.bytes, state.webTrace.downloadedBytes, [...state.webTrace.urls]],
     expected: [source, 1, Buffer.byteLength(source), Buffer.byteLength(source), [PAGE]],
+  })
+})
+
+test('voice web reads select and continue a section beyond the first page excerpt', async () => {
+  let requests = 0
+  const state = setup(
+    async () => {
+      requests++
+      return new Response(
+        '<h2>Opening</h2><p>Opening evidence.</p><section id="late"><h2>Late chapter</h2><p>Complete late evidence.</p></section>',
+        {
+          headers: { 'content-type': 'text/html' },
+        },
+      )
+    },
+    { chunkBytes: 20, maxBytes: 200 },
+  )
+  const pieces: string[] = []
+  let offsetBytes: number | undefined = 0
+  while (offsetBytes !== undefined) {
+    const result = (await state.tools.read_web_page.execute!({ url: PAGE + '#late', offsetBytes }, EXECUTION)) as Result
+    if (!result.ok) throw new Error(result.code)
+    pieces.push(result.text!)
+    offsetBytes = result.nextOffsetBytes
+  }
+  assert({
+    given: 'a requested public URL with an HTML fragment and a small excerpt allowance',
+    should: 'preserve section structure across cached continuations and record the base source once',
+    actual: [pieces.join(''), requests, [...state.webTrace.urls], state.trace.bytes],
+    expected: ['## Late chapter\n\nComplete late evidence.', 1, [PAGE], 40],
   })
 })

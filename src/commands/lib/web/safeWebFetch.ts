@@ -158,7 +158,7 @@ export function createPublicPageFetcher(dependencies: PublicPageDependencies = {
                 Host: url.host,
                 Accept: 'text/html, text/plain;q=0.9',
                 'Accept-Encoding': 'identity',
-                'User-Agent': 'Sky-Voice-Research/1.0',
+                'User-Agent': 'Sky-Web-Research/1.0',
               },
               // Resolve once and connect to that checked address while preserving URL Host and TLS identity.
               lookup: (_hostname, options, callback) => {

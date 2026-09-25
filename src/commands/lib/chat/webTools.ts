@@ -4,7 +4,9 @@
  */
 
 import { jsonSchema } from 'ai'
-import truncate from '#shared/strings/truncate.ts'
+import { downloadWebPage, type PageFetch } from '../web/downloadPage.ts'
+import { WebPageError } from '../web/pageContent.ts'
+import { createWebPageReader, type WebPageRequest } from '../web/pageReader.ts'
 
 interface SearchResult {
   title: string
@@ -12,25 +14,8 @@ interface SearchResult {
   snippet: string
 }
 
-/** Strip HTML tags and collapse whitespace to get readable text. */
-function htmlToText(html: string): string {
-  return html
-    .replace(/<script[\s\S]*?<\/script>/gi, '')
-    .replace(/<style[\s\S]*?<\/style>/gi, '')
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/\s+/g, ' ')
-    .trim()
-}
-
-const MAX_FETCH_CHARS = 20000
-
-export function createWebTools() {
+export function createWebTools(options: { pageFetcher?: PageFetch } = {}) {
+  const readPage = createWebPageReader((url, signal) => downloadWebPage(url, signal, options.pageFetcher))
   return {
     web_search: {
       description:
@@ -70,29 +55,35 @@ export function createWebTools() {
     },
     web_fetch: {
       description:
-        'Fetch the full content of a web page by URL. Use this after web_search to read the full text of a promising result.',
-      inputSchema: jsonSchema<{ url: string }>({
+        'Read a public web page as structured Markdown. The complete response is downloaded without a page-size cutoff. Long pages return an excerpt and a next object; pass next back to web_fetch to continue from the cached page until the requested material is read. URL fragments select HTML sections, and sections lists available anchors. Offsets address UTF-8 bytes of the selected Markdown text. Do not retry the beginning, guess paths, or use a proxy to work around excerpt boundaries. Report failed reads and missing sections honestly.',
+      inputSchema: jsonSchema<WebPageRequest>({
         type: 'object',
         properties: {
-          url: { type: 'string', description: 'The URL to fetch' },
+          url: { type: 'string', description: 'The URL to read, optionally including an HTML section fragment' },
+          offsetBytes: {
+            type: 'integer',
+            minimum: 0,
+            description: 'Use nextOffsetBytes from the preceding result to continue',
+          },
+          snapshot: { type: 'string', description: 'Use the snapshot from the preceding result when continuing' },
         },
         required: ['url'],
       }),
-      execute: async ({ url }: { url: string }): Promise<string> => {
+      execute: async (request: WebPageRequest, execution?: { abortSignal?: AbortSignal }) => {
+        const signal = AbortSignal.any([
+          AbortSignal.timeout(10_000),
+          ...(execution?.abortSignal ? [execution.abortSignal] : []),
+        ])
         try {
-          const resp = await fetch(url, {
-            headers: { 'User-Agent': 'Mozilla/5.0 (compatible; NotebookBot/1.0)' },
-            signal: AbortSignal.timeout(10000),
-          })
-          if (!resp.ok) return `Error: ${resp.status} ${resp.statusText}`
-
-          const contentType = resp.headers.get('content-type') ?? ''
-          const raw = await resp.text()
-
-          const text = contentType.includes('html') ? htmlToText(raw) : raw
-          return truncate(text, MAX_FETCH_CHARS, '\n\n[Content truncated...]')
+          return await readPage(request, 20_000, signal)
         } catch (err) {
-          return `Error fetching URL: ${(err as Error).message}`
+          execution?.abortSignal?.throwIfAborted()
+          return {
+            ok: false as const,
+            code: err instanceof WebPageError ? err.code : signal.aborted ? 'timeout' : 'fetch_failed',
+            error: err instanceof Error ? err.message : String(err),
+            ...(err instanceof WebPageError && err.sections ? { sections: err.sections } : {}),
+          }
         }
       },
     },

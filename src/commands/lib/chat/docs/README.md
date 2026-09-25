@@ -17,6 +17,9 @@ Research inherits standing instructions and the current reading budget; its
 bounded tool results and model requests are described in
 [research context limits](../../../all/ai/research/docs/README.md).
 
+Web page snapshots, section reads, and continuation positions follow the
+[shared web reader contract](../../web/docs/README.md).
+
 ## What the prompt rules on
 
 - Time: notebook days run past midnight; the newest message stamp is "now".

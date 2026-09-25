@@ -312,6 +312,7 @@ export function createChatHost(config: typeof ConfigModule, env: Record<string, 
 
   const createSession: ChatSessionFactory = async (id, onEvent, prefs, ask, restore, runs = () => []) => {
     const context = CommandContext.server(config, env)
+    const webTools = env.PERPLEXITY_API_KEY ? createWebTools() : {}
     const blessed = blessingsFor(id)
     if (restore?.approvals) blessed.restoreDurable(restore.approvals)
     const tasks = new CommandService(context)
@@ -392,7 +393,7 @@ export function createChatHost(config: typeof ConfigModule, env: Record<string, 
               source: `chat:${id}`,
               drafts: writingDraftTools(hooks, writingDrafts, unsaved),
             }),
-            ...(env.PERPLEXITY_API_KEY ? createWebTools() : {}),
+            ...webTools,
             // A browser has no shell directory, so a relative path resolves from home.
             ...createFileTools({ today, attachmentsRoot: config.DIR_ATTACHMENTS, cwd: config.DIR_HOME, onAttachments }),
             ...(await createNotebookTools(toolTasks, {

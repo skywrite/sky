@@ -215,7 +215,7 @@ test('voice page fetch pins the validated socket destination and preserves Host 
         Host: 'example.com',
         Accept: 'text/html, text/plain;q=0.9',
         'Accept-Encoding': 'identity',
-        'User-Agent': 'Sky-Voice-Research/1.0',
+        'User-Agent': 'Sky-Web-Research/1.0',
       },
     ],
   })

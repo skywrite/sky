@@ -517,6 +517,7 @@ export default class AiChatTask extends Command {
       }
     }
 
+    const webTools = env.PERPLEXITY_API_KEY ? createWebTools() : {}
     const session = new ChatSession({
       today,
       startTime,
@@ -552,7 +553,6 @@ export default class AiChatTask extends Command {
       },
       tools: async (hooks) => {
         const { onExternalFiles, onAttachments } = hooks
-        const webTools = env.PERPLEXITY_API_KEY ? createWebTools() : {}
         // A file the user points at: read into the conversation, copied
         // into the chat's day attachments, recorded on the transcript.
         const fileTools = createFileTools({

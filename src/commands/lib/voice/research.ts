@@ -219,7 +219,7 @@ export function createVoiceResearch(options: VoiceResearchOptions, dependencies:
     const limits = MODES[mode]
     // A web follow-up can need search → read → search → read → answer.
     // Notebook lookup retains its four steps; both fast paths keep the same
-    // wall-clock, tool-call, download, and output limits.
+    // wall-clock, tool-call, and output limits.
     const steps = mode === 'lookup' && domain === 'web' ? 6 : limits.steps
     const deadline = AbortSignal.timeout(limits.timeout)
     const totalSignal = callerSignal ? AbortSignal.any([callerSignal, deadline]) : deadline
@@ -237,7 +237,6 @@ export function createVoiceResearch(options: VoiceResearchOptions, dependencies:
     }
     const fast = mode === 'lookup'
     const useWeb = domain === 'web' || (!fast && !notebookOnly)
-    const maxDownloadBytes = fast ? 2_000_000 : 6_000_000
     const name = fast ? (options.fastProfile ?? FAST_VOICE_PROFILE) : (options.deepProfile ?? DEEP_VOICE_PROFILE)
     const instructions = fast
       ? `You are the fast ${domain} lookup assistant. Find the specific fact with a short search and targeted read, then answer in one to three spoken sentences. If it needs extensive research, explain what is still unresolved so the host can ask Sonny.`
@@ -275,7 +274,6 @@ export function createVoiceResearch(options: VoiceResearchOptions, dependencies:
               maxCalls: limits.calls,
               maxBytes: limits.bytes,
               chunkBytes: limits.chunk,
-              maxDownloadBytes,
             })
           : {}),
       }

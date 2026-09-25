@@ -1,6 +1,6 @@
 ---
 created: 2026-09-06
-updated: 2026-09-10
+updated: 2026-09-22
 ---
 
 # Browser voice
@@ -98,6 +98,8 @@ Deep investigation reserves thirty seconds of its three-minute budget for
 one recovery synthesis from already-read evidence if a later step fails.
 Web excerpts can be continued from their cached UTF-8 byte offset. An excerpt
 boundary is not a failed investigation or a spoken disclaimer.
+Extraction, section reads, and snapshot continuations follow the
+[shared web reader contract](../../web/docs/README.md).
 Standalone deep research can combine notebook and public evidence when needed,
 with private notebook details kept out of external search queries by default.
 
