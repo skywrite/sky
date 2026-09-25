@@ -1,6 +1,6 @@
 ---
 created: 2026-09-03
-updated: 2026-09-23
+updated: 2026-09-24
 ---
 
 # The web app's shell and client
@@ -73,6 +73,8 @@ Streaks opens from the day's **View all streaks** link. Its history and day-file
 writes follow the [streaks contract](../../streaks/docs/README.md).
 People & Orgs uses the settings sidebar above the Settings heading; its notebook
 files and browser import follow the [profile contract](../../people/docs/README.md).
+Places shares that sidebar; its records, hierarchy and Google Maps setup follow
+the [places contract](../../../../lib/places/docs/README.md#web-management-and-maps).
 
 Shared foundations load before feature styles. Keep the import order
 explicit and check overlapping selectors when changing it. Properties in

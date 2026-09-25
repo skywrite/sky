@@ -96,6 +96,7 @@ export interface ServerOptions {
   automations?: AutomationsRoutesOptions
   outbox?: OutboxRoutesOptions
   people?: PeopleOptions
+  places?: import('./handler/places/types.ts').PlacesOptions
   workstreams?: WorkstreamsRoutesOptions
   tracking?: TrackingRoutesOptions
   streaks?: StreaksRoutesOptions
@@ -270,6 +271,7 @@ export function createServer(options: ServerOptions): Server {
       automations,
       outbox: options.outbox,
       people: options.people,
+      places: options.places,
       workstreams: options.workstreams,
       tracking: options.tracking,
       streaks: options.streaks,

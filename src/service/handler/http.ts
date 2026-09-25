@@ -45,6 +45,9 @@ import { type OutboxRoutesOptions, createOutboxRoutes } from './outbox/mod.ts'
 import { createPeopleRoutes } from './people/mod.ts'
 import { createPeopleStore } from './people/store.ts'
 import { profileHref, type PeopleOptions } from './people/types.ts'
+import { createPlacesRoutes } from './places/mod.ts'
+import { createPlacesStore } from './places/store.ts'
+import type { PlacesOptions } from './places/types.ts'
 import { createSearchRoutes } from './search/mod.ts'
 import { createSettingsRoutes, type SettingsRoutesOptions } from './settings/mod.ts'
 import { createStreaksRoutes, type StreaksRoutesOptions } from './streaks/mod.ts'
@@ -96,6 +99,7 @@ export interface HttpHandlerOptions {
   automations?: AutomationsRoutesOptions
   outbox?: OutboxRoutesOptions
   people?: PeopleOptions
+  places?: PlacesOptions
   workstreams?: WorkstreamsRoutesOptions
   tracking?: TrackingRoutesOptions
   streaks?: StreaksRoutesOptions
@@ -216,6 +220,15 @@ export function createHttpApp(options: HttpHandlerOptions): Hono {
   }
   if (options.people) {
     app.route('/people/_api', createPeopleRoutes(profiles, options.people))
+  }
+  if (options.places) {
+    app.route(
+      '/places/_api',
+      createPlacesRoutes(
+        markdownStore ? createPlacesStore(markdownStore, markdownBaseDir, markdownDirs, options.places) : null,
+        options.places,
+      ),
+    )
   }
 
   // The clock page's data: the two clocks and the converter. The page itself is /clock, below.
@@ -616,6 +629,13 @@ export function createHttpApp(options: HttpHandlerOptions): Hono {
     if (c.req.path.startsWith('/settings/_api/')) return c.json(jsend.fail({ message: 'Not found.' }), 404)
     return c.html(renderAppHtml('sky'))
   })
+
+  app.get('/places', (c) => c.html(renderAppHtml('sky · Places')))
+  app.get('/places/*', (c) =>
+    c.req.path === '/places/_api' || c.req.path.startsWith('/places/_api/')
+      ? c.json({ message: 'Not found.' }, 404)
+      : c.html(renderAppHtml('sky · Places')),
+  )
 
   for (const root of ['/people', '/orgs']) {
     app.get(root, (c) => c.html(renderAppHtml('sky · People & Orgs')))

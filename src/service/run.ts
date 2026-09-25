@@ -5,6 +5,7 @@ import CommandContext from '#commands/lib/core/CommandContext.ts'
 import CommandService from '#commands/lib/core/CommandService.ts'
 import { automationPassInput, createAutomationProcess } from '#lib/automations/process.ts'
 import { createLinkedInHost } from '#lib/linkedin/mod.ts'
+import { KeychainSecretsProvider } from '#lib/secrets/KeychainSecretsProvider.ts'
 import { getDarwinIdleMs, openFdCount, readSystemTimezone } from '#lib/sys/mod.ts'
 import { routeAISDKWarningsToLog } from '#shared/ai/errorLog.ts'
 import * as config from '#shared/config.ts'
@@ -19,6 +20,7 @@ import { createClockHost } from './handler/clock/createClockHost.ts'
 import { createImportHost } from './handler/import/createImportHost.ts'
 import { createMeetingsHost } from './handler/meetings/createMeetingsHost.ts'
 import { createOutboxHost } from './handler/outbox/createOutboxHost.ts'
+import { createMapsHost } from './handler/places/google.ts'
 import { createSettingsHost } from './handler/settings/createSettingsHost.ts'
 import siteHtmlHandler from './handler/siteHtml.ts'
 import { createStreaksHost } from './handler/streaks/createStreaksHost.ts'
@@ -165,6 +167,11 @@ const server = createServer({
   chat: createChatHost(config, env.toObject()),
   voice: createVoiceHost(config, env.toObject()),
   settings: createSettingsHost(),
+  places: {
+    placesDir: config.DIR_PLACES,
+    stateDir: config.DIR_STATE,
+    maps: createMapsHost(env.toObject(), new KeychainSecretsProvider()),
+  },
   people: {
     peopleDir: config.DIR_PEOPLE,
     orgsDir: config.DIR_ORGS,

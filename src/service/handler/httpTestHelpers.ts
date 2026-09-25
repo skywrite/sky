@@ -48,6 +48,7 @@ export function createTestHttpApp(
     streaks?: StreaksRoutesOptions
     outbox?: OutboxRoutesOptions
     people?: PeopleOptions
+    places?: import('./places/types.ts').PlacesOptions
     imports?: ImportRoutesOptions
     /** Day start and end as the pages run them; a test scripts them over its temp notebook */
     week?: WeekCommands
@@ -76,6 +77,7 @@ export function createTestHttpApp(
     streaks: options.streaks,
     outbox: options.outbox,
     people: options.people,
+    places: options.places,
     imports: options.imports,
     week: options.week,
     // Never the real user-data directory: what a test stores stays in its temp notebook.

@@ -1,6 +1,6 @@
 ---
 created: 2026-09-08
-updated: 2026-09-12
+updated: 2026-09-24
 ---
 
 # Places
@@ -153,7 +153,49 @@ when reopening older saved links or resuming an import.
 VS Code's directory completion continues to emit the existing logical paths;
 geographic `.md` files can be completed beside their child directories.
 
-Descendant-place query filters remain future work.
+Descendant-place GraphQL query filters remain future work.
+
+## Web management and maps
+
+`/places` shares the People & Orgs settings sidebar. The HTTP owner is
+`service/handler/places`; it reads the existing MarkdownStore and publishes saved
+files back into that store immediately. Detail URLs encode the logical place
+reference. Editing a legacy record pins its current reference explicitly, so a
+name change or later file move does not break links. New records use dated,
+case-preserving filenames under `places/locations/YYYY/`. Recognized countries
+keep their natural `places/XX` identity, matching repair and automatic linking.
+
+Parent choices are saved references and must resolve uniquely to geography.
+Self-parenting and descendant cycles are refused. Existing hierarchical venue
+references can display their closest saved geographic ancestor without changing
+the file. The web list's location filter and geography detail traverse this parent
+chain. They do not infer unsaved city records from directory names.
+
+Metadata edits patch YAML, preserving unknown fields, comments, and the exact
+Markdown body. Notes append a dated section. Revisions, a process lock and atomic
+publication protect writes; new namesakes require an explicit choice and receive
+collision suffixes. Archiving sets `archived: true` and hides the place from the
+active UI list. The file and shared reference remain available to linked notebook
+records; restore reverses the flag. Rendering uses the safe profile Markdown
+renderer and the shared `RenderedHtml` component.
+
+Google search is a server-side draft operation; only Save writes a place. Requests
+use Places API (New), with the existing Places endpoint as a compatibility fallback
+when the project refuses the new API. Saved `googlePlaceId` values detect repeated
+imports. Network errors never send credential-bearing request URLs to the client.
+
+Maps JavaScript loads only when displaying a map. Existing installations reuse
+the shared `GOOGLE_MAPS_KEY` for both the map and Places search; Maps JavaScript API
+must also be enabled on that project. Map credentials are visible in the browser.
+A dedicated `GOOGLE_MAPS_BROWSER_KEY` overrides the shared key for maps, allowing
+website restrictions independently of server lookups. Setup is available from
+Places and keeps keys in the existing keychain: category `google-maps`, entries
+`browser` and `server`; an optional `map-id` entry selects a custom map. Stored
+values take precedence over the corresponding environment keys. The explicitly
+server-only keychain entry is never exposed to the browser or reused for maps.
+Search keys need Places API and billing enabled.
+Manual creation, geographic records, notes, and list browsing work without either
+key. Tests use temporary notebooks and scripted Google responses, never live keys.
 
 ## Verification
 
