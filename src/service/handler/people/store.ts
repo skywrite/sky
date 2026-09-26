@@ -73,14 +73,8 @@ function fields(type: ProfileType, doc: Document): ProfileFields {
   const email =
     yaml.email && typeof yaml.email === 'object' ? (yaml.email as Record<string, unknown>) : { personal: yaml.email }
   const current = unique([...(person?.orgs.current ?? []), ...(person?.org ? [person.org] : [])])
-  const refs = yaml.org_refs as Record<string, Array<{ name: string; path: string }>> | undefined
-  const choices = (values: string[], status: 'current' | 'past') =>
-    values.map((name) => {
-      const ref = Array.isArray(refs?.[status])
-        ? refs[status].find((ref) => ref && plain(string(ref.name)) === plain(name))
-        : undefined
-      return { name, ...(typeof ref?.path === 'string' ? { id: ref.path } : {}) }
-    })
+  // Organizations are linked by name, as every notebook reference is
+  const choices = (values: string[]) => values.map((name) => ({ name }))
   return {
     ...blankProfile(type),
     name: names[0] ?? '',
@@ -91,8 +85,8 @@ function fields(type: ProfileType, doc: Document): ProfileFields {
     emailBusiness: strings(email.business),
     sites: unique([...strings(yaml.sites), ...strings(yaml.site), ...strings(yaml.linkedin)]),
     met: typeof yaml.met === 'number' ? String(yaml.met) : string(yaml.met),
-    current: choices(current, 'current'),
-    past: choices(person?.orgs.past ?? [], 'past'),
+    current: choices(current),
+    past: choices(person?.orgs.past ?? []),
     kind: org?.kind ?? 'unknown',
     sector: string(yaml.sector),
   }
@@ -274,8 +268,6 @@ export function createPeopleStore(store: MarkdownStore, baseDir: string, dirs: s
     date: string,
   ): Promise<string> {
     const names = (choices: OrganizationChoice[]) => choices.map((org) => org.name)
-    // Human names remain compatible with CLI readers; paths disambiguate namesakes in the UI.
-    const refs = (choices: OrganizationChoice[]) => choices.map((org) => ({ name: org.name, path: org.id! }))
     const contents = newPersonMarkdown({
       name: aliases.length ? [input.name, ...aliases] : input.name,
       met: input.met || date,
@@ -283,7 +275,6 @@ export function createPeopleStore(store: MarkdownStore, baseDir: string, dirs: s
       location: input.location,
       title: input.title,
       orgs: { current: names(orgs.current), past: names(orgs.past) },
-      orgRefs: { current: refs(orgs.current), past: refs(orgs.past) },
       email: { personal: input.emailPersonal, business: input.emailBusiness },
       sites: input.sites,
       notes: input.notes,
@@ -517,29 +508,21 @@ export function createPeopleStore(store: MarkdownStore, baseDir: string, dirs: s
         } else if (input.type === 'org' && input.sites.length === 1) setInPlaceOf('site', 'sites', input.sites[0])
         else setInPlaceOf('sites', 'site', input.sites)
       }
-      if (input.type === 'person' && (!same(next.current, previous.current) || !same(next.past, previous.past))) {
+      const orgNames = (choices: OrganizationChoice[]) => choices.map((org) => org.name)
+      if (
+        input.type === 'person' &&
+        (!same(orgNames(next.current), orgNames(previous.current)) ||
+          !same(orgNames(next.past), orgNames(previous.past)))
+      ) {
         yaml.delete('org')
         for (const status of ['current', 'past'] as const) {
-          const choices = next[status]
-          if (choices.length) {
+          const names = orgNames(next[status])
+          if (names.length) {
             mapAt('orgs')
-            mapAt('org_refs')
-            yaml.setIn(
-              ['orgs', status],
-              choices.map((org) => org.name),
-            )
-            // Human names remain compatible with CLI readers; paths disambiguate namesakes in the UI.
-            yaml.setIn(
-              ['org_refs', status],
-              choices.map((org) => ({ name: org.name, path: org.id })),
-            )
-          } else {
-            if (yaml.hasIn(['orgs', status])) yaml.deleteIn(['orgs', status])
-            if (yaml.hasIn(['org_refs', status])) yaml.deleteIn(['org_refs', status])
-          }
+            yaml.setIn(['orgs', status], names)
+          } else if (yaml.hasIn(['orgs', status])) yaml.deleteIn(['orgs', status])
         }
         dropEmpty(yaml, 'orgs')
-        dropEmpty(yaml, 'org_refs')
       }
       if (input.type === 'org' && input.kind !== previous.kind) {
         const org = new OrganizationDocument(current.doc.yaml).setKind(input.kind)

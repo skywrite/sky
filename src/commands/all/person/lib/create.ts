@@ -53,8 +53,6 @@ export interface NewPerson {
   location?: string
   title?: string
   orgs?: OrgLists<string>
-  /** Each organization's file, so namesakes stay apart */
-  orgRefs?: OrgLists<{ name: string; path: string }>
   email?: { personal?: string[]; business?: string[] }
   sites?: string[]
   /** Opening lines under the name heading */
@@ -77,8 +75,6 @@ export function newPersonMarkdown(person: NewPerson): string {
   if (person.title) yaml.title = person.title
   const orgs = lists(person.orgs)
   if (orgs) yaml.orgs = orgs
-  const refs = lists(person.orgRefs)
-  if (refs) yaml.org_refs = refs
   yaml.email = { personal: list(person.email?.personal), business: list(person.email?.business) }
   yaml.sites = list(person.sites)
   yaml.created = person.created

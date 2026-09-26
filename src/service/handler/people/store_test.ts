@@ -174,9 +174,7 @@ test('New profiles are written as person:new and org:new write them, and edits n
       should:
         'drop the emptied fields instead of writing [], keep the blank line after the frontmatter, and list the sites where the site was',
       actual: [
-        withOrg.includes(
-          'org_refs:\n  current:\n    - name: Cedar Foundation\n      path: orgs/research/labs/Cedar-Foundation.md',
-        ),
+        withOrg.includes('orgs:\n  current:\n    - Cedar Foundation\n') && !withOrg.includes('org_refs'),
         withOrg.includes('met: 2021\n'),
         await read(cleared.id),
         (await read(twoSites.id)).split('\n').slice(0, 7).join('\n'),
