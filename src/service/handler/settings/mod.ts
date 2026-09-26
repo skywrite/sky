@@ -14,6 +14,11 @@
  */
 
 import { Hono } from 'hono'
+import {
+  TRANSCRIPTION_MODELS,
+  transcriptionModelValue,
+  type TranscriptionSettings,
+} from '#commands/all/audio/transcript/lib/models.ts'
 import type { WritingDraftStore } from '#lib/writingVoice/drafts.ts'
 import { DEFAULT_WRITING_VOICE_PROFILE } from '#lib/writingVoice/model.ts'
 import type { ModelProfile } from '#shared/ai/models.ts'
@@ -240,6 +245,7 @@ export interface ProfileInput {
 
 /** Everything the page shows, in one payload. */
 export interface SettingsData {
+  transcription: TranscriptionSettings
   calendar: { classifyEvents: boolean }
   /** Each Google account's category, by lower-case email; an account not listed files as Professional */
   google?: { accountCategories: Record<string, GoogleAccountCategory> }
@@ -316,6 +322,7 @@ export const SETTABLE_KEYS = {
   'voice.voice': ['voice', 'voice'],
   'voice.researcherVoice': ['voice', 'researcherVoice'],
   'ai.writingVoiceProfile': ['ai', 'writingVoiceProfile'],
+  'ai.models.transcription': ['ai', 'models', 'transcription'],
   'ai.roles.reasoning': ['ai', 'roles', 'reasoning'],
   'ai.roles.fast': ['ai', 'roles', 'fast'],
   'ai.roles.balanced': ['ai', 'roles', 'balanced'],
@@ -337,6 +344,8 @@ export const BOOLEAN_KEYS: ReadonlySet<SettableKey> = new Set<SettableKey>([
 /** The valid values for one settable key, against the live host. null = fine. */
 async function refuse(host: SettingsHost, key: SettableKey, value: string): Promise<string | null> {
   switch (key) {
+    case 'ai.models.transcription':
+      return TRANSCRIPTION_MODELS.some((model) => model.value === value) ? null : 'Choose OpenAI or Mistral.'
     case 'web.theme':
       return (THEMES as readonly string[]).includes(value) ? null : `theme must be one of ${THEMES.join(', ')}`
     case 'web.textSize':
@@ -373,6 +382,10 @@ async function settingsData(host: SettingsHost): Promise<SettingsData> {
   const [editors, memoryNotes, about] = await Promise.all([host.editors(), host.memoryNotes(), host.about()])
   return {
     theme: config.web.theme ?? 'system',
+    transcription: {
+      value: transcriptionModelValue(config.ai.models.transcription),
+      choices: TRANSCRIPTION_MODELS.map((model) => ({ ...model, configured: Boolean(snapshot.env[model.apiKeyEnv]) })),
+    },
     calendar: { classifyEvents: config.calendar?.classifyEvents === true },
     google: { accountCategories: { ...config.google?.accountCategories } },
     textSize: config.web.textSize ?? 'default',

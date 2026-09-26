@@ -16,6 +16,46 @@ import {
 
 // The routes are what is under test: the host is scripted, never the machine.
 
+test('audio transcription saves supported choices and exposes key presence only', async () => {
+  const config = structuredClone(CONFIG)
+  const { host, writes } = hostWith(config)
+  host.load().env.OPENAI_API_KEY = 'mock-secret-never-returned'
+  host.write = async (key, value) => {
+    writes.push([key, value])
+    if (key === 'ai.models.transcription') config.ai.models.transcription = value
+  }
+  const app = await appWith(host)
+  const before = (await (await app.request('/settings/_api/settings')).json()) as SettingsData
+  const saved = await post(app, '/settings/_api/set', {
+    key: 'ai.models.transcription',
+    value: 'mistral/voxtral-mini-latest',
+  })
+  const after = (await (await app.request('/settings/_api/settings')).json()) as SettingsData
+  const refused = await post(app, '/settings/_api/set', { key: 'ai.models.transcription', value: 'unknown/model' })
+  assert({
+    given: 'the formerly unused default, an available OpenAI key, and a change to Mistral',
+    should: 'serve the effective model, save the next choice, reject unsupported models, and keep secrets private',
+    actual: [
+      before.transcription.value,
+      before.transcription.choices.map((choice) => choice.configured),
+      saved.status,
+      after.transcription.value,
+      refused.status,
+      writes,
+      JSON.stringify(before).includes('mock-secret-never-returned'),
+    ],
+    expected: [
+      'openai/gpt-transcribe',
+      [true, false],
+      200,
+      'mistral/voxtral-mini-latest',
+      400,
+      [['ai.models.transcription', 'mistral/voxtral-mini-latest']],
+      false,
+    ],
+  })
+})
+
 test('calendar classification is read live and accepts only boolean settings writes', async () => {
   const config = structuredClone(CONFIG)
   const { host } = hostWith(config)

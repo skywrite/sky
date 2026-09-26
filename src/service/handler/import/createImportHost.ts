@@ -10,8 +10,9 @@ import { randomUUID } from 'node:crypto'
 import { readFile, rm } from 'node:fs/promises'
 import * as path from 'node:path'
 import { generateText } from 'ai'
+import { transcribeAudio } from '#commands/all/audio/transcript/lib/audio.ts'
 import { audioTurnsKey } from '#commands/all/audio/transcript/lib/audioTurns.ts'
-import { transcribeWithOpenAI } from '#commands/all/audio/transcript/lib/transcribe.ts'
+import { resolveTranscriptionModel } from '#commands/all/audio/transcript/lib/models.ts'
 import { peekTranscriptRun, sha256Of } from '#commands/all/audio/transcript/lib/transcriptRun.ts'
 import { checkDayMeetings, START_TOLERANCE_MINUTES } from '#commands/all/day/meeting/lib/meetingCheck.ts'
 import CommandContext from '#commands/lib/core/CommandContext.ts'
@@ -21,6 +22,7 @@ import { imageSize } from '#lib/media/image/mod.ts'
 import { KeychainSecretsProvider } from '#lib/secrets/KeychainSecretsProvider.ts'
 import { aiModel } from '#shared/ai/models.ts'
 import type * as ConfigModule from '#shared/config.ts'
+import { loadSkyConfig } from '#shared/config/loader.ts'
 import { readTextFile } from '#shared/fs/mod.ts'
 import { JournalTypes } from '#shared/models/Journal/mod.ts'
 import { dayDir, fetchNowSync } from '#shared/nbfs/mod.ts'
@@ -115,8 +117,9 @@ export function createImportHost(config: typeof ConfigModule, env: Record<string
     if (source === 'image') return readImage(size, await imageSize(filePath).catch(() => null))
     if (source === 'document') return readDocument(name)
     const info = await probeMedia(filePath).catch(() => null)
-    if (source === 'imessage-audio') return readIMessageAudio(size, info?.durationSeconds ?? null)
-    return readAudio(size, info?.durationSeconds ?? null)
+    const limit = resolveTranscriptionModel(loadSkyConfig().ai.models.transcription).maxUploadMb * 1024 * 1024
+    if (source === 'imessage-audio') return readIMessageAudio(size, info?.durationSeconds ?? null, limit)
+    return readAudio(size, info?.durationSeconds ?? null, limit)
   }
 
   // A transcript's clock is its end; a recording's is when it stopped. Either
@@ -141,7 +144,7 @@ export function createImportHost(config: typeof ConfigModule, env: Record<string
     const clip = path.join(jobDir, `listen-${randomUUID()}.wav`)
     try {
       await runFfmpeg('ffmpeg', ['-y', '-i', filePath, '-t', String(LISTEN_SECONDS), '-ac', '1', '-ar', '16000', clip])
-      return (await transcribeWithOpenAI(await readFile(clip), 'listen.wav')).text.trim()
+      return (await transcribeAudio(await readFile(clip), 'listen.wav')).text.trim()
     } finally {
       await rm(clip, { force: true })
     }

@@ -80,7 +80,7 @@ function generateConfig(opts: {
   //   "models": {
   //     "strong": "anthropic/claude-sonnet-5",
   //     "fast": "openai/gpt-4o-mini",
-  //     "transcription": "openai/gpt-4o-transcribe"
+  //     "transcription": "openai/gpt-transcribe"
   //   }
   // },
 

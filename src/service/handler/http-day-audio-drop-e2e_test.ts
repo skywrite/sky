@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises'
 import * as path from 'node:path'
+import { TRANSCRIPTION_MODELS } from '#commands/all/audio/transcript/lib/models.ts'
 import dayFile from '#shared/nbfs/dayFile.ts'
 import { assert, test } from '#test'
 import { PlainDate, ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
@@ -20,6 +21,8 @@ test(
   async (t) => {
     const runs: { start: StartArgs; contents: string[] }[] = []
     let listens = 0
+    let transcriptionChoice = TRANSCRIPTION_MODELS[0] as (typeof TRANSCRIPTION_MODELS)[number]
+    const readSizes: number[] = []
     await runWysiwygE2e(
       t,
       {
@@ -29,7 +32,10 @@ test(
         day: true,
         now: new ZonedDateTime('2026-01-27 10:00', 'America/Chicago'),
         imports: {
-          read: async ({ size }) => readIMessageAudio(size, 30),
+          read: async ({ size }) => {
+            readSizes.push(size)
+            return readIMessageAudio(size, 30, transcriptionChoice.maxUploadMb * 1024 * 1024)
+          },
           suggestWhen: () => '2026-01-27 09:30',
           listen: async () => {
             listens++
@@ -154,6 +160,48 @@ test(
             [],
           ],
         })
+        await page.route('**/settings/_api/settings', (route) =>
+          route.fulfill({
+            json: {
+              theme: 'light',
+              textSize: 'default',
+              transcription: { value: transcriptionChoice.value, choices: TRANSCRIPTION_MODELS },
+            },
+          }),
+        )
+        await page.goto(`${origin}/${DAY}`)
+        await page.waitForSelector('.sky-day .sky-col')
+        const dropLargeRecording = () =>
+          page.evaluate(() => {
+            const files = new DataTransfer()
+            files.items.add(new File([new Uint8Array(26 * 1024 * 1024)], 'large.caf', { type: 'audio/x-caf' }))
+            document
+              .querySelector('.sky-day .sky-col')!
+              .dispatchEvent(new DragEvent('drop', { bubbles: true, dataTransfer: files }))
+          })
+        await dropLargeRecording()
+        const dialog = page.locator('.sky-confirm')
+        await dialog
+          .getByText('The recording is 26 MB, over the 25 MB limit. Trim it, or record shorter parts.', { exact: true })
+          .waitFor()
+        assert({
+          given: 'a large recording with OpenAI selected',
+          should: 'refuse before uploading its bytes',
+          actual: readSizes.includes(26 * 1024 * 1024),
+          expected: false,
+        })
+        await dialog.getByRole('button', { name: 'Remove', exact: true }).click()
+        await dialog.waitFor({ state: 'detached' })
+        transcriptionChoice = TRANSCRIPTION_MODELS[1]
+        await dropLargeRecording()
+        await dialog.getByText('New iMessage Audio conversation', { exact: true }).waitFor()
+        assert({
+          given: 'the same recording after choosing Mistral without reloading',
+          should: 'pass both browser and server checks',
+          actual: readSizes.includes(26 * 1024 * 1024),
+          expected: true,
+        })
+        await dialog.getByRole('button', { name: 'Cancel', exact: true }).click()
       },
     )
   },

@@ -1,6 +1,6 @@
 ---
 created: 2026-08-30
-updated: 2026-09-23
+updated: 2026-09-26
 ---
 
 # Settings — the web's settings section
@@ -20,7 +20,7 @@ People & Orgs appears above the Settings heading in this sidebar. Its pages and
 record storage are owned by [People & Orgs](../../people/docs/README.md).
 
 Settings use one level of navigation: Appearance; Me (About me, Writing style);
-AI (Models, Voice, Prompts); Connections; Notebook; Advanced; Experimental; About Sky.
+AI (Models, Audio transcription, Voice, Prompts); Connections; Notebook; Advanced; Experimental; About Sky.
 Group labels open their first page; the adjacent disclosure toggles their children.
 `theme/client/settingsRoutes.ts` owns canonical paths and legacy aliases, including
 prompt detail paths. Existing `/settings/ai`, `/settings/voice`,
@@ -44,6 +44,10 @@ Pages:
   reads are bounded. Web text is evidence, never instructions. Failed sources
   remain visible, and accepting a suggestion changes the draft until Save.
   The existing memory count and notebook link live here too.
+- **AI → Audio transcription** — `/settings/ai/transcription`: provider, model,
+  upload limit, and API key availability. Saves to `ai.models.transcription`;
+  the [transcript pipeline](../../../../commands/all/audio/transcript/docs/README.md)
+  owns provider selection and retry behavior.
 - **AI → Voice** — independent Sky and Sonny voice pickers, each with a Hear
   button (the audition's receive-only call, one row at a time). Picks
   save to `voice.voice` and `voice.researcherVoice`, resolved per session

@@ -4,6 +4,7 @@ import * as path from 'node:path'
 import { serve } from '@hono/node-server'
 import { Hono } from 'hono'
 import { chromium } from 'playwright'
+import { TRANSCRIPTION_MODELS } from '#commands/all/audio/transcript/lib/models.ts'
 import { initialSetupState, saveAccountTokens, saveProjectClient } from '#lib/google/mod.ts'
 import type { CloudSetupState } from '#lib/google/mod.ts'
 import { TestSecretsProvider } from '#lib/secrets/TestSecretsProvider.ts'
@@ -128,6 +129,10 @@ test(
     }
     const accountCategories: Record<string, 'Professional' | 'Personal'> = {}
     const settings: SettingsData = {
+      transcription: {
+        value: 'openai/gpt-transcribe',
+        choices: TRANSCRIPTION_MODELS.map((model) => ({ ...model, configured: model.provider === 'openai' })),
+      },
       calendar: { classifyEvents: false },
       google: { accountCategories },
       theme: 'light',

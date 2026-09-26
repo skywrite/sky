@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises'
 import * as path from 'node:path'
+import { transcribeAudio } from '#commands/all/audio/transcript/lib/audio.ts'
 import { glossaryKeywords, loadGlossary } from '#commands/all/audio/transcript/lib/glossary.ts'
-import { transcribeWithOpenAI } from '#commands/all/audio/transcript/lib/transcribe.ts'
 import {
   clearTranscriptRun,
   TranscriptRun,
@@ -84,7 +84,7 @@ export async function transcribeSlackVoiceMemo(
     options.recognize ??
     (async (data, name, signal) => {
       const glossary = await loadGlossary()
-      return transcribeWithOpenAI(data, name, { keywords: glossary ? glossaryKeywords(glossary) : [], signal })
+      return transcribeAudio(data, name, { keywords: glossary ? glossaryKeywords(glossary) : [], signal })
     })
   const result = await recognize(await readFile(originalPath), path.basename(originalPath), options.signal)
   if (!result.text.trim()) throw new Error('Voice memo transcription returned no words.')

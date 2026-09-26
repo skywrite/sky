@@ -4,6 +4,7 @@ import * as path from 'node:path'
 import { serve } from '@hono/node-server'
 import { Hono } from 'hono'
 import { chromium } from 'playwright'
+import { TRANSCRIPTION_MODELS } from '#commands/all/audio/transcript/lib/models.ts'
 import { env } from '#shared/sys/mod.ts'
 import { assert, test } from '#test'
 import { createTestHttpApp } from './httpTestHelpers.ts'
@@ -32,6 +33,10 @@ test(
       },
     )
     const settings: SettingsData = {
+      transcription: {
+        value: 'openai/gpt-transcribe',
+        choices: TRANSCRIPTION_MODELS.map((model) => ({ ...model, configured: model.provider === 'openai' })),
+      },
       calendar: { classifyEvents: false },
       theme: 'light',
       experimental: { contextPreflight: false, workstreams: false },
@@ -54,12 +59,17 @@ test(
       advanced: { path: '/Config/config.jsonc', exists: true, version: 1, sections: [] },
     }
     const app = new Hono()
+    let refuseTranscriptionSave = false
     let refuseWorkstreamSave = false
     let persistBeforeRefusal = false
     app.route('/settings/_api/about-me', createAboutMeRoutes(host))
     app.get('/settings/_api/settings', (c) => c.json(settings))
     app.post('/settings/_api/set', async (c) => {
       const input = await c.req.json()
+      if (input.key === 'ai.models.transcription') {
+        if (refuseTranscriptionSave) return c.json({ message: 'This setting could not be saved.' }, 503)
+        settings.transcription.value = input.value
+      }
       if (input.key === 'web.theme') settings.theme = input.value
       if (input.key === 'web.textSize') settings.textSize = input.value
       if (input.key === 'experimental.workstreams') {
@@ -137,6 +147,46 @@ test(
       await page.locator('.sky-preset-toggle').filter({ hasText: 'sample' }).click()
       await page.getByRole('combobox', { name: 'Preset model', exact: true }).waitFor()
       await capture('models-light')
+      await nav.getByRole('button', { name: 'Audio transcription', exact: true }).click()
+      const transcription = page.getByRole('combobox', { name: 'Transcription provider', exact: true })
+      await transcription.click()
+      await page.getByRole('option', { name: 'Mistral', exact: true }).click()
+      await page.getByText('Saved. New transcriptions will use this provider.', { exact: true }).waitFor()
+      await nav.getByRole('button', { name: 'Models', exact: true }).click()
+      await nav.getByRole('button', { name: 'Audio transcription', exact: true }).click()
+      await page.getByText('voxtral-mini-latest', { exact: true }).waitFor()
+      assert({
+        given: 'Mistral is selected and the page is revisited',
+        should: 'retain the provider and explain its limit and missing key',
+        actual: [
+          await transcription.inputValue(),
+          await page.getByText('500 MB per file', { exact: true }).isVisible(),
+          await page.getByText('Not configured', { exact: true }).isVisible(),
+        ],
+        expected: ['Mistral', true, true],
+      })
+      await capture('transcription-desktop')
+      refuseTranscriptionSave = true
+      await transcription.click()
+      await page.getByRole('option', { name: 'OpenAI', exact: true }).click()
+      await page.getByRole('alert').filter({ hasText: 'This setting could not be saved.' }).waitFor()
+      assert({
+        given: 'a refused provider save',
+        should: 'retain the saved provider',
+        actual: await transcription.inputValue(),
+        expected: 'Mistral',
+      })
+      refuseTranscriptionSave = false
+      await page.setViewportSize({ width: 390, height: 844 })
+      await page.waitForFunction(() => document.querySelector('.sky-side')!.getBoundingClientRect().right <= 0)
+      await capture('transcription-mobile')
+      assert({
+        given: 'the transcription page on a phone',
+        should: 'fit without horizontal scrolling',
+        actual: await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+        expected: true,
+      })
+      await page.setViewportSize({ width: 1440, height: 1100 })
       await nav.getByRole('button', { name: 'Collapse Me', exact: true }).click()
       assert({
         given: 'a collapsed group',
@@ -200,6 +250,7 @@ test(
         ['/settings/writing-voice', 'Writing style'],
         ['/settings/ai', 'Models'],
         ['/settings/voice', 'Voice'],
+        ['/settings/ai/transcription', 'Audio transcription'],
         ['/settings/prompts', 'Prompts'],
         ['/settings/connections', 'Connections'],
         ['/settings/notebook', 'Notebook'],
@@ -305,6 +356,15 @@ test(
       await page.goto(`${base}/settings/me/writing-style`)
       await page.getByLabel('Your writing rules', { exact: true }).waitFor()
       await capture('writing-style-dark')
+      await page.goto(`${base}/settings/ai/transcription`)
+      await page.getByText('voxtral-mini-latest', { exact: true }).waitFor()
+      assert({
+        given: 'a fresh page load',
+        should: 'load the saved transcription provider',
+        actual: await transcription.inputValue(),
+        expected: 'Mistral',
+      })
+      await capture('transcription-dark')
       await page.setViewportSize({ width: 390, height: 844 })
       await page.goto(`${base}/settings/me`)
       await page.getByLabel('Your name', { exact: true }).waitFor()

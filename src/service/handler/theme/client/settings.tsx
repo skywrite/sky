@@ -13,6 +13,7 @@
 
 import { Button, SegmentedControl, Select, useMantineColorScheme } from '@mantine/core'
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
+import type { TranscriptionSettings } from '#commands/all/audio/transcript/lib/models.ts'
 import { AboutMePane } from './settingsAboutMe.tsx'
 import { BeeperMain } from './settingsBeeper.tsx'
 import { Block, mono, refusalOf, Row, UNREACHABLE } from './settingsBlocks.tsx'
@@ -21,6 +22,7 @@ import { GoogleMain } from './settingsGoogle.tsx'
 import { AIPane } from './settingsModels.tsx'
 import { PromptsMain } from './settingsPrompts.tsx'
 import { connectionPageOf, SETTINGS_PAGES, type SettingsSection } from './settingsRoutes.ts'
+import { TranscriptionPane } from './settingsTranscription.tsx'
 import { whenSpeakersWarm } from './speakers.ts'
 import { CALLS_URL } from './voice.tsx'
 import { WritingVoicePane } from './writingVoice.tsx'
@@ -65,6 +67,7 @@ export interface ConfigView {
 }
 
 export interface SettingsData {
+  transcription: TranscriptionSettings
   calendar: { classifyEvents: boolean }
   /** Each Google account's category, by lower-case email; an account not listed files as Professional */
   google?: { accountCategories: Record<string, 'Professional' | 'Personal'> }
@@ -733,7 +736,7 @@ export function SettingsMain({
       </header>
 
       <div className="sky-scroll">
-        <div className="sky-col sky-set">
+        <div className="sky-col sky-set" data-section={section}>
           <div className="sky-set-heading">
             <h1>{page.label}</h1>
             <p>{page.description}</p>
@@ -761,6 +764,8 @@ export function SettingsMain({
               />
             ) : section === 'models' ? (
               <AIPane data={data} reload={reload} />
+            ) : section === 'transcription' ? (
+              <TranscriptionPane settings={data.transcription} reload={reload} />
             ) : section === 'connections' ? (
               <ConnectionsPane navigate={navigate} />
             ) : section === 'notebook' ? (

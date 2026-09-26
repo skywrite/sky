@@ -206,6 +206,22 @@ test('readAudio', () => {
   })
 })
 
+test('audio import uses the selected provider limit for recordings and conversation turns', () => {
+  const limit = 500 * 1024 * 1024
+  const recording = 100 * 1024 * 1024
+  assert({
+    given: 'a recording larger than OpenAI accepts, with Mistral selected',
+    should: 'accept it for either audio path and still refuse files beyond the selected limit',
+    actual: [
+      Boolean(readAudio(recording, 600).refusal),
+      readAudio(recording, 600, limit).refusal,
+      readIMessageAudio(recording, 600, limit).refusal,
+      readAudio(limit + 1024 * 1024, 600, limit).refusal,
+    ],
+    expected: [true, null, null, 'The recording is 501 MB, over the 500 MB limit. Trim it, or record shorter parts.'],
+  })
+})
+
 test('readImage', () => {
   assert({
     given: 'a screenshot whose header states its pixels',

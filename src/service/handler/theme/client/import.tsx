@@ -13,6 +13,7 @@ import {
   useRef,
   useState,
 } from 'react'
+import { TRANSCRIPTION_MODELS, type TranscriptionSettings } from '#commands/all/audio/transcript/lib/models.ts'
 import {
   documentActivity,
   documentWorkWhen,
@@ -368,8 +369,8 @@ export function useImportFeed(id: string | null): ImportFeed {
 
 const RECORDING_EXTS = ['.m4a', '.mp3', '.wav', '.aac', '.ogg', '.flac', '.webm', '.mp4', '.caf']
 const IMAGE_EXTS = ['.png', '.jpg', '.jpeg', '.webp', '.gif', '.heic', '.heif']
-/** The transcriber takes at most this much per request: the read-back's cap, so the sentence below is its sentence. */
-const TRANSCRIBE_CAP = 25 * 1024 * 1024
+/** Smaller recordings fit either provider; larger ones need the current saved choice. */
+const TRANSCRIBE_CAP = TRANSCRIPTION_MODELS[0].maxUploadMb * 1024 * 1024
 /** The vision model takes 10 MB of base64 per image: this much file. The read-back's cap, and its sentence. */
 const IMAGE_CAP = 7.5 * 1024 * 1024
 
@@ -387,19 +388,41 @@ export function acceptsImports(): string {
 }
 
 /** A recording or a screenshot over its cap is refused before its bytes go up, in the read-back's words. */
-function refusedBeforeUpload(file: File): string | null {
+function refusedBeforeUpload(file: File, audioCap: number): string | null {
   const dot = file.name.lastIndexOf('.')
   const ext = dot > 0 ? file.name.slice(dot).toLowerCase() : ''
   const mb = (file.size / 1024 / 1024).toFixed(0)
   const recording = RECORDING_EXTS.includes(ext) || file.type.startsWith('audio/')
-  if (recording && file.size > TRANSCRIBE_CAP) {
-    return `The recording is ${mb} MB, over the 25 MB limit. Trim it, or record shorter parts.`
+  if (recording && file.size > audioCap) {
+    return `The recording is ${mb} MB, over the ${audioCap / 1024 / 1024} MB limit. Trim it, or record shorter parts.`
   }
   const image = IMAGE_EXTS.includes(ext) || file.type.startsWith('image/')
   if (image && file.size > IMAGE_CAP) {
     return `The screenshot is ${mb} MB, over the 7.5 MB limit. Crop it, or save it as a JPEG.`
   }
   return null
+}
+
+async function audioUploadCap(files: File[]): Promise<number> {
+  if (
+    !files.some(
+      (file) =>
+        file.size > TRANSCRIBE_CAP &&
+        (file.type.startsWith('audio/') || RECORDING_EXTS.some((ext) => file.name.toLowerCase().endsWith(ext))),
+    )
+  )
+    return TRANSCRIBE_CAP
+  try {
+    const response = await fetch('/settings/_api/settings')
+    if (response.ok) {
+      const { transcription } = (await response.json()) as { transcription?: TranscriptionSettings }
+      const choice = transcription?.choices.find((model) => model.value === transcription.value)
+      if (choice) return choice.maxUploadMb * 1024 * 1024
+    }
+  } catch {
+    // The server's read-back still checks the current limit if settings cannot be read here.
+  }
+  return Infinity
 }
 
 /** What a drag holds that a drop here can take: files, or text dragged out of another app. */
@@ -563,6 +586,13 @@ export function useImportQueue(onStarted: (job: ImportJob) => void, day?: string
   const [queue, setQueue] = useState<QueuedImport[]>([])
   const [pending, setPending] = useState<Pending | null>(null)
   const [again, setAgain] = useState<ImportJob | null>(null)
+  const pendingKey = useRef<string | null>(null)
+  useEffect(
+    () => () => {
+      pendingKey.current = null
+    },
+    [],
+  )
 
   /** Every file dropped on the day is an import; the Files pad keeps files on its own. */
   const take = (files: File[], meeting: MeetingImport | null = null, filingDay = day) => {
@@ -599,23 +629,27 @@ export function useImportQueue(onStarted: (job: ImportJob) => void, day?: string
     const [{ files, text, meeting, day }, ...rest] = queue
     setQueue(rest)
     const key = crypto.randomUUID()
-    let refusal: string | null = null
-    for (const file of files) {
-      const reason = refusedBeforeUpload(file)
-      if (reason) {
-        refusal = files.length > 1 ? `${file.name}: ${reason}` : reason
-        break
-      }
-    }
-    setPending({ key, files, text, meeting, day, fraction: 0, job: null, options: null, error: refusal })
-    if (refusal) return
+    pendingKey.current = key
+    setPending({ key, files, text, meeting, day, fraction: 0, job: null, options: null, error: null })
     const patch = (change: (p: Pending) => Pending) => setPending((p) => (p && p.key === key ? change(p) : p))
-    uploadImport(files, (fraction) => patch((p) => ({ ...p, fraction })), text, day)
-      .then(({ job, options }) => patch((p) => ({ ...p, fraction: 1, job, options })))
+    void audioUploadCap(files)
+      .then(async (audioCap) => {
+        if (pendingKey.current !== key) return
+        for (const file of files) {
+          const reason = refusedBeforeUpload(file, audioCap)
+          if (reason) {
+            patch((p) => ({ ...p, error: files.length > 1 ? `${file.name}: ${reason}` : reason }))
+            return
+          }
+        }
+        const { job, options } = await uploadImport(files, (fraction) => patch((p) => ({ ...p, fraction })), text, day)
+        patch((p) => ({ ...p, fraction: 1, job, options }))
+      })
       .catch((err: Error) => patch((p) => ({ ...p, error: err.message })))
   }, [queue, pending, again])
 
   const close = () => {
+    pendingKey.current = null
     setPending(null)
     setAgain(null)
   }

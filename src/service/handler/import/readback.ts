@@ -11,6 +11,7 @@
  */
 
 import * as path from 'node:path'
+import { TRANSCRIPTION_MODELS } from '#commands/all/audio/transcript/lib/models.ts'
 import { isRtf, stampedDurationMinutes, turnStamps } from '#commands/all/audio/transcript/lib/plainText.ts'
 import SRT from '#commands/all/audio/transcript/lib/SRT/mod.ts'
 import ZoomVTT from '#commands/all/audio/transcript/lib/ZoomVTT/mod.ts'
@@ -36,8 +37,8 @@ export const KINDS: ImportKind[] = [...RECORDING_KINDS, 'video']
 
 export const AUDIO_EXTENSIONS = ['.m4a', '.mp3', '.wav', '.aac', '.ogg', '.flac', '.webm', '.mp4', '.caf']
 
-/** The transcription request cap; a longer recording is refused up front, not after a wait. */
-export const AUDIO_LIMIT_BYTES = 25 * 1024 * 1024
+/** The default cap; production reads the selected provider's limit for each upload. */
+export const AUDIO_LIMIT_BYTES = TRANSCRIPTION_MODELS[0].maxUploadMb * 1024 * 1024
 
 /** What the vision model reads, and HEIC, which the door converts before it does. */
 export const IMAGE_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.webp', '.gif', '.heic', '.heif']
@@ -228,10 +229,14 @@ export function readSelection(text: string): ReadBack {
 }
 
 /** A recording: its length from the container when the host could read it, its size always. */
-export function readAudio(sizeBytes: number, durationSeconds: number | null): ReadBack {
-  if (sizeBytes > AUDIO_LIMIT_BYTES) {
+export function readAudio(sizeBytes: number, durationSeconds: number | null, limitBytes = AUDIO_LIMIT_BYTES): ReadBack {
+  if (sizeBytes > limitBytes) {
     const mb = (sizeBytes / 1024 / 1024).toFixed(0)
-    return refused('audio', `The recording is ${mb} MB, over the 25 MB limit. Trim it, or record shorter parts.`)
+    const limitMb = limitBytes / 1024 / 1024
+    return refused(
+      'audio',
+      `The recording is ${mb} MB, over the ${limitMb} MB limit. Trim it, or record shorter parts.`,
+    )
   }
   const length = lengthLabel(durationSeconds)
   return {
@@ -247,8 +252,12 @@ export function readAudio(sizeBytes: number, durationSeconds: number | null): Re
 }
 
 /** CAF clips dropped from Messages are conversation turns, never dictated meeting notes. */
-export function readIMessageAudio(sizeBytes: number, durationSeconds: number | null): ReadBack {
-  const audio = readAudio(sizeBytes, durationSeconds)
+export function readIMessageAudio(
+  sizeBytes: number,
+  durationSeconds: number | null,
+  limitBytes = AUDIO_LIMIT_BYTES,
+): ReadBack {
+  const audio = readAudio(sizeBytes, durationSeconds, limitBytes)
   return {
     ...audio,
     source: 'imessage-audio',

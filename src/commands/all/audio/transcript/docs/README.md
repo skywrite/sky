@@ -1,6 +1,6 @@
 ---
 created: 2026-09-02
-updated: 2026-09-25
+updated: 2026-09-26
 ---
 
 # The transcript pipeline
@@ -45,6 +45,19 @@ checkpoints remain until completion, as described below.
 An audio conversation (`--from-audio-turns`) files the cleaned words under the
 speaker names supplied by the person, with short paragraphs. It is not summarized. Its grouping, ordering, and retry boundaries
 are described in the [web import design](../../../../../service/handler/import/docs/README.md).
+
+## Provider selection
+
+`lib/audio.ts` reads `ai.models.transcription` for each new recording. The CLI,
+import previews, and Slack voice-note fallback all use this entrypoint, so a
+settings change applies without restarting the service. The browser's upload
+check and the server's import read-back use that provider's file-size limit too.
+`--provider` overrides
+the saved choice for that command. `lib/models.ts` lists supported choices;
+the old, unused `openai/gpt-4o-transcribe` default resolves to `gpt-transcribe`
+to preserve the model that was actually running. Live voice uses its own model.
+A saved retry transcript remains reusable after changing providers; `--fresh`
+(or Start over in an import) explicitly requests new recognition.
 
 ## What the caller states wins; what sky reads only fills
 

@@ -5,28 +5,13 @@ import { Arg, Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { probeMedia } from '#lib/media/ffmpeg/mod.ts'
 import { runCommand } from '#lib/sys/mod.ts'
+import { loadSkyConfig } from '#shared/config/loader.ts'
 import { exists, writeTextFile } from '#shared/fs/mod.ts'
-import { env } from '#shared/sys/mod.ts'
+import { transcribeAudio } from './lib/audio.ts'
 import { desktopFilesByExt } from './lib/desktopFiles.ts'
 import { glossaryKeywords, loadGlossary } from './lib/glossary.ts'
-import { transcribeWithOpenAI } from './lib/transcribe.ts'
+import { resolveTranscriptionModel } from './lib/models.ts'
 import { clockLabel, runOptionsFor, TranscriptRun } from './lib/transcriptRun.ts'
-
-// -----------------------------------------------------------------------------
-// Provider Types
-// -----------------------------------------------------------------------------
-
-type TranscriptionProvider = 'openai' | 'mistral'
-
-interface MistralTranscriptionResponse {
-  text: string
-  segments?: Array<{
-    start: number
-    end: number
-    text: string
-    speaker?: string
-  }>
-}
 
 // -----------------------------------------------------------------------------
 // Params & Types
@@ -54,9 +39,9 @@ const params = {
     short: 't',
     default: () => 'Transcript',
   }),
-  provider: Flag.string('Transcription provider: openai or mistral', {
+  provider: Flag.string('Override the saved transcription provider: openai or mistral', {
     short: 'p',
-    default: () => 'openai' as TranscriptionProvider,
+    optional: true,
   }),
   diarize: Flag.bool('Enable speaker diarization (mistral only)', {
     default: false,
@@ -112,7 +97,8 @@ export default class AudioTranscriptCreateTask extends Command {
       'Takes an audio file path, or if not provided, finds the newest audio file on the Desktop.',
       '',
       'Providers:',
-      '  - openai (default): Uses gpt-transcribe, guided by settled transcript-glossary',
+      '  Uses the provider saved in Settings → AI → Audio transcription (OpenAI initially).',
+      '  - openai: Uses gpt-transcribe, guided by settled transcript-glossary',
       '    vocabulary (skip with --no-glossary)',
       '  - mistral: Uses voxtral-mini-latest model with optional speaker diarization',
       '',
@@ -120,7 +106,7 @@ export default class AudioTranscriptCreateTask extends Command {
       'source audio, or --output to specify a custom path.',
     ],
     usage: [
-      'sky audio:transcript:create recording.mp3           # Output to stdout (OpenAI)',
+      'sky audio:transcript:create recording.mp3           # Output to stdout (saved provider)',
       'sky audio:transcript:create recording.mp3 -p mistral # Use Mistral Voxtral',
       'sky audio:transcript:create recording.mp3 -p mistral --diarize # With speaker ID',
       'sky audio:transcript:create recording.mp3 --save    # Save as recording.md',
@@ -145,10 +131,11 @@ export default class AudioTranscriptCreateTask extends Command {
       run: runKey,
     } = args
 
-    // Validate provider
-    const validProviders: TranscriptionProvider[] = ['openai', 'mistral']
-    if (!validProviders.includes(provider as TranscriptionProvider)) {
-      return CommandResult.fail(`Invalid provider "${provider}". Must be one of: ${validProviders.join(', ')}`)
+    let selected
+    try {
+      selected = resolveTranscriptionModel(loadSkyConfig().ai.models.transcription, provider)
+    } catch (err) {
+      return CommandResult.fail((err as Error).message)
     }
 
     // 1. Determine input file
@@ -211,7 +198,7 @@ export default class AudioTranscriptCreateTask extends Command {
 
     // 4. Transcribe using selected provider — unless an earlier run of this
     // file already did, in which case its words are the transcript.
-    const providerName = provider === 'mistral' ? 'Mistral Voxtral' : 'OpenAI'
+    const providerName = selected.label
     output.stage('transcribe', 'Transcribing', kept ? 'reused' : providerName)
 
     let transcriptText: string
@@ -236,35 +223,26 @@ export default class AudioTranscriptCreateTask extends Command {
       output.log(colors.gray(`File size: ${(audioData.length / 1024 / 1024).toFixed(2)} MB`))
 
       try {
-        if (provider === 'mistral') {
-          const result = await this.transcribeWithMistral(audioData, path.basename(transcribeFile), diarize)
-          transcriptText = result.text
-          durationSeconds = result.durationSeconds
-          language = result.language
-        } else {
-          // Glossary vocabulary guides recognition of names and jargon the
-          // model would otherwise mishear. Malformed glossary → no keywords.
-          let keywords: string[] = []
-          if (useGlossary) {
-            const glossary = await loadGlossary()
-            if (glossary) keywords = glossaryKeywords(glossary)
-            if (keywords.length > 0) output.log(colors.gray(`Guiding with ${keywords.length} glossary terms`))
-          }
-          // Imports stream progress without saving a transcript. Standalone
-          // stdout stays a single complete document for piped readers.
-          streamed = context.compositionDepth > 0 || Boolean(outputPath || save)
-          const result = await transcribeWithOpenAI(audioData, path.basename(transcribeFile), {
-            keywords,
-            onDelta: streamed ? (text) => output.write(text) : undefined,
-            signal: context.signal,
-          })
-          if (streamed) output.write('\n')
-          transcriptText = result.text
-          language = result.language
-          // A streamed transcription reports no length; the file knows its own.
-          durationSeconds =
-            result.durationSeconds ?? (await probeMedia(transcribeFile).catch(() => null))?.durationSeconds ?? undefined
+        // Only OpenAI currently receives glossary hints and streams progress.
+        let keywords: string[] = []
+        if (selected.provider === 'openai' && useGlossary) {
+          const glossary = await loadGlossary()
+          if (glossary) keywords = glossaryKeywords(glossary)
+          if (keywords.length > 0) output.log(colors.gray(`Guiding with ${keywords.length} glossary terms`))
         }
+        streamed = selected.provider === 'openai' && (context.compositionDepth > 0 || Boolean(outputPath || save))
+        const result = await transcribeAudio(audioData, path.basename(transcribeFile), {
+          model: selected.value,
+          diarize,
+          keywords,
+          onDelta: streamed ? (text) => output.write(text) : undefined,
+          signal: context.signal,
+        })
+        if (streamed) output.write('\n')
+        transcriptText = result.text
+        language = result.language
+        durationSeconds =
+          result.durationSeconds ?? (await probeMedia(transcribeFile).catch(() => null))?.durationSeconds ?? undefined
       } catch (err) {
         const error = err as Error
         output.error(`Transcription error: ${error.message}`)
@@ -345,91 +323,5 @@ ${transcriptText}
       language,
       run: run.key,
     })
-  }
-
-  // ---------------------------------------------------------------------------
-  // Provider Implementations
-  // ---------------------------------------------------------------------------
-
-  private async transcribeWithMistral(
-    audioData: Uint8Array,
-    fileName: string,
-    diarize: boolean,
-  ): Promise<{ text: string; durationSeconds?: number; language?: string }> {
-    const apiKey = env.get('MISTRAL_API_KEY')
-    if (!apiKey) {
-      throw new Error('MISTRAL_API_KEY environment variable is not set')
-    }
-
-    // Build multipart form data
-    const formData = new FormData()
-    const blob = new Blob([new Uint8Array(audioData).buffer as ArrayBuffer], { type: this.getMimeType(fileName) })
-    formData.append('file', blob, fileName)
-    formData.append('model', 'voxtral-mini-latest')
-
-    if (diarize) {
-      formData.append('diarize', 'true')
-    }
-
-    const response = await fetch('https://api.mistral.ai/v1/audio/transcriptions', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: formData,
-    })
-
-    if (!response.ok) {
-      const errorText = await response.text()
-      throw new Error(`Mistral API error (${response.status}): ${errorText}`)
-    }
-
-    const result = (await response.json()) as MistralTranscriptionResponse
-
-    // If diarization is enabled, format the text with speaker labels
-    let text: string
-    if (diarize && result.segments && result.segments.length > 0) {
-      text = this.formatDiarizedTranscript(result.segments)
-    } else {
-      text = result.text
-    }
-
-    return {
-      text,
-      durationSeconds: undefined,
-      language: undefined,
-    }
-  }
-
-  private getMimeType(fileName: string): string {
-    const ext = path.extname(fileName).toLowerCase()
-    const mimeTypes: Record<string, string> = {
-      '.mp3': 'audio/mpeg',
-      '.mp4': 'audio/mp4',
-      '.m4a': 'audio/mp4',
-      '.wav': 'audio/wav',
-      '.webm': 'audio/webm',
-      '.ogg': 'audio/ogg',
-      '.flac': 'audio/flac',
-      '.aac': 'audio/aac',
-    }
-    return mimeTypes[ext] || 'audio/mpeg'
-  }
-
-  private formatDiarizedTranscript(
-    segments: Array<{ start: number; end: number; text: string; speaker?: string }>,
-  ): string {
-    const lines: string[] = []
-    let currentSpeaker: string | undefined
-
-    for (const segment of segments) {
-      if (segment.speaker && segment.speaker !== currentSpeaker) {
-        currentSpeaker = segment.speaker
-        lines.push(`\n**${currentSpeaker}:**`)
-      }
-      lines.push(segment.text.trim())
-    }
-
-    return lines.join('\n').trim()
   }
 }

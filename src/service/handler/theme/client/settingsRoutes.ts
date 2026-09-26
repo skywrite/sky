@@ -23,6 +23,12 @@ export const SETTINGS_PAGES = {
     group: 'AI',
     description: 'The models Sky uses to think, write, and understand your world.',
   },
+  transcription: {
+    label: 'Audio transcription',
+    href: '/settings/ai/transcription',
+    group: 'AI',
+    description: 'Choose how Sky turns your recordings and voice notes into text.',
+  },
   voice: {
     label: 'Voice',
     href: '/settings/ai/voice',

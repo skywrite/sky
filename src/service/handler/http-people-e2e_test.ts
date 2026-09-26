@@ -4,6 +4,7 @@ import * as path from 'node:path'
 import { serve } from '@hono/node-server'
 import { Hono } from 'hono'
 import { chromium } from 'playwright'
+import { TRANSCRIPTION_MODELS } from '#commands/all/audio/transcript/lib/models.ts'
 import { readProfileEvidence } from '#lib/linkedin/extract.ts'
 import type { LinkedInImport, LinkedInImportHost } from '#lib/linkedin/types.ts'
 import MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
@@ -62,6 +63,10 @@ test(
       },
     }
     const settings: SettingsData = {
+      transcription: {
+        value: 'openai/gpt-transcribe',
+        choices: TRANSCRIPTION_MODELS.map((model) => ({ ...model, configured: model.provider === 'openai' })),
+      },
       calendar: { classifyEvents: false },
       theme: 'light',
       experimental: { contextPreflight: false, workstreams: false },

@@ -3,7 +3,7 @@ import { SETTINGS_PAGES, settingsHref, type SettingsGroup, type SettingsSection 
 
 const GROUPS: Array<{ label: SettingsGroup; pages: SettingsSection[] }> = [
   { label: 'Me', pages: ['about-me', 'writing-voice'] },
-  { label: 'AI', pages: ['models', 'voice', 'prompts'] },
+  { label: 'AI', pages: ['models', 'transcription', 'voice', 'prompts'] },
 ]
 
 export function SettingsNav({
