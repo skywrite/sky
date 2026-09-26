@@ -23,7 +23,7 @@ const org = z.object({
   create: z.boolean().optional(),
 })
 const met = text.refine((value) => {
-  if (!value || /^\d{4}$/.test(value)) return true
+  if (!value || value === 'Never' || /^\d{4}$/.test(value)) return true
   try {
     if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return PlainDate.from(value).ymd === value
     if (/^\d{4}-\d{2}$/.test(value)) return PlainYearMonth.from(value).toString() === value
@@ -31,7 +31,7 @@ const met = text.refine((value) => {
     return false
   }
   return false
-}, 'Use YYYY, YYYY-MM, or YYYY-MM-DD for when you met.')
+}, 'Use YYYY, YYYY-MM, YYYY-MM-DD, or Never for when you met.')
 
 export const SaveProfileSchema = z.object({
   type: z.enum(['person', 'org']),

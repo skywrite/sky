@@ -1,6 +1,6 @@
 import { Button, Checkbox, Modal, Select, TagsInput, Textarea, TextInput } from '@mantine/core'
 import { useEffect, useRef, useState } from 'react'
-import type { LinkedInImport } from '#lib/linkedin/types.ts'
+import { linkedInUrl, type LinkedInImport } from '#lib/linkedin/types.ts'
 import {
   blankProfile,
   organizationMatches,
@@ -17,6 +17,19 @@ import { peopleApi } from './peopleApi.ts'
 const errorText = (error: unknown) => (error instanceof Error ? error.message : 'Something went wrong. Try again.')
 const plain = (value: string) => value.trim().toLowerCase()
 
+/** The sites with a pasted LinkedIn URL added, unless one of them is already that profile. */
+function withLinkedIn(sites: string[], url: string): string[] {
+  const linkedIn = linkedInUrl(url)
+  const same = (site: string) => {
+    try {
+      return plain(linkedInUrl(site)) === plain(linkedIn)
+    } catch {
+      return false
+    }
+  }
+  return sites.some(same) ? sites : [...sites, linkedIn]
+}
+
 function OrganizationFields({
   label,
   value,
@@ -29,6 +42,11 @@ function OrganizationFields({
   onChange: (value: OrganizationChoice[]) => void
 }) {
   const [name, setName] = useState('')
+  const add = () => {
+    const typed = name.trim()
+    if (typed && !value.some((choice) => plain(choice.name) === plain(typed))) onChange([...value, { name: typed }])
+    setName('')
+  }
   return (
     <fieldset className="sky-people-org-fields">
       <legend>{label}</legend>
@@ -89,25 +107,18 @@ function OrganizationFields({
           onKeyDown={(event) => {
             if (event.key === 'Enter') {
               event.preventDefault()
-              if (name.trim()) {
-                onChange([...value, { name: name.trim() }])
-                setName('')
-              }
+              add()
             }
           }}
+          // A name typed but never added still counts, as Websites does
+          onBlur={add}
         />
         <datalist id={`people-orgs-${label.replaceAll(' ', '-')}`}>
           {orgs.map((org) => (
             <option key={org.id} value={org.name} />
           ))}
         </datalist>
-        <Button
-          disabled={!name.trim()}
-          onClick={() => {
-            onChange([...value, { name: name.trim() }])
-            setName('')
-          }}
-        >
+        <Button disabled={!name.trim()} onClick={add}>
           Add
         </Button>
       </div>
@@ -135,6 +146,7 @@ export function PeopleEditor({
   const [draft, setDraft] = useState<ProfileFields>(() => (profile ? { ...profile } : blankProfile(type)))
   const [notes, setNotes] = useState('')
   const [url, setUrl] = useState(initialImport?.url ?? '')
+  const [urlError, setUrlError] = useState('')
   const [job, setJob] = useState<LinkedInImport | undefined>(initialImport)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
@@ -233,11 +245,22 @@ export function PeopleEditor({
     }
   }
   const save = async () => {
+    // A pasted LinkedIn URL is kept even when it was never imported
+    let sites = draft.sites
+    if (!profile && type === 'person' && url.trim()) {
+      try {
+        sites = withLinkedIn(draft.sites, url)
+      } catch (error) {
+        setUrlError(errorText(error))
+        return
+      }
+    }
     setBusy(true)
     setError('')
     try {
       const saved = await peopleApi<ProfileDetail>('/profile', {
         ...draft,
+        sites,
         id: profile?.id,
         revision: profile?.revision,
         notes: profile ? undefined : notes,
@@ -273,7 +296,11 @@ export function PeopleEditor({
               label="Start with LinkedIn"
               placeholder="https://www.linkedin.com/in/…"
               value={url}
-              onChange={(event) => setUrl(event.currentTarget.value)}
+              onChange={(event) => {
+                setUrl(event.currentTarget.value)
+                setUrlError('')
+              }}
+              error={urlError}
               disabled={running || importStarting}
             />
             <Button
@@ -435,8 +462,14 @@ export function PeopleEditor({
                   label="First met"
                   placeholder="YYYY-MM-DD"
                   description="A year or year and month is fine too."
-                  value={draft.met}
+                  value={draft.met === 'Never' ? '' : draft.met}
+                  disabled={draft.met === 'Never'}
                   onChange={(event) => set('met', event.currentTarget.value)}
+                />
+                <Checkbox
+                  label="Never met"
+                  checked={draft.met === 'Never'}
+                  onChange={(event) => set('met', event.currentTarget.checked ? 'Never' : '')}
                 />
                 <OrganizationFields
                   label="Past organizations"
