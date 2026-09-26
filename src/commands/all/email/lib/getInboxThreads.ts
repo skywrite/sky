@@ -1,5 +1,6 @@
 import type { ImapFlow } from 'imapflow'
 import EmailFollowRegistry from '#shared/models/Follow/EmailFollowRegistry.ts'
+import { convertFromNotebookTimezone } from '#shared/nbfs/mod.ts'
 import { fetchFromLabel, findInboxReplies, parseMessage } from './imap-client.ts'
 import type { EmailMessage } from './imap-client.ts'
 
@@ -138,8 +139,10 @@ export async function getInboxThreads(
     const tid = entry.follow.ref.threadId
     if (!tid) continue
     followMessages.set(tid, entry.follow.messages)
+    // lastActivity is written in the zone of its own day, and read back in it.
     if (entry.follow.lastActivity) {
-      followLastActivity.set(tid, new Date(entry.follow.lastActivity.toString().replace(' ', 'T')))
+      const instant = await convertFromNotebookTimezone(entry.follow.lastActivity)
+      followLastActivity.set(tid, new Date(instant.epochMilliseconds))
     }
   }
 

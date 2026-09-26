@@ -2,6 +2,7 @@ import type { GoogleClient } from '#lib/google/mod.ts'
 import { getThread, listThreads, modifyThread, resolveLabel, threadIdToDecimal } from '#lib/google/mod.ts'
 import type { GmailMessage } from '#lib/google/mod.ts'
 import EmailFollowRegistry from '#shared/models/Follow/EmailFollowRegistry.ts'
+import { convertFromNotebookTimezone } from '#shared/nbfs/mod.ts'
 
 // Gmail-API twin of email/lib/getInboxThreads.ts. The IMAP original scans the
 // label folder plus the whole INBOX to reunite threads with unlabeled replies;
@@ -67,7 +68,7 @@ export function savedByCutoff(msgDate: Date, lastActivity: Date): boolean {
 export async function getInboxThreads(
   client: GoogleClient,
   label: string,
-  opts: { limit?: number; syncLabels?: boolean; followDir?: string } = {},
+  opts: { limit?: number; syncLabels?: boolean; followDir?: string; timeDir?: string } = {},
 ): Promise<InboxThreadsResult> {
   const { limit = 250 } = opts
 
@@ -126,8 +127,13 @@ export async function getInboxThreads(
     if (!tid) continue
     followMessages.set(tid, entry.follow.messages)
     followFiles.set(tid, entry.fileName)
+    // lastActivity is written in the zone of its own day. Read in the system
+    // zone, a day kept elsewhere moved the cutoff by the difference: west of
+    // here, the message that set it was captured again on every sync; east,
+    // a reply inside the gap counted as saved and was never captured.
     if (entry.follow.lastActivity) {
-      followLastActivity.set(tid, new Date(entry.follow.lastActivity.toString().replace(' ', 'T')))
+      const instant = await convertFromNotebookTimezone(entry.follow.lastActivity, { timeDir: opts.timeDir })
+      followLastActivity.set(tid, new Date(instant.epochMilliseconds))
     }
   }
 

@@ -1,5 +1,9 @@
 export { default as computePreviousRef } from './computePreviousRef.ts'
 export {
+  default as convertFromNotebookTimezone,
+  type ConvertFromNotebookTimezoneOptions,
+} from './convertFromNotebookTimezone.ts'
+export {
   default as convertToNotebookTimezone,
   type ConvertToNotebookTimezoneOptions,
 } from './convertToNotebookTimezone.ts'

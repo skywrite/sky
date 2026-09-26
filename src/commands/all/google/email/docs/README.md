@@ -1,6 +1,6 @@
 ---
 created: 2026-08-30
-updated: 2026-09-23
+updated: 2026-09-26
 ---
 
 # google:email
@@ -40,6 +40,7 @@ files as Professional.
 
 Dated narratives:
 
+- [2026-09-26 — a follow reads its last activity in its day's zone](2026-09-26-follow-reads-its-days-zone.md)
 - [2026-09-23 — mail files under its account's side of the day](2026-09-23-mail-files-under-its-accounts-side.md)
 - [2026-09-07 — Gmail stays draft-only](2026-09-07-draft-only.md)
 - [2026-09-06 — complete context and read-only listings](2026-09-06-read-limits-and-labels.md)
