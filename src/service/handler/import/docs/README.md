@@ -1,6 +1,6 @@
 ---
 created: 2026-09-01
-updated: 2026-09-25
+updated: 2026-09-26
 ---
 
 # Meeting from a file — the import
@@ -137,6 +137,13 @@ without a question — the upload was sky's staging copy, not the person's
 file — where the terminal asks. A text filed as a message goes the same
 way: the conversation read out of it, one check, and the text kept with
 the message.
+
+A name fixed at the write-up check ("it's not Pria, it's Priya") rewrites
+the write-up. The command announces the write-up step again, and the page
+starts that step's streamed text over, so the new take streams in place of
+the old one instead of under it. Any step announced a second time does the
+same. How the rename reaches the words, the lists, and the glossary is
+`commands/all/audio/transcript/docs/README.md`.
 
 A run that stops — a failure, a cancel, a restart — leaves the pipeline's
 run record behind, keyed by the file's bytes at upload. Opening the job

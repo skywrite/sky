@@ -132,6 +132,36 @@ Not covered: a person matched for who/rel whose name never appears in the
 transcript in any spelling the model listed. That needs a review question
 of a new shape ("which word is this person?") and is not built.
 
+## A name fixed at the check is fixed in the words
+
+The write-up check used to change fields only. "It's not Pria, it's
+Priya" put Priya in rel, while the write-up and the corrected transcript
+kept Pria, and a glossary ruling the names review had just made kept
+pointing at the wrong spelling. Now the check's line is read on the
+reasoning role into the fields it changes and the renames it asks for
+(`lib/parseCorrections.ts`). A rename lists every spelling the write-up
+uses for the name, including one it notes as "also transcribed as". It
+reaches four places (`lib/renames.ts`):
+
+- **The transcript**, by the same literal find-and-replace the names step
+  uses. Never a model rewrite.
+- **The people lists.** An entry with a wrong spelling takes the right one.
+  A single name that exactly one profile answers to becomes that profile's
+  full name, so it links. A list typed out with `who:` or `rel:` in the same
+  line stays as typed.
+- **The write-up**, rewritten by a model that carries only the rename. It
+  also drops the notes the wrong spelling caused, like "also transcribed
+  as" or a Loose End about the spelling. A literal replace would leave
+  those reading as nonsense, so it is only the fallback when the model
+  fails. The rewrite streams where the write-up is shown.
+- **The glossary**, when the check ends: each wrong spelling to the right
+  one. A names-review answer from the same run that produced a spelling now
+  called wrong is re-ruled from the word the transcriber actually wrote.
+  Renames made in later rounds fold into earlier ones.
+
+A changed field is never read as a rename, and a fact is never one ("95%,
+not 90%"). Other fixes to the write-up's text are still not acted on.
+
 ## Picking up a run
 
 A run of the pipeline costs minutes of model time and, for a recording, a
@@ -148,9 +178,10 @@ and a rerun of the same file picks up where the last one stopped.
   re-exported file does not, and rightly starts from nothing.
 - **One JSON file per stage**, written when the stage finishes and read
   first when it starts: `raw` (the transcription), `analysis` (what the
-  model found), `review` (the person's answers), `writeup`, `extract` (the
-  fields — rewritten after every round of corrections, so a rerun shows the
-  corrected ones), `questions` (the clarifying questions asked after the
+  model found), `review` (the person's answers), `writeup` (rewritten when a
+  rename at the check carries into it), `extract` (the fields — rewritten
+  after every round of corrections, so a rerun shows the corrected ones —
+  and the renames, which a rerun applies to the words again), `questions` (the clarifying questions asked after the
   check, and the write-up with the answers folded in), and `filed` (the
   document on disk, with the action items still to accept). Each carries the notebook time it was kept at.
 - **What a rerun skips and what it still asks.** The transcription, the
@@ -180,6 +211,9 @@ Start runs the same command, which finds the record on its own.
 
 ## Narrative
 
+- `2026-09-26-a-name-fixed-at-the-check.md` — a name corrected at the
+  write-up check changed rel and nothing else; how the fix now reaches the
+  transcript, the write-up, and the glossary.
 - `2026-09-05-a-match-owes-the-text-a-correction.md` — the rel list named
   the right contact while the write-up kept the transcriber's misspelling;
   why the two outputs diverged, and what now ties them.

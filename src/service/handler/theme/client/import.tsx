@@ -1461,6 +1461,9 @@ function derive(events: ImportEvent[]): Derived {
     if (event.type === 'plan') {
       plan ??= event.steps
     } else if (event.type === 'stage') {
+      // A step announced again is a new take on it (the write-up redone with a
+      // fix from the check): what it streams replaces what it streamed before.
+      delete text[event.stage.id]
       stage = event.stage
       tick = null
     } else if (event.type === 'tick') {

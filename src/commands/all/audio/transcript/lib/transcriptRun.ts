@@ -24,6 +24,7 @@ import { mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import * as path from 'node:path'
 import { DIR_STATE } from '#config'
 import type { ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
+import type { Rename } from './renames.ts'
 
 export const RUNS_DIR = path.join(DIR_STATE, 'transcript', 'runs')
 
@@ -76,6 +77,8 @@ export interface ExtractStage {
   from: string | null
   to: string | null
   actionItems: unknown
+  /** Names and terms renamed at the check, in order; a rerun applies them to the words again. Absent on older records */
+  renames?: Rename[]
 }
 
 /** One clarifying question: the words it was about, the question, and the answer; null when skipped */

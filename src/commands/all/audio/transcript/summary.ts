@@ -21,6 +21,18 @@ import { readPromptFile } from '#shared/prompts/load.ts'
 import { type RenderInput, renderPromptFile } from '#shared/prompts/mod.ts'
 import { isTerminal, readStdin, setRaw } from '#shared/sys/mod.ts'
 import { extractTypedTime, labelledTimeRaw } from '#universal/dates/extractTypedTime.ts'
+import { applyRulings, GLOSSARY_FILE, loadGlossary, saveGlossary } from './lib/glossary.ts'
+import { parseCorrections } from './lib/parseCorrections.ts'
+import {
+  applyRenames,
+  foundRenames,
+  plausibleRewrite,
+  type Rename,
+  renameNames,
+  renameRulings,
+  renamesText,
+  rewriteWithModel,
+} from './lib/renames.ts'
 import { resolveTimeField } from './lib/timeField.ts'
 import { clockLabel, runOptionsFor, TranscriptRun } from './lib/transcriptRun.ts'
 import { extractTypedNameLists } from './lib/typedNameLists.ts'
@@ -145,7 +157,8 @@ declare module '#commands/lib/core/CommandTypesRegistry.ts' {
 
 // The summary IS the meeting notes, so it rides the reasoning role — the registry's
 // strongest default — rather than a literal, keeping one swap point at the next model
-// bump. Metadata extraction and correction-parsing are lighter and use baseline roles.
+// bump. Metadata extraction is lighter and uses a baseline role. The check's correction
+// parse rides reasoning too, since a rename it reads reaches every word of the notes.
 
 // No-op until the CLI process family configures logging (see #shared/log.ts).
 const log = logger('transcript')
@@ -448,6 +461,8 @@ export default class AudioTranscriptSummaryTask extends Command {
     let extractedActionItems: TranscriptActionItem[] = []
     let finalWho: string[] = []
     let finalRel: string[] = []
+    /** Names and terms renamed at the check, in the order they were made */
+    let renames: Rename[] = []
     const isMessageTemplate = template === 'audio-message'
 
     // The fields as an earlier run of this file left them — extracted, and
@@ -465,6 +480,9 @@ export default class AudioTranscriptSummaryTask extends Command {
       extractedActionItems = normalizeActionItems(kept.actionItems)
       finalWho = kept.who
       finalRel = kept.rel
+      // The write-up kept above already carries the check's renames; the words get them again.
+      renames = kept.renames ?? []
+      transcript = applyRenames(transcript, renames)
       output.log(colors.gray(`Fields from ${clockLabel(keptExtract.at, runOptions.now())}, reused.`))
     } else {
       output.log(colors.cyan('Extracting metadata...'))
@@ -552,16 +570,12 @@ export default class AudioTranscriptSummaryTask extends Command {
         from: extractedFrom,
         to: extractedTo,
         actionItems: extractedActionItems,
+        renames,
       })
     }
     if (!keptExtract) await keepFields()
 
     const finalTitle = title !== 'Transcript Summary' ? title : extractedTitle
-
-    // Extract summary section (different header per template)
-    const summarySection = isMessageTemplate
-      ? extractSection(summary, 'Summary') || ''
-      : extractSection(summary, 'Meeting Summary') || ''
 
     // The message template's from/to feed no profile distiller; the meeting
     // template's who/rel do, so say up front which profiles they reach.
@@ -644,60 +658,26 @@ export default class AudioTranscriptSummaryTask extends Command {
           output.log(colors.gray(`  Typed rel read as: ${finalRel.join(', ') || '(none)'}`))
         }
 
-        // Use AI to parse corrections - handles any format including comma-separated fields
-        // Hoisted so the failure warn can carry the payload that failed to parse.
-        let jsonText = ''
+        // The rest of the line goes to a model: the fields it changes, and the
+        // names or terms it says the words got wrong (lib/parseCorrections.ts).
         try {
-          const peopleFields = isMessageTemplate
-            ? `- from: ${extractedFrom ?? 'null'}\n- to: ${extractedTo ?? 'null'}`
-            : `- who: ${JSON.stringify(finalWho)}`
-
-          const peopleRules = isMessageTemplate
-            ? '- from and to must be strings\n- Only include fields the user explicitly mentioned'
-            : '- who and rel must be arrays of strings\n- Only include fields the user explicitly mentioned'
-
-          const parseResult = await generateText({
-            ...aiModel('fast'),
-            abortSignal: context.signal,
-            prompt: `Parse these user corrections for metadata. Extract any fields the user is updating.
-
-Current metadata:
-- title: ${extractedTitle}
-- time: ${extractedTime ?? 'null'}
-- durationMinutes: ${extractedDuration ?? 'null'}
-- medium: ${extractedMedium ?? 'null'}
-${peopleFields}
-- rel: ${JSON.stringify(finalRel)}
-
-Today's date: ${context.notebookNow.date}
-
-User corrections:
-${corrections}
-
-Return ONLY a JSON object with the fields that should be updated. Rules:
-- time must be in format "YYYY-MM-DD HH:MM" (zero-padded)
-- A date given without a year resolves to its most recent occurrence on or before today's
-  date. Never invent a year.
-- Hours are NOT capped at 23. Notebook time files late-night work under the day it started,
-  so "25:30" means 01:30 the next morning and is a deliberate, valid value. Copy such times
-  through exactly — never normalize them, never roll the date forward, never report them as
-  invalid or ask the user to clarify them.
-- durationMinutes must be a number
-${peopleRules}
-- If the user says "13 mins" or "13 minutes", convert to durationMinutes: 13
-
-Example input: "Time: 2026-01-27 8:44, duration: 13 mins, Medium: Phone"
-Example output: {"time": "2026-01-27 08:44", "durationMinutes": 13, "medium": "Phone"}
-
-Example input: "time: 2026-03-31 25:30"
-Example output: {"time": "2026-03-31 25:30"}`,
+          const parsed = await parseCorrections({
+            corrections,
+            fields: {
+              title: extractedTitle,
+              time: extractedTime,
+              durationMinutes: extractedDuration,
+              medium: extractedMedium,
+              who: finalWho,
+              rel: finalRel,
+              from: extractedFrom,
+              to: extractedTo,
+            },
+            message: isMessageTemplate,
+            writeup: summary,
+            today: context.notebookNow.date,
+            signal: context.signal,
           })
-
-          jsonText = parseResult.text
-
-          log.debug('correction parse result', { raw: jsonText })
-
-          const parsed = extractJson<ExtractedMetadata>(jsonText)
 
           // Apply parsed corrections
           if (parsed.title) extractedTitle = parsed.title
@@ -708,9 +688,32 @@ Example output: {"time": "2026-03-31 25:30"}`,
             if (parsed.from) extractedFrom = parsed.from
             if (parsed.to) extractedTo = parsed.to
           } else {
-            if (!typedLists.who && Array.isArray(parsed.who)) finalWho = parsed.who
+            if (!typedLists.who && parsed.who) finalWho = parsed.who
           }
-          if (!typedLists.rel && Array.isArray(parsed.rel)) finalRel = parsed.rel
+          if (!typedLists.rel && parsed.rel) finalRel = parsed.rel
+
+          // A name or term the words got wrong is fixed in the words, not only
+          // in a field: the transcript, the people lists, and the write-up
+          // (lib/renames.ts). A list typed out this round stays as typed, and
+          // so does a from/to corrected this round.
+          const found = foundRenames(parsed.renames, [transcript, summary])
+          if (found.length > 0) {
+            const index = await fetchPeopleIndex().catch(() => null)
+            for (const rename of found) {
+              const wrong = rename.wrong.map((spelling) => `"${spelling}"`).join(', ')
+              output.log(colors.gray(`  Renamed ${wrong} → "${rename.right}"`))
+            }
+            transcript = applyRenames(transcript, found)
+            if (!typedLists.who && !isMessageTemplate) finalWho = renameNames(finalWho, found, index)
+            if (!typedLists.rel) finalRel = renameNames(finalRel, found, index)
+            if (isMessageTemplate) {
+              if (extractedFrom && !parsed.from) extractedFrom = renameNames([extractedFrom], found, index)[0]
+              if (extractedTo && !parsed.to) extractedTo = renameNames([extractedTo], found, index)[0]
+            }
+            renames = [...renames, ...found]
+            summary = await this.rewriteWriteup(summary, found, index, output, context.signal)
+            if (run) await run.put('writeup', { summary })
+          }
 
           // Corrections can move a person into who (or re-add a party to rel);
           // the party rule holds over whatever the lists now say.
@@ -719,17 +722,22 @@ Example output: {"time": "2026-03-31 25:30"}`,
           output.log(colors.green('Applied corrections.'))
         } catch (err) {
           output.log(colors.yellow(`Failed to parse corrections: ${err}`))
-          log.warn('correction parse failed', { error: err, raw: jsonText })
+          log.warn('correction parse failed', { error: err })
           await logAIError({
             source: 'audio:transcript:summary',
             stage: 'corrections-parse',
-            message: `${(err as Error).message}${jsonText ? ` — raw head: ${jsonText.slice(0, 200)}` : ''}`,
+            message: (err as Error).message,
           })
         }
         if (!isMessageTemplate) matches = await matchProfiles([...finalWho, ...finalRel])
         await keepFields()
         showMetadata()
       }
+    }
+
+    // What the renames teach the glossary, once the person is done with the check.
+    if (renames.length > 0 && !context.signal?.aborted) {
+      await this.rememberRenames(renames, run, output, context.notebookNow.date)
     }
 
     // Recalculate finalTitle after potential corrections
@@ -788,7 +796,8 @@ ${summary}
       who: finalWho,
       rel: finalRel,
       actionItems: extractedActionItems,
-      summary: summarySection,
+      // The summary section (its header differs per template), from the write-up as the check left it
+      summary: extractSection(summary, isMessageTemplate ? 'Summary' : 'Meeting Summary') || '',
       body: summary,
       cleanedText: transcript,
       audioFilePath: pipelineAudioFilePath,
@@ -907,7 +916,7 @@ ${summary}
     output: OutputHandler,
     hints: { unmatched: boolean; again: boolean },
   ): Promise<string | null> {
-    const hint = ['e.g., "time: 2026-01-20 14:30" or freeform feedback to improve the summary']
+    const hint = ['e.g., "time: 2026-01-20 14:30", or a name spelled wrong: "it\'s Sam, not Pam"']
     if (hints.unmatched) {
       hint.push(
         'a name under "No match" reaches no profile — retype its list with the full name, e.g. "rel: Sam Rivera, Jordan"',
@@ -920,5 +929,67 @@ ${summary}
       placeholder: 'time: …, who: …, rel: …, or what to change',
     })
     return answer ? answer : null
+  }
+
+  /**
+   * The write-up with a check's renames carried through. The write-up step
+   * is announced again, so the page shows the new take in place of the old
+   * one. When the model fails or comes back short, the names are replaced
+   * in place instead.
+   */
+  private async rewriteWriteup(
+    summary: string,
+    renames: Rename[],
+    index: PersonIndexEntry[] | null,
+    output: OutputHandler,
+    signal?: AbortSignal,
+  ): Promise<string> {
+    output.stage('writeup', 'Writing it up', 'with your fix')
+    try {
+      const rewritten = await rewriteWithModel(
+        { summary, renames: renamesText(renames, index) },
+        (text) => output.write(text),
+        signal,
+      )
+      output.write('\n')
+      if (!plausibleRewrite(rewritten, summary)) throw new Error('the rewrite came back empty or shortened')
+      return rewritten
+    } catch (err) {
+      if (signal?.aborted) return summary
+      const message = (err as Error).message
+      output.log(colors.yellow(`Couldn't rewrite the write-up: ${message}. The name is replaced in place.`))
+      await logAIError({ source: 'audio:transcript:summary', stage: 'rename', message })
+      const replaced = applyRenames(summary, renames)
+      output.stage('writeup', 'Writing it up', 'with your fix')
+      output.write(replaced + '\n')
+      return replaced
+    }
+  }
+
+  /**
+   * What the check's renames teach the glossary, once the check ends, so the
+   * next transcript that mishears the name gets it right without asking.
+   */
+  private async rememberRenames(
+    renames: Rename[],
+    run: TranscriptRun | null,
+    output: OutputHandler,
+    today: string,
+  ): Promise<void> {
+    const glossary = await loadGlossary()
+    if (glossary === null) {
+      output.log(colors.yellow(`Glossary unreadable — fix or delete ${GLOSSARY_FILE} (the renames aren't remembered)`))
+      return
+    }
+    const review = run ? ((await run.get('review'))?.data.corrections ?? []) : []
+    const rulings = renameRulings(renames, review)
+    if (rulings.length === 0) return
+    applyRulings(glossary, rulings, today)
+    try {
+      await saveGlossary(glossary)
+      output.log(colors.gray(`Glossary updated (${rulings.length} rulings): ${GLOSSARY_FILE}`))
+    } catch (err) {
+      output.error(`Failed to save glossary: ${(err as Error).message}`)
+    }
   }
 }
