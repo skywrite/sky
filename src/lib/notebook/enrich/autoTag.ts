@@ -15,6 +15,11 @@ export type AutoTagInput = {
    */
   to?: string
   from?: string
+  /**
+   * The conversation the tag history keys on, where it is not `to`: a
+   * video's `from:`, the speaker. Defaults to `to`.
+   */
+  conversation?: string
   summary?: string
   body: string
 }
@@ -51,7 +56,7 @@ export async function autoTagMessage(
         to: input.to,
         from: input.from,
         summary: input.summary,
-        tagHistory: tagHistoryFor(records, input.to),
+        tagHistory: tagHistoryFor(records, input.conversation ?? input.to),
         menu,
       },
       'fast',

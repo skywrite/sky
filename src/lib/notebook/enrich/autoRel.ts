@@ -25,6 +25,11 @@ export type AutoRelInput = {
    */
   to?: string
   from?: string
+  /**
+   * The conversation the rel history and exemplars key on, where it is not
+   * `to`: a video's `from:`, the speaker. Defaults to `to`.
+   */
+  conversation?: string
   summary?: string
   body: string
   existingRel?: string[]
@@ -121,13 +126,14 @@ export async function proposeRel(
       services.loadCorpus(opts.mediums),
     ])
     const records = corpus.records.filter((r) => r.date >= REL_SINCE)
-    const relHistory = relHistoryFor(records, input.to)
+    const conversation = input.conversation ?? input.to
+    const relHistory = relHistoryFor(records, conversation)
     // Identity-less media (journals, chats) have `to` unset on records and
     // input alike, so the whole medium is one conversation: its most recent
     // rel'd files serve as the exemplars, and the per-conversation prior
     // stays empty.
     const exemplars = records
-      .filter((r) => r.to === input.to && r.rel.length > 0)
+      .filter((r) => r.to === conversation && r.rel.length > 0)
       .slice(-MAX_EXEMPLARS)
       .map((r) => ({ summary: r.summary ?? '(no summary)', rel: r.rel }))
 

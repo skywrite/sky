@@ -16,6 +16,8 @@ import {
 } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { DayDirFileWriter, writeDayItems } from '#lib/nbfs/mod.ts'
+import { autoRelMessage, mergeRel } from '#lib/notebook/enrich/autoRel.ts'
+import { autoTagMessage } from '#lib/notebook/enrich/autoTag.ts'
 import openEditor from '#lib/shell/openEditor.ts'
 import slugify from '#lib/string/slugify.ts'
 import VideoDocument from '#shared/models/Video/mod.ts'
@@ -33,6 +35,8 @@ const params = {
   }),
   when: whenNBTime(),
   category: categoryComplete(),
+  noAutoTag: Flag.bool('Skip automatic tagging from the archived-video tag corpus', { default: false }),
+  noAutoRel: Flag.bool('Skip automatic rel suggestion from the entity graph', { default: false }),
   fresh: Flag.bool('Start over: forget what an earlier run of the transcript already produced', { default: false }),
   run: Flag.string('Run record key, passed by a host that keyed the file itself', { optional: true, hidden: true }),
   clock: Flag.string(
@@ -46,6 +50,10 @@ type Params = InferParams<typeof params>
 type Result = { filePath: string }
 
 const VIDEO_MEDIUMS = ['Loom', 'YouTube', 'Zoom Recording', 'Google Meet Recording', 'Vimeo', 'Video']
+
+// Videos classify against the video archive alone: a closed menu of tags
+// already on videos, and rel exemplars from earlier videos. See docs/README.md.
+const VIDEO_ENRICH: { mediums: string[]; kind: string } = { mediums: ['video'], kind: 'video recording' }
 
 export default class VideoNewTask extends Command {
   static override description: CommandDescription = {
@@ -66,6 +74,7 @@ export default class VideoNewTask extends Command {
     const { fromSrt } = args
     let body: string | undefined
     let rel: string[] | undefined
+    let tags: string | undefined
     let srtSourcePath: string | null = null
     /** The pipeline's run record for the transcript, forgotten once the video is filed */
     let run: TranscriptRun | null = null
@@ -103,6 +112,7 @@ export default class VideoNewTask extends Command {
       output.plan([
         { id: 'names', label: 'Checking names' },
         { id: 'writeup', label: 'Writing it up' },
+        { id: 'tags', label: 'Adding tags and links' },
         { id: 'file', label: 'Filing' },
       ])
 
@@ -148,6 +158,26 @@ export default class VideoNewTask extends Command {
 
       output.log(`\nExtracted: from="${from ?? ''}", to="${to ?? ''}", summary="${summary}", when="${when}"`)
       if (rel && rel.length > 0) output.log(`  Related: ${rel.join(', ')}`)
+
+      // Enrich from the archived-video corpus, keyed on the speaker: a
+      // recording is one-way, and a colleague's weekly update files the way
+      // their last one did. Auto-rel runs alongside the transcript's own
+      // extraction rather than instead of it, appending graph-validated refs
+      // the pipeline missed. The manual path stays as it is: a title and a
+      // placeholder body give the classifiers nothing to read.
+      output.stage('tags', 'Adding tags and links')
+      const enrichInput = { to, from, conversation: from ?? to, summary, body: data.body }
+      const [autoTags, autoRel] = await Promise.all([
+        args.noAutoTag ? undefined : autoTagMessage(enrichInput, VIDEO_ENRICH),
+        args.noAutoRel ? undefined : autoRelMessage(enrichInput, VIDEO_ENRICH),
+      ])
+      tags = autoTags
+      if (autoTags) output.log(`  Auto-tags: ${autoTags}`)
+      const merged = mergeRel(rel, autoRel)
+      if (autoRel && merged && merged.length > (rel?.length ?? 0)) {
+        output.log(`  Auto-rel: ${merged.slice(rel?.length ?? 0).join(', ')}`)
+      }
+      rel = merged
       output.log('')
     }
 
@@ -212,6 +242,7 @@ export default class VideoNewTask extends Command {
       summary: summary || '',
       attachments,
       ...(rel && rel.length > 0 ? { rel } : {}),
+      ...(tags ? { tags } : {}),
       body: finalBody,
     })
 

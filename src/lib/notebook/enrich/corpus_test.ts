@@ -74,6 +74,25 @@ const ROWS: CorpusRows = {
       path: '/nb/time/2026/01/11/actions/recaps/09-00_github.md',
     },
   ],
+  videos: [
+    {
+      from: 'Jane Doe',
+      to: 'Atlas team',
+      date: '2026-01-12',
+      summary: 'Rollout walkthrough',
+      tags: ['Work/Eng'],
+      rel: ['projects/Atlas-Rollout'],
+      path: '/nb/time/2026/01/12/actions/videos/Loom_Jane-Doe_Rollout-walkthrough.md',
+    },
+    {
+      to: 'Atlas team',
+      date: '2026-01-13',
+      summary: 'Town hall recording',
+      tags: [],
+      rel: [],
+      path: '/nb/time/2026/01/13/actions/videos/Zoom-Recording_Town-hall.md',
+    },
+  ],
 }
 
 test('corpusMediumOf folds message platforms into slack, email, and message', () => {
@@ -160,6 +179,21 @@ test('recordsFromRows maps recaps with the app as their conversation', () => {
     should: 'key the record on the app, with the what label as its summary',
     actual: records.map((r) => `${r.medium}:${r.to}:${r.summary}:${r.tags.join(',')}:${r.rel.join(',')}`),
     expected: ['recap:github:Code - GitHub:Work/Eng:projects/Atlas'],
+  })
+})
+
+test('recordsFromRows maps videos with the speaker as their conversation', () => {
+  const records = recordsFromRows(ROWS, ['video'])
+  assert({
+    given: 'video rows, one with a speaker and one without',
+    should: 'key each on from, falling back to to, with the summary carried',
+    actual: records.map(
+      (r) => `${r.medium}:${r.to}:${r.from ?? '-'}:${r.summary}:${r.tags.join(',')}:${r.rel.join(',')}`,
+    ),
+    expected: [
+      'video:Jane Doe:Jane Doe:Rollout walkthrough:Work/Eng:projects/Atlas-Rollout',
+      'video:Atlas team:-:Town hall recording::',
+    ],
   })
 })
 

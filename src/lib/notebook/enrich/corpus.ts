@@ -11,9 +11,9 @@ export type MessageRecord = {
   path: string
   /** YYYY-MM-DD — corpus slicing compares these strings */
   date: string
-  /** Corpus medium: slack | email | message (any other message platform) | meeting | journal | chat | note | recap */
+  /** Corpus medium: slack | email | message (any other message platform) | meeting | journal | chat | note | recap | video */
   medium: string
-  /** Conversation identity: `to:` (meetings: `who:`, recaps: `app:`), else `from` (DMs captured from-only); unset for journals, chats and notes */
+  /** Conversation identity: `to:` (meetings: `who:`, recaps: `app:`, videos: `from:`, the speaker), else `from` (DMs captured from-only); unset for journals, chats and notes */
   to?: string
   from?: string
   summary?: string
@@ -80,6 +80,16 @@ export type RecapRow = {
   path: string
   markdown?: string
 }
+export type VideoRow = {
+  from?: string | null
+  to?: string | null
+  date: string
+  summary?: string | null
+  tags: string[]
+  rel: string[]
+  path: string
+  markdown?: string
+}
 export type CorpusRows = {
   messages?: MessageRow[]
   meetings?: MeetingRow[]
@@ -87,6 +97,7 @@ export type CorpusRows = {
   chats?: ChatRow[]
   notes?: NoteRow[]
   recaps?: RecapRow[]
+  videos?: VideoRow[]
 }
 
 /** Message-domain platforms fold into three corpus mediums: slack, email, and message (all others). */
@@ -184,6 +195,23 @@ export function recordsFromRows(rows: CorpusRows, mediums: string[]): MessageRec
       })
     }
   }
+  if (wanted.has('video')) {
+    for (const row of rows.videos ?? []) {
+      records.push({
+        path: row.path,
+        date: row.date,
+        medium: 'video',
+        // A recording is one-way, and the speaker is what recurs: a
+        // colleague's weekly update files the way their last one did.
+        to: str(row.from) ?? str(row.to),
+        from: str(row.from),
+        summary: str(row.summary),
+        tags: row.tags,
+        rel: row.rel,
+        body: row.markdown ?? '',
+      })
+    }
+  }
 
   records.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a.path < b.path ? -1 : 1))
   return records
@@ -201,7 +229,7 @@ export type LoadCorpusOptions = {
 
 /**
  * Load corpus records of the given mediums from the service:
- * slack | email | message (any other message platform) | meeting | journal | chat | note | recap.
+ * slack | email | message (any other message platform) | meeting | journal | chat | note | recap | video.
  * Derived fresh on every call — the store follows the notebook files, so
  * landing in a file IS joining the corpus, with no separate state to maintain.
  */
@@ -226,6 +254,9 @@ export async function loadMessageCorpus(mediums: string[], opts: LoadCorpusOptio
   }
   if (wanted.has('recap')) {
     parts.push(`recaps(limit: ${QUERY_LIMIT}) { app what date tags rel path${body} }`)
+  }
+  if (wanted.has('video')) {
+    parts.push(`videos(limit: ${QUERY_LIMIT}) { from to date summary tags rel path${body} }`)
   }
   if (parts.length === 0) return { records: [] }
 
