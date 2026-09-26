@@ -12,7 +12,7 @@ import * as path from 'node:path'
 import { generateText } from 'ai'
 import { transcribeAudio } from '#commands/all/audio/transcript/lib/audio.ts'
 import { audioTurnsKey } from '#commands/all/audio/transcript/lib/audioTurns.ts'
-import { resolveTranscriptionModel } from '#commands/all/audio/transcript/lib/models.ts'
+import { transcriptionUploadLimit } from '#commands/all/audio/transcript/lib/models.ts'
 import { peekTranscriptRun, sha256Of } from '#commands/all/audio/transcript/lib/transcriptRun.ts'
 import { checkDayMeetings, START_TOLERANCE_MINUTES } from '#commands/all/day/meeting/lib/meetingCheck.ts'
 import CommandContext from '#commands/lib/core/CommandContext.ts'
@@ -117,7 +117,7 @@ export function createImportHost(config: typeof ConfigModule, env: Record<string
     if (source === 'image') return readImage(size, await imageSize(filePath).catch(() => null))
     if (source === 'document') return readDocument(name)
     const info = await probeMedia(filePath).catch(() => null)
-    const limit = resolveTranscriptionModel(loadSkyConfig().ai.models.transcription).maxUploadMb * 1024 * 1024
+    const limit = transcriptionUploadLimit(loadSkyConfig().ai.models.transcription)
     if (source === 'imessage-audio') return readIMessageAudio(size, info?.durationSeconds ?? null, limit)
     return readAudio(size, info?.durationSeconds ?? null, limit)
   }

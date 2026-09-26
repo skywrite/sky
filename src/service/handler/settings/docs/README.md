@@ -45,7 +45,8 @@ Pages:
   remain visible, and accepting a suggestion changes the draft until Save.
   The existing memory count and notebook link live here too.
 - **AI → Audio transcription** — `/settings/ai/transcription`: provider, model,
-  upload limit, and API key availability. Saves to `ai.models.transcription`;
+  upload limit, and API key availability. Selecting MacWhisper loads its
+  installed local models, with refresh and setup guidance. Saves to `ai.models.transcription`;
   the [transcript pipeline](../../../../commands/all/audio/transcript/docs/README.md)
   owns provider selection and retry behavior.
 - **AI → Voice** — independent Sky and Sonny voice pickers, each with a Hear

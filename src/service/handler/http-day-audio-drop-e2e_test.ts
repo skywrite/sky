@@ -1,6 +1,10 @@
 import { readFile } from 'node:fs/promises'
 import * as path from 'node:path'
-import { TRANSCRIPTION_MODELS } from '#commands/all/audio/transcript/lib/models.ts'
+import {
+  TRANSCRIPTION_MODELS,
+  transcriptionUploadLimit,
+  type TranscriptionModel,
+} from '#commands/all/audio/transcript/lib/models.ts'
 import dayFile from '#shared/nbfs/dayFile.ts'
 import { assert, test } from '#test'
 import { PlainDate, ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
@@ -21,7 +25,7 @@ test(
   async (t) => {
     const runs: { start: StartArgs; contents: string[] }[] = []
     let listens = 0
-    let transcriptionChoice = TRANSCRIPTION_MODELS[0] as (typeof TRANSCRIPTION_MODELS)[number]
+    let transcriptionChoice: TranscriptionModel = TRANSCRIPTION_MODELS[0]
     const readSizes: number[] = []
     await runWysiwygE2e(
       t,
@@ -34,7 +38,7 @@ test(
         imports: {
           read: async ({ size }) => {
             readSizes.push(size)
-            return readIMessageAudio(size, 30, transcriptionChoice.maxUploadMb * 1024 * 1024)
+            return readIMessageAudio(size, 30, transcriptionUploadLimit(transcriptionChoice.value))
           },
           suggestWhen: () => '2026-01-27 09:30',
           listen: async () => {
@@ -200,6 +204,22 @@ test(
           should: 'pass both browser and server checks',
           actual: readSizes.includes(26 * 1024 * 1024),
           expected: true,
+        })
+        await dialog.getByRole('button', { name: 'Cancel', exact: true }).click()
+        await dialog.waitFor({ state: 'detached' })
+        transcriptionChoice = {
+          ...TRANSCRIPTION_MODELS[2],
+          value: 'macwhisper/whisperkit:sample-small',
+          model: 'whisperkit:sample-small',
+        }
+        const previousReads = readSizes.length
+        await dropLargeRecording()
+        await dialog.getByText('New iMessage Audio conversation', { exact: true }).waitFor()
+        assert({
+          given: 'a large recording with MacWhisper selected',
+          should: 'pass browser and server checks without a cloud upload cap',
+          actual: readSizes.slice(previousReads),
+          expected: [26 * 1024 * 1024],
         })
         await dialog.getByRole('button', { name: 'Cancel', exact: true }).click()
       },

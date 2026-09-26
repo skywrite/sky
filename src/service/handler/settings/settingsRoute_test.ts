@@ -46,12 +46,61 @@ test('audio transcription saves supported choices and exposes key presence only'
     ],
     expected: [
       'openai/gpt-transcribe',
-      [true, false],
+      [true, false, false],
       200,
       'mistral/voxtral-mini-latest',
       400,
       [['ai.models.transcription', 'mistral/voxtral-mini-latest']],
       false,
+    ],
+  })
+})
+
+test('MacWhisper models load on demand and only installed local model choices are saved', async () => {
+  const config = structuredClone(CONFIG)
+  const { host, writes } = hostWith(config)
+  let discoveries = 0
+  host.macWhisperModels = async () => {
+    discoveries++
+    return {
+      available: true,
+      models: [{ id: 'whisperkit:sample-small', name: 'Sample Small', size: '100 MB', current: true }],
+      error: null,
+    }
+  }
+  const app = await appWith(host)
+  await app.request('/settings/_api/settings')
+  const lazy = discoveries === 0
+  const catalog = await (await app.request('/settings/_api/transcription/macwhisper')).json()
+  const save = (value: string) => post(app, '/settings/_api/set', { key: 'ai.models.transcription', value })
+  const statuses: number[] = []
+  for (const value of [
+    'macwhisper/default',
+    'macwhisper/whisperkit:sample-small',
+    'macwhisper/whisperkit:missing',
+    'macwhisper/openai:sample-cloud',
+  ])
+    statuses.push((await save(value)).status)
+  host.macWhisperModels = async () => ({ available: false, models: [], error: 'Open MacWhisper and try again.' })
+  const unavailable = await (await app.request('/settings/_api/transcription/macwhisper')).json()
+  statuses.push((await save('macwhisper/whisperkit:sample-small')).status)
+  assert({
+    given: 'a local installation, unsupported choices, then an unavailable app',
+    should: 'discover on demand, return model details and refuse unavailable choices',
+    actual: [lazy, catalog, statuses, writes, unavailable],
+    expected: [
+      true,
+      {
+        available: true,
+        models: [{ id: 'whisperkit:sample-small', name: 'Sample Small', size: '100 MB', current: true }],
+        error: null,
+      },
+      [200, 200, 400, 400, 400],
+      [
+        ['ai.models.transcription', 'macwhisper/default'],
+        ['ai.models.transcription', 'macwhisper/whisperkit:sample-small'],
+      ],
+      { available: false, models: [], error: 'Open MacWhisper and try again.' },
     ],
   })
 })

@@ -4,7 +4,7 @@ import * as path from 'node:path'
 import { serve } from '@hono/node-server'
 import { Hono } from 'hono'
 import { chromium } from 'playwright'
-import { TRANSCRIPTION_MODELS } from '#commands/all/audio/transcript/lib/models.ts'
+import { TRANSCRIPTION_MODELS, type MacWhisperModels } from '#commands/all/audio/transcript/lib/models.ts'
 import { env } from '#shared/sys/mod.ts'
 import { assert, test } from '#test'
 import { createTestHttpApp } from './httpTestHelpers.ts'
@@ -62,6 +62,19 @@ test(
     let refuseTranscriptionSave = false
     let refuseWorkstreamSave = false
     let persistBeforeRefusal = false
+    let modelRequests = 0
+    let localModels: MacWhisperModels = {
+      available: true,
+      models: [
+        { id: 'whisperkit:sample-small', name: 'Sample Small', size: '100 MB', current: true },
+        { id: 'whisper-cpp:sample-large', name: 'Sample Large', size: '1.5 GB', current: false },
+      ],
+      error: null,
+    }
+    app.get('/settings/_api/transcription/macwhisper', (c) => {
+      modelRequests++
+      return c.json(localModels)
+    })
     app.route('/settings/_api/about-me', createAboutMeRoutes(host))
     app.get('/settings/_api/settings', (c) => c.json(settings))
     app.post('/settings/_api/set', async (c) => {
@@ -126,7 +139,8 @@ test(
       }
       const screenshots = env.get('SKY_SETTINGS_SCREENSHOTS')
       const capture = async (name: string) => {
-        if (screenshots) await page.screenshot({ path: path.join(screenshots, `${name}.png`), fullPage: true })
+        if (screenshots)
+          await page.screenshot({ path: path.join(screenshots, `${name}.png`), fullPage: true, animations: 'disabled' })
       }
       await page.goto(`${base}/settings`)
       await page.getByRole('heading', { name: 'Appearance', exact: true }).waitFor()
@@ -166,6 +180,82 @@ test(
         expected: ['Mistral', true, true],
       })
       await capture('transcription-desktop')
+      assert({
+        given: 'a cloud provider is selected',
+        should: 'leave MacWhisper discovery idle',
+        actual: modelRequests,
+        expected: 0,
+      })
+      await transcription.click()
+      await page.getByRole('option', { name: 'MacWhisper (local)', exact: true }).click()
+      const localModel = page.getByRole('combobox', { name: 'MacWhisper model', exact: true })
+      await page.waitForFunction(
+        () => !(document.querySelector('[aria-label="MacWhisper model"]') as HTMLInputElement)?.disabled,
+      )
+      await localModel.click()
+      await page.getByRole('option', { name: 'Sample Large · 1.5 GB', exact: true }).click()
+      await page.waitForFunction(
+        () =>
+          (document.querySelector('[aria-label="MacWhisper model"]') as HTMLInputElement)?.value ===
+          'Sample Large · 1.5 GB',
+      )
+      await nav.getByRole('button', { name: 'Models', exact: true }).click()
+      await nav.getByRole('button', { name: 'Audio transcription', exact: true }).click()
+      await page.waitForFunction(
+        () =>
+          (document.querySelector('[aria-label="MacWhisper model"]') as HTMLInputElement)?.value ===
+          'Sample Large · 1.5 GB',
+      )
+      assert({
+        given: 'MacWhisper is selected and an installed model is chosen',
+        should: 'retain the model when revisited, remove the cloud cap and hide API key setup',
+        actual: [
+          settings.transcription.value,
+          await transcription.inputValue(),
+          await page.getByText('No provider upload limit', { exact: true }).isVisible(),
+          await page.getByText('API access', { exact: true }).count(),
+        ],
+        expected: ['macwhisper/whisper-cpp:sample-large', 'MacWhisper (local)', true, 0],
+      })
+      await capture('macwhisper-desktop')
+      await page.setViewportSize({ width: 390, height: 844 })
+      await page.waitForFunction(() => document.querySelector('.sky-side')!.getBoundingClientRect().right <= 0)
+      assert({
+        given: 'MacWhisper settings on a phone',
+        should: 'keep the model picker and explanatory text within the viewport',
+        actual: await page
+          .locator('.sky-set .sky-set-sub, .sky-set .sky-set-note, [aria-label="MacWhisper model"]')
+          .evaluateAll((elements) => elements.every((element) => element.getBoundingClientRect().right <= innerWidth)),
+        expected: true,
+      })
+      await capture('macwhisper-mobile')
+      await page.setViewportSize({ width: 1440, height: 1100 })
+      const installed = localModels
+      localModels = { available: true, models: [], error: null }
+      await page.getByRole('button', { name: 'Refresh models', exact: true }).click()
+      await page
+        .getByText('Download a local transcription model in MacWhisper, then refresh the models here.', { exact: true })
+        .waitFor()
+      assert({
+        given: 'the saved model has been removed',
+        should: 'disable an empty picker and explain the missing model',
+        actual: [
+          await localModel.isDisabled(),
+          await page.getByText('The saved model is no longer installed.', { exact: false }).isVisible(),
+        ],
+        expected: [true, true],
+      })
+      localModels = { available: false, models: [], error: 'Open MacWhisper and try again.' }
+      await page.getByRole('button', { name: 'Refresh models', exact: true }).click()
+      await page.getByRole('alert').filter({ hasText: 'Open MacWhisper and try again.' }).waitFor()
+      localModels = installed
+      await page.getByRole('button', { name: 'Refresh models', exact: true }).click()
+      await page.waitForFunction(
+        () => !(document.querySelector('[aria-label="MacWhisper model"]') as HTMLInputElement)?.disabled,
+      )
+      await transcription.click()
+      await page.getByRole('option', { name: 'Mistral', exact: true }).click()
+      await page.getByText('voxtral-mini-latest', { exact: true }).waitFor()
       refuseTranscriptionSave = true
       await transcription.click()
       await page.getByRole('option', { name: 'OpenAI', exact: true }).click()

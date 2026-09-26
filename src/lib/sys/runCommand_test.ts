@@ -1,6 +1,17 @@
 import { assert, test } from '#test'
 import { runCommand } from './command.ts'
 
+test('runCommand - cancellation and timeout stop a long-running child', async () => {
+  const cancelled = await runCommand('sleep', ['10'], { signal: AbortSignal.timeout(50), killSignal: 'SIGINT' })
+  const timedOut = await runCommand('sleep', ['10'], { timeout: 50, killSignal: 'SIGINT' })
+  assert({
+    given: 'a cancelled command and a command exceeding its deadline',
+    should: 'stop both processes and report failure',
+    actual: [cancelled.success, timedOut.success],
+    expected: [false, false],
+  })
+})
+
 test('runCommand - successful command returns stdout', async () => {
   const result = await runCommand('echo', ['hello world'])
 

@@ -13,7 +13,11 @@ import {
   useRef,
   useState,
 } from 'react'
-import { TRANSCRIPTION_MODELS, type TranscriptionSettings } from '#commands/all/audio/transcript/lib/models.ts'
+import {
+  TRANSCRIPTION_MODELS,
+  transcriptionUploadLimit,
+  type TranscriptionSettings,
+} from '#commands/all/audio/transcript/lib/models.ts'
 import {
   documentActivity,
   documentWorkWhen,
@@ -416,8 +420,7 @@ async function audioUploadCap(files: File[]): Promise<number> {
     const response = await fetch('/settings/_api/settings')
     if (response.ok) {
       const { transcription } = (await response.json()) as { transcription?: TranscriptionSettings }
-      const choice = transcription?.choices.find((model) => model.value === transcription.value)
-      if (choice) return choice.maxUploadMb * 1024 * 1024
+      if (transcription) return transcriptionUploadLimit(transcription.value)
     }
   } catch {
     // The server's read-back still checks the current limit if settings cannot be read here.

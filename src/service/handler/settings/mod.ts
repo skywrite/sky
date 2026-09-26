@@ -16,7 +16,9 @@
 import { Hono } from 'hono'
 import {
   TRANSCRIPTION_MODELS,
+  resolveTranscriptionModel,
   transcriptionModelValue,
+  type MacWhisperModels,
   type TranscriptionSettings,
 } from '#commands/all/audio/transcript/lib/models.ts'
 import type { WritingDraftStore } from '#lib/writingVoice/drafts.ts'
@@ -277,6 +279,8 @@ export interface SettingsData {
 
 /** The host behind the routes — production reads the machine, tests script it. */
 export interface SettingsHost {
+  /** Read installed local models only when the MacWhisper pane asks for them. */
+  macWhisperModels?: () => Promise<MacWhisperModels>
   /** The file and the configuration read from it, fresh for each request */
   load: () => ConfigSnapshot
   /** The voices Talk offers and the host/researcher preferences sessions use now */
@@ -344,8 +348,20 @@ export const BOOLEAN_KEYS: ReadonlySet<SettableKey> = new Set<SettableKey>([
 /** The valid values for one settable key, against the live host. null = fine. */
 async function refuse(host: SettingsHost, key: SettableKey, value: string): Promise<string | null> {
   switch (key) {
-    case 'ai.models.transcription':
-      return TRANSCRIPTION_MODELS.some((model) => model.value === value) ? null : 'Choose OpenAI or Mistral.'
+    case 'ai.models.transcription': {
+      if (TRANSCRIPTION_MODELS.some((model) => model.value === value)) return null
+      try {
+        const selected = resolveTranscriptionModel(value)
+        if (selected.provider === 'macwhisper') {
+          const catalog = await host.macWhisperModels?.()
+          if (catalog?.models.some((model) => model.id === selected.model)) return null
+          return catalog?.error ?? 'Choose an installed MacWhisper model. Refresh the models after downloading one.'
+        }
+      } catch {
+        return 'Choose OpenAI, Mistral, or an installed MacWhisper model.'
+      }
+      return 'Choose OpenAI, Mistral, or an installed MacWhisper model.'
+    }
     case 'web.theme':
       return (THEMES as readonly string[]).includes(value) ? null : `theme must be one of ${THEMES.join(', ')}`
     case 'web.textSize':
@@ -384,7 +400,10 @@ async function settingsData(host: SettingsHost): Promise<SettingsData> {
     theme: config.web.theme ?? 'system',
     transcription: {
       value: transcriptionModelValue(config.ai.models.transcription),
-      choices: TRANSCRIPTION_MODELS.map((model) => ({ ...model, configured: Boolean(snapshot.env[model.apiKeyEnv]) })),
+      choices: TRANSCRIPTION_MODELS.map((model) => ({
+        ...model,
+        configured: model.apiKeyEnv ? Boolean(snapshot.env[model.apiKeyEnv]) : false,
+      })),
     },
     calendar: { classifyEvents: config.calendar?.classifyEvents === true },
     google: { accountCategories: { ...config.google?.accountCategories } },
@@ -414,6 +433,20 @@ async function settingsData(host: SettingsHost): Promise<SettingsData> {
 
 export function createSettingsRoutes(options: SettingsRoutesOptions): Hono {
   const app = new Hono()
+
+  app.get('/transcription/macwhisper', async (c) => {
+    try {
+      const catalog = await options.macWhisperModels?.()
+      return c.json(
+        catalog ?? { available: false, models: [], error: 'MacWhisper is not available on this Sky service.' },
+      )
+    } catch (error) {
+      return c.json(
+        { available: false, models: [], error: error instanceof Error ? error.message : String(error) },
+        503,
+      )
+    }
+  })
 
   // Accounts and keys — the keychain's page, routes of its own.
   if (options.connections) app.route('/connections', createConnectionsRoutes(options.connections))

@@ -59,6 +59,17 @@ to preserve the model that was actually running. Live voice uses its own model.
 A saved retry transcript remains reusable after changing providers; `--fresh`
 (or Start over in an import) explicitly requests new recognition.
 
+MacWhisper choices use `macwhisper/<engine>:<model-id>`. The settings pane
+discovers installed local models through `mw models list` only when selected
+or refreshed; it must not launch MacWhisper during unrelated settings reads.
+`macwhisper/default` uses the selected local model, falling back to the first
+installed local model. Recognition always passes the resolved ID to `--model`
+without changing the app's own selection. Only known local engines use the
+uncapped upload path; cloud engines must not inherit it. The CLI needs a
+temporary audio file, removed on completion, failure, or cancellation. Plain
+text export works without Pro; `--persist` is deliberately omitted so Sky
+does not create a second library copy. Cancel sends SIGINT to the CLI.
+
 ## What the caller states wins; what sky reads only fills
 
 A start the person stated — `--when` typed on the command line, or the

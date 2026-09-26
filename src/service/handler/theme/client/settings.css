@@ -621,6 +621,10 @@
   .sky-set[data-section='transcription'] .sky-set-txt {
     min-width: 100%;
   }
+  .sky-set[data-section='transcription'] .sky-set-ctl {
+    min-width: 0;
+    max-width: 100%;
+  }
 }
 /* A row's second and third lines under its label: a box left unticked, who set it up. */
 .sky-set-sub .sky-set-line {

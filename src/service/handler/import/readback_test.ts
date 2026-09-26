@@ -1,3 +1,4 @@
+import { transcriptionUploadLimit } from '#commands/all/audio/transcript/lib/models.ts'
 import { assert, test } from '#test'
 import {
   AUDIO_LIMIT_BYTES,
@@ -219,6 +220,17 @@ test('audio import uses the selected provider limit for recordings and conversat
       readAudio(limit + 1024 * 1024, 600, limit).refusal,
     ],
     expected: [true, null, null, 'The recording is 501 MB, over the 500 MB limit. Trim it, or record shorter parts.'],
+  })
+})
+
+test('local audio imports accept recordings above either cloud provider limit', () => {
+  const size = 3 * 1024 * 1024 * 1024
+  const limit = transcriptionUploadLimit('macwhisper/whisperkit:sample-small')
+  assert({
+    given: 'a large file size with an installed local model selected',
+    should: 'accept both audio import paths',
+    actual: [readAudio(size, 3600, limit).refusal, readIMessageAudio(size, 3600, limit).refusal],
+    expected: [null, null],
   })
 })
 

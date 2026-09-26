@@ -3,6 +3,7 @@ import { readdir } from 'node:fs/promises'
 import * as os from 'node:os'
 import process from 'node:process'
 import { promisify } from 'node:util'
+import { getMacWhisperModels } from '#commands/all/audio/transcript/lib/macwhisper.ts'
 import { preferredResearcherVoice, preferredVoice, VOICE_GROUPS } from '#commands/lib/voice/sessionConfig.ts'
 import { DIR_AI_MEMORY, DIR_CODE } from '#config'
 import * as notebookConfig from '#config'
@@ -45,6 +46,7 @@ function aboutBuild(): Promise<{ version: string | null; date: string | null }> 
 /** The settings page over the real machine: the file, the preferences, the keychain, git, Finder. */
 export function createSettingsHost(): SettingsRoutesOptions {
   return {
+    macWhisperModels: getMacWhisperModels,
     load: () => ({
       path: SKY_CONFIG_PATH,
       home: os.homedir(),

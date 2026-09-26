@@ -33,10 +33,16 @@ export async function isCommandAvailable(commandName: string): Promise<boolean> 
 export async function runCommand(
   commandName: string,
   args: string[] = [],
-  options: { env?: Record<string, string> } = {},
+  options: {
+    env?: Record<string, string>
+    signal?: AbortSignal
+    timeout?: number
+    maxBuffer?: number
+    killSignal?: NodeJS.Signals
+  } = {},
 ): Promise<{ success: boolean; code: number; stdout: string; stderr: string }> {
   try {
-    const execOptions = options.env ? { env: { ...process.env, ...options.env } } : {}
+    const execOptions = { ...options, ...(options.env ? { env: { ...process.env, ...options.env } } : {}) }
     const { stdout, stderr } = await execFile(commandName, args, execOptions)
 
     return {

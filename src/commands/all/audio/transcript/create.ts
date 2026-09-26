@@ -39,11 +39,11 @@ const params = {
     short: 't',
     default: () => 'Transcript',
   }),
-  provider: Flag.string('Override the saved transcription provider: openai or mistral', {
+  provider: Flag.string('Override the saved transcription provider: openai, mistral, or macwhisper', {
     short: 'p',
     optional: true,
   }),
-  diarize: Flag.bool('Enable speaker diarization (mistral only)', {
+  diarize: Flag.bool('Enable speaker diarization (Mistral or supported MacWhisper models)', {
     default: false,
   }),
   // mri parses --no-glossary as {glossary: false}, so the flag must be
@@ -92,7 +92,7 @@ declare module '#commands/lib/core/CommandTypesRegistry.ts' {
 export default class AudioTranscriptCreateTask extends Command {
   static override description: CommandDescription = {
     name: 'audio:transcript:create',
-    description: 'Create a transcript from an audio file using OpenAI or Mistral.',
+    description: 'Create a transcript from an audio file using OpenAI, Mistral, or MacWhisper.',
     descriptionLong: [
       'Takes an audio file path, or if not provided, finds the newest audio file on the Desktop.',
       '',
@@ -101,6 +101,7 @@ export default class AudioTranscriptCreateTask extends Command {
       '  - openai: Uses gpt-transcribe, guided by settled transcript-glossary',
       '    vocabulary (skip with --no-glossary)',
       '  - mistral: Uses voxtral-mini-latest model with optional speaker diarization',
+      '  - macwhisper: Uses an installed local model selected in audio transcription settings',
       '',
       'By default, outputs to stdout for piping. Use --save to write a .md file next to the',
       'source audio, or --output to specify a custom path.',
