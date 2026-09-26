@@ -55,12 +55,33 @@ One door for every file kind. The kind picks the command:
 | `.srt` | `video:new --from-srt` — a video's transcript; a Loom's, a caption file's |
 | `.txt` | the kind chosen in the dialog: `meeting:new --from-text` (first), or `message:new --from-text` — a chat's export |
 | text dragged in | the same two doors on the text, staged as `selection.txt`: a message first, a meeting first when its lines carry a notetaker's stamps |
-| audio | the kind chosen in the dialog: `meeting:new` and `event:new` with `--from-voice-memo`, or `journal:new`, `notes:new`, `message:new` with `--from-audio` |
+| other audio | the kind chosen in the dialog: `meeting:new` and `event:new` with `--from-voice-memo`, or `journal:new`, `notes:new`, `message:new` with `--from-audio` |
+| `.caf` | `message:new --from-audio-turns` with medium `iMessage Audio`; every file in the drop is one turn in the same conversation |
 | image | `message:new --from-image` — a screenshot of a conversation |
 | `.pdf`, `.docx`, `.pptx`, `.xlsx`, `.md` | `notes:new --from-file` — a note about work, with the document attached and summarized |
 
 Screenshots dropped or selected together form one import and one message.
 The dialog lists every file, and the job keeps the complete group when reopened.
+CAF files also form one conversation, in the order shown in the dialog; the
+person names the speaker of each file and can move files before Start. Each
+clip is heard for its opening words as it arrives ("Starts: “…”" under its
+name), so the clips are told apart by what they say, not by their file names.
+One clip is a message to someone, and the dialog asks who ("To") before
+Start; a conversation's `to:` is its other speakers, so nothing is asked.
+Names stay with their files through reordering and retries. They skip the
+voice-memo classifier and calendar matching. Each file goes through the existing transcriber separately,
+then the combined transcript goes through one names review. The saved message
+uses the stated speaker names and paragraphs of at most three sentences, without
+a summary. A small model chooses only paragraph break positions; code preserves
+the cleaned words and enforces the limit, with a deterministic fallback. Internal
+file separators never become speaker labels. There is no diarization or inferred alternation.
+
+The transcript retry record is keyed by the ordered audio content hashes,
+with each turn's recognition checkpoint underneath it. Reordering changes the
+conversation identity; a failed later turn reuses completed earlier ones.
+Completion and Start over clear the whole conversation's checkpoints together.
+The original files follow the existing voice memo retention policy.
+
 Other file kinds remain separate imports. Each screenshot retains its capture
 time so `message:new` can read the conversation in capture order; size limits
 apply to each image, and a refused image blocks the whole group.
@@ -129,11 +150,11 @@ record itself is the transcript pipeline's: see
 
 | Route | Does |
 | --- | --- |
-| `POST /import` | multipart `file` (+ `lastModified`), repeated in matching order for a screenshot group → one job, read back; optional `day` selects a document's work day; or a `text` field alone for a dragged text |
+| `POST /import` | multipart `file` (+ `lastModified`), repeated in matching order for a screenshot or CAF group → one job, read back; optional `day` selects a document's work day; or a `text` field alone for a dragged text |
 | `GET /import` | the rows for the Running block |
 | `GET /import/:id` | one job, plus the journal types the dialog offers |
 | `GET /import/:id/events` | SSE: every event so far, then live until the job settles |
-| `POST /import/:id/start` | `{kind, when, whenStated?, dayStated?, category?, journalType?, fresh?, summary?, body?}` — runs the door command; document notes require `summary` and accept a range in `when`; `fresh` starts a transcript pipeline over |
+| `POST /import/:id/start` | `{kind, when, whenStated?, dayStated?, category?, journalType?, fresh?, summary?, body?, fileOrder?, audioSpeakers?, to?}` — runs the door command; document notes require `summary` and accept a range in `when`; `fileOrder` is the CAF group's complete ordered list of staged names, `audioSpeakers` who speaks in each by staged name, and `to` who a single clip is to; `fresh` starts a transcript pipeline over |
 | `POST /import/:id/answer` | `{promptId, answer}` |
 | `POST /import/:id/cancel`, `/remove` | abandon the run; forget the job and its file |
 

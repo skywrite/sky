@@ -1,6 +1,6 @@
 ---
 created: 2026-09-02
-updated: 2026-09-12
+updated: 2026-09-25
 ---
 
 # The transcript pipeline
@@ -41,6 +41,10 @@ dumps in `/tmp`, and meetings, notes, and messages do not attach the audio or
 append a transcript. A dictated journal uses the cleaned words as its entry.
 Explicit standalone transcript exports still save the requested file. Retry
 checkpoints remain until completion, as described below.
+
+An audio conversation (`--from-audio-turns`) files the cleaned words under the
+speaker names supplied by the person, with short paragraphs. It is not summarized. Its grouping, ordering, and retry boundaries
+are described in the [web import design](../../../../../service/handler/import/docs/README.md).
 
 ## What the caller states wins; what sky reads only fills
 

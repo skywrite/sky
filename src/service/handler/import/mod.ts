@@ -70,6 +70,8 @@ export interface ImportRoutesOptions {
   suggestWhen: (file: StagedFile, readback: ReadBack) => string
   /** The first minute of a recording, heard; absent or null when it cannot be */
   listen?: (filePath: string, jobDir: string) => Promise<Listen | null>
+  /** The opening words of one CAF clip, so the person can tell the clips apart before naming who speaks */
+  opening?: (filePath: string, jobDir: string) => Promise<string | null>
   /** A calendar event near the suggested when; absent or null when there is none */
   calendar?: (when: string, readback: ReadBack) => Promise<CalendarMatch | null>
   /**
@@ -77,7 +79,11 @@ export interface ImportRoutesOptions {
    * unless one is already known, and what an earlier run left to pick up.
    * Absent when the host keeps no records.
    */
-  record?: (file: { path: string; key: string | null }) => Promise<{ key: string; resume: Resume | null }>
+  record?: (file: {
+    path: string
+    paths?: string[]
+    key: string | null
+  }) => Promise<{ key: string; resume: Resume | null }>
   /**
    * Run the import as the person asked: the door command with the job's
    * fields, as one stream of what it reports and asks, ending in how it went.
@@ -92,6 +98,7 @@ export interface ImportRoutesOptions {
 function titleOf(file: StagedFile, readback: ReadBack, when: string): string {
   const time = when.slice(11).replace(/^0/, '')
   if (readback.source === 'audio') return `Voice memo ${time}`
+  if (readback.source === 'imessage-audio') return `iMessage Audio ${time}`
   if (readback.source === 'image') return `Screenshot ${time}`
   if (readback.source === 'selection') return `Text ${time}`
   return file.name.replace(/\.[^.]+$/, '')
@@ -148,7 +155,8 @@ function relay(store: JobStore, record: JobRecord, event: RunEvent): void {
 
 const WHEN = /^\d{4}-\d{2}-\d{2} \d{1,2}:\d{2}$/
 
-function parseStart(body: unknown, readback: ReadBack): StartFields | string {
+function parseStart(body: unknown, job: ImportJob): StartFields | string {
+  const { readback } = job
   const b = (body ?? {}) as Record<string, unknown>
   const kind = typeof b.kind === 'string' ? b.kind : ''
   if (!KINDS.includes(kind as StartFields['kind'])) return `kind must be one of ${KINDS.join(', ')}`
@@ -166,6 +174,33 @@ function parseStart(body: unknown, readback: ReadBack): StartFields | string {
   const category = b.category === 'Personal' ? 'Personal' : 'Professional'
   const journalType = typeof b.journalType === 'string' && b.journalType.trim() ? b.journalType.trim() : null
   if (kind === 'journal' && !journalType) return 'a journal needs a type'
+  let audioSpeakers: Record<string, string> | undefined
+  let to: string | undefined
+  if (readback.source === 'imessage-audio') {
+    const names = b.audioSpeakers as Record<string, unknown> | null | undefined
+    const files = job.files ?? [job.file]
+    if (
+      !names ||
+      typeof names !== 'object' ||
+      Array.isArray(names) ||
+      Object.keys(names).length !== files.length ||
+      files.some(
+        ({ name }) =>
+          typeof names[name] !== 'string' ||
+          !names[name].trim() ||
+          names[name].length > 200 ||
+          /[\r\n]/.test(names[name]),
+      )
+    )
+      return "Enter who's speaking in each audio file."
+    audioSpeakers = Object.fromEntries(files.map(({ name }) => [name, (names[name] as string).trim()]))
+    // One clip is a message to someone; a conversation's other speakers say it themselves.
+    if (files.length === 1) {
+      const value = typeof b.to === 'string' ? b.to.trim() : ''
+      if (!value || value.length > 200 || /[\r\n]/.test(value)) return 'Enter who the message is to.'
+      to = value
+    }
+  }
   return {
     kind: kind as StartFields['kind'],
     when,
@@ -174,6 +209,8 @@ function parseStart(body: unknown, readback: ReadBack): StartFields | string {
     category,
     journalType,
     fresh: b.fresh === true,
+    ...(audioSpeakers ? { audioSpeakers } : {}),
+    ...(to ? { to } : {}),
     ...(readback.source === 'document'
       ? { summary: (b.summary as string).trim(), body: typeof b.body === 'string' ? b.body : '' }
       : {}),
@@ -251,8 +288,13 @@ export function createImportRoutes(options: ImportRoutesOptions): Hono {
     if (selection !== null && !selection.trim()) return c.json({ message: 'the text is empty' }, 400)
     const empty = uploads.find((upload) => upload.size === 0)
     if (empty) return c.json({ message: uploads.length > 1 ? `${empty.name} is empty` : 'the file is empty' }, 400)
-    if (uploads.length > 1 && uploads.some((upload) => sourceOf(upload.name) !== 'image')) {
-      return c.json({ message: 'Only screenshots can be imported together.' }, 400)
+    const audioConversation =
+      uploads.length > 0 && uploads.every((upload) => sourceOf(upload.name) === 'imessage-audio')
+    if (uploads.length > 1 && !audioConversation && uploads.some((upload) => sourceOf(upload.name) !== 'image')) {
+      return c.json(
+        { message: 'Import screenshots together or .caf audio turns together. Other files need separate imports.' },
+        400,
+      )
     }
 
     const id = randomUUID()
@@ -300,7 +342,12 @@ export function createImportRoutes(options: ImportRoutesOptions): Hono {
         ? readbacks[0]
         : {
             ...readbacks[0],
-            summary: `${files.length} screenshots → 1 message`,
+            summary: `${files.length} ${audioConversation ? 'audio turns' : 'screenshots'} → 1 message`,
+            durationMinutes: audioConversation
+              ? readbacks.every((item) => item.durationMinutes !== null)
+                ? readbacks.reduce((total, item) => total + item.durationMinutes!, 0)
+                : null
+              : readbacks[0].durationMinutes,
             kinds: refused < 0 ? ['message'] : [],
             refusal: refused < 0 ? null : `${files[refused].name}: ${readbacks[refused].refusal}`,
           }
@@ -308,9 +355,15 @@ export function createImportRoutes(options: ImportRoutesOptions): Hono {
       readback.source === 'document' && typeof filingDay === 'string' ? filingDay : options.suggestWhen(file, readback)
     // Keyed once, now: a filed run moves the upload on, and the key must outlive it.
     const kept =
-      readback.refusal || readback.source === 'document' || files.length > 1 || !options.record
+      readback.refusal || readback.source === 'document' || (files.length > 1 && !audioConversation) || !options.record
         ? null
-        : await options.record({ path: filePath, key: null }).catch(() => null)
+        : await options
+            .record({
+              path: filePath,
+              key: null,
+              ...(audioConversation ? { paths: files.map((item) => path.join(dir, item.name)) } : {}),
+            })
+            .catch(() => null)
     const job: ImportJob = {
       id,
       file,
@@ -327,7 +380,8 @@ export function createImportRoutes(options: ImportRoutesOptions): Hono {
       stage: null,
       tick: null,
       line: readback.refusal,
-      title: files.length > 1 ? `${files.length} screenshots` : titleOf(file, readback, suggestedWhen),
+      title:
+        files.length > 1 && !audioConversation ? `${files.length} screenshots` : titleOf(file, readback, suggestedWhen),
       result: null,
       error: readback.refusal,
       created: instantNow(),
@@ -346,7 +400,25 @@ export function createImportRoutes(options: ImportRoutesOptions): Hono {
           })
           .catch(() => {})
       }
-      if (options.calendar) {
+      // Each CAF clip is heard for its opening words, so the person names who
+      // speaks in each by what it says, not by its file name.
+      if (options.opening && audioConversation) {
+        const clips = record.job.files ?? [record.job.file]
+        const clipPaths = store.filePaths(record.job)
+        for (const [index, staged] of clips.entries()) {
+          void options
+            .opening(clipPaths[index], dir)
+            .then(async (opening) => {
+              if (!opening) return
+              staged.opening = opening
+              if (record.job.file.name === staged.name) record.job.file.opening = opening
+              store.emit(record, { type: 'opening', file: staged.name, opening })
+              await store.persist(record.job)
+            })
+            .catch(() => {})
+        }
+      }
+      if (options.calendar && !audioConversation) {
         void options
           .calendar(suggestedWhen, readback)
           .then(async (calendar) => {
@@ -379,11 +451,17 @@ export function createImportRoutes(options: ImportRoutesOptions): Hono {
     if (
       options.record &&
       job.readback.source !== 'document' &&
-      (job.files?.length ?? 1) === 1 &&
+      ((job.files?.length ?? 1) === 1 || job.readback.source === 'imessage-audio') &&
       (job.state === 'failed' || job.state === 'cancelled') &&
       !job.readback.refusal
     ) {
-      const kept = await options.record({ path: store.filePath(job), key: job.runKey }).catch(() => null)
+      const kept = await options
+        .record({
+          path: store.filePath(job),
+          key: job.runKey,
+          ...(job.readback.source === 'imessage-audio' ? { paths: store.filePaths(job) } : {}),
+        })
+        .catch(() => null)
       if (kept) {
         job.runKey = kept.key
         job.resume = kept.resume
@@ -458,8 +536,30 @@ export function createImportRoutes(options: ImportRoutesOptions): Hono {
     }
     if (job.state === 'done') return c.json({ message: 'This import is already filed.' }, 409)
     if (job.readback.refusal) return c.json({ message: job.readback.refusal }, 400)
-    const fields = parseStart(await c.req.json().catch(() => null), job.readback)
+    const body = await c.req.json().catch(() => null)
+    const fields = parseStart(body, job)
     if (typeof fields === 'string') return c.json({ message: fields }, 400)
+
+    if (body?.fileOrder !== undefined) {
+      const order: unknown = body.fileOrder
+      const files = job.files ?? [job.file]
+      if (
+        job.readback.source !== 'imessage-audio' ||
+        !Array.isArray(order) ||
+        order.length !== files.length ||
+        new Set(order).size !== files.length ||
+        order.some((name) => !files.some((file) => file.name === name))
+      ) {
+        return c.json({ message: 'Turn order must include each uploaded audio file exactly once.' }, 400)
+      }
+      if (files.some((file, index) => file.name !== order[index])) {
+        job.files = order.map((name) => files.find((file) => file.name === name)!)
+        job.file = job.files[0]
+        // Order is part of the conversation's identity. The pipeline and resume lookup recompute it.
+        job.runKey = null
+        job.resume = null
+      }
+    }
 
     if (job.readback.source === 'document' && job.fields) {
       // A retry finishes the capture already saved, even after a restart or cancellation.
@@ -479,7 +579,7 @@ export function createImportRoutes(options: ImportRoutesOptions): Hono {
     job.linkError = null
     job.error = null
     job.line = 'Starting…'
-    record.events = record.events.filter((e) => e.type === 'listen' || e.type === 'calendar')
+    record.events = record.events.filter((e) => e.type === 'listen' || e.type === 'opening' || e.type === 'calendar')
     await store.setState(record, 'running')
     const release = hold('import')
 

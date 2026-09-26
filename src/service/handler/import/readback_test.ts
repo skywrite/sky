@@ -5,6 +5,7 @@ import {
   lengthLabel,
   readAudio,
   readImage,
+  readIMessageAudio,
   readSelection,
   readSrt,
   readText,
@@ -51,12 +52,24 @@ test('sourceOf', () => {
       'notes.txt',
       'memo.m4a',
       'song.MP3',
+      'reply.CAF',
       'chat.png',
       'photo.HEIC',
       'deck.pdf',
       'archive.zip',
     ].map(sourceOf),
-    expected: ['transcript', 'srt', 'text', 'audio', 'audio', 'image', 'image', 'document', null],
+    expected: ['transcript', 'srt', 'text', 'audio', 'audio', 'imessage-audio', 'image', 'image', 'document', null],
+  })
+})
+
+test('CAF audio is a message without automatic speaker identification and keeps the per-file limit', () => {
+  const back = readIMessageAudio(1024, 90)
+  const oversized = readIMessageAudio(AUDIO_LIMIT_BYTES + 1, null)
+  assert({
+    given: 'a CAF audio message and an oversized one',
+    should: 'offer only a message, preserve its duration, and refuse the oversized file',
+    actual: [back.source, back.kinds, back.summary, back.speakers, oversized.kinds, Boolean(oversized.refusal)],
+    expected: ['imessage-audio', ['message'], 'iMessage Audio · 1 min 30 s', [], [], true],
   })
 })
 

@@ -19,6 +19,7 @@
  * no clock of its own — its proposal is when it was dropped — so none goes.
  */
 
+import { basename } from 'node:path'
 import { documentWorkWhen } from '#commands/all/notes/lib/documentInput.ts'
 import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import type { StartFields } from './jobs.ts'
@@ -103,9 +104,16 @@ export function startArgs(job: StartContext, fields: StartFields, input: string 
         args: {
           ...(job.source === 'image'
             ? { fromImage: filePaths.join(',') }
-            : text
-              ? { fromText: filePath }
-              : { fromAudio: filePath }),
+            : job.source === 'imessage-audio'
+              ? {
+                  fromAudioTurns: filePaths,
+                  audioSpeakers: filePaths.map((file) => fields.audioSpeakers?.[basename(file)] ?? ''),
+                  medium: 'iMessage Audio',
+                  ...(fields.to ? { to: fields.to } : {}),
+                }
+              : text
+                ? { fromText: filePath }
+                : { fromAudio: filePath }),
           category,
           when,
           fresh,

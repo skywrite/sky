@@ -92,12 +92,12 @@
   gap: 16px;
 }
 
-.sky-confirm-files li span:first-child {
+.sky-confirm-files li > span:first-child {
   min-width: 0;
   overflow-wrap: anywhere;
 }
 
-.sky-confirm-files li span:last-child {
+.sky-confirm-files li > span:nth-child(2) {
   flex: none;
   color: var(--sky-dim);
   font-size: 14.5px;
@@ -773,4 +773,35 @@
   text-decoration: underline;
   text-underline-offset: 3px;
   cursor: pointer;
+}
+.sky-audio-turn-actions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.sky-audio-files {
+  gap: 20px;
+}
+
+.sky-audio-files li {
+  display: block;
+}
+
+.sky-audio-file {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 6px;
+}
+
+.sky-audio-file > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.sky-audio-files .sky-audio-opening {
+  font-size: 15px;
+  margin-bottom: 8px;
 }

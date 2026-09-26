@@ -14,6 +14,7 @@ import * as nbfs from '#lib/nbfs/mod.ts'
 import * as personFacts from '#lib/notebook/enrich/distillPersonFacts.ts'
 import * as sys from '#lib/sys/mod.ts'
 import * as chatDocument from '#shared/models/Chat/document/mod.ts'
+import { Document } from '#shared/models/Markdown/mod.ts'
 import * as promptLoader from '#shared/prompts/load.ts'
 import * as prompts from '#shared/prompts/mod.ts'
 import { assert, test } from '#test'
@@ -27,6 +28,107 @@ import * as runs from './transcriptRun.ts'
 
 const NOW = '2031-03-13 09:15'
 const WORDS = 'Jane Doe and I agreed to review the Atlas proposal on Friday.'
+
+test('an audio conversation files its cleaned turns without running or saving a summary', async () => {
+  const w = await world('caf')
+  const files = [w.audio, path.join(w.sourceDir, 'reply.caf')]
+  await writeFile(files[1], 'second mock recording')
+  const transcript = '### Turn 1\n\nCan we review the Atlas plan?\n\n### Turn 2\n\nYes, on Friday.'
+  const writes: string[] = []
+  const write = spyOn(nbfs.DayDirFileWriter.prototype, 'write').mockImplementation(async (file, content) => {
+    writes.push(content)
+    return file
+  })
+  const day = spyOn(nbfs, 'writeDayItems').mockResolvedValue()
+  const plan = spyOn(w.context.output, 'plan')
+  const tasks = new CommandService(w.context)
+  const calls: unknown[] = []
+  const child = spyOn(tasks, 'run').mockImplementation(async (name, args) => {
+    if (name !== 'audio:transcript:clean') throw new Error(`Unexpected command: ${name}`)
+    calls.push([name, args])
+    return CommandResult.success({
+      run: null,
+      cleanedText: transcript,
+      summary: 'A generated analysis summary must not become the message.',
+      who: ['Jane Doe', 'Alex Chen'],
+      rel: [],
+      durationMinutes: null,
+      appliedCount: 0,
+      skippedCount: 0,
+      outputPath: null,
+      audioFilePath: null,
+      transcriptFilePath: null,
+    })
+  })
+  try {
+    const args = await resolveCommandArgs({
+      description: MessageNewTask.description,
+      callerArgs: {},
+      callerDepth: 1,
+      overrides: {
+        fromAudioTurns: files,
+        audioSpeakers: ['Jane Doe', 'Me'],
+        medium: 'iMessage Audio',
+        when: new PlainDateTime(NOW),
+        category: 'Personal Complete',
+        fresh: false,
+      },
+    })
+    const result = await new MessageNewTask().run({
+      args: args as Parameters<MessageNewTask['run']>[0]['args'],
+      context: w.context,
+      tasks,
+      rawArgs: { _: [] },
+    })
+    const saved = Document.fromMarkdown(writes[0])
+    assert({
+      given: 'two CAF files with explicitly named speakers',
+      should: 'save the cleaned words and stated participants without a summary stage',
+      actual: [
+        result.ok,
+        writes.length,
+        day.mock.calls.length,
+        saved.yaml.medium,
+        saved.yaml.from,
+        saved.yaml.to,
+        saved.markdown.trim(),
+        saved.yaml.summary,
+        saved.yaml.when,
+        plan.mock.calls.map(([steps]) => steps.map((step) => step.id)),
+        calls,
+      ],
+      expected: [
+        true,
+        1,
+        1,
+        'iMessage Audio',
+        'Jane Doe',
+        'Me',
+        '**Jane Doe:**\n\nCan we review the Atlas plan?\n\n**Me:**\n\nYes, on Friday.',
+        'Audio conversation',
+        NOW,
+        [['transcribe', 'names', 'paragraphs', 'file']],
+        [
+          [
+            'audio:transcript:clean',
+            {
+              fromAudioTurns: files,
+              fresh: false,
+              save: false,
+              output: undefined,
+            },
+          ],
+        ],
+      ],
+    })
+  } finally {
+    child.mockRestore()
+    plan.mockRestore()
+    day.mockRestore()
+    write.mockRestore()
+    await w.close()
+  }
+})
 
 async function world(extension = 'm4a') {
   const root = await mkdtemp('/tmp/sky-memo-retention-')
@@ -92,6 +194,7 @@ test('audio cleaning keeps the words in memory without saving a transcript', asy
     const result = await new AudioTranscriptCleanTask().run({
       args: {
         fromAudio: w.audio,
+        fromAudioTurns: undefined,
         title,
         save: false,
         fresh: false,

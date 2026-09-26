@@ -21,7 +21,15 @@ export type RecordingKind = 'meeting' | 'journal' | 'note' | 'message' | 'event'
 /** Those, and a video, which comes in as its transcript. */
 export type ImportKind = RecordingKind | 'video'
 /** What arrived: a file of one of five kinds, or text dragged onto the day (`selection`). */
-export type ImportSource = 'transcript' | 'srt' | 'text' | 'audio' | 'image' | 'selection' | 'document'
+export type ImportSource =
+  | 'transcript'
+  | 'srt'
+  | 'text'
+  | 'audio'
+  | 'imessage-audio'
+  | 'image'
+  | 'selection'
+  | 'document'
 
 export const RECORDING_KINDS: RecordingKind[] = ['meeting', 'journal', 'note', 'message', 'event']
 export const KINDS: ImportKind[] = [...RECORDING_KINDS, 'video']
@@ -69,6 +77,7 @@ export function sourceOf(name: string): ImportSource | null {
   if (ext === '.vtt') return 'transcript'
   if (ext === '.srt') return 'srt'
   if (ext === '.txt') return 'text'
+  if (ext === '.caf') return 'imessage-audio'
   if (AUDIO_EXTENSIONS.includes(ext)) return 'audio'
   if (IMAGE_EXTENSIONS.includes(ext)) return 'image'
   if (isNoteDocument(name)) return 'document'
@@ -234,6 +243,18 @@ export function readAudio(sizeBytes: number, durationSeconds: number | null): Re
     clockStartSeconds: null,
     speakers: [],
     refusal: null,
+  }
+}
+
+/** CAF clips dropped from Messages are conversation turns, never dictated meeting notes. */
+export function readIMessageAudio(sizeBytes: number, durationSeconds: number | null): ReadBack {
+  const audio = readAudio(sizeBytes, durationSeconds)
+  return {
+    ...audio,
+    source: 'imessage-audio',
+    kinds: audio.refusal ? [] : ['message'],
+    summary: ['iMessage Audio', lengthLabel(durationSeconds)].filter(Boolean).join(' · '),
+    detail: 'Name the speaker for each file. Put the files in conversation order.',
   }
 }
 

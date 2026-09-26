@@ -6,9 +6,11 @@
  * header, and the day's calendar read the way the meeting check reads it.
  */
 
+import { randomUUID } from 'node:crypto'
 import { readFile, rm } from 'node:fs/promises'
 import * as path from 'node:path'
 import { generateText } from 'ai'
+import { audioTurnsKey } from '#commands/all/audio/transcript/lib/audioTurns.ts'
 import { transcribeWithOpenAI } from '#commands/all/audio/transcript/lib/transcribe.ts'
 import { peekTranscriptRun, sha256Of } from '#commands/all/audio/transcript/lib/transcriptRun.ts'
 import { checkDayMeetings, START_TOLERANCE_MINUTES } from '#commands/all/day/meeting/lib/meetingCheck.ts'
@@ -30,6 +32,7 @@ import {
   readAudio,
   readDocument,
   readImage,
+  readIMessageAudio,
   readSrt,
   readText,
   readTranscript,
@@ -112,6 +115,7 @@ export function createImportHost(config: typeof ConfigModule, env: Record<string
     if (source === 'image') return readImage(size, await imageSize(filePath).catch(() => null))
     if (source === 'document') return readDocument(name)
     const info = await probeMedia(filePath).catch(() => null)
+    if (source === 'imessage-audio') return readIMessageAudio(size, info?.durationSeconds ?? null)
     return readAudio(size, info?.durationSeconds ?? null)
   }
 
@@ -124,28 +128,43 @@ export function createImportHost(config: typeof ConfigModule, env: Record<string
     if (readback.clockStartSeconds !== null) {
       return notebookWhen(startOnSavedDay(end, readback.clockStartSeconds), config.DIR_TIME)
     }
-    const start = readback.durationMinutes ? end - Math.round(readback.durationMinutes * 60_000) : end
+    const start =
+      readback.durationMinutes && readback.source !== 'imessage-audio'
+        ? end - Math.round(readback.durationMinutes * 60_000)
+        : end
     return notebookWhen(new ZonedDateTime(new Date(start)), config.DIR_TIME)
   }
 
-  const listen = async (filePath: string, jobDir: string): Promise<Listen | null> => {
-    const clip = path.join(jobDir, 'listen.wav')
+  // The first LISTEN_SECONDS of a recording, transcribed. The scratch clip is
+  // named apart: a CAF group's clips are heard at once in the same job dir.
+  const hear = async (filePath: string, jobDir: string): Promise<string> => {
+    const clip = path.join(jobDir, `listen-${randomUUID()}.wav`)
     try {
       await runFfmpeg('ffmpeg', ['-y', '-i', filePath, '-t', String(LISTEN_SECONDS), '-ac', '1', '-ar', '16000', clip])
-      const heard = (await transcribeWithOpenAI(await readFile(clip), 'listen.wav')).text.trim()
-      if (!heard) return null
-      const kind = await classify(heard)
-      return { kind, opening: opening(heard), guess: GUESS[kind] }
+      return (await transcribeWithOpenAI(await readFile(clip), 'listen.wav')).text.trim()
     } finally {
       await rm(clip, { force: true })
     }
+  }
+
+  const listen = async (filePath: string, jobDir: string): Promise<Listen | null> => {
+    const heard = await hear(filePath, jobDir)
+    if (!heard) return null
+    const kind = await classify(heard)
+    return { kind, opening: opening(heard), guess: GUESS[kind] }
+  }
+
+  // A CAF clip: its opening words alone. It is a message; no kind to guess.
+  const clipOpening = async (filePath: string, jobDir: string): Promise<string | null> => {
+    const heard = await hear(filePath, jobDir)
+    return heard ? opening(heard) : null
   }
 
   const calendar = async (when: string, readback: ReadBack): Promise<CalendarMatch | null> => {
     // A screenshot or a dragged text is a conversation, and an .srt a video,
     // not a meeting; and a dragged text's time is only when it was dropped.
     // The calendar has nothing to say about any of them.
-    if (['image', 'srt', 'selection', 'document'].includes(readback.source)) return null
+    if (['image', 'srt', 'selection', 'document', 'imessage-audio'].includes(readback.source)) return null
     const day = new PlainDate(when.slice(0, 10))
     const start = minutesOf(when.slice(11))
     const check = await checkDayMeetings(secrets, day, config.DIR_TIME)
@@ -174,9 +193,14 @@ export function createImportHost(config: typeof ConfigModule, env: Record<string
   // The pipeline's run record for the file — what an earlier run of the same
   // bytes left to pick up. Keyed at upload, so a run that has since moved the
   // file into the attachments is still found by its key.
-  const record: ImportRoutesOptions['record'] = async ({ path: filePath, key }) => {
-    const runKey = key ?? (await sha256Of(filePath))
-    return { key: runKey, resume: await peekTranscriptRun(runKey) }
+  const record: ImportRoutesOptions['record'] = async ({ path: filePath, paths, key }) => {
+    const runKey = key ?? (paths ? await audioTurnsKey(paths) : await sha256Of(filePath))
+    const resume = await peekTranscriptRun(runKey)
+    return {
+      key: runKey,
+      // Audio messages need only paragraph breaks after the names review, never a write-up.
+      resume: paths && resume && resume.step !== 'Checking names' ? { ...resume, step: 'Formatting message' } : resume,
+    }
   }
 
   const run = async function* (
@@ -208,6 +232,7 @@ export function createImportHost(config: typeof ConfigModule, env: Record<string
     read,
     suggestWhen,
     listen,
+    opening: clipOpening,
     calendar,
     record,
     run,

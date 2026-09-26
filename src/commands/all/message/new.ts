@@ -33,6 +33,7 @@ import dayAttachmentsDir from '#shared/nbfs/dayAttachmentsDir.ts'
 import { extractTypedTime, labelledTimeRaw } from '#universal/dates/extractTypedTime.ts'
 import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import { applyParticipantCorrections, extractTypedParticipants } from './_lib/applyCorrections.ts'
+import { conversationTo, formatAudioConversation } from './_lib/audioConversation.ts'
 import { extractMessageFromImage, renderDialogue, senderSummary } from './_lib/extractFromImage.ts'
 import { extractMessageFromText } from './_lib/extractFromText.ts'
 import { findScreenshotsOnDesktop } from './_lib/findScreenshotOnDesktop.ts'
@@ -124,6 +125,12 @@ const params = {
     optional: true,
   }),
   fromAudio: Flag.string('Path to audio file, or omit path to search Desktop', { optional: true }),
+  fromAudioTurns: Flag.stringArray('Ordered audio files from one conversation, one turn per file', {
+    optional: true,
+  }),
+  audioSpeakers: Flag.stringArray('Who speaks in each audio file, in the same order as --from-audio-turns', {
+    optional: true,
+  }),
   fromText: Flag.string('Path to a .txt of the conversation, or omit path to use the newest .txt on the Desktop', {
     optional: true,
   }),
@@ -142,20 +149,75 @@ export default class MessageNewTask extends Command {
     name: 'message:new',
     description: 'Create new communication.',
     params,
-    postProcess: [validateAnyArgFlagExists('to', 'from', 'fromImage', 'fromAudio', 'fromText')],
+    postProcess: [validateAnyArgFlagExists('to', 'from', 'fromImage', 'fromAudio', 'fromAudioTurns', 'fromText')],
   }
 
   async run({ args, context, tasks, rawArgs }: CommandArgs<Params>): Promise<CommandResult<Result>> {
     const { output, config, prompt } = context
     let { when, to, from, medium, summary, category, fromImage, fromAudio, fromText, aiContext } = args
-    if ([fromAudio, fromImage, fromText].filter((flag) => flag !== undefined).length > 1) {
-      return CommandResult.fail('Use only one of --from-audio, --from-image or --from-text')
+    if ([fromAudio, args.fromAudioTurns, fromImage, fromText].filter((flag) => flag !== undefined).length > 1) {
+      return CommandResult.fail('Use only one of --from-audio, --from-audio-turns, --from-image or --from-text')
     }
     let body: string | undefined
     let attachmentFiles: string[] = []
     let audioRel: string[] | undefined
     /** The pipeline's run record, forgotten once the message is filed */
     let runKey: string | null = null
+
+    const audioConversation = args.fromAudioTurns !== undefined
+    if (audioConversation) {
+      const files = args.fromAudioTurns!
+      let speakers = args.audioSpeakers?.map((name) => name.trim())
+      if (!speakers && files.length === 1 && from) speakers = [from.trim()]
+      if (!speakers && prompt.interactive) {
+        speakers = []
+        for (const file of files) {
+          const name = await prompt.text({ message: `Who's speaking in ${path.basename(file)}?` })
+          if (name === null) return CommandResult.fail('Cancelled')
+          speakers.push(name.trim())
+        }
+      }
+      if (
+        !files.length ||
+        !speakers ||
+        speakers.length !== files.length ||
+        speakers.some((name) => !name || name.length > 200 || /[\r\n]/.test(name))
+      ) {
+        return CommandResult.fail("Enter who's speaking in each audio file with --audio-speakers.")
+      }
+      // One clip is a message to someone: ask who, when nobody said. A
+      // conversation's other speakers say it themselves, once from is known.
+      if (files.length === 1 && !to && prompt.interactive) {
+        const name = await prompt.text({ message: 'Who is it to?', placeholder: 'Name' })
+        if (name === null) return CommandResult.fail('Cancelled')
+        if (name.trim()) to = name.trim()
+      }
+      output.plan([
+        { id: 'transcribe', label: 'Transcribing' },
+        { id: 'names', label: 'Checking names' },
+        { id: 'paragraphs', label: 'Formatting message' },
+        { id: 'file', label: 'Filing' },
+      ])
+      const cleaned = await tasks.run('audio:transcript:clean', {
+        fromAudioTurns: args.fromAudioTurns,
+        fresh: args.fresh,
+        save: false,
+        output: undefined,
+      })
+      if (!cleaned.ok || !cleaned.data) {
+        return CommandResult.fail(`Audio transcription failed: ${cleaned.message}`)
+      }
+      if (context.signal?.aborted) return CommandResult.fail('Cancelled')
+      runKey = cleaned.data.run
+      output.stage('paragraphs', 'Formatting message')
+      body = await formatAudioConversation(cleaned.data.cleanedText, speakers, { signal: context.signal })
+      if (!from) from = speakers[0]
+      if (!to) to = conversationTo(speakers, from)
+      if (!medium) medium = 'iMessage Audio'
+      // A label for the day link; the message body is the conversation itself.
+      if (!summary) summary = args.fromAudioTurns!.length === 1 ? 'Audio message' : 'Audio conversation'
+      if (cleaned.data.rel.length > 0) audioRel = cleaned.data.rel
+    }
 
     // --from-audio pipeline: transcribe → clean → summarize (via audio:transcript:summary)
     const useAudioPipeline = fromAudio !== undefined
@@ -480,7 +542,7 @@ export default class MessageNewTask extends Command {
       return CommandResult.fail('Missing required flag: --medium (-m)')
     }
 
-    if (useAudioPipeline || useImagePipeline || useTextPipeline) output.stage('file', 'Filing')
+    if (audioConversation || useAudioPipeline || useImagePipeline || useTextPipeline) output.stage('file', 'Filing')
 
     const date = when.plainDate
 

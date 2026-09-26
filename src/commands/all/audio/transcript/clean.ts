@@ -18,6 +18,7 @@ import { readPromptFile } from '#shared/prompts/load.ts'
 import { type RenderInput, renderPromptFile } from '#shared/prompts/mod.ts'
 import { isTerminal, readStdin, setRaw } from '#shared/sys/mod.ts'
 import { applyCorrections, type DropReason } from './lib/applyCorrections.ts'
+import { transcribeAudioTurns } from './lib/audioTurns.ts'
 import { contactNameSet, landsOnContact } from './lib/contactNames.ts'
 import { dedupeIssues } from './lib/dedupeIssues.ts'
 import { desktopFilesByExt } from './lib/desktopFiles.ts'
@@ -43,6 +44,9 @@ import ZoomVTT from './lib/ZoomVTT/mod.ts'
 // -----------------------------------------------------------------------------
 
 const params = {
+  fromAudioTurns: Flag.stringArray('Ordered audio files from one conversation, one turn per file', {
+    optional: true,
+  }),
   file: Flag.string('Path to transcript file (alternative to stdin)', {
     short: 'f',
     optional: true,
@@ -253,7 +257,10 @@ export default class AudioTranscriptCleanTask extends Command {
     let run: TranscriptRun | null = null
 
     // Handle --from-audio: transcribe first, then clean
-    const useAudioPipeline = fromAudio !== undefined
+    const useAudioPipeline = fromAudio !== undefined || args.fromAudioTurns !== undefined
+    if (fromAudio !== undefined && args.fromAudioTurns !== undefined) {
+      return CommandResult.fail('Use only one of --from-audio or --from-audio-turns')
+    }
     // Handle --from-zoom-vtt / --from-srt / --from-text: clean an existing transcript
     // file (skip transcription). Each flag owns its format end-to-end: the bare-flag
     // Desktop search only matches that extension (a stray .srt can never shadow the
@@ -271,7 +278,11 @@ export default class AudioTranscriptCleanTask extends Command {
     let audioSourcePath: string | null = null
     let transcriptSourcePath: string | null = null
 
-    if (useAudioPipeline) {
+    if (args.fromAudioTurns !== undefined) {
+      const conversation = await transcribeAudioTurns(args.fromAudioTurns, { context, tasks }, fresh)
+      transcript = conversation.text
+      run = conversation.run
+    } else if (useAudioPipeline) {
       output.log('Starting audio transcription...\n')
 
       const createResult = await tasks.run('audio:transcript:create', {
@@ -562,7 +573,7 @@ export default class AudioTranscriptCleanTask extends Command {
     const autoFixIssues = analysis.issues.filter((i) => i.confidence === 'high')
     const reviewIssues = analysis.issues.filter((i) => i.confidence !== 'high')
 
-    output.log(colors.gray(`Summary: ${analysis.summary}\n`))
+    if (args.fromAudioTurns === undefined) output.log(colors.gray(`Summary: ${analysis.summary}\n`))
 
     // Display extracted people, and the spellings the text owed them
     const whoNames = who.map((person) => person.name)

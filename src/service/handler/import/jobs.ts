@@ -12,6 +12,8 @@ export interface StagedFile {
   size: number
   /** The file's own modified time from the browser, ms since the epoch; null when it sent none */
   lastModified: number | null
+  /** A CAF clip's opening words, heard at upload so the clips in a group can be told apart; absent until heard */
+  opening?: string
 }
 
 /** The first minute of a recording, heard: the opening words and a guessed kind. */
@@ -55,6 +57,10 @@ export interface StartFields {
   fresh: boolean
   summary?: string
   body?: string
+  /** Speaker names keyed by staged filename, so reordering cannot swap identities. */
+  audioSpeakers?: Record<string, string>
+  /** Who one audio message is to; a conversation's other speakers say it themselves */
+  to?: string
 }
 
 /** The step a command says it is on, in its own words. */
@@ -74,7 +80,7 @@ export interface Tick {
 export interface ImportJob {
   id: string
   file: StagedFile
-  /** All screenshots in one conversation; older jobs have only `file`. */
+  /** All screenshots or ordered audio turns in one conversation; older jobs have only `file`. */
   files?: StagedFile[]
   readback: ReadBack
   listen: Listen | null
@@ -114,6 +120,7 @@ export type PromptOnWire = { id: string } & PromptRequest
 export type ImportEventBody =
   | { type: 'links'; links: string[]; error: string | null }
   | { type: 'listen'; listen: Listen }
+  | { type: 'opening'; file: string; opening: string }
   | { type: 'calendar'; calendar: CalendarMatch }
   | { type: 'plan'; steps: PlanStep[] }
   | { type: 'stage'; stage: Stage }

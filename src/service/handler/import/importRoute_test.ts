@@ -6,7 +6,16 @@ import { makeTempDir } from '#shared/fs/mod.ts'
 import { assert, test } from '#test'
 import { createTestHttpApp } from '../httpTestHelpers.ts'
 import type { ImportEvent, ImportJob, ImportRoutesOptions, RunOutcome } from './mod.ts'
-import { readAudio, readDocument, readImage, readSrt, readTranscript, readUnknown, sourceOf } from './readback.ts'
+import {
+  readAudio,
+  readDocument,
+  readImage,
+  readIMessageAudio,
+  readSrt,
+  readTranscript,
+  readUnknown,
+  sourceOf,
+} from './readback.ts'
 import { startArgs } from './startArgs.ts'
 
 // The routes over a scripted world: the read-back is real (it is pure), the
@@ -63,6 +72,7 @@ async function world(): Promise<World & { dir: string; notebook: string }> {
       if (name.endsWith('.vtt')) return readTranscript(await readFile(filePath, 'utf8'), name)
       if (name.endsWith('.srt')) return readSrt(await readFile(filePath, 'utf8'), name)
       if (name.endsWith('.m4a')) return readAudio(size, 252)
+      if (sourceOf(name) === 'imessage-audio') return readIMessageAudio(size, 90)
       if (sourceOf(name) === 'document') return readDocument(name)
       if (sourceOf(name) === 'image') return readImage(size, { width: 1200, height: 2400 })
       return readUnknown(name)
@@ -236,6 +246,132 @@ test('POST /import keeps four screenshots together through upload, reopen and st
       return { command: start.command, images: start.args.fromImage, category: start.args.category }
     }),
     expected: [1, 2].map(() => ({ command: 'message:new', images: paths.join(','), category: 'Personal Complete' })),
+  })
+})
+
+test('CAF groups keep every ordered turn across reload, failure and retry without classification', async () => {
+  const w = await world()
+  let listens = 0
+  let calendars = 0
+  w.options.listen = async () => {
+    listens++
+    return null
+  }
+  w.options.calendar = async () => {
+    calendars++
+    return null
+  }
+  w.script.outcome = 'failed'
+  const app = createTestHttpApp([w.notebook], { imports: w.options })
+  const form = new FormData()
+  for (const [index, name] of ['audio.caf', 'audio.caf', 'reply.CAF'].entries()) {
+    form.append('file', new File([`turn ${index + 1}`], name))
+  }
+  const response = await app.request('/import', { method: 'POST', body: form })
+  const { job } = (await response.json()) as { job: ImportJob }
+  const speakers = { 'audio.caf': 'Jane Doe', 'audio-2.caf': 'Me', 'reply.CAF': 'Jane Doe' }
+  const fields = { kind: 'message', when: job.suggestedWhen, category: 'Personal', audioSpeakers: speakers }
+  const invalid = await postJson(app, `/import/${job.id}/start`, {
+    ...fields,
+    fileOrder: ['audio.caf', 'audio.caf', '../other.caf'],
+  })
+  const wrongKind = await postJson(app, `/import/${job.id}/start`, { ...fields, kind: 'meeting' })
+  for (const audioSpeakers of [
+    undefined,
+    {},
+    { ...speakers, 'reply.CAF': ' ' },
+    { ...speakers, 'reply.CAF': 'Jane\nDoe' },
+    { ...speakers, 'extra.caf': 'Me' },
+  ]) {
+    const invalidNames = await postJson(app, `/import/${job.id}/start`, { ...fields, audioSpeakers })
+    assert({
+      given: 'missing or invalid speaker names',
+      should: 'ask for a name for each file before starting',
+      actual: [invalidNames.status, w.runs.length],
+      expected: [400, 0],
+    })
+  }
+  assert({
+    given: 'three CAF clips, including identical filenames',
+    should: 'create one message import, preserve each clip, and reject invalid order or kind',
+    actual: [
+      response.status,
+      job.files?.map((file) => file.name),
+      job.readback.summary,
+      job.readback.kinds,
+      listens,
+      calendars,
+      invalid.status,
+      wrongKind.status,
+    ],
+    expected: [
+      201,
+      ['audio.caf', 'audio-2.caf', 'reply.CAF'],
+      '3 audio turns → 1 message',
+      ['message'],
+      0,
+      0,
+      400,
+      400,
+    ],
+  })
+  const order = ['reply.CAF', 'audio.caf', 'audio-2.caf']
+  await postJson(app, `/import/${job.id}/start`, { ...fields, fileOrder: order })
+  await events(
+    await app.request(`/import/${job.id}/events`),
+    (event) => event.type === 'state' && event.state === 'failed',
+  )
+  const reopened = createTestHttpApp([w.notebook], { imports: w.options })
+  const loaded = (await (await reopened.request(`/import/${job.id}`)).json()).job as ImportJob
+  await postJson(reopened, `/import/${job.id}/start`, fields)
+  await events(
+    await reopened.request(`/import/${job.id}/events`),
+    (event) => event.type === 'state' && event.state === 'failed',
+  )
+  assert({
+    given: 'a reordered conversation reopened after failure',
+    should: 'retry the same ordered clips through one iMessage Audio command',
+    actual: [
+      loaded.files?.map((file) => file.name),
+      loaded.fields?.audioSpeakers,
+      w.runs.map((run, index) => {
+        const start = startArgs({ ...run, source: run.readback.source }, run.fields!, w.paths[index])
+        return [
+          start.command,
+          start.args.medium,
+          (start.args.fromAudioTurns as string[]).map((file) => path.basename(file)),
+          start.args.audioSpeakers,
+        ]
+      }),
+    ],
+    expected: [
+      order,
+      speakers,
+      [1, 2].map(() => ['message:new', 'iMessage Audio', order, ['Jane Doe', 'Jane Doe', 'Me']]),
+    ],
+  })
+})
+
+test('a later oversized CAF blocks the whole conversation; a single CAF uses the same door', async () => {
+  const w = await world()
+  const app = createTestHttpApp([w.notebook], { imports: w.options })
+  const form = new FormData()
+  form.append('file', new File(['one turn'], 'audio.caf'))
+  const single = (await (await app.request('/import', { method: 'POST', body: form })).json()).job as ImportJob
+  form.append('file', new File([new Uint8Array(26 * 1024 * 1024)], 'reply.caf'))
+  const group = (await (await app.request('/import', { method: 'POST', body: form })).json()).job as ImportJob
+  const started = await postJson(app, `/import/${group.id}/start`, { kind: 'message', when: group.suggestedWhen })
+  assert({
+    given: 'a single CAF and a group whose second CAF exceeds the cap',
+    should: 'recognize the single message and refuse the entire oversized conversation',
+    actual: [single.readback.source, single.readback.kinds, group.readback.refusal, started.status, w.runs.length],
+    expected: [
+      'imessage-audio',
+      ['message'],
+      'reply.caf: The recording is 26 MB, over the 25 MB limit. Trim it, or record shorter parts.',
+      400,
+      0,
+    ],
   })
 })
 
@@ -887,5 +1023,50 @@ test('a filed import and a refused file leave after their moment, and at a resta
       afterRestart: [stopped.id],
       onDiskAfterRestart: false,
     },
+  })
+})
+
+test('CAF clips are heard for their opening words, each kept with its file', async () => {
+  const w = await world()
+  w.options.opening = async (filePath) => `Starts with ${path.basename(filePath)}`
+  const app = createTestHttpApp([w.notebook], { imports: w.options })
+  const form = new FormData()
+  for (const name of ['audio.caf', 'reply.CAF']) form.append('file', new File(['turn'], name))
+  const { job } = (await (await app.request('/import', { method: 'POST', body: form })).json()) as { job: ImportJob }
+  // The clips are heard after the upload answers.
+  let openings: Array<string | undefined> = [undefined]
+  for (let attempt = 0; attempt < 200 && !openings.every(Boolean); attempt++) {
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    const { job: now } = (await (await app.request(`/import/${job.id}`)).json()) as { job: ImportJob }
+    openings = (now.files ?? [now.file]).map((file) => file.opening)
+  }
+  assert({
+    given: 'two CAF clips heard after upload',
+    should: 'keep each clip’s opening words on its own file',
+    actual: openings,
+    expected: ['Starts with audio.caf', 'Starts with reply.CAF'],
+  })
+})
+
+test('one CAF clip needs who it is to before starting', async () => {
+  const w = await world()
+  const app = createTestHttpApp([w.notebook], { imports: w.options })
+  const form = new FormData()
+  form.append('file', new File(['turn'], 'audio.caf'))
+  const { job } = (await (await app.request('/import', { method: 'POST', body: form })).json()) as { job: ImportJob }
+  const fields = {
+    kind: 'message',
+    when: job.suggestedWhen,
+    category: 'Personal',
+    audioSpeakers: { 'audio.caf': 'Jane Doe' },
+  }
+  const missing = await postJson(app, `/import/${job.id}/start`, fields)
+  const blank = await postJson(app, `/import/${job.id}/start`, { ...fields, to: ' ' })
+  const started = await postJson(app, `/import/${job.id}/start`, { ...fields, to: 'Joe Smith' })
+  assert({
+    given: 'a single clip, then the same with a recipient',
+    should: 'refuse until someone is named, then start with it',
+    actual: [missing.status, blank.status, started.status, w.runs.length, w.runs[0]?.fields?.to],
+    expected: [400, 400, 200, 1, 'Joe Smith'],
   })
 })

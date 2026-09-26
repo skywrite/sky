@@ -13,6 +13,39 @@ const fields = (over: Partial<StartFields>): StartFields => ({
   ...over,
 })
 
+test('CAF audio goes to one message with every turn and a fixed medium', () => {
+  for (const files of [['/tmp/first.caf'], ['/tmp/first.caf', '/tmp/reply.CAF']]) {
+    const start = startArgs(
+      { ...memo, source: 'imessage-audio' },
+      fields({
+        kind: 'message',
+        audioSpeakers: { 'first.caf': 'Jane Doe', 'reply.CAF': 'Me' },
+      }),
+      files,
+    )
+    assert({
+      given: `${files.length} CAF files in one drop`,
+      should: 'send the entire ordered group through the audio conversation pipeline',
+      actual: [
+        start.command,
+        start.args.fromAudioTurns,
+        start.args.audioSpeakers,
+        start.args.medium,
+        start.args.fromAudio,
+        start.rawArgs,
+      ],
+      expected: [
+        'message:new',
+        files,
+        ['Jane Doe', 'Me'].slice(0, files.length),
+        'iMessage Audio',
+        undefined,
+        { _: [] },
+      ],
+    })
+  }
+})
+
 test('a document starts a timed note with the work wording and a stable retry identity', () => {
   const start = startArgs(
     { source: 'document', runKey: null, suggestedWhen: '2025-01-01', id: 'import-one' },
@@ -247,5 +280,21 @@ test('startArgs() — text, from a .txt or dragged onto the day', () => {
       { command: 'meeting:new', text: '/tmp/imports/j1/chat.txt', clock: PROPOSED },
       { command: 'meeting:new', text: '/tmp/imports/j1/chat.txt', clock: undefined },
     ],
+  })
+})
+
+test('startArgs carries who one audio message is to', () => {
+  const clip = ['/tmp/first.caf']
+  const one = (extra: Partial<StartFields>) =>
+    startArgs(
+      { ...memo, source: 'imessage-audio' },
+      fields({ kind: 'message', audioSpeakers: { 'first.caf': 'Jane Doe' }, ...extra }),
+      clip,
+    )
+  assert({
+    given: 'one CAF clip, with and without a recipient',
+    should: 'pass the recipient as the door command --to, and nothing otherwise',
+    actual: [one({ to: 'Joe Smith' }).args.to, one({}).args.to],
+    expected: ['Joe Smith', undefined],
   })
 })

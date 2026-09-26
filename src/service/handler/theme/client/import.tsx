@@ -1,5 +1,5 @@
 import './import.css'
-import { ActionIcon, Button, Drawer, Modal, Popover, Textarea, TextInput } from '@mantine/core'
+import { ActionIcon, Autocomplete, Button, Drawer, Modal, Popover, Textarea, TextInput } from '@mantine/core'
 import { useMediaQuery } from '@mantine/hooks'
 import {
   type DragEvent,
@@ -36,6 +36,7 @@ import { DocumentSummaryDialog } from './documentImport.tsx'
 import { fileHref } from './explorer.tsx'
 import { dayFileHref, sizeLabel } from './files.tsx'
 import { DocumentRail } from './frontmatter/Rail.tsx'
+import { useCompletions } from './frontmatter/rows.tsx'
 import { useFrontmatter } from './frontmatter/useFrontmatter.ts'
 import { LinksInput } from './links.tsx'
 import { renderStatic } from './wysiwyg/render.ts'
@@ -57,11 +58,11 @@ export type ImportState = 'new' | 'running' | 'needs-you' | 'done' | 'failed' | 
 
 export interface ImportJob {
   id: string
-  file: { name: string; size: number; lastModified: number | null }
+  file: { name: string; size: number; lastModified: number | null; opening?: string }
   files?: ImportJob['file'][]
   readback: {
     /** `selection` is text dragged onto the day */
-    source: 'transcript' | 'srt' | 'text' | 'audio' | 'image' | 'selection' | 'document'
+    source: 'transcript' | 'srt' | 'text' | 'audio' | 'imessage-audio' | 'image' | 'selection' | 'document'
     kinds: ImportKind[]
     summary: string
     detail: string | null
@@ -91,6 +92,8 @@ export interface ImportJob {
     journalType: string | null
     summary?: string
     body?: string
+    audioSpeakers?: Record<string, string>
+    to?: string
   } | null
   state: ImportState
   /** The steps the command announced, in the words a person reads */
@@ -156,6 +159,7 @@ type PromptOnWire = { id: string } & (
 type ImportEvent = { seq: number } & (
   | { type: 'links'; links: string[]; error: string | null }
   | { type: 'listen'; listen: NonNullable<ImportJob['listen']> }
+  | { type: 'opening'; file: string; opening: string }
   | { type: 'calendar'; calendar: NonNullable<ImportJob['calendar']> }
   | { type: 'plan'; steps: PlanStep[] }
   | { type: 'stage'; stage: Stage }
@@ -312,6 +316,13 @@ export function useImportFeed(id: string | null): ImportFeed {
         setJob((prev) => (prev ? { ...prev, links: event.links, linkError: event.error } : prev))
       } else if (event.type === 'listen') {
         setJob((prev) => (prev ? { ...prev, listen: event.listen } : prev))
+      } else if (event.type === 'opening') {
+        setJob((prev) => {
+          if (!prev) return prev
+          const heard = (file: ImportJob['file']) =>
+            file.name === event.file ? { ...file, opening: event.opening } : file
+          return { ...prev, file: heard(prev.file), files: prev.files?.map(heard) }
+        })
       } else if (event.type === 'calendar') {
         setJob((prev) => (prev ? { ...prev, calendar: event.calendar } : prev))
       } else if (event.type === 'plan') {
@@ -328,6 +339,7 @@ export function useImportFeed(id: string | null): ImportFeed {
       for (const type of [
         'links',
         'listen',
+        'opening',
         'calendar',
         'plan',
         'stage',
@@ -544,7 +556,7 @@ interface Pending extends QueuedImport {
 }
 
 /**
- * Each drop's screenshots stay together as one conversation. Other files
+ * Each drop's screenshots or CAF audio turns stay together as one conversation. Other files
  * are uploaded and confirmed one at a time, then the next import comes up.
  */
 export function useImportQueue(onStarted: (job: ImportJob) => void, day?: string) {
@@ -555,10 +567,15 @@ export function useImportQueue(onStarted: (job: ImportJob) => void, day?: string
   /** Every file dropped on the day is an import; the Files pad keeps files on its own. */
   const take = (files: File[], meeting: MeetingImport | null = null, filingDay = day) => {
     const screenshots = files.filter((file) => IMAGE_EXTS.some((ext) => file.name.toLowerCase().endsWith(ext)))
+    const audioTurns = files.filter((file) => file.name.toLowerCase().endsWith('.caf'))
     const imports: QueuedImport[] = []
     for (const file of files) {
       if (screenshots.includes(file)) {
         if (file === screenshots[0]) imports.push({ files: screenshots, meeting: null })
+        continue
+      }
+      if (audioTurns.includes(file)) {
+        if (file === audioTurns[0]) imports.push({ files: audioTurns, meeting: null, day: filingDay })
         continue
       }
       imports.push({
@@ -685,6 +702,10 @@ function whenNote(source: ImportJob['readback']['source'], proposed: boolean, la
       return proposed
         ? `when the memo was recorded · ${label} · a time you say in it wins`
         : 'yours · wins over what the memo says'
+    case 'imessage-audio':
+      return proposed
+        ? `from the first audio file's saved time · ${label} · edit if needed`
+        : 'yours · used for this conversation'
     case 'image':
       return proposed
         ? `when the ${count > 1 ? 'first screenshot' : 'screenshot'} was taken · ${label} · a time ${count > 1 ? 'they show' : 'it shows'} wins`
@@ -716,6 +737,8 @@ function nextLine(
 ): string {
   if (source === 'document')
     return 'Sky will save your note and attachment, summarize the document, and add tags. You can keep working while it runs.'
+  if (source === 'imessage-audio')
+    return 'Sky transcribes the audio, checks unsure names with you, and saves one iMessage Audio conversation with short paragraphs.'
   if (source === 'image') {
     if (count > 1)
       return `Sky reads all ${count} screenshots as one conversation, checks what it read with you, and files one message under the day.`
@@ -779,6 +802,41 @@ function ImportLinks({ job, onBusy }: { job: ImportJob; onBusy?: (busy: boolean)
   )
 }
 
+function AudioSpeaker({
+  file,
+  value,
+  names,
+  disabled,
+  onChange,
+  label = "Who's speaking?",
+  ariaLabel = `Who's speaking in ${file}?`,
+}: {
+  file: string
+  value: string
+  names: string[]
+  disabled: boolean
+  onChange: (name: string) => void
+  label?: string
+  ariaLabel?: string
+}) {
+  const people = useCompletions(disabled ? null : 'people', value, {})
+  const data = [...new Set([...names, ...people.map((person) => person.value)].filter(Boolean))]
+  return (
+    <Autocomplete
+      label={label}
+      aria-label={ariaLabel}
+      placeholder="Name"
+      value={value}
+      data={data}
+      limit={8}
+      maxLength={200}
+      disabled={disabled}
+      onChange={onChange}
+      comboboxProps={{ withinPortal: true }}
+    />
+  )
+}
+
 function ConfirmBody({
   pending,
   job,
@@ -787,6 +845,12 @@ function ConfirmBody({
   onStart,
   onCancel,
   phone,
+  fileOrder,
+  setFileOrder,
+  audioSpeakers,
+  setAudioSpeakers,
+  audioTo,
+  setAudioTo,
 }: {
   pending: Pending | null
   job: ImportJob | null
@@ -795,6 +859,12 @@ function ConfirmBody({
   onStart: (job: ImportJob) => void
   onCancel: () => void
   phone: boolean
+  fileOrder: string[] | null
+  setFileOrder: (files: string[]) => void
+  audioSpeakers: Record<string, string> | null
+  setAudioSpeakers: (names: Record<string, string>) => void
+  audioTo: string | null
+  setAudioTo: (to: string) => void
 }) {
   const feed = useImportFeed(job?.id ?? null)
   const live = feed.job ?? job
@@ -840,9 +910,21 @@ function ConfirmBody({
 
   const uploading = pending && !pending.job && !pending.error
   const refusal = live?.readback.refusal ?? pending?.error ?? null
-  const files = live ? (live.files ?? [live.file]) : (pending?.files ?? [])
+  const receivedFiles = live ? (live.files ?? [live.file]) : (pending?.files ?? [])
+  const files = fileOrder
+    ? [...receivedFiles].sort((a, b) => fileOrder.indexOf(a.name) - fileOrder.indexOf(b.name))
+    : receivedFiles
   const count = files.length
   const source = live?.readback.source ?? (pending?.text !== undefined ? 'selection' : 'audio')
+  const audioConversation = source === 'imessage-audio'
+  const speakers = audioSpeakers ?? job?.fields?.audioSpeakers ?? {}
+  const to = audioTo ?? job?.fields?.to ?? ''
+  const moveTurn = (index: number, direction: number) => {
+    const order = files.map((file) => file.name)
+    const next = index + direction
+    ;[order[index], order[next]] = [order[next], order[index]]
+    setFileOrder(order)
+  }
   let workDuration: string | null = null
   if (documentInput) {
     try {
@@ -873,7 +955,9 @@ function ConfirmBody({
         ? retryDocument
           ? 'Finish the note'
           : 'Record work'
-        : `New ${KIND_LABEL[fields.kind].toLowerCase()} from ${sourceWord}`
+        : audioConversation
+          ? 'New iMessage Audio conversation'
+          : `New ${KIND_LABEL[fields.kind].toLowerCase()} from ${sourceWord}`
 
   const start = async () => {
     if (!live || starting || linkBusy) return
@@ -884,6 +968,10 @@ function ConfirmBody({
         documentWorkWhen(fields.when)
         if (!fields.summary.trim()) throw new Error('Describe the work in one line.')
       }
+      if (audioConversation && files.some((file) => !speakers[file.name]?.trim())) {
+        throw new Error("Enter who's speaking in each audio file.")
+      }
+      if (audioConversation && count === 1 && !to.trim()) throw new Error('Enter who the message is to.')
       const { job: started } = await post<{ job: ImportJob }>(`/import/${live.id}/start`, {
         kind: fields.kind,
         when: fields.when.trim(),
@@ -892,6 +980,13 @@ function ConfirmBody({
         category: fields.category,
         journalType: fields.kind === 'journal' ? fields.journalType : undefined,
         fresh: fields.fresh,
+        ...(audioConversation
+          ? {
+              fileOrder: files.map((file) => file.name),
+              audioSpeakers: speakers,
+              ...(count === 1 ? { to: to.trim() } : {}),
+            }
+          : {}),
         ...(documentInput ? { summary: fields.summary, body: fields.body } : {}),
       })
       if (documentInput) {
@@ -929,10 +1024,10 @@ function ConfirmBody({
       <div className="sky-confirm-file">
         {selection ? 'Dropped text' : count > 1 ? `${count} files` : files[0]?.name} · {sizeLabel(size)}
       </div>
-      {count > 1 && (
+      {count > 1 && !audioConversation && (
         <ul className="sky-confirm-files" aria-label="Screenshots">
           {files.map((file, index) => (
-            <li key={index}>
+            <li key={live ? file.name : index}>
               <span>{file.name}</span>
               <span>{sizeLabel(file.size)}</span>
             </li>
@@ -958,6 +1053,58 @@ function ConfirmBody({
               <div className="sky-confirm-opening">Starts: “{live.listen.opening}”</div>
               <div className="sky-confirm-guess">{live.listen.guess}</div>
             </>
+          )}
+          {audioConversation && (
+            <ol className="sky-confirm-files sky-audio-files" aria-label="Audio messages">
+              {files.map((file, index) => (
+                <li key={file.name}>
+                  {count > 1 && (
+                    <div className="sky-audio-file">
+                      <span>{file.name}</span>
+                      <div className="sky-audio-turn-actions">
+                        <Button
+                          size="compact-sm"
+                          aria-label={`Move ${file.name} up`}
+                          disabled={index === 0 || starting}
+                          onClick={() => moveTurn(index, -1)}
+                        >
+                          ↑
+                        </Button>
+                        <Button
+                          size="compact-sm"
+                          aria-label={`Move ${file.name} down`}
+                          disabled={index === count - 1 || starting}
+                          onClick={() => moveTurn(index, 1)}
+                        >
+                          ↓
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                  {'opening' in file && file.opening && (
+                    <div className="sky-confirm-opening sky-audio-opening">Starts: “{file.opening}”</div>
+                  )}
+                  <AudioSpeaker
+                    file={file.name}
+                    value={speakers[file.name] ?? ''}
+                    names={Object.values(speakers)}
+                    disabled={starting}
+                    onChange={(name) => setAudioSpeakers({ ...speakers, [file.name]: name })}
+                  />
+                  {count === 1 && (
+                    <AudioSpeaker
+                      file={file.name}
+                      label="To"
+                      ariaLabel="Who is it to?"
+                      value={to}
+                      names={Object.values(speakers)}
+                      disabled={starting}
+                      onChange={setAudioTo}
+                    />
+                  )}
+                </li>
+              ))}
+            </ol>
           )}
           {documentInput ? (
             <div className="sky-document-capture">
@@ -1122,6 +1269,11 @@ export function ImportDialog({
   const job = again ?? pending?.job ?? null
   const options = pending?.options ?? null
   const [againOptions, setAgainOptions] = useState<ImportOptions | null>(null)
+  const importKey = pending?.key ?? again?.id ?? 'none'
+  // Keep order and identities when switching between the desktop dialog and phone sheet.
+  const [turnOrder, setTurnOrder] = useState<{ key: string; files: string[] } | null>(null)
+  const [speakerNames, setSpeakerNames] = useState<{ key: string; names: Record<string, string> } | null>(null)
+  const [audioTo, setAudioToState] = useState<{ key: string; to: string } | null>(null)
   useEffect(() => {
     if (!again) return
     fetch(`/import/${again.id}`)
@@ -1138,7 +1290,7 @@ export function ImportDialog({
   }
   // Keyed by the file: the next one up starts with its own fields.
   const body = (
-    <Fragment key={pending?.key ?? again?.id ?? 'none'}>
+    <Fragment key={importKey}>
       <ConfirmBody
         pending={pending}
         job={job}
@@ -1147,6 +1299,12 @@ export function ImportDialog({
         onStart={onStarted}
         onCancel={cancel}
         phone={phone}
+        fileOrder={turnOrder?.key === importKey ? turnOrder.files : null}
+        setFileOrder={(files) => setTurnOrder({ key: importKey, files })}
+        audioSpeakers={speakerNames?.key === importKey ? speakerNames.names : null}
+        setAudioSpeakers={(names) => setSpeakerNames({ key: importKey, names })}
+        audioTo={audioTo?.key === importKey ? audioTo.to : null}
+        setAudioTo={(to) => setAudioToState({ key: importKey, to })}
       />
     </Fragment>
   )
