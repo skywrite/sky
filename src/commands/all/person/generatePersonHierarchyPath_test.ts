@@ -1,5 +1,5 @@
 import { assert, test } from '#test'
-import { generatePersonHierarchyPath } from './new.ts'
+import { generatePersonHierarchyPath } from './lib/create.ts'
 
 const fixtures = [
   // Standard names

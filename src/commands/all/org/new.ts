@@ -1,18 +1,15 @@
-import { readFile } from 'node:fs/promises'
-import { join, relative, sep } from 'node:path'
+import { join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import openEditor from 'open-editor'
 import colors from 'picocolors'
 import { Arg, Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { DIR_ORGS } from '#config'
-import { walk } from '#shared/fs/mod.ts'
 import outputFile from '#shared/fs/outputFile.ts'
-import OrganizationDocument from '#shared/models/Organization/mod.ts'
-import { normalizeUrl } from '#shared/universal/urls/normalize.ts'
-import { categorizeOrganization } from './lib/categorize.ts'
+import { nameToFileStem, organizationDir, organizationDocument, pathHostileCategory } from './lib/document.ts'
+import type { OrganizationDraft } from './lib/document.ts'
+import { draftOrganization, findExistingOrgFile } from './lib/draft.ts'
 import { webFetch, type WebFetchResult } from './lib/webFetch.ts'
-import { getWikipediaArticleAI, type WikipediaSelectionResult } from './lib/wikipedia.ts'
 
 const params = {
   name: Arg.string('Organization name (optional with --site: detected from the website)', { optional: true }),
@@ -37,9 +34,6 @@ export default class OrgNewTask extends Command {
   async run({ args, context }: CommandArgs<Params>): Promise<CommandResult<Result>> {
     const { output } = context
     const { site, noWikipedia } = args
-    const wikipediaQueryArg = args.wikipedia
-    const forcedSector = args.sector
-    const forcedSubcategory = args.subcategory
 
     // Fetched up front when the site must yield the name; reused for
     // categorization below so the site is never fetched twice.
@@ -63,9 +57,6 @@ export default class OrgNewTask extends Command {
       output.log(`${colors.bold('Detected name:')} ${name}`)
     }
 
-    // Use Wikipedia flag if provided, otherwise default to org name (unless --no-wikipedia is set)
-    const wikipediaQuery = noWikipedia ? undefined : (wikipediaQueryArg ?? name)
-
     output.log(`Creating organization: ${name}`)
 
     // Generate slug and filename from name
@@ -77,7 +68,7 @@ export default class OrgNewTask extends Command {
     // either clobber it in place (losing hand-written notes) or duplicate it
     // under a different category. Check as soon as the name is known, before
     // spending on further enrichment calls.
-    const existing = await findExistingOrgFile(filename)
+    const existing = await findExistingOrgFile(DIR_ORGS, filename)
     if (existing) {
       if (args.force) {
         output.log(`Ignoring existing org file (--force): ${existing}`)
@@ -88,168 +79,43 @@ export default class OrgNewTask extends Command {
       }
     }
 
-    let sector: string
-    let subcategory: string
-    let normalizedSite: string | undefined
-    let description: string | undefined
-    let ticker: string | undefined
-    let kind: 'company' | 'government' | 'nonprofit' | 'unknown' = 'unknown'
-    let wikipediaResult: WikipediaSelectionResult | undefined
-
-    // Normalize site URL if provided (always, regardless of forced categorization)
-    if (site) {
-      normalizedSite = normalizeUrl(site)
-    }
-
-    // If both sector and subcategory are forced, skip AI categorization
-    if (forcedSector && forcedSubcategory) {
-      sector = forcedSector
-      subcategory = forcedSubcategory
-      output.log(`Using forced categorization: ${sector}/${subcategory}`)
-    } else {
-      // Fetch from multiple sources and categorize using AI
-      try {
-        // Site and Wikipedia enrichment are independent (normalizedSite is already
-        // derived from the arg), so run them concurrently. Either source failing
-        // degrades to categorizing without it — only categorization itself is fatal.
-        const [webFetchResult, wikipediaFetched] = await Promise.all([
-          (async () => {
-            if (prefetchedSite) return prefetchedSite // fetched during name detection
-            if (!site) return undefined
-            output.log(`Fetching site: ${site}`)
-            try {
-              return await webFetch(site)
-            } catch (error) {
-              output.log(`Site fetch failed (${(error as Error).message}), continuing without it`)
-              return undefined
-            }
-          })(),
-          (async () => {
-            if (!wikipediaQuery) {
-              output.log('Skipping Wikipedia enrichment (--no-wikipedia flag set)')
-              return undefined
-            }
-            output.log(`Fetching Wikipedia: ${wikipediaQuery}`)
-            try {
-              return await getWikipediaArticleAI(wikipediaQuery, {
-                orgName: name,
-                website: normalizedSite,
-                fullContent: true, // Get full article content for better categorization and ticker extraction
-              })
-            } catch {
-              output.log(`Wikipedia not found for "${wikipediaQuery}", continuing without it`)
-              return undefined
-            }
-          })(),
-        ])
-        wikipediaResult = wikipediaFetched
-
-        if (webFetchResult) {
-          output.log(`Site summary: ${webFetchResult.summary}`)
-        }
-        if (wikipediaResult) {
-          output.log(`Wikipedia article: ${wikipediaResult.article.title}`)
-          output.log(`Wikipedia confidence: ${wikipediaResult.confidence}`)
-          output.log(`Selection reasoning: ${wikipediaResult.reasoning}`)
-        }
-
-        // Load the taxonomy guide and the categories that actually exist on disk
-        const taxonomyPath = new URL('./lib/taxonomy.md', import.meta.url).pathname
-        const taxonomyInfo = await readFile(taxonomyPath, 'utf-8')
-        const categoriesInUse = await listCategoriesInUse()
-
-        // Categorize with all available sources
-        output.log('Categorizing with AI...')
-        const categorization = await categorizeOrganization(
-          { guide: taxonomyInfo, inUse: categoriesInUse || '(none yet)' },
-          name,
-          {
-            webFetch: webFetchResult,
-            wikipedia: wikipediaResult,
-          },
-        )
-
-        sector = forcedSector || categorization.sector
-        subcategory = forcedSubcategory || categorization.subcategory
-        kind = categorization.kind
-        ticker = categorization.ticker
-        description = categorization.description
-
-        // Use website from categorizer if not already set
-        if (!normalizedSite && categorization.website) {
-          normalizedSite = normalizeUrl(categorization.website)
-          output.log(`${colors.bold('Website:')} ${normalizedSite}`)
-        }
-
-        // Highlight new category suggestions
-        if (categorization.isNewCategory) {
-          output.log(`${colors.bold(colors.yellow('✨ NEW CATEGORY SUGGESTED:'))} ${sector}/${subcategory}`)
-          if (categorization.categoryReasoning) {
-            output.log(`${colors.bold(colors.yellow('Reasoning:'))} ${categorization.categoryReasoning}`)
-          }
-        } else {
-          output.log(`${colors.bold('Categorized as:')} ${sector}/${subcategory}`)
-        }
-
-        output.log(`${colors.bold('Confidence:')} ${categorization.confidence}`)
-        output.log(`${colors.bold('Kind:')} ${kind}`)
-        if (ticker) {
-          output.log(`${colors.bold('Ticker:')} ${ticker}`)
-        }
-        if (description) {
-          output.log(`${colors.bold('Description:')} ${description}`)
-        }
-      } catch (error) {
-        output.error(`Failed to fetch/categorize: ${(error as Error).message}`)
-        return CommandResult.error(error as Error)
-      }
+    // Fetch from multiple sources and categorize using AI (skipped when both are forced)
+    let draft: OrganizationDraft
+    try {
+      draft = await draftOrganization(DIR_ORGS, {
+        name,
+        site,
+        // Use Wikipedia flag if provided, otherwise default to org name (unless --no-wikipedia is set)
+        wikipedia: noWikipedia ? false : args.wikipedia,
+        sector: args.sector,
+        subcategory: args.subcategory,
+        prefetchedSite,
+        log: (line) => output.log(line),
+      })
+    } catch (error) {
+      output.error(`Failed to fetch/categorize: ${(error as Error).message}`)
+      return CommandResult.error(error as Error)
     }
 
     // Sector and subcategory become directory names — refuse anything path-hostile
-    for (const [label, value] of [
-      ['sector', sector],
-      ['subcategory', subcategory],
-    ] as const) {
-      if (!/^[\w-]+$/.test(value)) {
-        output.error(`Invalid ${label} "${value}" — expected letters, digits, and hyphens`)
-        return CommandResult.error(new Error(`invalid ${label}: ${value}`))
-      }
+    const hostile = pathHostileCategory(draft)
+    if (hostile) {
+      output.error(`Invalid ${hostile.label} "${hostile.value}" — expected letters, digits, and hyphens`)
+      return CommandResult.error(new Error(`invalid ${hostile.label}: ${hostile.value}`))
     }
 
-    const yamlData: Record<string, unknown> = {
-      name,
-      slug,
-      site: normalizedSite,
-      sector,
-      subcategory,
-    }
-
-    // Add ticker if available
-    if (ticker) {
-      yamlData.ticker = ticker
-    }
-
-    // Create organization (the description goes into the markdown body, not YAML)
-    let org = OrganizationDocument.create(yamlData, description)
-    org = org.setKind(kind)
-
-    // Add Wikipedia article URL to rel if available
-    if (wikipediaResult) {
-      org = org.addRel(wikipediaResult.article.url)
-    }
-
-    const filePath = join(DIR_ORGS, sector, subcategory, filename)
+    const filePath = join(organizationDir(DIR_ORGS, draft), filename)
 
     // Write file (outputFile handles directory creation)
-    const content = org.toMarkdown()
+    const content = organizationDocument(draft).toMarkdown()
     await outputFile(filePath, content)
 
     output.log('\n' + colors.bold(colors.magenta('Name:')) + ' ' + name)
     output.log(colors.bold(colors.magenta('Slug:')) + ' ' + slug)
-    output.log(colors.bold(colors.magenta('Sector:')) + ' ' + sector)
-    output.log(colors.bold(colors.magenta('Subcategory:')) + ' ' + subcategory)
-    if (normalizedSite) {
-      output.log(colors.bold(colors.magenta('Site:')) + ' ' + normalizedSite)
+    output.log(colors.bold(colors.magenta('Sector:')) + ' ' + draft.sector)
+    output.log(colors.bold(colors.magenta('Subcategory:')) + ' ' + draft.subcategory)
+    if (draft.site) {
+      output.log(colors.bold(colors.magenta('Site:')) + ' ' + draft.site)
     }
     output.log(colors.bold(colors.magenta('File:')) + ' ' + filePath)
     output.log('')
@@ -260,46 +126,4 @@ export default class OrgNewTask extends Command {
 
     return CommandResult.success({ filePath })
   }
-}
-
-/** Filesystem-safe stem derived from the org name; the slug is its lowercased form. */
-function nameToFileStem(name: string): string {
-  return name
-    .replace(/&/g, 'and')
-    .replace(/[^\w\s-]/g, '')
-    .replace(/\s+/g, '-')
-    .replace(/-+/g, '-')
-}
-
-/** Find an org file with the given basename anywhere under orgs/, case-insensitively. */
-async function findExistingOrgFile(filename: string): Promise<string | undefined> {
-  const target = filename.toLowerCase()
-  for await (const entry of walk(DIR_ORGS, { includeDirs: false, exts: ['.md'] })) {
-    if (entry.name.toLowerCase() === target) return entry.path
-  }
-  return undefined
-}
-
-/**
- * Render the sector/subcategory pairs that exist on disk, one sector per line
- * ("crypto: exchanges, wallets"). Derived from org files rather than bare
- * directories, so an empty dir doesn't count as in use.
- */
-async function listCategoriesInUse(): Promise<string> {
-  const sectors = new Map<string, Set<string>>()
-  for await (const entry of walk(DIR_ORGS, { includeDirs: false, exts: ['.md'] })) {
-    const segments = relative(DIR_ORGS, entry.path).split(sep)
-    if (segments.length < 3) continue // orgs live at sector/subcategory/file.md
-    const [sector, subcategory] = segments
-    let subcategories = sectors.get(sector)
-    if (!subcategories) {
-      subcategories = new Set()
-      sectors.set(sector, subcategories)
-    }
-    subcategories.add(subcategory)
-  }
-  return [...sectors.entries()]
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([sector, subcategories]) => `${sector}: ${[...subcategories].sort().join(', ')}`)
-    .join('\n')
 }

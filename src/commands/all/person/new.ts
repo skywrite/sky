@@ -4,43 +4,9 @@ import openEditor from 'open-editor'
 import { parsePartialDate } from '#commands/lib/args/parsePartialDate.ts'
 import { ArgOrFlag, Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
-import latinize from '#lib/string/latinize.ts'
-import { slugify } from '#lib/string/mod.ts'
-import { exists, outputFile } from '#shared/fs/mod.ts'
-import PersonDocument from '#shared/models/Person/mod.ts'
+import { createNumberedFile } from '#lib/nbfs/createNumberedFile.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
-
-// -----------------------------------------------------------------------------
-// Exported Helpers
-// -----------------------------------------------------------------------------
-
-/**
- * Generate the directory path for a person based on their first name
- * Uses year/first-two-letters-of-first-name pattern with underscore padding
- */
-export function generatePersonHierarchyPath(personName: string, year?: number): string {
-  const currentYear = year ?? new Date().getFullYear()
-
-  // Parse the name to get the first name
-  const nameParts = personName.trim().split(/\s+/)
-  const firstName = nameParts[0] || ''
-
-  // Latinize and create directory path
-  const firstNameLatin = latinize(firstName).toLowerCase()
-
-  // Create 2-letter directory name with underscore padding if needed
-  let dirName: string
-  if (firstNameLatin.length >= 2) {
-    dirName = firstNameLatin.substring(0, 2)
-  } else if (firstNameLatin.length === 1) {
-    dirName = firstNameLatin + '_'
-  } else {
-    dirName = '__' // Fallback for empty names
-  }
-
-  // Build the directory path: year/first-two-letters/
-  return path.join(String(currentYear), dirName)
-}
+import { generatePersonHierarchyPath, newPersonMarkdown, personFileStem } from './lib/create.ts'
 
 const params = {
   name: ArgOrFlag.string("Person's full name", { short: 'n', required: true }),
@@ -93,47 +59,24 @@ export default class PersonNewTask extends Command {
     }
 
     const personName = name
-    const personSlug = slugify(personName, { preserveCase: true })
 
-    // Generate the hierarchy path using the extracted function
-    const hierarchyPath = generatePersonHierarchyPath(personName, year)
-
-    // Use custom path if provided, otherwise use the generated hierarchy
-    const finalPath = pathStr ?? hierarchyPath
-
+    // Use custom path if provided, otherwise year/first-two-letters of the first name
+    const finalPath = pathStr ?? generatePersonHierarchyPath(personName, year)
     const peopleDir = <string>config.DIR_PEOPLE
-    let personFile = path.join(peopleDir, finalPath, `${personSlug}.md`)
 
-    // Handle collisions
-    let fileCounter = 2
-    const baseFile = personFile
-    while (await exists(personFile)) {
-      const baseName = path.basename(baseFile, '.md')
-      const dir = path.dirname(baseFile)
-      personFile = path.join(dir, `${baseName}-${fileCounter}.md`)
-      fileCounter++
-    }
-
-    // Build YAML in preferred field order: name, location, orgs, email, sites, created, updated, met, tags
-    const personYaml: Record<string, unknown> = {
+    const personMarkdown = newPersonMarkdown({
       name: personName,
-      location: null,
-    }
+      met: met.ymd,
+      created: new PlainDate().ymd,
+      orgs: org ? { current: [org] } : undefined,
+    })
 
-    if (org) {
-      personYaml.orgs = { current: [org] }
-    }
-
-    personYaml.email = { personal: null, business: null }
-    personYaml.sites = null
-    // created/updated are added by PersonDocument.create()
-    personYaml.met = met.ymd
-    personYaml.tags = null
-
-    const person = PersonDocument.create(personYaml)
-    const personMarkdown = person.toMarkdown()
-
-    await outputFile(personFile, personMarkdown)
+    // A namesake gets -2, -3…; an existing file is never overwritten
+    const personFile = await createNumberedFile(
+      path.join(peopleDir, finalPath),
+      personFileStem(personName),
+      personMarkdown,
+    )
 
     openEditor([{ file: personFile, line: personMarkdown.split('\n').length }])
     await delay(500)

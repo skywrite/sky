@@ -1,3 +1,4 @@
+import type { OrganizationDraft, OrganizationRequest } from '#commands/all/org/lib/document.ts'
 import type { LinkedInImportHost } from '#lib/linkedin/types.ts'
 import { linkedInUrl } from '#lib/linkedin/types.ts'
 import type { ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
@@ -107,6 +108,8 @@ export interface PeopleOptions {
   now?: () => ZonedDateTime
   linkedIn?: LinkedInImportHost
   scores?: () => Pick<Scores, 'people' | 'orgs'>
+  /** Looks a new organization up as org:new does; org:new's own lookup when absent */
+  draftOrganization?: (request: OrganizationRequest) => Promise<OrganizationDraft>
 }
 
 export class ProfileError extends Error {

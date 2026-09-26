@@ -1,12 +1,24 @@
-import { lstat, mkdir, readdir, readFile } from 'node:fs/promises'
+import { lstat, readFile } from 'node:fs/promises'
 import * as path from 'node:path'
-import { isMap, parseDocument } from 'yaml'
+import { isMap, isScalar, parseDocument, type Document as YamlDocument } from 'yaml'
+import {
+  nameToFileStem,
+  organizationDir,
+  organizationDocument,
+  pathHostileCategory,
+  type OrganizationDraft,
+  type OrganizationRequest,
+} from '#commands/all/org/lib/document.ts'
+import {
+  generatePersonHierarchyPath,
+  metValue,
+  newPersonMarkdown,
+  personFileStem,
+} from '#commands/all/person/lib/create.ts'
 import { withProcessLock } from '#lib/jobs/files.ts'
 import { linkedInUrl } from '#lib/linkedin/types.ts'
-import { createDayFile } from '#lib/nbfs/createDayFile.ts'
+import { createNumberedFile } from '#lib/nbfs/createNumberedFile.ts'
 import { atomicWrite, hash } from '#lib/outbox/files.ts'
-import { slugify } from '#lib/string/mod.ts'
-import { workstreamIdentityTime } from '#lib/workstreams/identities.ts'
 import type Document from '#shared/models/Markdown/Document/mod.ts'
 import type MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
 import splitYamlMarkdown from '#shared/models/Markdown/util/splitYamlMarkdown.ts'
@@ -19,6 +31,7 @@ import { renderProfileNotes } from './notes.ts'
 import { profileRoutes } from './routes.ts'
 import {
   blankProfile,
+  companyLink,
   organizationMatches,
   organizationNeedsChoice,
   ProfileError,
@@ -40,6 +53,16 @@ const strings = (value: unknown): string[] =>
     .map((item) => item.trim())
 const unique = (values: string[]) => [...new Map(values.map((value) => [plain(value), value])).values()]
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b)
+
+/** Opening lines go under the name heading. */
+const withNotes = (body: string, notes?: string) =>
+  notes?.trim() ? body.replace(/^(# .*)$/m, `$1\n\n${notes.trim()}`) : body
+
+/** A field emptied by an edit is left out; a map with nothing left in it goes too, never `{}`. */
+function dropEmpty(yaml: YamlDocument, key: string): void {
+  const node = yaml.get(key, true)
+  if (isMap(node) && node.items.length === 0) yaml.delete(key)
+}
 
 function fields(type: ProfileType, doc: Document): ProfileFields {
   const yaml = doc.yaml
@@ -82,6 +105,11 @@ export function createPeopleStore(store: MarkdownStore, baseDir: string, dirs: s
   const entries = (type: ProfileType) =>
     type === 'person' ? store.people.getAll().toArray() : store.orgs.getAll().toArray()
   const allowed = (file: string) => isPathWithinRoot(file, base) && isPathWithinRoots(file, dirs)
+  // org:new's lookup reads the website and Wikipedia and asks a model; load it only when used.
+  const draftOrganization =
+    options.draftOrganization ??
+    (async (request: OrganizationRequest) =>
+      (await import('#commands/all/org/lib/draft.ts')).draftOrganization(options.orgsDir, request))
   let cached: { version: number; value: Promise<PeopleIndex> } | undefined
 
   async function safeFile(file: string): Promise<void> {
@@ -204,7 +232,9 @@ export function createPeopleStore(store: MarkdownStore, baseDir: string, dirs: s
       throw new ProfileError('This file has invalid frontmatter. Fix it in the notebook before editing here.', 409)
     // A file watcher can lag a read; publish the exact version the editor is reviewing.
     if (find(type, id).doc.toMarkdown() !== doc.toMarkdown()) store.set(file, raw)
-    return { file, raw, yaml, body: split.markdown, doc, revision: hash(raw) }
+    // The line breaks between the closing `---` and the body, kept as the file has them
+    const gap = raw.slice(0, raw.length - split.markdown.length).match(/\n*$/)?.[0] || '\n'
+    return { file, raw, yaml, gap, body: split.markdown, doc, revision: hash(raw) }
   }
 
   async function detail(type: ProfileType, id: string): Promise<ProfileDetail> {
@@ -224,27 +254,78 @@ export function createPeopleStore(store: MarkdownStore, baseDir: string, dirs: s
     }
   }
 
-  function creationTime(): string {
-    const now = (options.now ?? fetchNowSync)()
-    return options.now ? `${now.plainDateTime.toString()}:00` : workstreamIdentityTime(now.timezone)
+  /** Today in the notebook's timezone, YYYY-MM-DD. */
+  const today = () => (options.now ?? fetchNowSync)().plainDateTime.toString().slice(0, 10)
+
+  /** Write a new profile as `<stem>.md` in `dir`, numbering namesakes; never overwrites. */
+  async function createFile(dir: string, stem: string, contents: string): Promise<string> {
+    await safeFile(dir)
+    const file = await createNumberedFile(dir, stem, contents)
+    store.set(file, contents)
+    return relative(file)
   }
 
-  async function publish(type: ProfileType, name: string, contents: string, time: string): Promise<string> {
-    const root = type === 'person' ? options.peopleDir : options.orgsDir
-    const dir = path.join(root, time.slice(0, 4))
-    await safeFile(dir)
-    await mkdir(dir, { recursive: true })
-    const stem = `${time.slice(0, 10)}_${time.slice(11, 19).replaceAll(':', '')}_${slugify(name, { preserveCase: true }).slice(0, 100) || (type === 'person' ? 'Person' : 'Organization')}`
-    const existing = new Set((await readdir(dir)).map(plain))
-    for (let suffix = 1; suffix < 10_000; suffix++) {
-      const filename = `${stem}${suffix === 1 ? '' : `-${suffix}`}.md`
-      if (existing.has(plain(filename))) continue
-      const file = path.join(dir, filename)
-      if (!(await createDayFile(file, contents))) continue
-      store.set(file, contents)
-      return relative(file)
+  /** A new person, made as person:new makes one, holding what the form holds. */
+  async function createPerson(
+    input: SaveProfile,
+    orgs: { current: OrganizationChoice[]; past: OrganizationChoice[] },
+    aliases: string[],
+    date: string,
+  ): Promise<string> {
+    const names = (choices: OrganizationChoice[]) => choices.map((org) => org.name)
+    // Human names remain compatible with CLI readers; paths disambiguate namesakes in the UI.
+    const refs = (choices: OrganizationChoice[]) => choices.map((org) => ({ name: org.name, path: org.id! }))
+    const contents = newPersonMarkdown({
+      name: aliases.length ? [input.name, ...aliases] : input.name,
+      met: input.met || date,
+      created: date,
+      location: input.location,
+      title: input.title,
+      orgs: { current: names(orgs.current), past: names(orgs.past) },
+      orgRefs: { current: refs(orgs.current), past: refs(orgs.past) },
+      email: { personal: input.emailPersonal, business: input.emailBusiness },
+      sites: input.sites,
+      notes: input.notes,
+    })
+    const dir = path.join(options.peopleDir, generatePersonHierarchyPath(input.name, Number(date.slice(0, 4))))
+    return createFile(dir, personFileStem(input.name), contents)
+  }
+
+  /** A new organization, looked up and filed as org:new does, holding what the form holds. */
+  async function createOrganization(
+    org: {
+      name: string
+      sites: string[]
+      sector?: string
+      kind?: ProfileFields['kind']
+      aliases?: string[]
+      location?: string
+      notes?: string
+    },
+    date: string,
+  ): Promise<string> {
+    const website = org.sites.find((site) => companyLink(site) === null)
+    let draft: OrganizationDraft
+    try {
+      draft = await draftOrganization({ name: org.name, site: website, sector: org.sector || undefined })
+    } catch (error) {
+      throw new ProfileError(`${org.name} could not be looked up: ${(error as Error).message}`, 503)
     }
-    throw new ProfileError('Could not allocate a unique filename. Try again.', 409)
+    const hostile = pathHostileCategory(draft)
+    if (hostile) throw new ProfileError(`Use letters, digits, and hyphens for the ${hostile.label}: ${hostile.value}.`)
+    let doc = organizationDocument(draft, { sites: org.sites.filter((site) => site !== website), created: date })
+    // A kind chosen in the form wins over the lookup's
+    if (org.kind && org.kind !== 'unknown') doc = doc.setKind(org.kind)
+    const split = splitYamlMarkdown(doc.toMarkdown())
+    let frontmatter = `${split.yaml}\n`
+    if (org.aliases?.length || org.location) {
+      const yaml = parseDocument(split.yaml)
+      if (org.aliases?.length) yaml.set('alt', org.aliases.join('; '))
+      if (org.location) yaml.set('location', org.location)
+      frontmatter = yaml.toString()
+    }
+    const contents = `---\n${frontmatter}---\n\n${withNotes(split.markdown, org.notes)}`
+    return createFile(organizationDir(options.orgsDir, draft), nameToFileStem(org.name), contents)
   }
 
   async function save(input: SaveProfile): Promise<ProfileDetail> {
@@ -308,36 +389,53 @@ export function createPeopleStore(store: MarkdownStore, baseDir: string, dirs: s
             409,
           )
       }
-      const time = creationTime()
-      const today = time.slice(0, 10)
+      const date = today()
       const resolve = async (choices: OrganizationChoice[]): Promise<OrganizationChoice[]> => {
         const resolved: OrganizationChoice[] = []
         for (const choice of choices) {
           const matches = organizationMatches(choice, summaries('org'))
           if (matches.length === 1) resolved.push({ name: matches[0].name, id: matches[0].id })
           else {
-            const doc = OrganizationDocument.create({
-              name: choice.name,
-              created: today,
-              updated: today,
-              ...(choice.linkedin ? { sites: [linkedInUrl(choice.linkedin, 'org')] } : {}),
-            })
-            const id = await publish('org', choice.name, doc.toMarkdown(), time)
-            resolved.push({ name: choice.name, id })
+            const sites = choice.linkedin ? [linkedInUrl(choice.linkedin, 'org')] : []
+            resolved.push({ name: choice.name, id: await createOrganization({ name: choice.name, sites }, date) })
           }
         }
         return resolved
       }
       const next = { ...input, current: await resolve(input.current), past: await resolve(input.past) }
       const previous = current ? fields(input.type, current.doc) : blankProfile(input.type)
-      const yaml = current?.yaml ?? parseDocument('')
-      const set = (key: string, value: unknown) =>
-        value === '' || value === undefined ? yaml.delete(key) : yaml.set(key, value)
       const aliases = unique([
         ...input.aliases,
         ...(current && previous.name !== input.name ? [previous.name] : []),
       ]).filter((name) => plain(name) !== plain(input.name))
-      if (!current || previous.name !== input.name || !same(previous.aliases, aliases)) {
+
+      if (!current) {
+        const id =
+          input.type === 'person'
+            ? await createPerson(input, next, aliases, date)
+            : await createOrganization(
+                {
+                  name: input.name,
+                  sites: input.sites,
+                  sector: input.sector,
+                  kind: input.kind,
+                  aliases,
+                  location: input.location,
+                  notes: input.notes,
+                },
+                date,
+              )
+        return detail(input.type, id)
+      }
+
+      const yaml = current.yaml
+      const set = (key: string, value: unknown) =>
+        value === '' || value === undefined ? yaml.delete(key) : yaml.set(key, value)
+      // A blank or scalar field becomes a map before anything is set inside it.
+      const mapAt = (key: string) => {
+        if (yaml.has(key) && !isMap(yaml.get(key, true))) yaml.delete(key)
+      }
+      if (previous.name !== input.name || !same(previous.aliases, aliases)) {
         set('name', input.type === 'person' && aliases.length ? [input.name, ...aliases] : input.name)
         if (input.type === 'org') set('alt', aliases.join('; '))
         else {
@@ -346,59 +444,80 @@ export function createPeopleStore(store: MarkdownStore, baseDir: string, dirs: s
           yaml.delete('who')
         }
       }
-      for (const key of ['title', 'location', 'met', 'sector'] as const)
-        if (!current || input[key] !== previous[key]) set(key, input[key])
+      for (const key of ['title', 'location', 'sector'] as const) if (input[key] !== previous[key]) set(key, input[key])
+      if (input.met !== previous.met) set('met', input.met ? metValue(input.met) : undefined)
       for (const [key, values, old] of [
         ['personal', input.emailPersonal, previous.emailPersonal],
         ['business', input.emailBusiness, previous.emailBusiness],
       ] as const) {
-        if (!same(values, old)) {
-          if (typeof current?.doc.yaml.email === 'string') yaml.set('email', { personal: previous.emailPersonal })
+        if (same(values, old)) continue
+        if (typeof current.doc.yaml.email === 'string') yaml.set('email', { personal: previous.emailPersonal })
+        if (values.length) {
+          mapAt('email')
           yaml.setIn(['email', key], values)
+        } else if (yaml.hasIn(['email', key])) yaml.deleteIn(['email', key])
+      }
+      dropEmpty(yaml, 'email')
+      /** Set `key` where `other` stood when only that one exists; `other` goes either way. */
+      const setInPlaceOf = (key: string, other: string, value: unknown) => {
+        const map = yaml.contents
+        const at =
+          !yaml.has(key) && isMap(map)
+            ? map.items.findIndex((item) => (isScalar(item.key) ? item.key.value : item.key) === other)
+            : -1
+        if (at >= 0 && isMap(map)) {
+          // A parsed map types its pairs as parsed nodes; at run time it holds any pair.
+          map.items.splice(at, 1, yaml.createPair(key, value) as (typeof map.items)[number])
+        } else {
+          yaml.set(key, value)
+          yaml.delete(other)
         }
       }
-      if (!current || !same(input.sites, previous.sites)) {
-        set('sites', input.sites.length ? input.sites : undefined)
-        yaml.delete('site')
+      if (!same(input.sites, previous.sites)) {
         yaml.delete('linkedin')
-        if (input.type === 'org' && input.sites[0]) set('site', input.sites[0])
+        // An organization keeps one website in `site`, several in `sites`, never both.
+        if (!input.sites.length) {
+          yaml.delete('site')
+          yaml.delete('sites')
+        } else if (input.type === 'org' && input.sites.length === 1) setInPlaceOf('site', 'sites', input.sites[0])
+        else setInPlaceOf('sites', 'site', input.sites)
       }
-      if (
-        input.type === 'person' &&
-        (!current || !same(next.current, previous.current) || !same(next.past, previous.past))
-      ) {
+      if (input.type === 'person' && (!same(next.current, previous.current) || !same(next.past, previous.past))) {
         yaml.delete('org')
-        yaml.setIn(
-          ['orgs', 'current'],
-          next.current.map((org) => org.name),
-        )
-        yaml.setIn(
-          ['orgs', 'past'],
-          next.past.map((org) => org.name),
-        )
-        // Human names remain compatible with CLI readers; paths disambiguate namesakes in the UI.
-        set('org_refs', {
-          current: next.current.map((org) => ({ name: org.name, path: org.id })),
-          past: next.past.map((org) => ({ name: org.name, path: org.id })),
-        })
+        for (const status of ['current', 'past'] as const) {
+          const choices = next[status]
+          if (choices.length) {
+            mapAt('orgs')
+            mapAt('org_refs')
+            yaml.setIn(
+              ['orgs', status],
+              choices.map((org) => org.name),
+            )
+            // Human names remain compatible with CLI readers; paths disambiguate namesakes in the UI.
+            yaml.setIn(
+              ['org_refs', status],
+              choices.map((org) => ({ name: org.name, path: org.id })),
+            )
+          } else {
+            if (yaml.hasIn(['orgs', status])) yaml.deleteIn(['orgs', status])
+            if (yaml.hasIn(['org_refs', status])) yaml.deleteIn(['org_refs', status])
+          }
+        }
+        dropEmpty(yaml, 'orgs')
+        dropEmpty(yaml, 'org_refs')
       }
       if (input.type === 'org' && input.kind !== previous.kind) {
-        const org = new OrganizationDocument(current?.doc.yaml ?? {}).setKind(input.kind)
+        const org = new OrganizationDocument(current.doc.yaml).setKind(input.kind)
         set('tags', org.yaml.tags)
       }
-      if (!current) set('created', today)
-      set('updated', today)
-      const body = current?.body ?? `\n# ${input.name}\n\n${input.notes?.trim() || ''}\n`
-      const contents = `---\n${yaml.toString()}---\n${body}`
-      let id = input.id
-      if (current) {
-        // Catch an external editor saving while related organization files were being created.
-        if (hash(await readFile(current.file, 'utf8')) !== current.revision)
-          throw new ProfileError('This profile changed while saving. Reload it before trying again.', 409)
-        await atomicWrite(current.file, contents)
-        store.set(current.file, contents)
-      } else id = await publish(input.type, input.name, contents, time)
-      return detail(input.type, id!)
+      set('updated', date)
+      const contents = `---\n${yaml.toString()}---${current.gap}${current.body}`
+      // Catch an external editor saving while related organization files were being created.
+      if (hash(await readFile(current.file, 'utf8')) !== current.revision)
+        throw new ProfileError('This profile changed while saving. Reload it before trying again.', 409)
+      await atomicWrite(current.file, contents)
+      store.set(current.file, contents)
+      return detail(input.type, input.id!)
     })
   }
 
@@ -407,9 +526,9 @@ export function createPeopleStore(store: MarkdownStore, baseDir: string, dirs: s
       const current = await snapshot(type, id)
       if (revision !== current.revision)
         throw new ProfileError('This profile changed. Reload it before adding your note.', 409)
-      const today = creationTime().slice(0, 10)
-      current.yaml.set('updated', today)
-      const contents = `---\n${current.yaml.toString()}---\n${current.body.trimEnd()}\n\n## ${today}\n\n${text.trim()}\n`
+      const date = today()
+      current.yaml.set('updated', date)
+      const contents = `---\n${current.yaml.toString()}---${current.gap}${current.body.trimEnd()}\n\n## ${date}\n\n${text.trim()}\n`
       await atomicWrite(current.file, contents)
       store.set(current.file, contents)
       return detail(type, id)

@@ -1,6 +1,6 @@
 ---
 created: 2026-09-23
-updated: 2026-09-23
+updated: 2026-09-25
 ---
 
 # People & Orgs
@@ -37,11 +37,20 @@ Metadata edits patch the YAML document, retaining unknown keys and YAML comments
 Existing Markdown is preserved verbatim. Notes append a dated section. Writes
 require the reviewed content hash, run under a local process lock, and publish
 atomically. This lock coordinates these UI writes; external notebook editors do
-not participate, so writes also recheck the file before replacement. Creation uses
-the notebook timezone and `YYYY-MM-DD_HHMMSS_Name`, with exclusive publication and
-case-insensitive collision checks. No operation overwrites another profile to
-resolve a filename collision. Organization records created during a person save
-can survive a later failure saving that person; a retry matches and reuses them.
+not participate, so writes also recheck the file before replacement. An edit keeps
+the file's spacing after the frontmatter. A field emptied by an edit is left out,
+never written as `[]`. An organization keeps one website in `site`, several in
+`sites`, never both.
+
+New profiles come from the same code as `person:new` and `org:new`
+(`commands/all/person/lib/create.ts`, `commands/all/org/lib/`). A person goes under
+`people/<year>/<first two letters>/Name.md` with the command's fields and headings.
+An organization is looked up as `org:new` looks it up: its website, Wikipedia, and a
+model. It is filed under `orgs/<sector>/<subcategory>/Name.md` with its overview.
+That lookup takes a few seconds; a failure refuses the save with the reason.
+Namesakes get `-2`, `-3`, compared case-insensitively. No operation overwrites
+another profile. Organization records created during a person save can survive a
+later failure saving that person; a retry matches and reuses them.
 
 ## LinkedIn draft lifecycle
 

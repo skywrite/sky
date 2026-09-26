@@ -6,7 +6,7 @@ import { ArgOrFlag, Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { exists, outputFile, readTextFile, walk } from '#shared/fs/mod.ts'
 import PersonDocument from '#shared/models/Person/mod.ts'
-import { generatePersonHierarchyPath } from '../new.ts'
+import { generatePersonHierarchyPath } from '../lib/create.ts'
 
 const params = {
   search: ArgOrFlag.string('Person filename or path to search for (case-insensitive)', {

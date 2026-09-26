@@ -101,6 +101,14 @@ test(
           stateDir: path.join(root, '.state'),
           now: () => new ZonedDateTime('2026-02-12 09:34', 'America/Chicago'),
           linkedIn,
+          // Stands in for org:new's website, Wikipedia and model lookup
+          draftOrganization: async (request) => ({
+            name: request.name,
+            sector: 'research',
+            subcategory: 'labs',
+            kind: 'unknown',
+            site: request.site,
+          }),
         },
       }),
     )

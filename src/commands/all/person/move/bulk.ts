@@ -8,7 +8,7 @@ import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod
 import { runCommand } from '#lib/sys/mod.ts'
 import { exists, outputFile, readDir, readTextFile, walk } from '#shared/fs/mod.ts'
 import PersonDocument from '#shared/models/Person/mod.ts'
-import { generatePersonHierarchyPath } from '../new.ts'
+import { generatePersonHierarchyPath } from '../lib/create.ts'
 
 const params = {
   count: ArgOrFlag.number('Number of files to move', { short: 'n' }),

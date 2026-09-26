@@ -1,6 +1,7 @@
 import { mkdir, mkdtemp, readFile, rename, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import * as path from 'node:path'
+import type { OrganizationRequest } from '#commands/all/org/lib/document.ts'
 import MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
 import { assert, test } from '#test'
 import { ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
@@ -16,11 +17,24 @@ async function fixture() {
   const dirs = [peopleDir, orgsDir, timeDir]
   await Promise.all(dirs.map((dir) => mkdir(dir)))
   const store = await MarkdownStore.build({ peopleDirs: [peopleDir], orgDirs: [orgsDir], timeDirs: [timeDir] })
+  const drafted: OrganizationRequest[] = []
   const options: PeopleOptions = {
     peopleDir,
     orgsDir,
     stateDir: path.join(root, '.state'),
     now: () => new ZonedDateTime('2026-02-12 09:34', 'America/Chicago'),
+    // Stands in for org:new's website, Wikipedia and model lookup
+    draftOrganization: async (request) => {
+      drafted.push(request)
+      return {
+        name: request.name,
+        sector: request.sector ?? 'research',
+        subcategory: 'labs',
+        kind: 'company',
+        site: request.site,
+        description: `${request.name} is an example organization.`,
+      }
+    },
   }
   const profiles = createPeopleStore(store, root, dirs, options)
   const seed = async (file: string, raw: string) => {
@@ -34,6 +48,7 @@ async function fixture() {
     options,
     profiles,
     seed,
+    drafted,
     app: createTestHttpApp(dirs, { markdownStore: store, people: options }),
     close: () => rm(root, { recursive: true, force: true }),
   }
@@ -69,7 +84,7 @@ test('People save into notebook stores, link current and past organizations, and
         notes: raw.includes('Met at the design workshop.'),
       },
       expected: {
-        id: 'people/2026/2026-02-12_093400_Jane-Doe.md',
+        id: 'people/2026/ja/Jane-Doe.md',
         orgs: 2,
         current: [{ name: 'Atlas', id: 'orgs/Atlas.md', slug: 'atlas', linkedin: undefined }],
         past: ['Cedar Foundation'],
@@ -111,6 +126,72 @@ test('People save into notebook stores, link current and past organizations, and
   }
 })
 
+test('New profiles are written as person:new and org:new write them, and edits never leave empty lists', async () => {
+  const f = await fixture()
+  try {
+    const read = async (id: string) => readFile(path.join(f.root, id), 'utf8')
+    const person = await f.profiles.save({ ...blankProfile('person'), name: 'Jane Doe' })
+    const org = await f.profiles.save({
+      ...blankProfile('org'),
+      name: 'Cedar Foundation',
+      sites: ['https://cedar.example/'],
+      notes: 'Funds research.',
+    })
+    assert({
+      given: 'a new person with only a name, and a new organization with a website and a note',
+      should:
+        "file the person by year and first letters with person:new's fields, and the organization by its looked-up category with one site and an overview",
+      actual: [person.id, await read(person.id), org.id, await read(org.id), f.drafted],
+      expected: [
+        'people/2026/ja/Jane-Doe.md',
+        '---\nname: Jane Doe\nlocation:\nemail:\n  personal:\n  business:\nsites:\ncreated: 2026-02-12\nupdated: 2026-02-12\nmet: 2026-02-12\ntags:\n---\n\n# Jane Doe\n\n## Background',
+        'orgs/research/labs/Cedar-Foundation.md',
+        '---\nname: Cedar Foundation\nslug: cedar-foundation\nsite: https://cedar.example/\nsector: research\nsubcategory: labs\nupdated: 2026-02-12\ncreated: 2026-02-12\ntags: Organization/Company\n---\n\n# Cedar Foundation\n\nFunds research.\n\n## Overview\n\nCedar Foundation is an example organization.\n\n\n## Misc',
+        [{ name: 'Cedar Foundation', site: 'https://cedar.example/', sector: undefined }],
+      ],
+    })
+
+    const sam = await f.profiles.save({
+      ...blankProfile('person'),
+      name: 'Sam Rivera',
+      met: '2021',
+      emailBusiness: ['sam@example.com'],
+      current: [{ name: 'Cedar Foundation' }],
+    })
+    const withOrg = await read(sam.id)
+    const cleared = await f.profiles.save({
+      ...(await f.profiles.detail('person', sam.id)),
+      emailBusiness: [],
+      current: [],
+    })
+    const twoSites = await f.profiles.save({
+      ...(await f.profiles.detail('org', org.id)),
+      sites: ['https://cedar.example/', 'https://www.linkedin.com/company/cedar-example/'],
+    })
+    assert({
+      given: 'a person whose organization and only email are later removed, and an organization given a second site',
+      should:
+        'drop the emptied fields instead of writing [], keep the blank line after the frontmatter, and list the sites where the site was',
+      actual: [
+        withOrg.includes(
+          'org_refs:\n  current:\n    - name: Cedar Foundation\n      path: orgs/research/labs/Cedar-Foundation.md',
+        ),
+        withOrg.includes('met: 2021\n'),
+        await read(cleared.id),
+        (await read(twoSites.id)).split('\n').slice(0, 7).join('\n'),
+      ],
+      expected: [
+        true,
+        true,
+        '---\nname: Sam Rivera\nlocation:\nemail:\n  personal:\nsites:\ncreated: 2026-02-12\nupdated: 2026-02-12\nmet: 2021\ntags:\n---\n\n# Sam Rivera\n\n## Background',
+        '---\nname: Cedar Foundation\nslug: cedar-foundation\nsites:\n  - https://cedar.example/\n  - https://www.linkedin.com/company/cedar-example/\nsector: research',
+      ],
+    })
+  } finally {
+    await f.close()
+  }
+})
+
 test('Duplicate imports, ambiguous organizations, concurrent namesakes, and stale edits cannot silently overwrite records', async () => {
   const f = await fixture()
   try {
@@ -132,7 +213,7 @@ test('Duplicate imports, ambiguous organizations, concurrent namesakes, and stal
       given: 'two distinct people with the same name',
       should: 'retain both and atomically suffix the second filename',
       actual: [(await f.profiles.index()).people.length, second.id, profileHref(first), profileHref(second)],
-      expected: [2, 'people/2026/2026-02-12_093400_Jane-Doe-2.md', '/people/jane-doe', '/people/jane-doe-2'],
+      expected: [2, 'people/2026/ja/Jane-Doe-2.md', '/people/jane-doe', '/people/jane-doe-2'],
     })
     const before = await f.profiles.detail('person', first.id)
     await f.seed(first.id, (await readFile(path.join(f.root, first.id), 'utf8')) + '\nAn external edit.\n')
