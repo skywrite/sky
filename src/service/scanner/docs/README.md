@@ -1,6 +1,6 @@
 ---
 created: 2026-08-30
-updated: 2026-09-07
+updated: 2026-09-26
 ---
 
 # Scanner
@@ -95,8 +95,9 @@ names that person's file lists (`Store.rememberPersonNames`, fed by
 `readFileAndUpdatePeople`; `spellingsOf` answers for a name). A name two
 profiles both list — a bare first name — belongs to neither: its interactions
 stand under it alone, so the dominance rule that resolves bare names keeps its
-footing. Every listed name reports the same total, so a lookup by any spelling
-finds the person.
+footing. The person is reported once, under the name their file lists first;
+their other names are spellings, not people, and have no entry of their own.
+A lookup by another spelling goes through the profile (`spellingsOf`).
 
 The scanner loads organization and person profiles before time files, so
 alias deduplication and organization classification do not depend on directory
@@ -105,6 +106,10 @@ another contact's familiarity for a short calendar label.
 
 ## History
 
+- `2026-09-26-one-entry-per-person.md` — every name a profile listed was
+  reported as a person of its own with the whole score, so the model saw one
+  person twice and could write the old spelling; reported once now, under the
+  first name.
 - `2026-09-07-familiarity-needs-contact.md` — mentions previously looked like
   participation and family had no standing; distinguish relevance from
   familiarity and add an explicit family bonus.

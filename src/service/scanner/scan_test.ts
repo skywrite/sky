@@ -87,12 +87,9 @@ test('readFileAndUpdatePeople: the names a person file lists score as one person
   const scores = new Map(store.getPeopleWithScores().map((p) => [p.name, [p.score, p.lastInteraction]]))
   assert({
     given: 'a profile listing two names, a meeting under the nickname and a message under the lowercased name',
-    should: 'report the meeting and the message as one person under either name',
+    should: 'report the meeting and the message as one person, under the name the file lists first',
     actual: [scores.get('Jane Doe'), scores.get('Janie')],
-    expected: [
-      [13, '2026-01-31'],
-      [13, '2026-01-31'],
-    ],
+    expected: [[13, '2026-01-31'], undefined],
   })
 })
 
@@ -165,14 +162,10 @@ test('person scoring distinguishes participants from related names and counts al
   )
   assert({
     given: 'participants repeated in related fields and aliases, plus a person only discussed',
-    should: 'give direct credit once per person and file, and only discounted relevance for the discussed person',
+    should:
+      'give direct credit once per person and file under the first listed name, and only discounted relevance for the discussed person',
     actual: ['Jane Doe', 'Janie', 'Sam Park', 'Taylor Quinn'].map((name) => scores.get(name)),
-    expected: [
-      [15, 15, 2],
-      [15, 15, 2],
-      [5, 5, 1],
-      [1.5, 0, 2],
-    ],
+    expected: [[15, 15, 2], undefined, [5, 5, 1], [1.5, 0, 2]],
   })
 })
 
@@ -191,29 +184,21 @@ test('family scoring uses the exact tag hierarchy once per profile, survives reb
     scanners.readFileAndUpdatePeople(`---\n${JSON.stringify(profile)}\n---\n`, `/nb/people/Contact-${index}.md`)
   })
   const score = (name: string) => {
-    const person = store.getPeopleWithScores().find((person) => person.name === name)!
-    return [person.score, person.familiarityScore, person.interactionCount]
+    const person = store.getPeopleWithScores().find((person) => person.name === name)
+    return person && [person.score, person.familiarityScore, person.interactionCount]
   }
   assert({
     given: 'family and descendant tags, several aliases, lookalike tags, and a stale met flag',
     should: 'award one lasting bonus only through Person/Family, without inventing interactions',
     actual: ['Jane Doe', 'Janie', 'Sam Park', 'Riley Ng', 'Alex Chen', 'Taylor Quinn', 'Pat Morgan'].map(score),
-    expected: [
-      [100, 100, 0],
-      [100, 100, 0],
-      [100, 100, 0],
-      [100, 100, 0],
-      [0, 0, 0],
-      [0, 0, 0],
-      [0, 0, 0],
-    ],
+    expected: [[100, 100, 0], undefined, [100, 100, 0], [100, 100, 0], [0, 0, 0], [0, 0, 0], [0, 0, 0]],
   })
   const replacement = new Store()
   replacement.replaceFrom(store)
   assert({
     given: 'the scanned store installed by a rebuild',
     should: 'keep the relationship bonus',
-    actual: replacement.getPeopleWithScores().find((person) => person.name === 'Janie')?.familiarityScore,
+    actual: replacement.getPeopleWithScores().find((person) => person.name === 'Jane Doe')?.familiarityScore,
     expected: 100,
   })
   scanners.readFileAndUpdatePeople('---\nname: [Jane Doe, Janie]\n---\n', '/nb/people/Contact-0.md')
@@ -222,11 +207,7 @@ test('family scoring uses the exact tag hierarchy once per profile, survives reb
     given: 'one family tag removed and another profile forgotten',
     should: 'remove both bonuses immediately',
     actual: [score('Jane Doe'), score('Janie'), score('Sam Park')],
-    expected: [
-      [0, 0, 0],
-      [0, 0, 0],
-      [0, 0, 0],
-    ],
+    expected: [[0, 0, 0], undefined, [0, 0, 0]],
   })
 })
 
@@ -242,7 +223,6 @@ test('met dates contribute once for a person and unknown or Never values apply n
     actual: store.getPeopleWithScores().map((person) => [person.name, person.score, person.familiarityScore]),
     expected: [
       ['Jane Doe', 5, 5],
-      ['Janie', 5, 5],
       ['Sam Park', 0, 0],
       ['Taylor Quinn', 0, 0],
     ],
@@ -274,14 +254,11 @@ test('scanFiles loads aliases before time files regardless of directory order', 
     })
     assert({
       given: 'a time directory visited before profiles, with several spellings of the same participant',
-      should: 'score that person for one meeting under each alias',
+      should: 'score that person once for the meeting, under the name the file lists first',
       actual: store
         .getPeopleWithScores()
         .map((person) => [person.name, person.score, person.familiarityScore, person.interactionCount]),
-      expected: [
-        ['Jane Doe', 10, 10, 1],
-        ['Janie', 10, 10, 1],
-      ],
+      expected: [['Jane Doe', 10, 10, 1]],
     })
   } finally {
     await rm(root, { recursive: true, force: true })

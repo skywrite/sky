@@ -1,6 +1,6 @@
 import { assert, test } from '#test'
 import type { EntityIndex } from './resolve.ts'
-import { candidatesFromPaths, normalizeEntityName, resolveMention } from './resolve.ts'
+import { candidatesFromPaths, candidatesFromProfiles, normalizeEntityName, resolveMention } from './resolve.ts'
 
 test('normalizeEntityName collapses separators and case', () => {
   assert({
@@ -201,5 +201,29 @@ test('resolveMention: project status filter', () => {
     should: 'resolve',
     actual: resolveMention('Beacon Launch', 'project', { index: index() }),
     expected: 'projects/Beacon-Launch',
+  })
+})
+
+test('candidatesFromProfiles writes the first listed name and answers to every other one', () => {
+  const candidates = candidatesFromProfiles([
+    { kind: 'person', names: ['Jane Doe', 'Jane Doh'] },
+    { kind: 'person', names: ['Sam Rivera'], archived: true },
+    { kind: 'person', names: ['Sam Rivera'] },
+    { kind: 'org', names: ['Atlas Studio', 'Atlas Labs'] },
+  ])
+  const byName: EntityIndex = { candidates, canResolve: () => true }
+  const scores = new Map([['jane doe', 20]])
+  assert({
+    given: 'a person renamed from a misspelling, a namesake in people-old, and an organization with another name',
+    should:
+      'resolve the old spellings to the current names, keep the current file, and let scores see the written name',
+    actual: [
+      resolveMention('Jane Doh', 'person', { index: byName }),
+      resolveMention('jane-doe', 'person', { index: byName }),
+      resolveMention('Jane', 'person', { index: byName, scores }),
+      candidates.find((candidate) => candidate.ref === 'Sam Rivera')?.archivedPerson,
+      resolveMention('Atlas Labs', 'org', { index: byName }),
+    ],
+    expected: ['Jane Doe', 'Jane Doe', 'Jane Doe', undefined, 'Atlas Studio'],
   })
 })

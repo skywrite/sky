@@ -501,3 +501,70 @@
     padding: 15px;
   }
 }
+.sky-people-profile-header .sky-people-spellings {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  margin-top: 6px;
+  font-size: 15px;
+  color: var(--sky-text-2);
+}
+.sky-people-reference-intro {
+  margin: 0 0 16px;
+  font-size: 15px;
+  color: var(--sky-text-2);
+}
+.sky-people-spelling-choices {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.sky-people-reference-preview details {
+  border-top: 1px solid var(--sky-border-soft);
+  padding: 10px 0;
+}
+.sky-people-reference-preview summary {
+  cursor: pointer;
+  font-size: 15px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.sky-people-reference-preview ul,
+.sky-people-reference-result ul {
+  list-style: none;
+  padding: 0;
+  margin: 8px 0 0;
+}
+.sky-people-reference-preview li,
+.sky-people-reference-result li {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 0;
+  font-size: 14px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.sky-people-reference-preview li .sky-people-muted,
+.sky-people-reference-result li .sky-people-muted {
+  font-size: 13px;
+}
+.sky-people-reference-file {
+  margin: 0 0 10px;
+  font-size: 15px;
+  color: var(--sky-text-2);
+  overflow-wrap: anywhere;
+}
+.sky-people-reference-file span {
+  color: var(--sky-text);
+  font-weight: 600;
+}
+.sky-people-details .sky-people-rename-file {
+  display: block;
+  margin-top: 8px;
+  padding-left: 0;
+  font-size: 14px;
+}

@@ -56,3 +56,15 @@ export async function profileRoutes(stateDir: string, profiles: ProfileIdentity[
     return result
   })
 }
+
+/** Keep a profile's URL when its file is renamed: its reservation follows the file. */
+export async function moveProfileRoute(stateDir: string, type: ProfileType, from: string, to: string): Promise<void> {
+  await withProcessLock(path.join(stateDir, 'routes.lock'), async () => {
+    const file = path.join(stateDir, 'routes.json')
+    const saved = (await readJson<RouteEntry[]>(file)) ?? []
+    const entry = saved.find((old) => old.type === type && old.id === from && old.active !== false)
+    if (!entry) return
+    entry.id = to
+    await writeJson(file, saved)
+  })
+}

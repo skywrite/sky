@@ -459,6 +459,116 @@ test('Profile URLs survive name edits, file moves and a new store, without reusi
   }
 })
 
+test('Updating references renames a former spelling in other files, and leaves a file changed since the preview', async () => {
+  const f = await fixture()
+  try {
+    const read = async (id: string) => readFile(path.join(f.root, id), 'utf8')
+    await f.seed('people/2026/ja/Jane-Doe.md', '---\nname: [Jane Doe, Jane Doh]\n---\n\n# Jane Doe\n')
+    const meeting = 'time/2026/W07/02-10/actions/meetings/09-00_Zoom_Planning.md'
+    const message = 'time/2026/W07/02-11/actions/messages/10-00_Email_Hello.md'
+    const note = 'time/2026/W07/02-12/actions/notes/11-00_Atlas.md'
+    await f.seed(meeting, '---\nwho: Alex Kim, Jane Doh\nsummary: Planning\n---\n\nJane Doh led it.\n')
+    await f.seed(message, '---\nfrom: Jane Doh\nto: Alex Kim\nsummary: Hello\n---\n')
+    await f.seed(note, '---\nrel:\n  - Jane Doh\n  - projects/Atlas\n---\n')
+    const before = await f.profiles.detail('person', 'people/2026/ja/Jane-Doe.md')
+    const preview = await f.profiles.previewReferences('person', before.id, ['Jane Doh'])
+    await f.seed(note, '---\nrel:\n  - Jane Doh\n  - projects/Atlas\n---\nAn edit after the preview.\n')
+    const result = await f.profiles.updateReferences(
+      'person',
+      before.id,
+      ['Jane Doh'],
+      preview.files.map(({ id, revision }) => ({ id, revision })),
+    )
+    const after = await f.profiles.detail('person', before.id)
+    assert({
+      given: 'a profile whose old spelling three files still use, one of which changes after the preview',
+      should: 'preview all three, rename two in place, and list the changed one as left alone',
+      actual: [
+        before.spellings,
+        preview.files.map((file) => [file.kind, file.changes]),
+        result,
+        await read(meeting),
+        await read(message),
+        after.spellings,
+      ],
+      expected: [
+        [{ name: 'Jane Doh', files: 3 }],
+        [
+          ['meetings', [{ field: 'who', before: 'Jane Doh', after: 'Jane Doe' }]],
+          ['messages', [{ field: 'from', before: 'Jane Doh', after: 'Jane Doe' }]],
+          ['notes', [{ field: 'rel', before: 'Jane Doh', after: 'Jane Doe' }]],
+        ],
+        { updated: 2, skipped: [{ id: note, label: '11-00_Atlas', reason: 'It changed after the preview.' }] },
+        '---\nwho: Alex Kim, Jane Doe\nsummary: Planning\n---\n\nJane Doh led it.\n',
+        '---\nfrom: Jane Doe\nto: Alex Kim\nsummary: Hello\n---\n',
+        [{ name: 'Jane Doh', files: 1 }],
+      ],
+    })
+    let refused = ''
+    try {
+      await f.profiles.previewReferences('person', before.id, ['Alex Kim'])
+    } catch (error) {
+      refused = (error as Error).message
+    }
+    assert({
+      given: 'a request to rename a name this profile does not list',
+      should: 'refuse it',
+      actual: refused,
+      expected: 'Choose among the other spellings this profile lists.',
+    })
+  } finally {
+    await f.close()
+  }
+})
+
+test('A rename moves the profile file to its new name and updates every path to it, keeping its URL', async () => {
+  const f = await fixture()
+  try {
+    const read = async (id: string) => readFile(path.join(f.root, id), 'utf8')
+    await f.seed('people/2026/ja/Jane-Doh.md', '---\nname: [Jane Doe, Jane Doh]\n---\n\n# Jane Doe\n')
+    await f.seed('people/2026/ja/Jane-Doh-2.md', '---\nname: Jane Doh\n---\n\n# Another Jane Doh\n')
+    const chat = 'time/2026/W07/02-12/actions/ai-chats/12-00_Planning.md'
+    const log =
+      '<!-- CONTEXT-LOG\n{\n  "turns": [\n    {\n      "universe": [\n        {"path":"people/2026/ja/Jane-Doh.md","tokens":85},\n        {"path":"people/2026/ja/Jane-Doh-2.md","tokens":12}\n      ]\n    }\n  ]\n}\n-->\n'
+    await f.seed(chat, `---\nrel: [Jane Doh]\n---\n\nWe talked about people/2026/ja/Jane-Doh.md.\n\n${log}`)
+    const before = await f.profiles.detail('person', 'people/2026/ja/Jane-Doh.md')
+    const preview = await f.profiles.previewReferences('person', before.id, [])
+    const result = await f.profiles.updateReferences(
+      'person',
+      before.id,
+      [],
+      preview.files.map(({ id, revision }) => ({ id, revision })),
+      preview.file?.to,
+    )
+    const after = await f.profiles.resolveRoute('person', before.slug)
+    assert({
+      given:
+        'a profile whose file still carries a misspelling that a chat writes out, and a namesake with a numbered file',
+      should: "rename the file, change every whole path to it in the chat and nothing else, and keep the profile's URL",
+      actual: [
+        before.renameFile,
+        preview.file,
+        preview.files.map((file) => file.changes),
+        result.file,
+        await read(chat),
+        await read('people/2026/ja/Jane-Doe.md'),
+        after?.id,
+      ],
+      expected: [
+        'people/2026/ja/Jane-Doe.md',
+        { from: 'people/2026/ja/Jane-Doh.md', to: 'people/2026/ja/Jane-Doe.md' },
+        [[{ field: 'path', before: 'people/2026/ja/Jane-Doh.md', after: 'people/2026/ja/Jane-Doe.md', count: 2 }]],
+        'people/2026/ja/Jane-Doe.md',
+        `---\nrel: [Jane Doh]\n---\n\nWe talked about people/2026/ja/Jane-Doe.md.\n\n${log.replace('people/2026/ja/Jane-Doh.md"', 'people/2026/ja/Jane-Doe.md"')}`,
+        '---\nname: [Jane Doe, Jane Doh]\n---\n\n# Jane Doe\n',
+        'people/2026/ja/Jane-Doe.md',
+      ],
+    })
+  } finally {
+    await f.close()
+  }
+})
+
 test('Two organizations never share a name, alternate names and punctuation included', async () => {
   const f = await fixture()
   try {

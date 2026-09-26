@@ -11,6 +11,8 @@ import {
 } from '#lib/places/catalog.ts'
 import { walkToArray } from '#shared/fs/mod.ts'
 import MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
+import type PersonDocument from '#shared/models/Person/mod.ts'
+import { altNames } from '#shared/models/Store/OrgStore/mod.ts'
 import type PlaceStore from '#shared/models/Store/PlaceStore/mod.ts'
 
 export type EntityKind = 'person' | 'org' | 'project' | 'place'
@@ -21,6 +23,8 @@ export type EntityCandidate = {
   kind: EntityKind
   /** Lowercased, separator-normalized matching form */
   norm: string
+  /** The other names the same person or organization answers to, normalized; `ref` is always written */
+  aliases?: string[]
   /** projects only: status bucket the project dir lives under (open, completed, ...) */
   projectStatus?: string
   /** person exists only under people-old — matched reluctantly */
@@ -60,10 +64,44 @@ export function normalizeEntityName(value: string): string {
 }
 
 /**
+ * Enumerate person and organization candidates from their profiles' names: each
+ * one writes the first name its file lists and answers to every name it lists,
+ * so a renamed profile is written under its new name, whatever its file is called.
+ */
+export function candidatesFromProfiles(
+  profiles: Array<{ kind: 'person' | 'org'; names: string[]; archived?: boolean }>,
+): EntityCandidate[] {
+  const byNorm = new Map<string, EntityCandidate>()
+  for (const profile of profiles) {
+    const names = profile.names.map((name) => name.trim()).filter(Boolean)
+    if (!names.length) continue
+    const norm = normalizeEntityName(names[0])
+    const aliases = [...new Set(names.slice(1).map(normalizeEntityName))].filter((alias) => alias && alias !== norm)
+    const candidate: EntityCandidate = {
+      ref: names[0],
+      kind: profile.kind,
+      norm,
+      ...(aliases.length ? { aliases } : {}),
+      ...(profile.archived ? { archivedPerson: true } : {}),
+    }
+    const key = `${profile.kind}:${norm}`
+    const existing = byNorm.get(key)
+    // A person in both people/ and people-old/ counts as current
+    if (existing) {
+      if (existing.archivedPerson && !candidate.archivedPerson) byNorm.set(key, candidate)
+      continue
+    }
+    byNorm.set(key, candidate)
+  }
+  return Array.from(byNorm.values())
+}
+
+/**
  * Enumerate entity candidates from file paths (relative to the notebook base).
  * Pure so conventions are testable; `buildEntityIndex` validates every ref
  * through MarkdownStore.canResolve afterwards, so a wrongly-derived candidate
- * is dropped rather than ever written.
+ * is dropped rather than ever written. The notebook's index takes only its
+ * projects from here; people and organizations come from their names.
  */
 export function candidatesFromPaths(relPaths: string[]): EntityCandidate[] {
   const byNorm = new Map<string, EntityCandidate>()
@@ -127,30 +165,33 @@ export async function buildEntityIndex(): Promise<EntityIndex> {
   })
   const canResolve = (raw: string) => store.canResolve(raw)
 
-  const relPaths: string[] = []
-  for (const [dir, family] of [
-    [DIR_PEOPLE, 'people'],
-    [DIR_PEOPLE_OLD, 'people-old'],
-    [DIR_ORGS, 'orgs'],
-    [DIR_PROJECTS, 'projects'],
-  ] as const) {
-    for (const entry of await walkToArray(dir, { exts: ['.md'] })) {
-      relPaths.push(path.join(family, path.relative(dir, entry.path)))
-    }
-  }
+  // People and organizations write the first name their file lists and answer
+  // to every name it lists; keep only candidates whose written form resolves.
+  const profiles = [
+    ...store.people
+      .getAll()
+      .toArray()
+      .map(({ doc, path: file }) => {
+        const person = doc as PersonDocument
+        return {
+          kind: 'person' as const,
+          names: [...person.names, ...(person.alt ? [person.alt] : [])],
+          archived: file.startsWith(`${DIR_PEOPLE_OLD}${path.sep}`),
+        }
+      }),
+    ...store.orgs
+      .getAll()
+      .toArray()
+      .map(({ doc }) => ({ kind: 'org' as const, names: [doc.name, ...altNames(doc)] })),
+  ]
+  const candidates = candidatesFromProfiles(profiles).filter((candidate) => canResolve(candidate.ref))
 
-  // Keep only candidates whose written form the store actually resolves; for
-  // bare names prefer the spaced form but fall back to the hyphenated stem.
-  const candidates: EntityCandidate[] = []
-  for (const candidate of candidatesFromPaths(relPaths)) {
-    if (canResolve(candidate.ref)) {
-      candidates.push(candidate)
-      continue
-    }
-    const hyphenated = candidate.ref.replace(/ /g, '-')
-    if (candidate.kind !== 'project' && canResolve(hyphenated)) {
-      candidates.push({ ...candidate, ref: hyphenated })
-    }
+  // Projects are named by their folders
+  const projectPaths = (await walkToArray(DIR_PROJECTS, { exts: ['.md'] })).map((entry) =>
+    path.join('projects', path.relative(DIR_PROJECTS, entry.path)),
+  )
+  for (const candidate of candidatesFromPaths(projectPaths)) {
+    if (canResolve(candidate.ref)) candidates.push(candidate)
   }
 
   const choices = placeChoices(store.places)
@@ -197,12 +238,15 @@ export function resolveMention(name: string, kind: EntityKind, opts: ResolveOpti
   )
   if (pool.length === 0) return undefined
 
-  const exact = pool.filter((c) => c.norm === target)
+  // A candidate answers to its written name and every other name it lists
+  const spellings = (c: EntityCandidate) => [c.norm, ...(c.aliases ?? [])]
+
+  const exact = pool.filter((c) => spellings(c).includes(target))
   if (exact.length > 0) return disambiguate(exact, opts.scores)?.ref
 
   // Single-token mention ("michael") against first names, people only
   if (kind === 'person' && !target.includes(' ')) {
-    const firstName = pool.filter((c) => c.norm.split(' ')[0] === target)
+    const firstName = pool.filter((c) => spellings(c).some((norm) => norm.split(' ')[0] === target))
     if (firstName.length > 0) return disambiguate(firstName, opts.scores)?.ref
   }
 
@@ -218,7 +262,10 @@ export function resolveMention(name: string, kind: EntityKind, opts: ResolveOpti
   }
 
   const rated = pool
-    .map((c) => ({ c, rating: stringSimilarity.compareTwoStrings(target, c.norm) }))
+    .map((c) => ({
+      c,
+      rating: Math.max(...spellings(c).map((norm) => stringSimilarity.compareTwoStrings(target, norm))),
+    }))
     .sort((a, b) => b.rating - a.rating)
   const best = rated[0]
   const bar = best.c.archivedPerson ? FUZZY_MIN_ARCHIVED : FUZZY_MIN

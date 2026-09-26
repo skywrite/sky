@@ -338,8 +338,9 @@ test('Store - a person scores as one across the names their file lists', () => {
   const scores = new Map(store.getPeopleWithScores().map((p) => [p.name, p.score]))
   assert({
     given: 'interactions under an initialism, a lowercased name, and the shared bare name',
-    should: 'credit the initialism and the name to Jane Doe, and the bare name to nobody in particular',
+    should:
+      'credit the initialism and the name to Jane Doe, reported once under her first name, and the bare name to nobody in particular',
     actual: ['JD', 'Jane Doe', 'Jane', 'Jane Roe'].map((name) => scores.get(name)),
-    expected: [15, 15, 3, 0],
+    expected: [undefined, 15, 3, 0],
   })
 })

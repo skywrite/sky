@@ -120,10 +120,20 @@ export class Store extends EventEmitter {
   /**
    * Get people sorted by score (descending) — one entry per person, their
    * interactions added up across every spelling their person file lists.
+   * A person is reported under the name their file lists first; their other
+   * spellings are not people of their own. A name several files share, or no
+   * file lists, still stands alone.
    */
   getPeopleWithScores(): PersonScore[] {
+    const files = this.filesByName()
+    const reported = [...this._people].filter((name) => {
+      const listed = files.get(normalizeName(name))
+      if (!listed || listed.size !== 1) return true
+      const own = this._personFiles.get([...listed][0]!) ?? []
+      return normalizeName(own[0] ?? '') === normalizeName(name)
+    })
     return this._scoring.getPeopleWithScores(
-      this._people,
+      reported,
       (name) => this.spellingsOf(name),
       (name) => this.familyBonusOf(name),
     )

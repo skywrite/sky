@@ -176,7 +176,7 @@ function aliasesOf(display: string, doc: Document, indexed: string[]): string[] 
 }
 
 /** Every document the store holds, once, with its notebook-relative path and top-level directory. */
-function documentsOf(store: MarkdownStore, base: string): Array<{ path: string; dir: string; doc: Document }> {
+export function documentsOf(store: MarkdownStore, base: string): Array<{ path: string; dir: string; doc: Document }> {
   const out: Array<{ path: string; dir: string; doc: Document }> = []
   const add = (absolute: string, doc: Document | undefined) => {
     if (!doc) return

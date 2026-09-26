@@ -54,6 +54,45 @@ export interface ProfileDetail extends ProfileSummary {
   tags: string[]
   activity: ProfileActivity[]
   people: ProfileSummary[]
+  /** Other spellings of the name that other files still use */
+  spellings: SpellingUse[]
+  /** Where the profile's file would go to carry its current name, when it does not yet */
+  renameFile?: string
+}
+
+/** Another spelling of a profile's name, and how many other files still use it. */
+export interface SpellingUse {
+  name: string
+  files: number
+}
+
+export interface ReferenceFile {
+  /** Notebook-relative file */
+  id: string
+  label: string
+  /** Where it lives: meetings, messages, ai-chats, people… */
+  kind: string
+  date?: string
+  /** Its content hash when previewed; the update writes only an unchanged file */
+  revision: string
+  /** `path` changes count how many times the file writes out the old path */
+  changes: Array<{ field: string; before: string; after: string; count?: number }>
+}
+
+export interface ReferencePreview {
+  /** The name the files will use */
+  name: string
+  /** The profile's file, renamed to carry that name */
+  file?: { from: string; to: string }
+  files: ReferenceFile[]
+  skipped: Array<{ id: string; label: string; reason: string }>
+}
+
+export interface ReferenceResult {
+  updated: number
+  /** The profile's file after the rename */
+  file?: string
+  skipped: Array<{ id: string; label: string; reason: string }>
 }
 
 export interface PeopleIndex {

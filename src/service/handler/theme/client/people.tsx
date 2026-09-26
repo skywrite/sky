@@ -12,6 +12,7 @@ import {
 import { fileHref } from './explorer.tsx'
 import { peopleApi } from './peopleApi.ts'
 import { PeopleEditor } from './peopleEditor.tsx'
+import { ReferencesDialog, RenameFileLink, SpellingsNotice } from './peopleReferences.tsx'
 import { RenderedHtml } from './renderedHtml.tsx'
 
 interface PeopleRoute {
@@ -111,11 +112,13 @@ function ProfilePage({
   navigate,
   edit,
   addNote,
+  updateReferences,
 }: {
   profile: ProfileDetail
   navigate: (path: string) => void
   edit: () => void
   addNote: () => void
+  updateReferences: () => void
 }) {
   const emails = [...new Set([...profile.emailBusiness, ...profile.emailPersonal])]
   const hasDetails = Boolean(
@@ -152,6 +155,7 @@ function ProfilePage({
         <div>
           <h1>{profile.name || 'Unnamed profile'}</h1>
           <p>{profile.type === 'person' ? profile.title : orgLabel(profile)}</p>
+          <SpellingsNotice profile={profile} open={updateReferences} />
           {profile.type === 'person' && profile.current.length > 0 && (
             <ul className="sky-people-inline-orgs">{orgs(profile.current)}</ul>
           )}
@@ -275,6 +279,7 @@ function ProfilePage({
           <AppLink href={fileHref(profile.id)} navigate={navigate} className="sky-people-source">
             Open notebook file ↗
           </AppLink>
+          <RenameFileLink profile={profile} open={updateReferences} />
         </aside>
       </div>
     </>
@@ -302,6 +307,9 @@ export function PeopleMain({
   const [note, setNote] = useState('')
   const [noteError, setNoteError] = useState('')
   const [savingNote, setSavingNote] = useState(false)
+  const [referencesOpen, setReferencesOpen] = useState(false)
+  /** The name a save just replaced, which the references dialog starts with */
+  const [replaced, setReplaced] = useState<string>()
   const load = useCallback(
     async (signal?: AbortSignal) => {
       try {
@@ -352,7 +360,7 @@ export function PeopleMain({
     }
   }, [index?.linkedInAvailable, editing, job?.status])
   useEffect(() => {
-    if (editing || noteOpen) return
+    if (editing || noteOpen || referencesOpen) return
     const abort = new AbortController()
     const refresh = () => {
       if (!document.hidden) void load(abort.signal)
@@ -364,8 +372,14 @@ export function PeopleMain({
       clearInterval(timer)
       window.removeEventListener('focus', refresh)
     }
-  }, [load, editing, noteOpen])
+  }, [load, editing, noteOpen, referencesOpen])
   const saved = (next: ProfileDetail) => {
+    // A new name leaves the old one in other files: offer to update them, as a rename does
+    if (profile && profile.id === next.id && profile.name !== next.name)
+      if (next.renameFile || next.spellings.some((spelling) => spelling.name === profile.name)) {
+        setReplaced(profile.name)
+        setReferencesOpen(true)
+      }
     setEditing(false)
     setResume(undefined)
     setJob(undefined)
@@ -462,6 +476,7 @@ export function PeopleMain({
               navigate={navigate}
               edit={() => setEditing(true)}
               addNote={() => setNoteOpen(true)}
+              updateReferences={() => setReferencesOpen(true)}
             />
           )
         ) : (
@@ -609,6 +624,20 @@ export function PeopleMain({
             void load()
           }}
           onSaved={saved}
+        />
+      )}
+      {profile && (
+        <ReferencesDialog
+          profile={profile}
+          opened={referencesOpen}
+          initial={replaced}
+          onClose={() => {
+            setReferencesOpen(false)
+            setReplaced(undefined)
+          }}
+          onUpdated={() => {
+            void load()
+          }}
         />
       )}
       <Modal

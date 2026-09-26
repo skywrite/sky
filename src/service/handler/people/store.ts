@@ -1,4 +1,4 @@
-import { lstat, readFile } from 'node:fs/promises'
+import { link, lstat, mkdir, readFile, rename, unlink } from 'node:fs/promises'
 import * as path from 'node:path'
 import { isMap, isScalar, parseDocument, type Document as YamlDocument } from 'yaml'
 import {
@@ -29,7 +29,8 @@ import { fetchNowSync } from '#shared/nbfs/mod.ts'
 import { isPathWithinRoot, isPathWithinRoots } from '../markdown-preview/request.ts'
 import { backlinksOf } from '../vocabulary/mod.ts'
 import { renderProfileNotes } from './notes.ts'
-import { profileRoutes } from './routes.ts'
+import { applyRename, plannedFile, previewRename, spellingUses, type RenameProfile } from './references.ts'
+import { moveProfileRoute, profileRoutes } from './routes.ts'
 import {
   blankProfile,
   companyLink,
@@ -43,6 +44,8 @@ import {
   type ProfileFields,
   type ProfileSummary,
   type ProfileType,
+  type ReferencePreview,
+  type ReferenceResult,
   type SaveProfile,
 } from './types.ts'
 
@@ -239,6 +242,7 @@ export function createPeopleStore(store: MarkdownStore, baseDir: string, dirs: s
     const activity = backlinksOf(store, base, id)
       .filter((item) => allowed(path.resolve(base, item.path)))
       .sort((a, b) => (b.date ?? '').localeCompare(a.date ?? ''))
+    const renameFile = await plannedFile(base, { type, id, name: summary.name })
     return {
       ...summary,
       revision: current.revision,
@@ -246,7 +250,66 @@ export function createPeopleStore(store: MarkdownStore, baseDir: string, dirs: s
       tags: [...current.doc.tags],
       activity,
       people: type === 'org' ? all.people.filter((person) => person.current.some((org) => org.id === id)) : [],
+      spellings: spellingUses(store, base, { type, id, name: summary.name, aliases: summary.aliases }),
+      ...(renameFile ? { renameFile } : {}),
     }
+  }
+
+  /** A profile's current name and the other spellings it lists, for updating references. */
+  function renameProfile(type: ProfileType, id: string, spellings: string[]): RenameProfile {
+    const { name, aliases } = fields(type, find(type, id).doc)
+    const listed = new Set(aliases.map(plain))
+    if (spellings.some((spelling) => !listed.has(plain(spelling))))
+      throw new ProfileError('Choose among the other spellings this profile lists.')
+    return { type, id, name, aliases }
+  }
+
+  /** What updating references to `spellings` would change, file by file. */
+  async function previewReferences(type: ProfileType, id: string, spellings: string[]): Promise<ReferencePreview> {
+    return previewRename(store, base, renameProfile(type, id, spellings), spellings)
+  }
+
+  /** Write the previewed changes to the files still exactly as previewed, then rename the profile's file. */
+  async function updateReferences(
+    type: ProfileType,
+    id: string,
+    spellings: string[],
+    files: Array<{ id: string; revision: string }>,
+    file?: string,
+  ): Promise<ReferenceResult> {
+    return withProcessLock(lock, async () =>
+      applyRename(
+        store,
+        base,
+        renameProfile(type, id, spellings),
+        spellings,
+        { files, file },
+        {
+          write: async (target, contents) => {
+            await safeFile(target)
+            await atomicWrite(target, contents)
+            store.set(target, contents)
+          },
+          move: async (from, to) => {
+            const source = path.join(base, from)
+            const target = path.join(base, to)
+            await safeFile(source)
+            await safeFile(target)
+            const contents = await readFile(source, 'utf8')
+            // A new name is linked first, so an existing file is never replaced; a change of case renames in place
+            if (from.toLowerCase() === to.toLowerCase()) await rename(source, target)
+            else {
+              await mkdir(path.dirname(target), { recursive: true })
+              await link(source, target)
+              await unlink(source)
+            }
+            store.delete(source)
+            store.set(target, contents)
+            await moveProfileRoute(stateDir, type, from, to)
+          },
+        },
+      ),
+    )
   }
 
   /** Today in the notebook's timezone, YYYY-MM-DD. */
@@ -552,5 +615,5 @@ export function createPeopleStore(store: MarkdownStore, baseDir: string, dirs: s
       return detail(type, id)
     })
   }
-  return { index, detail, resolveRoute, save, addNote }
+  return { index, detail, resolveRoute, save, addNote, previewReferences, updateReferences }
 }

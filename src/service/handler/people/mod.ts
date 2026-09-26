@@ -12,7 +12,10 @@ export function createPeopleRoutes(
   options: PeopleOptions,
 ): Hono {
   const app = new Hono()
-  app.use('*', bodyLimit({ maxSize: 256 * 1024 }))
+  const small = bodyLimit({ maxSize: 256 * 1024 })
+  // Updating references lists every file it changes
+  const large = bodyLimit({ maxSize: 4 * 1024 * 1024 })
+  app.use('*', (c, next) => (c.req.path.endsWith('/references') ? large(c, next) : small(c, next)))
   app.use('*', async (c, next) => {
     const origin = c.req.header('Origin')
     if ((origin && origin !== new URL(c.req.url).origin) || c.req.header('Sec-Fetch-Site') === 'cross-site')
@@ -58,6 +61,24 @@ export function createPeopleRoutes(
       })
       .parse(await c.req.json())
     return c.json(await profiles!.addNote(input.type, input.id, input.revision, input.text))
+  })
+  const references = z.object({
+    type,
+    id: z.string().min(1).max(2048),
+    spellings: z.array(z.string().trim().min(1).max(300)).max(20),
+  })
+  app.post('/references/preview', async (c) => {
+    const input = references.parse(await c.req.json())
+    return c.json(await profiles!.previewReferences(input.type, input.id, input.spellings))
+  })
+  app.post('/references', async (c) => {
+    const input = references
+      .extend({
+        files: z.array(z.object({ id: z.string().min(1).max(2048), revision: z.string().length(64) })).max(20_000),
+        file: z.string().min(1).max(2048).optional(),
+      })
+      .parse(await c.req.json())
+    return c.json(await profiles!.updateReferences(input.type, input.id, input.spellings, input.files, input.file))
   })
   app.get('/linkedin', async (c) => c.json(options.linkedIn ? await options.linkedIn.status() : null))
   app.post('/linkedin', async (c) => {

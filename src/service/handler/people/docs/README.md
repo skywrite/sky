@@ -55,6 +55,37 @@ Namesakes get `-2`, `-3`, compared case-insensitively. No operation overwrites
 another profile. Organization records created during a person save can survive a
 later failure saving that person; a retry matches and reuses them.
 
+## Updating references
+
+A rename works like one in an IDE. Other files name a person or organization in
+their frontmatter: `rel`, `who`, `from`, `to`, `cc`, `org`, and, for an
+organization, a person's `orgs`. A profile's other spellings stay
+in its `name:` list (`alt` for an organization) until someone removes them, so
+references using them still resolve.
+
+When other files still use one of those spellings, the profile says so under its
+name, with the count. When the file name no longer matches the name, its details
+offer to rename the file. Changing the name in the editor opens the same update.
+
+The update previews every change, grouped by kind, and writes nothing until it is
+confirmed. Only the characters of each change are replaced; every other character
+of each file stays as it was.
+- A name is matched by the profile it resolves to, not by text, so a namesake, a
+  bare first name, or a link to a file whose name holds the spelling stays.
+- The profile's file takes its current name, as `person:new` and `org:new` name
+  files: same folder, a person's letters folder following a new first name, and
+  `-2`, `-3` past other files. It moves last.
+- Every place a file writes out the old path in full points at the new one: chat
+  and summary context records, links. The path must start and end
+  whole, so a namesake's `Name-2.md` or another folder's path stays.
+- What files say, their sentences, is never edited.
+- A file changed after the preview is left alone and listed, and so is a value
+  that cannot be edited exactly, such as a list written across lines.
+- The profile keeps its page address; the reservation follows the file.
+
+New files name the profile by its current name: auto-linking writes the first
+name a file lists, and the model's people list shows each person once.
+
 ## LinkedIn draft lifecycle
 
 `lib/linkedin` owns a persistent local browser profile and a detached `lib/jobs`
