@@ -2,7 +2,7 @@
 schema: 0.2.0
 description: Categorize an organization using taxonomy and enrichment sources
 created: 2026-01-26
-updated: 2026-08-13
+updated: 2026-09-26
 ---
 
 You are an expert at categorizing organizations. Analyze the following organization and determine the most appropriate sector and subcategory.
@@ -52,4 +52,4 @@ Determine the most accurate sector and subcategory for this organization, plus t
 - kind: "company" for for-profit businesses, "government" for government entities, "nonprofit" for non-profits, "unknown" if unclear
 - ticker: EXCHANGE:SYMBOL (e.g., "NASDAQ:COIN", "TSX:SHOP") only when the organization is publicly traded and the sources or certain knowledge confirm the ticker — never guess; omit otherwise
 - website: the official website URL (reuse the Website Source URL when present); omit if none is evident
-- description: a concise 3-5 sentence summary in a neutral, encyclopedic tone covering what the organization does, its founding (when and by whom, if known), scale or market position, and key products or distinguishing features. Write it as a single flowing paragraph built on concrete facts from the sources — no marketing adjectives or unverifiable superlatives.
+- description: a concise 3-5 sentence summary in a neutral, encyclopedic tone covering what the organization does, its founding (when and by whom, if known), scale or market position, and key products or distinguishing features. Split it into short paragraphs of 2-3 sentences each, separated by a blank line — never one long block. Build it on concrete facts from the sources — no marketing adjectives or unverifiable superlatives.
