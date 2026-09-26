@@ -133,15 +133,6 @@ export async function draftOrganization(orgsDir: string, request: DraftRequest):
   }
 }
 
-/** Find an org file with the given basename anywhere under orgs/, case-insensitively. */
-export async function findExistingOrgFile(orgsDir: string, filename: string): Promise<string | undefined> {
-  const target = filename.toLowerCase()
-  for await (const entry of walk(orgsDir, { includeDirs: false, exts: ['.md'] })) {
-    if (entry.name.toLowerCase() === target) return entry.path
-  }
-  return undefined
-}
-
 /**
  * Render the sector/subcategory pairs that exist on disk, one sector per line
  * ("crypto: exchanges, wallets"). Derived from org files rather than bare

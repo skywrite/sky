@@ -1,14 +1,14 @@
-import { join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import openEditor from 'open-editor'
 import colors from 'picocolors'
 import { Arg, Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { DIR_ORGS } from '#config'
-import outputFile from '#shared/fs/outputFile.ts'
+import { createNumberedFile } from '#lib/nbfs/createNumberedFile.ts'
 import { nameToFileStem, organizationDir, organizationDocument, pathHostileCategory } from './lib/document.ts'
 import type { OrganizationDraft } from './lib/document.ts'
-import { draftOrganization, findExistingOrgFile } from './lib/draft.ts'
+import { draftOrganization } from './lib/draft.ts'
+import { existingOrganization } from './lib/existing.ts'
 import { webFetch, type WebFetchResult } from './lib/webFetch.ts'
 
 const params = {
@@ -18,7 +18,6 @@ const params = {
   noWikipedia: Flag.bool('Skip Wikipedia enrichment'),
   sector: Flag.string('Force specific sector', { short: 's' }),
   subcategory: Flag.string('Force specific subcategory', { short: 'c' }),
-  force: Flag.bool('Create even if an org file with the same name already exists'),
 }
 
 type Params = InferParams<typeof params>
@@ -62,21 +61,14 @@ export default class OrgNewTask extends Command {
     // Generate slug and filename from name
     const stem = nameToFileStem(name)
     const slug = stem.toLowerCase().replace(/^-|-$/g, '')
-    const filename = stem + '.md'
 
-    // A same-named file anywhere under orgs/ is the same org: proceeding would
-    // either clobber it in place (losing hand-written notes) or duplicate it
-    // under a different category. Check as soon as the name is known, before
-    // spending on further enrichment calls.
-    const existing = await findExistingOrgFile(DIR_ORGS, filename)
+    // Two organizations never share a name, as a name or an alternate one. Check as soon
+    // as the name is known, before spending on further enrichment calls.
+    const existing = await existingOrganization(DIR_ORGS, name)
     if (existing) {
-      if (args.force) {
-        output.log(`Ignoring existing org file (--force): ${existing}`)
-      } else {
-        output.error(`Org file already exists: ${existing}`)
-        output.error('Use --force to create anyway')
-        return CommandResult.error(new Error(`org file already exists: ${existing}`))
-      }
+      output.error(`An organization named ${name} already exists: ${existing}`)
+      output.error('Open it, or give the new one a name of its own.')
+      return CommandResult.error(new Error(`organization already exists: ${existing}`))
     }
 
     // Fetch from multiple sources and categorize using AI (skipped when both are forced)
@@ -104,11 +96,9 @@ export default class OrgNewTask extends Command {
       return CommandResult.error(new Error(`invalid ${hostile.label}: ${hostile.value}`))
     }
 
-    const filePath = join(organizationDir(DIR_ORGS, draft), filename)
-
-    // Write file (outputFile handles directory creation)
+    // A file of that name for another organization gets -2, -3…; nothing is overwritten
     const content = organizationDocument(draft).toMarkdown()
-    await outputFile(filePath, content)
+    const filePath = await createNumberedFile(organizationDir(DIR_ORGS, draft), stem, content)
 
     output.log('\n' + colors.bold(colors.magenta('Name:')) + ' ' + name)
     output.log(colors.bold(colors.magenta('Slug:')) + ' ' + slug)

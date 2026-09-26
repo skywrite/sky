@@ -1,6 +1,6 @@
 ---
 created: 2026-09-23
-updated: 2026-09-25
+updated: 2026-09-26
 ---
 
 # People & Orgs
@@ -20,12 +20,16 @@ records are immediately published back into that store.
 
 Lists enumerate the complete path index, not the name index, which can hold only
 one of several namesakes. Organization matching first uses an explicit record,
-then a LinkedIn company URL, then an exact name or alias. Ambiguous names or
-conflicting company URLs require an explicit link or separate creation. People
-retain `orgs.current` and `orgs.past` as readable names for existing
-consumers. Optional `org_refs` stores the corresponding names and notebook paths
-to preserve an explicit choice between organizations with the same name. A stale
-path does not silently select another namesake.
+then a LinkedIn company URL, then an exact name or alias. People retain
+`orgs.current` and `orgs.past` as readable names for existing consumers, and
+`org_refs` stores the corresponding names and notebook paths. A stale path does
+not silently select another organization. Two organizations never share a name:
+not as a name, not as an alternate name, and not apart from case, spacing or
+punctuation ("Atlas Inc" and "Atlas, Inc." are one name). The page refuses a
+clash when an organization is created, renamed or given an alternate name, and
+`org:new` refuses it too, with no override. A person who writes an
+organization's name another way is linked to it. A conflicting company URL asks
+for the existing record, or for the new organization under a name of its own.
 
 Search results rank by the existing service person/organization scores, with
 alphabetical ties. Without a search, the selected alphabetical or recent ordering

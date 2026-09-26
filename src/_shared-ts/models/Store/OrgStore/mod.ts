@@ -5,10 +5,18 @@ import OrganizationDocument from '#shared/models/Organization/mod.ts'
 import { normalizeName } from '../normalize.ts'
 import type { StoreError, StoreWarning } from '../types.ts'
 
+/** An organization's other names: its `alt` list, `;`-separated or a YAML list. */
+export function altNames(org: OrganizationDocument): string[] {
+  const alt = org.yaml['alt']
+  const names = Array.isArray(alt) ? alt : typeof alt === 'string' ? alt.split(';') : []
+  return names.filter((name): name is string => typeof name === 'string').map((name) => name.trim())
+}
+
 /**
  * Store for Organization documents with name-based lookup.
  *
- * Indexes by normalized name (lowercase, trimmed) and by slug.
+ * Indexes by normalized name (lowercase, trimmed), each `alt` name, and by slug.
+ * An `alt` name never displaces another organization's own name.
  *
  * Build is async (walks directories), lookups are sync (objects pre-loaded).
  */
@@ -73,6 +81,9 @@ export default class OrgStore {
           if (normalized) {
             store.byName.set(normalized, { value: org, path: entry.path })
           }
+          for (const alt of altNames(org).map(normalizeName)) {
+            if (alt && !store.byName.has(alt)) store.byName.set(alt, { value: org, path: entry.path })
+          }
 
           // Index by slug (with path)
           if (org.slug) {
@@ -106,6 +117,9 @@ export default class OrgStore {
     const normalized = normalizeName(org.name)
     if (normalized) {
       this.byName.set(normalized, { value: org, path: filePath })
+    }
+    for (const alt of altNames(org).map(normalizeName)) {
+      if (alt && !this.byName.has(alt)) this.byName.set(alt, { value: org, path: filePath })
     }
 
     if (org.slug) {

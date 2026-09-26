@@ -57,28 +57,26 @@ function OrganizationFields({
             <div>
               <strong>{choice.name}</strong>
               {organizationNeedsChoice(choice, orgs) ? (
-                <Select
-                  label={`Choose ${choice.name}`}
-                  placeholder="Choose the organization"
-                  value={null}
-                  data={[
-                    ...matches.map((org) => ({ value: org.id, label: `${org.name} · ${org.sites[0] || org.id}` })),
-                    { value: '__create__', label: 'Create a separate organization' },
-                  ]}
-                  onChange={(id) =>
-                    onChange(
-                      value.map((item, at) =>
-                        at === index
-                          ? {
-                              ...item,
-                              id: id === '__create__' ? undefined : (id ?? undefined),
-                              create: id === '__create__',
-                            }
-                          : item,
-                      ),
-                    )
-                  }
-                />
+                matches.length > 1 ? (
+                  <small role="alert">
+                    More than one organization is named {choice.name}. Give one of them a name of its own first.
+                  </small>
+                ) : (
+                  <>
+                    <Select
+                      label={`Choose ${choice.name}`}
+                      placeholder="Choose the organization"
+                      value={null}
+                      data={matches.map((org) => ({ value: org.id, label: `${org.name} · ${org.sites[0] || org.id}` }))}
+                      onChange={(id) =>
+                        onChange(value.map((item, at) => (at === index ? { ...item, id: id ?? undefined } : item)))
+                      }
+                    />
+                    <small>
+                      A different organization needs a name of its own: remove this one and add it by that name.
+                    </small>
+                  </>
+                )
               ) : (
                 <small>
                   {choice.id || matches.length === 1
@@ -366,11 +364,15 @@ export function PeopleEditor({
                 {item.name} · {item.title || item.sites[0] || item.id}
               </a>
             ))}
-            <Checkbox
-              label={`This is a different ${type === 'person' ? 'person' : 'organization'} with the same name`}
-              checked={namesake}
-              onChange={(event) => setNamesake(event.currentTarget.checked)}
-            />
+            {type === 'person' ? (
+              <Checkbox
+                label="This is a different person with the same name"
+                checked={namesake}
+                onChange={(event) => setNamesake(event.currentTarget.checked)}
+              />
+            ) : (
+              <p>An organization needs a name of its own.</p>
+            )}
           </div>
         )}
         {type === 'person' ? (

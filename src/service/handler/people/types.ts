@@ -1,4 +1,5 @@
 import type { OrganizationDraft, OrganizationRequest } from '#commands/all/org/lib/document.ts'
+import { orgNameKey } from '#commands/all/org/lib/name.ts'
 import type { LinkedInImportHost } from '#lib/linkedin/types.ts'
 import { linkedInUrl } from '#lib/linkedin/types.ts'
 import type { ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
@@ -79,8 +80,8 @@ export function organizationMatches<T extends OrganizationIdentity>(choice: Orga
     if (matches.length) return matches
   }
   if (choice.create) return []
-  const name = choice.name.trim().toLowerCase()
-  return orgs.filter((org) => [org.name, ...org.aliases].some((alias) => alias.trim().toLowerCase() === name))
+  const name = orgNameKey(choice.name)
+  return orgs.filter((org) => [org.name, ...org.aliases].some((alias) => orgNameKey(alias) === name))
 }
 
 export function organizationNeedsChoice(choice: OrganizationChoice, orgs: OrganizationIdentity[]): boolean {

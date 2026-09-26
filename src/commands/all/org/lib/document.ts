@@ -1,5 +1,6 @@
 import * as path from 'node:path'
 import OrganizationDocument, { type OrgKind } from '#shared/models/Organization/mod.ts'
+import { nameToFileStem } from './name.ts'
 
 /** What org:new is asked: the name, and optionally the website to read and a category to use as given. */
 export interface OrganizationRequest {
@@ -23,14 +24,7 @@ export interface OrganizationDraft {
   wikipediaUrl?: string
 }
 
-/** Filesystem-safe stem derived from the org name; the slug is its lowercased form. */
-export function nameToFileStem(name: string): string {
-  return name
-    .replace(/&/g, 'and')
-    .replace(/[^\w\s-]/g, '')
-    .replace(/\s+/g, '-')
-    .replace(/-+/g, '-')
-}
+export { nameToFileStem }
 
 /** The first category name that cannot be a directory name, if any. */
 export function pathHostileCategory(

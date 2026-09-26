@@ -39,6 +39,7 @@ async function fixture() {
   const profiles = createPeopleStore(store, root, dirs, options)
   const seed = async (file: string, raw: string) => {
     const target = path.join(root, file)
+    await mkdir(path.dirname(target), { recursive: true })
     await writeFile(target, raw)
     store.set(target, raw)
   }
@@ -240,21 +241,25 @@ test('Duplicate imports, ambiguous organizations, concurrent namesakes, and stal
     } catch (error) {
       ambiguous = (error as Error).message
     }
-    const picked = await f.profiles.save({
-      ...blankProfile('person'),
-      name: 'Alex Reed',
-      current: [{ name: 'Atlas', id: 'orgs/second.md' }],
-    })
+    let picked = ''
+    try {
+      await f.profiles.save({
+        ...blankProfile('person'),
+        name: 'Alex Reed',
+        current: [{ name: 'Atlas', id: 'orgs/second.md' }],
+      })
+    } catch (error) {
+      picked = (error as Error).message
+    }
     assert({
       given: 'organizations sharing a name',
-      should: 'require a choice and retain that exact relationship after serialization',
-      actual: [
-        ambiguous.includes('More than one'),
-        picked.current[0].id,
-        (await f.profiles.detail('org', 'orgs/first.md')).people.length,
-        (await f.profiles.detail('org', 'orgs/second.md')).people.length,
+      should: 'refuse to link either, even when one is chosen, since a name cannot say which',
+      actual: [ambiguous, picked, f.store.people.getAll().toArray().length],
+      expected: [
+        'More than one organization is named Atlas. Give one of them a name of its own first.',
+        'More than one organization is named Atlas. Give one of them a name of its own first.',
+        2,
       ],
-      expected: [true, 'orgs/second.md', 0, 1],
     })
   } finally {
     await f.close()
@@ -285,13 +290,34 @@ test('Different LinkedIn company identities sharing a name require an explicit l
       actual: [refused, f.store.people.size, f.store.orgs.size],
       expected: [true, 0, 1],
     })
-    const saved = await f.profiles.save({ ...input, current: input.current.map((org) => ({ ...org, create: true })) })
+    let separate = ''
+    try {
+      await f.profiles.save({ ...input, current: input.current.map((org) => ({ ...org, create: true })) })
+    } catch (error) {
+      separate = (error as Error).message
+    }
+    const saved = await f.profiles.save({
+      ...input,
+      current: input.current.map((org) => ({ ...org, name: 'Atlas Labs', create: true })),
+    })
     const linked = await f.profiles.detail('org', saved.current[0].id!)
     assert({
-      given: 'an explicit choice to create the separate organization',
-      should: 'retain both namesakes and link the intended company',
-      actual: [f.store.orgs.size, linked.sites, (await f.profiles.detail('org', 'orgs/Atlas.md')).people.length],
-      expected: [2, ['https://www.linkedin.com/company/atlas-new-example/'], 0],
+      given: 'a choice to create the separate organization, first under the same name, then under its own',
+      should: 'refuse the same name, then create it and link the intended company',
+      actual: [
+        separate,
+        f.store.orgs.size,
+        linked.name,
+        linked.sites,
+        (await f.profiles.detail('org', 'orgs/Atlas.md')).people.length,
+      ],
+      expected: [
+        'An organization named Atlas already exists. Choose it, or add the new one under a name of its own.',
+        2,
+        'Atlas Labs',
+        ['https://www.linkedin.com/company/atlas-new-example/'],
+        0,
+      ],
     })
   } finally {
     await f.close()
@@ -379,7 +405,12 @@ test('Profile URLs survive name edits, file moves and a new store, without reusi
       allowNamesake: true,
     })
     const org = await f.profiles.save({ ...blankProfile('org'), name: 'Atlas' })
-    const otherOrg = await f.profiles.save({ ...blankProfile('org'), name: 'Atlas', allowNamesake: true })
+    let otherOrg = ''
+    try {
+      await f.profiles.save({ ...blankProfile('org'), name: 'Atlas', allowNamesake: true })
+    } catch (error) {
+      otherOrg = (error as Error).message
+    }
     const changed = await f.profiles.save({ ...second, name: 'Jane Rivera' })
     const destination = path.join(f.options.peopleDir, 'Moved.md')
     await rename(path.join(f.root, changed.id), destination)
@@ -396,8 +427,9 @@ test('Profile URLs survive name edits, file moves and a new store, without reusi
       allowNamesake: true,
     })
     assert({
-      given: 'namesakes, a renamed and moved profile, a service restart and a deleted name',
-      should: 'keep existing public URLs and reserve the removed URL instead of linking it to someone else',
+      given: 'namesakes, a renamed and moved profile, a service restart, a deleted name, and a second Atlas',
+      should:
+        'keep existing public URLs, reserve the removed URL instead of linking it to someone else, and refuse a second organization of the same name',
       actual: [
         profileHref(changed),
         moved?.id,
@@ -405,7 +437,7 @@ test('Profile URLs survive name edits, file moves and a new store, without reusi
         profileHref(third),
         await restarted.resolveRoute('person', first.slug),
         profileHref(org),
-        profileHref(otherOrg),
+        otherOrg,
       ],
       expected: [
         '/people/jane-doe-2',
@@ -414,7 +446,7 @@ test('Profile URLs survive name edits, file moves and a new store, without reusi
         '/people/jane-doe-3',
         undefined,
         '/orgs/atlas',
-        '/orgs/atlas-2',
+        'An organization named Atlas already exists. Open it, or give this one a name of its own.',
       ],
     })
     const oldOrg = await f.app.request(`/orgs/${org.id}`)
@@ -423,6 +455,47 @@ test('Profile URLs survive name edits, file moves and a new store, without reusi
       should: 'redirect to the clean organization route',
       actual: [oldOrg.status, oldOrg.headers.get('location')],
       expected: [308, '/orgs/atlas'],
+    })
+  } finally {
+    await f.close()
+  }
+})
+
+test('Two organizations never share a name, alternate names and punctuation included', async () => {
+  const f = await fixture()
+  try {
+    await f.seed('orgs/tech/software/Atlas-Inc.md', '---\nname: Atlas Inc\nalt: Atlas Labs\n---\n\n# Atlas Inc\n')
+    const refused = async (save: () => Promise<unknown>) => {
+      try {
+        await save()
+        return ''
+      } catch (error) {
+        return (error as Error).message
+      }
+    }
+    const person = await f.profiles.save({
+      ...blankProfile('person'),
+      name: 'Jane Doe',
+      current: [{ name: 'Atlas, Inc.' }],
+    })
+    assert({
+      given: 'an organization named Atlas Inc, also known as Atlas Labs',
+      should:
+        'refuse another under its name, its alternate name, or either as an alternate name, and link a person who writes it with punctuation',
+      actual: [
+        await refused(() => f.profiles.save({ ...blankProfile('org'), name: 'Atlas, Inc.' })),
+        await refused(() => f.profiles.save({ ...blankProfile('org'), name: 'Atlas Labs' })),
+        await refused(() => f.profiles.save({ ...blankProfile('org'), name: 'Cedar', aliases: ['atlas labs'] })),
+        person.current.map((org) => [org.name, org.id]),
+        f.store.orgs.getAll().toArray().length,
+      ],
+      expected: [
+        'An organization named Atlas, Inc. already exists. Open it, or give this one a name of its own.',
+        'Atlas Labs is already a name of Atlas Inc. Open it, or give this one a name of its own.',
+        'atlas labs is already a name of Atlas Inc. Choose another alternate name.',
+        [['Atlas Inc', 'orgs/tech/software/Atlas-Inc.md']],
+        1,
+      ],
     })
   } finally {
     await f.close()

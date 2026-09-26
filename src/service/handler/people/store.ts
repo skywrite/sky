@@ -9,6 +9,7 @@ import {
   type OrganizationDraft,
   type OrganizationRequest,
 } from '#commands/all/org/lib/document.ts'
+import { orgNameKey } from '#commands/all/org/lib/name.ts'
 import {
   generatePersonHierarchyPath,
   metValue,
@@ -365,9 +366,30 @@ export function createPeopleStore(store: MarkdownStore, baseDir: string, dirs: s
           `This LinkedIn profile is already saved as ${sameSource.name}. Open that record to edit it.`,
           409,
         )
-      if (sameName.length && !input.allowNamesake)
+      // People may share a name. Two organizations never do: an organization is linked by its
+      // name, so each of its names, alternate ones included, is its own.
+      const orgNamed = (name: string) =>
+        all.orgs.find(
+          (org) =>
+            org.id !== input.id && [org.name, ...org.aliases].some((other) => orgNameKey(other) === orgNameKey(name)),
+        )
+      if (input.type === 'org') {
+        const clash = orgNamed(input.name)
+        if (clash)
+          throw new ProfileError(
+            orgNameKey(clash.name) === orgNameKey(input.name)
+              ? `An organization named ${input.name} already exists. Open it, or give this one a name of its own.`
+              : `${input.name} is already a name of ${clash.name}. Open it, or give this one a name of its own.`,
+            409,
+          )
+        for (const alias of input.aliases) {
+          const other = orgNamed(alias)
+          if (other)
+            throw new ProfileError(`${alias} is already a name of ${other.name}. Choose another alternate name.`, 409)
+        }
+      } else if (sameName.length && !input.allowNamesake)
         throw new ProfileError(
-          'A profile with this name already exists. Open it, or confirm this is a different person or organization.',
+          'A profile with this name already exists. Open it, or confirm this is a different person.',
           409,
         )
 
@@ -383,9 +405,22 @@ export function createPeopleStore(store: MarkdownStore, baseDir: string, dirs: s
         const matches = organizationMatches(choice, all.orgs)
         if (choice.id && !matches.length)
           throw new ProfileError(`The organization ${choice.name} no longer exists. Choose it again.`, 409)
+        // A person's organizations are written by name, which must say which organization it is
+        const name = orgNameKey(matches.length === 1 ? matches[0]!.name : choice.name)
+        const named = all.orgs.filter((org) => [org.name, ...org.aliases].some((alias) => orgNameKey(alias) === name))
+        if (named.length > 1)
+          throw new ProfileError(
+            `More than one organization is named ${choice.name}. Give one of them a name of its own first.`,
+            409,
+          )
+        if (choice.create && named.length)
+          throw new ProfileError(
+            `An organization named ${choice.name} already exists. Choose it, or add the new one under a name of its own.`,
+            409,
+          )
         if (organizationNeedsChoice(choice, all.orgs))
           throw new ProfileError(
-            `More than one organization could be ${choice.name}. Choose an existing record or create a separate organization.`,
+            `${choice.name} has a different LinkedIn page than the organization of that name. Choose that organization, or add the new one under a name of its own.`,
             409,
           )
       }
