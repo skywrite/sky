@@ -1,6 +1,7 @@
 /**
- * Tracking record-file helpers — append rows exactly the way a hand edit
- * would: same file, same format, same quoting habits, same carried header.
+ * Tracking record-file helpers — add rows exactly the way a hand edit
+ * would: same file, same format, same quoting habits, same carried header,
+ * in date order.
  * `storage: weekly` writes the legacy time-tree shards
  * ({timeDir}/{weekDir}/_tracking/{category}/{slug}.csv) with rows keyed by
  * day letter (M T W R F SA SU). `storage: yearly` (default) writes metrics to
@@ -100,15 +101,27 @@ export function formatRowForHeader(
   )
 }
 
-export function appendRecordContents(
+/** A row's place in date order: the full date, or the day letter's weekday number. */
+function orderKey(def: TrackingDocument, key: string): string {
+  return def.storage === 'yearly' ? key : String(DAY_LETTERS.findIndex((d) => d === key.toUpperCase()))
+}
+
+function lineKey(line: string): string {
+  return line.split(',')[0].trim().replace(/^"|"$/g, '')
+}
+
+/** File contents with the row in date order, plus the row as written. */
+function insertRecord(
   contents: string | null,
   def: TrackingDocument,
   date: PlainDate,
   values: Record<string, string>,
-): string {
+): { contents: string; row: string } {
   const newline = contents?.includes('\r\n') ? '\r\n' : '\n'
-  if (!contents?.trim())
-    return `${contents ?? ''}${formatHeader(def)}${newline}${formatRow(def, date, values)}${newline}`
+  if (!contents?.trim()) {
+    const row = formatRow(def, date, values)
+    return { contents: `${contents ?? ''}${formatHeader(def)}${newline}${row}${newline}`, row }
+  }
   const table = readTrackingCsv(contents, def.storage === 'weekly' ? date.addDays(1 - date.dayOfWeek) : undefined)
   const header = table.header.slice()
   const names = header.slice(1).map(columnName)
@@ -131,8 +144,30 @@ export function appendRecordContents(
     lines[at] = `${lines[at].startsWith('\uFEFF') ? '\uFEFF' : ''}${header.map(quoteCsv).join(', ')}`
     contents = lines.join(newline)
   }
+  const row = formatRowForHeader(def, date, values, header)
+  // A late entry for an earlier day goes above the later days; same-day rows keep arrival order.
+  const own = orderKey(def, rowKey(def, date))
+  let insertAt = lines.length
+  for (let i = lines.length - 1; i > at; i--) {
+    if (!lines[i].trim()) continue
+    if (orderKey(def, lineKey(lines[i])) <= own) break
+    insertAt = i
+  }
+  if (insertAt < lines.length) {
+    lines.splice(insertAt, 0, row)
+    return { contents: lines.join(newline), row }
+  }
   const separator = contents.endsWith('\n') ? '' : newline
-  return `${contents}${separator}${formatRowForHeader(def, date, values, header)}${newline}`
+  return { contents: `${contents}${separator}${row}${newline}`, row }
+}
+
+export function appendRecordContents(
+  contents: string | null,
+  def: TrackingDocument,
+  date: PlainDate,
+  values: Record<string, string>,
+): string {
+  return insertRecord(contents, def, date, values).contents
 }
 
 /**
@@ -145,8 +180,8 @@ export function hasEntryForDate(def: TrackingDocument, contents: string, date: P
 }
 
 /**
- * Append a row for `date`, creating the period's file with its header when
- * new. Returns the written row and whether the file was created.
+ * Add a row for `date` in date order, creating the period's file with its
+ * header when new. Returns the written row and whether the file was created.
  */
 export async function appendRecord(
   filePath: string,
@@ -156,8 +191,8 @@ export async function appendRecord(
 ): Promise<{ created: boolean; row: string }> {
   return withTrackingFiles([filePath], async () => {
     const contents = await readTrackingFile(filePath)
-    const next = appendRecordContents(contents, def, date, values)
-    await writeTrackingFile(filePath, next)
-    return { created: contents === null, row: next.trimEnd().split(/\r?\n/).at(-1)! }
+    const next = insertRecord(contents, def, date, values)
+    await writeTrackingFile(filePath, next.contents)
+    return { created: contents === null, row: next.row }
   })
 }

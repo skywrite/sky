@@ -201,6 +201,56 @@ test('yearly storage: date-keyed rows, date header, year-file path', () => {
   })
 })
 
+test('appendRecordContents: a late entry for an earlier day goes in date order', () => {
+  const header = '"date", "time", "inches (in)", "notes"\n'
+  assert({
+    given: 'a yearly file ending with a later day',
+    should: 'insert the earlier day above it',
+    expected: `${header}2026-08-16, 5:00, 39\n2026-08-17, 5:10, 38.8\n2026-08-23, 5:25, 38.5\n`,
+    actual: appendRecordContents(`${header}2026-08-16, 5:00, 39\n2026-08-23, 5:25, 38.5\n`, WAIST, MONDAY, {
+      time: '5:10',
+      inches: '38.8',
+    }),
+  })
+  assert({
+    given: 'two later days already out of order at the end',
+    should: 'insert above both, after the last earlier day',
+    expected: `${header}2026-08-16, 5:00, 39\n2026-08-17, 5:10, 38.8\n2026-08-23, 5:25, 38.5\n2026-08-22, 5:20, 38.6\n`,
+    actual: appendRecordContents(
+      `${header}2026-08-16, 5:00, 39\n2026-08-23, 5:25, 38.5\n2026-08-22, 5:20, 38.6\n`,
+      WAIST,
+      MONDAY,
+      { time: '5:10', inches: '38.8' },
+    ),
+  })
+  assert({
+    given: 'a second entry for a day that already has one',
+    should: 'go after the existing same-day row',
+    expected: `${header}2026-08-17, 5:00, 39\n2026-08-17, 21:00, 39.4\n2026-08-23, 5:25, 38.5\n`,
+    actual: appendRecordContents(`${header}2026-08-17, 5:00, 39\n2026-08-23, 5:25, 38.5\n`, WAIST, MONDAY, {
+      time: '21:00',
+      inches: '39.4',
+    }),
+  })
+  assert({
+    given: 'the newest day, in a file with no final newline',
+    should: 'append at the end as before',
+    expected: `${header}2026-08-16, 5:00, 39\n2026-08-23, 5:25, 38.5\n`,
+    actual: appendRecordContents(`${header}2026-08-16, 5:00, 39`, WAIST, SUNDAY, { time: '5:25', inches: '38.5' }),
+  })
+  assert({
+    given: 'a weekly file with a Saturday row, quoted era',
+    should: 'insert Thursday above Saturday',
+    expected: '"day", "time", "lbs (lbs)", "notes"\nM, 6:05, 180\nR, 6:20, 179\n"SA","6:15",181\n',
+    actual: appendRecordContents(
+      '"day", "time", "lbs (lbs)", "notes"\nM, 6:05, 180\n"SA","6:15",181\n',
+      WEIGHT,
+      THURSDAY,
+      { time: '6:20', lbs: '179' },
+    ),
+  })
+})
+
 test('appendRecord: creates with header, then appends; repairs missing final newline', async () => {
   await rm(TEST_DIR, { recursive: true }).catch(() => {})
   await mkdir(TEST_DIR, { recursive: true })
@@ -234,6 +284,14 @@ test('appendRecord: creates with header, then appends; repairs missing final new
       should: 'end with both rows',
       expected: '"day", "time", "lbs (lbs)", "notes"\nM, 6:05, 180\nR, 6:20, 179\n',
       actual: await readTextFile(filePath),
+    })
+
+    const late = await appendRecord(filePath, WEIGHT, MONDAY.addDays(2), { time: '6:10', lbs: '179.6' })
+    assert({
+      given: 'a late Wednesday entry after Thursday',
+      should: 'return the row it inserted, not the last line of the file',
+      expected: 'W, 6:10, 179.6',
+      actual: late.row,
     })
   } finally {
     await rm(TEST_DIR, { recursive: true }).catch(() => {})

@@ -1,6 +1,6 @@
 ---
 created: 2026-08-30
-updated: 2026-09-20
+updated: 2026-09-26
 ---
 
 # Tracking commands
@@ -29,7 +29,9 @@ Both carry the quoted header style (`"day", "time", "lbs (lbs)", "notes"`).
 Prose-ish values (`range`, `word`, `text`) are quoted, numbers and times
 bare, trailing empty fields dropped. A value carrying a comma or a quote is
 quoted whatever its column type, so a bare cell always ends at the next comma.
-Always append; multiplicity is a query-time concern. Helpers: `lib/records.ts`.
+Rows go in date order. A late entry for an earlier day lands above the
+later days' rows; a second entry for the same day goes after the first.
+Multiplicity is a query-time concern. Helpers: `lib/records.ts`.
 
 Capture creates a record file with its header on the first entry. Health
 summaries and checkins read annual records filtered to their date range,
@@ -69,6 +71,7 @@ files apply only to their original sources; omit completed repairs on a rerun.
 
 ## Notes
 
+- [2026-09-26 — late entries go in date order](2026-09-26-late-entries-go-in-date-order.md)
 - [2026-09-25 — bare cells end at the comma](2026-09-25-bare-cells-end-at-the-comma.md)
 - [2026-09-05 — annual tracking migration](2026-09-05-annual-tracking.md)
 
