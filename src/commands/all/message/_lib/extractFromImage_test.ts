@@ -1,5 +1,13 @@
+import { readPromptFile } from '#shared/prompts/load.ts'
+import { renderPromptFile } from '#shared/prompts/mod.ts'
 import { assert, test } from '#test'
-import { collapseAdjacentDuplicates, renameSenders, renderDialogue, senderSummary } from './extractFromImage.ts'
+import {
+  collapseAdjacentDuplicates,
+  nameTheOwner,
+  renameSenders,
+  renderDialogue,
+  senderSummary,
+} from './extractFromImage.ts'
 import type { ExtractedMessage } from './extractFromImage.ts'
 
 function msg(sender: string, text: string, time: string | null = null): ExtractedMessage {
@@ -97,6 +105,78 @@ test('renameSenders', async (t) => {
       should: 'return equivalent messages',
       actual: renameSenders(messages, []),
       expected: messages,
+    })
+  })
+})
+
+test('nameTheOwner', async (t) => {
+  const extraction = { from: 'Sarah', to: 'Me', messages: [msg('Sarah', 'hi'), msg('Me', 'hey'), msg('you', 'ok')] }
+
+  await t.step('files the owner by name wherever the model wrote a label', () => {
+    const named = nameTheOwner(extraction, 'Jane Doe')
+    assert({
+      given: 'a to and senders the model labelled "Me" and "you"',
+      should: 'name the owner and leave the other party alone',
+      actual: [named.from, named.to, named.messages.map((m) => m.sender)],
+      expected: ['Sarah', 'Jane Doe', ['Sarah', 'Jane Doe', 'Jane Doe']],
+    })
+  })
+
+  await t.step('changes nothing without a name', () => {
+    assert({
+      given: 'no owner name, or a blank one',
+      should: 'return the extraction as it was',
+      actual: [nameTheOwner(extraction, undefined), nameTheOwner(extraction, '  ')],
+      expected: [extraction, extraction],
+    })
+  })
+
+  await t.step('leaves a name that merely starts with the label', () => {
+    const mel = { from: 'Mel', to: null, messages: [msg('Mel', 'hi')] }
+    assert({
+      given: 'a sender called Mel',
+      should: 'keep it',
+      actual: nameTheOwner(mel, 'Jane Doe'),
+      expected: mel,
+    })
+  })
+})
+
+test('extract-from-image.prompt.md', async (t) => {
+  const content = await readPromptFile(new URL('../prompts/extract-from-image.prompt.md', import.meta.url).pathname)
+  // An explicit me namespace stops the render from reading the real AboutMe profile.
+  const render = (me: Record<string, string>) =>
+    renderPromptFile(content, 'extract-from-image.prompt.md', { me, user: { now: '2026-01-27 09:30' } })
+
+  await t.step('names the owner from the profile', () => {
+    const { output, warnings } = render({ fullName: 'Jane Doe' })
+    assert({
+      given: 'a profile with a name',
+      should: 'give the outgoing side that name, with no "Me" left',
+      actual: {
+        warnings,
+        outgoing: output.includes('who took the screenshot: Jane Doe.'),
+        asTo: output.includes('the owner (Jane Doe) is `to`'),
+        me: output.includes('"Me"'),
+        unfilled: output.includes('{{'),
+      },
+      expected: { warnings: [], outgoing: true, asTo: true, me: false, unfilled: false },
+    })
+  })
+
+  await t.step('falls back to "Me" without a name', () => {
+    const { output, warnings } = render({})
+    assert({
+      given: 'no name in the profile',
+      should: 'keep the "Me" wording and no stray name',
+      actual: {
+        warnings,
+        outgoing: output.includes('otherwise call them "Me".'),
+        asTo: output.includes('the owner ("Me") is `to`'),
+        name: output.includes('Jane Doe'),
+        unfilled: output.includes('{{'),
+      },
+      expected: { warnings: [], outgoing: true, asTo: true, name: false, unfilled: false },
     })
   })
 })

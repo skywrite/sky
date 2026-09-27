@@ -30,7 +30,7 @@ const TextExtractionSchema = z.object({
     .string()
     .nullable()
     .describe(
-      'Who that first message was written to — the other party, or "Me" when the conversation opens incoming. Null if unclear.',
+      'Who that first message was written to — the other party, or the account owner, under the name the prompt gives them, when the conversation opens incoming. Null if unclear.',
     ),
   summary: z
     .string()

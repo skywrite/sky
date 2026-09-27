@@ -11,7 +11,7 @@ export const MessageSchema = z.object({
   sender: z
     .string()
     .describe(
-      'Sender name: the name shown next to the message, the chat header name for the other party in a 1:1 chat, or a name from the additional context. Outgoing messages with no known name are "Me" — never placeholders like "Person 1".',
+      'Sender name: the name shown next to the message, the chat header name for the other party in a 1:1 chat, or a name from the additional context. Outgoing messages belong to the account owner, under the name the prompt gives them — never placeholders like "Person 1".',
     ),
   text: z.string().describe('Message text, verbatim'),
   time: z
@@ -42,7 +42,7 @@ const ExtractionSchema = z.object({
     .string()
     .nullable()
     .describe(
-      'Who that first message was written to — the other party, or "Me" when the conversation opens incoming. Null if unclear.',
+      'Who that first message was written to — the other party, or the account owner, under the name the prompt gives them, when the conversation opens incoming. Null if unclear.',
     ),
   summary: z
     .string()
@@ -109,6 +109,34 @@ export function renameSenders(messages: ExtractedMessage[], renames: SenderRenam
     const to = map.get(m.sender)
     return to === undefined ? m : { ...m, sender: to }
   })
+}
+
+/** The labels an app, or the model, gives the account owner in place of a name. */
+const OWNER_LABEL = /^(me|you)$/i
+
+export function isOwnerLabel(name: string | null | undefined): boolean {
+  return name !== null && name !== undefined && OWNER_LABEL.test(name.trim())
+}
+
+/**
+ * The owner by name wherever the model still wrote "Me" (or an app's "You").
+ * The prompts name the owner from the About-me profile; this makes sure that
+ * name, not the label, is what reaches the file. Without a name (no profile
+ * yet) nothing changes, and the check step says so.
+ */
+export function nameTheOwner<T extends { from: string | null; to: string | null; messages: ExtractedMessage[] }>(
+  extraction: T,
+  owner: string | undefined,
+): T {
+  const name = owner?.trim()
+  if (!name) return extraction
+  const byName = (party: string | null) => (isOwnerLabel(party) ? name : party)
+  return {
+    ...extraction,
+    from: byName(extraction.from),
+    to: byName(extraction.to),
+    messages: extraction.messages.map((m) => (isOwnerLabel(m.sender) ? { ...m, sender: name } : m)),
+  }
 }
 
 /** e.g. "Sarah ×6, Me ×4" — distinct senders in order of first appearance */

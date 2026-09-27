@@ -28,13 +28,20 @@ import { DayDirFileWriter, messageFileName, writeDayItems } from '#lib/nbfs/mod.
 import openEditor from '#lib/shell/openEditor.ts'
 import slugify from '#lib/string/slugify.ts'
 import { exists, readTextFile } from '#shared/fs/mod.ts'
+import { AboutMeDocument } from '#shared/models/AboutMe/mod.ts'
 import MessageDocument from '#shared/models/Message/mod.ts'
 import dayAttachmentsDir from '#shared/nbfs/dayAttachmentsDir.ts'
 import { extractTypedTime, labelledTimeRaw } from '#universal/dates/extractTypedTime.ts'
 import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import { applyParticipantCorrections, extractTypedParticipants } from './_lib/applyCorrections.ts'
 import { conversationTo, formatAudioConversation, summarizeAudioConversation } from './_lib/audioConversation.ts'
-import { extractMessageFromImage, renderDialogue, senderSummary } from './_lib/extractFromImage.ts'
+import {
+  extractMessageFromImage,
+  isOwnerLabel,
+  nameTheOwner,
+  renderDialogue,
+  senderSummary,
+} from './_lib/extractFromImage.ts'
 import { extractMessageFromText } from './_lib/extractFromText.ts'
 import { findScreenshotsOnDesktop } from './_lib/findScreenshotOnDesktop.ts'
 import { parseCorrections } from './_lib/parseCorrections.ts'
@@ -78,6 +85,19 @@ async function keepWithDay(context: CommandArgs['context'], message: string): Pr
   if (context.platform === CommandPlatform.Server) return true
   if (!context.prompt.interactive) return false
   return (await context.prompt.confirm({ message })) ?? false
+}
+
+/**
+ * The owner's name from the About-me profile (Settings > Me), which their own
+ * side of a conversation files under. Undefined until the profile has one:
+ * the extractors then fall back to "Me", and the check step says so.
+ */
+async function ownerName(aboutMePath: string): Promise<string | undefined> {
+  try {
+    return AboutMeDocument.fromMarkdown(await readTextFile(aboutMePath)).fullName || undefined
+  } catch {
+    return undefined
+  }
 }
 
 /**
@@ -369,9 +389,15 @@ export default class MessageNewTask extends Command {
         aiContext ?? '',
       ].filter(Boolean)
       const extractOptions = { aiContext: hints.length > 0 ? hints.join(' ') : undefined, now: `${when}` }
-      const extraction = conversation
-        ? await extractMessageFromText(conversation.text, extractOptions)
-        : await extractMessageFromImage(imagePaths, extractOptions)
+      // The prompts name the owner's side from the profile; a "Me" the model
+      // wrote anyway is renamed here, so the label never reaches the file.
+      const owner = await ownerName(config.FILE_ABOUT_ME as string)
+      const extraction = nameTheOwner(
+        conversation
+          ? await extractMessageFromText(conversation.text, extractOptions)
+          : await extractMessageFromImage(imagePaths, extractOptions),
+        owner,
+      )
       if (context.signal?.aborted) return CommandResult.fail('Cancelled')
 
       // 3. Apply extracted values (CLI flags override AI)
@@ -421,6 +447,11 @@ export default class MessageNewTask extends Command {
         if (messages.length > 0) {
           output.log(colors.white(`  Senders:  ${senderSummary(messages)}`))
         }
+        if (!owner && [from, to, ...messages.map((m) => m.sender)].some(isOwnerLabel)) {
+          output.log(
+            colors.gray('  Your messages read "Me". Set your name in Settings > Me > About me and they file under it.'),
+          )
+        }
         output.log(colors.white(`  Medium:   ${medium}`))
         output.log(colors.white(`  Summary:  ${summary ?? '(none)'}`))
         output.log(colors.white(`  When:     ${when}`))
@@ -436,7 +467,9 @@ export default class MessageNewTask extends Command {
       while (prompt.interactive) {
         const corrections = await prompt.text({
           message: rounds > 0 ? 'Anything else? (Enter to accept)' : 'Any corrections? (Enter to accept)',
-          placeholder: 'e.g. medium: Signal, from: Alice, Me is Alice, when: 14:30',
+          placeholder: owner
+            ? 'e.g. medium: Signal, from: Alice, Sam is Sam Lee, when: 14:30'
+            : 'e.g. medium: Signal, from: Alice, Me is Alice, when: 14:30',
         })
         if (!corrections) break
         rounds++

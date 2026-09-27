@@ -1,7 +1,7 @@
 ---
 schema: 0.2.0
 created: 2026-09-23
-updated: 2026-09-23
+updated: 2026-09-27
 description: Extract messaging conversation data from the text of a conversation, dragged or copied out of a messaging app, or exported from one
 ---
 
@@ -16,7 +16,12 @@ Read the text's own layout:
 
 Attribute every message to its sender by the name the text gives:
 
+{{#if me.fullName}}
+- Use the names in the text. A message the text marks as the account owner's — "You", "Me", or the owner's own name in another spelling — belongs to {{me.fullName}}. Use exactly that name for them.
+{{/if}}
+{{#unless me.fullName}}
 - Use the names in the text. A message the text marks as the account owner's — "You", "Me" — belongs to "Me", unless the owner's name is supplied in the additional context.
+{{/unless}}
 - A line with no name of its own continues the message or run of messages above it.
 - Never invent a name, and never use placeholders like "Person 1".
 
