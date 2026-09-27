@@ -123,7 +123,7 @@ function commandLineOf(pid: number): string | null {
  * holder can only be their own crash orphan: kill it (after confirming its
  * command line names this profile dir, never an unrelated pid-reuse) and clear.
  */
-async function clearProfileLock(profileDir: string, takeover: boolean): Promise<void> {
+export async function clearProfileLock(profileDir: string, takeover: boolean): Promise<void> {
   try {
     const target = await readlink(path.join(profileDir, 'SingletonLock'))
     const pid = Number.parseInt(target.split('-').pop() ?? '', 10)
@@ -152,7 +152,7 @@ async function clearProfileLock(profileDir: string, takeover: boolean): Promise<
  * after a run stopped it. Chromium reads these from the profile's
  * Preferences file, written once before the first launch.
  */
-async function quietProfilePreferences(profileDir: string): Promise<void> {
+export async function quietProfilePreferences(profileDir: string): Promise<void> {
   const file = path.join(profileDir, 'Default', 'Preferences')
   if (await exists(file)) return
   await mkdir(path.dirname(file), { recursive: true })

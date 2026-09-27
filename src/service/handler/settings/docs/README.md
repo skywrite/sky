@@ -157,6 +157,10 @@ Pages:
   Workstreams sidebar entry on desktop and mobile. A successful save updates
   navigation immediately; the saved choice is loaded again when the app opens.
   This controls navigation visibility, leaving workstream data and direct links intact.
+  "Jev drives the browser" — `experimental.jevBrowser`, ON by default —
+  `sky browser:task` lets Jev pick each move from a table of the page,
+  with the reasoning model reading when Jev is stuck, typing, checking
+  the files and writing the report; since 2026-09-25.
 - **About** — the build (git, cached per process) and the service.
 
 Connections was deferred by ruling on 2026-08-31 and built on

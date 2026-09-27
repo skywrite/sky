@@ -162,6 +162,9 @@ export function loadSkyConfig(configPath = SKY_CONFIG_PATH): SkyConfig {
     if (typeof parsed.experimental?.workstreams === 'boolean') {
       config.experimental.workstreams = parsed.experimental.workstreams
     }
+    if (typeof parsed.experimental?.jevBrowser === 'boolean') {
+      config.experimental.jevBrowser = parsed.experimental.jevBrowser
+    }
     if (parsed.ai?.models) config.ai.models = { ...config.ai.models, ...parsed.ai.models }
     if (parsed.ai?.profiles) config.ai.profiles = parsed.ai.profiles
     if (parsed.ai?.roles) config.ai.roles = parsed.ai.roles

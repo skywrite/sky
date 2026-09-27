@@ -90,7 +90,7 @@ export interface SettingsData {
   about: { version: string | null; date: string | null }
   advanced: ConfigView
   /** The Experimental page's switches */
-  experimental: { contextPreflight: boolean; workstreams: boolean }
+  experimental: { contextPreflight: boolean; workstreams: boolean; jevBrowser?: boolean }
 }
 
 // ── Talking to the service ──────────────────────────────────────────
@@ -439,6 +439,26 @@ function ExperimentalPane({ data, change }: { data: SettingsData; change: Return
             change('experimental.contextPreflight', String(contextPreflight), (current) => ({
               ...current,
               experimental: { ...current.experimental, contextPreflight },
+            }))
+          }}
+          data={[
+            { value: 'off', label: 'Off' },
+            { value: 'on', label: 'On' },
+          ]}
+        />
+      </Row>
+      <Row
+        label="Jev drives the browser"
+        sub="On by default. When Sky does a task in the browser, Jev picks each move from a table of what is on the page, in a fraction of a second, and your reasoning model reads the page when Jev is stuck, types into fields, checks the files, and writes the report. Needs your TypeSafe API key, under Credentials. Off hands the browser to your reasoning model instead."
+      >
+        <SegmentedControl
+          aria-label="Jev drives the browser"
+          value={data.experimental.jevBrowser === false ? 'off' : 'on'}
+          onChange={(value) => {
+            const jevBrowser = value === 'on'
+            change('experimental.jevBrowser', String(jevBrowser), (current) => ({
+              ...current,
+              experimental: { ...current.experimental, jevBrowser },
             }))
           }}
           data={[

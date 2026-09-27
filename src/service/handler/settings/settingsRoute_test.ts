@@ -763,7 +763,7 @@ test({ name: 'settings route - the Experimental switch is read as a value and wr
     should: 'report it on, accept the two words, refuse the third, and hand the host the words to keep as values',
     actual: [data.experimental, off.status, on.status, maybe.status, written],
     expected: [
-      { contextPreflight: true, workstreams: false },
+      { contextPreflight: true, workstreams: false, jevBrowser: true },
       200,
       200,
       400,
@@ -807,13 +807,13 @@ test('settings route - Workstreams defaults off and changes independently of not
       written,
     ],
     expected: [
-      { contextPreflight: true, workstreams: false },
+      { contextPreflight: true, workstreams: false, jevBrowser: true },
       200,
-      { contextPreflight: true, workstreams: true },
+      { contextPreflight: true, workstreams: true, jevBrowser: true },
       400,
       400,
       200,
-      { contextPreflight: true, workstreams: false },
+      { contextPreflight: true, workstreams: false, jevBrowser: true },
       true,
       [
         ['experimental.workstreams', 'true'],

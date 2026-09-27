@@ -274,7 +274,7 @@ export interface SettingsData {
   about: { version: string | null; date: string | null }
   advanced: ConfigView
   /** The Experimental page's switches */
-  experimental: { contextPreflight: boolean; workstreams: boolean }
+  experimental: { contextPreflight: boolean; workstreams: boolean; jevBrowser?: boolean }
 }
 
 /** The host behind the routes — production reads the machine, tests script it. */
@@ -334,6 +334,7 @@ export const SETTABLE_KEYS = {
   editor: ['editor'],
   'experimental.contextPreflight': ['experimental', 'contextPreflight'],
   'experimental.workstreams': ['experimental', 'workstreams'],
+  'experimental.jevBrowser': ['experimental', 'jevBrowser'],
 } as const
 
 export type SettableKey = keyof typeof SETTABLE_KEYS
@@ -343,6 +344,7 @@ export const BOOLEAN_KEYS: ReadonlySet<SettableKey> = new Set<SettableKey>([
   'calendar.classifyEvents',
   'experimental.contextPreflight',
   'experimental.workstreams',
+  'experimental.jevBrowser',
 ])
 
 /** The valid values for one settable key, against the live host. null = fine. */
@@ -387,6 +389,7 @@ async function refuse(host: SettingsHost, key: SettableKey, value: string): Prom
         : 'Choose an available preset.'
     case 'experimental.contextPreflight':
     case 'experimental.workstreams':
+    case 'experimental.jevBrowser':
     case 'calendar.classifyEvents':
       return value === 'true' || value === 'false' ? null : 'on is true, off is false'
   }
@@ -427,6 +430,7 @@ async function settingsData(host: SettingsHost): Promise<SettingsData> {
     experimental: {
       contextPreflight: config.experimental.contextPreflight === true,
       workstreams: config.experimental.workstreams === true,
+      jevBrowser: config.experimental.jevBrowser !== false,
     },
   }
 }

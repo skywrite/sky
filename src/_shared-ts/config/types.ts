@@ -56,6 +56,8 @@ export interface SkyConfig {
     workstreams?: boolean
     /** Before a web chat reads the notebook, TypeSafe's Jev judges whether the message needs it. */
     contextPreflight?: boolean
+    /** `sky browser:task`: TypeSafe's Jev picks each move in the browser (the default); false hands the browser to the reasoning model. */
+    jevBrowser?: boolean
   }
   ai: {
     models: {
