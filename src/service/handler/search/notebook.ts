@@ -6,6 +6,7 @@ import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import { explorerHref } from '../explorer/mod.ts'
 import { docDate, docTitle } from '../home/docMeta.ts'
 import { isPathWithinRoot, isPathWithinRoots } from '../markdown-preview/request.ts'
+import { placeHref } from '../places/types.ts'
 import {
   SEARCH_KINDS,
   type SearchFilter,
@@ -93,6 +94,13 @@ function entriesOf(store: MarkdownStore, base: string): Entry[] {
     [store.library.getAll(), 'library'],
     [store.ai.getAll(), 'note'],
   ] as const
+  // A place opens on its page, by the ref no other record claims
+  const placeRefs = new Map(
+    store.places
+      .getEntries()
+      .filter((entry) => store.places.findByPlacePath(entry.placePath)?.path === entry.path)
+      .map((entry) => [entry.path, entry.placePath]),
+  )
   const seen = new Set<string>()
   const entries: Entry[] = []
   for (const [source, fallback] of sources) {
@@ -101,6 +109,7 @@ function entriesOf(store: MarkdownStore, base: string): Entry[] {
       seen.add(absolute)
       const relativePath = path.relative(base, absolute)
       const kind = kindOf(relativePath, fallback)
+      const place = placeRefs.get(absolute)
       const date = parseTimePath(relativePath)?.start.toString() ?? docDate(doc, absolute)?.ymd
       const names = [...strings(doc.yaml['name']), ...strings(doc.yaml['aliases']), ...strings(doc.yaml['alt'])]
       const title =
@@ -132,7 +141,7 @@ function entriesOf(store: MarkdownStore, base: string): Entry[] {
         absolute,
         result: {
           relativePath,
-          href: kind === 'day' && date ? `/${date}` : explorerHref(relativePath),
+          href: kind === 'day' && date ? `/${date}` : place ? placeHref(place) : explorerHref(relativePath),
           title,
           kind,
           date,

@@ -516,6 +516,7 @@ export function createHttpApp(options: HttpHandlerOptions): Hono {
       base: markdownBaseDir,
       roots: markdownDirs,
       scoring: store.scoring,
+      profiles,
     }),
   )
   app.get('/search', (c) => c.html(renderAppHtml('sky · search')))

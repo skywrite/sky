@@ -4,6 +4,7 @@ import * as path from 'node:path'
 import MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
 import { assert, test } from '#test'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
+import { createTestHttpApp } from '../httpTestHelpers.ts'
 import { createSearchRoutes } from './mod.ts'
 import { searchAllNotebook, searchDate } from './notebook.ts'
 import type { SearchResponse } from './types.ts'
@@ -208,6 +209,49 @@ test({ name: 'search routes report unavailable indexes and return paginated resu
       should: 'return the matching organization using safe defaults',
       actual: [response.status, body.total, body.offset, body.results[0]?.href, body.today],
       expected: [200, 1, 0, '/explorer/orgs/Atlas.md', '2026-01-28'],
+    })
+    const failing = createSearchRoutes({ ...options, store, profiles: { index: () => Promise.reject(new Error()) } })
+    const fallback = (await (await failing.request('http://localhost/?q=Atlas')).json()) as SearchResponse
+    assert({
+      given: 'profile addresses that cannot load',
+      should: 'still return the organization, opening its file',
+      actual: fallback.results[0]?.href,
+      expected: '/explorer/orgs/Atlas.md',
+    })
+  })
+})
+
+test({ name: 'people, organizations and places open on their pages; other records open in Explorer' }, async () => {
+  await withNotebook(async (store, base) => {
+    const dirs = ['people', 'orgs', 'time', 'places', 'library'].map((name) => path.join(base, name))
+    store.set(path.join(base, 'people/Jane-Doe.md'), '---\nname: Jane Doe\norg: Atlas Studio\n---\n')
+    store.set(path.join(base, 'orgs/Atlas.md'), '---\nname: Atlas Studio\n---\n')
+    store.set(path.join(base, 'places/US/NY/Atlas-office.md'), '---\nname: Atlas office\n---\n')
+    store.set(path.join(base, 'library/Guide.md'), '---\ntitle: Atlas guide\n---\n')
+    const app = createTestHttpApp(dirs, {
+      markdownStore: store,
+      people: { peopleDir: dirs[0]!, orgsDir: dirs[1]!, stateDir: path.join(base, '.state') },
+    })
+    const body = (await (await app.request('/search/_api?q=Atlas')).json()) as SearchResponse
+    assert({
+      given: 'a person, an organization, a place and a note matching a search',
+      should: 'open the person, organization and place on their pages and the note in Explorer',
+      actual: Object.fromEntries(body.results.map((result) => [result.kind, result.href])),
+      expected: {
+        person: '/people/jane-doe',
+        org: '/orgs/atlas-studio',
+        place: '/places/US/NY/Atlas-office',
+        library: '/explorer/library/Guide.md',
+      },
+    })
+    store.set(path.join(base, 'places/Atlas-annex.md'), '---\nname: Atlas annex\nref: places/US/NY/Atlas-office\n---\n')
+    assert({
+      given: 'two places claiming one ref',
+      should: 'open each in Explorer, since the ref cannot tell them apart',
+      actual: searchAllNotebook(store, base, 'Atlas', { today: TODAY, kind: 'place' })
+        .results.map((result) => result.href)
+        .sort(),
+      expected: ['/explorer/places/Atlas-annex.md', '/explorer/places/US/NY/Atlas-office.md'],
     })
   })
 })

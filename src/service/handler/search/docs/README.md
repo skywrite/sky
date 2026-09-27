@@ -1,6 +1,6 @@
 ---
 created: 2026-09-08
-updated: 2026-09-08
+updated: 2026-09-27
 ---
 
 # Notebook search
@@ -17,9 +17,14 @@ hide an exact match or make a type filter incorrectly appear empty.
 
 Date queries resolve on the server using notebook time. A time document's
 partition date takes precedence over its last edit date. Day results open
-`/<YYYY-MM-DD>`; other records open in Explorer. A recognized day can be
-opened even without a day file, but that navigation shortcut does not count
-as an existing document.
+`/<YYYY-MM-DD>`. A recognized day can be opened even without a day file, but
+that navigation shortcut does not count as an existing document.
+
+People, organizations and places open on their pages; other records open in
+Explorer. A profile's address is the slug People & Orgs reserves for it, so
+the route asks that store; when it cannot answer, profiles open as files and
+search still works. A place opens at its ref, unless another record claims
+the same ref: the page cannot tell them apart, so both open in Explorer.
 
 `theme/client/search.tsx` owns the persistent header and `/search` page.
 The query, filter, ordering, and page offset live in the URL so Back and
