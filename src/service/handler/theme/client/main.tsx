@@ -182,7 +182,7 @@ function Canvas() {
   const showDateNav = onDayPage || isWeek || isStreaks || filesRoute !== null
   const activeDayYmd = filesRoute?.ymd ?? dayYmd
   const dayImports = importRows.filter((job) =>
-    job.readback.source === 'document'
+    job.readback.source === 'document' || job.readback.source === 'imessage-audio'
       ? (job.fields?.when ?? job.suggestedWhen).slice(0, 10) === (activeDayYmd ?? day?.today.ymd)
       : isToday,
   )
@@ -463,7 +463,7 @@ function Canvas() {
 
       <SearchWorkspace route={path + search} onNavigate={navigate}>
         {explorerFile !== null ? (
-          <DocView file={explorerFile} go={navigate} />
+          <DocView file={explorerFile} go={navigate} onImportConversation={queue.takeConversation} />
         ) : filesRoute ? (
           <DayFilesMain
             ymd={filesRoute.ymd}
@@ -566,6 +566,7 @@ function Canvas() {
             onImportMeeting={queue.take}
             dragging={drop.dragging}
             onImportFiles={queue.take}
+            onImportConversation={queue.takeConversation}
             kept={kept}
             onKept={setKept}
             onUndoKept={undoKept}

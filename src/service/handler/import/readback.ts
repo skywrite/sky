@@ -16,6 +16,7 @@ import { isRtf, stampedDurationMinutes, turnStamps } from '#commands/all/audio/t
 import SRT from '#commands/all/audio/transcript/lib/SRT/mod.ts'
 import ZoomVTT from '#commands/all/audio/transcript/lib/ZoomVTT/mod.ts'
 import { isNoteDocument } from '#commands/all/notes/lib/documentInput.ts'
+import { audioContainerFromHeader } from '#lib/media/audioHeader.ts'
 
 /** The kinds a recording may be filed as: every door that takes audio. */
 export type RecordingKind = 'meeting' | 'journal' | 'note' | 'message' | 'event'
@@ -72,13 +73,14 @@ export interface ReadBack {
   refusal: string | null
 }
 
-/** Which door family a file name points at, or null for a file sky does not take. */
-export function sourceOf(name: string): ImportSource | null {
+/** Contents win for recordings. The filename only hints at the remaining import families. */
+export function sourceOf(name: string, header?: Uint8Array): ImportSource | null {
+  const container = header ? audioContainerFromHeader(header) : null
+  if (container) return container === 'caf' ? 'imessage-audio' : 'audio'
   const ext = path.extname(name).toLowerCase()
   if (ext === '.vtt') return 'transcript'
   if (ext === '.srt') return 'srt'
   if (ext === '.txt') return 'text'
-  if (ext === '.caf') return 'imessage-audio'
   if (AUDIO_EXTENSIONS.includes(ext)) return 'audio'
   if (IMAGE_EXTENSIONS.includes(ext)) return 'image'
   if (isNoteDocument(name)) return 'document'

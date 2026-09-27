@@ -1,5 +1,5 @@
 import './import.css'
-import { ActionIcon, Autocomplete, Button, Drawer, Modal, Popover, Textarea, TextInput } from '@mantine/core'
+import { ActionIcon, Autocomplete, Button, Drawer, Modal, Popover, Select, Textarea, TextInput } from '@mantine/core'
 import { useMediaQuery } from '@mantine/hooks'
 import {
   type DragEvent,
@@ -18,6 +18,7 @@ import {
   transcriptionUploadLimit,
   type TranscriptionSettings,
 } from '#commands/all/audio/transcript/lib/models.ts'
+import type { AudioConversation } from '#commands/all/message/_lib/savedAudioConversation.ts'
 import {
   documentActivity,
   documentWorkWhen,
@@ -26,6 +27,7 @@ import {
   workDurationLabel,
 } from '#commands/all/notes/lib/documentInput.ts'
 import type { PlaceAnswer, PlaceItem, PlacePrompt } from '#commands/lib/prompt/Prompter.ts'
+import { inspectAudioBlob } from '#lib/media/audioHeader.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import {
   dayLabel,
@@ -44,6 +46,7 @@ import { DocumentRail } from './frontmatter/Rail.tsx'
 import { useCompletions } from './frontmatter/rows.tsx'
 import { useFrontmatter } from './frontmatter/useFrontmatter.ts'
 import { LinksInput } from './links.tsx'
+import { RenderedHtml } from './renderedHtml.tsx'
 import { renderStatic } from './wysiwyg/render.ts'
 
 /**
@@ -84,6 +87,7 @@ export interface ImportJob {
     relation: 'matches' | 'just-after'
   } | null
   suggestedWhen: string
+  day?: string
   links?: string[]
   linkError?: string | null
   /** What an earlier run of the same file left to pick up, when there is one */
@@ -99,6 +103,7 @@ export interface ImportJob {
     body?: string
     audioSpeakers?: Record<string, string>
     to?: string
+    appendTo?: string
   } | null
   state: ImportState
   /** The steps the command announced, in the words a person reads */
@@ -108,6 +113,9 @@ export interface ImportJob {
   line: string | null
   title: string
   result: { file: string } | null
+  audioAdded?: number
+  canUndo?: boolean
+  undone?: boolean
   error: string | null
   created: string
   when: string
@@ -173,7 +181,16 @@ type ImportEvent = { seq: number } & (
   | { type: 'text'; text: string }
   | { type: 'prompt'; prompt: PromptOnWire }
   | { type: 'answered'; id: string; answer?: unknown }
-  | { type: 'state'; state: ImportState; line: string | null; result: { file: string } | null; error: string | null }
+  | {
+      type: 'state'
+      state: ImportState
+      line: string | null
+      result: { file: string } | null
+      error: string | null
+      audioAdded?: number
+      canUndo?: boolean
+      undone?: boolean
+    }
 )
 
 const SETTLED: ReadonlySet<ImportState> = new Set(['done', 'failed', 'cancelled'])
@@ -290,6 +307,7 @@ export function useImportFeed(id: string | null): ImportFeed {
     if (!id) return
     let alive = true
     let source: EventSource | null = null
+    let settledSnapshot = false
     setJob(null)
     setEvents([])
     setMissing(false)
@@ -298,6 +316,7 @@ export function useImportFeed(id: string | null): ImportFeed {
       .then((body) => {
         if (!alive) return
         const b = body as { job: ImportJob; options: ImportOptions }
+        settledSnapshot = SETTLED.has(b.job.state)
         setJob(b.job)
         setOptions(b.options)
         subscribe()
@@ -312,9 +331,26 @@ export function useImportFeed(id: string | null): ImportFeed {
       if (seen.has(event.seq)) return
       seen.add(event.seq)
       setEvents((prev) => (prev.some((e) => e.seq === event.seq) ? prev : [...prev, event]))
+      // A reopened completed job can include a later Undo. Replaying its earlier
+      // completion must not replace the current snapshot with the pre-Undo state.
+      if (settledSnapshot) {
+        if (event.type === 'state' && SETTLED.has(event.state)) source?.close()
+        return
+      }
       if (event.type === 'state') {
         setJob((prev) =>
-          prev ? { ...prev, state: event.state, line: event.line, result: event.result, error: event.error } : prev,
+          prev
+            ? {
+                ...prev,
+                state: event.state,
+                line: event.line,
+                result: event.result,
+                error: event.error,
+                ...(prev.fields?.appendTo
+                  ? { audioAdded: event.audioAdded, canUndo: event.canUndo, undone: event.undone }
+                  : {}),
+              }
+            : prev,
         )
         if (SETTLED.has(event.state)) source?.close()
       } else if (event.type === 'links') {
@@ -372,6 +408,7 @@ export function useImportFeed(id: string | null): ImportFeed {
 // -----------------------------------------------------------------------------
 
 const RECORDING_EXTS = ['.m4a', '.mp3', '.wav', '.aac', '.ogg', '.flac', '.webm', '.mp4', '.caf']
+export const AUDIO_IMPORT_ACCEPT = [...RECORDING_EXTS, 'audio/*'].join(',')
 const IMAGE_EXTS = ['.png', '.jpg', '.jpeg', '.webp', '.gif', '.heic', '.heif']
 /** Smaller recordings fit either provider; larger ones need the current saved choice. */
 const TRANSCRIBE_CAP = TRANSCRIPTION_MODELS[0].maxUploadMb * 1024 * 1024
@@ -392,15 +429,16 @@ export function acceptsImports(): string {
 }
 
 /** A recording or a screenshot over its cap is refused before its bytes go up, in the read-back's words. */
-function refusedBeforeUpload(file: File, audioCap: number): string | null {
+async function refusedBeforeUpload(file: File, audioCap: number): Promise<string | null> {
   const dot = file.name.lastIndexOf('.')
   const ext = dot > 0 ? file.name.slice(dot).toLowerCase() : ''
   const mb = (file.size / 1024 / 1024).toFixed(0)
-  const recording = RECORDING_EXTS.includes(ext) || file.type.startsWith('audio/')
+  const container = await inspectAudioBlob(file).catch(() => null)
+  const recording = Boolean(container) || RECORDING_EXTS.includes(ext) || file.type.startsWith('audio/')
   if (recording && file.size > audioCap) {
     return `The recording is ${mb} MB, over the ${audioCap / 1024 / 1024} MB limit. Trim it, or record shorter parts.`
   }
-  const image = IMAGE_EXTS.includes(ext) || file.type.startsWith('image/')
+  const image = !container && (IMAGE_EXTS.includes(ext) || file.type.startsWith('image/'))
   if (image && file.size > IMAGE_CAP) {
     return `The screenshot is ${mb} MB, over the 7.5 MB limit. Crop it, or save it as a JPEG.`
   }
@@ -408,11 +446,14 @@ function refusedBeforeUpload(file: File, audioCap: number): string | null {
 }
 
 async function audioUploadCap(files: File[]): Promise<number> {
+  const containers = await Promise.all(files.map((file) => inspectAudioBlob(file).catch(() => null)))
   if (
     !files.some(
-      (file) =>
+      (file, index) =>
         file.size > TRANSCRIBE_CAP &&
-        (file.type.startsWith('audio/') || RECORDING_EXTS.some((ext) => file.name.toLowerCase().endsWith(ext))),
+        (Boolean(containers[index]) ||
+          file.type.startsWith('audio/') ||
+          RECORDING_EXTS.some((ext) => file.name.toLowerCase().endsWith(ext))),
     )
   )
     return TRANSCRIBE_CAP
@@ -474,7 +515,8 @@ export function useFileDrop(enabled: boolean, onFiles: (files: File[]) => void, 
     const target = event.target instanceof Element ? event.target : null
     if (what === 'text')
       return !target?.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"])')
-    const owner = target?.closest('[data-drop-pad], [data-meeting-drop], [data-meetings-drop]') ?? null
+    const owner =
+      target?.closest('[data-drop-pad], [data-meeting-drop], [data-meetings-drop], [data-conversation-drop]') ?? null
     return !owner || owner === event.currentTarget
   }
   const onDragEnter = (event: DragEvent) => {
@@ -571,6 +613,7 @@ interface QueuedImport {
   text?: string
   meeting: MeetingImport | null
   day?: string
+  conversation?: string
 }
 
 interface Pending extends QueuedImport {
@@ -589,6 +632,7 @@ export function useImportQueue(onStarted: (job: ImportJob) => void, day?: string
   const [queue, setQueue] = useState<QueuedImport[]>([])
   const [pending, setPending] = useState<Pending | null>(null)
   const [again, setAgain] = useState<ImportJob | null>(null)
+  const incoming = useRef(Promise.resolve())
   const pendingKey = useRef<string | null>(null)
   useEffect(
     () => () => {
@@ -598,30 +642,37 @@ export function useImportQueue(onStarted: (job: ImportJob) => void, day?: string
   )
 
   /** Every file dropped on the day is an import; the Files pad keeps files on its own. */
-  const take = (files: File[], meeting: MeetingImport | null = null, filingDay = day) => {
-    const screenshots = files.filter((file) => IMAGE_EXTS.some((ext) => file.name.toLowerCase().endsWith(ext)))
-    const audioTurns = files.filter((file) => file.name.toLowerCase().endsWith('.caf'))
-    const imports: QueuedImport[] = []
-    for (const file of files) {
-      if (screenshots.includes(file)) {
-        if (file === screenshots[0]) imports.push({ files: screenshots, meeting: null })
-        continue
+  const take = (files: File[], meeting: MeetingImport | null = null, filingDay = day, conversation?: string) => {
+    const inspection = Promise.all(files.map((file) => inspectAudioBlob(file).catch(() => null)))
+    // Preserve the order of separate drops even if their header reads finish out of order.
+    incoming.current = incoming.current.then(async () => {
+      const containers = await inspection
+      const audioTurns = files.filter((_, index) => containers[index] === 'caf')
+      const screenshots = files.filter(
+        (file, index) => !containers[index] && IMAGE_EXTS.some((ext) => file.name.toLowerCase().endsWith(ext)),
+      )
+      const imports: QueuedImport[] = []
+      for (const file of files) {
+        if (screenshots.includes(file)) {
+          if (file === screenshots[0]) imports.push({ files: screenshots, meeting: null })
+          continue
+        }
+        if (audioTurns.includes(file)) {
+          if (file === audioTurns[0]) imports.push({ files: audioTurns, meeting: null, day: filingDay, conversation })
+          continue
+        }
+        imports.push({
+          files: [file],
+          day: filingDay,
+          meeting:
+            ['.vtt', '.txt', ...RECORDING_EXTS].some((ext) => file.name.toLowerCase().endsWith(ext)) ||
+            file.type.startsWith('audio/')
+              ? meeting
+              : null,
+        })
       }
-      if (audioTurns.includes(file)) {
-        if (file === audioTurns[0]) imports.push({ files: audioTurns, meeting: null, day: filingDay })
-        continue
-      }
-      imports.push({
-        files: [file],
-        day: filingDay,
-        meeting:
-          ['.vtt', '.txt', ...RECORDING_EXTS].some((ext) => file.name.toLowerCase().endsWith(ext)) ||
-          file.type.startsWith('audio/')
-            ? meeting
-            : null,
-      })
-    }
-    setQueue((q) => [...q, ...imports])
+      setQueue((q) => [...q, ...imports])
+    })
   }
 
   /** Text dragged onto the day is an import too: the dialog asks what it is. */
@@ -629,17 +680,17 @@ export function useImportQueue(onStarted: (job: ImportJob) => void, day?: string
 
   useEffect(() => {
     if (pending || again || queue.length === 0) return
-    const [{ files, text, meeting, day }, ...rest] = queue
+    const [{ files, text, meeting, day, conversation }, ...rest] = queue
     setQueue(rest)
     const key = crypto.randomUUID()
     pendingKey.current = key
-    setPending({ key, files, text, meeting, day, fraction: 0, job: null, options: null, error: null })
+    setPending({ key, files, text, meeting, day, conversation, fraction: 0, job: null, options: null, error: null })
     const patch = (change: (p: Pending) => Pending) => setPending((p) => (p && p.key === key ? change(p) : p))
     void audioUploadCap(files)
       .then(async (audioCap) => {
         if (pendingKey.current !== key) return
         for (const file of files) {
-          const reason = refusedBeforeUpload(file, audioCap)
+          const reason = await refusedBeforeUpload(file, audioCap)
           if (reason) {
             patch((p) => ({ ...p, error: files.length > 1 ? `${file.name}: ${reason}` : reason }))
             return
@@ -659,6 +710,8 @@ export function useImportQueue(onStarted: (job: ImportJob) => void, day?: string
 
   return {
     take,
+    takeConversation: (files: File[], conversation: string, filingDay = day) =>
+      take(files, null, filingDay, conversation),
     takeExisting: async (ymd: string, relative: string, name: string) => {
       const response = await fetch(dayFileHref(ymd, relative))
       if (!response.ok) throw new Error('The attachment could not be opened.')
@@ -888,6 +941,8 @@ function ConfirmBody({
   setAudioSpeakers,
   audioTo,
   setAudioTo,
+  destination,
+  setDestination,
 }: {
   pending: Pending | null
   job: ImportJob | null
@@ -902,6 +957,8 @@ function ConfirmBody({
   setAudioSpeakers: (names: Record<string, string>) => void
   audioTo: string | null
   setAudioTo: (to: string) => void
+  destination: string | null
+  setDestination: (path: string) => void
 }) {
   const feed = useImportFeed(job?.id ?? null)
   const live = feed.job ?? job
@@ -954,6 +1011,43 @@ function ConfirmBody({
   const count = files.length
   const source = live?.readback.source ?? (pending?.text !== undefined ? 'selection' : 'audio')
   const audioConversation = source === 'imessage-audio'
+  const appendTo = destination ?? job?.fields?.appendTo ?? pending?.conversation ?? ''
+  const conversationDay = job?.fields?.appendTo
+    ? job.fields.when.slice(0, 10)
+    : (pending?.day ?? job?.day ?? fields.when.slice(0, 10))
+  const [conversations, setConversations] = useState<AudioConversation[]>([])
+  const [conversationError, setConversationError] = useState<string | null>(null)
+  const [conversationLoading, setConversationLoading] = useState(false)
+  const [conversationReload, setConversationReload] = useState(0)
+  useEffect(() => {
+    if (!audioConversation || !conversationDay) return
+    const controller = new AbortController()
+    setConversationLoading(true)
+    setConversationError(null)
+    setConversations([])
+    void fetch(`/import/audio-conversations?day=${encodeURIComponent(conversationDay)}`, { signal: controller.signal })
+      .then(async (response) => {
+        const result = await response.json()
+        if (!response.ok) throw new Error(result.message ?? 'Could not load conversations.')
+        if (!controller.signal.aborted) setConversations(result.conversations)
+      })
+      .catch((error: Error) => {
+        if (!controller.signal.aborted) setConversationError(error.message)
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setConversationLoading(false)
+      })
+    return () => controller.abort()
+  }, [audioConversation, conversationDay, conversationReload])
+  const selectedConversation = conversations.find((conversation) => conversation.path === appendTo)
+  const conversationPreview = useMemo(
+    () => renderStatic(selectedConversation?.preview ?? ''),
+    [selectedConversation?.preview],
+  )
+  const speakerChoices = [
+    ...(selectedConversation?.participants ?? []),
+    ...Object.values(audioSpeakers ?? job?.fields?.audioSpeakers ?? {}),
+  ]
   const speakers = audioSpeakers ?? job?.fields?.audioSpeakers ?? {}
   const to = audioTo ?? job?.fields?.to ?? ''
   const moveTurn = (index: number, direction: number) => {
@@ -993,7 +1087,9 @@ function ConfirmBody({
           ? 'Finish the note'
           : 'Record work'
         : audioConversation
-          ? 'New iMessage Audio conversation'
+          ? appendTo
+            ? 'Add audio to conversation'
+            : 'New iMessage Audio conversation'
           : `New ${KIND_LABEL[fields.kind].toLowerCase()} from ${sourceWord}`
 
   const start = async () => {
@@ -1008,7 +1104,7 @@ function ConfirmBody({
       if (audioConversation && files.some((file) => !speakers[file.name]?.trim())) {
         throw new Error("Enter who's speaking in each audio file.")
       }
-      if (audioConversation && count === 1 && !to.trim()) throw new Error('Enter who the message is to.')
+      if (audioConversation && count === 1 && !appendTo && !to.trim()) throw new Error('Enter who the message is to.')
       const { job: started } = await post<{ job: ImportJob }>(`/import/${live.id}/start`, {
         kind: fields.kind,
         when: fields.when.trim(),
@@ -1021,7 +1117,7 @@ function ConfirmBody({
           ? {
               fileOrder: files.map((file) => file.name),
               audioSpeakers: speakers,
-              ...(count === 1 ? { to: to.trim() } : {}),
+              ...(appendTo ? { appendTo } : count === 1 ? { to: to.trim() } : {}),
             }
           : {}),
         ...(documentInput ? { summary: fields.summary, body: fields.body } : {}),
@@ -1092,6 +1188,59 @@ function ConfirmBody({
             </>
           )}
           {audioConversation && (
+            <div className="sky-audio-destination">
+              {conversationLoading && <div className="sky-confirm-guess">Loading conversations…</div>}
+              {conversationError && (
+                <div role="alert">
+                  {conversationError}{' '}
+                  <Button size="compact-sm" onClick={() => setConversationReload((n) => n + 1)}>
+                    Retry
+                  </Button>
+                </div>
+              )}
+              {(conversations.length > 0 || appendTo) && (
+                <Select
+                  label="Conversation"
+                  aria-label="Conversation destination"
+                  value={appendTo || 'new'}
+                  disabled={starting}
+                  allowDeselect={false}
+                  data={[
+                    { value: 'new', label: 'Create a new conversation' },
+                    ...conversations.map((conversation) => ({
+                      value: conversation.path,
+                      label: `Add to ${conversation.when.slice(11)} · ${conversation.participants.join(', ')} — ${conversation.title}`,
+                    })),
+                    ...(appendTo && !selectedConversation
+                      ? [
+                          {
+                            value: appendTo,
+                            label: conversationLoading
+                              ? 'Loading selected conversation…'
+                              : 'Selected conversation is unavailable',
+                          },
+                        ]
+                      : []),
+                  ]}
+                  onChange={(value) => setDestination(value === 'new' ? '' : (value ?? ''))}
+                />
+              )}
+              {selectedConversation && (
+                <div className="sky-audio-context">
+                  <a href={fileHref(selectedConversation.path)} target="_blank" rel="noreferrer">
+                    {selectedConversation.title}
+                  </a>
+                  <div className="sky-confirm-guess">
+                    {selectedConversation.when} · {selectedConversation.participants.join(', ')}
+                  </div>
+                  {selectedConversation.preview && (
+                    <RenderedHtml className="sky-audio-preview" html={conversationPreview} />
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+          {audioConversation && (
             <ol className="sky-confirm-files sky-audio-files" aria-label="Audio messages">
               {files.map((file, index) => (
                 <li key={file.name}>
@@ -1124,11 +1273,11 @@ function ConfirmBody({
                   <AudioSpeaker
                     file={file.name}
                     value={speakers[file.name] ?? ''}
-                    names={Object.values(speakers)}
+                    names={speakerChoices}
                     disabled={starting}
                     onChange={(name) => setAudioSpeakers({ ...speakers, [file.name]: name })}
                   />
-                  {count === 1 && (
+                  {count === 1 && !appendTo && (
                     <AudioSpeaker
                       file={file.name}
                       label="To"
@@ -1193,7 +1342,7 @@ function ConfirmBody({
                 }}
               />
             </div>
-          ) : (
+          ) : appendTo && audioConversation ? null : (
             <>
               <Pills
                 label={kinds.length > 1 ? 'What is it?' : 'This becomes'}
@@ -1239,7 +1388,7 @@ function ConfirmBody({
               {calendar.who.length > 0 ? ` · ${calendar.who.join(', ')}` : ''}
             </div>
           )}
-          {retryDocument ? null : fields.kind === 'journal' ? (
+          {retryDocument || (audioConversation && appendTo) ? null : fields.kind === 'journal' ? (
             <Pills
               label="Type"
               options={(options?.journalTypes ?? []).map((t) => ({ value: t, label: t }))}
@@ -1258,7 +1407,11 @@ function ConfirmBody({
             />
           )}
           <ImportLinks job={live} onBusy={setLinkBusy} />
-          <div className="sky-confirm-next">{nextLine(fields.kind, source, fields.journalType, count)}</div>
+          <div className="sky-confirm-next">
+            {audioConversation && appendTo
+              ? 'Sky transcribes the new clips, checks unsure names with you, and adds the messages at the end of this conversation.'
+              : nextLine(fields.kind, source, fields.journalType, count)}
+          </div>
           {live.resume && !documentInput && (
             <div className="sky-confirm-resume">
               {fields.fresh
@@ -1279,8 +1432,20 @@ function ConfirmBody({
       <div className="sky-dialog-actions">
         <Button onClick={onCancel}>{refusal ? 'Remove' : 'Cancel'}</Button>
         {!refusal && (
-          <Button variant="primary" onClick={() => void start()} disabled={!live || starting || linkBusy}>
-            {starting ? 'Starting…' : documentInput ? (retryDocument ? 'Retry summary' : 'Add to day') : 'Start'}
+          <Button
+            variant="primary"
+            onClick={() => void start()}
+            disabled={!live || starting || linkBusy || Boolean(audioConversation && appendTo && !selectedConversation)}
+          >
+            {starting
+              ? 'Starting…'
+              : audioConversation && appendTo
+                ? 'Add to conversation'
+                : documentInput
+                  ? retryDocument
+                    ? 'Retry summary'
+                    : 'Add to day'
+                  : 'Start'}
           </Button>
         )}
       </div>
@@ -1311,6 +1476,7 @@ export function ImportDialog({
   const [turnOrder, setTurnOrder] = useState<{ key: string; files: string[] } | null>(null)
   const [speakerNames, setSpeakerNames] = useState<{ key: string; names: Record<string, string> } | null>(null)
   const [audioTo, setAudioToState] = useState<{ key: string; to: string } | null>(null)
+  const [audioDestination, setAudioDestination] = useState<{ key: string; path: string } | null>(null)
   useEffect(() => {
     if (!again) return
     fetch(`/import/${again.id}`)
@@ -1342,6 +1508,8 @@ export function ImportDialog({
         setAudioSpeakers={(names) => setSpeakerNames({ key: importKey, names })}
         audioTo={audioTo?.key === importKey ? audioTo.to : null}
         setAudioTo={(to) => setAudioToState({ key: importKey, to })}
+        destination={audioDestination?.key === importKey ? audioDestination.path : null}
+        setDestination={(path) => setAudioDestination({ key: importKey, path })}
       />
     </Fragment>
   )
@@ -2604,6 +2772,20 @@ export function ImportMain({
   onStartAgain: (job: ImportJob) => void
 }) {
   const { job, events, missing, refresh } = useImportFeed(id)
+  const [undoing, setUndoing] = useState(false)
+  const [undoError, setUndoError] = useState<string | null>(null)
+  const undoAudio = async () => {
+    setUndoing(true)
+    setUndoError(null)
+    try {
+      await post(`/import/${id}/undo`, {})
+      refresh()
+    } catch (error) {
+      setUndoError((error as Error).message)
+    } finally {
+      setUndoing(false)
+    }
+  }
   const d = useMemo(() => derive(events), [events])
   const [history, setHistory] = useState<{ question: string; answer: string }[]>([])
   const startedAt = useMemo(() => {
@@ -2725,11 +2907,29 @@ export function ImportMain({
           {job?.state === 'done' && (
             <>
               <div className="sky-condensed" data-tone="done">
-                — filed{job.result ? ` · ${job.result.file}` : ''} —
+                —{' '}
+                {job.undone
+                  ? 'audio addition undone'
+                  : job.fields?.appendTo
+                    ? job.audioAdded === 0
+                      ? 'audio already in conversation'
+                      : 'added to conversation'
+                    : 'filed'}
+                {job.result ? ` · ${job.result.file}` : ''} —
               </div>
+              {job.canUndo && (
+                <Button onClick={() => void undoAudio()} disabled={undoing}>
+                  {undoing ? 'Undoing…' : 'Undo audio addition'}
+                </Button>
+              )}
+              {undoError && <p role="alert">{undoError}</p>}
               {d.placed && <Placed placed={d.placed} lines={d.lines} />}
-              {job.result && <FiledDetails file={job.result.file} />}
-              {job.result && <FiledDoc file={job.result.file} />}
+              {job.result && (
+                <Fragment key={`file:${job.undone}`}>
+                  <FiledDetails file={job.result.file} />
+                  <FiledDoc file={job.result.file} />
+                </Fragment>
+              )}
               {!job.result && <div className="sky-lead">Filed. The day has it.</div>}
             </>
           )}

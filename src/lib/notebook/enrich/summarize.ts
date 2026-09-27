@@ -20,14 +20,15 @@ const MAX_SUMMARY_CHARS = 80
  */
 export async function summarizeTranscript(
   transcript: string,
-  opts: { kind?: string } = {},
+  opts: { kind?: string; signal?: AbortSignal } = {},
 ): Promise<string | undefined> {
   if (!transcript.trim()) return undefined
   const kind = opts.kind ?? 'conversation'
   try {
+    const timeout = AbortSignal.timeout(60_000)
     const { text } = await generateText({
       ...aiModel('fast'),
-      abortSignal: AbortSignal.timeout(60_000),
+      abortSignal: opts.signal ? AbortSignal.any([opts.signal, timeout]) : timeout,
       prompt: [
         `You are labeling a ${kind} for a filename. Summarize its topic in 5-7 words.`,
         '',

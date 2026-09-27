@@ -8,16 +8,17 @@ import {
 import dayFile from '#shared/nbfs/dayFile.ts'
 import { assert, test } from '#test'
 import { PlainDate, ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
+import { CAF_TEST_HEADER } from '../../test/audioFixtures.ts'
 import { dispatchFileDrop, runWysiwygE2e } from './httpWysiwygE2eTestHelpers.ts'
 import { readIMessageAudio } from './import/readback.ts'
 import { type StartArgs, startArgs } from './import/startArgs.ts'
 
 const DAY = new PlainDate('2026-01-27')
 const DAY_DOC = path.posix.join('time', dayFile(DAY))
-const CLIPS = ['audio.caf', 'reply.CAF', 'follow-up.caf'].map((name, index) => ({
+const CLIPS = ['audio.m4a', 'reply.CAF', 'follow-up.caf'].map((name, index) => ({
   name,
   type: 'audio/x-caf',
-  text: `Synthetic turn ${index + 1}`,
+  text: `${CAF_TEST_HEADER}Synthetic turn ${index + 1}`,
 }))
 
 test(
@@ -118,8 +119,8 @@ test(
                   .evaluate((element) => element.getBoundingClientRect().right <= innerWidth),
               ],
               expected: [
-                ['audio.caf', 'follow-up.caf', 'reply.CAF'],
-                ['audio.caf', 'follow-up.caf', 'reply.CAF'].map((name) => `Starts: “Synthetic opening of ${name}”`),
+                ['audio.m4a', 'follow-up.caf', 'reply.CAF'],
+                ['audio.m4a', 'follow-up.caf', 'reply.CAF'].map((name) => `Starts: “Synthetic opening of ${name}”`),
                 ['Jane Doe', 'Jane Doe', 'Me'],
                 0,
                 true,
@@ -152,12 +153,12 @@ test(
               [
                 'message:new',
                 'iMessage Audio',
-                ['audio.caf', 'follow-up.caf', 'reply.CAF'],
+                ['audio.m4a', 'follow-up.caf', 'reply.CAF'],
                 ['Jane Doe', 'Jane Doe', 'Me'],
                 undefined,
                 [CLIPS[0].text, CLIPS[2].text, CLIPS[1].text],
               ],
-              ['message:new', 'iMessage Audio', ['audio.caf'], ['Jane Doe'], 'Joe Smith', [CLIPS[0].text]],
+              ['message:new', 'iMessage Audio', ['audio.m4a'], ['Jane Doe'], 'Joe Smith', [CLIPS[0].text]],
             ],
             0,
             0,

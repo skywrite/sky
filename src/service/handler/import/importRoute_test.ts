@@ -2,8 +2,10 @@ import { readdir, readFile, stat } from 'node:fs/promises'
 import * as path from 'node:path'
 import type { PromptEvent, RunEvent } from '#commands/lib/core/runCommand.ts'
 import type { PromptRequest } from '#commands/lib/prompt/Prompter.ts'
+import { readAudioHeader } from '#lib/media/readAudioHeader.ts'
 import { makeTempDir } from '#shared/fs/mod.ts'
 import { assert, test } from '#test'
+import { CAF_TEST_HEADER } from '../../../test/audioFixtures.ts'
 import { createTestHttpApp } from '../httpTestHelpers.ts'
 import type { ImportEvent, ImportJob, ImportRoutesOptions, RunOutcome } from './mod.ts'
 import {
@@ -69,10 +71,11 @@ async function world(): Promise<World & { dir: string; notebook: string }> {
     dir,
     journalTypes: ['Reflection', 'Mood'],
     read: async ({ path: filePath, name, size }) => {
+      const source = sourceOf(name, await readAudioHeader(filePath))
+      if (source === 'imessage-audio') return readIMessageAudio(size, 90)
       if (name.endsWith('.vtt')) return readTranscript(await readFile(filePath, 'utf8'), name)
       if (name.endsWith('.srt')) return readSrt(await readFile(filePath, 'utf8'), name)
       if (name.endsWith('.m4a')) return readAudio(size, 252)
-      if (sourceOf(name) === 'imessage-audio') return readIMessageAudio(size, 90)
       if (sourceOf(name) === 'document') return readDocument(name)
       if (sourceOf(name) === 'image') return readImage(size, { width: 1200, height: 2400 })
       return readUnknown(name)
@@ -265,7 +268,7 @@ test('CAF groups keep every ordered turn across reload, failure and retry withou
   const app = createTestHttpApp([w.notebook], { imports: w.options })
   const form = new FormData()
   for (const [index, name] of ['audio.caf', 'audio.caf', 'reply.CAF'].entries()) {
-    form.append('file', new File([`turn ${index + 1}`], name))
+    form.append('file', new File([CAF_TEST_HEADER, `turn ${index + 1}`], name))
   }
   const response = await app.request('/import', { method: 'POST', body: form })
   const { job } = (await response.json()) as { job: ImportJob }
@@ -356,9 +359,9 @@ test('a later oversized CAF blocks the whole conversation; a single CAF uses the
   const w = await world()
   const app = createTestHttpApp([w.notebook], { imports: w.options })
   const form = new FormData()
-  form.append('file', new File(['one turn'], 'audio.caf'))
+  form.append('file', new File([CAF_TEST_HEADER, 'one turn'], 'audio.caf'))
   const single = (await (await app.request('/import', { method: 'POST', body: form })).json()).job as ImportJob
-  form.append('file', new File([new Uint8Array(26 * 1024 * 1024)], 'reply.caf'))
+  form.append('file', new File([CAF_TEST_HEADER, new Uint8Array(26 * 1024 * 1024)], 'reply.caf'))
   const group = (await (await app.request('/import', { method: 'POST', body: form })).json()).job as ImportJob
   const started = await postJson(app, `/import/${group.id}/start`, { kind: 'message', when: group.suggestedWhen })
   assert({
@@ -1031,7 +1034,7 @@ test('CAF clips are heard for their opening words, each kept with its file', asy
   w.options.opening = async (filePath) => `Starts with ${path.basename(filePath)}`
   const app = createTestHttpApp([w.notebook], { imports: w.options })
   const form = new FormData()
-  for (const name of ['audio.caf', 'reply.CAF']) form.append('file', new File(['turn'], name))
+  for (const name of ['audio.caf', 'reply.CAF']) form.append('file', new File([CAF_TEST_HEADER, 'turn'], name))
   const { job } = (await (await app.request('/import', { method: 'POST', body: form })).json()) as { job: ImportJob }
   // The clips are heard after the upload answers.
   let openings: Array<string | undefined> = [undefined]
@@ -1052,7 +1055,7 @@ test('one CAF clip needs who it is to before starting', async () => {
   const w = await world()
   const app = createTestHttpApp([w.notebook], { imports: w.options })
   const form = new FormData()
-  form.append('file', new File(['turn'], 'audio.caf'))
+  form.append('file', new File([CAF_TEST_HEADER, 'turn'], 'audio.caf'))
   const { job } = (await (await app.request('/import', { method: 'POST', body: form })).json()) as { job: ImportJob }
   const fields = {
     kind: 'message',
@@ -1068,5 +1071,85 @@ test('one CAF clip needs who it is to before starting', async () => {
     should: 'refuse until someone is named, then start with it',
     actual: [missing.status, blank.status, started.status, w.runs.length, w.runs[0]?.fields?.to],
     expected: [400, 400, 200, 1, 'Joe Smith'],
+  })
+})
+
+test('CAF additions validate the destination and retain it across failures and reloads without a recipient', async () => {
+  const w = await world()
+  const destination = {
+    path: 'time/2026/W05/01-27/actions/messages/09-30_iMessage-Audio_Atlas.md',
+    title: 'Atlas plan',
+    when: '2026-01-27 09:30',
+    participants: ['Jane Doe', 'Me'],
+    preview: 'Can we review it?',
+  }
+  const days: string[] = []
+  w.options.audioConversations = {
+    list: async (day) => {
+      days.push(day)
+      return [destination]
+    },
+    get: async (file) => {
+      if (file !== destination.path) throw new Error('Choose a saved iMessage Audio conversation.')
+      return destination
+    },
+  }
+  w.script.outcome = 'failed'
+  const app = createTestHttpApp([w.notebook], { imports: w.options })
+  const listing = await app.request('/import/audio-conversations?day=2026-01-27')
+  const invalidDay = await app.request('/import/audio-conversations?day=not-a-day')
+  const form = new FormData()
+  form.append('file', new File([CAF_TEST_HEADER, 'one reply'], 'reply.caf'))
+  form.append('day', '2026-01-28')
+  const { job } = (await (await app.request('/import', { method: 'POST', body: form })).json()) as { job: ImportJob }
+  const fields = {
+    kind: 'message',
+    when: job.suggestedWhen,
+    audioSpeakers: { 'reply.caf': 'Me' },
+    appendTo: destination.path,
+  }
+  const invalid = await postJson(app, `/import/${job.id}/start`, { ...fields, appendTo: '../private.md' })
+  const started = await postJson(app, `/import/${job.id}/start`, fields)
+  await events(
+    await app.request(`/import/${job.id}/events`),
+    (event) => event.type === 'state' && event.state === 'failed',
+  )
+  const reopened = createTestHttpApp([w.notebook], { imports: w.options })
+  const loaded = (await (await reopened.request(`/import/${job.id}`)).json()).job as ImportJob
+  await postJson(reopened, `/import/${job.id}/start`, fields)
+  await events(
+    await reopened.request(`/import/${job.id}/events`),
+    (event) => event.type === 'state' && event.state === 'failed',
+  )
+  assert({
+    given: 'a day drop with an existing destination, followed by a failed run and a service restart',
+    should:
+      'use the viewed day for a new conversation but inherit the selected conversation time and preserve its destination on retry',
+    actual: [
+      await listing.json(),
+      days,
+      invalidDay.status,
+      job.suggestedWhen,
+      invalid.status,
+      started.status,
+      loaded.fields?.appendTo,
+      loaded.fields?.when,
+      loaded.fields?.to,
+      w.runs.map(
+        (run, index) => startArgs({ ...run, source: run.readback.source }, run.fields!, w.paths[index]).command,
+      ),
+    ],
+    expected: [
+      { conversations: [destination] },
+      ['2026-01-27'],
+      400,
+      '2026-01-28 09:31',
+      400,
+      200,
+      destination.path,
+      destination.when,
+      undefined,
+      ['message:append', 'message:append'],
+    ],
   })
 })

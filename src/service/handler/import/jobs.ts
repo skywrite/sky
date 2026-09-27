@@ -61,6 +61,8 @@ export interface StartFields {
   audioSpeakers?: Record<string, string>
   /** Who one audio message is to; a conversation's other speakers say it themselves */
   to?: string
+  /** Existing conversation chosen for a CAF addition; absent when creating a conversation. */
+  appendTo?: string
 }
 
 /** The step a command says it is on, in its own words. */
@@ -87,6 +89,8 @@ export interface ImportJob {
   calendar: CalendarMatch | null
   /** The when sky proposes, from the file's time and length */
   suggestedWhen: string
+  /** The viewed day at upload, also used when reopening the conversation picker. */
+  day?: string
   /** The pipeline's record key for the file, from its bytes at upload; null when the host keeps none */
   runKey: string | null
   /** The earlier run to pick up, when there is one */
@@ -108,6 +112,9 @@ export interface ImportJob {
   title: string
   /** What was filed, relative to the notebook root */
   result: { file: string } | null
+  audioAdded?: number
+  canUndo?: boolean
+  undone?: boolean
   error: string | null
   /** ISO, when the file arrived */
   created: string
@@ -129,7 +136,16 @@ export type ImportEventBody =
   | { type: 'text'; text: string }
   | { type: 'prompt'; prompt: PromptOnWire }
   | { type: 'answered'; id: string; answer: unknown }
-  | { type: 'state'; state: ImportState; line: string | null; result: { file: string } | null; error: string | null }
+  | {
+      type: 'state'
+      state: ImportState
+      line: string | null
+      result: { file: string } | null
+      error: string | null
+      audioAdded?: number
+      canUndo?: boolean
+      undone?: boolean
+    }
 
 export type ImportEvent = ImportEventBody & { seq: number }
 
@@ -316,6 +332,9 @@ export class JobStore {
       line: record.job.line,
       result: record.job.result,
       error: record.job.error,
+      ...(record.job.fields?.appendTo
+        ? { audioAdded: record.job.audioAdded, canUndo: record.job.canUndo, undone: record.job.undone }
+        : {}),
     })
     await this.persist(record.job)
   }

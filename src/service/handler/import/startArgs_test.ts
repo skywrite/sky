@@ -13,6 +13,30 @@ const fields = (over: Partial<StartFields>): StartFields => ({
   ...over,
 })
 
+test('an existing conversation sends new audio to append without creating a day entry', () => {
+  const file = 'time/2026/W05/01-27/actions/messages/09-30_iMessage-Audio_Atlas.md'
+  const start = startArgs(
+    { ...memo, source: 'imessage-audio' },
+    fields({
+      kind: 'message',
+      appendTo: file,
+      audioSpeakers: { 'reply.caf': 'Me' },
+    }),
+    ['/tmp/reply.caf'],
+  )
+  assert({
+    given: 'a single CAF added to an existing conversation',
+    should:
+      'use the append command with the destination and speaker, without asking for a recipient or new filing time',
+    actual: start,
+    expected: {
+      command: 'message:append',
+      args: { file, fromAudioTurns: ['/tmp/reply.caf'], audioSpeakers: ['Me'], fresh: false },
+      rawArgs: { _: [] },
+    },
+  })
+})
+
 test('CAF audio goes to one message with every turn and a fixed medium', () => {
   for (const files of [['/tmp/first.caf'], ['/tmp/first.caf', '/tmp/reply.CAF']]) {
     const start = startArgs(

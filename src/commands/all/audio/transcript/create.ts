@@ -3,7 +3,7 @@ import * as path from 'node:path'
 import colors from 'picocolors'
 import { Arg, Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
-import { probeMedia } from '#lib/media/ffmpeg/mod.ts'
+import { probeMedia, type MediaInfo } from '#lib/media/ffmpeg/mod.ts'
 import { runCommand } from '#lib/sys/mod.ts'
 import { loadSkyConfig } from '#shared/config/loader.ts'
 import { exists, writeTextFile } from '#shared/fs/mod.ts'
@@ -175,10 +175,27 @@ export default class AudioTranscriptCreateTask extends Command {
     output.log(colors.gray(`\nTranscribing: ${inputFile}`))
     const kept = await run.get('raw')
 
-    // 3. Convert .caf to .m4a (unsupported by transcription APIs)
+    // The extension can be wrong on a file dragged from Messages. Probe before
+    // conversion or upload, and give the provider a filename matching the bytes.
+    let media: MediaInfo | null = null
+    let transcribeName = path.basename(inputFile)
+    if (!kept) {
+      try {
+        media = await probeMedia(inputFile)
+      } catch (err) {
+        return CommandResult.error(err as Error, 'Could not read the audio recording')
+      }
+      if (!media.hasAudio) return CommandResult.fail('This file has no audio track.')
+      const formats = media.formatName?.split(',') ?? []
+      const extension = ['caf', 'mp4', 'mp3', 'wav', 'aac', 'ogg', 'flac', 'webm'].find((ext) => formats.includes(ext))
+      if (!extension) return CommandResult.fail('This recording uses an unsupported audio container.')
+      transcribeName = `${path.basename(inputFile, path.extname(inputFile))}.${extension}`
+    }
+
+    // 3. Convert CAF to M4A (unsupported by transcription APIs).
     let transcribeFile = inputFile
     let tempConvertedFile: string | null = null
-    if (!kept && path.extname(inputFile).toLowerCase() === '.caf') {
+    if (media?.formatName?.split(',').includes('caf')) {
       const ffmpegCheck = await runCommand('which', ['ffmpeg'])
       if (!ffmpegCheck.success) {
         return CommandResult.fail('ffmpeg is required to convert .caf files. Install with: brew install ffmpeg')
@@ -195,6 +212,7 @@ export default class AudioTranscriptCreateTask extends Command {
         return CommandResult.fail(`ffmpeg conversion failed: ${result.stderr}`)
       }
       transcribeFile = tempConvertedFile
+      transcribeName = path.basename(tempConvertedFile)
     }
 
     // 4. Transcribe using selected provider — unless an earlier run of this
@@ -232,7 +250,7 @@ export default class AudioTranscriptCreateTask extends Command {
           if (keywords.length > 0) output.log(colors.gray(`Guiding with ${keywords.length} glossary terms`))
         }
         streamed = selected.provider === 'openai' && (context.compositionDepth > 0 || Boolean(outputPath || save))
-        const result = await transcribeAudio(audioData, path.basename(transcribeFile), {
+        const result = await transcribeAudio(audioData, transcribeName, {
           model: selected.value,
           diarize,
           keywords,
@@ -242,8 +260,7 @@ export default class AudioTranscriptCreateTask extends Command {
         if (streamed) output.write('\n')
         transcriptText = result.text
         language = result.language
-        durationSeconds =
-          result.durationSeconds ?? (await probeMedia(transcribeFile).catch(() => null))?.durationSeconds ?? undefined
+        durationSeconds = result.durationSeconds ?? media?.durationSeconds ?? undefined
       } catch (err) {
         const error = err as Error
         output.error(`Transcription error: ${error.message}`)

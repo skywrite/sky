@@ -29,7 +29,14 @@ import { DayTracking } from './dayTracking.tsx'
 import { DocumentImportNotice } from './documentImport.tsx'
 import { fileHref, resolvePath } from './explorer.tsx'
 import { type Kept, KeptToast } from './files.tsx'
-import { acceptsImports, type Dragged, DropOverlay, type ImportJob, type MeetingImport } from './import.tsx'
+import {
+  acceptsImports,
+  type Dragged,
+  DropOverlay,
+  type ImportJob,
+  type MeetingImport,
+  useFileDrop,
+} from './import.tsx'
 import { useRail } from './rail.ts'
 import { RailToggle } from './railToggle.tsx'
 import { DayStreaks } from './streaks.tsx'
@@ -957,6 +964,33 @@ function DocLine({ when, tag, children }: { when: string | null; tag?: string | 
   )
 }
 
+function MessageLine({
+  message,
+  onImport,
+}: {
+  message: DayRecord['messages']['involved'][number]
+  onImport?: (files: File[], conversation: string) => void
+}) {
+  const canDrop = message.medium === 'iMessage Audio' && Boolean(onImport)
+  const drop = useFileDrop(canDrop, (files) => onImport?.(files, message.path))
+  return (
+    <div
+      className="sky-audio-message"
+      data-conversation-drop={canDrop || undefined}
+      data-dragging={drop.dragging || undefined}
+      {...drop.handlers}
+    >
+      <DocLine when={message.when} tag={mediumLabel(message.medium)}>
+        <a href={fileHref(message.path)}>{message.title}</a>
+        {(message.from || message.to) && (
+          <span className="sky-rec-sub">{[message.from, message.to].filter(Boolean).join(' → ')}</span>
+        )}
+        {drop.dragging && <span className="sky-audio-drop-hint">Add to this conversation</span>}
+      </DocLine>
+    </div>
+  )
+}
+
 function ChatsCard({
   rows,
   onOpenThread,
@@ -1030,7 +1064,13 @@ function Fold<T>({ rows, render, limit = 6 }: { rows: T[]; render: (row: T, i: n
 }
 
 /** The archive, folded to a line: the conversations filed for reference. */
-function FiledCard({ archive }: { archive: DayRecord['messages']['archive'] }) {
+function FiledCard({
+  archive,
+  onImport,
+}: {
+  archive: DayRecord['messages']['archive']
+  onImport?: (files: File[], conversation: string) => void
+}) {
   const [showArchive, setShowArchive] = useState(false)
   if (archive.length === 0) return null
   return (
@@ -1046,12 +1086,7 @@ function FiledCard({ archive }: { archive: DayRecord['messages']['archive'] }) {
           {showArchive &&
             archive.map((m) => (
               <Fragment key={m.path}>
-                <DocLine when={m.when} tag={mediumLabel(m.medium)}>
-                  <a href={fileHref(m.path)}>{m.title}</a>
-                  {(m.from || m.to) && (
-                    <span className="sky-rec-sub">{[m.from, m.to].filter(Boolean).join(' → ')}</span>
-                  )}
-                </DocLine>
+                <MessageLine message={m} onImport={onImport} />
               </Fragment>
             ))}
         </>
@@ -1078,6 +1113,7 @@ export function DayView({
   onImportMeeting,
   dragging = false,
   onImportFiles,
+  onImportConversation,
   kept = [],
   onKept = () => {},
   onUndoKept = () => {},
@@ -1103,6 +1139,7 @@ export function DayView({
   /** Files, or text, are held over the page */
   dragging?: Dragged | false
   onImportFiles?: (files: File[]) => void
+  onImportConversation?: (files: File[], conversation: string) => void
   /** Files just kept: the toast holds Undo for a moment */
   kept?: Kept[]
   /** The rail's pad moved or copied these */
@@ -1310,12 +1347,7 @@ export function DayView({
                       <Fold
                         rows={record.messages.involved}
                         render={(m: DayRecord['messages']['involved'][number]) => (
-                          <DocLine when={m.when} tag={mediumLabel(m.medium)}>
-                            <a href={fileHref(m.path)}>{m.title}</a>
-                            {(m.from || m.to) && (
-                              <span className="sky-rec-sub">{[m.from, m.to].filter(Boolean).join(' → ')}</span>
-                            )}
-                          </DocLine>
+                          <MessageLine message={m} onImport={onImportConversation} />
                         )}
                       />
                     </Block>
@@ -1386,7 +1418,7 @@ export function DayView({
                     </Block>
                   )}
 
-                  <FiledCard archive={record.messages.archive} />
+                  <FiledCard archive={record.messages.archive} onImport={onImportConversation} />
                 </>
               )}
             </div>

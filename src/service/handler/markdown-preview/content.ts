@@ -1,4 +1,6 @@
-import { readTextFile, writeTextFile } from '#shared/fs/mod.ts'
+import { withMarkdownWrite } from '#lib/nbfs/withMarkdownWrite.ts'
+import { atomicWrite } from '#lib/outbox/files.ts'
+import { readTextFile } from '#shared/fs/mod.ts'
 
 export interface MarkdownContentSnapshot {
   content: string
@@ -29,13 +31,14 @@ export async function saveMarkdownContent(
   expectedVersion?: number,
   force = false,
 ): Promise<MarkdownContentSnapshot> {
-  const current = await readMarkdownContent(filePath)
-  if (!force && expectedVersion != null && current.version !== expectedVersion) {
-    throw new MarkdownSaveConflictError(current)
-  }
-
-  await writeTextFile(filePath, content)
-  return await readMarkdownContent(filePath)
+  return withMarkdownWrite(filePath, async () => {
+    const current = await readMarkdownContent(filePath)
+    if (!force && expectedVersion != null && current.version !== expectedVersion) {
+      throw new MarkdownSaveConflictError(current)
+    }
+    await atomicWrite(filePath, content)
+    return await readMarkdownContent(filePath)
+  })
 }
 
 function computeMarkdownVersion(content: string): number {

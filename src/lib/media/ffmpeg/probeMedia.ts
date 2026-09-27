@@ -1,6 +1,8 @@
 import runFfmpeg from './runFfmpeg.ts'
 
 export interface MediaInfo {
+  /** Demuxer names detected from the contents, independent of the filename. */
+  formatName: string | null
   /** Playing length in seconds, or null for a container that records none. */
   durationSeconds: number | null
   hasAudio: boolean
@@ -14,7 +16,7 @@ export interface MediaInfo {
 }
 
 interface FfprobeJson {
-  format?: { duration?: string; tags?: { creation_time?: string } }
+  format?: { format_name?: string; duration?: string; tags?: { creation_time?: string } }
   streams?: { codec_type?: string }[]
 }
 
@@ -37,7 +39,13 @@ interface FfprobeJson {
 export default async function probeMedia(filePath: string): Promise<MediaInfo> {
   const stdout = await runFfmpeg(
     'ffprobe',
-    ['-show_entries', 'format=duration:format_tags=creation_time:stream=codec_type', '-of', 'json', filePath],
+    [
+      '-show_entries',
+      'format=format_name,duration:format_tags=creation_time:stream=codec_type',
+      '-of',
+      'json',
+      filePath,
+    ],
     { describe: `ffprobe could not read ${filePath}` },
   )
 
@@ -52,6 +60,7 @@ export default async function probeMedia(filePath: string): Promise<MediaInfo> {
   const duration = Number.parseFloat(probe.format?.duration ?? '')
 
   return {
+    formatName: probe.format?.format_name ?? null,
     durationSeconds: Number.isFinite(duration) ? duration : null,
     hasAudio: streams.some((stream) => stream.codec_type === 'audio'),
     hasVideo: streams.some((stream) => stream.codec_type === 'video'),

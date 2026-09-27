@@ -1,5 +1,6 @@
 import { transcriptionUploadLimit } from '#commands/all/audio/transcript/lib/models.ts'
 import { assert, test } from '#test'
+import { silentCaf } from '../../../test/audioFixtures.ts'
 import {
   AUDIO_LIMIT_BYTES,
   IMAGE_LIMIT_BYTES,
@@ -58,8 +59,18 @@ test('sourceOf', () => {
       'photo.HEIC',
       'deck.pdf',
       'archive.zip',
-    ].map(sourceOf),
-    expected: ['transcript', 'srt', 'text', 'audio', 'audio', 'imessage-audio', 'image', 'image', 'document', null],
+    ].map((name) => sourceOf(name)),
+    expected: ['transcript', 'srt', 'text', 'audio', 'audio', 'audio', 'image', 'image', 'document', null],
+  })
+  assert({
+    given: 'CAF contents under misleading names and a non-CAF recording named .caf',
+    should: 'route using the header',
+    actual: [
+      sourceOf('reply.m4a', silentCaf()),
+      sourceOf('recording', silentCaf()),
+      sourceOf('memo.caf', new TextEncoder().encode('\0\0\0\u0018ftypM4A ')),
+    ],
+    expected: ['imessage-audio', 'imessage-audio', 'audio'],
   })
 })
 

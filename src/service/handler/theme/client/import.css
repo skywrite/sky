@@ -74,6 +74,48 @@
   overflow-wrap: anywhere;
 }
 
+.sky-audio-destination {
+  margin: 16px 0;
+}
+
+.sky-audio-context {
+  margin-top: 12px;
+  padding: 12px 16px;
+  border-left: 2px solid var(--sky-border-soft);
+}
+
+.sky-audio-preview {
+  margin: 8px 0 0;
+  overflow-wrap: anywhere;
+  max-height: 110px;
+  overflow: auto;
+}
+
+.sky-audio-preview p {
+  margin: 6px 0;
+}
+
+.sky-audio-message[data-dragging],
+.sky-scroll[data-conversation-drop][data-dragging] {
+  background: var(--sky-accent-soft);
+  box-shadow: inset 0 0 0 1px var(--sky-accent);
+  border-radius: 8px;
+}
+
+.sky-audio-drop-hint {
+  color: var(--sky-accent);
+  display: block;
+}
+
+.sky-audio-document-drop {
+  position: sticky;
+  top: 0;
+  padding: 12px 24px;
+  color: var(--sky-accent);
+  background: var(--sky-accent-soft);
+  pointer-events: none;
+}
+
 .sky-confirm-files {
   display: flex;
   flex-direction: column;

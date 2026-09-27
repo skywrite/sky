@@ -7,7 +7,7 @@
  */
 
 import { randomUUID } from 'node:crypto'
-import { readFile, rm } from 'node:fs/promises'
+import { readFile, rm, writeFile } from 'node:fs/promises'
 import * as path from 'node:path'
 import { generateText } from 'ai'
 import { transcribeAudio } from '#commands/all/audio/transcript/lib/audio.ts'
@@ -15,10 +15,17 @@ import { audioTurnsKey } from '#commands/all/audio/transcript/lib/audioTurns.ts'
 import { transcriptionUploadLimit } from '#commands/all/audio/transcript/lib/models.ts'
 import { peekTranscriptRun, sha256Of } from '#commands/all/audio/transcript/lib/transcriptRun.ts'
 import { checkDayMeetings, START_TOLERANCE_MINUTES } from '#commands/all/day/meeting/lib/meetingCheck.ts'
+import {
+  type AudioAppendUndo,
+  listAudioConversations,
+  readAudioConversation,
+  undoAudioAppend,
+} from '#commands/all/message/_lib/savedAudioConversation.ts'
 import CommandContext from '#commands/lib/core/CommandContext.ts'
 import { runCommand, type RunEvent } from '#commands/lib/core/runCommand.ts'
 import { probeMedia, runFfmpeg } from '#lib/media/ffmpeg/mod.ts'
 import { imageSize } from '#lib/media/image/mod.ts'
+import { readAudioHeader } from '#lib/media/readAudioHeader.ts'
 import { KeychainSecretsProvider } from '#lib/secrets/KeychainSecretsProvider.ts'
 import { aiModel } from '#shared/ai/models.ts'
 import type * as ConfigModule from '#shared/config.ts'
@@ -109,7 +116,7 @@ export function createImportHost(config: typeof ConfigModule, env: Record<string
   const secrets = new KeychainSecretsProvider()
 
   const read: ImportRoutesOptions['read'] = async ({ path: filePath, name, size }) => {
-    const source = sourceOf(name)
+    const source = sourceOf(name, await readAudioHeader(filePath))
     if (source === null) return readUnknown(name)
     if (source === 'transcript') return readTranscript(await readTextFile(filePath), name)
     if (source === 'srt') return readSrt(await readTextFile(filePath), name)
@@ -118,8 +125,17 @@ export function createImportHost(config: typeof ConfigModule, env: Record<string
     if (source === 'document') return readDocument(name)
     const info = await probeMedia(filePath).catch(() => null)
     const limit = transcriptionUploadLimit(loadSkyConfig().ai.models.transcription)
-    if (source === 'imessage-audio') return readIMessageAudio(size, info?.durationSeconds ?? null, limit)
-    return readAudio(size, info?.durationSeconds ?? null, limit)
+    const audio = info?.formatName?.split(',').includes('caf')
+      ? readIMessageAudio(size, info.durationSeconds, limit)
+      : readAudio(size, info?.durationSeconds ?? null, limit)
+    if (audio.refusal) return audio
+    if (!info || !info.hasAudio)
+      return {
+        ...audio,
+        kinds: [],
+        refusal: info ? 'This file has no audio track.' : 'The recording could not be read. Try exporting it again.',
+      }
+    return audio
   }
 
   // A transcript's clock is its end; a recording's is when it stopped. Either
@@ -227,10 +243,33 @@ export function createImportHost(config: typeof ConfigModule, env: Record<string
     const result = yield* runCommand(command, { context: CommandContext.server(config, env), args, rawArgs, signal })
     const file = filedPath(result.data, PlainDateTime.fromString(fields.when.slice(0, 16)), config)
     if (!result.ok) return { ok: false, message: result.message ?? `${command} did not finish`, file }
+    if (fields.appendTo) {
+      const data = result.data as { added?: number; undo?: AudioAppendUndo } | undefined
+      job.audioAdded = data?.added ?? 0
+      if (data?.undo) {
+        // The receipt lives with this temporary import and leaves when the completed job expires.
+        await writeFile(
+          path.join(config.DIR_USER_DATA, 'imports', job.id, 'append-undo.json'),
+          JSON.stringify(data.undo),
+        )
+        job.canUndo = true
+      }
+    }
     return { ok: true, file }
   }
 
   return {
+    audioConversations: {
+      list: (day) => listAudioConversations(config, day),
+      get: async (file) => (await readAudioConversation(config, file)).conversation,
+    },
+    undoAudio: async (job) => {
+      if (!job.fields?.appendTo) throw new Error('There is no audio addition to undo.')
+      const receipt = JSON.parse(
+        await readFile(path.join(config.DIR_USER_DATA, 'imports', job.id, 'append-undo.json'), 'utf8'),
+      ) as AudioAppendUndo
+      await undoAudioAppend(config, job.fields.appendTo, receipt)
+    },
     dir: path.join(config.DIR_USER_DATA, 'imports'),
     read,
     suggestWhen,

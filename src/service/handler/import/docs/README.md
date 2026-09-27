@@ -1,6 +1,6 @@
 ---
 created: 2026-09-01
-updated: 2026-09-26
+updated: 2026-09-27
 ---
 
 # Meeting from a file — the import
@@ -56,12 +56,20 @@ One door for every file kind. The kind picks the command:
 | `.txt` | the kind chosen in the dialog: `meeting:new --from-text` (first), or `message:new --from-text` — a chat's export |
 | text dragged in | the same two doors on the text, staged as `selection.txt`: a message first, a meeting first when its lines carry a notetaker's stamps |
 | other audio | the kind chosen in the dialog: `meeting:new` and `event:new` with `--from-voice-memo`, or `journal:new`, `notes:new`, `message:new` with `--from-audio` |
-| `.caf` | `message:new --from-audio-turns` with medium `iMessage Audio`; every file in the drop is one turn in the same conversation |
+| CAF audio (detected from its contents) | `message:new --from-audio-turns` with medium `iMessage Audio`, or `message:append` for an existing destination; every file is one turn |
 | image | `message:new --from-image` — a screenshot of a conversation |
 | `.pdf`, `.docx`, `.pptx`, `.xlsx`, `.md` | `notes:new --from-file` — a note about work, with the document attached and summarized |
 
 Screenshots dropped or selected together form one import and one message.
 The dialog lists every file, and the job keeps the complete group when reopened.
+Audio filenames and MIME types are hints: Messages can export CAF bytes with
+an `.m4a` filename. The browser reads a bounded header before grouping files;
+the server independently reads the uploaded contents and probes their audio
+tracks before accepting them. A genuine MPEG-4 file named `.caf` remains a
+normal recording. Transcription probes again before converting CAF and gives
+the provider a filename matching the actual container. The original filename,
+bytes, and content fingerprint remain intact. Header recognition alone does
+not validate an audio stream; malformed recordings are refused by the probe.
 CAF files also form one conversation, in the order shown in the dialog; the
 person names the speaker of each file and can move files before Start. Each
 clip is heard for its opening words as it arrives ("Starts: “…”" under its
@@ -71,8 +79,10 @@ Start; a conversation's `to:` is its other speakers, so nothing is asked.
 Names stay with their files through reordering and retries. They skip the
 voice-memo classifier and calendar matching. Each file goes through the existing transcriber separately,
 then the combined transcript goes through one names review. The saved message
-uses the stated speaker names and paragraphs of at most three sentences, without
-a summary. A small model chooses only paragraph break positions; code preserves
+uses the stated speaker names and paragraphs of at most three sentences.
+New conversations get a 5–7 word topic summary for their metadata, filename, and
+day link; appending keeps the existing summary. The body retains the full transcript.
+A small model chooses only paragraph break positions; code preserves
 the cleaned words and enforces the limit, with a deterministic fallback. Internal
 file separators never become speaker labels. There is no diarization or inferred alternation.
 
@@ -81,6 +91,33 @@ with each turn's recognition checkpoint underneath it. Reordering changes the
 conversation identity; a failed later turn reuses completed earlier ones.
 Completion and Start over clear the whole conversation's checkpoints together.
 The original files follow the existing voice memo retention policy.
+
+A CAF drop uses the viewed day and offers that day's saved iMessage Audio
+conversations alongside **Create a new conversation**. An empty day goes
+straight to creation. Dropping on an audio conversation's row or its open
+document preselects it; the document also offers **Add audio…**. Existing
+participants are speaker suggestions, never an assumption about whose turn
+comes next. An addition inherits the destination's time and recipient.
+
+`message:append` transcribes only new clips, then appends the named turns to
+the existing file without adding another day entry. The selected path persists
+in the import's `appendTo` field across retries. Each saved clip's content
+fingerprint lives in `audioClips` frontmatter so duplicate drops and retries
+are idempotent even after the transcript checkpoints have been removed. New
+conversations also retain these fingerprints; older conversations cannot
+identify recordings imported before this metadata existed. Original audio
+retention remains unchanged. The normal properties UI hides the fingerprints;
+they remain available in raw YAML.
+
+The writer re-reads the current document after transcription, preserves its
+body verbatim, and merges participants and links. It takes the same short
+`withMarkdownWrite` lock as browser edits before checking fingerprints and
+atomically saving the body and metadata together. This prevents simultaneous
+appends or stale browser saves from losing a turn; the lock must never span a
+model call. Only valid audio-message files inside the notebook's time tree
+are destinations, and symlinks are refused. A temporary Undo receipt stays
+with the import and restores the previous file only if it has not changed
+since the addition.
 
 Other file kinds remain separate imports. Each screenshot retains its capture
 time so `message:new` can read the conversation in capture order; size limits
@@ -159,11 +196,13 @@ record itself is the transcript pipeline's: see
 | --- | --- |
 | `POST /import` | multipart `file` (+ `lastModified`), repeated in matching order for a screenshot or CAF group → one job, read back; optional `day` selects a document's work day; or a `text` field alone for a dragged text |
 | `GET /import` | the rows for the Running block |
+| `GET /import/audio-conversations?day=YYYY-MM-DD` | eligible saved audio conversations, with participants and a last-turn preview |
 | `GET /import/:id` | one job, plus the journal types the dialog offers |
 | `GET /import/:id/events` | SSE: every event so far, then live until the job settles |
-| `POST /import/:id/start` | `{kind, when, whenStated?, dayStated?, category?, journalType?, fresh?, summary?, body?, fileOrder?, audioSpeakers?, to?}` — runs the door command; document notes require `summary` and accept a range in `when`; `fileOrder` is the CAF group's complete ordered list of staged names, `audioSpeakers` who speaks in each by staged name, and `to` who a single clip is to; `fresh` starts a transcript pipeline over |
+| `POST /import/:id/start` | `{kind, when, whenStated?, dayStated?, category?, journalType?, fresh?, summary?, body?, fileOrder?, audioSpeakers?, to?, appendTo?}` — runs the door command; document notes require `summary` and accept a range in `when`; `fileOrder` is the CAF group's complete ordered list of staged names, `audioSpeakers` who speaks in each by staged name, and `to` who a single new clip is to; `appendTo` selects a saved audio conversation; `fresh` starts a transcript pipeline over |
 | `POST /import/:id/answer` | `{promptId, answer}` |
 | `POST /import/:id/cancel`, `/remove` | abandon the run; forget the job and its file |
+| `POST /import/:id/undo` | undo an audio addition while its completed import and unchanged saved result remain available |
 
 ## Events
 

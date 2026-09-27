@@ -17,6 +17,7 @@ import { mkdir, rm, utimes, writeFile } from 'node:fs/promises'
 import * as path from 'node:path'
 import { Hono } from 'hono'
 import { streamSSE } from 'hono/streaming'
+import type { AudioConversation } from '#commands/all/message/_lib/savedAudioConversation.ts'
 import { documentWorkWhen } from '#commands/all/notes/lib/documentInput.ts'
 import type { RunEvent } from '#commands/lib/core/runCommand.ts'
 import { instantNow, PlainDate } from '#universal/dates/nbdt/mod.ts'
@@ -38,7 +39,7 @@ import {
   type StartFields,
   summarize,
 } from './jobs.ts'
-import { KINDS, type ReadBack, readSelection, sourceOf } from './readback.ts'
+import { KINDS, type ReadBack, readSelection } from './readback.ts'
 
 export type {
   CalendarMatch,
@@ -59,6 +60,11 @@ export type { RunEvent } from '#commands/lib/core/runCommand.ts'
 export type RunOutcome = { ok: true; file: string | null } | { ok: false; message: string; file?: string | null }
 
 export interface ImportRoutesOptions {
+  undoAudio?: (job: ImportJob) => Promise<void>
+  audioConversations?: {
+    list: (day: string) => Promise<AudioConversation[]>
+    get: (file: string) => Promise<AudioConversation>
+  }
   links?: ImportLinksHost
   /** The clock the sweep of finished imports reads — a test seam; the wall clock otherwise */
   now?: () => number
@@ -158,6 +164,15 @@ const WHEN = /^\d{4}-\d{2}-\d{2} \d{1,2}:\d{2}$/
 function parseStart(body: unknown, job: ImportJob): StartFields | string {
   const { readback } = job
   const b = (body ?? {}) as Record<string, unknown>
+  if (
+    b.appendTo !== undefined &&
+    (readback.source !== 'imessage-audio' ||
+      typeof b.appendTo !== 'string' ||
+      !b.appendTo.trim() ||
+      b.appendTo.length > 2048)
+  )
+    return 'Choose a saved iMessage Audio conversation.'
+  const appendTo = typeof b.appendTo === 'string' ? b.appendTo : undefined
   const kind = typeof b.kind === 'string' ? b.kind : ''
   if (!KINDS.includes(kind as StartFields['kind'])) return `kind must be one of ${KINDS.join(', ')}`
   if (!readback.kinds.includes(kind as StartFields['kind'])) return `this file cannot be filed as a ${kind}`
@@ -195,7 +210,7 @@ function parseStart(body: unknown, job: ImportJob): StartFields | string {
       return "Enter who's speaking in each audio file."
     audioSpeakers = Object.fromEntries(files.map(({ name }) => [name, (names[name] as string).trim()]))
     // One clip is a message to someone; a conversation's other speakers say it themselves.
-    if (files.length === 1) {
+    if (files.length === 1 && !appendTo) {
       const value = typeof b.to === 'string' ? b.to.trim() : ''
       if (!value || value.length > 200 || /[\r\n]/.test(value)) return 'Enter who the message is to.'
       to = value
@@ -211,6 +226,7 @@ function parseStart(body: unknown, job: ImportJob): StartFields | string {
     fresh: b.fresh === true,
     ...(audioSpeakers ? { audioSpeakers } : {}),
     ...(to ? { to } : {}),
+    ...(appendTo ? { appendTo } : {}),
     ...(readback.source === 'document'
       ? { summary: (b.summary as string).trim(), body: typeof b.body === 'string' ? b.body : '' }
       : {}),
@@ -288,15 +304,6 @@ export function createImportRoutes(options: ImportRoutesOptions): Hono {
     if (selection !== null && !selection.trim()) return c.json({ message: 'the text is empty' }, 400)
     const empty = uploads.find((upload) => upload.size === 0)
     if (empty) return c.json({ message: uploads.length > 1 ? `${empty.name} is empty` : 'the file is empty' }, 400)
-    const audioConversation =
-      uploads.length > 0 && uploads.every((upload) => sourceOf(upload.name) === 'imessage-audio')
-    if (uploads.length > 1 && !audioConversation && uploads.some((upload) => sourceOf(upload.name) !== 'image')) {
-      return c.json(
-        { message: 'Import screenshots together or .caf audio turns together. Other files need separate imports.' },
-        400,
-      )
-    }
-
     const id = randomUUID()
     const dir = store.jobDir(id)
     await mkdir(dir, { recursive: true })
@@ -334,6 +341,14 @@ export function createImportRoutes(options: ImportRoutesOptions): Hono {
       await rm(dir, { recursive: true, force: true })
       throw error
     }
+    const audioConversation = readbacks.every((readback) => readback.source === 'imessage-audio')
+    if (files.length > 1 && !audioConversation && readbacks.some((readback) => readback.source !== 'image')) {
+      await rm(dir, { recursive: true, force: true })
+      return c.json(
+        { message: 'Import screenshots together or CAF audio turns together. Other files need separate imports.' },
+        400,
+      )
+    }
     const file = files[0]
     const filePath = path.join(dir, file.name)
     const refused = readbacks.findIndex((readback) => readback.refusal !== null)
@@ -351,8 +366,15 @@ export function createImportRoutes(options: ImportRoutesOptions): Hono {
             kinds: refused < 0 ? ['message'] : [],
             refusal: refused < 0 ? null : `${files[refused].name}: ${readbacks[refused].refusal}`,
           }
+    const proposed = options.suggestWhen(file, readback)
     const suggestedWhen =
-      readback.source === 'document' && typeof filingDay === 'string' ? filingDay : options.suggestWhen(file, readback)
+      typeof filingDay === 'string'
+        ? readback.source === 'document'
+          ? filingDay
+          : audioConversation
+            ? `${filingDay} ${proposed.slice(11)}`
+            : proposed
+        : proposed
     // Keyed once, now: a filed run moves the upload on, and the key must outlive it.
     const kept =
       readback.refusal || readback.source === 'document' || (files.length > 1 && !audioConversation) || !options.record
@@ -372,6 +394,7 @@ export function createImportRoutes(options: ImportRoutesOptions): Hono {
       listen: null,
       calendar: null,
       suggestedWhen,
+      ...(typeof filingDay === 'string' ? { day: filingDay } : {}),
       runKey: kept?.key ?? null,
       resume: kept?.resume ?? null,
       fields: null,
@@ -439,6 +462,17 @@ export function createImportRoutes(options: ImportRoutesOptions): Hono {
     // Finished imports leave at the next look, once their moment has passed.
     await store.sweep(options.now?.())
     return c.json({ imports: store.list().map(summarize) })
+  })
+
+  app.get('/audio-conversations', async (c) => {
+    try {
+      const day = c.req.query('day') ?? ''
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || new PlainDate(day).toString() !== day)
+        return c.json({ message: 'Choose a valid day.' }, 400)
+      return c.json({ conversations: (await options.audioConversations?.list(day)) ?? [] })
+    } catch (error) {
+      return c.json({ message: (error as Error).message }, 400)
+    }
   })
 
   app.get('/:id', async (c) => {
@@ -539,6 +573,19 @@ export function createImportRoutes(options: ImportRoutesOptions): Hono {
     const body = await c.req.json().catch(() => null)
     const fields = parseStart(body, job)
     if (typeof fields === 'string') return c.json({ message: fields }, 400)
+    if (fields.appendTo) {
+      try {
+        if (!options.audioConversations) throw new Error('Adding to a conversation is unavailable.')
+        const destination = await options.audioConversations.get(fields.appendTo)
+        fields.when = destination.when
+        job.title = destination.title
+      } catch (error) {
+        return c.json({ message: (error as Error).message }, 400)
+      }
+    }
+    // Destination validation can yield while another Start begins this same job.
+    if (['running', 'needs-you', 'done'].includes(job.state))
+      return c.json({ message: 'This import has already started.' }, 409)
 
     if (body?.fileOrder !== undefined) {
       const order: unknown = body.fileOrder
@@ -611,7 +658,8 @@ export function createImportRoutes(options: ImportRoutesOptions): Hono {
           await withLinks(record.job.id, async () => {
             record.job.result = outcome.file ? { file: outcome.file } : null
             await saveLinks(record)
-            record.job.line = outcome.file ? `Filed · ${path.basename(outcome.file).replace(/\.md$/, '')}` : 'Filed'
+            const action = record.job.fields?.appendTo ? 'Added to conversation' : 'Filed'
+            record.job.line = outcome.file ? `${action} · ${path.basename(outcome.file).replace(/\.md$/, '')}` : action
             record.job.stage = null
             await store.setState(record, 'done')
           })
@@ -668,6 +716,23 @@ export function createImportRoutes(options: ImportRoutesOptions): Hono {
     record.job.line = 'Cancelled.'
     await store.setState(record, 'cancelled')
     return c.json({ job: summarize(record.job) })
+  })
+
+  app.post('/:id/undo', async (c) => {
+    await loaded
+    const record = store.get(c.req.param('id'))
+    if (!record) return notFound(c)
+    if (record.job.state !== 'done' || !record.job.canUndo || !options.undoAudio)
+      return c.json({ message: 'There is no audio addition to undo.' }, 409)
+    try {
+      await options.undoAudio(record.job)
+      record.job.canUndo = false
+      record.job.undone = true
+      await store.setState(record, 'done', { line: 'Audio addition undone.' })
+      return c.json({ job: summarize(record.job) })
+    } catch (error) {
+      return c.json({ message: (error as Error).message }, 409)
+    }
   })
 
   app.post('/:id/remove', async (c) => {

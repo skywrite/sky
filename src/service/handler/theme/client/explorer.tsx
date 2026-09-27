@@ -1,4 +1,4 @@
-import { ActionIcon, Button, Menu, Tooltip } from '@mantine/core'
+import { ActionIcon, Button, FileButton, Menu, Tooltip } from '@mantine/core'
 import {
   type CSSProperties,
   Fragment,
@@ -23,6 +23,7 @@ import { IdentityLine } from './frontmatter/Identity.tsx'
 import { useOutline } from './frontmatter/outline.ts'
 import { DocumentRail } from './frontmatter/Rail.tsx'
 import { useFrontmatter } from './frontmatter/useFrontmatter.ts'
+import { AUDIO_IMPORT_ACCEPT, useFileDrop } from './import.tsx'
 import { useRail } from './rail.ts'
 import { RailToggle } from './railToggle.tsx'
 import { highlightCodeBlocks } from './wysiwyg/highlight.ts'
@@ -545,7 +546,15 @@ function DirListing({ entries }: { entries: ExplorerEntry[] }) {
   )
 }
 
-export function DocView({ file, go }: { file: string; go: (to: string) => void }) {
+export function DocView({
+  file,
+  go,
+  onImportConversation,
+}: {
+  file: string
+  go: (to: string) => void
+  onImportConversation?: (files: File[], conversation: string, day?: string) => void
+}) {
   // Editing is per file — turning the page ends it.
   const [editingFile, setEditingFile] = useState<string | null>(null)
   const editing = file !== '' && editingFile === file
@@ -612,6 +621,14 @@ export function DocView({ file, go }: { file: string; go: (to: string) => void }
       : undefined,
   )
   const { open: railOpen, toggle: toggleRail } = useRail(file)
+  const canAddAudio = Boolean(
+    !editing &&
+    doc?.path === file &&
+    onImportConversation &&
+    frontmatter.rows.some((row) => row.key === 'medium' && row.value === 'iMessage Audio'),
+  )
+  const addAudio = (files: File[]) => onImportConversation?.(files, file, doc?.day)
+  const audioDrop = useFileDrop(canAddAudio, addAudio)
   const outline = useOutline(scrollRef, [doc?.path, doc?.html, editing])
   const segments = file.split('/')
   const name = segments[segments.length - 1]
@@ -718,6 +735,15 @@ export function DocView({ file, go }: { file: string; go: (to: string) => void }
                   </Button>
                 </>
               )}
+              {canAddAudio && (
+                <FileButton onChange={addAudio} accept={AUDIO_IMPORT_ACCEPT} multiple>
+                  {(props) => (
+                    <Button size="sm" {...props}>
+                      Add audio…
+                    </Button>
+                  )}
+                </FileButton>
+              )}
               <Tooltip label={`${editing ? 'Done' : 'Edit'} (⌘E)`} events={{ hover: true, focus: true, touch: false }}>
                 <Button
                   ref={editButton}
@@ -777,7 +803,14 @@ export function DocView({ file, go }: { file: string; go: (to: string) => void }
           )}
         </header>
 
-        <div className="sky-scroll" ref={scrollRef}>
+        <div
+          className="sky-scroll"
+          ref={scrollRef}
+          data-conversation-drop={canAddAudio || undefined}
+          data-dragging={audioDrop.dragging || undefined}
+          {...audioDrop.handlers}
+        >
+          {audioDrop.dragging && <div className="sky-audio-document-drop">Add to this conversation</div>}
           {missing ? (
             <div className="sky-blank">
               <p>

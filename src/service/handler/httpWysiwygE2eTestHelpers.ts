@@ -10,6 +10,7 @@ import process from 'node:process'
 import { serve } from '@hono/node-server'
 import type { ServerType } from '@hono/node-server'
 import { type Browser, chromium, type Page } from 'playwright'
+import { listAudioConversations, readAudioConversation } from '#commands/all/message/_lib/savedAudioConversation.ts'
 import type { MostImportantAI } from '#lib/mostImportant/types.ts'
 import MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
 import { env } from '#shared/sys/mod.ts'
@@ -100,6 +101,17 @@ function dayHosts(
       timeDir: path.join(notebookBaseDir, 'time'),
     },
     imports: {
+      audioConversations: {
+        list: (day) =>
+          listAudioConversations({ DIR_BASE: notebookBaseDir, DIR_TIME: path.join(notebookBaseDir, 'time') }, day),
+        get: async (file) =>
+          (
+            await readAudioConversation(
+              { DIR_BASE: notebookBaseDir, DIR_TIME: path.join(notebookBaseDir, 'time') },
+              file,
+            )
+          ).conversation,
+      },
       dir: path.join(userDataDir, 'imports'),
       journalTypes: ['Reflection'],
       read: async ({ path: filePath, name }) => {

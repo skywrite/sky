@@ -6,6 +6,7 @@ import CommandService from '#commands/lib/core/CommandService.ts'
 import { resolveCommandArgs } from '#commands/lib/core/resolveCommandArgs.ts'
 import { CommandPlatform } from '#commands/mod.ts'
 import * as config from '#config'
+import * as media from '#lib/media/ffmpeg/mod.ts'
 import * as sys from '#lib/sys/mod.ts'
 import { assert, test } from '#test'
 import { ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
@@ -28,6 +29,13 @@ test('audio conversation retries reuse completed turns and preserve boundaries w
   })
   const options = { dir: path.join(root, 'runs'), now: () => now.plainDateTime.toString() }
   const runOptions = spyOn(runs, 'runOptionsFor').mockReturnValue(options)
+  const probe = spyOn(media, 'probeMedia').mockResolvedValue({
+    formatName: 'caf',
+    hasAudio: true,
+    hasVideo: false,
+    durationSeconds: 15,
+    creationTime: null,
+  })
   const command = spyOn(sys, 'runCommand').mockImplementation(async (name, args = []) => {
     if (name === 'ffmpeg') await copyFile(args[1], args.at(-1)!)
     else if (name !== 'which') throw new Error(`Unexpected command: ${name}`)
@@ -123,6 +131,7 @@ test('audio conversation retries reuse completed turns and preserve boundaries w
     recognize.mockRestore()
     command.mockRestore()
     runOptions.mockRestore()
+    probe.mockRestore()
     await rm(root, { recursive: true, force: true })
   }
 })

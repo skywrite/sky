@@ -12,7 +12,7 @@ import * as path from 'node:path'
 import colors from 'picocolors'
 import { desktopFilesByExt } from '#commands/all/audio/transcript/lib/desktopFiles.ts'
 import { isRtf } from '#commands/all/audio/transcript/lib/plainText.ts'
-import { clearTranscriptRun } from '#commands/all/audio/transcript/lib/transcriptRun.ts'
+import { clearTranscriptRun, sha256Of } from '#commands/all/audio/transcript/lib/transcriptRun.ts'
 import { validateAnyArgFlagExists } from '#commands/cli/mod.ts'
 import {
   ArgOrFlag,
@@ -33,7 +33,7 @@ import dayAttachmentsDir from '#shared/nbfs/dayAttachmentsDir.ts'
 import { extractTypedTime, labelledTimeRaw } from '#universal/dates/extractTypedTime.ts'
 import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import { applyParticipantCorrections, extractTypedParticipants } from './_lib/applyCorrections.ts'
-import { conversationTo, formatAudioConversation } from './_lib/audioConversation.ts'
+import { conversationTo, formatAudioConversation, summarizeAudioConversation } from './_lib/audioConversation.ts'
 import { extractMessageFromImage, renderDialogue, senderSummary } from './_lib/extractFromImage.ts'
 import { extractMessageFromText } from './_lib/extractFromText.ts'
 import { findScreenshotsOnDesktop } from './_lib/findScreenshotOnDesktop.ts'
@@ -161,12 +161,14 @@ export default class MessageNewTask extends Command {
     let body: string | undefined
     let attachmentFiles: string[] = []
     let audioRel: string[] | undefined
+    let audioClips: string[] | undefined
     /** The pipeline's run record, forgotten once the message is filed */
     let runKey: string | null = null
 
     const audioConversation = args.fromAudioTurns !== undefined
     if (audioConversation) {
       const files = args.fromAudioTurns!
+      audioClips = await Promise.all(files.map(sha256Of))
       let speakers = args.audioSpeakers?.map((name) => name.trim())
       if (!speakers && files.length === 1 && from) speakers = [from.trim()]
       if (!speakers && prompt.interactive) {
@@ -196,6 +198,7 @@ export default class MessageNewTask extends Command {
         { id: 'transcribe', label: 'Transcribing' },
         { id: 'names', label: 'Checking names' },
         { id: 'paragraphs', label: 'Formatting message' },
+        ...(!summary ? [{ id: 'summary', label: 'Summarizing conversation' }] : []),
         { id: 'file', label: 'Filing' },
       ])
       const cleaned = await tasks.run('audio:transcript:clean', {
@@ -215,7 +218,10 @@ export default class MessageNewTask extends Command {
       if (!to) to = conversationTo(speakers, from)
       if (!medium) medium = 'iMessage Audio'
       // A label for the day link; the message body is the conversation itself.
-      if (!summary) summary = args.fromAudioTurns!.length === 1 ? 'Audio message' : 'Audio conversation'
+      if (!summary) {
+        output.stage('summary', 'Summarizing conversation')
+        summary = await summarizeAudioConversation(cleaned.data.cleanedText, speakers, { signal: context.signal })
+      }
       if (cleaned.data.rel.length > 0) audioRel = cleaned.data.rel
     }
 
@@ -570,6 +576,7 @@ export default class MessageNewTask extends Command {
       summary,
       attachments,
       ...(audioRel ? { rel: audioRel } : {}),
+      ...(audioClips ? { audioClips } : {}),
     })
     let data = message.toMarkdown()
     if (body) {

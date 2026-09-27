@@ -46,6 +46,18 @@ export interface StartArgs {
 export function startArgs(job: StartContext, fields: StartFields, input: string | string[]): StartArgs {
   const filePaths = typeof input === 'string' ? [input] : input
   const filePath = filePaths[0]
+  if (job.source === 'imessage-audio' && fields.appendTo) {
+    return {
+      command: 'message:append',
+      args: {
+        file: fields.appendTo,
+        fromAudioTurns: filePaths,
+        audioSpeakers: filePaths.map((file) => fields.audioSpeakers?.[basename(file)] ?? ''),
+        fresh: fields.fresh,
+      },
+      rawArgs: { _: [] },
+    }
+  }
   if (job.source === 'document') {
     const work = documentWorkWhen(fields.when)
     return {

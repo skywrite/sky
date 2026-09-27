@@ -1,5 +1,6 @@
 import { generateObject } from 'ai'
 import { z } from 'zod'
+import { summarizeTranscript } from '#lib/notebook/enrich/summarize.ts'
 import { aiModel } from '#shared/ai/models.ts'
 
 /** The numbered separators belong to the transcription pipeline, never to the saved message. */
@@ -86,11 +87,42 @@ export function conversationTo(speakers: string[], from: string | undefined): st
   return others.length > 0 ? others.join(', ') : undefined
 }
 
+/** A new conversation's topic label; appending never regenerates it. */
+export async function summarizeAudioConversation(
+  transcript: string,
+  speakers: string[],
+  options: { signal?: AbortSignal } = {},
+): Promise<string> {
+  options.signal?.throwIfAborted()
+  const turns = readTurns(transcript, speakers.length)
+  const summary = await summarizeTranscript(turns.map((turn, index) => `${speakers[index]}: ${turn}`).join('\n\n'), {
+    kind: 'iMessage audio conversation',
+    signal: options.signal,
+  })
+  options.signal?.throwIfAborted()
+  const wordCount = summary?.split(/\s+/).length ?? 0
+  if (summary && wordCount >= 5 && wordCount <= 7) return summary
+
+  // Naming must not prevent filing: use a short excerpt if the model is unavailable.
+  const words = turns.join(' ').split(/\s+/).slice(0, 7)
+  const excerpt = words.join(' ').replace(/[.!?]+$/, '')
+  if (words.length >= 5) return excerpt
+  return `${words.length === 1 ? 'Audio message saying just' : 'Audio message saying'} ${excerpt}`
+}
+
 export async function formatAudioConversation(
   transcript: string,
   speakers: string[],
   options: { signal?: AbortSignal; chooseBreaks?: ChooseBreaks } = {},
 ): Promise<string> {
+  return (await formatAudioTurns(transcript, speakers, options)).join('\n\n')
+}
+
+export async function formatAudioTurns(
+  transcript: string,
+  speakers: string[],
+  options: { signal?: AbortSignal; chooseBreaks?: ChooseBreaks } = {},
+): Promise<string[]> {
   options.signal?.throwIfAborted()
   const turns = readTurns(transcript, speakers.length).map(sentences)
   let ends: number[][] = []
@@ -103,10 +135,8 @@ export async function formatAudioConversation(
     }
   }
   options.signal?.throwIfAborted()
-  return turns
-    .map((turn, index) => {
-      const name = speakers[index].replace(/[\\`*_[\]<>]/g, '\\$&')
-      return `**${name}:**\n\n${paragraphs(turn, ends[index])}`
-    })
-    .join('\n\n')
+  return turns.map((turn, index) => {
+    const name = speakers[index].replace(/[\\`*_[\]<>]/g, '\\$&')
+    return `**${name}:**\n\n${paragraphs(turn, ends[index])}`
+  })
 }

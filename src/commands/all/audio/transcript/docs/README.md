@@ -1,6 +1,6 @@
 ---
 created: 2026-09-02
-updated: 2026-09-26
+updated: 2026-09-27
 ---
 
 # The transcript pipeline
@@ -43,7 +43,8 @@ Explicit standalone transcript exports still save the requested file. Retry
 checkpoints remain until completion, as described below.
 
 An audio conversation (`--from-audio-turns`) files the cleaned words under the
-speaker names supplied by the person, with short paragraphs. It is not summarized. Its grouping, ordering, and retry boundaries
+speaker names supplied by the person, with short paragraphs. The body keeps the full transcript.
+Its topic label, grouping, ordering, and retry boundaries
 are described in the [web import design](../../../../../service/handler/import/docs/README.md).
 
 ## Provider selection

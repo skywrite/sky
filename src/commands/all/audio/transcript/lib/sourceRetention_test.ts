@@ -10,8 +10,10 @@ import { resolveCommandArgs } from '#commands/lib/core/resolveCommandArgs.ts'
 import type { BufferedOutput } from '#commands/lib/output/BufferedOutput.ts'
 import { CommandPlatform, CommandResult, type CommandArgs } from '#commands/mod.ts'
 import * as config from '#config'
+import * as media from '#lib/media/ffmpeg/mod.ts'
 import * as nbfs from '#lib/nbfs/mod.ts'
 import * as personFacts from '#lib/notebook/enrich/distillPersonFacts.ts'
+import * as summaries from '#lib/notebook/enrich/summarize.ts'
 import * as sys from '#lib/sys/mod.ts'
 import * as chatDocument from '#shared/models/Chat/document/mod.ts'
 import { Document } from '#shared/models/Markdown/mod.ts'
@@ -29,11 +31,13 @@ import * as runs from './transcriptRun.ts'
 const NOW = '2031-03-13 09:15'
 const WORDS = 'Jane Doe and I agreed to review the Atlas proposal on Friday.'
 
-test('an audio conversation files its cleaned turns without running or saving a summary', async () => {
+test('a new audio conversation gets a short topic label while retaining its cleaned turns', async () => {
   const w = await world('caf')
   const files = [w.audio, path.join(w.sourceDir, 'reply.caf')]
   await writeFile(files[1], 'second mock recording')
   const transcript = '### Turn 1\n\nCan we review the Atlas plan?\n\n### Turn 2\n\nYes, on Friday.'
+  const summary = 'Reviewing the Atlas plan on Friday'
+  const summarize = spyOn(summaries, 'summarizeTranscript').mockResolvedValue(summary)
   const writes: string[] = []
   const write = spyOn(nbfs.DayDirFileWriter.prototype, 'write').mockImplementation(async (file, content) => {
     writes.push(content)
@@ -83,7 +87,7 @@ test('an audio conversation files its cleaned turns without running or saving a 
     const saved = Document.fromMarkdown(writes[0])
     assert({
       given: 'two CAF files with explicitly named speakers',
-      should: 'save the cleaned words and stated participants without a summary stage',
+      should: 'keep the cleaned words as the body and use the topic label in metadata and the day link',
       actual: [
         result.ok,
         writes.length,
@@ -93,6 +97,8 @@ test('an audio conversation files its cleaned turns without running or saving a 
         saved.yaml.to,
         saved.markdown.trim(),
         saved.yaml.summary,
+        day.mock.calls[0][2].includes(`[${summary}]`),
+        summarize.mock.calls[0][0],
         saved.yaml.when,
         plan.mock.calls.map(([steps]) => steps.map((step) => step.id)),
         calls,
@@ -105,9 +111,11 @@ test('an audio conversation files its cleaned turns without running or saving a 
         'Jane Doe',
         'Me',
         '**Jane Doe:**\n\nCan we review the Atlas plan?\n\n**Me:**\n\nYes, on Friday.',
-        'Audio conversation',
+        summary,
+        true,
+        'Jane Doe: Can we review the Atlas plan?\n\nMe: Yes, on Friday.',
         NOW,
-        [['transcribe', 'names', 'paragraphs', 'file']],
+        [['transcribe', 'names', 'paragraphs', 'summary', 'file']],
         [
           [
             'audio:transcript:clean',
@@ -121,7 +129,27 @@ test('an audio conversation files its cleaned turns without running or saving a 
         ],
       ],
     })
+
+    const explicitSummary = 'My own label'
+    const explicit = await new MessageNewTask().run({
+      args: { ...(args as Parameters<MessageNewTask['run']>[0]['args']), summary: explicitSummary },
+      context: w.context,
+      tasks,
+      rawArgs: { _: [] },
+    })
+    assert({
+      given: 'a new audio conversation with an explicitly supplied summary',
+      should: 'preserve that summary without generating another one',
+      actual: [
+        explicit.ok,
+        Document.fromMarkdown(writes[1]).yaml.summary,
+        summarize.mock.calls.length,
+        plan.mock.calls[1][0].map((step) => step.id),
+      ],
+      expected: [true, explicitSummary, 1, ['transcribe', 'names', 'paragraphs', 'file']],
+    })
   } finally {
+    summarize.mockRestore()
     child.mockRestore()
     plan.mockRestore()
     day.mockRestore()
@@ -143,6 +171,13 @@ async function world(extension = 'm4a') {
   ).fork({ platform: CommandPlatform.Server, compositionDepth: 1 })
   const options = { dir: path.join(root, 'runs'), now: () => NOW }
   const runOptions = spyOn(runs, 'runOptionsFor').mockReturnValue(options)
+  const probe = spyOn(media, 'probeMedia').mockResolvedValue({
+    formatName: extension === 'caf' ? 'caf' : 'mov,mp4,m4a,3gp,3g2,mj2',
+    hasAudio: true,
+    hasVideo: false,
+    durationSeconds: 90,
+    creationTime: null,
+  })
   const run = await runs.TranscriptRun.forFile(audio, options)
   return {
     root,
@@ -151,6 +186,7 @@ async function world(extension = 'm4a') {
     context,
     run,
     async close() {
+      probe.mockRestore()
       runOptions.mockRestore()
       await rm(root, { recursive: true, force: true })
     },
