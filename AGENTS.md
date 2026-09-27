@@ -1,6 +1,10 @@
 # AGENTS.md
 
-Project knowledge for AI coding agents. Claude Code users: see [CLAUDE.md](CLAUDE.md) for additional instructions.
+Project knowledge for AI coding agents. This is the only agent instruction file in the repo.
+
+## ⛔ NEVER COMMIT REAL NOTEBOOK DATA
+
+This repo is **public**. Nothing observed in the personal notebook (`~/Sky`) — project names, people, orgs, file paths, sizes, dates — may appear in code, comments, test fixtures, fixture paths, docs, or commit messages. Use clearly synthetic names (`Atlas`, `Jane Doe`). **Grep the staged diff for every real name you saw before every commit.** Full rule: [Never Hard-Code Real User Data — Use Mock Data](#never-hard-code-real-user-data--use-mock-data) below.
 
 ## Project Overview
 
