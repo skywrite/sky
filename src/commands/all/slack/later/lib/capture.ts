@@ -49,9 +49,10 @@ export async function captureLaterItems(
     const result = await tasks.run('slack:follow:message', { link, noEditor: true })
 
     if (!result.ok) {
-      // A thread that is already followed or already captured (a saved reply
-      // whose parent's capture holds the whole thread) is in the notebook —
-      // completing the Later item is still the right move
+      // slack:follow:message declines a thread captured before only once its
+      // capture holds everything Slack has (new replies land first), so the
+      // saved message is in the notebook — completing the Later item is
+      // still the right move
       if (result.message?.includes('Duplicate follow') || result.message?.includes('Already captured')) {
         output.log('  Thread already in the notebook — skipping capture')
         const done = await runAgentSlack(['later', 'complete', link])

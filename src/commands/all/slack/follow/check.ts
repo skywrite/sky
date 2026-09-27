@@ -1,30 +1,14 @@
 import { unlink } from 'node:fs/promises'
 import * as path from 'node:path'
-import { captureMessages } from '#commands/all/slack/lib/captureMessages.ts'
 import { checkChannelWatches, type ChannelWatchCheckResult } from '#commands/all/slack/lib/checkChannelWatches.ts'
-import { resolveRecipient } from '#commands/all/slack/lib/mod.ts'
-import { saveSlackCaptureUpdate } from '#commands/all/slack/lib/saveCapture.ts'
-import { syncSlackFollow } from '#commands/all/slack/lib/syncFollow.ts'
-import { clearSavedVoiceTranscripts } from '#commands/all/slack/lib/transcribeVoiceMemo.ts'
-import { updateSlackCapture } from '#commands/all/slack/lib/updateCapture.ts'
-import type { CommandTypesRegistry } from '#commands/lib/core/CommandTypesRegistry.ts'
+import { followAnchors, pollSlackFollow } from '#commands/all/slack/lib/pollFollow.ts'
 import { Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
-import { DIR_BASE, DIR_STATE_FOLLOW_SLACK_ACTIVE, DIR_STATE_FOLLOW_SLACK_ARCHIVE } from '#config'
-import { DayDirFileWriter } from '#lib/nbfs/mod.ts'
-import { atomicWrite } from '#lib/outbox/files.ts'
-import { exists, outputFile, readTextFile } from '#shared/fs/mod.ts'
+import { DIR_STATE_FOLLOW_SLACK_ACTIVE, DIR_STATE_FOLLOW_SLACK_ARCHIVE } from '#config'
+import { exists, outputFile } from '#shared/fs/mod.ts'
 import Follow from '#shared/models/Follow/mod.ts'
 import SlackFollowRegistry from '#shared/models/Follow/SlackFollowRegistry.ts'
-import MessageDocument from '#shared/models/Message/mod.ts'
-import {
-  computePreviousRef,
-  convertToNotebookTimezone,
-  fetchNow,
-  fetchNowSync,
-  resolveTimeRef,
-  toTimeRef,
-} from '#shared/nbfs/mod.ts'
+import { fetchNowSync } from '#shared/nbfs/mod.ts'
 
 const params = {
   file: Flag.string('Check a specific follow by filename (skip due filtering)', { short: 'f' }),
@@ -158,105 +142,32 @@ export default class SlackFollowCheckTask extends Command {
 
     for (const entry of entries) {
       try {
-        let { follow } = entry
-        const { path: followPath, fileName } = entry
+        const { fileName } = entry
 
-        const anchors = [follow.ref, ...follow.merged].filter((a) => a.link)
-        if (anchors.length === 0) {
+        if (followAnchors(entry.follow).length === 0) {
           output.log(`[check] ${fileName}: no link in ref, skipping`)
           skipped.push(`${fileName}: no link`)
           continue
         }
 
-        // 1. Poll Slack — one export per anchor (a merged follow watches
-        //    several roots and gathers their activity into one stream)
         polled++
-        const exports: NonNullable<CommandTypesRegistry['slack:cli:export']['result']>[] = []
-        let lastFailure: string | null = null
-        for (const anchor of anchors) {
-          const exportResult = await tasks.run('slack:cli:export', { link: anchor.link })
-          if (!exportResult.ok || !exportResult.data) {
-            output.log(`[check] ${fileName}: export failed (${anchor.link}) — ${exportResult.message}`)
-            lastFailure = exportResult.message ?? 'no message'
-            continue
+        const poll = await pollSlackFollow(entry, { tasks, output, signal: context.signal, now: nowDt })
+        if (!poll.ok) {
+          for (const failure of poll.failures) {
+            output.log(`[check] ${fileName}: export failed (${failure.link}) — ${failure.message}`)
           }
-          exports.push(exportResult.data)
-        }
-        if (exports.length !== anchors.length) {
+          const lastFailure = poll.failures.at(-1)?.message ?? null
           exportFailures++
           exportFailure ??= lastFailure
           skipped.push(`${fileName}: incomplete export — ${lastFailure}`)
           continue
         }
-        const data = exports[0]
-
-        const synced = await syncSlackFollow(follow, exports.flatMap(captureMessages), {
-          read: async (ref) =>
-            MessageDocument.fromMarkdown(await readTextFile(path.join(DIR_BASE, resolveTimeRef(ref)))),
-          notebookTime: convertToNotebookTimezone,
-          saveFollow: async (pending) => atomicWrite(followPath, pending.toYaml()),
-          update: async (ref, doc, messages, day) => {
-            const transcriptRuns = new Set<string>()
-            const updated = await updateSlackCapture({
-              doc,
-              messages,
-              day,
-              output,
-              signal: context.signal,
-              transcriptRuns,
-            })
-            if (updated.toMarkdown() !== doc.toMarkdown())
-              await saveSlackCaptureUpdate(path.join(DIR_BASE, resolveTimeRef(ref)), doc, updated)
-            await clearSavedVoiceTranscripts(transcriptRuns, output)
-          },
-          create: async ({ messages, when, previous, inherit }) => {
-            const from = messages[0].userName || messages[0].userId || '-'
-            const inheritedTags = inherit?.yaml['tags']
-            const inheritedRel = inherit?.yaml['rel']
-            const result = await tasks.run('slack:new', {
-              from,
-              to: resolveRecipient(data, from),
-              summary: follow.summary,
-              when,
-              slackMessages: JSON.stringify(messages),
-              follow: fileName,
-              link: data.message.permalink ?? data.link,
-              previous: previous ? computePreviousRef(resolveTimeRef(previous), when.plainDate) : undefined,
-              noEditor: true,
-              ...(typeof inheritedTags === 'string' ? { tags: inheritedTags } : {}),
-              ...(typeof inheritedRel === 'string' ? { rel: inheritedRel } : {}),
-              ...(Array.isArray(inheritedRel) ? { noAutoRel: true } : {}),
-            })
-            if (!result.ok || !result.data?.filePath)
-              throw new Error(`Failed to save Slack replies: ${result.message ?? 'no file path'}`)
-            const ddfw = new DayDirFileWriter(when.plainDate)
-            const timePath = `time/${ddfw.dayDir}/${result.data.filePath}`
-            if (Array.isArray(inheritedRel)) {
-              const fullPath = path.join(DIR_BASE, timePath)
-              const doc = MessageDocument.fromMarkdown(await readTextFile(fullPath))
-              await atomicWrite(
-                fullPath,
-                new MessageDocument({ ...doc.yaml, rel: inheritedRel }, doc.markdown).toMarkdown(),
-              )
-            }
-            return toTimeRef(timePath)
-          },
-        })
-        follow = synced.follow
-        if (synced.newReplies > 0) {
-          output.log(`[check] ${fileName}: ${synced.newReplies} new replies`)
-          withActivity.push({ fileName, newReplies: synced.newReplies })
+        if (poll.newReplies > 0) {
+          output.log(`[check] ${fileName}: ${poll.newReplies} new replies`)
+          withActivity.push({ fileName, newReplies: poll.newReplies })
         } else {
           output.log(`[check] ${fileName}: no new activity`)
         }
-        // Checkpoint the start of the poll, not its completion: replies can
-        // arrive while files are being downloaded or written.
-        const checkedAt = (await fetchNow()).plainDateTime
-        const activity = synced.lastActivity ?? follow.followSince
-        const updated = (synced.lastActivity ? follow.updateLastActivity(synced.lastActivity) : follow)
-          .updateLastChecked(nowDt)
-          .updateCheckInterval(Follow.backoffInterval(checkedAt, activity))
-        await atomicWrite(followPath, updated.toYaml())
       } catch (err) {
         const errMsg = err instanceof Error ? err.message : String(err)
         output.log(`[check] ${entry.fileName}: ERROR — ${errMsg}`)

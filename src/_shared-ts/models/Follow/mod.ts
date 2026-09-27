@@ -170,6 +170,10 @@ export default class Follow {
     return new Follow({ ...this.fields(), messages })
   }
 
+  withExpires(expires: PlainDateTime | undefined): Follow {
+    return new Follow({ ...this.fields(), expires })
+  }
+
   /** Inactivity window after which a follow with no explicit `expires` auto-expires */
   static readonly DEFAULT_MAX_INACTIVE = '14d'
 

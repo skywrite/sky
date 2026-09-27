@@ -1,3 +1,4 @@
+import { unlink } from 'node:fs/promises'
 import * as path from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import ms from 'ms'
@@ -6,23 +7,32 @@ import { captureMessages, captureText, type SlackCaptureMessage } from '#command
 import { SLACK_ENRICH } from '#commands/all/slack/lib/enrich.ts'
 import { resolveRecipient } from '#commands/all/slack/lib/mod.ts'
 import parseMessageLink from '#commands/all/slack/lib/parseMessageLink.ts'
+import { followAnchors, pollSlackFollow, type SlackFollowPoll } from '#commands/all/slack/lib/pollFollow.ts'
 import { summarizeSlackMessage } from '#commands/all/slack/lib/summarize.ts'
 import {
   clearSavedVoiceTranscripts,
   prepareSlackVoiceTranscripts,
 } from '#commands/all/slack/lib/transcribeVoiceMemo.ts'
+import type { OutputHandler } from '#commands/lib/output/OutputHandler.ts'
 import { Arg, Command, CommandResult, Flag, whenNBTime } from '#commands/mod.ts'
-import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
+import type { CommandArgs, CommandDescription, CommandService, InferParams } from '#commands/mod.ts'
 import { DIR_BASE, DIR_STATE_FOLLOW_SLACK_ACTIVE, DIR_STATE_FOLLOW_SLACK_ARCHIVE } from '#config'
 import { DayDirFileWriter } from '#lib/nbfs/mod.ts'
 import { autoRelMessage } from '#lib/notebook/enrich/autoRel.ts'
 import { autoTagMessage } from '#lib/notebook/enrich/autoTag.ts'
+import { atomicWrite } from '#lib/outbox/files.ts'
 import slugify from '#lib/string/slugify.ts'
 import { outputFile, readTextFile, writeTextFile } from '#shared/fs/mod.ts'
 import Follow from '#shared/models/Follow/mod.ts'
 import SlackFollowRegistry from '#shared/models/Follow/SlackFollowRegistry.ts'
 import MessageDocument from '#shared/models/Message/mod.ts'
-import { computePreviousRef, convertToNotebookTimezone, fetchNowSync, toTimeRef } from '#shared/nbfs/mod.ts'
+import {
+  computePreviousRef,
+  convertToNotebookTimezone,
+  fetchNowSync,
+  resolveTimeRef,
+  toTimeRef,
+} from '#shared/nbfs/mod.ts'
 import { PlainDate, PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 
 const params = {
@@ -33,9 +43,12 @@ const params = {
     { short: 'e' },
   ),
   when: whenNBTime(),
-  force: Flag.bool('Capture even when the thread is already captured, or inactive past the expiry window', {
-    default: false,
-  }),
+  force: Flag.bool(
+    'Capture the whole thread as a new copy even when it is already captured, or inactive past the expiry window',
+    {
+      default: false,
+    },
+  ),
   check: Flag.bool(
     'Report whether the link is already in the follow registry (active or archive) and stop — no Slack fetch, no capture',
     {
@@ -47,7 +60,7 @@ const params = {
 
 type Params = InferParams<typeof params>
 type Result = {
-  /** Follow YAML path — active for live threads, a born-closed archive record for quiet ones, the matching record on --check */
+  /** Follow YAML path — active for live threads, a born-closed archive record for quiet ones, the matching record on --check or when an earlier capture was brought up to date */
   file?: string
   followed: boolean
   /** --check only: whether the link is already in the follow registry (active or archive) */
@@ -73,9 +86,13 @@ export default class SlackFollowMessageTask extends Command {
       'Resolves channel name, message details, and thread info from a Slack link',
       'via slack:cli:export, then writes a Follow YAML file to the follow directory.',
       '',
-      'A link into an already-captured thread is declined — the earlier capture',
-      'holds the whole thread, identified by channel + root ts across the active',
-      'and archive follow ledgers (--force to capture anyway).',
+      'A link into an already-captured thread — identified by channel + root ts',
+      'across the active and archive follow ledgers — fetches only what is new',
+      'since that capture: each new reply is saved on its own day, linked back',
+      'to the earlier file. An archived thread that has come back to life is',
+      'followed again (--expires sets a new deadline); one still quiet past the',
+      'expiry window stays archived. With nothing new, the link is declined as',
+      'already captured. --force captures the whole thread again as a new copy.',
       '',
       '--check reports whether the link is already in those ledgers and stops —',
       'no Slack fetch, no capture. Identity comes from the link alone, so a',
@@ -120,19 +137,16 @@ export default class SlackFollowMessageTask extends Command {
       }
     }
 
-    // 0. Decline duplicates before any Slack work. Identity is channel + root
-    //    ts — never link strings, one thread wears many URL spellings — and a
-    //    root p-link names the thread key directly. A bare reply p-link only
-    //    names its own ts, so it can pass here; the post-export check below
-    //    catches it once Slack reveals the true root.
+    const refresh = { tasks, output, signal: context.signal, expires }
+
+    // 0. A thread captured before is brought up to date, never copied again.
+    //    Identity is channel + root ts — never link strings, one thread wears
+    //    many URL spellings — and a root p-link names the thread key directly.
+    //    A bare reply p-link only names its own ts, so it can pass here; the
+    //    post-export check below catches it once Slack reveals the true root.
     if (!args.force) {
       const dupe = await findCapturedThread(link, parseMessageLink(link))
-      if (dupe) {
-        output.log(`Thread already captured: ${dupe.summary} (${dupe.fileName})`)
-        return CommandResult.fail(
-          `${dupe.ledger === 'active' ? 'Duplicate follow' : 'Already captured'}: ${dupe.fileName}`,
-        )
-      }
+      if (dupe) return refreshCapturedThread(dupe, refresh)
     }
 
     // 1. Resolve Slack message details (this is the initial follow/check)
@@ -153,12 +167,7 @@ export default class SlackFollowMessageTask extends Command {
     if (!args.force) {
       const rootTs = data.threadTs ?? data.messageTs
       const owner = await findCapturedThread(link, { channelId: data.channelId, rootTs })
-      if (owner) {
-        output.log(`Thread already captured: ${owner.summary} (${owner.fileName})`)
-        return CommandResult.fail(
-          `${owner.ledger === 'active' ? 'Duplicate follow' : 'Already captured'}: ${owner.fileName}`,
-        )
-      }
+      if (owner) return refreshCapturedThread(owner, refresh)
     }
 
     // Default --when to message timestamp (converted to notebook day's timezone)
@@ -430,6 +439,94 @@ export async function findCapturedThread(
     if (match) return { fileName: match.fileName, path: match.path, summary: match.follow.summary, ledger }
   }
   return undefined
+}
+
+/**
+ * Bring a thread captured before up to date instead of copying it again:
+ * poll its follow where the record lives, then settle the record. With
+ * nothing new it declines exactly as before, so callers that treat a
+ * decline as "already in the notebook" (the Later queue, channel watches)
+ * keep working — and a thread with news now lands its replies for them too.
+ */
+export async function refreshCapturedThread(
+  hit: CapturedThread,
+  deps: {
+    tasks: CommandService
+    output: OutputHandler
+    signal?: AbortSignal
+    expires?: PlainDateTime
+    // Test seams: the clock, the Slack poll, and where active records live
+    now?: PlainDateTime
+    poll?: typeof pollSlackFollow
+    activeDir?: string
+  },
+): Promise<CommandResult<Result>> {
+  const { tasks, output, signal, expires } = deps
+  const decline = () =>
+    CommandResult.fail<Result>(`${hit.ledger === 'active' ? 'Duplicate follow' : 'Already captured'}: ${hit.fileName}`)
+
+  output.log(`Thread already captured: ${hit.summary} (${hit.fileName})`)
+  const follow = Follow.fromYaml(await readTextFile(hit.path))
+  if (followAnchors(follow).length === 0) return decline()
+
+  const now = deps.now ?? fetchNowSync().plainDateTime
+  let poll: SlackFollowPoll
+  try {
+    poll = await (deps.poll ?? pollSlackFollow)(
+      { follow, path: hit.path, fileName: hit.fileName },
+      { tasks, output, signal, now },
+    )
+  } catch (error) {
+    // A failed save is this thread's problem, not the batch's — the Later
+    // queue and channel watches record it and move on to the next link
+    return CommandResult.fail(
+      `Failed to update ${hit.fileName}: ${error instanceof Error ? error.message : String(error)}`,
+    )
+  }
+  if (!poll.ok) {
+    return CommandResult.fail(`Failed to export Slack message: ${poll.failures.map((f) => f.message).join('; ')}`)
+  }
+  if (poll.newReplies === 0) {
+    output.log(`  Nothing new since ${poll.follow.messages.at(-1)?.date ?? 'the capture'}`)
+    return decline()
+  }
+
+  const settled = await settleRefreshedFollow(hit, poll.follow, { now, expires, activeDir: deps.activeDir })
+  output.log(`  Saved ${poll.newReplies} new ${poll.newReplies === 1 ? 'reply' : 'replies'}`)
+  if (hit.ledger === 'archive') {
+    output.log(
+      settled.followed
+        ? '  Following again — the thread is live'
+        : `  Still quiet past ${Follow.DEFAULT_MAX_INACTIVE} — kept in the archive`,
+    )
+  }
+  return CommandResult.success({
+    file: settled.path,
+    followed: settled.followed,
+    slackFiles: poll.written.map((ref) => resolveTimeRef(ref)),
+  })
+}
+
+/**
+ * Where a refreshed follow's record belongs. An archived thread that has come
+ * back to life returns to the active ledger; its lapsed deadline no longer
+ * applies, so only a new --expires carries over. The move happens only after
+ * the poll saved the news: the heartbeat's check expires an active follow
+ * whose last saved message is past the inactivity window before polling it,
+ * so a record moved first could be archived again before its replies landed.
+ */
+async function settleRefreshedFollow(
+  hit: CapturedThread,
+  follow: Follow,
+  opts: { now: PlainDateTime; expires?: PlainDateTime; activeDir?: string },
+): Promise<{ path: string; followed: boolean }> {
+  if (hit.ledger === 'active') return { path: hit.path, followed: true }
+  const reopened = follow.withExpires(opts.expires).updateStatus('active')
+  if (reopened.isExpired(opts.now)) return { path: hit.path, followed: false }
+  const activePath = path.join(opts.activeDir ?? DIR_STATE_FOLLOW_SLACK_ACTIVE, `${hit.fileName}.yaml`)
+  await atomicWrite(activePath, reopened.toYaml())
+  await unlink(hit.path)
+  return { path: activePath, followed: true }
 }
 
 /**
