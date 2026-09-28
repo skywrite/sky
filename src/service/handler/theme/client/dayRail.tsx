@@ -6,6 +6,7 @@ import { chatState, chatTurnCount, dayChatRows } from './dayChats.ts'
 import { fileHref } from './explorer.tsx'
 import { filesHref, type Kept, moveIn, readListing } from './files.tsx'
 import { type ImportJob, importStateWord, type MeetingImport, useFileDrop } from './import.tsx'
+import { meetingHref } from './meetingPage.tsx'
 import { RailToggle } from './railToggle.tsx'
 import { refusalOf } from './settingsBlocks.tsx'
 
@@ -241,7 +242,7 @@ function MeetingRow({
             )
           ) : m.state === 'past' ? (
             m.record ? (
-              <a href={fileHref(m.record.path)}>{m.record.inline ? 'noted' : 'filed'}</a>
+              <a href={meetingHref(m.record.path) ?? fileHref(m.record.path)}>{m.record.inline ? 'noted' : 'filed'}</a>
             ) : (
               'no record'
             )

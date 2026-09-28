@@ -12,6 +12,7 @@ import {
 import type { Backlink } from '../../vocabulary/mod.ts'
 import { type ExplorerDoc, fileHref } from './explorer.tsx'
 import { LinkIcon } from './linkIcon.tsx'
+import { meetingHref } from './meetingPage.tsx'
 import { RenderedHtml } from './renderedHtml.tsx'
 
 const LABELS: Record<SearchKind, string> = {
@@ -320,7 +321,7 @@ function Preview({
               <p>Related records could not load.</p>
             ) : (
               current.backlinks?.map((link) => (
-                <a key={link.path} href={fileHref(link.path)} className="sky-search-related">
+                <a key={link.path} href={meetingHref(link.path) ?? fileHref(link.path)} className="sky-search-related">
                   <span>
                     {link.label}
                     <small>{link.date}</small>

@@ -37,6 +37,7 @@ import {
   type MeetingImport,
   useFileDrop,
 } from './import.tsx'
+import { meetingHref } from './meetingPage.tsx'
 import { useRail } from './rail.ts'
 import { RailToggle } from './railToggle.tsx'
 import { DayStreaks } from './streaks.tsx'
@@ -1334,7 +1335,7 @@ export function DayView({
                       {record.meetings.map((m) => (
                         <Fragment key={m.path}>
                           <DocLine when={m.when}>
-                            <a href={fileHref(m.path)}>{m.title}</a>
+                            <a href={meetingHref(m.path) ?? fileHref(m.path)}>{m.title}</a>
                             {m.who && <span className="sky-rec-sub">{m.who}</span>}
                           </DocLine>
                         </Fragment>

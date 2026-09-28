@@ -18,6 +18,7 @@ import {
   resolveMarkdownPreviewRequest,
   toNotebookRelativePath,
 } from '../markdown-preview/request.ts'
+import { type MeetingViewOptions, readMeetingView } from './meeting.ts'
 import { createRemoveRoutes, type ExplorerRemoveOptions } from './remove.ts'
 
 export interface ExplorerRoutesOptions {
@@ -27,6 +28,8 @@ export interface ExplorerRoutesOptions {
   markdownDirs: string[]
   /** Where a deleted file goes, and which day lets go of its line; without this the ⋯ menu's Delete has no route */
   remove?: ExplorerRemoveOptions
+  /** The notebook index and the people pages, for a meeting's page; without them /meeting is not served */
+  meeting?: MeetingViewOptions
 }
 
 export interface ExplorerEntry {
@@ -167,6 +170,17 @@ export function createExplorerRoutes(options: ExplorerRoutesOptions): Hono {
     if (!result.ok) return c.json({ message: result.message }, result.status)
     return c.json(result.doc)
   })
+
+  // GET /meeting?path=a/b.md → the meeting's page: its people, its thread, what it is filed under
+  if (options.meeting) {
+    const meeting = options.meeting
+    app.get('/meeting', async (c) => {
+      const query = { path: c.req.query('path'), day: c.req.query('day'), slug: c.req.query('slug') }
+      const result = await readMeetingView(query, { ...options, ...meeting })
+      if (!result.ok) return c.json({ message: result.message }, result.status)
+      return c.json(result.view)
+    })
+  }
 
   // POST /remove, POST /undo → Delete from the ⋯ menu, and its Undo
   if (options.remove) app.route('/', createRemoveRoutes(options, options.remove))

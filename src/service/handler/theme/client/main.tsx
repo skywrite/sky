@@ -16,6 +16,7 @@ import { useDocumentNotices } from './documentImport.tsx'
 import { DocView, explorerFileOf, fileHref, Tree } from './explorer.tsx'
 import { type Kept, undoKeep } from './files.tsx'
 import { ImportDialog, ImportMain, useFileDrop, useImportQueue, useImports } from './import.tsx'
+import { MeetingMain, meetingRouteOf } from './meetingPage.tsx'
 import { OutboxMain } from './outbox.tsx'
 import { outboxItemOf, outboxLegacyItemPath } from './outboxRoutes.ts'
 import { PeopleMain, peopleRouteOf } from './people.tsx'
@@ -90,6 +91,8 @@ function Canvas() {
   const dayYmd = path.match(/^\/(\d{4}-\d{2}-\d{2})$/)?.[1] ?? null
   // /<ymd>/files is the day's files, /<ymd>/files/<folder> a folder inside them.
   const filesRoute = filesRouteOf(path)
+  // /<ymd>/meetings/<slug> is a meeting's page, under its day.
+  const meetingRoute = meetingRouteOf(path)
   const isAudition = path === '/voice/audition'
   const settingsSection = settingsSectionOf(path)
   const isSettings = settingsSection !== null
@@ -178,9 +181,10 @@ function Canvas() {
     !isWorkstreams &&
     !isWeek &&
     filesRoute === null &&
+    meetingRoute === null &&
     explorerFile === null
-  const showDateNav = onDayPage || isWeek || isStreaks || filesRoute !== null
-  const activeDayYmd = filesRoute?.ymd ?? dayYmd
+  const showDateNav = onDayPage || isWeek || isStreaks || filesRoute !== null || meetingRoute !== null
+  const activeDayYmd = filesRoute?.ymd ?? meetingRoute?.ymd ?? dayYmd
   const dayImports = importRows.filter((job) =>
     job.readback.source === 'document' || job.readback.source === 'imessage-audio'
       ? (job.fields?.when ?? job.suggestedWhen).slice(0, 10) === (activeDayYmd ?? day?.today.ymd)
@@ -247,7 +251,12 @@ function Canvas() {
     const url = new URL(anchor.href)
     if (url.origin !== location.origin) return
     if (url.hash && url.pathname === location.pathname && url.search === location.search) return
-    if (!url.pathname.startsWith('/explorer/') && filesRouteOf(url.pathname) === null) return
+    if (
+      !url.pathname.startsWith('/explorer/') &&
+      filesRouteOf(url.pathname) === null &&
+      meetingRouteOf(url.pathname) === null
+    )
+      return
     event.preventDefault()
     navigate(url.pathname)
   }
@@ -463,7 +472,14 @@ function Canvas() {
 
       <SearchWorkspace route={path + search} onNavigate={navigate}>
         {explorerFile !== null ? (
-          <DocView file={explorerFile} go={navigate} onImportConversation={queue.takeConversation} />
+          <DocView
+            file={explorerFile}
+            go={navigate}
+            edit={search === '?edit'}
+            onImportConversation={queue.takeConversation}
+          />
+        ) : meetingRoute ? (
+          <MeetingMain ymd={meetingRoute.ymd} slug={meetingRoute.slug} go={navigate} />
         ) : filesRoute ? (
           <DayFilesMain
             ymd={filesRoute.ymd}

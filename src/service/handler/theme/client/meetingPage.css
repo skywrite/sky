@@ -1,0 +1,130 @@
+/*
+ * The meeting page: the person page's header and column, over the
+ * explorer's document. The header borrows the profile header's classes;
+ * the column restates the profile column's labels and values inside the
+ * rail's frame, since the rail's own sections are for editing front matter.
+ */
+.sky-doc > .sky-meeting-header {
+  margin-bottom: 36px;
+}
+.sky-meeting-header h1 {
+  font-size: 38px;
+  line-height: 1.12;
+  margin: 0;
+  letter-spacing: -0.01em;
+}
+.sky-meeting-header p {
+  font-size: 17px;
+}
+
+.sky-meeting-rail {
+  font-size: 15px;
+  line-height: 1.45;
+  padding: 24px 22px 32px 26px;
+}
+.sky-meeting-rail h2 {
+  font-size: 17px;
+  margin: 0 0 22px;
+}
+.sky-meeting-rail h3,
+.sky-meeting-rail dt {
+  font-size: 13px;
+  color: var(--sky-dim);
+  font-weight: 500;
+  margin: 0 0 5px;
+}
+.sky-meeting-rail dl {
+  margin: 0;
+}
+.sky-meeting-rail dd {
+  margin: 0 0 22px;
+  overflow-wrap: anywhere;
+}
+.sky-meeting-rail dd > span,
+.sky-meeting-rail dd > a {
+  display: block;
+  margin-bottom: 5px;
+}
+.sky-meeting-rail dd small,
+.sky-meeting-person small {
+  display: block;
+  font-size: 13px;
+  color: var(--sky-dim);
+}
+.sky-meeting-person {
+  margin-bottom: 10px;
+}
+.sky-meeting-person:last-child {
+  margin-bottom: 0;
+}
+.sky-meeting-rail section {
+  margin-bottom: 24px;
+}
+.sky-meeting-rail ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.sky-meeting-rail li {
+  margin: 5px 0;
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+}
+.sky-meeting-date {
+  color: var(--sky-dim);
+  width: 48px;
+  flex: none;
+  font-size: 13px;
+}
+.sky-meeting-all {
+  display: block;
+  margin-top: 8px;
+  font-size: 13px;
+}
+.sky-meeting-note {
+  font-size: 13px;
+  color: var(--sky-dim);
+  margin: 0 0 22px;
+}
+/* An extension's card in the column reads like the column's own sections. */
+.sky-meeting-rail .sky-ext-card h3 {
+  font-size: 13px;
+  color: var(--sky-dim);
+  font-weight: 500;
+  margin: 0 0 5px;
+}
+.sky-meeting-rail .sky-ext-card-action {
+  display: block;
+  margin-top: 6px;
+  padding-left: 0;
+  padding-right: 0;
+  font-size: 14px;
+}
+.sky-meeting-rail .sky-ext-card-note {
+  font-size: 13px;
+  color: var(--sky-dim);
+  margin: 6px 0 0;
+}
+.sky-meeting-rail .sky-ext-card-warn {
+  font-size: 13px;
+  color: var(--sky-action-danger);
+  margin: 6px 0 0;
+}
+
+/* Each person stacks: name, then role and organization, then which meeting this is. */
+.sky-meeting-rail .sky-meeting-person {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  align-items: flex-start;
+}
+/* Front-matter rows the column reuses (files, tags) show their values only; the column's heading is the label. */
+.sky-meeting-rail .sky-prop {
+  display: block;
+  padding: 0;
+  border-bottom: 0;
+}
+.sky-meeting-rail .sky-prop-key {
+  display: none;
+}

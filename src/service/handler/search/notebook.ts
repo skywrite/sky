@@ -3,6 +3,7 @@ import type Document from '#shared/models/Markdown/Document/mod.ts'
 import type MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
 import parseTimePath from '#shared/nbfs/parseTimePath.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
+import { meetingHref } from '../explorer/meeting.ts'
 import { explorerHref } from '../explorer/mod.ts'
 import { docDate, docTitle } from '../home/docMeta.ts'
 import { isPathWithinRoot, isPathWithinRoots } from '../markdown-preview/request.ts'
@@ -141,7 +142,12 @@ function entriesOf(store: MarkdownStore, base: string): Entry[] {
         absolute,
         result: {
           relativePath,
-          href: kind === 'day' && date ? `/${date}` : place ? placeHref(place) : explorerHref(relativePath),
+          href:
+            kind === 'day' && date
+              ? `/${date}`
+              : place
+                ? placeHref(place)
+                : (meetingHref(relativePath) ?? explorerHref(relativePath)),
           title,
           kind,
           date,

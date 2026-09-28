@@ -695,6 +695,12 @@ export function createHttpApp(options: HttpHandlerOptions): Hono {
     createExplorerRoutes({
       markdownBaseDir,
       markdownDirs,
+      // A meeting's page reads the notebook index and the people pages' routes
+      meeting: {
+        timeDir: chat?.timeDir ?? path.join(markdownBaseDir, 'time'),
+        store: () => markdownStore,
+        profiles: () => profiles,
+      },
       // Delete from the ⋯ menu: the Trash, and the day whose line pointed at the file
       remove: {
         userDataDir,
@@ -721,6 +727,10 @@ export function createHttpApp(options: HttpHandlerOptions): Hono {
     return c.html(renderAppHtml('sky'))
   })
   app.get('/:ymd{\\d{4}-\\d{2}-\\d{2}}/files/*', (c) => {
+    return c.html(renderAppHtml('sky'))
+  })
+  // A meeting's page — /2026-08-27/meetings/<slug>. Its data comes from /explorer/_api/meeting?day=&slug=.
+  app.get('/:ymd{\\d{4}-\\d{2}-\\d{2}}/meetings/:slug', (c) => {
     return c.html(renderAppHtml('sky'))
   })
 

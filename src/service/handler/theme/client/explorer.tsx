@@ -371,7 +371,7 @@ function clampScale(value: number): number {
   return Math.min(SCALE_MAX, Math.max(SCALE_MIN, Math.round(value * 10) / 10))
 }
 
-function useDocScale(): [number, (next: number) => void] {
+export function useDocScale(): [number, (next: number) => void] {
   const [scale, setScale] = useState(() => {
     try {
       const stored = Number.parseFloat(localStorage.getItem(SCALE_KEY) ?? '1')
@@ -510,7 +510,7 @@ function Editor({
  * The HTML goes in by hand, once per change: React re-applies `dangerouslySetInnerHTML` on every
  * render of the page, which would strip the coloring again.
  */
-function RenderedBody({ html }: { html: string }) {
+export function RenderedBody({ html }: { html: string }) {
   const ref = useRef<HTMLDivElement>(null)
   useLayoutEffect(() => {
     const root = ref.current
@@ -549,14 +549,17 @@ function DirListing({ entries }: { entries: ExplorerEntry[] }) {
 export function DocView({
   file,
   go,
+  edit = false,
   onImportConversation,
 }: {
   file: string
   go: (to: string) => void
+  /** Open in the editor rather than to read — `/explorer/<path>?edit`, the meeting page's Edit */
+  edit?: boolean
   onImportConversation?: (files: File[], conversation: string, day?: string) => void
 }) {
   // Editing is per file — turning the page ends it.
-  const [editingFile, setEditingFile] = useState<string | null>(null)
+  const [editingFile, setEditingFile] = useState<string | null>(edit ? file : null)
   const editing = file !== '' && editingFile === file
   const { doc, listing, missing } = useDoc(file, editing)
   const canToggleEditing = file !== '' && !missing && (editing || doc?.path === file)

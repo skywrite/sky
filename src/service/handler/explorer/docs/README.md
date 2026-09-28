@@ -30,6 +30,19 @@ files it holds, one row per entry; `/explorer` itself lists the roots.
   editor mount. The column resolves its path as a file first, then as
   a directory, and re-reads whichever it shows every few seconds, so a
   save or a new capture from another session lands in place.
+- `meeting.ts` — the view behind a meeting's page, `/<day>/meetings/<slug>`.
+  `GET /explorer/_api/meeting?day=&slug=` (or `?path=`) answers what the
+  file's frontmatter says, resolved: who as profiles with their route,
+  title, organization and which meeting this is; when, how long, on what;
+  what it is filed under; the meetings before and the first after, chosen
+  by what they share with this one, each linked to its own page; tags.
+  `meetingHref(path)` is the page's address, used by search results. See
+  `2026-09-27-a-meeting-has-a-page.md`.
+- `theme/client/meetingPage.tsx` — that page: the person page's header
+  above the document, its column beside it, the document's own title line
+  and its Time/Date and Attendees sections not drawn twice. The explorer
+  is not involved: `/explorer/<path>` shows the same file as written, and
+  the page's Edit opens it there with the editor on (`?edit`).
 - `theme/client/frontmatter/` — the identity line under the title and
   the rail beside the document: tags, links, what links here, files,
   the outline, the raw YAML behind a switch. The rail's Files section
