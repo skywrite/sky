@@ -43,6 +43,7 @@ import {
   senderSummary,
 } from './_lib/extractFromImage.ts'
 import { extractMessageFromText } from './_lib/extractFromText.ts'
+import { recordFiledClips } from './_lib/filedAudioClips.ts'
 import { findScreenshotsOnDesktop } from './_lib/findScreenshotOnDesktop.ts'
 import { parseCorrections } from './_lib/parseCorrections.ts'
 
@@ -181,14 +182,15 @@ export default class MessageNewTask extends Command {
     let body: string | undefined
     let attachmentFiles: string[] = []
     let audioRel: string[] | undefined
-    let audioClips: string[] | undefined
+    /** Fingerprints of the dropped clips, recorded in state once the conversation is filed */
+    let clipHashes: string[] | undefined
     /** The pipeline's run record, forgotten once the message is filed */
     let runKey: string | null = null
 
     const audioConversation = args.fromAudioTurns !== undefined
     if (audioConversation) {
       const files = args.fromAudioTurns!
-      audioClips = await Promise.all(files.map(sha256Of))
+      clipHashes = await Promise.all(files.map(sha256Of))
       let speakers = args.audioSpeakers?.map((name) => name.trim())
       if (!speakers && files.length === 1 && from) speakers = [from.trim()]
       if (!speakers && prompt.interactive) {
@@ -609,7 +611,6 @@ export default class MessageNewTask extends Command {
       summary,
       attachments,
       ...(audioRel ? { rel: audioRel } : {}),
-      ...(audioClips ? { audioClips } : {}),
     })
     let data = message.toMarkdown()
     if (body) {
@@ -618,6 +619,7 @@ export default class MessageNewTask extends Command {
 
     const filePath = await ddfw.write(fileName, data.trimStart())
     const fullPath = path.join(ddfw.fullDir, filePath)
+    if (clipHashes) await recordFiledClips(config, path.relative(config.DIR_BASE, fullPath), clipHashes)
 
     const commEntry = `${who} ${medium}`.trim() // we trim in case there's no 'who'
 

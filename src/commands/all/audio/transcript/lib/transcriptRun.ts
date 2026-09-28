@@ -12,6 +12,8 @@
  * the names review, the write-up and its extracted fields, the filed
  * document. Whoever started the run deletes the record when it finishes —
  * nothing outlives a completed run — and `--fresh` deletes it up front.
+ * Which conversations an audio clip was filed into is the one fact kept
+ * longer, as a record beside the runs: see message/_lib/filedAudioClips.ts.
  *
  * A record untouched for STALE_DAYS is deleted on open rather than picked
  * up: the prompts and the models move, and a month-old checkpoint is not

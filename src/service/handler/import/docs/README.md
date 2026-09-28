@@ -1,6 +1,6 @@
 ---
 created: 2026-09-01
-updated: 2026-09-27
+updated: 2026-09-28
 ---
 
 # Meeting from a file — the import
@@ -101,13 +101,14 @@ comes next. An addition inherits the destination's time and recipient.
 
 `message:append` transcribes only new clips, then appends the named turns to
 the existing file without adding another day entry. The selected path persists
-in the import's `appendTo` field across retries. Each saved clip's content
-fingerprint lives in `audioClips` frontmatter so duplicate drops and retries
-are idempotent even after the transcript checkpoints have been removed. New
-conversations also retain these fingerprints; older conversations cannot
-identify recordings imported before this metadata existed. Original audio
-retention remains unchanged. The normal properties UI hides the fingerprints;
-they remain available in raw YAML.
+in the import's `appendTo` field across retries. Which conversations a clip
+has a turn in is recorded in Sky's state directory, as
+`state/transcript/filed/<sha256>.json`, keyed like the transcript run by the
+clip's bytes, so duplicate drops and retries add a clip once even after the
+run's checkpoints are gone. The conversation file carries no fingerprint: it
+is the person's document (see
+[2026-09-28-fingerprints-leave-the-notebook.md](2026-09-28-fingerprints-leave-the-notebook.md)).
+Undo forgets the turns it removed. Original audio retention remains unchanged.
 
 The writer re-reads the current document after transcription, preserves its
 body verbatim, and merges participants and links. It takes the same short

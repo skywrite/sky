@@ -32,8 +32,7 @@ export function useFrontmatter(
 ): FrontmatterState {
   const body = text ?? ''
   const parsed = useMemo(() => readFrontmatter(body), [body])
-  // Duplicate-detection fingerprints stay in the raw YAML, outside the person's property controls.
-  const rows = useMemo(() => parsed.rows.filter((row) => row.key !== 'audioClips'), [parsed.rows])
+  const rows = parsed.rows
   const [resolved, setResolved] = useState<Record<string, Resolved | null>>({})
   const [focusKey, setFocusKey] = useState<string | null>(null)
   const names = useMemo(() => {

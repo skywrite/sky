@@ -10,6 +10,7 @@ import { hash } from '#lib/outbox/files.ts'
 import { Document } from '#shared/models/Markdown/mod.ts'
 import { assert, test } from '#test'
 import { ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
+import { recordFiledClips } from './_lib/filedAudioClips.ts'
 import MessageAppendTask from './append.ts'
 
 test('appending transcribes only new clips and safely retries a completed addition', async () => {
@@ -19,7 +20,8 @@ test('appending transcribes only new clips and safely retries a completed additi
     ...config,
     DIR_BASE: root,
     DIR_TIME: path.join(root, 'time'),
-    DIR_USER_DATA: path.join(root, 'state'),
+    DIR_USER_DATA: path.join(root, 'data'),
+    DIR_STATE: path.join(root, 'data', 'state'),
   }
   const now = new ZonedDateTime('2026-01-27 10:00', 'UTC')
   const context = CommandContext.test(paths, { notebookNow: now, systemNow: now })
@@ -35,9 +37,10 @@ test('appending transcribes only new clips and safely retries a completed additi
     await mkdir(path.dirname(path.join(root, file)), { recursive: true })
     await writeFile(
       path.join(root, file),
-      `---\nfrom: Jane Doe\nto: Me\nwhen: 2026-01-27 09:30\nmedium: iMessage Audio\nsummary: ${summary}\naudioClips:\n  - ${hash('already imported')}\n---\n\n**Jane Doe:**\n\nCan we review it?\n`,
+      `---\nfrom: Jane Doe\nto: Me\nwhen: 2026-01-27 09:30\nmedium: iMessage Audio\nsummary: ${summary}\n---\n\n**Jane Doe:**\n\nCan we review it?\n`,
     )
     const files = ['old.caf', 'reply.caf', 'renamed.caf'].map((name) => path.join(root, name))
+    await recordFiledClips(paths, file, [hash('already imported')])
     await Promise.all(files.map((file, index) => writeFile(file, index === 0 ? 'already imported' : 'new recording')))
     const input = {
       context,
@@ -50,8 +53,10 @@ test('appending transcribes only new clips and safely retries a completed additi
     const content = await readFile(path.join(root, file), 'utf8')
     const second = await task.run(input)
     assert({
-      given: 'a known clip plus two filenames containing the same new recording, then the same import retried',
-      should: 'transcribe the new recording once and retain the conversation and its original summary',
+      given:
+        'a clip recorded as filed plus two filenames containing the same new recording, then the same import retried',
+      should:
+        'transcribe the new recording once, keep the fingerprints out of the file, and retain the original summary',
       actual: [
         first.ok,
         second.ok,
@@ -59,6 +64,7 @@ test('appending transcribes only new clips and safely retries a completed additi
         (await readFile(path.join(root, file), 'utf8')) === content,
         content.split('Yes, on Friday.').length - 1,
         content.includes('Can we review it?'),
+        content.includes('audioClips'),
         Document.fromMarkdown(content).yaml.summary,
         summarize.mock.calls.length,
       ],
@@ -69,6 +75,7 @@ test('appending transcribes only new clips and safely retries a completed additi
         true,
         1,
         true,
+        false,
         summary,
         0,
       ],

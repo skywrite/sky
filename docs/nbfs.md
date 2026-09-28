@@ -1,6 +1,6 @@
 ---
 created: 2026-07-28
-updated: 2026-09-23
+updated: 2026-09-28
 ---
 
 # Notebook time and the notebook filesystem
@@ -110,6 +110,18 @@ The notebook is meant to be a clean, diffable git repository at human scale. Bin
 would make every clone drag years of screenshots. The split is the reason the notebook
 stays cheap to version. `dayAttachmentsDir()` builds these paths; `sky day:attachments:check`
 finds attachments nothing references anymore.
+
+## Frontmatter belongs to the person
+
+A notebook file is the person's document: every frontmatter key is one they could have
+typed, and references are names (`rel`, `who`, `orgs`), never ids or paths that repeat a
+name. Bookkeeping that only a program reads — content fingerprints, run state, which file
+a name resolved to — lives under `DIR_STATE` (`<userDataDir>/state`), keyed so the program
+finds it again without the file carrying it. A key the properties panel would have to hide
+is the tell. Twice in September 2026 a writer put such a key in a file (`org_refs` on a
+person, `audioClips` on an audio conversation) and both were taken back out; see
+[fingerprints leaving the notebook](../src/service/handler/import/docs/2026-09-28-fingerprints-leave-the-notebook.md)
+and the automations note in `src/_shared-ts/config.ts`.
 
 ## Notebook time
 

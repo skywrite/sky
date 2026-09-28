@@ -8,7 +8,8 @@ import {
   type InferParams,
 } from '#commands/mod.ts'
 import { formatAudioTurns } from './_lib/audioConversation.ts'
-import { appendAudioConversation, audioClipHashes, readAudioConversation } from './_lib/savedAudioConversation.ts'
+import { filedClips } from './_lib/filedAudioClips.ts'
+import { appendAudioConversation, readAudioConversation } from './_lib/savedAudioConversation.ts'
 
 const params = {
   file: Flag.string('Notebook-relative path of the iMessage Audio conversation', { required: true }),
@@ -34,8 +35,9 @@ export default class MessageAppendTask extends Command {
     )
       return CommandResult.fail("Enter who's speaking in each audio file.")
     const target = await readAudioConversation(config, args.file)
-    const known = new Set(audioClipHashes(target.doc))
     const hashes = await Promise.all(args.fromAudioTurns.map(sha256Of))
+    // Clips already in the conversation are not transcribed again; the writer checks once more under its lock.
+    const known = await filedClips(config, target.conversation.path, hashes)
     const turns = args.fromAudioTurns
       .map((file, index) => ({ file, hash: hashes[index], speaker: speakers[index] }))
       .filter((turn) => {

@@ -30,7 +30,11 @@ test(
     const starts: StartArgs[] = []
     let notebook = ''
     const receipts = new Map<string, AudioAppendUndo>()
-    const paths = () => ({ DIR_BASE: notebook, DIR_TIME: path.join(notebook, 'time') })
+    const paths = () => ({
+      DIR_BASE: notebook,
+      DIR_TIME: path.join(notebook, 'time'),
+      DIR_STATE: path.join(notebook, 'state'),
+    })
     await runWysiwygE2e(
       t,
       {

@@ -4,9 +4,9 @@ import { hash } from '#lib/outbox/files.ts'
 import { readMarkdownContent, saveMarkdownContent } from '#service/handler/markdown-preview/content.ts'
 import MessageDocument from '#shared/models/Message/mod.ts'
 import { assert, test } from '#test'
+import { filedClips } from './filedAudioClips.ts'
 import {
   appendAudioConversation,
-  audioClipHashes,
   listAudioConversations,
   readAudioConversation,
   undoAudioAppend,
@@ -23,7 +23,7 @@ const addition = (words: string, speaker = 'Me') => ({
 
 async function world() {
   const root = await mkdtemp('/tmp/sky-audio-append-')
-  const paths = { DIR_BASE: root, DIR_TIME: path.join(root, 'time') }
+  const paths = { DIR_BASE: root, DIR_TIME: path.join(root, 'time'), DIR_STATE: path.join(root, 'state') }
   const file = path.join(root, RELATIVE)
   await mkdir(path.dirname(file), { recursive: true })
   await writeFile(file, ORIGINAL)
@@ -46,7 +46,8 @@ test('audio additions preserve the current body, references and metadata, and ca
     const doc = MessageDocument.fromMarkdown(content)
     assert({
       given: 'an existing conversation edited while the new audio was being transcribed',
-      should: 'preserve the edited body and append one named turn with merged links and participants',
+      should:
+        'preserve the edited body, append one named turn with merged links and participants, and record the clip in state',
       actual: [
         result.added,
         result.filePath === w.file,
@@ -58,7 +59,8 @@ test('audio additions preserve the current body, references and metadata, and ca
         [...doc.rel],
         content.includes(edited.slice(edited.indexOf('\n---\n') + 5)),
         doc.markdown.endsWith('**Joe Smith:**\n\nI will review it.\n'),
-        audioClipHashes(doc),
+        'audioClips' in doc.yaml,
+        [...(await filedClips(w.paths, RELATIVE, [hash('I will review it.')]))],
       ],
       expected: [
         1,
@@ -71,15 +73,16 @@ test('audio additions preserve the current body, references and metadata, and ca
         ['projects/Atlas', 'projects/Widget-V2'],
         true,
         true,
+        false,
         [hash('I will review it.')],
       ],
     })
     await undoAudioAppend(w.paths, RELATIVE, result.undo!)
     assert({
       given: 'an unchanged audio addition',
-      should: 'undo to the exact prior file including comments and formatting',
-      actual: await readFile(w.file, 'utf8'),
-      expected: edited,
+      should: 'undo to the exact prior file including comments and formatting, and forget the clip',
+      actual: [await readFile(w.file, 'utf8'), (await filedClips(w.paths, RELATIVE, [hash('I will review it.')])).size],
+      expected: [edited, 0],
     })
   } finally {
     await w.close()

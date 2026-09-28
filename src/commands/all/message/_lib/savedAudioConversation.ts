@@ -6,6 +6,7 @@ import { atomicWrite, missing, notebookFile } from '#lib/outbox/files.ts'
 import MessageDocument from '#shared/models/Message/mod.ts'
 import dayDir from '#shared/nbfs/dayDir.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
+import { type FiledClipPaths, filedClips, forgetFiledClips, recordFiledClips } from './filedAudioClips.ts'
 
 export interface AudioConversation {
   path: string
@@ -20,17 +21,15 @@ export interface AudioConversationPaths {
   DIR_TIME: string
 }
 
+/** Writing a turn also records the clip in state; reading a conversation needs only the notebook */
+export type AudioAppendPaths = AudioConversationPaths & FiledClipPaths
+
 function participants(doc: MessageDocument): string[] {
   const names = [doc.from, doc.to].flatMap((value) => (typeof value === 'string' ? value.split(',') : []))
   const voices = [...doc.markdown.matchAll(/^\*\*(.+):\*\*[ \t]*$/gm)].map((match) =>
     match[1].replace(/\\([\\`*_[\]<>])/g, '$1'),
   )
   return [...new Set([...names, ...voices].map((name) => name.trim()).filter(Boolean))]
-}
-
-export function audioClipHashes(doc: MessageDocument): string[] {
-  const hashes = doc.yaml.audioClips
-  return Array.isArray(hashes) ? hashes.filter((hash): hash is string => typeof hash === 'string') : []
 }
 
 export async function readAudioConversation(paths: AudioConversationPaths, relative: string) {
@@ -97,11 +96,13 @@ export interface AudioAddition {
 export interface AudioAppendUndo {
   before: string
   after: string
+  /** The clips the addition filed, so undo can forget them */
+  hashes: string[]
 }
 
 /** Re-read after transcription: preserve edits and serialize simultaneous additions with browser saves. */
 export async function appendAudioConversation(
-  paths: AudioConversationPaths,
+  paths: AudioAppendPaths,
   relative: string,
   additions: AudioAddition[],
   rel: string[] = [],
@@ -111,10 +112,15 @@ export async function appendAudioConversation(
   return withMarkdownWrite(target.file, async () => {
     signal?.throwIfAborted()
     const current = await readAudioConversation(paths, relative)
-    const hashes = new Set(audioClipHashes(current.doc))
+    const conversation = current.conversation.path
+    const known = await filedClips(
+      paths,
+      conversation,
+      additions.map((addition) => addition.hash),
+    )
     const fresh = additions.filter((addition) => {
-      if (hashes.has(addition.hash)) return false
-      hashes.add(addition.hash)
+      if (known.has(addition.hash)) return false
+      known.add(addition.hash)
       return true
     })
     if (!fresh.length) return { filePath: current.file, added: 0 }
@@ -123,8 +129,6 @@ export async function appendAudioConversation(
     if (!header) throw new Error('The conversation needs valid frontmatter.')
     const yaml = parseDocument(header[2])
     if (yaml.errors.length) throw new Error('The conversation needs valid frontmatter.')
-    // These are content fingerprints for duplicate detection, not user-content IDs.
-    yaml.set('audioClips', [...hashes])
     const others = [...new Set([...current.conversation.participants, ...fresh.map((turn) => turn.speaker)])].filter(
       (name) => name !== current.doc.from,
     )
@@ -135,20 +139,20 @@ export async function appendAudioConversation(
     const content = `${header[1]}${yaml.toString().trimEnd()}${header[3]}${body}${separator}${fresh.map((turn) => turn.body).join('\n\n')}\n`
     signal?.throwIfAborted()
     await atomicWrite(current.file, content)
-    return { filePath: current.file, added: fresh.length, undo: { before: current.content, after: content } }
+    // Recorded after the write: a clip counts as filed only once its turn is in the file.
+    const hashes = fresh.map((turn) => turn.hash)
+    await recordFiledClips(paths, conversation, hashes)
+    return { filePath: current.file, added: fresh.length, undo: { before: current.content, after: content, hashes } }
   })
 }
 
-export async function undoAudioAppend(
-  paths: AudioConversationPaths,
-  relative: string,
-  undo: AudioAppendUndo,
-): Promise<void> {
+export async function undoAudioAppend(paths: AudioAppendPaths, relative: string, undo: AudioAppendUndo): Promise<void> {
   const target = await readAudioConversation(paths, relative)
   await withMarkdownWrite(target.file, async () => {
     const current = await readAudioConversation(paths, relative)
     if (current.content !== undo.after)
       throw new Error('The conversation has changed since the audio was added. Open it to remove the added messages.')
     await atomicWrite(current.file, undo.before)
+    await forgetFiledClips(paths, current.conversation.path, undo.hashes)
   })
 }
