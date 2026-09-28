@@ -80,3 +80,44 @@ test('slack:new recaptures in place and retains new messages when an attachment 
     await rm(temp, { recursive: true, force: true })
   }
 })
+
+test('slack:new creates the day file when the message lands on a day that has none', async () => {
+  const temp = await mkdtemp(path.join(tmpdir(), 'slack-new-test-'))
+  try {
+    const result = await runCommand(
+      'bun',
+      [
+        '--eval',
+        `
+      import { strict as check } from 'node:assert'
+      import { readFile } from 'node:fs/promises'
+      import * as path from 'node:path'
+      import Task from '#commands/all/slack/new.ts'
+      import { DIR_TIME } from '#config'
+      import dayFile from '#shared/nbfs/dayFile.ts'
+      import { readDay } from '#shared/nbfs/mod.ts'
+      import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
+      const when = new PlainDateTime('2026-04-11 00:15')
+      const message = { channelId: 'C0ATLAS', ts: '1770000000.000001', timeLabel: when.toString(), userName: 'Jane Doe', text: 'After midnight.' }
+      const created = await new Task().run({
+        args: { from: 'Jane Doe', to: 'John Smith', summary: 'Atlas', when, link: 'https://atlas.slack.com/archives/C0ATLAS/p1770000000000001', slackMessages: JSON.stringify([message]), noEditor: true, noAutoTag: true, noAutoRel: true },
+        rawArgs: { when: when.toString() }, context: { output: { log() {} } }, tasks: { run() { throw new Error('Unexpected task') } },
+      })
+      check.equal(created.ok, true, created.message)
+      check.equal((await readDay(when.plainDate)).started, undefined)
+      const daily = await readFile(path.join(DIR_TIME, dayFile(when.plainDate)), 'utf8')
+      check.equal(daily.split(created.data.filePath).length - 1, 1)
+    `,
+      ],
+      { env: { SKY_DIR: path.join(temp, 'notebook'), SKY_DATA_DIR: path.join(temp, 'user-data') } },
+    )
+    assert({
+      given: 'a capture onto a day that has no day file',
+      should: 'create the day, unstarted, with the message linked',
+      actual: result.success || result.stderr,
+      expected: true,
+    })
+  } finally {
+    await rm(temp, { recursive: true, force: true })
+  }
+})

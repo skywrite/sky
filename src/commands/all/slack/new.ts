@@ -5,7 +5,7 @@ import { validateAnyArgFlagExists } from '#commands/cli/mod.ts'
 import { ArgOrFlag, category, Command, CommandResult, Flag, whenNBTime } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { DIR_TIME } from '#config'
-import { DayDirFileWriter, messageFileName } from '#lib/nbfs/mod.ts'
+import { DayDirFileWriter, ensureDay, messageFileName } from '#lib/nbfs/mod.ts'
 import { autoRelMessage } from '#lib/notebook/enrich/autoRel.ts'
 import { autoTagMessage } from '#lib/notebook/enrich/autoTag.ts'
 import slugify from '#lib/string/slugify.ts'
@@ -100,6 +100,9 @@ export default class SlackNewTask extends Command {
 
     // Build the key for matching existing items
     const baseKey = `${when.time} > ${who} Slack`
+
+    // The message may land on a day that has no day file yet
+    await ensureDay(whenDate)
 
     // A key hit only means "same message" when the links agree — distinct
     // same-minute messages (rapid DMs) must not replace each other. Walk
