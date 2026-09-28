@@ -65,6 +65,8 @@ export type FetchUnsavedOptions = {
   noAutoTag?: boolean
   /** Skip the rel proposal on first capture */
   noAutoRel?: boolean
+  followDir?: string
+  followArchiveDir?: string
 }
 
 type Output = { log: (msg: string) => void }
@@ -91,7 +93,13 @@ export async function fetchUnsavedThreads(
   // the listing itself starved: captured threads keep the label, so the
   // newest-first listing tops out with saved threads and an unsaved thread
   // deeper than the limit was unreachable on every run.
-  const { threads, labelId } = opts.inbox ?? (await getInboxThreads(client, label, { limit: LISTING_DEPTH }))
+  const { threads, labelId } =
+    opts.inbox ??
+    (await getInboxThreads(client, label, {
+      limit: LISTING_DEPTH,
+      followDir: opts.followDir,
+      followArchiveDir: opts.followArchiveDir,
+    }))
 
   // Filter to target threads
   let unsaved = threads.filter((t) => !t.saved)

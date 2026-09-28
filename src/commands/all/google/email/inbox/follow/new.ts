@@ -3,10 +3,13 @@ import { Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { AccountResolutionError, modifyThread, threadIdFromDecimal } from '#lib/google/mod.ts'
 import type { GoogleClient } from '#lib/google/mod.ts'
+import { writeTextFile } from '#shared/fs/mod.ts'
+import EmailFollowRegistry from '#shared/models/Follow/EmailFollowRegistry.ts'
 import { fetchNowSync } from '#shared/nbfs/mod.ts'
-import { PlainDateTime as PDT } from '#universal/dates/nbdt/mod.ts'
+import { PlainDate, PlainDateTime as PDT } from '#universal/dates/nbdt/mod.ts'
 import type { FetchedThread } from '../../lib/fetchUnsavedThreads.ts'
-import { persistNewFollow, planThreadFollow } from '../../lib/followLifecycle.ts'
+import { fetchUnsavedThreads } from '../../lib/fetchUnsavedThreads.ts'
+import { continueFollow, persistNewFollow, planThreadFollow, resumeLabeledFollows } from '../../lib/followLifecycle.ts'
 import { getInboxThreads, LISTING_DEPTH } from '../../lib/getInboxThreads.ts'
 import type { InboxThread } from '../../lib/getInboxThreads.ts'
 import { resolveGmailClient } from '../../lib/resolveGmailClient.ts'
@@ -23,6 +26,7 @@ const params = {
 
 type Params = InferParams<typeof params>
 type Result = { created: number; bornExpired: number; follows: string[] }
+type FollowDirs = { activeDir: string; archiveDir: string }
 
 declare module '#commands/lib/core/CommandTypesRegistry.ts' {
   interface CommandTypesRegistry {
@@ -50,6 +54,10 @@ export default class GoogleEmailInboxFollowNewTask extends Command {
   async run({ args, context, tasks }: CommandArgs<Params>): Promise<CommandResult<Result>> {
     const { output, secrets } = context
     const { account, label, limit, when } = args
+    const dirs = {
+      activeDir: context.config.DIR_STATE_FOLLOW_EMAIL_ACTIVE,
+      archiveDir: context.config.DIR_STATE_FOLLOW_EMAIL_ARCHIVE,
+    }
 
     let client: GoogleClient
     try {
@@ -61,33 +69,43 @@ export default class GoogleEmailInboxFollowNewTask extends Command {
 
     if (when) {
       // ── Single-thread mode: chooser + collapse into one file ───────
-      return this.runSingleThread(client, args, output, tasks)
+      return this.runSingleThread(client, args, output, tasks, dirs)
     }
 
     // ── Batch mode: fetch + follow ALL unsaved threads ─────────────
-    const fetchResult = await tasks.run('google:email:inbox:fetch', {
-      account,
-      label,
-      limit,
-      follow: true,
-      noAutoTag: args.noAutoTag,
-      noAutoRel: args.noAutoRel,
+    const inbox = await getInboxThreads(client, label, {
+      limit: LISTING_DEPTH,
+      followDir: dirs.activeDir,
+      followArchiveDir: dirs.archiveDir,
     })
-
-    if (!fetchResult.ok || !fetchResult.data) {
-      return CommandResult.fail('google:email:inbox:fetch failed')
-    }
-
-    if (fetchResult.data.fetched === 0) {
-      output.log('  No unsaved threads to follow.\n')
-      return CommandResult.success({ created: 0, bornExpired: 0, follows: [] })
-    }
-
-    const result = await this.createFollows(client, fetchResult.data, label, args.force, output)
+    await resumeLabeledFollows({
+      client,
+      threads: inbox.threads,
+      label,
+      labelId: inbox.labelId,
+      now: fetchNowSync().plainDateTime,
+      output,
+      ...dirs,
+    })
+    const fetched = await fetchUnsavedThreads(
+      client,
+      {
+        label,
+        limit,
+        follow: true,
+        inbox,
+        noAutoTag: args.noAutoTag,
+        noAutoRel: args.noAutoRel,
+      },
+      { tasks, output },
+    )
+    const result = await this.createFollows(client, fetched, label, args.force, output, dirs)
 
     // Archive from inbox; the Sky/Follow label stays so inbox:view shows the
     // thread as saved.
-    const threadIds = fetchResult.data.threads.map((t) => t.threadId)
+    const threadIds = fetched.threads
+      .filter((t) => !t.failed && !inbox.threads.find((listed) => listed.threadId === t.threadId)?.followFile)
+      .map((t) => t.threadId)
     await this.archiveThreads(client, threadIds, output)
 
     return result
@@ -98,14 +116,19 @@ export default class GoogleEmailInboxFollowNewTask extends Command {
     args: CommandArgs<Params>['args'],
     output: { log: (msg: string) => void },
     tasks: CommandArgs<Params>['tasks'],
+    dirs: FollowDirs,
   ): Promise<CommandResult<Result>> {
-    const { account, label, when } = args
+    const { label, when } = args
 
     let unsaved: InboxThread[]
     try {
       output.log(`\n  Fetching "${label}" for ${client.email}...`)
-      const { threads } = await getInboxThreads(client, label, { limit: LISTING_DEPTH })
-      unsaved = threads.filter((t) => !t.saved)
+      const { threads } = await getInboxThreads(client, label, {
+        limit: LISTING_DEPTH,
+        followDir: dirs.activeDir,
+        followArchiveDir: dirs.archiveDir,
+      })
+      unsaved = threads.filter((t) => !t.saved || t.followStatus === 'closed')
     } catch (err) {
       return CommandResult.error(err as Error, 'Gmail fetch failed')
     }
@@ -126,7 +149,7 @@ export default class GoogleEmailInboxFollowNewTask extends Command {
       for (let i = 0; i < unsaved.length; i++) {
         const thread = unsaved[i]
         const first = thread.messages[0]
-        const date = first.date ? first.date.toISOString().slice(0, 10) : '(no date)'
+        const date = first.date ? PlainDate.from(first.date).toString() : '(no date)'
         const from = first.from?.name || first.from?.address || '(unknown)'
         const subject = first.subject || '(no subject)'
         const replies = thread.messages.length > 1 ? ` (+${thread.messages.length - 1})` : ''
@@ -151,24 +174,40 @@ export default class GoogleEmailInboxFollowNewTask extends Command {
     }
 
     // Fetch with --when and --threadId to collapse into one file
-    const fetchResult = await tasks.run('google:email:inbox:fetch', {
-      account,
-      label,
-      when,
-      threadId: selectedThread.threadId,
-      follow: true,
-      noAutoTag: args.noAutoTag,
-      noAutoRel: args.noAutoRel,
+    const inbox = await getInboxThreads(client, label, {
+      limit: LISTING_DEPTH,
+      followDir: dirs.activeDir,
+      followArchiveDir: dirs.archiveDir,
     })
-
-    if (!fetchResult.ok || !fetchResult.data || fetchResult.data.fetched === 0) {
-      return CommandResult.fail('google:email:inbox:fetch failed')
-    }
-
-    const result = await this.createFollows(client, fetchResult.data, label, args.force, output)
+    await resumeLabeledFollows({
+      client,
+      threads: inbox.threads.filter((t) => t.threadId === selectedThread.threadId),
+      label,
+      labelId: inbox.labelId,
+      now: fetchNowSync().plainDateTime,
+      output,
+      ...dirs,
+    })
+    const fetched = await fetchUnsavedThreads(
+      client,
+      {
+        label,
+        when,
+        limit: 1,
+        threadId: selectedThread.threadId,
+        follow: true,
+        inbox,
+        noAutoTag: args.noAutoTag,
+        noAutoRel: args.noAutoRel,
+      },
+      { tasks, output },
+    )
+    const result = await this.createFollows(client, fetched, label, args.force, output, dirs)
 
     // Archive from inbox; the Sky/Follow label stays
-    await this.archiveThreads(client, [selectedThread.threadId], output)
+    if (!selectedThread.followFile && fetched.threads.some((t) => !t.failed && t.messages.length > 0)) {
+      await this.archiveThreads(client, [selectedThread.threadId], output)
+    }
 
     return result
   }
@@ -199,13 +238,22 @@ export default class GoogleEmailInboxFollowNewTask extends Command {
     label: string,
     force: boolean,
     output: { log: (msg: string) => void },
+    dirs: FollowDirs,
   ): Promise<CommandResult<Result>> {
     const now = fetchNowSync()
     const created: string[] = []
     let bornExpired = 0
+    const registry = await EmailFollowRegistry.build(dirs.activeDir)
 
     for (const thread of fetched.threads) {
       if (thread.messages.length === 0) continue
+
+      const existing = registry.findByThreadId(thread.threadId, client.email)
+      if (existing) {
+        await writeTextFile(existing.path, continueFollow(existing.follow, thread, now.plainDateTime).toYaml())
+        created.push(existing.fileName)
+        continue
+      }
 
       const planned = planThreadFollow({
         accountEmail: client.email,
@@ -214,7 +262,7 @@ export default class GoogleEmailInboxFollowNewTask extends Command {
         now: now.plainDateTime,
         force,
       })
-      const persisted = await persistNewFollow({ client, labelId: fetched.labelId, planned, output })
+      const persisted = await persistNewFollow({ client, labelId: fetched.labelId, planned, output, ...dirs })
       if (persisted.followed) created.push(persisted.fileName)
       else bornExpired++
     }

@@ -194,6 +194,25 @@ export async function resolveLabelId(client: GoogleClient, name: string): Promis
   return (await resolveLabel(client, name))?.id
 }
 
+/** Create a visible user label if needed, tolerating another sync creating it first. */
+export async function ensureLabel(client: GoogleClient, name: string): Promise<GmailLabel> {
+  const existing = await resolveLabel(client, name)
+  if (existing) return existing
+  try {
+    const label = await client.postJson<LabelWire>(`${GMAIL_API_URL}/labels`, {
+      name,
+      labelListVisibility: 'labelShow',
+      messageListVisibility: 'show',
+    })
+    if (!label.id) throw new Error(`Gmail did not return an id for label "${name}"`)
+    return { id: label.id, name: label.name ?? name, type: 'user' }
+  } catch (error) {
+    const concurrent = await resolveLabel(client, name)
+    if (concurrent) return concurrent
+    throw error
+  }
+}
+
 /**
  * Thread refs matching a Gmail query and/or label ids, newest-first (the
  * API's own order). Paginates until `limit` (default 100) refs are collected.

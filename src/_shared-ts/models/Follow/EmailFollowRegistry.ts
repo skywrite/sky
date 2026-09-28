@@ -1,9 +1,9 @@
-import { DIR_STATE_FOLLOW_EMAIL_ACTIVE } from '#config'
+import { DIR_STATE_FOLLOW_EMAIL_ACTIVE, DIR_STATE_FOLLOW_EMAIL_ARCHIVE } from '#config'
 import { exists } from '#shared/fs/mod.ts'
 import type { StoreError } from '../Store/types.ts'
 import { loadFollowDir, type FollowFileEntry } from './loadFollowDir.ts'
 
-interface EmailFollowEntry {
+export interface EmailFollowEntry {
   follow: FollowFileEntry['follow']
   path: string
   fileName: string
@@ -33,6 +33,18 @@ export default class EmailFollowRegistry {
     return new EmailFollowRegistry(byFile, errors)
   }
 
+  /** Capture history survives closure. Active copies win if a move was interrupted. */
+  static async buildWithArchive(
+    activeDir = DIR_STATE_FOLLOW_EMAIL_ACTIVE,
+    archiveDir = DIR_STATE_FOLLOW_EMAIL_ARCHIVE,
+  ): Promise<EmailFollowRegistry> {
+    const [active, archive] = await Promise.all([this.build(activeDir), this.build(archiveDir)])
+    return new EmailFollowRegistry(new Map([...archive.byFile, ...active.byFile]), [
+      ...archive.errors,
+      ...active.errors,
+    ])
+  }
+
   getAll(): EmailFollowEntry[] {
     return Array.from(this.byFile.entries()).map(([fileName, { follow, path: filePath }]) => ({
       follow,
@@ -49,8 +61,19 @@ export default class EmailFollowRegistry {
     return this.byFile.get(name)
   }
 
-  findByThreadId(threadId: string): EmailFollowEntry | undefined {
-    return this.getAll().find((e) => e.follow.ref.threadId === threadId)
+  findByThreadId(threadId: string, account?: string): EmailFollowEntry | undefined {
+    const matches = this.getAll().filter(
+      (e) =>
+        e.follow.ref.threadId === threadId &&
+        (!account || e.follow.ref.account?.toLowerCase() === account.toLowerCase()),
+    )
+    // Older releases could start another follow for the same thread. Prefer
+    // its current watch, then the archive with the latest capture cutoff.
+    return matches.sort(
+      (a, b) =>
+        Number(b.follow.status === 'active') - Number(a.follow.status === 'active') ||
+        (b.follow.lastActivity?.toString() ?? '').localeCompare(a.follow.lastActivity?.toString() ?? ''),
+    )[0]
   }
 
   get size(): number {

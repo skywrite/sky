@@ -2,7 +2,9 @@ import type { GoogleClient } from '#lib/google/mod.ts'
 import { getThread, listThreads, modifyThread, resolveLabel, threadIdToDecimal } from '#lib/google/mod.ts'
 import type { GmailMessage } from '#lib/google/mod.ts'
 import EmailFollowRegistry from '#shared/models/Follow/EmailFollowRegistry.ts'
+import type Follow from '#shared/models/Follow/mod.ts'
 import { convertFromNotebookTimezone } from '#shared/nbfs/mod.ts'
+import { Instant } from '#universal/dates/nbdt/mod.ts'
 
 // Gmail-API twin of email/lib/getInboxThreads.ts. The IMAP original scans the
 // label folder plus the whole INBOX to reunite threads with unlabeled replies;
@@ -26,6 +28,7 @@ export type InboxThread = {
   savedMessages: { date: string; path: string }[]
   /** File name (extension-free) of the follow already tracking this thread. */
   followFile?: string
+  followStatus?: Follow['status']
 }
 
 export type InboxThreadsResult = {
@@ -54,8 +57,8 @@ export const LISTING_DEPTH = 1000
  * within that same minute is never fetched: the minute-granularity blind spot
  * slack:follow:check also accepts.
  */
-export function savedByCutoff(msgDate: Date, lastActivity: Date): boolean {
-  return msgDate.getTime() < lastActivity.getTime() + 60_000
+export function savedByCutoff(msgDate: { valueOf(): number }, lastActivity: { valueOf(): number }): boolean {
+  return Number(msgDate) < Number(lastActivity) + 60_000
 }
 
 /**
@@ -68,7 +71,7 @@ export function savedByCutoff(msgDate: Date, lastActivity: Date): boolean {
 export async function getInboxThreads(
   client: GoogleClient,
   label: string,
-  opts: { limit?: number; syncLabels?: boolean; followDir?: string; timeDir?: string } = {},
+  opts: { limit?: number; syncLabels?: boolean; followDir?: string; followArchiveDir?: string; timeDir?: string } = {},
 ): Promise<InboxThreadsResult> {
   const { limit = 250 } = opts
 
@@ -119,21 +122,23 @@ export async function getInboxThreads(
 
   // Load follow registry to determine saved status
   const followMessages = new Map<string, { date: string; path: string }[]>()
-  const followLastActivity = new Map<string, Date>()
+  const followLastActivity = new Map<string, number>()
   const followFiles = new Map<string, string>()
-  const registry = await EmailFollowRegistry.build(opts.followDir)
-  for (const entry of registry.getAll()) {
-    const tid = entry.follow.ref.threadId
-    if (!tid) continue
+  const followStatuses = new Map<string, Follow['status']>()
+  const registry = await EmailFollowRegistry.buildWithArchive(opts.followDir, opts.followArchiveDir)
+  for (const { threadId: tid } of threadEntries) {
+    const entry = registry.findByThreadId(tid, client.email)
+    if (!entry) continue
     followMessages.set(tid, entry.follow.messages)
     followFiles.set(tid, entry.fileName)
+    followStatuses.set(tid, entry.follow.status)
     // lastActivity is written in the zone of its own day. Read in the system
     // zone, a day kept elsewhere moved the cutoff by the difference: west of
     // here, the message that set it was captured again on every sync; east,
     // a reply inside the gap counted as saved and was never captured.
     if (entry.follow.lastActivity) {
       const instant = await convertFromNotebookTimezone(entry.follow.lastActivity, { timeDir: opts.timeDir })
-      followLastActivity.set(tid, new Date(instant.epochMilliseconds))
+      followLastActivity.set(tid, instant.epochMilliseconds)
     }
   }
 
@@ -142,7 +147,7 @@ export async function getInboxThreads(
     const cutoff = followLastActivity.get(entry.threadId)
     if (!cutoff) continue
     for (const msg of entry.messages) {
-      msg.saved = !!msg.date && savedByCutoff(msg.date, cutoff)
+      msg.saved = !!msg.date && savedByCutoff(Instant.fromEpochMilliseconds(Number(msg.date)).epochMilliseconds, cutoff)
     }
   }
 
@@ -169,6 +174,7 @@ export async function getInboxThreads(
       saved,
       savedMessages: followMessages.get(entry.threadId) ?? [],
       ...(followFiles.has(entry.threadId) ? { followFile: followFiles.get(entry.threadId) } : {}),
+      ...(followStatuses.has(entry.threadId) ? { followStatus: followStatuses.get(entry.threadId) } : {}),
     })
   }
 

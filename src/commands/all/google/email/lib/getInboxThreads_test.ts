@@ -69,7 +69,11 @@ test('getInboxThreads only synchronizes user labels when requested', async () =>
           }) as typeof fetch,
         })
 
-        const result = await getInboxThreads(client, label.name, { syncLabels, followDir })
+        const result = await getInboxThreads(client, label.name, {
+          syncLabels,
+          followDir,
+          followArchiveDir: path.join(followDir, 'archive'),
+        })
         assert({
           given: `${label.name} with label synchronization ${String(syncLabels)}`,
           should: 'label new replies only for user buckets when synchronization is enabled',
@@ -135,7 +139,12 @@ test('getInboxThreads reads a follow’s last activity in the zone of its day', 
         }) as typeof fetch,
       })
 
-      const result = await getInboxThreads(client, 'Sky/Follow', { syncLabels: false, followDir, timeDir })
+      const result = await getInboxThreads(client, 'Sky/Follow', {
+        syncLabels: false,
+        followDir,
+        followArchiveDir: path.join(followDir, 'archive'),
+        timeDir,
+      })
       assert({
         given: `a follow last active at 14:34 on a day kept in ${tz}`,
         should: 'count the message that set it as saved, and the reply half an hour later as new',

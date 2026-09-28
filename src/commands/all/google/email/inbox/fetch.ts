@@ -62,7 +62,17 @@ export default class GoogleEmailInboxFetchTask extends Command {
       output.log(`\n  Fetching "${label}" for ${client.email}...`)
       const result = await fetchUnsavedThreads(
         client,
-        { label, limit, when, threadId, follow, noAutoTag, noAutoRel },
+        {
+          label,
+          limit,
+          when,
+          threadId,
+          follow,
+          noAutoTag,
+          noAutoRel,
+          followDir: context.config.DIR_STATE_FOLLOW_EMAIL_ACTIVE,
+          followArchiveDir: context.config.DIR_STATE_FOLLOW_EMAIL_ARCHIVE,
+        },
         { tasks, output },
       )
       return CommandResult.success(result)

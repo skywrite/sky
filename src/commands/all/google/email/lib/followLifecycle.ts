@@ -1,14 +1,16 @@
 import { unlink } from 'node:fs/promises'
 import * as path from 'node:path'
 import { DIR_STATE_FOLLOW_EMAIL_ACTIVE, DIR_STATE_FOLLOW_EMAIL_ARCHIVE } from '#config'
-import { modifyThread, resolveLabelId, threadIdFromDecimal } from '#lib/google/mod.ts'
+import { listLabels, modifyThread, threadIdFromDecimal } from '#lib/google/mod.ts'
 import type { GoogleClient } from '#lib/google/mod.ts'
 import slugify from '#lib/string/slugify.ts'
 import { exists, outputFile } from '#shared/fs/mod.ts'
+import EmailFollowRegistry from '#shared/models/Follow/EmailFollowRegistry.ts'
 import Follow from '#shared/models/Follow/mod.ts'
 import { toTimeRef } from '#shared/nbfs/mod.ts'
 import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import type { FetchedThread } from './fetchUnsavedThreads.ts'
+import { archivedLabelName, retireGmailThread } from './followLabels.ts'
 
 // First-time follow creation, shared by follow:new and follow:sync, and the
 // Gmail label lifecycle around a follow (first-capture archiving, the Now
@@ -126,14 +128,21 @@ export async function persistNewFollow(opts: {
   labelId: string
   planned: PlannedFollow
   output: { log: (msg: string) => void }
+  activeDir?: string
+  archiveDir?: string
 }): Promise<PersistedFollow> {
-  const { client, labelId, planned, output } = opts
+  const { client, planned, output } = opts
   const { threadId, fileName } = planned
   let { follow, bornExpired } = planned
 
   if (bornExpired) {
     try {
-      await modifyThread(client, threadIdFromDecimal(threadId), { removeLabelIds: [labelId, 'INBOX'] })
+      await retireGmailThread({
+        client,
+        threadId: threadIdFromDecimal(threadId),
+        label: follow.ref.label,
+        saved: follow.messages.length > 0,
+      })
     } catch (err) {
       output.log(`  Warning: could not retire thread in Gmail (${(err as Error).message}) — following instead`)
       follow = follow.updateStatus('active')
@@ -141,7 +150,9 @@ export async function persistNewFollow(opts: {
     }
   }
 
-  const dir = bornExpired ? DIR_STATE_FOLLOW_EMAIL_ARCHIVE : DIR_STATE_FOLLOW_EMAIL_ACTIVE
+  const dir = bornExpired
+    ? (opts.archiveDir ?? DIR_STATE_FOLLOW_EMAIL_ARCHIVE)
+    : (opts.activeDir ?? DIR_STATE_FOLLOW_EMAIL_ACTIVE)
   await outputFile(path.join(dir, `${fileName}.yaml`), follow.toYaml())
 
   if (bornExpired) {
@@ -225,6 +236,71 @@ export async function applyNowLabelSwaps(opts: {
 
 export type FollowEntry = { follow: Follow; path: string; fileName: string }
 
+export function continueFollow(follow: Follow, thread: FetchedThread, now: PlainDateTime): Follow {
+  const canonical = (ref: string) => {
+    try {
+      return toTimeRef(ref)
+    } catch {
+      return ref
+    }
+  }
+  const paths = new Set(follow.messages.map((m) => canonical(m.path)))
+  for (const message of thread.messages) {
+    const ref = canonical(message.path)
+    if (paths.has(ref)) continue
+    follow = follow.addMessage(message.date, ref)
+    paths.add(ref)
+  }
+  if (thread.lastMessageAt) follow = follow.updateLastActivity(PlainDateTime.fromString(thread.lastMessageAt))
+  return follow.updateLastChecked(now)
+}
+
+/** Only a thread explicitly carrying Follow or Follow/Now may reopen its archived watch. */
+export async function resumeLabeledFollows(opts: {
+  client: GoogleClient
+  threads: { threadId: string; messages: { labelIds: string[] }[] }[]
+  label: string
+  labelId: string
+  now: PlainDateTime
+  output: { log: (msg: string) => void }
+  activeDir?: string
+  archiveDir?: string
+}): Promise<number> {
+  const { client, label, labelId, now, output } = opts
+  const activeDir = opts.activeDir ?? DIR_STATE_FOLLOW_EMAIL_ACTIVE
+  const registry = await EmailFollowRegistry.buildWithArchive(activeDir, opts.archiveDir)
+  const labels = await listLabels(client)
+  const seen = new Set<string>()
+  let resumed = 0
+  for (const thread of opts.threads) {
+    if (seen.has(thread.threadId)) continue
+    seen.add(thread.threadId)
+    const entry = registry.findByThreadId(thread.threadId, client.email)
+    if (!entry) continue
+    const archivedNames = new Set([archivedLabelName(label), archivedLabelName(entry.follow.ref.label || label)])
+    const archiveIds = labels
+      .filter((l) => [...archivedNames].some((name) => name.toLowerCase() === l.name.toLowerCase()))
+      .map((l) => l.id)
+    const closed = entry.follow.status === 'closed'
+    if (!closed && !thread.messages.some((m) => archiveIds.some((id) => m.labelIds.includes(id)))) continue
+
+    // Gmail first: if the disk move fails, the entry label still requests a
+    // resume on the next sync, and archived history still prevents recapture.
+    await modifyThread(client, threadIdFromDecimal(thread.threadId), {
+      addLabelIds: [labelId],
+      removeLabelIds: archiveIds,
+    })
+    if (!closed) continue
+    const follow = entry.follow.resume(now).withRef({ ...entry.follow.ref, label })
+    const destination = path.join(activeDir, `${entry.fileName}.yaml`)
+    await outputFile(destination, follow.toYaml())
+    if (entry.path !== destination) await unlink(entry.path)
+    resumed++
+    output.log(`  Resumed follow: ${entry.fileName}`)
+  }
+  return resumed
+}
+
 /**
  * Active follows of this account that have gone quiet past their window.
  * Follows of other accounts are left alone — their Gmail-side retire has to
@@ -263,11 +339,11 @@ export async function expireQuietFollows(opts: {
   fallbackLabel: string
   now: PlainDateTime
   output: { log: (msg: string) => void }
+  archiveDir?: string
 }): Promise<ExpireSweepResult> {
   const { client, entries, fallbackLabel, now, output } = opts
   const expired: ExpiredFollow[] = []
   const skipped: string[] = []
-  const labelIds = new Map<string, string | undefined>()
 
   for (const entry of selectExpiredFollows(entries, client.email, now)) {
     const { follow, fileName } = entry
@@ -275,13 +351,12 @@ export async function expireQuietFollows(opts: {
     const threadId = follow.ref['threadId']
     if (threadId) {
       const label = follow.ref['label'] || fallbackLabel
-      if (!labelIds.has(label)) labelIds.set(label, await resolveLabelId(client, label))
-      const labelId = labelIds.get(label)
       try {
-        // A label that no longer exists cannot be applied to the thread, so
-        // dropping INBOX alone is safe then.
-        await modifyThread(client, threadIdFromDecimal(threadId), {
-          removeLabelIds: labelId ? [labelId, 'INBOX'] : ['INBOX'],
+        await retireGmailThread({
+          client,
+          threadId: threadIdFromDecimal(threadId),
+          label,
+          saved: follow.messages.length > 0,
         })
       } catch (err) {
         output.log(`  Warning: could not retire ${fileName} in Gmail (${(err as Error).message}) — will retry`)
@@ -298,7 +373,7 @@ export async function expireQuietFollows(opts: {
         : `inactive ${Math.floor(inactiveMs / 86_400_000)}d >= ${Follow.DEFAULT_MAX_INACTIVE}`
 
     const closed = follow.updateStatus('closed')
-    await outputFile(path.join(DIR_STATE_FOLLOW_EMAIL_ARCHIVE, `${fileName}.yaml`), closed.toYaml())
+    await outputFile(path.join(opts.archiveDir ?? DIR_STATE_FOLLOW_EMAIL_ARCHIVE, `${fileName}.yaml`), closed.toYaml())
     await unlink(entry.path)
     output.log(`  Expired ${fileName}: ${reason}`)
     expired.push({ fileName, summary: follow.summary, reason })

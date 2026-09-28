@@ -9,15 +9,17 @@ import openEditor from '#lib/shell/openEditor.ts'
 import { writeTextFile } from '#shared/fs/mod.ts'
 import EmailFollowRegistry from '#shared/models/Follow/EmailFollowRegistry.ts'
 import Follow from '#shared/models/Follow/mod.ts'
-import { fetchNow, toTimeRef } from '#shared/nbfs/mod.ts'
+import { fetchNow } from '#shared/nbfs/mod.ts'
 import { PlainDate, PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import { fetchUnsavedThreads } from '../../lib/fetchUnsavedThreads.ts'
 import type { FetchedThread, FetchUnsavedResult } from '../../lib/fetchUnsavedThreads.ts'
 import {
   applyNowLabelSwaps,
+  continueFollow,
   expireQuietFollows,
   persistNewFollow,
   planThreadFollow,
+  resumeLabeledFollows,
   selectNowLabelSwaps,
   threadsToArchive,
 } from '../../lib/followLifecycle.ts'
@@ -96,7 +98,8 @@ export default class GoogleEmailInboxFollowSyncTask extends Command {
       'Either way:',
       '  - Already-followed threads: appends each new message on its own date, updates follow file',
       '  - Archives first captures from inbox; replies to followed threads stay in the inbox',
-      `  - Closes follows quiet past ${Follow.DEFAULT_MAX_INACTIVE}: Gmail label removed, follow YAML archived`,
+      `  - Closes follows quiet past ${Follow.DEFAULT_MAX_INACTIVE}: Sky/Archived label added, follow YAML archived`,
+      '  - Re-following an archived thread resumes its history and captures only new messages',
       'Designed to run on the heartbeat. Idempotent and non-interactive.',
     ],
     usage: ['sky google:email:inbox:follow:sync', 'sky google:email:inbox:follow:sync --pick   # choose one thread'],
@@ -109,7 +112,14 @@ export default class GoogleEmailInboxFollowSyncTask extends Command {
     const nowLabel = `${label}/${NOW_SUBLABEL}`
 
     // ── Phase 1: Load follow registry ────────────────────────────────────
-    const registry = await EmailFollowRegistry.build()
+    const activeDir = context.config.DIR_STATE_FOLLOW_EMAIL_ACTIVE
+    const archiveDir = context.config.DIR_STATE_FOLLOW_EMAIL_ARCHIVE
+    const listingOptions = {
+      limit: LISTING_DEPTH,
+      followDir: activeDir,
+      followArchiveDir: archiveDir,
+      timeDir: context.config.DIR_TIME,
+    }
 
     let client: GoogleClient
     try {
@@ -120,7 +130,7 @@ export default class GoogleEmailInboxFollowSyncTask extends Command {
     }
 
     try {
-      const now = await fetchNow()
+      const now = await fetchNow({ timeDir: context.config.DIR_TIME })
 
       // ── Phase 2a: List both entry labels ─────────────────────────────────
       // Deep listings: captured threads keep the bucket label, so the
@@ -129,12 +139,12 @@ export default class GoogleEmailInboxFollowSyncTask extends Command {
       let nowInbox: InboxThreadsResult | undefined
       if (await resolveLabel(client, nowLabel)) {
         try {
-          nowInbox = await getInboxThreads(client, nowLabel, { limit: LISTING_DEPTH })
+          nowInbox = await getInboxThreads(client, nowLabel, listingOptions)
         } catch (err) {
           output.log(`  Warning: could not list ${nowLabel} (${(err as Error).message}) — skipping the Now door`)
         }
       }
-      const bucketListing = await getInboxThreads(client, label, { limit: LISTING_DEPTH })
+      const bucketListing = await getInboxThreads(client, label, listingOptions)
       // A thread wearing both labels is the Now door's: the sub-label is the
       // explicit act, and two doors capturing one thread would double it.
       const nowThreadIds = new Set((nowInbox?.threads ?? []).map((t) => t.threadId))
@@ -151,6 +161,20 @@ export default class GoogleEmailInboxFollowSyncTask extends Command {
           return CommandResult.success(NOTHING_SYNCED)
         }
       }
+
+      await resumeLabeledFollows({
+        client,
+        threads: [...(nowInbox?.threads ?? []), ...bucketInbox.threads].filter(
+          (t) => !picked || t.threadId === picked.threadId,
+        ),
+        label,
+        labelId: bucketListing.labelId,
+        now: now.plainDateTime,
+        output,
+        activeDir,
+        archiveDir,
+      })
+      const registry = await EmailFollowRegistry.build(activeDir)
 
       // ── Phase 2b: Fetch unsaved messages (google:email:inbox:fetch core) ──
       // The listings above are passed through so the label scans aren't redone.
@@ -203,6 +227,8 @@ export default class GoogleEmailInboxFollowSyncTask extends Command {
         now: now.plainDateTime,
         force: true,
         output,
+        activeDir,
+        archiveDir,
       })
       const bucketDoor = await this.trackFetchedThreads({
         registry,
@@ -212,6 +238,8 @@ export default class GoogleEmailInboxFollowSyncTask extends Command {
         now: now.plainDateTime,
         force: false,
         output,
+        activeDir,
+        archiveDir,
       })
 
       if (nowFetch.fetched + bucketFetch.fetched === 0) {
@@ -281,13 +309,14 @@ export default class GoogleEmailInboxFollowSyncTask extends Command {
       // one doesn't know. --pick skips it — triage must not close follows.
       let expired: string[] = []
       if (!pick) {
-        const sweepRegistry = await EmailFollowRegistry.build()
+        const sweepRegistry = await EmailFollowRegistry.build(activeDir)
         const sweep = await expireQuietFollows({
           client,
           entries: sweepRegistry.getActive(),
           fallbackLabel: label,
           now: now.plainDateTime,
           output,
+          archiveDir,
         })
         expired = sweep.expired.map((e) => e.fileName)
         // Follows the sweep retired carry no capture this run — their threads
@@ -326,6 +355,8 @@ export default class GoogleEmailInboxFollowSyncTask extends Command {
     now: PlainDateTime
     force: boolean
     output: { log: (msg: string) => void }
+    activeDir: string
+    archiveDir: string
   }): Promise<DoorOutcome> {
     const { registry, client, fetchResult, label, now, force, output } = opts
     const outcome: DoorOutcome = {
@@ -340,31 +371,10 @@ export default class GoogleEmailInboxFollowSyncTask extends Command {
     for (const thread of fetchResult.threads) {
       if (thread.messages.length === 0) continue
 
-      const lastMessageAt = thread.lastMessageAt ? PlainDateTime.fromString(thread.lastMessageAt) : undefined
-      const existingFollow = registry.findByThreadId(thread.threadId)
+      const existingFollow = registry.findByThreadId(thread.threadId, client.email)
 
       if (existingFollow) {
-        let follow = existingFollow.follow
-        // New entries are stored as time refs; old follows may hold paths
-        // in any layout (or damaged ones). Dedupe on the canonical form,
-        // falling back to the raw string where canonicalizing fails —
-        // a duplicate follow entry is cheaper than a lost sync.
-        const canon = (p: string): string => {
-          try {
-            return toTimeRef(p)
-          } catch {
-            return p
-          }
-        }
-        const existingPaths = new Set(follow.messages.map((m) => canon(m.path)))
-        for (const msg of thread.messages) {
-          if (existingPaths.has(canon(msg.path))) continue
-          follow = follow.addMessage(msg.date, toTimeRef(msg.path))
-        }
-        // lastActivity is the newest message's real time, not the sync time —
-        // a reply discovered late must not look like fresh activity
-        if (lastMessageAt) follow = follow.updateLastActivity(lastMessageAt)
-        follow = follow.updateLastChecked(now)
+        const follow = continueFollow(existingFollow.follow, thread, now)
 
         await writeTextFile(existingFollow.path, follow.toYaml())
         output.log(`  Updated follow: ${path.basename(existingFollow.path, '.yaml')}`)
@@ -385,7 +395,14 @@ export default class GoogleEmailInboxFollowSyncTask extends Command {
           now,
           force,
         })
-        const persisted = await persistNewFollow({ client, labelId: fetchResult.labelId, planned, output })
+        const persisted = await persistNewFollow({
+          client,
+          labelId: fetchResult.labelId,
+          planned,
+          output,
+          activeDir: opts.activeDir,
+          archiveDir: opts.archiveDir,
+        })
         outcome.firstCaptures.add(thread.threadId)
         const topic = thread.summary || thread.subject
         outcome.synced.push({
@@ -423,7 +440,7 @@ export default class GoogleEmailInboxFollowSyncTask extends Command {
     ]
     const doorByThread = new Map<string, 'now' | 'bucket'>()
     const unsaved = rows
-      .filter(({ t }) => !t.saved)
+      .filter(({ t }) => !t.saved || t.followStatus === 'closed')
       .map(({ t, door }) => {
         doorByThread.set(t.threadId, door)
         const first = t.messages[0]

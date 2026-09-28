@@ -193,6 +193,7 @@ export {
   GMAIL_SCOPE,
   createDraft,
   draftUrl,
+  ensureLabel,
   getAttachment,
   getDraft,
   getLabelCounts,

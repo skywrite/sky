@@ -10,6 +10,7 @@ const YAML_KEY_ORDER = [
   'summary',
   'checkInterval',
   'followSince',
+  'resumedAt',
   'expires',
   'lastChecked',
   'lastActivity',
@@ -29,6 +30,7 @@ interface FollowCreateFields {
   summary: string
   checkInterval?: string
   followSince?: PlainDateTime
+  resumedAt?: PlainDateTime
   expires?: PlainDateTime
   lastChecked?: PlainDateTime
   lastActivity?: PlainDateTime
@@ -54,6 +56,7 @@ export default class Follow {
   readonly summary: string
   readonly checkInterval: string
   readonly followSince: PlainDateTime | undefined
+  readonly resumedAt: PlainDateTime | undefined
   readonly expires: PlainDateTime | undefined
   readonly lastChecked: PlainDateTime | undefined
   readonly lastActivity: PlainDateTime | undefined
@@ -67,6 +70,7 @@ export default class Follow {
     summary: string
     checkInterval: string
     followSince: PlainDateTime | undefined
+    resumedAt: PlainDateTime | undefined
     expires: PlainDateTime | undefined
     lastChecked: PlainDateTime | undefined
     lastActivity: PlainDateTime | undefined
@@ -79,6 +83,7 @@ export default class Follow {
     this.summary = fields.summary
     this.checkInterval = fields.checkInterval
     this.followSince = fields.followSince
+    this.resumedAt = fields.resumedAt
     this.expires = fields.expires
     this.lastChecked = fields.lastChecked
     this.lastActivity = fields.lastActivity
@@ -96,6 +101,7 @@ export default class Follow {
       summary: (data['summary'] ?? '') as string,
       checkInterval: (data['checkInterval'] ?? '10m') as string,
       followSince: parseDateTimeField(data['followSince']),
+      resumedAt: parseDateTimeField(data['resumedAt']),
       expires: parseDateTimeField(data['expires']),
       lastChecked: parseDateTimeField(data['lastChecked']),
       lastActivity: parseDateTimeField(data['lastActivity']),
@@ -112,6 +118,7 @@ export default class Follow {
       summary: fields.summary,
       checkInterval: fields.checkInterval ?? '10m',
       followSince: fields.followSince,
+      resumedAt: fields.resumedAt,
       expires: fields.expires,
       lastChecked: fields.lastChecked,
       lastActivity: fields.lastActivity,
@@ -128,6 +135,7 @@ export default class Follow {
       summary: this.summary,
       checkInterval: this.checkInterval,
       followSince: this.followSince ? formatDateTime(this.followSince) : null,
+      ...(this.resumedAt ? { resumedAt: formatDateTime(this.resumedAt) } : {}),
       expires: this.expires ? formatDateTime(this.expires) : null,
       lastChecked: this.lastChecked ? formatDateTime(this.lastChecked) : null,
       lastActivity: this.lastActivity ? formatDateTime(this.lastActivity) : null,
@@ -148,6 +156,11 @@ export default class Follow {
 
   updateStatus(status: FollowStatus): Follow {
     return new Follow({ ...this.fields(), status })
+  }
+
+  /** Restart the watch without advancing lastActivity, which also marks what was captured. */
+  resume(now: PlainDateTime): Follow {
+    return new Follow({ ...this.fields(), status: 'active', resumedAt: now, expires: undefined })
   }
 
   addMessage(date: string, msgPath: string): Follow {
@@ -184,15 +197,16 @@ export default class Follow {
    * since such a follow can never become active on its own.
    */
   inactivityMs(now: PlainDateTime): number {
+    const sinceResume = this.resumedAt ? Math.max(0, this.resumedAt.until(now).total('milliseconds')) : Infinity
     const lastMsgDate = this.messages.at(-1)?.date
     if (lastMsgDate) {
       const msgMs = PlainDate.fromString(lastMsgDate).toDate().getTime()
       const todayMs = now.plainDate.toDate().getTime()
-      return Math.max(0, todayMs - msgMs)
+      return Math.min(sinceResume, Math.max(0, todayMs - msgMs))
     }
     const anchor = this.lastActivity ?? this.followSince
-    if (!anchor) return Infinity
-    return Math.max(0, anchor.until(now).total('milliseconds'))
+    if (!anchor) return sinceResume
+    return Math.min(sinceResume, Math.max(0, anchor.until(now).total('milliseconds')))
   }
 
   /**
@@ -230,6 +244,7 @@ export default class Follow {
       summary: this.summary,
       checkInterval: this.checkInterval,
       followSince: this.followSince,
+      resumedAt: this.resumedAt,
       expires: this.expires,
       lastChecked: this.lastChecked,
       lastActivity: this.lastActivity,

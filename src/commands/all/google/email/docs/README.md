@@ -1,6 +1,6 @@
 ---
 created: 2026-08-30
-updated: 2026-09-26
+updated: 2026-09-28
 ---
 
 # google:email
@@ -32,6 +32,23 @@ console call; service and composed calls return account ambiguity errors.
 
 Capture/follow operations still synchronize user labels across replies
 by default. System labels are never synchronized by the listing helper.
+
+`Sky/Follow` is the active watch; `Sky/Archived` means earlier correspondence
+is saved and the watch has closed. Expiry, manual closure, and captures born
+expired swap the labels before archiving the follow record. Threads without
+saved history get no archive marker. Custom buckets use `<bucket>/Archived`;
+a bucket ending in `/Follow` uses its sibling `/Archived`.
+
+Saved-message detection reads both active and archived records, keyed by
+account and thread id. Applying `Sky/Follow` or `Sky/Follow/Now` to an archived
+thread resumes its original record and captures only new messages. `resumedAt`
+starts a fresh inactivity window without changing `lastActivity`, the capture
+cutoff. Resumed replies stay in the inbox. An incoming reply alone does not
+reopen a watch; the archive marker does not claim that new reply is saved.
+
+`google:email:inbox:follow:backfill` previews missing archive markers for an
+account; `--apply` adds them. It skips active and queued threads and never
+changes inbox placement, read status, or notebook content. It can be repeated.
 
 A capture's day entry goes under its account's side of the day: the
 Professional or Personal choice on the Google settings page, kept in

@@ -3,11 +3,11 @@ import * as path from 'node:path'
 import * as p from '@clack/prompts'
 import { Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
-import { DIR_STATE_FOLLOW_EMAIL_ARCHIVE } from '#config'
-import { AccountResolutionError, modifyThread } from '#lib/google/mod.ts'
+import { AccountResolutionError } from '#lib/google/mod.ts'
 import { outputFile } from '#shared/fs/mod.ts'
 import EmailFollowRegistry from '#shared/models/Follow/EmailFollowRegistry.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
+import { retireGmailThread } from '../lib/followLabels.ts'
 import { getInboxThreads } from '../lib/getInboxThreads.ts'
 import type { InboxThread } from '../lib/getInboxThreads.ts'
 import { resolveGmailClient } from '../lib/resolveGmailClient.ts'
@@ -29,12 +29,12 @@ declare module '#commands/lib/core/CommandTypesRegistry.ts' {
 export default class GoogleEmailInboxCloseTask extends Command {
   static override description: CommandDescription = {
     name: 'google:email:inbox:close',
-    description: 'Close an email thread: remove Sky/Follow label, archive from inbox, archive follow.',
+    description: 'Close an email thread: mark saved history Sky/Archived, archive from inbox, archive follow.',
     descriptionLong: [
       'Gmail-API twin of email:inbox:close, using the OAuth grant from google:auth',
       '(requires the Gmail scope). Shows an interactive picker of threads from',
       'google:email:inbox:view. Pick a thread to close it:',
-      '  1. Removes the Sky/Follow label from all messages in the thread',
+      '  1. Replaces Sky/Follow with Sky/Archived when the thread has saved history',
       '  2. Archives all messages from inbox (removes the INBOX label)',
       '  3. Archives the follow YAML (status: closed, moved to follow/email/archive/)',
     ],
@@ -55,12 +55,14 @@ export default class GoogleEmailInboxCloseTask extends Command {
     }
 
     let threads: InboxThread[]
-    let labelId: string
     try {
       output.log(`\n  Fetching "${label}" for ${client.email}...`)
-      const result = await getInboxThreads(client, label)
+      const result = await getInboxThreads(client, label, {
+        followDir: context.config.DIR_STATE_FOLLOW_EMAIL_ACTIVE,
+        followArchiveDir: context.config.DIR_STATE_FOLLOW_EMAIL_ARCHIVE,
+        timeDir: context.config.DIR_TIME,
+      })
       threads = result.threads
-      labelId = result.labelId
     } catch (err) {
       return CommandResult.error(err as Error, 'Gmail fetch failed')
     }
@@ -100,23 +102,33 @@ export default class GoogleEmailInboxCloseTask extends Command {
 
     output.log(`\n  Closing: ${subject}`)
 
+    const registry = await EmailFollowRegistry.buildWithArchive(
+      context.config.DIR_STATE_FOLLOW_EMAIL_ACTIVE,
+      context.config.DIR_STATE_FOLLOW_EMAIL_ARCHIVE,
+    )
+    const followEntry = registry.findByThreadId(threadId, client.email)
+
     // One thread-level modify replaces the IMAP original's three full-mailbox
     // scans: unlabel + archive every message of the thread in a single call.
     try {
-      await modifyThread(client, thread.apiThreadId, { removeLabelIds: [labelId, 'INBOX'] })
+      await retireGmailThread({
+        client,
+        threadId: thread.apiThreadId,
+        label,
+        saved: !!followEntry?.follow.messages.length,
+      })
       output.log(`  Removed "${label}" label and archived ${thread.messages.length} message(s).`)
     } catch (err) {
-      output.log(`  Warning: Gmail operations failed: ${(err as Error).message}`)
+      return CommandResult.error(err as Error, 'Gmail close failed; follow history retained')
     }
 
     // Archive the follow YAML if it exists: mark closed, move out of active/
     // (even when the thread has unsaved replies — closing means stop following)
-    const registry = await EmailFollowRegistry.build()
-    const followEntry = registry.findByThreadId(threadId)
     if (followEntry) {
       const closed = followEntry.follow.updateStatus('closed')
-      await outputFile(path.join(DIR_STATE_FOLLOW_EMAIL_ARCHIVE, followEntry.fileName), closed.toYaml())
-      await unlink(followEntry.path)
+      const destination = path.join(context.config.DIR_STATE_FOLLOW_EMAIL_ARCHIVE, `${followEntry.fileName}.yaml`)
+      await outputFile(destination, closed.toYaml())
+      if (followEntry.path !== destination) await unlink(followEntry.path)
       output.log(`  Archived follow: ${followEntry.fileName}`)
     }
 

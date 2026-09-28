@@ -28,6 +28,7 @@ interface ViewThreadRow {
   snippet?: string
   messages: number
   saved: boolean
+  followStatus?: InboxThread['followStatus']
 }
 
 type Result = { count: number; label: string; threads: ViewThreadRow[]; totals: GmailLabelCounts | null }
@@ -82,6 +83,8 @@ export default class GoogleEmailInboxViewTask extends Command {
         limit,
         syncLabels: false,
         followDir: context.config.DIR_STATE_FOLLOW_EMAIL_ACTIVE,
+        followArchiveDir: context.config.DIR_STATE_FOLLOW_EMAIL_ARCHIVE,
+        timeDir: context.config.DIR_TIME,
       })
 
       const totals = await getLabelCounts(client, labelId).catch(() => null)
@@ -106,6 +109,7 @@ export default class GoogleEmailInboxViewTask extends Command {
           snippet: newest.snippet,
           messages: t.messages.length,
           saved: t.saved,
+          ...(t.followStatus ? { followStatus: t.followStatus } : {}),
         }
       })
 

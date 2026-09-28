@@ -18,7 +18,12 @@ export async function withGmail(
   run: (context: CommandContext) => Promise<void>,
 ): Promise<void> {
   const followDir = await mkdtemp('/tmp/sky-gmail-command-test-')
-  const context = CommandContext.test({ ...config, DIR_STATE_FOLLOW_EMAIL_ACTIVE: followDir }).fork({
+  const context = CommandContext.test({
+    ...config,
+    DIR_STATE_FOLLOW_EMAIL_ACTIVE: `${followDir}/active`,
+    DIR_STATE_FOLLOW_EMAIL_ARCHIVE: `${followDir}/archive`,
+    DIR_TIME: `${followDir}/time`,
+  }).fork({
     platform: CommandPlatform.Server,
   })
   const fetchMock = spyOn(globalThis, 'fetch').mockImplementation((async (input: unknown, init?: RequestInit) => {
