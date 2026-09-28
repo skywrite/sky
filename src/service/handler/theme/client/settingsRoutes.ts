@@ -47,6 +47,12 @@ export const SETTINGS_PAGES = {
     group: null,
     description: 'Connect the accounts and services that help Sky work with you.',
   },
+  extensions: {
+    label: 'Extensions',
+    href: '/settings/extensions',
+    group: null,
+    description: 'Add-ons that bring more services and tools into Sky.',
+  },
   notebook: {
     label: 'Notebook',
     href: '/settings/notebook',
@@ -84,7 +90,10 @@ export function settingsSectionOf(path: string): SettingsSection | null {
   if (path !== '/settings' && !path.startsWith('/settings/')) return null
   const clean = path.replace(/\/$/, '')
   for (const [id, page] of Object.entries(SETTINGS_PAGES)) {
-    if (clean === page.href || ((id === 'prompts' || id === 'connections') && clean.startsWith(`${page.href}/`)))
+    if (
+      clean === page.href ||
+      ((id === 'prompts' || id === 'connections' || id === 'extensions') && clean.startsWith(`${page.href}/`))
+    )
       return id as SettingsSection
   }
   if (clean === '/settings/ai') return 'models'

@@ -17,7 +17,9 @@
     "./nbfs": "./src/nbfs.ts",
     "./shell": "./src/shell.ts",
     "./browser": "./src/browser.ts",
-    "./recap": "./src/recap.ts"
+    "./recap": "./src/recap.ts",
+    "./extensions": "./src/extensions.ts",
+    "./documents": "./src/documents.ts"
   },
   "scripts": {
     "build": "echo 'TODO: bundle for publishing'"

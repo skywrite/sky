@@ -19,6 +19,7 @@ import {
   undoRemove,
   useDirChanges,
 } from './explorerDelete.tsx'
+import { ExtensionFileActions } from './extensions.tsx'
 import { IdentityLine } from './frontmatter/Identity.tsx'
 import { useOutline } from './frontmatter/outline.ts'
 import { DocumentRail } from './frontmatter/Rail.tsx'
@@ -738,6 +739,7 @@ export function DocView({
                   </Button>
                 </>
               )}
+              {!editing && <ExtensionFileActions file={file} />}
               {canAddAudio && (
                 <FileButton onChange={addAudio} accept={AUDIO_IMPORT_ACCEPT} multiple>
                   {(props) => (

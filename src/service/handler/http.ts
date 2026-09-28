@@ -26,6 +26,7 @@ import { type ClockRoutesOptions, createClockRoutes } from './clock/mod.ts'
 import { createDayRoutes } from './day/mod.ts'
 import { createDayScheduleHost } from './day/schedule.ts'
 import { createExplorerRoutes, explorerHref } from './explorer/mod.ts'
+import { type ExtensionRoutesOptions, createExtensionRoutes } from './extensions/routes.ts'
 import { searchNotebook } from './home/mod.ts'
 import { createImportRoutes, type ImportRoutesOptions } from './import/mod.ts'
 import { createLinks } from './links/mod.ts'
@@ -98,6 +99,8 @@ export interface HttpHandlerOptions {
   /** The automations page's host; absent, /automations/_api is not served */
   automations?: AutomationsRoutesOptions
   outbox?: OutboxRoutesOptions
+  /** Installed extensions and their commands, for the extensions' screens; absent, /extensions/_api is not served */
+  extensions?: ExtensionRoutesOptions
   people?: PeopleOptions
   places?: PlacesOptions
   workstreams?: WorkstreamsRoutesOptions
@@ -236,6 +239,7 @@ export function createHttpApp(options: HttpHandlerOptions): Hono {
     app.route('/automations/_api', createAutomationRoutes(automations))
   }
   if (options.outbox) app.route('/outbox/_api', createOutboxRoutes(options.outbox))
+  if (options.extensions) app.route('/extensions/_api', createExtensionRoutes(options.extensions))
   if (options.workstreams) {
     app.route('/workstreams/_api', createWorkstreamRoutes(options.workstreams))
     app.route('/', createWorkstreamFileRoutes(options.workstreams.store, contentTypeOf, keep, userDataDir))

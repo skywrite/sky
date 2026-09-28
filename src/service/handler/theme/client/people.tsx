@@ -10,6 +10,7 @@ import {
   type ProfileType,
 } from '../../people/types.ts'
 import { fileHref } from './explorer.tsx'
+import { ExtensionProfileCards } from './extensions.tsx'
 import { peopleApi } from './peopleApi.ts'
 import { PeopleEditor } from './peopleEditor.tsx'
 import { ReferencesDialog, RenameFileLink, SpellingsNotice } from './peopleReferences.tsx'
@@ -276,6 +277,7 @@ function ProfilePage({
               </div>
             </section>
           )}
+          <ExtensionProfileCards profile={{ id: profile.id, type: profile.type, name: profile.name }} />
           <AppLink href={fileHref(profile.id)} navigate={navigate} className="sky-people-source">
             Open notebook file ↗
           </AppLink>

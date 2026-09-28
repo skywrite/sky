@@ -41,6 +41,7 @@ import { createYogaInstance } from './graphql/schema.ts'
 import type { AutomationsRoutesOptions } from './handler/automations/mod.ts'
 import type { ChatRoutesOptions } from './handler/chat/mod.ts'
 import type { ClockRoutesOptions } from './handler/clock/mod.ts'
+import type { ExtensionRoutesOptions } from './handler/extensions/routes.ts'
 import { createHttpApp } from './handler/http.ts'
 import type { ImportRoutesOptions } from './handler/import/mod.ts'
 import type { OutboxRoutesOptions } from './handler/outbox/mod.ts'
@@ -95,6 +96,7 @@ export interface ServerOptions {
   /** The automations page's host; absent, /automations/_api is not served */
   automations?: AutomationsRoutesOptions
   outbox?: OutboxRoutesOptions
+  extensions?: ExtensionRoutesOptions
   people?: PeopleOptions
   places?: import('./handler/places/types.ts').PlacesOptions
   workstreams?: WorkstreamsRoutesOptions
@@ -270,6 +272,7 @@ export function createServer(options: ServerOptions): Server {
       meetings: options.meetings,
       automations,
       outbox: options.outbox,
+      extensions: options.extensions,
       people: options.people,
       places: options.places,
       workstreams: options.workstreams,

@@ -17,6 +17,7 @@ import { hold } from './activity.ts'
 import { createAutomationsHost } from './handler/automations/createAutomationsHost.ts'
 import { createChatHost } from './handler/chat/createSession.ts'
 import { createClockHost } from './handler/clock/createClockHost.ts'
+import { createExtensionsHost } from './handler/extensions/createExtensionsHost.ts'
 import { createImportHost } from './handler/import/createImportHost.ts'
 import { createMeetingsHost } from './handler/meetings/createMeetingsHost.ts'
 import { createOutboxHost } from './handler/outbox/createOutboxHost.ts'
@@ -182,6 +183,7 @@ const server = createServer({
   meetings: createMeetingsHost(config, () => server.markdownStore, store),
   automations: createAutomationsHost(config, env.toObject()),
   outbox: createOutboxHost(config, env.toObject()),
+  extensions: createExtensionsHost(config, env.toObject()),
   workstreams: createWorkstreamsHost(config),
   tracking: createTrackingHost(config),
   streaks: createStreaksHost(config),

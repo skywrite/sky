@@ -568,3 +568,31 @@
   padding-left: 0;
   font-size: 14px;
 }
+
+/*
+ * An extension's card in the profile column reads like the column's own
+ * sections: its actions are quiet, block links like Rename file, and its
+ * small print matches the labels.
+ */
+.sky-people-details .sky-ext-card-action {
+  display: block;
+  margin-top: 6px;
+  padding-left: 0;
+  padding-right: 0;
+  font-size: 14px;
+}
+.sky-people-details .sky-ext-card-note {
+  font-size: 13px;
+  color: var(--sky-dim);
+  margin: 6px 0 0;
+}
+.sky-people-details .sky-ext-card-warn {
+  font-size: 13px;
+  color: var(--sky-action-danger);
+  margin: 6px 0 0;
+}
+.sky-people-details .sky-ext-card dd small {
+  display: block;
+  font-size: 13px;
+  color: var(--sky-dim);
+}

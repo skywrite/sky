@@ -5,6 +5,7 @@ import colors from 'picocolors'
 import { isAIChatTool } from '#commands/lib/AIChatTool.ts'
 import type { ParamDef, ParamKind, ParamType, ParamsRecord } from '#commands/lib/params.ts'
 import { DIR_CODE_SRC, DIR_HOME, COMMAND_DIRS } from '#config'
+import { extensionCommandRoots } from '#lib/extensions/installed.ts'
 import { readTextFile, writeTextFile } from '#shared/fs/mod.ts'
 import { walk } from '#shared/fs/mod.ts'
 
@@ -121,10 +122,27 @@ async function discoverCommands(): Promise<CommandEntry[]> {
   return commands
 }
 
-/** Discover commands from extra commandDirs (from config) */
+/**
+ * The extra roots: the configured command dirs, then the `commands/` folder
+ * of every installed extension. An extension's commands all carry its slug
+ * as prefix — `commands/contact/fetch.ts` in the hubspot extension is
+ * `hubspot:contact:fetch` — so an extension names nothing outside its own
+ * prefix and can shadow no core command.
+ */
+async function extraCommandRoots(): Promise<Array<{ dir: string; prefix?: string }>> {
+  return [...COMMAND_DIRS.map((dir) => ({ dir })), ...(await extensionCommandRoots())]
+}
+
+/** A command's name from its path under a root, with an extension's slug in front when it has one. */
+export function commandNameOf(relPath: string, prefix?: string): string {
+  const name = pathToCommandName(relPath)
+  return prefix ? `${prefix}:${name}` : name
+}
+
+/** Discover commands from extra commandDirs (from config) and installed extensions */
 async function discoverExtraCommands(): Promise<CommandEntry[]> {
   const commands: CommandEntry[] = []
-  for (const dir of COMMAND_DIRS) {
+  for (const { dir, prefix } of await extraCommandRoots()) {
     if (!existsSync(dir)) continue
     for await (const entry of walk(dir)) {
       if (!entry.isFile || !entry.path.endsWith('.ts')) continue
@@ -133,8 +151,7 @@ async function discoverExtraCommands(): Promise<CommandEntry[]> {
       if (relPath.split('/').some((seg) => seg.startsWith('_'))) continue
       if (relPath.split('/').includes('lib')) continue
 
-      const name = pathToCommandName(relPath)
-      commands.push(await buildCommandEntry(name, entry.path))
+      commands.push(await buildCommandEntry(commandNameOf(relPath, prefix), entry.path))
     }
   }
   commands.sort((a, b) => a.name.localeCompare(b.name))
@@ -171,6 +188,7 @@ async function walkIncremental(
   baseDir: string,
   prevEntries: CommandEntry[],
   manifestMtime: number,
+  prefix?: string,
 ): Promise<{ commands: CommandEntry[]; changed: boolean }> {
   const cached = new Map<string, CommandEntry>()
   for (const cmd of prevEntries) cached.set(cmd.file, cmd)
@@ -195,7 +213,7 @@ async function walkIncremental(
     }
 
     changed = true
-    commands.push(await buildCommandEntry(pathToCommandName(relPath), entry.path))
+    commands.push(await buildCommandEntry(commandNameOf(relPath, prefix), entry.path))
   }
 
   if (cached.size > 0) changed = true
@@ -220,24 +238,25 @@ export async function updateManifest(): Promise<CommandsManifest> {
 
   const localCommands: CommandEntry[] = []
   let localChanged = false
-  // Track which configured dirs actually exist so removals trigger a rewrite.
+  // Track which roots actually exist so removals trigger a rewrite.
+  const roots = await extraCommandRoots()
   const prevLocalDirs = new Set<string>()
   for (const cmd of existing.commands.local) {
-    for (const dir of COMMAND_DIRS) {
+    for (const { dir } of roots) {
       if (cmd.file.startsWith(dir + path.sep)) prevLocalDirs.add(dir)
     }
   }
-  for (const dir of COMMAND_DIRS) {
+  for (const { dir, prefix } of roots) {
     if (!existsSync(dir)) {
       if (prevLocalDirs.has(dir)) localChanged = true
       continue
     }
     const prevForDir = existing.commands.local.filter((c) => c.file.startsWith(dir + path.sep))
-    const result = await walkIncremental(dir, prevForDir, manifestMtime)
+    const result = await walkIncremental(dir, prevForDir, manifestMtime, prefix)
     localCommands.push(...result.commands)
     if (result.changed) localChanged = true
   }
-  // Detect entries from dirs no longer in COMMAND_DIRS.
+  // Detect entries from roots no longer present: a dir dropped from the config, an extension removed.
   if (existing.commands.local.length !== localCommands.length && !localChanged) {
     const knownFiles = new Set(localCommands.map((c) => c.file))
     if (existing.commands.local.some((c) => !knownFiles.has(c.file))) localChanged = true

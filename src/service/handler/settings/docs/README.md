@@ -1,6 +1,6 @@
 ---
 created: 2026-08-30
-updated: 2026-09-26
+updated: 2026-09-27
 ---
 
 # Settings — the web's settings section
@@ -20,7 +20,7 @@ People & Orgs appears above the Settings heading in this sidebar. Its pages and
 record storage are owned by [People & Orgs](../../people/docs/README.md).
 
 Settings use one level of navigation: Appearance; Me (About me, Writing style);
-AI (Models, Audio transcription, Voice, Prompts); Connections; Notebook; Advanced; Experimental; About Sky.
+AI (Models, Audio transcription, Voice, Prompts); Connections; Extensions; Notebook; Advanced; Experimental; About Sky.
 Group labels open their first page; the adjacent disclosure toggles their children.
 `theme/client/settingsRoutes.ts` owns canonical paths and legacy aliases, including
 prompt detail paths. Existing `/settings/ai`, `/settings/voice`,
@@ -141,6 +141,11 @@ Pages:
   Change and Remove on each row (every remove asks twice), and a form to
   add one as a key/token or a login. Presence only: a value never comes
   back out whole.
+- **Extensions** — `/settings/extensions`: the installed extensions, each
+  with its version, author, categories, or why it did not load, a switch,
+  and Reload. An extension with a settings screen opens at
+  `/settings/extensions/<author>/<slug>`. Since 2026-09-26; see
+  `lib/extensions/docs/README.md`.
 - **Notebook** — where things live (with Show in Finder), the editor
   (detected commands, saved to `editor`), export and drop folders.
 - **Advanced** — the configuration view kept from the first rung:

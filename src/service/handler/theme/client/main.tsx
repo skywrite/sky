@@ -14,6 +14,7 @@ import { DayFilesMain, filesRouteOf, shortLabel } from './dayFiles.tsx'
 import { useItemHelpChat } from './dayItemHelp.tsx'
 import { useDocumentNotices } from './documentImport.tsx'
 import { DocView, explorerFileOf, fileHref, Tree } from './explorer.tsx'
+import { ExtensionNavLinks, ExtensionPageMain, extensionRouteOf } from './extensions.tsx'
 import { type Kept, undoKeep } from './files.tsx'
 import { ImportDialog, ImportMain, useFileDrop, useImportQueue, useImports } from './import.tsx'
 import { MeetingMain, meetingRouteOf } from './meetingPage.tsx'
@@ -98,6 +99,8 @@ function Canvas() {
   const isSettings = settingsSection !== null
   const peopleRoute = peopleRouteOf(path)
   const placesRoute = placesRouteOf(path)
+  // /extensions/<author>/<slug> is an extension's own page.
+  const extensionPage = extensionRouteOf(path)
   const isClock = path === '/clock'
   // /week is this week, /week/<id> another.
   const weekId = weekIdOf(path)
@@ -172,6 +175,7 @@ function Canvas() {
     !isSettings &&
     !peopleRoute &&
     placesRoute === null &&
+    extensionPage === null &&
     !isClock &&
     !isAutomations &&
     !isOutbox &&
@@ -289,7 +293,7 @@ function Canvas() {
               <div className="sky-side-label">Explorer</div>
               <Tree file={explorerFile} onOpen={(file) => navigate(fileHref(file))} />
             </>
-          ) : settingsSection || peopleRoute || placesRoute !== null ? (
+          ) : settingsSection || peopleRoute || placesRoute !== null || extensionPage !== null ? (
             <>
               <button type="button" className="sky-thread" onClick={() => navigate('/')}>
                 <span>‹ Today</span>
@@ -320,6 +324,7 @@ function Canvas() {
               >
                 Places
               </a>
+              <ExtensionNavLinks active={extensionPage} navigate={navigate} />
               <div className="sky-side-label">Settings</div>
               <SettingsNav section={settingsSection} navigate={navigate} />
             </>
@@ -528,6 +533,8 @@ function Canvas() {
           <PeopleMain key={path} route={peopleRoute} navigate={navigate} />
         ) : placesRoute !== null ? (
           <PlacesMain route={placesRoute} navigate={navigate} />
+        ) : extensionPage !== null ? (
+          <ExtensionPageMain id={extensionPage} navigate={navigate} />
         ) : settingsSection ? (
           <SettingsMain
             section={settingsSection}

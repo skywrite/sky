@@ -14,6 +14,7 @@
 import { Button, SegmentedControl, Select, useMantineColorScheme } from '@mantine/core'
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
 import type { TranscriptionSettings } from '#commands/all/audio/transcript/lib/models.ts'
+import { ExtensionsPane } from './extensions.tsx'
 import { AboutMePane } from './settingsAboutMe.tsx'
 import { BeeperMain } from './settingsBeeper.tsx'
 import { Block, mono, refusalOf, Row, UNREACHABLE } from './settingsBlocks.tsx'
@@ -786,6 +787,8 @@ export function SettingsMain({
               <AIPane data={data} reload={reload} />
             ) : section === 'transcription' ? (
               <TranscriptionPane settings={data.transcription} reload={reload} />
+            ) : section === 'extensions' ? (
+              <ExtensionsPane path={path} navigate={navigate} />
             ) : section === 'connections' ? (
               <ConnectionsPane navigate={navigate} />
             ) : section === 'notebook' ? (
