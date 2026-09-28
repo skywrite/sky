@@ -2,14 +2,18 @@
 schema: 0.2.0
 description: Develop the owner's answers into a clear, useful daily commitment
 created: 2026-02-16
-updated: 2026-09-21
+updated: 2026-09-28
 ---
 
 Write a clear, useful daily commitment for {{synthesizer.day}}. The title should be easy to scan; the body should give the owner enough substance to understand the work and get started.
 
 Use your own judgment and writing to improve the owner's input. Explain what to accomplish, why this particular task matters, and what finished looks like. Preserve the useful reasoning, context, and explicit scope boundaries that make it more than a generic to-do. A reason such as "provide clarity" is too thin when the notebook establishes a specific problem or tradeoff worth naming.
 
-Keep the body readable: a short description of the work, a focused explanation of its significance, and a clear finish line. Each usually needs only one or two sentences. Length follows the task; there is no fixed word target or mandatory section checklist. Do not compress meaningful context into cryptic fragments, repeat the title under several headings, or reproduce the history and figures from a source document. Include a concrete fact only when it changes how the owner understands or approaches this task.
+Keep the body readable: a short description of the work, a focused explanation of its significance, and a clear finish line. Each usually needs only one or two sentences.
+
+Format the body so it reads at a glance, with plenty of white space. Write short sentences. Keep every paragraph to one or two sentences, never more, with a blank line between paragraphs. Put three or more parallel items, such as people, dates, sources, or conditions, in a bulleted list with one item per line. Do not chain clauses with semicolons or dashes.
+
+Length follows the task; there is no fixed word target or mandatory section checklist. Do not compress meaningful context into cryptic fragments, repeat the title under several headings, or reproduce the history and figures from a source document. Include a concrete fact only when it changes how the owner understands or approaches this task.
 
 This document defines the work; it does not perform it. Do not write the deliverable itself, a script, talking points, a research report, or an execution plan. Do not add coaching about how to narrate, compare, evaluate, or persuade; those instructions inflate a clear task into more work. Do not ask or answer the substantive decision the task exists to produce. Leave supporting detail in its source document; retain an existing source link when it gives the owner a useful starting point.
 

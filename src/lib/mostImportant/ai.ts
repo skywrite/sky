@@ -7,6 +7,7 @@ import { aiModel } from '#shared/ai/models.ts'
 import { readPromptFile } from '#shared/prompts/load.ts'
 import { renderPromptFile, type RenderInput } from '#shared/prompts/mod.ts'
 import type { PlainDate } from '#universal/dates/nbdt/mod.ts'
+import { shortParagraphs } from './document.ts'
 import { MAX_MI_QUESTIONS, type MostImportantAI, type MISuggestion, type MIProgressReporter } from './types.ts'
 
 const promptFile = (name: string) =>
@@ -42,7 +43,7 @@ const Draft = z.object({
   summary,
   dueBy: z.string().nullable().describe('Only an explicitly established deadline; never a scheduled start time'),
   body: text.describe(
-    'Readable Markdown beneath the title: what to accomplish, why it matters in this situation, and what done means. Preserve useful context and explicit boundaries without repeating the source material or doing the task.',
+    'Readable Markdown beneath the title: what to accomplish, why it matters in this situation, and what done means. Short paragraphs of one or two sentences with a blank line between them; a bulleted list for three or more parallel items. Preserve useful context and explicit boundaries without repeating the source material or doing the task.',
   ),
 })
 
@@ -139,7 +140,7 @@ export function createMostImportantAI(): MostImportantAI {
         },
       })
       const draft = await generate(Draft, prompt, progress)
-      return { ...draft, dueBy: draft.dueBy ?? '' }
+      return { ...draft, body: shortParagraphs(draft.body), dueBy: draft.dueBy ?? '' }
     },
   }
 }

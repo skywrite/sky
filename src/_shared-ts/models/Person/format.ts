@@ -132,7 +132,8 @@ function capitalize(text: string): string {
   return /^[a-z][a-z]/.test(text) ? text[0].toUpperCase() + text.slice(1) : text
 }
 
-function splitSentences(text: string): string[] {
+/** The sentences of one line of prose; an abbreviation or initial ("Oct.", "J.", "e.g.") never ends one. */
+export function splitSentences(text: string): string[] {
   const merged: string[] = []
   for (const part of text.split(SENTENCE_END)) {
     const last = merged.length - 1
