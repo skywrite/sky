@@ -264,6 +264,58 @@ test('Complete entries stay on the selected day outside the planning window', as
   })
 })
 
+test('reading missing past and future days stays read-only until an item is added', async () => {
+  await withNotebook(async ({ app, root }) => {
+    const past = DAY.addDays(-1)
+    const future = DAY.addDays(14)
+    const dates = [
+      { day: past, kind: 'todos', text: 'Review the Atlas outline', list: 'Professional Todos' },
+      { day: future, kind: 'reminders', text: 'Water the plants', list: 'Reminders' },
+    ] as const
+    for (const { day, kind, text, list } of dates) {
+      const file = path.join(root, 'time', dayFile(day))
+      const opened = (await (await app.request(`/${day.ymd}`)).json()) as DayView
+      const absentAfterOpen = !(await exists(file))
+      const response = await app.request(`/${day.ymd}/item/add`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ kind, text, requestId: randomUUID() }),
+      })
+      const added = (await response.json()) as DayPlanResult
+      const document = DayDocument.fromMarkdown(await readFile(file, 'utf8'))
+      assert({
+        given: `${day.ymd} selected without a day file`,
+        should: 'open without writing, then create an unstarted day containing the requested item',
+        actual: {
+          openedEmpty: opened.day.dayRelativePath === null && !opened.record.started,
+          absentAfterOpen,
+          status: response.status,
+          savedPath: added.view.day.dayRelativePath,
+          started: document.started,
+          items: document.lists.find((entry) => entry.title === list)?.items,
+        },
+        expected: {
+          openedEmpty: true,
+          absentAfterOpen: true,
+          status: 200,
+          savedPath: path.join('time', dayFile(day)),
+          started: undefined,
+          items: [text],
+        },
+      })
+    }
+    assert({
+      given: 'direct additions on dates before and beyond this week',
+      should: 'leave the schedule files alone',
+      actual: [
+        await exists(path.join(root, 'time', 'schedule-professional.md')),
+        await exists(path.join(root, 'time', 'schedule-personal.md')),
+      ],
+      expected: [false, false],
+    })
+  })
+})
+
 test(
   { name: 'Next moves preserve links, source categories, completed duplicates, and support exact undo' },
   async () => {
@@ -426,7 +478,7 @@ test(
       })
       const headers = { 'content-type': 'application/json', origin: 'https://example.com' }
       const origin = await app.request(`/${DAY.ymd}/item/add`, { method: 'POST', headers, body: JSON.stringify(body) })
-      const missing = await app.request('/2026-01-26/item/add', {
+      const invalidDay = await app.request('/2026-01-32/item/add', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ ...body, time: '09:30' }),
@@ -440,7 +492,7 @@ test(
           missingTime.status,
           timedNext.status,
           origin.status,
-          missing.status,
+          invalidDay.status,
           await readFile(file, 'utf8'),
         ],
         expected: [400, 400, 400, 400, 403, 404, EMPTY],

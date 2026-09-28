@@ -156,7 +156,7 @@ test('web edits can change task type and schedule in one save, with exact Undo',
   })
 })
 
-test('web adds and Next pulls prepare this-week days and schedule later dates with Undo', async () => {
+test('explicit day-page adds and Next pulls prepare the selected date without starting it', async () => {
   await withDayNotebook(async ({ context }) => {
     const { config } = context
     const app = createDayRoutes({
@@ -183,18 +183,20 @@ test('web adds and Next pulls prepare this-week days and schedule later dates wi
       text: 'Water the plants',
       requestId: randomUUID(),
     })
-    const added = (await scheduled.json()) as { undo: string; href: string }
+    const added = (await scheduled.json()) as { undo: string; view: DayView }
+    const laterFile = path.join(config.DIR_TIME, dayFile(LATER))
+    const laterDay = DayDocument.fromMarkdown(await readTextFile(laterFile))
     assert({
       given: 'an inline reminder add on a missing later date',
-      should: 'schedule it without a day file',
-      actual: [scheduled.status, added.href, await exists(path.join(config.DIR_TIME, dayFile(LATER)))],
-      expected: [200, `/week/${Week.of(LATER)}`, false],
+      should: 'prepare the selected day, leave it unstarted, and show the reminder there',
+      actual: [scheduled.status, laterDay.started, added.view.record.reminders.map((item) => item.text)],
+      expected: [200, undefined, ['Water the plants']],
     })
     await post(app, LATER, 'undo', { id: added.undo })
     assert({
-      given: 'Undo of the future add',
-      should: 'remove only the created schedule file',
-      actual: await exists(config.FILE_SCHEDULE_PERSONAL),
+      given: 'Undo of the only addition on a newly prepared day',
+      should: 'remove the untouched day file',
+      actual: await exists(laterFile),
       expected: false,
     })
     const next = path.join(config.DIR_TIME, 'next-professional.md')
@@ -209,20 +211,20 @@ test('web adds and Next pulls prepare this-week days and schedule later dates wi
     const pulled = (await pull.json()) as { undo: string }
     assert({
       given: 'a Next item pulled onto next week',
-      should: 'land in the schedule and leave the Next list',
+      should: 'land in the selected day and leave the Next list',
       actual: [
         pull.status,
-        (await readTextFile(config.FILE_SCHEDULE_PROFESSIONAL)).includes('Review the outline'),
+        (await readTextFile(laterFile)).includes('Review the outline'),
         (await readTextFile(next)).includes('Review the outline'),
       ],
       expected: [200, true, false],
     })
     await post(app, LATER, 'undo', { id: pulled.undo })
     assert({
-      given: 'Undo of a scheduled Next pull',
-      should: 'restore the original Next file',
-      actual: await readTextFile(next),
-      expected: before,
+      given: 'Undo of a Next pull into a new day',
+      should: 'restore the source and remove the untouched day file',
+      actual: [await readTextFile(next), await exists(laterFile)],
+      expected: [before, false],
     })
   })
 })

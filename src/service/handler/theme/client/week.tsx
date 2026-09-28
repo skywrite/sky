@@ -236,7 +236,7 @@ function DaysBlock({
             type="button"
             className="sky-wday"
             data-today={d.today || undefined}
-            disabled={!d.exists}
+            aria-label={`${d.weekday} ${shortDate(d.ymd)}`}
             onClick={() => onOpenDay(d)}
           >
             {d.weekday}
@@ -640,8 +640,6 @@ export function WeekMain({
   }
 
   const title = view ? `Week ${view.number} · ${rangeLabel(view.start, view.end)}` : 'Week'
-  const showDays = view ? view.exists || view.current : false
-
   return (
     <div className="sky-main sky-week">
       <header className="sky-head">
@@ -668,7 +666,7 @@ export function WeekMain({
       <div className="sky-scroll">
         <div className="sky-col">
           {note && <div className="sky-wnote">{note}</div>}
-          {view && showDays && (
+          {view && (
             <DaysBlock
               days={view.days}
               busy={busy}

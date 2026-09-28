@@ -1,6 +1,6 @@
 ---
 created: 2026-09-04
-updated: 2026-09-20
+updated: 2026-09-28
 ---
 
 # The week page
@@ -36,7 +36,9 @@ Sunday's End is one step back.
 - **Days.** Monday to Sunday, each in a word or two: the hours it ran and
   green "perfect"; "today · started 6:20"; amber "not ended" with an End
   button hugging it; "not started yet" with the page's one primary button,
-  Start; dim "upcoming". A day with a file is a link to its page.
+  Start; dim "upcoming". Every day opens its dated page, including dates without
+  a file. Opening is read-only; adding a plan item prepares an unstarted day
+  file. The seven days also appear for a week with no directory yet.
 - **Plan.** `week.md` read by heading: the priorities as a numbered list,
   the goals under their category, a goal struck by hand shown as done. Each
   goal carries a chip with what the latest check-in said about it — done,

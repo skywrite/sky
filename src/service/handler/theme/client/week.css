@@ -28,11 +28,6 @@
   font-weight: 550;
 }
 
-.sky-wday:disabled {
-  cursor: default;
-  text-decoration: none;
-}
-
 .sky-wdate {
   margin-left: 10px;
   font-size: 15px;

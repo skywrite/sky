@@ -32,7 +32,7 @@ export async function dayFileOf(
   if (!isDay(ymd)) return c.json({ error: `not a day: ${ymd}` }, 404)
   const file = path.join(options.timeDir, dayFile(new PlainDate(ymd)))
   const present = await exists(file)
-  if (!present && (!allowMissing || ymd < options.today().ymd)) return c.json({ error: `no day file for ${ymd}` }, 404)
+  if (!present && !allowMissing) return c.json({ error: `no day file for ${ymd}` }, 404)
   const content = present ? await readTextFile(file) : DayDocument.createFutureDay(new PlainDate(ymd)).toMarkdown()
   if (dayEnd(DayDocument.fromMarkdown(content)).ended) {
     return c.json({ error: 'This day has ended. Tasks are read-only.', view: await options.view(ymd) }, 409)

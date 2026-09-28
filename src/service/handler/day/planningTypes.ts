@@ -27,7 +27,6 @@ export interface DayPlanResult {
   view: DayView
   undo: string
   message: string
-  href?: string
 }
 
 /** Accept the notebook's extended hours as well as ordinary clock times. */

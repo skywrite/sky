@@ -1,13 +1,9 @@
 import * as path from 'node:path'
 import { Hono } from 'hono'
-import { appendTaskBlock } from '#lib/nbfs/fileTaskItems.ts'
-import { blockRaw, ItemEditError } from '#lib/nbfs/listBlocks.ts'
+import { ItemEditError } from '#lib/nbfs/listBlocks.ts'
 import { writePlanningChanges as writeChanges, type PlanningChange as Change } from '#lib/nbfs/planningChanges.ts'
-import { emptySchedule, scheduledBlock } from '#lib/nbfs/scheduledItems.ts'
-import { taskDestination, taskFiling } from '#lib/nbfs/taskDestination.ts'
-import { readOptional, withLock } from '#lib/outbox/files.ts'
+import { readOptional } from '#lib/outbox/files.ts'
 import DayDocument from '#shared/models/Day/document/mod.ts'
-import { PlainDate, Week } from '#universal/dates/nbdt/mod.ts'
 import { bodyOf, dayFileOf, type ItemRoutesOptions } from './itemContext.ts'
 import {
   addPlanItem,
@@ -38,7 +34,6 @@ interface Operation {
   added: Added[]
   removed: Removed[]
   message: string
-  href?: string
   expires: number
   undone: boolean
 }
@@ -70,13 +65,6 @@ function inputOf(body: Record<string, unknown> | null): DayPlanInput | null {
 export function createPlanningRoutes(options: ItemRoutesOptions): Hono {
   const app = new Hono()
   const operations = new Map<string, Operation>()
-  // The outer item guard already owns the source/day lock. Schedule writers
-  // use the same second lock as CLI carries and day:start imports.
-  app.use('*', async (c, next) => {
-    if (c.req.method === 'POST' && /\/item\/(?:add|pull|undo)$/.test(c.req.path) && options.workstreams)
-      return withLock(path.join(options.workstreams.stateDir, 'schedule.lock'), next)
-    await next()
-  })
   const cleanup = () => {
     for (const [id, operation] of operations) if (operation.expires < performance.now()) operations.delete(id)
     while (operations.size > 200) operations.delete(operations.keys().next().value!)
@@ -129,7 +117,7 @@ export function createPlanningRoutes(options: ItemRoutesOptions): Hono {
     if (previous) {
       if (previous.day !== day.ymd || previous.request !== request || previous.undone)
         throw new PlanningError('This request has already been used. Try again.')
-      return c.json({ view: await options.view(day.ymd), undo: id, message: previous.message, href: previous.href })
+      return c.json({ view: await options.view(day.ymd), undo: id, message: previous.message })
     }
     const result = addPlanItem(day.content, input)
     if (
@@ -138,47 +126,25 @@ export function createPlanningRoutes(options: ItemRoutesOptions): Hono {
       )
     )
       throw new PlanningError('That item is already on this day.')
-    const date = new PlainDate(day.ymd)
-    // Complete entries record the selected day, even beyond the task scheduling window.
-    const destination =
-      input.kind === 'complete'
-        ? { filed: 'day' as const, file: day.file, list: result.list }
-        : taskDestination({ DIR_TIME: options.timeDir }, date, options.today(), result.list)
-    const before =
-      destination.filed === 'day' ? (day.exists ? day.content : undefined) : await readOptional(destination.file)
-    const after =
-      destination.filed === 'day'
-        ? result.content
-        : appendTaskBlock(before ?? emptySchedule(result.list), date, result.list, `- ${result.raw}`, true)
-    const changes = [{ file: destination.file, before, after }]
+    const changes = [{ file: day.file, before: day.exists ? day.content : undefined, after: result.content }]
     await writeChanges(changes, options.writePlanning)
     const message =
-      destination.filed === 'schedule'
-        ? `Scheduled for ${day.ymd}`
-        : input.kind === 'complete'
-          ? `Entry added at ${input.time}`
-          : input.kind === 'commitments'
-            ? `Commitment added at ${input.time}`
-            : input.kind === 'reminders'
-              ? 'Reminder added'
-              : 'To-do added'
-    const href = destination.filed === 'schedule' ? `/week/${Week.of(date)}` : undefined
+      input.kind === 'complete'
+        ? `Entry added at ${input.time}`
+        : input.kind === 'commitments'
+          ? `Commitment added at ${input.time}`
+          : input.kind === 'reminders'
+            ? 'Reminder added'
+            : 'To-do added'
     remember(id, {
       day: day.ymd,
       request,
       changes,
-      added: [
-        {
-          file: destination.file,
-          list: destination.list,
-          raw: destination.filed === 'schedule' ? blockRaw(scheduledBlock(`- ${result.raw}`, result.list)) : result.raw,
-        },
-      ],
+      added: [{ file: day.file, list: result.list, raw: result.raw }],
       removed: [],
       message,
-      href,
     })
-    return c.json({ view: await options.view(day.ymd), undo: id, message, href })
+    return c.json({ view: await options.view(day.ymd), undo: id, message })
   })
 
   app.post('/:ymd/item/pull', async (c) => {
@@ -204,7 +170,7 @@ export function createPlanningRoutes(options: ItemRoutesOptions): Hono {
     if (previous) {
       if (previous.day !== day.ymd || previous.request !== request || previous.undone)
         throw new PlanningError('This request has already been used. Try again.')
-      return c.json({ view: await options.view(day.ymd), undo: id, message: previous.message, href: previous.href })
+      return c.json({ view: await options.view(day.ymd), undo: id, message: previous.message })
     }
     const { sources, entries } = await readNext(day.content)
     const selected = [...new Set(body.ids)].map((id) => entries.find((entry) => entry.id === id))
@@ -214,8 +180,6 @@ export function createPlanningRoutes(options: ItemRoutesOptions): Hono {
     const added: Added[] = []
     const removed: Removed[] = []
     const changedSources = new Map(sources)
-    const destinations = new Map<string, Change>()
-    const date = new PlainDate(day.ymd)
     for (const entry of selected as NextEntry[]) {
       const file = path.join(options.timeDir, entry.file)
       const text = moveItemMarkdown(entry.item, sources.get(entry.file)!, file, day.file)
@@ -230,31 +194,11 @@ export function createPlanningRoutes(options: ItemRoutesOptions): Hono {
       if (deletion.kind === 'missing')
         throw new PlanningError('An item changed in its Next list. Refresh and try again.')
       changedSources.set(entry.file, deletion.content)
-      const destination = taskDestination({ DIR_TIME: options.timeDir }, date, options.today(), result.list)
-      if (destination.filed === 'day') content = result.content
-      else {
-        let change = destinations.get(destination.file)
-        if (!change) {
-          const before = await readOptional(destination.file)
-          change = { file: destination.file, before, after: before ?? emptySchedule(result.list) }
-          destinations.set(destination.file, change)
-        }
-        const movedText = moveItemMarkdown(entry.item, sources.get(entry.file)!, file, destination.file)
-        change.after = appendTaskBlock(change.after!, date, result.list, `- ${movedText}`, true)
-      }
-      const raw =
-        destination.filed === 'day'
-          ? result.raw
-          : blockRaw(
-              scheduledBlock(
-                `- ${moveItemMarkdown(entry.item, sources.get(entry.file)!, file, destination.file)}`,
-                result.list,
-              ),
-            )
-      added.push({ file: destination.file, list: destination.list, raw })
+      content = result.content
+      added.push({ file: day.file, list: result.list, raw: result.raw })
       removed.push({ file, list: entry.list, raw: entry.raw, at: entry.at })
     }
-    const changes: Change[] = [...destinations.values()]
+    const changes: Change[] = []
     if (content !== day.content)
       changes.push({ file: day.file, before: day.exists ? day.content : undefined, after: content })
     for (const [name, after] of changedSources) {
@@ -262,13 +206,9 @@ export function createPlanningRoutes(options: ItemRoutesOptions): Hono {
       if (before !== after) changes.push({ file: path.join(options.timeDir, name), before, after })
     }
     await writeChanges(changes, options.writePlanning)
-    const scheduled = taskFiling(date, options.today()) === 'schedule'
-    const message = scheduled
-      ? `Scheduled ${added.length} ${added.length === 1 ? 'item' : 'items'} for ${day.ymd}`
-      : `Moved ${added.length} ${added.length === 1 ? 'item' : 'items'} to the day`
-    const href = scheduled ? `/week/${Week.of(date)}` : undefined
-    remember(id, { day: day.ymd, request, changes, added, removed, message, href })
-    return c.json({ view: await options.view(day.ymd), undo: id, message, href })
+    const message = `Moved ${added.length} ${added.length === 1 ? 'item' : 'items'} to the day`
+    remember(id, { day: day.ymd, request, changes, added, removed, message })
+    return c.json({ view: await options.view(day.ymd), undo: id, message })
   })
 
   app.post('/:ymd/item/undo', async (c) => {

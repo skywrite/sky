@@ -1,6 +1,6 @@
 ---
 created: 2026-09-03
-updated: 2026-09-23
+updated: 2026-09-28
 ---
 
 # The day's items, the day's rail, and the day's files
@@ -27,8 +27,11 @@ task blocks within the list, preserving their notes, links and surrounding text.
 
 Inline forms add to-dos, reminders, and commitments, including when their
 sections are empty. A time makes a task a commitment; times accept the
-notebook's extended hours. Adding can prepare a missing current-week day without starting it. Later dates
-use the schedule files; the confirmation links to the scheduled week.
+notebook's extended hours. The dated day page opens even when its file is
+missing. Opening it changes nothing; adding an item or moving one from Next
+prepares that selected day's file without starting the day, including past and
+later-week dates. Date changes made from an existing task still follow the
+shared date-routing rule and may use the schedule files.
 
 Each row's "Get Sky's help" opens a temporary chat with the item, its notes
 and links, and its source drafted in the composer (`dayItemHelp.tsx`).

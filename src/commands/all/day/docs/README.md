@@ -1,6 +1,6 @@
 ---
 created: 2026-08-29
-updated: 2026-09-23
+updated: 2026-09-28
 ---
 
 # Day commands
@@ -30,12 +30,14 @@ Scheduled items continue to enter their day through the day-start flow.
 ## Task dates choose their destination
 
 `lib/nbfs/taskDestination` is shared by CLI adds/carries, meeting action-item
-acceptance, and web additions, Next pulls, date edits, bulk moves, and week-page
-date picks. A date through the current week's Sunday goes to its day file,
+acceptance, and web date edits, bulk moves, and week-page date picks. A date
+through the current week's Sunday goes to its day file,
 created unstarted when needed. Later dates go to `schedule-professional.md` or
 `schedule-personal.md` under `## YYYY-MM-DD`, even if a future day file already
 exists. Existing future plans are preserved; this rule does not migrate them.
-Historical edits still go to their day files.
+Historical edits still go to their day files. An addition or Next pull made
+from a dated day page is explicitly for that day, so it writes directly to its
+file on any date and creates the unstarted template if needed.
 
 The boundary is the calendar date in the notebook's timezone: a Sunday running
 at 25:30 is already Monday for planning. A new notebook falls back to system
