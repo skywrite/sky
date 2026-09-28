@@ -31,7 +31,7 @@ const longDraft: MIDraft = {
     '## Why this matters',
     'The product brief explains what is changing, but the support team still needs a clear account of what customers will notice. A shared draft gives both teams something specific to review before launch. It also puts the remaining questions in one place so they can be resolved without another round of scattered messages.',
     'The handoff should preserve the distinctions already established in the brief: features that are ready, changes still under review, and issues that need a follow-up. The purpose is to give the team an accurate starting point for the release, with enough context to recognize where they need more information.',
-    '## Done when',
+    '**Done when**',
     'Jane has the draft, with the agreed release scope and unresolved support questions clearly described. Include links to the product brief and the current issue list so the team can find the supporting detail. Keep the document focused on the handoff rather than reproducing every discussion that led to it.',
     'The review draft is ready to share with the support team.',
   ].join('\n\n'),
@@ -107,6 +107,21 @@ test({ name: 'a long draft review keeps document text clear of its controls', ti
               feedbackVisible: false,
               overflow: false,
             },
+          })
+          assert({
+            given: `section labels written as a heading and as a bold line at ${viewport.width} × ${viewport.height}`,
+            should: 'set each label much closer to its own text than to the section above',
+            actual: await editor.evaluate((element) =>
+              [...element.children]
+                .filter((block) => ['Why this matters', 'Done when'].includes((block as HTMLElement).innerText.trim()))
+                .map((label) => {
+                  const box = label.getBoundingClientRect()
+                  const above = box.top - label.previousElementSibling!.getBoundingClientRect().bottom
+                  const below = label.nextElementSibling!.getBoundingClientRect().top - box.bottom
+                  return above > 2 * below
+                }),
+            ),
+            expected: [true, true],
           })
           await editor.locator(':scope > :last-child').scrollIntoViewIfNeeded()
           assert({

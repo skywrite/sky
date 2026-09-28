@@ -24,6 +24,11 @@
   flex-direction: column;
   max-height: var(--sky-dialog-max-height);
 }
+.sky-mi-modal {
+  /* The draft is read in full before it is saved: wide margins, and with the modal's 680 size
+     a line short enough (about 75 characters) to follow back to its start. */
+  --sky-dialog-padding: 48px;
+}
 .sky-mi-dialog-body {
   display: flex;
   min-height: 0;
@@ -188,7 +193,19 @@
 .sky-mi-document :is(h2, h3, p[data-looks-like='h2'], p[data-looks-like='h3']) {
   font-size: 1em;
   font-weight: 600;
+}
+/* A section label opens its section: clear space above, its text close below. Drafts write
+   labels as headings or as a line of bold text; the editor wraps every text run in its own span,
+   so a bold span that is a paragraph's only child is the whole line. */
+.sky-mi-document
+  :is(h2, h3, p[data-looks-like='h2'], p[data-looks-like='h3'], p:has(> [data-inline='strong']:only-child)) {
+  margin: 0 0 0.4em;
   line-height: 1.45;
+}
+.sky-mi-document
+  > *
+  + :is(h2, h3, p[data-looks-like='h2'], p[data-looks-like='h3'], p:has(> [data-inline='strong']:only-child)) {
+  margin-top: 1.9em;
 }
 .sky-mi-document > :last-child {
   margin-bottom: 0;

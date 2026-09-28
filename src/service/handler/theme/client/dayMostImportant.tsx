@@ -625,7 +625,7 @@ export function DayMostImportant({
           title="Most important"
           closeButtonProps={{ 'aria-label': 'Close' }}
           centered
-          size={780}
+          size={680}
           className="sky-mi-modal"
           padding={0}
           classNames={{ content: 'sky-mi-dialog', body: 'sky-mi-dialog-body' }}
