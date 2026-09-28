@@ -1,4 +1,6 @@
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { createServer, type IncomingMessage } from 'node:http'
+import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
 import * as path from 'node:path'
 import process from 'node:process'
@@ -142,45 +144,62 @@ test('close ends the server and later calls fail fast', async () => {
 
 test('over HTTP the client keeps the session id, reads JSON and event-stream answers, and ends the session on close', async () => {
   // A stand-in driver speaking MCP's Streamable HTTP: JSON for initialize, an event stream for a tool call.
+  // It serves through node:http on purpose. Once any test in the suite has loaded the service's Hono
+  // server (the markdown commands' integration test does), the global Response is Hono's lightweight one,
+  // and Bun.serve refuses it ("Expected a Response object") however the fake builds its answers.
   const seen: { method: string; session: string | null }[] = []
   let deleted: string | null = null
-  const server = Bun.serve({
-    port: 0,
-    async fetch(req) {
-      const session = req.headers.get('mcp-session-id')
-      if (req.method === 'DELETE') {
-        deleted = session
-        return new Response(null, { status: 200 })
-      }
-      const msg = (await req.json()) as {
-        id?: number
-        method: string
-        params?: { name?: string; arguments?: { text?: string } }
-      }
-      seen.push({ method: msg.method, session })
-      if (msg.method === 'initialize')
-        return Response.json(
-          {
-            jsonrpc: '2.0',
-            id: msg.id,
-            result: {
-              protocolVersion: '2025-06-18',
-              capabilities: { tools: {} },
-              serverInfo: { name: 'FakeHttp', version: '0.2' },
-            },
+  const readBody = (req: IncomingMessage) =>
+    new Promise<string>((resolve, reject) => {
+      const chunks: Buffer[] = []
+      req.on('data', (chunk: Buffer) => chunks.push(chunk))
+      req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')))
+      req.on('error', reject)
+    })
+  const server = createServer(async (req, res) => {
+    const header = req.headers['mcp-session-id']
+    const session = typeof header === 'string' ? header : null
+    const answer = (status: number, body: string | null, headers: Record<string, string> = {}) => {
+      res.writeHead(status, headers)
+      if (body === null) res.end()
+      else res.end(body)
+    }
+    if (req.method === 'DELETE') {
+      deleted = session
+      return answer(200, null)
+    }
+    const msg = JSON.parse(await readBody(req)) as {
+      id?: number
+      method: string
+      params?: { name?: string; arguments?: { text?: string } }
+    }
+    seen.push({ method: msg.method, session })
+    const json = (body: unknown, headers: Record<string, string> = {}) =>
+      answer(200, JSON.stringify(body), { 'content-type': 'application/json', ...headers })
+    if (msg.method === 'initialize')
+      return json(
+        {
+          jsonrpc: '2.0',
+          id: msg.id,
+          result: {
+            protocolVersion: '2025-06-18',
+            capabilities: { tools: {} },
+            serverInfo: { name: 'FakeHttp', version: '0.2' },
           },
-          { headers: { 'mcp-session-id': 'sess-42' } },
-        )
-      if (msg.method === 'notifications/initialized') return new Response(null, { status: 202 })
-      if (msg.method === 'tools/call') {
-        const body = `event: message\ndata: ${JSON.stringify({ jsonrpc: '2.0', method: 'notifications/progress', params: {} })}\n\nevent: message\ndata: ${JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: { content: [{ type: 'text', text: `echo: ${msg.params?.arguments?.text}` }], isError: false } })}\n\n`
-        return new Response(body, { headers: { 'content-type': 'text/event-stream' } })
-      }
-      return Response.json({ jsonrpc: '2.0', id: msg.id, error: { code: -32601, message: `no ${msg.method}` } })
-    },
+        },
+        { 'mcp-session-id': 'sess-42' },
+      )
+    if (msg.method === 'notifications/initialized') return answer(202, null)
+    if (msg.method === 'tools/call') {
+      const stream = `event: message\ndata: ${JSON.stringify({ jsonrpc: '2.0', method: 'notifications/progress', params: {} })}\n\nevent: message\ndata: ${JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: { content: [{ type: 'text', text: `echo: ${msg.params?.arguments?.text}` }], isError: false } })}\n\n`
+      return answer(200, stream, { 'content-type': 'text/event-stream' })
+    }
+    json({ jsonrpc: '2.0', id: msg.id, error: { code: -32601, message: `no ${msg.method}` } })
   })
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+  const { port } = server.address() as AddressInfo
   try {
-    const client = await McpClient.connect({ url: `http://localhost:${server.port}/mcp`, clientName: 'sky-test' })
+    const client = await McpClient.connect({ url: `http://127.0.0.1:${port}/mcp`, clientName: 'sky-test' })
     const result = await client.callTool('echo', { text: 'over http' })
     await client.close()
     assert({
@@ -201,6 +220,7 @@ test('over HTTP the client keeps the session id, reads JSON and event-stream ans
       },
     })
   } finally {
-    server.stop(true)
+    server.closeAllConnections()
+    server.close()
   }
 })
