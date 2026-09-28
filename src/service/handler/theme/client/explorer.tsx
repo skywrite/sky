@@ -9,6 +9,7 @@ import {
   useRef,
   useState,
 } from 'react'
+import { stageChatDraft } from './chatDraft.ts'
 import {
   announceChanged,
   removedLine,
@@ -62,6 +63,16 @@ export interface ExplorerDoc {
 /** The page for a notebook file. */
 export function fileHref(path: string): string {
   return `/explorer/${path.split('/').map(encodeURIComponent).join('/')}`
+}
+
+/**
+ * A new chat about a file opens with its link — `About [Atlas](/explorer/projects/Atlas.md)` — and
+ * room below for the question. The link reads as the document's title, else as the file's name.
+ */
+export function chatAboutMessage(path: string, title?: string): string {
+  const name = title?.replace(/\s+/g, ' ').trim() || (path.split('/').pop() ?? path).replace(/\.md$/i, '')
+  const href = fileHref(path).replaceAll('(', '%28').replaceAll(')', '%29')
+  return `About [${name.replace(/[\\[\]]/g, '\\$&')}](${href})\n\n`
 }
 
 /** `../people/Jane.md` seen from `time/2026/08/24-30/08-28` — a link as a document writes it, as a notebook path. */
@@ -662,6 +673,15 @@ export function DocView({
     }
   }
 
+  // A new chat with this file's link waiting in the composer; the question and Send stay the person's.
+  // The thread's id is a random routing key, so the file's name stays out of the address.
+  const chatAbout = () => {
+    const id = crypto.randomUUID()
+    const error = stageChatDraft(id, chatAboutMessage(file, outline.find((item) => item.level === 1)?.text))
+    if (error) say(error)
+    else go(`/thread/${id}`)
+  }
+
   // Delete: the file goes to the Trash and its day lets go of its line; the page turns to the
   // directory it was in, with a toast that holds Undo for a moment.
   const [toast, setToast] = useState<RemoveToast | null>(null)
@@ -768,6 +788,8 @@ export function DocView({
                   </ActionIcon>
                 </Menu.Target>
                 <Menu.Dropdown>
+                  <Menu.Item onClick={chatAbout}>Chat about this…</Menu.Item>
+                  <Menu.Divider />
                   <Menu.Label>Text size · {Math.round(scale * 100)}%</Menu.Label>
                   <Menu.Item
                     closeMenuOnClick={false}

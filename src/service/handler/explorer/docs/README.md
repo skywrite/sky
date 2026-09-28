@@ -1,6 +1,6 @@
 ---
 created: 2026-08-30
-updated: 2026-09-25
+updated: 2026-09-28
 ---
 
 # Explorer — the notebook's files as pages
@@ -29,7 +29,11 @@ files it holds, one row per entry; `/explorer` itself lists the roots.
 - `theme/client/explorer.tsx` — the tree, the reading column, and the
   editor mount. The column resolves its path as a file first, then as
   a directory, and re-reads whichever it shows every few seconds, so a
-  save or a new capture from another session lands in place.
+  save or a new capture from another session lands in place. The ⋯ menu
+  opens with Chat about this…: a new chat with the file's link, under
+  its title, waiting in the composer. The chat finds the file through
+  its ordinary reading of the notebook — the link is not a pin — so a
+  chat set to read nothing will not see it.
 - `meeting.ts` — the view behind a meeting's page, `/<day>/meetings/<slug>`.
   `GET /explorer/_api/meeting?day=&slug=` (or `?path=`) answers what the
   file's frontmatter says, resolved: who as profiles with their route,
