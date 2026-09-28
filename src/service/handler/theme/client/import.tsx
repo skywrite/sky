@@ -78,7 +78,7 @@ export interface ImportJob {
     speakers: string[]
     refusal: string | null
   }
-  listen: { kind: ImportKind; opening: string; guess: string } | null
+  listen: { kind: ImportKind; opening: string; guess: string; category?: 'Professional' | 'Personal' } | null
   calendar: {
     title: string
     start: string
@@ -975,10 +975,11 @@ function ConfirmBody({
   const whenStated = documentInput || Boolean(meeting?.when || job?.fields?.whenStated)
   const dayStated = Boolean(meeting?.day || job?.fields?.dayStated)
   const [touched, setTouched] = useState(Boolean(meeting || job?.fields))
+  const categoryTouched = useRef(Boolean(job?.fields?.category))
   const [fields, setFields] = useState<Fields>({
     kind: meeting ? 'meeting' : (job?.fields?.kind ?? kinds[0] ?? 'meeting'),
     when: job?.fields?.when ?? proposedWhen ?? '',
-    category: job?.fields?.category ?? 'Professional',
+    category: job?.fields?.category ?? live?.listen?.category ?? 'Professional',
     journalType: job?.fields?.journalType ?? options?.journalTypes[0] ?? 'Reflection',
     fresh: false,
     summary:
@@ -999,6 +1000,7 @@ function ConfirmBody({
       ...f,
       when: f.when.trim() ? f.when : (proposedWhen ?? live.suggestedWhen),
       kind: touched ? f.kind : (live.listen?.kind ?? live.readback.kinds[0] ?? f.kind),
+      category: categoryTouched.current ? f.category : (live.listen?.category ?? f.category),
     }))
   }, [live, touched, proposedWhen])
 
@@ -1403,7 +1405,10 @@ function ConfirmBody({
                 { value: 'Personal', label: 'Personal' },
               ]}
               value={fields.category}
-              onChange={(category) => setFields((f) => ({ ...f, category }))}
+              onChange={(category) => {
+                categoryTouched.current = true
+                setFields((f) => ({ ...f, category }))
+              }}
             />
           )}
           <ImportLinks job={live} onBusy={setLinkBusy} />

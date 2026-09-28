@@ -16,12 +16,14 @@ export interface StagedFile {
   opening?: string
 }
 
-/** The first minute of a recording, heard: the opening words and a guessed kind. */
+/** The first minute of a recording, heard: the opening words and suggested kind and category. */
 export interface Listen {
   kind: ImportKind
   opening: string
   /** "Sounds like a meeting recap." */
   guess: string
+  /** Absent on older jobs or when the opening gives no usable category judgment. */
+  category?: StartFields['category']
 }
 
 /** A calendar event near the file's time. */
