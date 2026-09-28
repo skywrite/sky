@@ -25,4 +25,22 @@ describe('linkSharedPackages', () => {
     const root = await mkdtemp(path.join(tmpdir(), 'sky-ext-'))
     expect(await linkSharedPackages(path.join(root, 'ext'), path.join(root, 'host'))).toEqual([])
   })
+
+  test("Sky's own packages are linked for every extension, screens or not", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'sky-ext-'))
+    const packages = path.join(root, 'sky', 'packages')
+    for (const name of ['core', 'commands']) await mkdir(path.join(packages, name), { recursive: true })
+    const ext = path.join(root, 'ext')
+    await mkdir(path.join(ext, 'commands'), { recursive: true })
+
+    expect(await linkSharedPackages(ext, path.join(root, 'host'), packages)).toEqual([
+      '@skywrite/core',
+      '@skywrite/commands',
+    ])
+    expect(await readlink(path.join(ext, 'node_modules', '@skywrite', 'core'))).toBe(path.join(packages, 'core'))
+    expect(await readlink(path.join(ext, 'node_modules', '@skywrite', 'commands'))).toBe(
+      path.join(packages, 'commands'),
+    )
+    expect(await linkSharedPackages(ext, path.join(root, 'host'), packages)).toEqual([])
+  })
 })

@@ -9,7 +9,7 @@ import { existsSync } from 'node:fs'
 import { lstat, mkdir, readFile, readlink, realpath, rm, symlink, writeFile } from 'node:fs/promises'
 import * as path from 'node:path'
 import { buildManifest } from '#commands/all/cli/_commandsManifest.ts'
-import { DIR_CODE_SRC } from '#config'
+import { DIR_CODE, DIR_CODE_SRC } from '#config'
 import { disabledMarker, EXTENSIONS_DIR, type InstalledExtension, listInstalled } from './installed.ts'
 import { authorHandle, readManifest } from './manifest.ts'
 
@@ -23,23 +23,37 @@ export interface AddOptions {
   installDependencies?: (dir: string) => Promise<{ ok: boolean; detail: string }>
   /** Rebuild the command manifest; the default is the real one */
   rebuild?: () => Promise<{ commands: { local: Array<{ name: string }> } }>
-  /** Where Sky's own packages live; the default is the checkout's */
+  /** Where the web app's packages live; the default is the checkout's node_modules */
   hostModules?: string
+  /** Where Sky's own packages live; the default is the checkout's packages/ folder */
+  hostPackages?: string
 }
 
 /**
- * The packages an extension's screens share with Sky's web app. One copy of
- * each on the page: an extension with a ui/ folder gets links to Sky's own,
- * replacing any copy its install brought, and the bundler resolves them the
- * way it resolves Sky's.
+ * The packages an extension shares with Sky rather than installing its own.
+ * Sky's own — the command framework and the core library — come from the
+ * checkout's packages/ folder and are linked for every extension, since its
+ * commands are built on them and no registry carries them; an extension
+ * names them as peer dependencies and installs nothing of Sky's. The page's
+ * packages are linked only for an extension with a ui/ folder: one copy of
+ * React and Mantine on the page, replacing any copy its install brought,
+ * and the bundler resolves them the way it resolves Sky's.
  */
+export const SHARED_SKY_PACKAGES = ['@skywrite/core', '@skywrite/commands'] as const
 export const SHARED_UI_PACKAGES = ['react', 'react-dom', '@mantine/core', '@mantine/hooks'] as const
 
-export async function linkSharedPackages(dir: string, hostModules: string): Promise<string[]> {
-  if (!existsSync(path.join(dir, 'ui'))) return []
+export async function linkSharedPackages(dir: string, hostModules: string, hostPackages?: string): Promise<string[]> {
+  const shares: Array<{ name: string; source: string }> = []
+  if (hostPackages) {
+    for (const name of SHARED_SKY_PACKAGES) {
+      shares.push({ name, source: path.join(hostPackages, name.slice('@skywrite/'.length)) })
+    }
+  }
+  if (existsSync(path.join(dir, 'ui'))) {
+    for (const name of SHARED_UI_PACKAGES) shares.push({ name, source: path.join(hostModules, name) })
+  }
   const linked: string[] = []
-  for (const name of SHARED_UI_PACKAGES) {
-    const source = path.join(hostModules, name)
+  for (const { name, source } of shares) {
     if (!existsSync(source)) continue
     const link = path.join(dir, 'node_modules', name)
     const current = await lstat(link).catch(() => null)
@@ -93,7 +107,11 @@ export async function addExtension(folder: string, options: AddOptions = {}): Pr
     await rm(target, { force: true })
     return { added: false, reason: `dependency install failed in ${dir}:\n${install.detail}` }
   }
-  await linkSharedPackages(dir, options.hostModules ?? path.join(DIR_CODE_SRC, 'node_modules'))
+  await linkSharedPackages(
+    dir,
+    options.hostModules ?? path.join(DIR_CODE_SRC, 'node_modules'),
+    options.hostPackages ?? path.join(DIR_CODE, 'packages'),
+  )
 
   const manifest = await (options.rebuild ?? buildManifest)()
   const commands = manifest.commands.local

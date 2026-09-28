@@ -1,6 +1,6 @@
 ---
 created: 2026-09-26
-updated: 2026-09-26
+updated: 2026-09-28
 ---
 
 # Extensions
@@ -35,8 +35,12 @@ extension with the same slug.
 
 `sky extensions:add <folder>` checks the manifest, links the folder into
 `~/.sky/extensions/<author>/<slug>`, runs `bun install` there, links Sky's
-own React and Mantine into the extension's `node_modules` when it has
-screens, and rebuilds the command manifest. `sky extensions:list` and
+own packages — `@skywrite/core` and `@skywrite/commands`, from the
+checkout's `packages/` — into the extension's `node_modules`, links React
+and Mantine in too when it has screens, and rebuilds the command manifest.
+An extension names Sky's packages as optional peer dependencies, so its
+install fetches nothing of Sky's; `linkSharedPackages` is the one place
+that says what Sky provides. `sky extensions:list` and
 `sky extensions:remove` do what they say; remove only unlinks.
 
 Installed means present in that folder. Switched off means an empty
