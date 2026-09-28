@@ -212,7 +212,7 @@ test(
       await capture('settings-before-interaction')
       const thinking = page.getByRole('combobox', { name: 'Default preset for Thinking', exact: true })
       await thinking.click()
-      await page.getByRole('option', { name: 'default-sonnet-5', exact: true }).click()
+      await page.getByRole('option', { name: 'default-sonnet-5.5', exact: true }).click()
       const roleEffort = page.getByRole('radiogroup', { name: 'Default effort for Thinking', exact: true })
       await roleEffort.getByRole('radio', { name: 'Low', exact: true }).click()
       await page.waitForFunction(
@@ -225,13 +225,13 @@ test(
         should: 'save the assignment and show the shared effort change in every role',
         actual: [
           config.ai.roles?.reasoning,
-          config.ai.profiles?.['default-sonnet-5']?.options?.effort,
+          config.ai.profiles?.['default-sonnet-5.5']?.options?.effort,
           await page
             .getByRole('radiogroup', { name: 'Default effort for Vision' })
             .getByRole('radio', { name: 'Low', exact: true })
             .getAttribute('aria-checked'),
         ],
-        expected: ['default-sonnet-5', 'low', 'true'],
+        expected: ['default-sonnet-5.5', 'low', 'true'],
       })
       await capture('settings-defaults')
       await page.locator('.sky-preset-toggle').filter({ hasText: 'custom-effort' }).click()

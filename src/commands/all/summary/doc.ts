@@ -54,7 +54,7 @@ export default class SummaryDocTask extends Command {
       'sky summary:doc financials.xlsx               # Summarize Excel (via SheetJS)',
       'sky summary:doc report.pdf --dry-run           # Preview prompt without calling AI',
       'sky summary:doc report.pdf -o /tmp/summary.md  # Write summary to file',
-      'sky summary:doc report.pdf -m default-sonnet-5  # Use a specific model profile',
+      'sky summary:doc report.pdf -m default-sonnet-5.5  # Use a specific model profile',
     ],
     params,
   }

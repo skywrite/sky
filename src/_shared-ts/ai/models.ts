@@ -111,8 +111,8 @@ export type ProfileName = keyof typeof PROFILES
 export const ROLES = {
   reasoning: 'default-opus-5.5',
   fast: 'default-haiku-4.5',
-  balanced: 'default-sonnet-5',
-  vision: 'default-sonnet-5',
+  balanced: 'default-sonnet-5.5',
+  vision: 'default-sonnet-5.5',
 } satisfies Record<Role, ProfileName>
 
 const COMMON_KEYS = new Set<string>(['temperature', 'maxOutputTokens', 'topP', 'topK', 'maxRetries'])
@@ -181,7 +181,7 @@ function thinkingEnabled(profile: ModelProfile): boolean {
   if (profile.provider === 'openai' && /^gpt-6-astra(?:$|-)/.test(profile.model)) return true
   if (
     profile.provider === 'anthropic' &&
-    /^claude-(?:opus-5(?:-5)?|sonnet-5|fable-5(?:-1)?)(?:$|-\d{8}$)/.test(profile.model)
+    /^claude-(?:opus-5(?:-5)?|sonnet-5(?:-5)?|fable-5(?:-1)?)(?:$|-\d{8}$)/.test(profile.model)
   )
     return true
   const thinking = (profile.options as { thinking?: { type?: string } } | undefined)?.thinking

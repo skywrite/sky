@@ -29,8 +29,8 @@
     "#test": "./test/mod.ts"
   },
   "dependencies": {
-    "@ai-sdk/anthropic": "4.0.60",
-    "@ai-sdk/openai": "4.0.62",
+    "@ai-sdk/anthropic": "4.0.67",
+    "@ai-sdk/openai": "4.0.79",
     "@anthropic-ai/sdk": "0.62.0",
     "@clack/core": "0.5.0",
     "@clack/prompts": "0.11.0",
@@ -42,7 +42,7 @@
     "@ngrok/ngrok": "1.5.2",
     "@slack/web-api": "7.11.0",
     "@typesafe-ai/sdk": "0.6.0",
-    "ai": "7.0.111",
+    "ai": "7.0.120",
     "chokidar": "5.0.0",
     "cross-keychain": "1.1.0",
     "diff": "5.2.2",

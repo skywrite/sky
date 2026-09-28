@@ -1,6 +1,6 @@
 ---
 created: 2026-09-01
-updated: 2026-09-22
+updated: 2026-09-28
 ---
 
 # Model registry — roles, profiles, providers
@@ -89,8 +89,8 @@ also uses Jev to skip clearly irrelevant conversations before request extraction
   (`ai.roles`) changes its default; `ROLES` remains the shipped fallback.
 - Superseded profiles stay in the catalog unless explicitly retired: a
   person's config or a command flag may still name them. The retired
-  built-ins are Opus 5 (2026-09-22), Opus 4.6/4.8, Sonnet 4.6, GPT-4o,
-  and GPT-5.5.
+  built-ins are Sonnet 5 (2026-09-28), Opus 5 (2026-09-22), Opus 4.6/4.8,
+  Sonnet 4.6, GPT-4o, and GPT-5.5.
 - GPT-6 Astra has `default-gpt-6-astra-low`, `default-gpt-6-astra-high`, and
   `default-gpt-6-astra-xhigh`, all using priority processing. The model
   id and reasoning efforts follow the

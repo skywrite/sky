@@ -21,7 +21,7 @@ Pieces:
 
 ## Model and source evidence
 
-Person curation uses the `balanced` role (Sonnet 5), independently of the
+Person curation uses the `balanced` role (Sonnet 5.5), independently of the
 `fast` role used by other extractors. Its request timeout is three minutes.
 
 - Chats supply every visible word of every turn, with speaker labels and

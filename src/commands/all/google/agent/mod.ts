@@ -50,8 +50,8 @@ const MAX_STEPS = 48
  * brief: Opus 5 at xhigh took 19m28s for 25 steps, 19m05s of it thinking
  * (~46 s a step), and built the doc right; Qwen 3.8 on Cerebras took 4m49s,
  * probed request formats against the live doc and emptied two tabs.
- * `--ai-reasoning default-opus-5.5` is the full-depth run; `default-sonnet-5`
- * the no-thinking one.
+ * `--ai-reasoning default-opus-5.5` is the full-depth run; `default-sonnet-5.5`
+ * the faster, cheaper one.
  */
 const MISSION_PROFILE = 'default-opus-5.5-medium'
 /**
@@ -83,7 +83,7 @@ const params = {
   data: Flag.string('Path to a local CSV/text file appended to the mission as data', { short: 'd' }),
   images: Flag.string('Directory of images offered to the mission (backgrounds, logos)', { short: 'i' }),
   account: Flag.string('Google account (email or unique part of it)', { short: 'a' }),
-  reasoning: Flag.string('Model profile that runs the mission (e.g. default-opus-5.5-medium, default-sonnet-5)', {
+  reasoning: Flag.string('Model profile that runs the mission (e.g. default-opus-5.5-medium, default-sonnet-5.5)', {
     long: 'ai-reasoning',
     short: 'r',
     default: () => MISSION_PROFILE,

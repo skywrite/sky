@@ -11,7 +11,7 @@ import { defineProfile, type ModelProfile } from './models.ts'
  * Model ids stay in their canonical API form (claude-opus-5-5, gpt-6-astra); the profile
  * key is just a label. Sampling params (temperature/topP) belong only on profiles
  * whose model accepts them — thinking/reasoning models (Fable 5/5.1, Opus 5.5,
- * Sonnet 5, GPT-6 Astra) 400 on them, so those carry effort/thinking instead.
+ * Sonnet 5.5, GPT-6 Astra) 400 on them, so those carry effort/thinking instead.
  */
 export const PROFILES = {
   // Fable 5.1 thinks unconditionally (no `disabled`, no budget) and rejects forced tool
@@ -56,7 +56,9 @@ export const PROFILES = {
     contextWindow: 1_000_000,
     options: { effort: 'medium', thinking: { type: 'adaptive' } },
   }),
-  'default-sonnet-5': defineProfile({ provider: 'anthropic', model: 'claude-sonnet-5', contextWindow: 1_000_000 }),
+  // Sonnet 5.5 thinks by default; `disabled` and forced tool choice 400 (the AI SDK turns
+  // them into `between_tools` and `auto`, with a warning). Effort stays the API default (high).
+  'default-sonnet-5.5': defineProfile({ provider: 'anthropic', model: 'claude-sonnet-5-5', contextWindow: 1_000_000 }),
   'default-haiku-4.5': defineProfile({ provider: 'anthropic', model: 'claude-haiku-4-5' }),
   'default-gpt-6-astra-xhigh': defineProfile({
     provider: 'openai',

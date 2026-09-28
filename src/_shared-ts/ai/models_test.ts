@@ -4,6 +4,7 @@ test('custom reasoning presets suppress unsupported sampling without an explicit
   const presets = [
     defineProfile({ provider: 'openai', model: 'gpt-6-astra' }),
     defineProfile({ provider: 'anthropic', model: 'claude-sonnet-5' }),
+    defineProfile({ provider: 'anthropic', model: 'claude-sonnet-5-5' }),
   ]
   assert({
     given: 'roles assigned to reasoning presets without a thinking option',
@@ -13,6 +14,7 @@ test('custom reasoning presets suppress unsupported sampling without an explicit
       return [resolved.temperature, resolved.topP, resolved.maxOutputTokens]
     }),
     expected: [
+      [undefined, undefined, 1000],
       [undefined, undefined, 1000],
       [undefined, undefined, 1000],
     ],
@@ -81,17 +83,17 @@ test('role assignments resolve the current preset, including overridden built-in
     roles: { reasoning: 'deep-work' },
     profiles: {
       'deep-work': { provider: 'openai', model: 'gpt-6-astra', options: { reasoningEffort: 'high' } },
-      'default-sonnet-5': { provider: 'anthropic', model: 'claude-sonnet-5', options: { effort: 'low' } },
+      'default-sonnet-5.5': { provider: 'anthropic', model: 'claude-sonnet-5-5', options: { effort: 'low' } },
     },
   }
   const before = getProfile(getRoles(config).reasoning, config)
-  config.roles!.reasoning = 'default-sonnet-5'
+  config.roles!.reasoning = 'default-sonnet-5.5'
   const after = getProfile(getRoles(config).reasoning, config)
   assert({
     given: 'a role reassigned to a customized built-in preset',
     should: 'use the latest assignment and preset options while keeping the model window',
     actual: [before.model, after.model, after.options, after.contextWindow, getRoles(config).fast],
-    expected: ['gpt-6-astra', 'claude-sonnet-5', { effort: 'low' }, 1_000_000, 'default-haiku-4.5'],
+    expected: ['gpt-6-astra', 'claude-sonnet-5-5', { effort: 'low' }, 1_000_000, 'default-haiku-4.5'],
   })
 })
 
@@ -114,15 +116,15 @@ test('aiModel resolves a role to its baseline profile model', () => {
   })
   assert({
     given: 'the balanced role',
-    should: 'resolve to the sonnet-5 profile model',
+    should: 'resolve to the sonnet-5.5 profile model',
     actual: modelId(aiModel('balanced').model),
-    expected: 'claude-sonnet-5',
+    expected: 'claude-sonnet-5-5',
   })
   assert({
     given: 'the vision role',
-    should: 'resolve to the sonnet-5 profile model',
+    should: 'resolve to the sonnet-5.5 profile model',
     actual: modelId(aiModel('vision').model),
-    expected: 'claude-sonnet-5',
+    expected: 'claude-sonnet-5-5',
   })
 })
 

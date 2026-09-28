@@ -15,6 +15,12 @@ test('effort levels for Opus 5.5', () => {
     actual: effortLevels(profile),
     expected: EFFORTS,
   })
+  assert({
+    given: 'the Sonnet 5.5 model with no preset effort',
+    should: 'advertise every effort level, as Sonnet 5 does',
+    actual: effortLevels({ provider: 'anthropic', model: 'claude-sonnet-5-5' }),
+    expected: EFFORTS,
+  })
   let rejected: string | undefined
   try {
     validateEffort(profile, 'low')

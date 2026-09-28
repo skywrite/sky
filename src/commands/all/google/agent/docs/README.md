@@ -8,7 +8,7 @@ updated: 2026-09-23
 A mission is one `streamText` run (`mod.ts`): `MISSION_PROFILE` — Opus 5.5
 at medium effort (`default-opus-5.5-medium`) — with the agent tools, or the
 profile named by `--reasoning` (`default-opus-5.5` for full depth,
-`default-sonnet-5` for no thinking), up to `MAX_STEPS = 48` steps, final
+`default-sonnet-5.5` for a faster, cheaper run), up to `MAX_STEPS = 48` steps, final
 text = the report. A mission executes a brief the chat model already
 wrote, so it needs Opus's hands without Opus's deliberation. Measured on one
 three-tab brief on 2026-09-06: Opus 5 at xhigh, the default until then,
