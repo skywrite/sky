@@ -322,6 +322,86 @@
   color: var(--sky-text-2);
   margin: 8px 0 0;
 }
+.sky-people-import-progress {
+  margin-top: 22px;
+  padding-top: 20px;
+  border-top: 1px solid var(--sky-border-soft);
+}
+.sky-people-import-activity {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+.sky-people-import-indicator {
+  color: var(--sky-accent);
+  flex: none;
+  margin-top: 2px;
+}
+.sky-people-import-status {
+  flex: 1;
+  min-width: 0;
+}
+.sky-people-import-status strong {
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+.sky-people-import-status p {
+  line-height: 1.5;
+  margin-top: 6px;
+}
+.sky-people-import-elapsed {
+  color: var(--sky-dim);
+  flex: none;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  margin-top: 3px;
+}
+.sky-people-import-steps {
+  display: flex;
+  gap: 12px;
+  list-style: none;
+  padding: 0;
+  margin: 20px 0 0;
+}
+.sky-people-import-steps li {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  color: var(--sky-dim);
+}
+.sky-people-import-steps li > span {
+  display: grid;
+  place-items: center;
+  width: 23px;
+  height: 23px;
+  flex: none;
+  border: 1px solid var(--sky-border-soft);
+  border-radius: 50%;
+}
+.sky-people-import-steps [data-state='active'],
+.sky-people-import-steps [data-state='done'] {
+  color: var(--sky-accent);
+}
+.sky-people-import-steps [data-state='active'] > span {
+  border-color: var(--sky-accent);
+  background: var(--sky-accent-soft);
+}
+.sky-people-import-steps [data-state='done'] > span {
+  border-color: transparent;
+  background: var(--sky-accent-soft);
+}
+.sky-people-import-controls {
+  margin-top: 18px;
+}
+@media (max-width: 480px) {
+  .sky-people-import-steps li {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
 .sky-people-org-fields {
   margin: 0;
   padding: 0;

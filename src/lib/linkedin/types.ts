@@ -10,6 +10,7 @@ export interface LinkedInDraft {
   location: string
   about: string
   current: LinkedInOrganization[]
+  /** Retained for older import clients; new imports leave this empty. */
   past: LinkedInOrganization[]
   warning?: string
 }
@@ -19,9 +20,20 @@ export interface LinkedInImport {
   url: string
   status: 'running' | 'complete' | 'failed'
   stage: string
+  phase?: LinkedInImportPhase
+  elapsedSeconds?: number
   draft?: LinkedInDraft
   error?: string
 }
+
+export type LinkedInImportPhase =
+  | 'opening'
+  | 'signing_in'
+  | 'waiting'
+  | 'needs_user'
+  | 'loading_profile'
+  | 'reading'
+  | 'preparing'
 
 export interface LinkedInImportHost {
   start: (url: string) => Promise<LinkedInImport>

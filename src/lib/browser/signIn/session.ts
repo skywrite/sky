@@ -5,6 +5,8 @@ import { setTimeout as delay } from 'node:timers/promises'
 import { chromium, type Browser, type BrowserContext, type Locator, type Page } from 'playwright'
 import { z } from 'zod'
 import type { LoginValues } from '#lib/credentials/login.ts'
+import { LinkedInBrowserImport } from '#lib/linkedin/browser.ts'
+import { captureLinkedInSignIn } from '#lib/linkedin/login.ts'
 import { browserBinary } from '../mcp/browserDriver.ts'
 import type { CallOptions, McpToolDefinition, McpToolResult } from '../mcp/client.ts'
 import { SignInBroker, type SignInResult } from './broker.ts'
@@ -87,12 +89,18 @@ const definitions = {
 } as const
 
 const result = (text: string, isError = false): McpToolResult => ({ content: [{ type: 'text', text }], isError })
+const linkedInDefinition = {
+  description: 'Continue importing the selected LinkedIn profile. Returns progress or profile evidence only.',
+  schema: z.object({}).strict(),
+}
 
 export interface PrivateBrowserOptions {
   filesDir: string
   broker: SignInBroker
   headless?: boolean
   executablePath?: string
+  /** Limits this session to one trusted import, with no general browser tools or downloads. */
+  linkedInProfile?: string
   /** Test seam for synthetic sites. The worker's start schema cannot supply it. */
   prepare?: (page: Page) => Promise<void>
 }
@@ -107,6 +115,7 @@ export class PrivateBrowserSession {
   private busy = false
   private closed = false
   private readonly attemptedOrigins = new Set<string>()
+  private readonly linkedIn: LinkedInBrowserImport | undefined
 
   private constructor(
     private readonly browser: Browser,
@@ -114,7 +123,17 @@ export class PrivateBrowserSession {
     private readonly page: Page,
     private readonly temporary: string,
     private readonly options: PrivateBrowserOptions,
-  ) {}
+  ) {
+    if (options.linkedInProfile) {
+      this.allowedOrigin = 'https://www.linkedin.com'
+      this.linkedIn = new LinkedInBrowserImport(
+        options.linkedInProfile,
+        page,
+        (signal) => this.signIn(signal),
+        (text) => this.redactor.text(text),
+      )
+    }
+  }
 
   static async launch(options: PrivateBrowserOptions): Promise<PrivateBrowserSession> {
     const temporary = await mkdtemp(path.join(os.tmpdir(), 'sky-private-browser-'))
@@ -134,7 +153,7 @@ export class PrivateBrowserSession {
       const context = await browser.newContext({
         viewport: null,
         serviceWorkers: 'block',
-        acceptDownloads: true,
+        acceptDownloads: !options.linkedInProfile,
       })
       context.setDefaultTimeout(5000)
       context.setDefaultNavigationTimeout(30000)
@@ -153,6 +172,10 @@ export class PrivateBrowserSession {
         containsLogin: (text) => session.redactor.contains(text),
       })
       page.on('download', (download) => {
+        if (options.linkedInProfile) {
+          void download.cancel().catch(() => {})
+          return
+        }
         const work = (async () => {
           const source = await download.path()
           if (!source || session.closed) return
@@ -196,11 +219,13 @@ export class PrivateBrowserSession {
   }
 
   async listTools(): Promise<McpToolDefinition[]> {
-    return Object.entries(definitions).map(([name, definition]) => ({
-      name,
-      description: definition.description,
-      inputSchema: z.toJSONSchema(definition.schema),
-    }))
+    return Object.entries(this.linkedIn ? { linkedin_step: linkedInDefinition } : definitions).map(
+      ([name, definition]) => ({
+        name,
+        description: definition.description,
+        inputSchema: z.toJSONSchema(definition.schema),
+      }),
+    )
   }
 
   async close(): Promise<void> {
@@ -252,7 +277,7 @@ export class PrivateBrowserSession {
       this.allowedOrigin = origin
       this.redactor.remember(login)
     }
-    const form = await captureSignInForm(this.page, protect)
+    const form = (await captureSignInForm(this.page, protect)) ?? (await captureLinkedInSignIn(this.page, protect))
     if (form && this.attemptedOrigins.has(form.origin)) {
       await form.dispose()
       return { status: 'needs_user' }
@@ -262,7 +287,13 @@ export class PrivateBrowserSession {
   }
 
   async callTool(name: string, args: Record<string, unknown>, options: CallOptions = {}): Promise<McpToolResult> {
-    const definition = Object.hasOwn(definitions, name) ? definitions[name as keyof typeof definitions] : undefined
+    const definition = this.linkedIn
+      ? name === 'linkedin_step'
+        ? linkedInDefinition
+        : undefined
+      : Object.hasOwn(definitions, name)
+        ? definitions[name as keyof typeof definitions]
+        : undefined
     if (!definition || !definition.schema.safeParse(args).success)
       return result('This operation is not available in the private browser.', true)
     if (this.closed || this.busy || options.signal?.aborted) return result('The browser task is stopped or busy.', true)
@@ -272,6 +303,7 @@ export class PrivateBrowserSession {
     }
     options.signal?.addEventListener('abort', abort, { once: true })
     try {
+      if (this.linkedIn) return result(JSON.stringify(await this.linkedIn.step(options.signal)))
       if (name === 'sign_in') {
         return result(JSON.stringify(await this.signIn(options.signal)))
       }

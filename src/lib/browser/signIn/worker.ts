@@ -5,6 +5,7 @@ import { z } from 'zod'
 import { DIR_STATE } from '#config'
 import { connectOnePassword } from '#lib/credentials/connect.ts'
 import { PasswordManagerSettingsStore } from '#lib/credentials/passwordManagers.ts'
+import { linkedInUrl } from '#lib/linkedin/types.ts'
 import { SignInBroker } from './broker.ts'
 import { nativeSignInApproval } from './nativeApproval.ts'
 import { PrivateBrowserSession } from './session.ts'
@@ -16,6 +17,11 @@ const startSchema = z
     objective: z.string().min(1).max(20000),
     filesDir: z.string().min(1),
     headless: z.boolean().optional(),
+    linkedInProfile: z
+      .string()
+      .max(8000)
+      .transform((url) => linkedInUrl(url))
+      .optional(),
   })
   .strict()
 const controllers = new Map<number, AbortController>()
@@ -54,7 +60,10 @@ async function request(method: string, params: unknown, signal: AbortSignal) {
     const broker = new SignInBroker({
       sources: async () => (await settings.read()).sources,
       connect: connectOnePassword,
-      approval: nativeSignInApproval(options.objective, lifetime.signal),
+      approval: nativeSignInApproval(
+        options.linkedInProfile ? `Import LinkedIn profile: ${options.linkedInProfile}` : options.objective,
+        lifetime.signal,
+      ),
     })
     session = await PrivateBrowserSession.launch({ ...options, broker })
     if (ended || signal.aborted) {

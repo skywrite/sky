@@ -8,6 +8,7 @@ export async function launchPrivateBrowser(
     objective: string
     filesDir: string
     headless?: boolean
+    linkedInProfile?: string
   },
   signal?: AbortSignal,
 ): Promise<McpClient> {

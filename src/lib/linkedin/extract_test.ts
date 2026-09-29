@@ -30,7 +30,7 @@ test('LinkedIn destinations only accept profile or company pages on LinkedIn', (
   })
 })
 
-test('LinkedIn suggestions retain multiple jobs and reject unsupported fields and invented organization URLs', () => {
+test('LinkedIn suggestions retain current jobs and reject past employers, unsupported fields and invented URLs', () => {
   const source: ProfileEvidence = {
     url: 'https://www.linkedin.com/in/jane-doe-example/',
     name: 'Jane Doe',
@@ -64,7 +64,7 @@ test('LinkedIn suggestions retain multiple jobs and reject unsupported fields an
   const draft = groundedDraft(source, extracted)
   assert({
     given: 'suggestions containing supported and hallucinated facts',
-    should: 'keep grounded current and former employers, and leave unknown facts blank',
+    should: 'keep only grounded current employers, and leave unknown facts blank',
     actual: draft,
     expected: {
       url: source.url,
@@ -76,7 +76,7 @@ test('LinkedIn suggestions retain multiple jobs and reject unsupported fields an
         { name: 'Atlas', linkedin: 'https://www.linkedin.com/company/atlas-example/' },
         { name: 'Cedar Foundation' },
       ],
-      past: [{ name: 'Northstar' }],
+      past: [],
     },
   })
 })

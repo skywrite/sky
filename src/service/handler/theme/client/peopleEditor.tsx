@@ -13,6 +13,7 @@ import {
   type ProfileType,
 } from '../../people/types.ts'
 import { peopleApi } from './peopleApi.ts'
+import { PeopleImportProgress } from './peopleImportProgress.tsx'
 
 const errorText = (error: unknown) => (error instanceof Error ? error.message : 'Something went wrong. Try again.')
 const plain = (value: string) => value.trim().toLowerCase()
@@ -211,7 +212,6 @@ export function PeopleEditor({
       location: old.location || imported.location,
       sites: [...new Set([...old.sites, imported.url])],
       current: old.current.length ? old.current : choices(imported.current),
-      past: old.past.length ? old.past : choices(imported.past),
     }))
     setNotes((old) => [old, imported.about, `Source: [LinkedIn](${imported.url})`].filter(Boolean).join('\n\n'))
     setNotice(imported.warning || 'The profile is ready to review. Edit anything before saving.')
@@ -311,10 +311,13 @@ export function PeopleEditor({
             >
               Import profile
             </Button>
-            <p>Sky opens a browser for you to sign in. You’ll review the details here before saving.</p>
+            <p>
+              Sky opens a private browser and asks for approval when using a saved login. You’ll review the details here
+              before saving.
+            </p>
+            {(running || importStarting) && <PeopleImportProgress job={running ? job : undefined} />}
             {running && (
-              <div role="status">
-                <p>{job.stage}</p>
+              <div className="sky-people-import-controls">
                 <Button
                   size="compact-sm"
                   onClick={() => {
@@ -473,12 +476,14 @@ export function PeopleEditor({
                   checked={draft.met === 'Never'}
                   onChange={(event) => set('met', event.currentTarget.checked ? 'Never' : '')}
                 />
-                <OrganizationFields
-                  label="Past organizations"
-                  value={draft.past}
-                  orgs={index.orgs}
-                  onChange={(value) => set('past', value)}
-                />
+                {profile && profile.past.length > 0 && (
+                  <OrganizationFields
+                    label="Past organizations"
+                    value={draft.past}
+                    orgs={index.orgs}
+                    onChange={(value) => set('past', value)}
+                  />
+                )}
               </>
             ) : (
               <TextInput

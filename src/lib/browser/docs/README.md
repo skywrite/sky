@@ -48,7 +48,11 @@ or `unavailable`. Submission is not proof of authentication; the next snapshot
 must show progress. Another task cannot reuse the approval or browser context.
 
 This flow supports a visible username and current-password field in one
-top-level, same-origin POST form with one submit control. Username-first pages,
+top-level, same-origin POST form with one submit control. LinkedIn's JavaScript
+login has a separate, origin-and-path-bound adapter in `lib/linkedin/login.ts`:
+its current login screen has no HTML form. That adapter captures the concrete
+username, password and sign-in controls, revalidates them around native approval,
+and installs the same network guard before filling. Username-first pages,
 frames, popups, cross-origin identity providers, passkeys, and codes require the
 person. After credential use, navigation is confined to the approved origin.
 The worker combines Playwright routing with a private Chromium Fetch interceptor:
@@ -77,6 +81,25 @@ OS user. The guarantee here is separation from ordinary Sky API access, other
 browser tasks, and the model's allowed tool surface. Legacy shared-browser tasks
 remain outside this boundary. Settings stores preferences only; see the
 [settings boundary](../../../service/handler/settings/docs/README.md#password-manager-setup-boundary).
+
+## LinkedIn Person import
+
+Person import starts this same private worker, scoped at initialization to one
+canonical LinkedIn profile. In this mode the worker exposes only `linkedin_step`:
+fixed workflow progress followed by scrubbed profile evidence. The job cannot
+request general navigation, snapshots, downloads, credential reads, or an approval
+decision. Website credentials and the authenticated browser stay inside the
+worker; the normal People HTTP API still exposes only job progress and a draft.
+
+`lib/linkedin/browser.ts` owns the deterministic flow: open the profile, use the
+shared sign-in broker once if needed, wait for the person to finish verification,
+return from LinkedIn's feed to the selected profile, and capture its main content.
+All navigation is confined to `https://www.linkedin.com`. The import job closes
+the browser before sending evidence to its extraction model. Completion, failure,
+cancellation, or the five-minute deadline disposes the session. The previous
+persistent LinkedIn profile is neither read nor modified. No configured password
+manager or a declined approval leaves manual sign-in available in the private
+window. Codes, passkeys and unsupported login variants still require the person.
 
 ## How a task runs
 
@@ -218,8 +241,8 @@ to type; the prompt says so and `wait_for_person` is how Sky asks.
 ## The batch helper beside it
 
 `persistentContext.ts` is the older, batch-oriented helper: launch a
-signed-in profile, run a callback, close. The LinkedIn import and MyFitnessPal
-fetch use it.
+signed-in profile, run a callback, close. The MyFitnessPal fetch uses it.
+LinkedIn import uses the private worker above.
 
 ## Verified
 

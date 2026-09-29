@@ -1,6 +1,6 @@
 ---
 created: 2026-09-23
-updated: 2026-09-26
+updated: 2026-09-29
 ---
 
 # People & Orgs
@@ -88,12 +88,14 @@ name a file lists, and the model's people list shows each person once.
 
 ## LinkedIn draft lifecycle
 
-`lib/linkedin` owns a persistent local browser profile and a detached `lib/jobs`
-worker. Signing in and verification happen in its visible browser. The service
-only starts, polls, or requests cancellation, so a service reload does not kill a
-sign-in session. One worker at a time owns the browser profile. Its durable state,
-cookies, progress, and cancellation files remain under local user-data state,
-outside the notebook. The HTTP response exposes only progress and the draft.
+`lib/linkedin` runs in a detached `lib/jobs` worker and uses the
+[protected browser runtime](../../../../lib/browser/docs/README.md#linkedin-person-import),
+scoped to the selected profile. Native approval authorizes a saved login;
+verification and unsupported sign-in steps happen in the visible browser.
+The service only starts, polls, or requests cancellation, so a service reload
+does not kill an import. Job progress and cancellation files stay in local
+user-data state, outside the notebook. The browser session is disposable and
+closes before model extraction. The HTTP response exposes only progress and the draft.
 
 The worker reads the selected person's main page content and visible company
 links, then asks the configured balanced model for an editable suggestion. Source

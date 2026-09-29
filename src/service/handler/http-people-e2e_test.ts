@@ -37,11 +37,13 @@ test(
           id: '11111111-1111-4111-8111-111111111111',
           url,
           status: 'running',
+          phase: 'needs_user',
+          elapsedSeconds: 65,
           stage: 'Sign in to LinkedIn in the browser window.',
         })
       },
       status: async () => {
-        if (job?.status === 'running' && ++polls >= 2)
+        if (job?.status === 'running' && job.phase === 'preparing' && ++polls >= 3)
           job = {
             ...job,
             status: 'complete',
@@ -53,6 +55,7 @@ test(
               location: 'Portland',
               about: 'A first paragraph.\n\nA second paragraph.',
               current: [{ name: 'Atlas', linkedin: 'https://www.linkedin.com/company/atlas-new-example/' }],
+              // An older completed import can still include former employers.
               past: [{ name: 'Cedar Foundation' }],
             },
           }
@@ -163,8 +166,44 @@ test(
         .getByRole('textbox', { name: 'Start with LinkedIn' })
         .fill('https://www.linkedin.com/in/jane-doe-example/')
       await page.getByRole('button', { name: 'Import profile', exact: true }).click()
+      const progress = page.getByRole('region', { name: 'LinkedIn import progress' })
+      await progress.getByText('Needs your attention', { exact: true }).waitFor()
+      await progress.getByLabel('65 seconds elapsed').waitFor()
+      await page.getByRole('button', { name: 'Cancel import', exact: true }).waitFor()
+      const activeStep = () => progress.locator('[aria-current="step"]').innerText()
+      const signInStep = await activeStep()
+      job = {
+        ...job!,
+        phase: 'loading_profile',
+        stage: 'The requested profile is open. Waiting for its content to become readable…',
+      }
+      await progress.getByText('Loading profile…', { exact: true }).waitFor()
+      const readingStep = await activeStep()
+      job = { ...job!, phase: 'reading', stage: 'Reading the selected profile…' }
+      await progress.getByText('Reading profile…', { exact: true }).waitFor()
+      await page.setViewportSize({ width: 390, height: 844 })
+      const progressOverflow = await progress.evaluate((element) => element.scrollWidth > element.clientWidth)
+      await capture('02-import-progress')
+      await page.setViewportSize({ width: 1440, height: 1050 })
+      job = { ...job!, phase: 'preparing', stage: 'Preparing an editable draft…' }
+      await progress.getByText('Preparing your draft…', { exact: true }).waitFor()
+      const preparingStep = await activeStep()
       await page.getByText('The profile is ready to review. Edit anything before saving.').waitFor()
+      assert({
+        given: 'an active LinkedIn import',
+        should: 'show real stages, attention, elapsed time and responsive progress until the draft is ready',
+        actual: [
+          signInStep.includes('Sign in'),
+          readingStep.includes('Read profile'),
+          preparingStep.includes('Prepare draft'),
+          progressOverflow,
+          await progress.count(),
+        ],
+        expected: [true, true, true, false, 0],
+      })
       const beforeSave = { people: store.people.size, orgs: store.orgs.size }
+      const currentOrgsShown = await page.getByRole('group', { name: 'Current organizations', exact: true }).isVisible()
+      const pastOrgsShown = await page.getByRole('group', { name: 'Past organizations', exact: true }).count()
       const needsChoice = await page
         .getByRole('dialog')
         .getByRole('button', { name: 'Add person', exact: true })
@@ -247,6 +286,8 @@ test(
         actual: {
           above,
           beforeSave,
+          currentOrgsShown,
+          pastOrgsShown,
           needsChoice,
           people: store.people.size,
           orgs: store.orgs.size,
@@ -264,9 +305,11 @@ test(
         expected: {
           above: true,
           beforeSave: { people: 0, orgs: 1 },
+          currentOrgsShown: true,
+          pastOrgsShown: 0,
           needsChoice: true,
           people: 1,
-          orgs: 2,
+          orgs: 1,
           path: '/people/jane-doe',
           orgPath: '/orgs/atlas',
           headings: ['Overview'],
@@ -318,7 +361,7 @@ test(
       await search.fill('jane')
       await page.waitForFunction(() => document.querySelector('.sky-people-row strong')?.textContent === 'Jane Adams')
       const refreshedRank = await page.locator('.sky-people-row strong').allTextContents()
-      await page.getByRole('link', { name: /Organizations 4/ }).click()
+      await page.getByRole('link', { name: /Organizations 3/ }).click()
       await page.getByRole('textbox', { name: 'Search organizations', exact: true }).fill('atlas')
       const rankedOrgs = await page.locator('.sky-people-row strong').allTextContents()
       await capture('11-org-search')

@@ -2,7 +2,14 @@ import { randomUUID } from 'node:crypto'
 import * as path from 'node:path'
 import { readJson, writeJson } from '#lib/jobs/files.ts'
 import { createProcessJob, type JobRecord } from '#lib/jobs/mod.ts'
-import { linkedInUrl, type LinkedInDraft, type LinkedInImport, type LinkedInImportHost } from './types.ts'
+import { ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
+import {
+  linkedInUrl,
+  type LinkedInDraft,
+  type LinkedInImport,
+  type LinkedInImportHost,
+  type LinkedInImportPhase,
+} from './types.ts'
 import type { LinkedInInput } from './worker.ts'
 
 export function createLinkedInHost(
@@ -15,21 +22,30 @@ export function createLinkedInHost(
     module: new URL('./worker.ts', import.meta.url),
     env: { ...env, SKY_DIR: config.DIR_BASE, SKY_CODE_DIR: config.DIR_CODE, SKY_DATA_DIR: config.DIR_USER_DATA },
   })
-  const view = async (job: JobRecord<LinkedInDraft, LinkedInInput>): Promise<LinkedInImport> => ({
-    id: job.id,
-    url: job.input.url,
-    status: job.status,
-    stage: (await readJson<{ stage: string }>(job.input.progressFile))?.stage ?? 'Opening LinkedIn…',
-    ...(job.result ? { draft: job.result } : {}),
-    ...(job.error ? { error: job.error } : {}),
-  })
+  const view = async (job: JobRecord<LinkedInDraft, LinkedInInput>): Promise<LinkedInImport> => {
+    const progress = await readJson<{ stage: string; phase?: LinkedInImportPhase; startedAt?: number }>(
+      job.input.progressFile,
+    )
+    return {
+      id: job.id,
+      url: job.input.url,
+      status: job.status,
+      stage: progress?.stage ?? 'Opening LinkedIn…',
+      phase: progress?.phase,
+      elapsedSeconds:
+        typeof progress?.startedAt === 'number'
+          ? Math.max(0, Math.floor((ZonedDateTime.now().epochMilliseconds - progress.startedAt) / 1000))
+          : undefined,
+      ...(job.result ? { draft: job.result } : {}),
+      ...(job.error ? { error: job.error } : {}),
+    }
+  }
   return {
     async start(value) {
       const url = linkedInUrl(value)
       const token = randomUUID()
       const job = await jobs.start({
         url,
-        profileDir: path.join(dir, 'browser'),
         progressFile: path.join(dir, 'progress', `${token}.json`),
         cancelFile: path.join(dir, 'cancel', `${token}.json`),
       })
