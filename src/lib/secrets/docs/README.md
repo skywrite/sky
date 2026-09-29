@@ -1,11 +1,11 @@
 ---
 created: 2026-09-09
-updated: 2026-09-10
+updated: 2026-09-28
 ---
 
 # Keychain access
 
-Every provider shares `KeychainAccess`: pending reads, a bounded memory cache,
+Every Keychain provider instance shares `KeychainAccess`: pending reads, a bounded memory cache,
 and a queue for reads and writes. Successful mutations invalidate cached values;
 a revision file also invalidates other processes. Failed deletes preserve the
 index. Secret values only cross anonymous pipes and never enter the state files.
@@ -37,7 +37,8 @@ a failure reservation so a crash or timeout cannot create an immediate retry
 loop in another process. Transient failures back off from approximately thirty
 seconds to five minutes. Authentication failures wait for explicit recovery.
 
-Only Settings → Connections → Restore access permits authentication dialogs.
+Only an explicit Restore access action permits authentication dialogs, from
+the account recovery notice in Settings → Connections.
 Its requests join one pending recovery; each helper has a two-minute deadline.
 Before reading entries, a helper checks the default keychain session. A locked
 keychain is unlocked through macOS's own password dialog. If it reports unlocked
@@ -55,3 +56,6 @@ on a failed refresh, and exposes the error with a link to Connections.
 
 Tests use fake transports and temporary state directories. Normal test runs
 must never retrieve real credentials or generate authentication prompts.
+
+The opt-in [credential service](../../credentials/docs/README.md) adapts this
+store alongside 1Password; existing callers and stored entries keep this contract.
