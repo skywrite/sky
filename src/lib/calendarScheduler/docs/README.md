@@ -15,7 +15,7 @@ availability and creation jobs. Chat and voice expose both calendar commands.
 ## Entry points and ownership
 
 - `CalendarScheduler` provides `setup`, `people`, `parse`, `preview`, `prepare`,
-  `review`, `create`, `send`, `sendBatch`, `prepareUpdate`, `reviewUpdate`, `update`, `approval`, and `get`.
+  `review`, `create`, `send`, `sendBatch`, `retryReview`, `retry`, `prepareUpdate`, `reviewUpdate`, `update`, `approval`, and `get`.
   Hosts inject contacts and provider operations. `updates.ts` owns the update workflow.
 - `google.ts` supplies Google account discovery, calendar reads and creation.
   Credentials and contact lookup are injected; this module does not import the
@@ -254,12 +254,28 @@ becomes `uncertain`, never an automatic retry. Completed jobs retain their resul
 after restart and after their meeting time has passed. The HTTP aliases share one
 scheduler instance so both observe the same running job owner.
 
+A confirmed failure before Save can be retried explicitly from the original chat
+card. `retryReview` reads its immutable edited fields and refreshes availability;
+`retry` requires that review key and the failed attempt ID. A retry publishes one
+successor atomically, with the original draft ID continuing to resolve to the
+latest receipt. Concurrent clicks and replayed retry requests return that same
+attempt. Save rechecks availability, and an uncertain save is never retryable.
+Failures keep their saved fields and identity through the tool boundary. The
+scheduling turn stops further preparations and older-draft sends after a failure:
+conversation text predates human edits and must not be used to reconstruct them.
+
 ## Google Calendar and Zoom
 
 `lib/google/createCalendarMeeting.ts` drives the existing
 Google Calendar Zoom add-on through Sky's dedicated Google browser profile.
 It does not require another Zoom app or new Google Calendar write scopes.
-The Google account must be signed in to that profile (`sky google:browser`).
+The Google account must be signed in to that profile. The meeting card and composer
+provide **Sign in to Google**; `sky google:browser` uses the same sign-in flow.
+The browser queue owns the visible window until the selected account is verified,
+the person cancels, or the attempt expires. Its profile lock is released before a
+calendar save starts. Sign-in is separate from OAuth and never grants or retries
+an invitation; [composer routes](../../../service/handler/meetings/docs/README.md#service-boundary)
+own its status and service hold.
 Only events requesting Zoom need the Zoom for Google Workspace add-on connected.
 Solo blocks and events requesting no conferencing skip Zoom and its reuse check.
 Mobile uses the

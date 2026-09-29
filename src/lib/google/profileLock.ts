@@ -1,5 +1,6 @@
 import { readFile, rm, writeFile } from 'node:fs/promises'
 import process from 'node:process'
+import { setTimeout as delay } from 'node:timers/promises'
 
 // Cross-process turn-taking for the automation browser profile. Chromium
 // allows one process per profile dir, and the in-process queue in
@@ -36,6 +37,7 @@ export class ProfileLockBusyError extends Error {
 }
 
 export interface ProfileLockOptions {
+  signal?: AbortSignal
   /** Total time to wait on a live holder before throwing (default 120s — under the agent's 180s tool timer). */
   deadlineMs?: number
   /** Poll interval while waiting (default 1s). */
@@ -58,6 +60,7 @@ export async function acquireProfileLock(
   let waitedMs = 0
   let notified = false
   for (;;) {
+    options.signal?.throwIfAborted()
     try {
       await writeFile(lockPath, String(process.pid), { flag: 'wx' })
       return async () => {
@@ -81,7 +84,7 @@ export async function acquireProfileLock(
       notified = true
       options.onWait?.(holderPid)
     }
-    await new Promise((resolve) => setTimeout(resolve, pollMs))
+    await delay(pollMs, undefined, { signal: options.signal })
     waitedMs += pollMs
   }
 }

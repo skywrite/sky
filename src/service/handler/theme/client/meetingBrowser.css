@@ -1,0 +1,29 @@
+.sky-meeting-browser {
+  margin-block: 18px;
+  padding-left: 16px;
+  border-left: 2px solid var(--sky-accent);
+  font-size: 15px;
+  line-height: 1.6;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+.sky-meeting-browser strong {
+  font-weight: 500;
+}
+.sky-meeting-browser p {
+  margin: 3px 0 10px;
+  color: var(--sky-text-2);
+}
+.sky-meeting-browser-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.sky-calendar-connection {
+  padding: 0 26px;
+}
+@media (max-width: 600px) {
+  .sky-calendar-connection {
+    padding-inline: 16px;
+  }
+}

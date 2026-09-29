@@ -5,6 +5,7 @@ import { withGoogleBrowser } from '#lib/google/browserSession.ts'
 import { getEvent, listEvents, type CalendarEvent } from '#lib/google/calendar.ts'
 import type { GoogleClient } from '#lib/google/client.ts'
 import { calendarInstant, calendarNow, instantNow, PlainDate } from '#universal/dates/nbdt/mod.ts'
+import { GoogleBrowserSignInRequired, googleBrowserSignInMessage } from './browserSignIn.ts'
 import { calendarRecurrenceMatches, calendarRepeatSummaryMatches } from './calendarRecurrence.ts'
 import { prepareCalendarRecurrence } from './calendarRecurrenceEditor.ts'
 
@@ -118,16 +119,14 @@ export async function prepareCalendarMeeting(page: Page, meeting: CalendarMeetin
   try {
     await page.getByRole('textbox', { name: 'Title', exact: true }).waitFor()
   } catch {
-    throw new Error(
-      'Google Calendar needs a browser sign-in on the computer running Sky. Run sky google:browser there, then retry.',
-    )
+    throw new GoogleBrowserSignInRequired(googleBrowserSignInMessage)
   }
   const labels = await page
     .getByRole('button', { name: /^Google Account:/ })
     .first()
     .ariaSnapshot()
   if (!labels.toLowerCase().includes(`(${meeting.account.toLowerCase()})`))
-    throw new Error(
+    throw new GoogleBrowserSignInRequired(
       'The Calendar browser is signed in to a different Google account. Sign in to the chosen account first.',
     )
   await selectCalendar(page, meeting)

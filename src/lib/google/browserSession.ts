@@ -212,10 +212,11 @@ async function closeWarmBrowser(): Promise<void> {
 
 /** Run one browser flow with exclusive use of the automation profile. */
 export async function withGoogleBrowser<T>(
-  options: { headless?: boolean },
+  options: { headless?: boolean; timeoutMs?: number; closeAfter?: boolean; signal?: AbortSignal },
   fn: (context: BrowserContext) => Promise<T>,
 ): Promise<T> {
   const run = profileQueue.then(async () => {
+    options.signal?.throwIfAborted()
     const headless = options.headless ?? false
     if (warm && (warm.closed || warm.headless !== headless)) await closeWarmBrowser()
     let session = warm
@@ -225,7 +226,7 @@ export async function withGoogleBrowser<T>(
       // Turn-taking across sky processes; within this process the queue
       // already serializes, so the lock is uncontended here. Held while the
       // browser stays warm.
-      const release = await acquireProfileLock(GOOGLE_BROWSER_PROFILE_LOCK)
+      const release = await acquireProfileLock(GOOGLE_BROWSER_PROFILE_LOCK, { signal: options.signal })
       try {
         const context = await launchGoogleBrowser({ headless, takeover: true })
         const created: WarmBrowser = { context, release, headless, closed: false }
@@ -241,21 +242,24 @@ export async function withGoogleBrowser<T>(
     }
     const active = session
     let deadlineHit = false
+    const timeoutMs = options.timeoutMs ?? FLOW_DEADLINE_MS
     const deadline = setTimeout(() => {
       deadlineHit = true
       void closeWarmBrowser()
-    }, FLOW_DEADLINE_MS)
+    }, timeoutMs)
     try {
+      options.signal?.throwIfAborted()
       return await fn(active.context)
     } catch (err) {
       if (deadlineHit) {
         throw new GoogleBrowserError(
-          `The browser flow exceeded ${FLOW_DEADLINE_MS / 1000}s and was force-closed — the next call starts a fresh browser`,
+          `The browser flow exceeded ${timeoutMs / 1000}s and was force-closed — the next call starts a fresh browser`,
         )
       }
       throw err
     } finally {
       clearTimeout(deadline)
+      if (options.closeAfter && warm === active) await closeWarmBrowser()
       if (warm === active && !active.closed) {
         // Park warm. The teardown rides the queue, so it can never close the
         // browser under a flow that grabbed the queue first; unref lets a

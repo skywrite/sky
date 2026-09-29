@@ -22,7 +22,7 @@ function resultOf(run: CalendarSchedulingRun): Record<string, unknown> {
 }
 
 const SEND_FAILED_ACTION =
-  'The calendar save failed. Stop scheduling in this turn. Keep the exact saved, edited draft and explain the failure. Do not send an older draft or prepare a replacement from conversation text. Keep the saved draft until the underlying problem is resolved. For an uncertain result, only check status; never retry the save.'
+  'The calendar save failed. Stop scheduling in this turn. Keep the exact saved, edited draft and explain the failure. Do not send an older draft or prepare a replacement from conversation text. The user can review and retry the saved draft in its meeting card after fixing the problem. For an uncertain result, only check status; never retry the save.'
 
 function failedSave(input: unknown, output: Record<string, unknown>): boolean {
   if (!input || typeof input !== 'object' || !('send' in input) || !input.send) return false

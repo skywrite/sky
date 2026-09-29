@@ -60,6 +60,18 @@ export interface CalendarSetup {
   date: string
   timezone: string
   accounts: string[]
+  browserSignIn?: boolean
+}
+
+export interface CalendarBrowserState {
+  account: string
+  state: 'checking' | 'sign_in_required' | 'opening' | 'waiting' | 'signed_in' | 'failed' | 'busy'
+  message?: string
+}
+
+export interface CalendarBrowserHost {
+  check: (account: string, signal: AbortSignal) => Promise<boolean>
+  signIn: (account: string, signal: AbortSignal, opened: () => void) => Promise<void>
 }
 
 export interface CalendarDayEvent {
@@ -96,9 +108,18 @@ export interface CreatedCalendarEvent {
 
 export interface CalendarJob {
   id: string
+  /** Current attempt behind this stable draft/job ID. A retry must name the failure it reviewed. */
+  attemptId?: string
+  /** When this attempt finished, as Unix milliseconds; unchanged when its receipt is read again. */
+  finishedAt?: number
+  /** Only a confirmed failure before Save can be retried. */
+  retryable?: boolean
+  /** Authoritative reviewed details, including edits made in the approval widget. */
+  fields?: CalendarFields
   state: 'creating' | 'created' | 'updating' | 'updated' | 'failed' | 'uncertain'
   operation?: 'update'
   message?: string
+  recovery?: 'google_sign_in'
   result?: CreatedCalendarEvent
 }
 
@@ -127,6 +148,7 @@ export interface CalendarPreparedDraft {
 export interface CalendarSchedulerHost {
   dir: string
   setup: () => Promise<CalendarSetup>
+  browser?: CalendarBrowserHost
   people: (query: string) => Promise<CalendarContact[]>
   parse: (query: string, timezone: string, signal?: AbortSignal) => Promise<CalendarDraft>
   availability: (timing: CalendarTiming, exclude?: CalendarEventSnapshot) => Promise<CalendarAvailability>

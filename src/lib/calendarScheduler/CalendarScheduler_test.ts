@@ -1,5 +1,6 @@
-import { mkdtemp, readdir, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import { assert, test } from '#test'
+import { calendarInstant } from '#universal/dates/nbdt/mod.ts'
 import { availabilityOf } from './availability.ts'
 import { CalendarScheduler } from './CalendarScheduler.ts'
 import { calendarConference } from './conference.ts'
@@ -289,11 +290,190 @@ test('a calendar draft with an uncertain save is never sent again', async () =>
     await scheduler.send(prepared.draftId!)
     const job = await finished(scheduler, prepared.draftId!)
     const retried = await schedulerFor(host).send(prepared.draftId!)
+    const refused = await Promise.all([
+      scheduler.retryReview(prepared.draftId!).then(
+        () => false,
+        () => true,
+      ),
+      scheduler
+        .retry({ draftId: prepared.draftId, attemptId: job.attemptId, reviewKey: prepared.availability!.reviewKey })
+        .then(
+          () => false,
+          () => true,
+        ),
+    ])
     assert({
       given: 'a failed readback after the invitation may have been saved',
       should: 'keep the uncertain receipt through retry and restart',
-      actual: [job.state, retried.state, sent.length],
-      expected: ['uncertain', 'uncertain', 1],
+      actual: [job.state, retried.state, sent.length, job.retryable, refused],
+      expected: ['uncertain', 'uncertain', 1, false, [true, true]],
+    })
+  }))
+
+test('explicit retries retain the human-edited series across reloads and competing retry requests', async () =>
+  fixture(async (host, sent) => {
+    const scheduler = schedulerFor(host)
+    const original = await scheduler.prepare({ request: 'Meet Jane for Atlas planning.' })
+    const edited: CalendarFields = {
+      ...FIELDS,
+      title: 'Atlas launch review',
+      time: '16:15',
+      duration: 45,
+      guests: [{ name: 'Jane Doe', email: 'jane.work@example.com' }],
+      description: 'Review the revised launch proposal.',
+      conference: 'none',
+      recurrence: { frequency: 'weekly', interval: 2, ends: { type: 'after', count: 8 } },
+    }
+    const reviewed = await scheduler.review({ fields: edited, assumptions: [] })
+    const id = reviewed.draftId!
+    host.parse = async () => {
+      throw new Error('Recovery must not reinterpret old conversation text.')
+    }
+    const create = host.create
+    let attempts = 0
+    host.create = async (...args) => {
+      attempts++
+      if (attempts === 1) throw new Error('Sign in to the calendar browser.')
+      return create(...args)
+    }
+    await scheduler.send(id)
+    const failed = await finished(scheduler, id)
+    const retryTime = '2030-05-01T13:00:00Z'
+    const restarted = new CalendarScheduler(host, { now: () => retryTime })
+    await restarted.send(id)
+    const recovery = await restarted.retryReview(id)
+    assert({
+      given: 'a browser sign-in failure, a restart and the original unedited draft still on disk',
+      should: 'retain the exact edited series without saving or parsing again',
+      actual: [
+        failed.fields,
+        failed.retryable,
+        recovery.fields,
+        recovery.id,
+        attempts,
+        sent.length,
+        original.draftId !== id,
+        failed.finishedAt,
+        recovery.job?.finishedAt,
+      ],
+      expected: [edited, true, edited, id, 1, 0, true, calendarInstant(NOW), calendarInstant(NOW)],
+    })
+    const input = { draftId: id, attemptId: recovery.job!.attemptId, reviewKey: recovery.reviewKey }
+    await Promise.all(Array.from({ length: 6 }, () => restarted.retry(input)))
+    const created = await finished(restarted, id)
+    const later = schedulerFor(host)
+    const duplicate = await later.retry(input)
+    const receipt = await later.send(id)
+    const approval = await later.approval(id, 'schedule')
+    assert({
+      given: 'concurrent explicit retries, repeated network delivery and another restart',
+      should: 'create exactly one edited series, keep the original card ID and return the same receipt thereafter',
+      actual: [
+        attempts,
+        sent,
+        created.state,
+        duplicate.state,
+        receipt.state,
+        created.id,
+        created.attemptId !== id,
+        approval.draft?.fields,
+        created.finishedAt,
+        duplicate.finishedAt,
+      ],
+      expected: [
+        2,
+        [edited],
+        'created',
+        'created',
+        'created',
+        id,
+        true,
+        edited,
+        calendarInstant(retryTime),
+        calendarInstant(retryTime),
+      ],
+    })
+  }))
+
+test('legacy failure receipts keep their recorded time across reads without rewriting or retrying', async () =>
+  fixture(async (host) => {
+    let attempts = 0
+    host.create = async () => {
+      attempts++
+      throw new Error('The test provider stopped before Save.')
+    }
+    const scheduler = schedulerFor(host)
+    const prepared = await scheduler.prepare({ request: 'Schedule Atlas planning.' })
+    const id = prepared.draftId!
+    await scheduler.send(id)
+    await finished(scheduler, id)
+    const file = `${host.dir}/${id}.json`
+    const old = JSON.parse(await readFile(file, 'utf8'))
+    delete old.finishedAt
+    const legacy = JSON.stringify(old)
+    await writeFile(file, legacy)
+    const recordedAt = Math.floor((await stat(file)).mtimeMs)
+    const reloaded = schedulerFor(host)
+    assert({
+      given: 'a saved failure from before completion timestamps were stored',
+      should: 'use its original receipt time on every read, leaving the receipt and send count unchanged',
+      actual: [
+        (await reloaded.get(id))?.finishedAt,
+        (await reloaded.get(id))?.finishedAt,
+        await readFile(file, 'utf8'),
+        attempts,
+      ],
+      expected: [recordedAt, recordedAt, legacy, 1],
+    })
+  }))
+
+test('retry requires fresh availability review and checks it again immediately before Save', async () =>
+  fixture(async (host, sent) => {
+    const scheduler = schedulerFor(host)
+    const prepared = await scheduler.review({ fields: FIELDS })
+    const create = host.create
+    host.create = async () => {
+      throw new Error('Browser unavailable.')
+    }
+    await scheduler.send(prepared.draftId!)
+    await finished(scheduler, prepared.draftId!)
+    const review = await scheduler.retryReview(prepared.draftId!)
+    const input = { draftId: review.id, attemptId: review.job!.attemptId, reviewKey: review.reviewKey }
+    host.availability = async (timing) => availabilityOf(timing, [], ['Could not check Work.'], NOW)
+    const stale = await scheduler.retry(input).then(
+      () => '',
+      (error: Error) => error.message,
+    )
+    const refreshed = await scheduler.retryReview(review.id)
+    let enteredBrowser = false
+    host.create = async (...args) => {
+      enteredBrowser = true
+      host.availability = async (timing) => availabilityOf(timing, [], ['Could not check Personal.'], NOW)
+      return create(...args)
+    }
+    await scheduler.retry({ ...input, reviewKey: refreshed.reviewKey })
+    const stopped = await finished(scheduler, review.id)
+    assert({
+      given: 'availability changes after review, then changes again inside the browser before Save',
+      should: 'require the new warning to be reviewed and prevent an unreviewed write even after retry starts',
+      actual: [
+        stale.includes('Review the saved draft again'),
+        refreshed.availability?.warnings,
+        enteredBrowser,
+        stopped.state,
+        stopped.retryable,
+        sent.length,
+      ],
+      expected: [true, ['Could not check Work.'], true, 'failed', true, 0],
+    })
+    const current = await scheduler.retryReview(review.id)
+    host.create = create
+    await scheduler.retry({ draftId: current.id, attemptId: current.job!.attemptId, reviewKey: current.reviewKey })
+    assert({
+      given: 'the new availability reviewed and accepted on the same saved draft',
+      should: 'allow recovery without manufacturing a replacement draft',
+      actual: [(await finished(scheduler, review.id)).state, sent],
+      expected: ['created', [FIELDS]],
     })
   }))
 

@@ -4,6 +4,7 @@ import { calendarDraftIds } from '#lib/calendarScheduler/batch.ts'
 import { CalendarScheduler } from '#lib/calendarScheduler/CalendarScheduler.ts'
 import { CalendarSchedulerClient } from '#lib/calendarScheduler/client.ts'
 import type { CalendarFields, CalendarReview, CalendarTiming } from '#lib/calendarScheduler/types.ts'
+import { GoogleBrowserSignInRequired } from '#lib/google/browserSignIn.ts'
 import type { ResolvedModel } from '#shared/ai/models.ts'
 import ChatSession from '#shared/models/Chat/ChatSession/mod.ts'
 import { PlainDate, PlainDateTime } from '#universal/dates/nbdt/mod.ts'
@@ -51,7 +52,7 @@ export function calendarApprovalTestHost(root: string) {
       availability,
       create: async (fields, hooks) => {
         await hooks.beforeSave()
-        if (failure === 'sign_in') throw new Error('Sign in to Google to continue.')
+        if (failure === 'sign_in') throw new GoogleBrowserSignInRequired('Sign in to Google to continue.')
         if (failure === 'repeat')
           throw new Error('Calendar did not keep the requested repeat schedule. Nothing was saved.')
         if (failure === 'before_save') throw new Error('Sign in to the Calendar browser, then retry the saved draft.')

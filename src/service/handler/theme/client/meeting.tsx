@@ -12,6 +12,7 @@ import type {
   CalendarSetup,
 } from '#lib/calendarScheduler/types.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
+import { MeetingGoogleSignIn, useMeetingBrowser } from './meetingBrowser.tsx'
 import { mergeMeetingDraft } from './meetingDraft.ts'
 import { MeetingGuests } from './meetingGuests.tsx'
 import { MeetingRequestError, meetingRequest } from './meetingRequest.ts'
@@ -360,6 +361,15 @@ export function MeetingDialog({ opened, onClose }: { opened: boolean; onClose: (
       })
     : ''
   const active = sending || job?.state === 'creating'
+  const browserAccount = job ? (sentFields?.account ?? '') : (fields?.account ?? '')
+  const connection = useMeetingBrowser(
+    browserAccount,
+    opened &&
+      !active &&
+      (!job || job.state === 'failed') &&
+      (setup?.browserSignIn === true || job?.recovery === 'google_sign_in'),
+    job?.recovery === 'google_sign_in' ? (job.attemptId ?? job.id) : undefined,
+  )
   const parseContext = useRef({ timezone: '', account: '' })
   parseContext.current = {
     timezone: fields?.timezone || setup?.timezone || browserTimezone(),
@@ -564,6 +574,7 @@ export function MeetingDialog({ opened, onClose }: { opened: boolean; onClose: (
   const conference = calendarConference({ ...fields, guests })
   const stale = query.trim() !== parsedQuery
   const canCreate =
+    connection.ready &&
     !!fields?.title.trim() &&
     !!fields.account &&
     !unresolved &&
@@ -721,7 +732,8 @@ export function MeetingDialog({ opened, onClose }: { opened: boolean; onClose: (
           ) : (
             <>
               <h2>{job?.state === 'uncertain' ? 'Check Calendar before retrying' : 'The meeting wasn’t created'}</h2>
-              <p>{job?.message}</p>
+              {job?.recovery !== 'google_sign_in' && <p>{job?.message}</p>}
+              <MeetingGoogleSignIn connection={connection} />
               <Button component="a" href={calendarUrl} target="_blank" rel="noreferrer" variant="primary">
                 Open Google Calendar
               </Button>
@@ -817,6 +829,7 @@ export function MeetingDialog({ opened, onClose }: { opened: boolean; onClose: (
             )}
             {draft && fields && (
               <>
+                <MeetingGoogleSignIn connection={connection} />
                 {draft.unsupported.length > 0 && <Alert color="yellow">{draft.unsupported.join(' ')}</Alert>}
                 <div className="sky-meeting-review" aria-busy={stale || parsing}>
                   <MeetingDetails

@@ -67,6 +67,12 @@ Its shared header, spacing, action roles and footer follow the
    On phones, the footer links directly to conflicts or incomplete checks.
    Guests are optional. Video conferencing can be None or Zoom, following the
    [shared scheduler defaults](../../../../lib/calendarScheduler/docs/README.md#the-command).
+   The composer and chat draft check the selected organizer's Google browser session
+   before enabling creation. **Sign in to Google** opens Sky's dedicated browser on
+   the service computer; the card polls its status and retains the draft across
+   reloads. Authentication alone never creates or retries an invitation. Cancel,
+   a closed window or a different signed-in account cannot enable sending. The same
+   window and profile are shared with `sky google:browser`.
 5. Success shows the Calendar link and a Copy Zoom link action when present. No call is
    joined. A failure preserves the draft. An uncertain save directs the
    person to Calendar before returning to the draft.
@@ -86,6 +92,9 @@ Both see the same jobs, including invitations started before the extraction.
 | Route under either API prefix | Behavior |
 | --- | --- |
 | `GET /setup` | Civil date, zone, accounts with calendar access |
+| `GET /browser?account=...` | Read/check the organizer's browser session; never opens a visible window |
+| `POST /browser/sign-in` | Open one sign-in window for a connected account; concurrent clicks share it |
+| `POST /browser/check`, `POST /browser/cancel` | Refresh the account check or cancel sign-in without changing a draft |
 | `GET /people?q=...` | Matching contacts ranked with the shared interaction scores, with explicit emails |
 | `POST /parse` | Free text → editable draft; no event or conference created |
 | `POST /preview` | Timing → day, conflicts, alternatives and a review key |

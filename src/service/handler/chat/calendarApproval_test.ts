@@ -2,7 +2,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import * as path from 'node:path'
 import { loadResumeSession } from '#shared/models/Chat/ChatStore/mod.ts'
 import { assert, test } from '#test'
-import { calendarApprovalPrompt, restoreAnsweredApprovals } from './calendarApproval.ts'
+import { calendarApprovalPrompt, recoverCalendarApprovals, restoreAnsweredApprovals } from './calendarApproval.ts'
 import { CALENDAR_FIELDS, calendarApprovalTestHost } from './calendarApprovalTestHelpers.ts'
 import { createChatRoutes, type ToolRun, type ChatSessionFactory } from './mod.ts'
 
@@ -153,6 +153,68 @@ test('chat calendar review pins approval to the latest saved revision and ignore
   } finally {
     await post('/main/stop', {})
     await body
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('legacy chat recovery reconstructs failed cards from executed draft IDs without reviving unsent drafts', async () => {
+  const root = await mkdtemp('/tmp/sky-calendar-legacy-card-')
+  try {
+    const host = calendarApprovalTestHost(root)
+    const original = await host.scheduler.prepare({ request: 'Meet Jane.' })
+    const fields = { ...CALENDAR_FIELDS, title: 'Atlas launch review', time: '16:15', duration: 45 }
+    const edited = await host.scheduler.review({ fields })
+    host.setFailure('before_save')
+    await host.client.wait(await host.scheduler.send(edited.draftId!))
+    const runs: ToolRun[] = [edited, original, edited].map((draft, index) => ({
+      tool: 'calendar_schedule',
+      callId: `calendar-${index}`,
+      at: 1,
+      started: 0,
+      lines: [],
+      status: 'error',
+      input: { send: draft.draftId },
+      output: { success: false, error: 'Calendar sign-in required.' },
+    }))
+    const recovered = await recoverCalendarApprovals(runs, host.client, [])
+    const repeated = await recoverCalendarApprovals(runs, host.client, recovered)
+    const app = createChatRoutes({
+      ...host.chat,
+      snapshots: async () => [
+        {
+          id: 'legacy',
+          runs,
+          state: {
+            conversation: [
+              { role: 'user', content: 'Schedule Atlas.' },
+              { role: 'assistant', content: 'Calendar sign-in required.' },
+            ],
+            universePaths: [],
+            queries: [],
+            lastTurn: 1,
+            contextLog: [],
+          },
+        },
+      ],
+    })
+    const restored = await (await app.request('/legacy')).json()
+    const again = await (await app.request('/legacy')).json()
+    assert({
+      given: 'a legacy snapshot containing a failed edited send, an unsent stale ID, and a repeated receipt read',
+      should: 'restore one actionable saved card from the durable job without replaying an invitation',
+      actual: [
+        recovered.length,
+        recovered[0]?.calendar?.[0]?.fields,
+        recovered[0]?.calendar?.[0]?.job?.retryable,
+        repeated,
+        restored.answered.length,
+        again.answered.length,
+        restored.answered[0]?.calendar[0]?.fields,
+        host.sent.length,
+      ],
+      expected: [1, fields, true, [], 1, 1, fields, 0],
+    })
+  } finally {
     await rm(root, { recursive: true, force: true })
   }
 })

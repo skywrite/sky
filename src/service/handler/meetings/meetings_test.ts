@@ -286,3 +286,105 @@ test('meeting routes keep parse and preview read-only and refuse cross-site crea
       expected: [200, 200, 400, 403, 0],
     })
   }))
+
+test('Google browser routes open only a connected account on an explicit same-origin request', async () =>
+  fixture(async (host) => {
+    let windows = 0
+    let writes = 0
+    let checked = 0
+    const signed = Promise.withResolvers<void>()
+    host.browser = {
+      check: async () => {
+        checked++
+        return false
+      },
+      signIn: async (_account, _signal, opened) => {
+        windows++
+        opened()
+        await signed.promise
+      },
+    }
+    host.create = async () => {
+      writes++
+      return RESULT
+    }
+    const app = createMeetingRoutes(host)
+    const post = (body: unknown, origin?: string) =>
+      app.request('http://localhost/browser/sign-in', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(origin ? { Origin: origin } : {}) },
+        body: JSON.stringify(body),
+      })
+    const status = await app.request(`/browser?account=${encodeURIComponent(FIELDS.account)}`)
+    const unknown = await post({ account: 'other@example.com' })
+    const crossSite = await post({ account: FIELDS.account }, 'https://example.com')
+    const redirected = await post({ account: FIELDS.account, url: 'https://example.com' })
+    assert({
+      given: 'preflight, an unconnected account, a cross-site click and an arbitrary destination',
+      should: 'check read-only and reject window-opening requests outside the known account flow',
+      actual: [status.status, checked, unknown.status, crossSite.status, redirected.status, windows, writes],
+      expected: [200, 1, 400, 403, 400, 0, 0],
+    })
+    await Promise.all([post({ account: FIELDS.account }), post({ account: FIELDS.account })])
+    const waiting = await (await app.request(`/browser?account=${encodeURIComponent(FIELDS.account)}`)).json()
+    signed.resolve()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    const ready = await (await app.request(`/browser?account=${encodeURIComponent(FIELDS.account)}`)).json()
+    assert({
+      given: 'two clicks, polling and a verified sign-in',
+      should: 'share one visible window and never create an invitation as a side effect',
+      actual: [waiting.state, ready.state, windows, writes],
+      expected: ['waiting', 'signed_in', 1, 0],
+    })
+  }))
+
+test('meeting recovery routes review saved fields and reject changed payloads before a single explicit retry', async () =>
+  fixture(async (host) => {
+    const create = host.create
+    let saves = 0
+    host.create = async () => {
+      throw new Error('Sign in to Calendar.')
+    }
+    const app = createMeetingRoutes(host)
+    const post = (route: string, body: unknown, origin?: string) =>
+      app.request(`http://localhost${route}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(origin ? { Origin: origin } : {}) },
+        body: JSON.stringify(body),
+      })
+    const draft = await (await post('/review', { fields: FIELDS })).json()
+    const done = async () => {
+      for (let attempt = 0; attempt < 100; attempt++) {
+        const job = await (await app.request(`/jobs/${draft.draftId}`)).json()
+        if (job.state !== 'creating') return job as CalendarJob
+        await new Promise((resolve) => setTimeout(resolve, 5))
+      }
+      throw new Error('Calendar request did not finish.')
+    }
+    await post('/send', { draftId: draft.draftId })
+    await done()
+    host.create = async (...args) => {
+      saves++
+      return create(...args)
+    }
+    const reviewResponse = await post('/retry-review', { draftId: draft.draftId })
+    const review = await reviewResponse.json()
+    const request = { draftId: draft.draftId, attemptId: review.job.attemptId, reviewKey: review.reviewKey }
+    const invalid = await post('/retry', { ...request, fields: { ...FIELDS, title: 'Unreviewed title' } })
+    const crossSite = await post('/retry', request, 'https://example.com')
+    assert({
+      given: 'a failed request, read-only recovery review, changed fields and a cross-site retry',
+      should: 'return only the saved invitation and prevent all unapproved writes',
+      actual: [reviewResponse.status, review.fields, invalid.status, crossSite.status, saves],
+      expected: [200, FIELDS, 400, 403, 0],
+    })
+    const started = await post('/retry', request)
+    const result = await done()
+    await post('/retry', request)
+    assert({
+      given: 'an explicit retry and an identical redelivered request',
+      should: 'create once and retain the original draft identity',
+      actual: [started.status, result.id, result.state, saves],
+      expected: [202, draft.draftId, 'created', 1],
+    })
+  }))

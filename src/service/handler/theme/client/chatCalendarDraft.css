@@ -222,6 +222,18 @@
 .sky-calendar-receipt[data-warning] {
   color: var(--sky-amber);
 }
+.sky-calendar-receipt[data-ready] {
+  color: var(--sky-text-2);
+}
+.sky-calendar-receipt[data-history] {
+  color: var(--sky-text-2);
+}
+.sky-calendar-history summary {
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--sky-dim);
+}
 .sky-calendar-receipt p {
   color: var(--sky-text-2);
   line-height: 1.6;

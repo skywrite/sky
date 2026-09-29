@@ -9,6 +9,7 @@ import type {
   CalendarApproval,
   CalendarJobBatch,
   CalendarPreparation,
+  CalendarPreparedDraft,
   CalendarRequest,
   CalendarSchedulerHost,
 } from './types.ts'
@@ -40,7 +41,7 @@ export class CalendarScheduler {
     private readonly options: { hold?: () => () => void; now?: () => string } = {},
   ) {
     this.drafts = new CalendarDrafts(host.dir)
-    this.jobs = new CalendarJobs(host, options.hold)
+    this.jobs = new CalendarJobs(host, options.hold, options.now)
     this.updates = new CalendarUpdates(host, this.drafts, options.now)
   }
 
@@ -84,6 +85,46 @@ export class CalendarScheduler {
 
   get(id: string) {
     return this.jobs.get(id)
+  }
+
+  /** Recovery reads the immutable edited draft; it never interprets the old conversation again. */
+  async retryReview(id: string): Promise<CalendarPreparedDraft> {
+    const draft = await this.drafts.get(id)
+    const job = await this.jobs.get(id)
+    if (draft.update || !job?.retryable || job.state !== 'failed')
+      throw new Error('Only a failed event that was not saved can be retried. Check its existing result.')
+    const fields = validateMeeting(draft.fields)
+    if (JSON.stringify(validateMeeting(job.fields)) !== JSON.stringify(fields))
+      throw new Error('The saved calendar result does not match this draft. Check Calendar before continuing.')
+    this.requireFuture(fields)
+    const setup = await this.host.setup()
+    if (!setup.accounts.includes(fields.account)) throw new Error('Choose a connected Google account.')
+    const availability = await this.host.availability(fields)
+    return { id, fields, assumptions: draft.assumptions ?? [], availability, reviewKey: availability.reviewKey, job }
+  }
+
+  async retry(input: unknown) {
+    const { draftId, attemptId, reviewKey } = z
+      .object({
+        draftId: z.uuid(),
+        attemptId: z.uuid(),
+        reviewKey: z.string().regex(/^[a-f0-9]{64}$/),
+      })
+      .strict()
+      .parse(input)
+    const current = await this.jobs.get(draftId)
+    if (current && current.attemptId !== attemptId) return current
+    try {
+      const reviewed = await this.retryReview(draftId)
+      if (reviewed.reviewKey !== reviewKey)
+        throw new Error('Calendar availability changed. Review the saved draft again before retrying.')
+      return await this.jobs.retry(draftId, attemptId, reviewKey)
+    } catch (error) {
+      // Another tab may have started the same retry during the availability check.
+      const latest = await this.jobs.get(draftId)
+      if (latest && latest.attemptId !== attemptId) return latest
+      throw error
+    }
   }
 
   /** Approval describes persisted fields, never a model-supplied summary or just an ID. */

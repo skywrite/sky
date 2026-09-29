@@ -1,6 +1,7 @@
 import { availabilityOf, type CalendarSourceEvents } from '#lib/calendarScheduler/availability.ts'
 import { parseMeeting } from '#lib/calendarScheduler/parse.ts'
 import { meetingInterval } from '#lib/calendarScheduler/validation.ts'
+import { checkCalendarBrowserSignIn, signInGoogleBrowser } from '#lib/google/browserSignIn.ts'
 import { createCalendarMeeting } from '#lib/google/createCalendarMeeting.ts'
 import {
   GoogleClient,
@@ -46,7 +47,11 @@ export function createGoogleCalendarHost(options: {
     dir,
     setup: async () => {
       const timezone = (await readSystemTimezone()) ?? currentTimezoneIANA()
-      return { date: calendarNow(timezone).date, timezone, accounts: await accounts() }
+      return { date: calendarNow(timezone).date, timezone, accounts: await accounts(), browserSignIn: true }
+    },
+    browser: {
+      check: checkCalendarBrowserSignIn,
+      signIn: (account, signal, onOpened) => signInGoogleBrowser({ account, signal, onOpened }),
     },
     people,
     parse: (query, timezone, signal) => parseMeeting(query, timezone, people, signal),

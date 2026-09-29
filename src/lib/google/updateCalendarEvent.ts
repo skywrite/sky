@@ -5,6 +5,7 @@ import { validateEventUpdate } from '#lib/calendarScheduler/updateValidation.ts'
 import { meetingInterval } from '#lib/calendarScheduler/validation.ts'
 import { calendarInstant, calendarLocal, instantNow } from '#universal/dates/nbdt/mod.ts'
 import { withGoogleBrowser } from './browserSession.ts'
+import { GoogleBrowserSignInRequired, googleBrowserSignInMessage } from './browserSignIn.ts'
 import { formDate, formTime, zoomMeetingUrl } from './createCalendarMeeting.ts'
 
 const emails = (guests: { email: string }[]) => [...new Set(guests.map((guest) => guest.email.toLowerCase()))].sort()
@@ -99,14 +100,14 @@ export async function prepareCalendarEventUpdate(
   try {
     await title.waitFor()
   } catch {
-    throw new Error('The event editor could not open. Check the selected account with sky google:browser.')
+    throw new GoogleBrowserSignInRequired(googleBrowserSignInMessage)
   }
   const account = await page
     .getByRole('button', { name: /^Google Account:/ })
     .first()
     .ariaSnapshot()
   if (!account.toLowerCase().includes(`(${event.ref.account.toLowerCase()})`))
-    throw new Error('The browser is signed in to a different Google account. Nothing was saved.')
+    throw new GoogleBrowserSignInRequired('The browser is signed in to a different Google account. Nothing was saved.')
   if (await page.getByRole('checkbox', { name: 'All day', exact: true }).isChecked())
     throw new Error('The event editor is all-day. Nothing was saved.')
   const oldEnd = calendarLocal(event.end, event.fields.timezone)

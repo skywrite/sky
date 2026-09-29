@@ -13,6 +13,7 @@ import type {
 } from '#lib/calendarScheduler/types.ts'
 import type { Approval } from './chat.tsx'
 import { DaySchedule, MeetingDetails, meetingClock, meetingDayLabel, meetingRequest } from './meeting.tsx'
+import { MeetingGoogleSignIn, useMeetingBrowser } from './meetingBrowser.tsx'
 import { RenderedHtml } from './renderedHtml.tsx'
 import { renderStatic } from './wysiwyg/render.ts'
 import './writingDraft.css'
@@ -21,6 +22,10 @@ import './chatCalendarDraft.css'
 type Edit = { id: string; fields: CalendarFields; reviewKey: string }
 const messageOf = (error: unknown) =>
   error instanceof Error ? error.message : 'Could not update the meeting. Try again.'
+// Cards move in the transcript as replies arrive. Keep current attempts through those remounts,
+// but only for this page load: refreshing must not announce an old failure as a new one.
+const pageAttempts = new Set<string>()
+
 function MeetingEditor({
   saved,
   accounts,
@@ -243,7 +248,40 @@ function MeetingPreview({
   )
 }
 
-function MeetingReceipt({ draft, job }: { draft: CalendarPreparedDraft; job?: CalendarJob }) {
+function attemptTime(at: number | undefined, timezone: string): string | undefined {
+  if (at === undefined || !Number.isFinite(at)) return undefined
+  try {
+    const parts = Object.fromEntries(
+      new Intl.DateTimeFormat('en-US', {
+        timeZone: timezone,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        hourCycle: 'h23',
+        timeZoneName: 'short',
+      })
+        .formatToParts(at)
+        .map(({ type, value }) => [type, value]),
+    )
+    return `${parts.year}-${parts.month}-${parts.day} · ${meetingClock(`${parts.hour}:${parts.minute}`)} ${parts.timeZoneName}`
+  } catch {
+    return undefined
+  }
+}
+
+function MeetingReceipt({
+  draft,
+  job,
+  signInRecovered,
+  historical,
+}: {
+  draft: CalendarPreparedDraft
+  job?: CalendarJob
+  signInRecovered?: boolean
+  historical?: boolean
+}) {
   const [copied, setCopied] = useState(false)
   const [error, setError] = useState('')
   const created = job?.state === 'created'
@@ -251,9 +289,31 @@ function MeetingReceipt({ draft, job }: { draft: CalendarPreparedDraft; job?: Ca
   const calendarUrl =
     job?.result?.calendarUrl ??
     `https://calendar.google.com/calendar/u/0/r?authuser=${encodeURIComponent(draft.fields.account)}`
-
+  if (historical && job?.state === 'failed') {
+    const when = attemptTime(job.finishedAt, draft.fields.timezone)
+    return (
+      <div className="sky-calendar-receipt" data-history>
+        {signInRecovered && <p>Ready to retry your saved draft</p>}
+        <details className="sky-calendar-history" key={job.attemptId ?? job.id}>
+          <summary>
+            Previous attempt failed
+            {when && <span title={draft.fields.timezone}> · {when}</span>}
+          </summary>
+          <p>{job.message || 'This attempt stopped before the event was saved.'}</p>
+          <Button component="a" href={calendarUrl} target="_blank" rel="noreferrer" size="sm" variant="primary-quiet">
+            Open Calendar
+          </Button>
+        </details>
+      </div>
+    )
+  }
   return (
-    <div className="sky-calendar-receipt" data-warning={failed || undefined} role={failed ? 'alert' : 'status'}>
+    <div
+      className="sky-calendar-receipt"
+      data-ready={signInRecovered || undefined}
+      data-warning={(failed && !signInRecovered) || undefined}
+      role={failed && !signInRecovered ? 'alert' : 'status'}
+    >
       <strong>
         {created
           ? draft.fields.guests.length
@@ -261,15 +321,20 @@ function MeetingReceipt({ draft, job }: { draft: CalendarPreparedDraft; job?: Ca
             : `${draft.fields.recurrence ? 'Series' : 'Event'} created`
           : job?.state === 'uncertain'
             ? 'Check Calendar before trying again'
-            : failed
-              ? 'The event wasn’t created'
-              : !job
-                ? 'Checking saved result…'
-                : draft.fields.recurrence
-                  ? 'Creating series…'
-                  : 'Creating event…'}
+            : signInRecovered
+              ? 'Ready to retry your saved draft'
+              : failed
+                ? 'The event wasn’t created'
+                : !job
+                  ? 'Checking saved result…'
+                  : draft.fields.recurrence
+                    ? 'Creating series…'
+                    : 'Creating event…'}
       </strong>
-      {job?.message && <p>{job.message}</p>}
+      {signInRecovered && (
+        <p>Google sign-in is complete. Review the saved draft to retry. No invitations have been sent.</p>
+      )}
+      {job?.message && job.recovery !== 'google_sign_in' && <p>{job.message}</p>}
       {(created || failed) && (
         <div className="sky-calendar-links">
           <Button component="a" href={calendarUrl} target="_blank" rel="noreferrer" size="sm" variant="primary-quiet">
@@ -303,11 +368,11 @@ function MeetingReceipt({ draft, job }: { draft: CalendarPreparedDraft; job?: Ca
   )
 }
 
-function batchStatus(draft: CalendarPreparedDraft, job?: CalendarJob) {
+function batchStatus(draft: CalendarPreparedDraft, job?: CalendarJob, historical?: boolean) {
   if (job) {
     if (job.state === 'created') return 'Created'
     if (job.state === 'uncertain') return 'Save unconfirmed'
-    if (job.state === 'failed') return 'Failed'
+    if (job.state === 'failed') return historical ? 'Saved draft' : 'Failed'
     return 'Creating…'
   }
   if (draft.availability?.events.some((event) => event.conflict)) return 'Conflict'
@@ -343,19 +408,30 @@ export function ChatCalendarDraft({
   const [jobs, setJobs] = useState<Record<string, CalendarJob>>({})
   const [receiptError, setReceiptError] = useState('')
   const [selected, setSelected] = useState(0)
+  const [retryReview, setRetryReview] = useState<CalendarPreparedDraft | null>(null)
   const [pollRevision, setPollRevision] = useState(0)
   const activeIndex = Math.min(selected, drafts.length - 1)
   const activeDraft = drafts[activeIndex]!
+  const activeJob = jobs[activeDraft.id] ?? activeDraft.job
+  const historicalFailure = (job?: CalendarJob) => job?.state === 'failed' && !pageAttempts.has(job.attemptId ?? job.id)
   const sharedTitle = drafts.every((draft) => draft.fields.title === drafts[0]!.fields.title)
   const ids = drafts.map((draft) => draft.id).join(',')
   const editable = answered === undefined && !!onAnswer
+  const needsBrowser = editable || activeJob?.state === 'failed'
+  const connection = useMeetingBrowser(
+    editing ? (edits.current[activeIndex]?.fields.account ?? activeDraft.fields.account) : activeDraft.fields.account,
+    needsBrowser && (setup?.browserSignIn === true || activeJob?.recovery === 'google_sign_in'),
+    activeJob?.recovery === 'google_sign_in' ? (activeJob.attemptId ?? activeJob.id) : undefined,
+  )
+  const signInRecovered = activeJob?.recovery === 'google_sign_in' && connection.enabled && connection.ready
+  const showConnection = needsBrowser && (editable || !connection.ready || activeJob?.recovery === 'google_sign_in')
   const conflicts = drafts.some(
     (draft) => draft.availability?.events.some((event) => event.conflict) || draft.availability?.warnings.length,
   )
   const guests = drafts.some((draft) => draft.fields.guests.length)
 
   useEffect(() => {
-    if (!editing) return
+    if (!needsBrowser) return
     const controller = new AbortController()
     void meetingRequest<CalendarSetup>('setup', undefined, controller.signal)
       .then((value) => {
@@ -365,7 +441,7 @@ export function ChatCalendarDraft({
         if (!controller.signal.aborted) setError(messageOf(failure))
       })
     return () => controller.abort()
-  }, [!!editing])
+  }, [needsBrowser, !!editing])
 
   useEffect(() => {
     if (!answered) return
@@ -391,6 +467,9 @@ export function ChatCalendarDraft({
               ]
             : [],
       )
+      for (const job of found) {
+        if (job.state === 'creating') pageAttempts.add(job.attemptId ?? job.id)
+      }
       setJobs((previous) => ({ ...previous, ...Object.fromEntries(found.map((job) => [job.id, job])) }))
       const lost = results.some((result) => result.status === 'rejected' && !(result.reason?.status === 404))
       setReceiptError(lost ? 'Waiting to reconnect to the calendar service. This will check the existing request.' : '')
@@ -450,11 +529,20 @@ export function ChatCalendarDraft({
             ? drafts.length === 1 && activeDraft.fields.recurrence
               ? 'Creating series…'
               : 'Creating event…'
-            : drafts.some((draft) => (jobs[draft.id] ?? draft.job)?.state === 'failed')
-              ? 'Not created'
-              : drafts.some((draft) => (jobs[draft.id] ?? draft.job)?.state === 'uncertain')
-                ? 'Save unconfirmed'
-                : 'Checking result…'
+            : retryReview
+              ? 'Review before retrying'
+              : signInRecovered
+                ? 'Ready to retry'
+                : drafts.some((draft) => (jobs[draft.id] ?? draft.job)?.state === 'failed')
+                  ? drafts.some((draft) => {
+                      const job = jobs[draft.id] ?? draft.job
+                      return job?.state === 'failed' && !historicalFailure(job)
+                    })
+                    ? 'Not created'
+                    : 'Saved draft'
+                  : drafts.some((draft) => (jobs[draft.id] ?? draft.job)?.state === 'uncertain')
+                    ? 'Save unconfirmed'
+                    : 'Checking result…'
         : 'Review before sending'
   return (
     <section
@@ -482,7 +570,7 @@ export function ChatCalendarDraft({
               <div className="sky-calendar-dates" role="group" aria-label="Events in this request">
                 {drafts.map((draft, index) => {
                   const job = jobs[draft.id] ?? draft.job
-                  const result = batchStatus(draft, job)
+                  const result = batchStatus(draft, job, historicalFailure(job))
                   return (
                     <button
                       type="button"
@@ -492,6 +580,7 @@ export function ChatCalendarDraft({
                       disabled={!!editing || busy}
                       onClick={() => {
                         setSelected(index)
+                        setRetryReview(null)
                       }}
                     >
                       <span>
@@ -527,12 +616,19 @@ export function ChatCalendarDraft({
                 />
               ) : (
                 <MeetingPreview
-                  draft={draft}
+                  draft={retryReview?.id === draft.id ? retryReview : draft}
                   summary={approval.lines[activeIndex]}
                   created={(jobs[draft.id] ?? draft.job)?.state === 'created'}
                 />
               )}
-              {answered && <MeetingReceipt draft={draft} job={jobs[draft.id] ?? draft.job} />}
+              {answered && (
+                <MeetingReceipt
+                  draft={draft}
+                  job={jobs[draft.id] ?? draft.job}
+                  signInRecovered={signInRecovered}
+                  historical={historicalFailure(jobs[draft.id] ?? draft.job)}
+                />
+              )}
             </div>
           ))}
         </>
@@ -541,6 +637,11 @@ export function ChatCalendarDraft({
         <p className="sky-calendar-error">
           Connect a Google account in <a href="/settings/connections">Settings → Connections</a> to schedule this event.
         </p>
+      )}
+      {showConnection && (
+        <div className="sky-calendar-connection">
+          <MeetingGoogleSignIn connection={connection} />
+        </div>
       )}
       {editable && (
         <div className="sky-writing-draft-actions sky-calendar-actions">
@@ -575,8 +676,10 @@ export function ChatCalendarDraft({
                 size="sm"
                 variant={conflicts ? 'warning' : 'primary'}
                 loading={busy}
+                disabled={!connection.ready}
                 onClick={() =>
                   void act(async () => {
+                    for (const draft of drafts) pageAttempts.add(draft.id)
                     await onAnswer!(true, false, approval.revision)
                   })
                 }
@@ -624,6 +727,62 @@ export function ChatCalendarDraft({
               </Button>
             </>
           )}
+        </div>
+      )}
+      {answered && activeJob?.state === 'failed' && activeJob.retryable && (
+        <div className="sky-writing-draft-actions sky-calendar-actions">
+          {retryReview?.id === activeDraft.id ? (
+            <>
+              <Button
+                size="sm"
+                variant={
+                  retryReview.availability?.events.some((event) => event.conflict) ||
+                  retryReview.availability?.warnings.length
+                    ? 'warning'
+                    : 'primary'
+                }
+                loading={busy}
+                disabled={!connection.ready}
+                onClick={() =>
+                  void act(async () => {
+                    const job = await meetingRequest<CalendarJob>('retry', {
+                      draftId: retryReview.id,
+                      attemptId: retryReview.job!.attemptId,
+                      reviewKey: retryReview.reviewKey,
+                    })
+                    pageAttempts.add(job.attemptId ?? job.id)
+                    setJobs((current) => ({ ...current, [activeDraft.id]: job }))
+                    setRetryReview(null)
+                    setPollRevision((value) => value + 1)
+                  })
+                }
+              >
+                {activeDraft.fields.guests.length ? 'Retry & send invites' : 'Retry saved event'}
+              </Button>
+              <Button size="sm" disabled={busy} onClick={() => setRetryReview(null)}>
+                Not now
+              </Button>
+            </>
+          ) : (
+            <Button
+              size="sm"
+              variant="primary"
+              loading={busy}
+              onClick={() =>
+                void act(async () => {
+                  const reviewed = await meetingRequest<CalendarPreparedDraft>('retry-review', {
+                    draftId: activeDraft.id,
+                  })
+                  pageAttempts.delete(reviewed.job?.attemptId ?? reviewed.id)
+                  setRetryReview(reviewed)
+                  setRaw(false)
+                })
+              }
+            >
+              Review saved draft
+            </Button>
+          )}
+          <span>Your edited details are preserved.</span>
         </div>
       )}
       {error && (
