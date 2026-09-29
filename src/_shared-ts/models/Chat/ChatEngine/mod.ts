@@ -702,7 +702,7 @@ export default class ChatEngine {
               type: 'tool-approval-response',
               approvalId,
               approved: false,
-              reason: `User already denied ${toolCall.toolName}. Do not request it again.`,
+              reason: `User already denied ${toolCall.toolName} this turn. Do not request it again this turn.`,
             })
             continue
           }

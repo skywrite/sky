@@ -1970,6 +1970,68 @@ test({ name: 'chat route - a declined call tells the model so, and the turn goes
   })
 })
 
+test({ name: 'chat route - a declined call is a no for this turn, and a later turn may ask again' }, async () => {
+  const reasons: string[][] = []
+  let round = 0
+  const host = await testHost({
+    invokeModel: (args) => {
+      round++
+      // Turns 1 and 2 each ask once; the model call after each answer reads the decision it was given.
+      if (round === 1 || round === 3) {
+        return Promise.resolve({
+          ...EMPTY,
+          content: [
+            {
+              type: 'tool-approval-request',
+              approvalId: `ap-${round}`,
+              toolCall: { toolName: 'slack_post', input: { channel: 'general', text: round === 1 ? 'Hello' : 'Hi' } },
+            },
+          ],
+        })
+      }
+      // The newest tool message carries this turn's decision; earlier ones are history.
+      const decisions = (args.messages as Array<{ role: string; content: unknown }>).findLast((m) => m.role === 'tool')
+      reasons.push(((decisions?.content as Array<{ reason?: string }>) ?? []).map((decision) => decision.reason ?? ''))
+      args.sink.write(round === 2 ? 'Not posted.' : 'Posted.')
+      return Promise.resolve(EMPTY)
+    },
+  })
+  const app = appWith(host)
+  const first = await send(app, 'http://localhost/chat/a3/messages', { message: 'Post hello for me' })
+  const firstBody = first.text()
+  const asked = await until(
+    () => getJson(app, 'http://localhost/chat/a3'),
+    (t) => Array.isArray(t.pending) && t.pending.length > 0,
+  )
+  await post(app, `http://localhost/chat/a3/approvals/${asked.pending[0].id}`, { approved: false })
+  await firstBody
+  const second = await send(app, 'http://localhost/chat/a3/messages', { message: 'Post hi instead' })
+  const secondBody = second.text()
+  const askedAgain = await until(
+    () => getJson(app, 'http://localhost/chat/a3'),
+    (t) => Array.isArray(t.pending) && t.pending.length > 0,
+  )
+  await post(app, `http://localhost/chat/a3/approvals/${askedAgain.pending[0].id}`, { approved: true })
+  const frames = parseSSE(await secondBody)
+  assert({
+    given: 'a call declined on one turn and requested again on the next',
+    should: 'tell the model the no was for that turn, then hold the new call for a go',
+    actual: {
+      firstReason: reasons[0]?.[0],
+      askedAgain: askedAgain.pending.map((card: { toolName: string }) => card.toolName),
+      secondReason: reasons[1]?.[0],
+      reply: frames.at(-1)?.data?.text,
+    },
+    expected: {
+      firstReason:
+        'User declined this call. It is a no to this input or this moment, not to the tool: do not run it again this turn, wait for their direction, and a later turn may ask again with new input.',
+      askedAgain: ['slack_post'],
+      secondReason: 'User approved',
+      reply: 'Posted.',
+    },
+  })
+})
+
 test('chat route - the opening question names the thread before its reply finishes', async () => {
   const message = 'What do you think of the state of the Atlas conversation?'
   const title = 'Atlas conversation status and next steps'

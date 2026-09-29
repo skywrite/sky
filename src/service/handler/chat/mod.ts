@@ -1403,7 +1403,12 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
             always,
             ...(replacementInput ? { input: replacementInput } : {}),
           }
-        : { approved: false, reason: refused ?? 'User declined. Do not request this tool again.' },
+        : {
+            approved: false,
+            reason:
+              refused ??
+              'User declined this call. It is a no to this input or this moment, not to the tool: do not run it again this turn, wait for their direction, and a later turn may ask again with new input.',
+          },
     )
     if (refused) return c.json({ message: refused, approved: false }, 409)
     return c.json({ id: approval.id, approved, at, waiting: thread.pending.size })

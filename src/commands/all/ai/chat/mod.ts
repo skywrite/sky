@@ -686,10 +686,17 @@ export default class AiChatTask extends Command {
         }
 
         if (p.isCancel(approved)) {
-          return { approved: false, reason: 'User cancelled. Do not request this tool again.' }
+          return {
+            approved: false,
+            reason: 'User cancelled this call. Do not run it again this turn; wait for their direction.',
+          }
         }
         if (!approved) {
-          return { approved: false, reason: 'User declined. Do not request this tool again.' }
+          return {
+            approved: false,
+            reason:
+              'User declined this call. It is a no to this input or this moment, not to the tool: do not run it again this turn, wait for their direction, and a later turn may ask again with new input.',
+          }
         }
         return { approved: true, reason: 'User approved' }
       },

@@ -334,7 +334,7 @@ test('ChatEngine.runTurn - repeat requests auto-denied', async () => {
       asked: 1,
       responses: [
         'User declined. Do not request this tool again.',
-        'User already denied slack_post. Do not request it again.',
+        'User already denied slack_post this turn. Do not request it again this turn.',
       ],
       toolRecords: [
         { tool: 'slack_post', input: 'one', outcome: 'denied' },

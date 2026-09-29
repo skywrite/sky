@@ -1,6 +1,6 @@
 ---
 created: 2026-09-01
-updated: 2026-09-28
+updated: 2026-09-29
 ---
 
 # Chat over HTTP — a thread, its tuning, and the story of its context
@@ -230,6 +230,11 @@ a person can see and touch:
   in plain-text fences; other code stays code. Long literal lines wrap within
   the reply. Conversation text and approval payloads retain their source.
   See [2026-09-08 — Drafts are read here](2026-09-08-drafts-are-read-here.md).
+  A drafted message ends the turn: the prompt places it in Gmail or Slack
+  only when the request was to send or place it, or when the owner asks
+  afterwards, and then with the frame's current text. A declined placement
+  is a no to that text or that moment, not to the tool. See
+  [2026-09-29 — A draft ends the turn](2026-09-29-a-draft-ends-the-turn.md).
 - **Text stays selected through background refreshes.** Completed replies
   and rich approval previews use the
   [shared HTML renderer](../../theme/docs/README.md#text-selection-and-rendered-html).
