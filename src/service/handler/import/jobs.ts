@@ -113,7 +113,7 @@ export interface ImportJob {
   line: string | null
   title: string
   /** What was filed, relative to the notebook root */
-  result: { file: string } | null
+  result: { file: string; files?: string[] } | null
   audioAdded?: number
   canUndo?: boolean
   undone?: boolean
@@ -142,7 +142,7 @@ export type ImportEventBody =
       type: 'state'
       state: ImportState
       line: string | null
-      result: { file: string } | null
+      result: { file: string; files?: string[] } | null
       error: string | null
       audioAdded?: number
       canUndo?: boolean

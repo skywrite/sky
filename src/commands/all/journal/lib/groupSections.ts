@@ -165,7 +165,7 @@ export function typeMenuFrom(records: { date: string; tags: string[] }[]): { nam
     if (record.date < '2025-01-01') continue
     for (const tag of record.tags) {
       const m = tag.match(/^Journal\/([^/]+)$/)
-      if (!m || m[1] === 'Misc' || m[1] === 'Video') continue
+      if (!m || m[1] === 'Misc' || m[1] === 'Video' || m[1] === 'Audio') continue
       counts.set(m[1], (counts.get(m[1]) ?? 0) + 1)
     }
   }

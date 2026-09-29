@@ -45,6 +45,8 @@ import { dayFileHref, sizeLabel } from './files.tsx'
 import { DocumentRail } from './frontmatter/Rail.tsx'
 import { useCompletions } from './frontmatter/rows.tsx'
 import { useFrontmatter } from './frontmatter/useFrontmatter.ts'
+import { expectJournalTabs, openCompletedJournals, openJournalFiles } from './journalImportTabs.ts'
+import { JournalTypesReview } from './journalTypes.tsx'
 import { LinksInput } from './links.tsx'
 import { RenderedHtml } from './renderedHtml.tsx'
 import { renderStatic } from './wysiwyg/render.ts'
@@ -112,7 +114,7 @@ export interface ImportJob {
   tick: Tick | null
   line: string | null
   title: string
-  result: { file: string } | null
+  result: { file: string; files?: string[] } | null
   audioAdded?: number
   canUndo?: boolean
   undone?: boolean
@@ -185,7 +187,7 @@ type ImportEvent = { seq: number } & (
       type: 'state'
       state: ImportState
       line: string | null
-      result: { file: string } | null
+      result: { file: string; files?: string[] } | null
       error: string | null
       audioAdded?: number
       canUndo?: boolean
@@ -247,6 +249,9 @@ export function useImports() {
       clearInterval(timer)
     }
   }, [])
+  useEffect(() => {
+    for (const job of imports) openCompletedJournals(job)
+  }, [imports])
   return { imports, started }
 }
 
@@ -400,6 +405,9 @@ export function useImportFeed(id: string | null): ImportFeed {
     }
   }, [id, generation])
 
+  useEffect(() => {
+    if (job) openCompletedJournals(job)
+  }, [job])
   return { job, options, events, missing, refresh }
 }
 
@@ -737,7 +745,6 @@ type Fields = {
   kind: ImportKind
   when: string
   category: 'Professional' | 'Personal'
-  journalType: string
   /** Start over rather than pick up an earlier run of the file */
   fresh: boolean
   summary: string
@@ -819,12 +826,7 @@ function whenLabel(when: string, todayYmd: string | null): string {
   return `${ymd} ${time}`
 }
 
-function nextLine(
-  kind: ImportKind,
-  source: ImportJob['readback']['source'],
-  journalType: string,
-  count: number,
-): string {
+function nextLine(kind: ImportKind, source: ImportJob['readback']['source'], count: number): string {
   if (source === 'document')
     return 'Sky will save your note and attachment, summarize the document, and add tags. You can keep working while it runs.'
   if (source === 'imessage-audio')
@@ -845,7 +847,7 @@ function nextLine(
     case 'meeting':
       return `${heard}, writes the meeting up, and files it under the day with its action items.`
     case 'journal':
-      return `${heard}, and files it as a ${journalType} journal under the day.`
+      return `${heard}, then suggests journal types for you to choose. Each entry is named and saved with the original audio.`
     case 'note':
       return `${heard}, and files it as a note under the day, transcript and all.`
     case 'message':
@@ -930,7 +932,6 @@ function AudioSpeaker({
 function ConfirmBody({
   pending,
   job,
-  options,
   todayYmd,
   onStart,
   onCancel,
@@ -980,7 +981,6 @@ function ConfirmBody({
     kind: meeting ? 'meeting' : (job?.fields?.kind ?? kinds[0] ?? 'meeting'),
     when: job?.fields?.when ?? proposedWhen ?? '',
     category: job?.fields?.category ?? live?.listen?.category ?? 'Professional',
-    journalType: job?.fields?.journalType ?? options?.journalTypes[0] ?? 'Reflection',
     fresh: false,
     summary:
       job?.fields?.summary ?? (documentInput ? documentActivity(job?.file.name ?? pending?.files[0]?.name ?? '') : ''),
@@ -1113,7 +1113,6 @@ function ConfirmBody({
         whenStated,
         dayStated,
         category: fields.category,
-        journalType: fields.kind === 'journal' ? fields.journalType : undefined,
         fresh: fields.fresh,
         ...(audioConversation
           ? {
@@ -1128,6 +1127,7 @@ function ConfirmBody({
         setStarted(true)
         feed.refresh()
       }
+      if (fields.kind === 'journal') expectJournalTabs(started.id)
       setStarting(false)
       onStart(started)
     } catch (err) {
@@ -1390,14 +1390,7 @@ function ConfirmBody({
               {calendar.who.length > 0 ? ` · ${calendar.who.join(', ')}` : ''}
             </div>
           )}
-          {retryDocument || (audioConversation && appendTo) ? null : fields.kind === 'journal' ? (
-            <Pills
-              label="Type"
-              options={(options?.journalTypes ?? []).map((t) => ({ value: t, label: t }))}
-              value={fields.journalType}
-              onChange={(journalType) => setFields((f) => ({ ...f, journalType }))}
-            />
-          ) : (
+          {retryDocument || (audioConversation && appendTo) || fields.kind === 'journal' ? null : (
             <Pills
               label="Category"
               options={[
@@ -1415,7 +1408,7 @@ function ConfirmBody({
           <div className="sky-confirm-next">
             {audioConversation && appendTo
               ? 'Sky transcribes the new clips, checks unsure names with you, and adds the messages at the end of this conversation.'
-              : nextLine(fields.kind, source, fields.journalType, count)}
+              : nextLine(fields.kind, source, count)}
           </div>
           {live.resume && !documentInput && (
             <div className="sky-confirm-resume">
@@ -2807,7 +2800,8 @@ export function ImportMain({
         { question: prompt.prompt.message.replace(/\s*\(.*\)\s*$/, ''), answer: String(value ?? '') },
       ])
     }
-    await post(`/import/${id}/answer`, { promptId: prompt.id, answer: value }).catch(() => refresh())
+    if (job?.stage?.id === 'journal-types') expectJournalTabs(id)
+    await post(`/import/${id}/answer`, { promptId: prompt.id, answer: value })
   }
   const cancel = () => void post(`/import/${id}/cancel`, {}).catch(() => {})
   const remove = () =>
@@ -2837,6 +2831,7 @@ export function ImportMain({
 
   const steps = job && job.state !== 'new' ? ladder(job, d) : null
   const pending = job && job.state === 'needs-you' ? d.pending : null
+  const journalFiles = job?.fields?.kind === 'journal' && job.result ? (job.result.files ?? [job.result.file]) : null
   const busy = job?.state === 'running' || job?.state === 'needs-you'
 
   return (
@@ -2852,10 +2847,16 @@ export function ImportMain({
               Cancel
             </Button>
           )}
-          {job?.result && (
-            <Button size="sm" variant="primary" component="a" href={fileHref(job.result.file)}>
-              {job.readback.source === 'document' ? 'Open note' : 'Open it'}
+          {journalFiles ? (
+            <Button size="sm" variant="primary" onClick={() => openJournalFiles(journalFiles)}>
+              Open journals
             </Button>
+          ) : (
+            job?.result && (
+              <Button size="sm" variant="primary" component="a" href={fileHref(job.result.file)}>
+                {job.readback.source === 'document' ? 'Open note' : 'Open it'}
+              </Button>
+            )
           )}
           {(job?.state === 'failed' || job?.state === 'cancelled') && (
             <>
@@ -2886,26 +2887,33 @@ export function ImportMain({
               </div>
             </Block>
           )}
-          {pending?.kind === 'form' && <ReviewForm prompt={pending} onAnswer={(a) => void answer(pending, a)} />}
+          {pending?.kind === 'form' && (
+            <ReviewForm prompt={pending} onAnswer={(a) => void answer(pending, a).catch(() => refresh())} />
+          )}
           {pending?.kind === 'text' && job && (
             <CorrectionsExchange
               prompt={pending}
               d={d}
               job={job}
               history={history}
-              onAnswer={(a) => void answer(pending, a)}
+              onAnswer={(a) => void answer(pending, a).catch(() => refresh())}
             />
           )}
-          {pending?.kind === 'multiselect' && (
-            <ActionItems prompt={pending} onAnswer={(a) => void answer(pending, a)} />
-          )}
+          {pending?.kind === 'multiselect' &&
+            (job?.stage?.id === 'journal-types' ? (
+              <Fragment key={pending.id}>
+                <JournalTypesReview prompt={pending.prompt} onAnswer={(types) => answer(pending, types)} />
+              </Fragment>
+            ) : (
+              <ActionItems prompt={pending} onAnswer={(a) => void answer(pending, a).catch(() => refresh())} />
+            ))}
           {pending?.kind === 'place' && (
             <Fragment key={pending.id}>
-              <PlaceItems prompt={pending} onAnswer={(a) => void answer(pending, a)} />
+              <PlaceItems prompt={pending} onAnswer={(a) => void answer(pending, a).catch(() => refresh())} />
             </Fragment>
           )}
           {(pending?.kind === 'select' || pending?.kind === 'confirm') && (
-            <Choice prompt={pending} onAnswer={(a) => void answer(pending, a)} />
+            <Choice prompt={pending} onAnswer={(a) => void answer(pending, a).catch(() => refresh())} />
           )}
           {job && job.state === 'running' && <LiveBlock job={job} d={d} startedAt={startedAt} />}
           {job && job.state === 'needs-you' && !pending && <LiveBlock job={job} d={d} startedAt={startedAt} />}
@@ -2929,7 +2937,29 @@ export function ImportMain({
               )}
               {undoError && <p role="alert">{undoError}</p>}
               {d.placed && <Placed placed={d.placed} lines={d.lines} />}
-              {job.result && (
+              {journalFiles && (
+                <Block head="Journals" mini={`${journalFiles.length} saved`}>
+                  <ul className="sky-journal-results">
+                    {journalFiles.map((file) => (
+                      <li key={file}>
+                        <a href={fileHref(file)} target="_blank" rel="noopener">
+                          {file
+                            .split('/')
+                            .at(-1)
+                            ?.replace(/\.md$/, '')
+                            .replace(/^\d{4}-\d{2}-\d{2}_\d{6}_/, '')
+                            .replaceAll('-', ' ')}{' '}
+                          ↗
+                        </a>
+                      </li>
+                    ))}
+                  </ul>
+                  <div className="sky-lead">
+                    Each journal opens in its own tab. If your browser blocks new tabs, use the links above.
+                  </div>
+                </Block>
+              )}
+              {job.result && !journalFiles && (
                 <Fragment key={`file:${job.undone}`}>
                   <FiledDetails file={job.result.file} />
                   <FiledDoc file={job.result.file} />

@@ -1,6 +1,6 @@
 ---
 created: 2026-09-02
-updated: 2026-09-27
+updated: 2026-09-28
 ---
 
 # The transcript pipeline
@@ -34,11 +34,13 @@ runs `create`. The doors — `meeting:new`, `journal:new`, `notes:new`,
 `message:new`, `event:new`, `video:new` — run one of the three and file what
 comes back.
 
-Voice memo imports file only the resulting document. The spoken words pass
+Meeting, note, and message voice memo imports file only the resulting document. The spoken words pass
 directly from transcription to cleaning, without a sidecar transcript or
 recording metadata in the text. Composed runs leave no transcript or summary
 dumps in `/tmp`, and meetings, notes, and messages do not attach the audio or
-append a transcript. A dictated journal uses the cleaned words as its entry.
+append a transcript. Recorded journals retain their original recording and
+organize the cleaned words into entries after review; see
+[Recorded journals](../../../journal/docs/README.md).
 Explicit standalone transcript exports still save the requested file. Retry
 checkpoints remain until completion, as described below.
 

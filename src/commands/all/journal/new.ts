@@ -1,24 +1,17 @@
 import * as path from 'node:path'
-import { generateText } from 'ai'
 import colors from 'picocolors'
 import { z } from 'zod'
-import { clearTranscriptRun } from '#commands/all/audio/transcript/lib/transcriptRun.ts'
-import type { OutputHandler } from '#commands/lib/output/OutputHandler.ts'
 import { Command, CommandPlatform, CommandResult, Flag, whenNBTime } from '#commands/mod.ts'
 import type { Args, CommandArgs, CommandDescription, InferParams, InferParamsInput } from '#commands/mod.ts'
 import { DayDirFileWriter } from '#lib/nbfs/mod.ts'
 import openEditor from '#lib/shell/openEditor.ts'
 import slugify from '#lib/string/slugify.ts'
-import { extractJson } from '#shared/ai/extractJson.ts'
-import { aiModel } from '#shared/ai/models.ts'
 import createQuestions from '#shared/models/Journal/createQuestions.ts'
 import JournalDocument from '#shared/models/Journal/document/mod.ts'
 import { JournalTypes } from '#shared/models/Journal/mod.ts'
 import type { JournalType, Question } from '#shared/models/Journal/type.d.ts'
-import { isTerminal, readStdin, setRaw, writeStdout } from '#shared/sys/mod.ts'
-import { extractTypedTime, labelledTimeRaw } from '#universal/dates/extractTypedTime.ts'
-import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import { type GeneratedQuestion, generateQuestions, generateQuestionsForTypes } from './_lib/generateQuestions.ts'
+import { journalFromAudio } from './lib/fromAudio.ts'
 import { journalFromVideo } from './lib/fromVideo.ts'
 import { CONTEXT_TOKENS_TRIPWIRE, gatherContext, type JournalContext } from './lib/gatherContext.ts'
 
@@ -27,7 +20,7 @@ const typesDescription = `Journal types: ${JournalTypes.join(', ')} (or any cust
 function validateFromAudioRequiresTypes(_result: Record<string, unknown>, rawArgs: Args): string | undefined {
   const hasFromAudio = rawArgs['from-audio'] !== undefined || rawArgs['fromAudio'] !== undefined
   const hasTypes = rawArgs['types'] !== undefined
-  if (hasFromAudio && !hasTypes) {
+  if (hasFromAudio && !hasTypes && rawArgs['split'] === undefined) {
     return '--from-audio requires --types to be specified (e.g. --types "Reflection")'
   }
   return undefined
@@ -38,9 +31,12 @@ const params = {
   ai: Flag.bool('Generate AI-powered contextual questions', { default: false }),
   inspectInitialContext: Flag.bool('List initial context file paths and exit', { default: false }),
   dryRun: Flag.bool('Show context and AI questions without creating files', { default: false }),
-  fromAudio: Flag.string('Path to audio file, or omit path to search Desktop. Requires --types.', {
-    optional: true,
-  }),
+  fromAudio: Flag.string(
+    'Path to audio file, or omit path to search Desktop. Use --split to detect types, or supply --types.',
+    {
+      optional: true,
+    },
+  ),
   fromVideo: Flag.string(
     'Path to a recorded video journal, or omit path to search Desktop. Files under the Video type.',
     { optional: true },
@@ -49,7 +45,7 @@ const params = {
   noAutoRel: Flag.bool('Skip automatic rel suggestion from the entity graph', { default: false }),
   fresh: Flag.bool('Start over: forget what an earlier run of the recording already produced', { default: false }),
   split: Flag.stringOrBool(
-    'Split a --from-video recording into one entry per subject: bare --split groups automatically, --split="Health, Faith" extracts those entries plus a remainder',
+    'Split an audio or video journal into one entry per type: bare --split groups automatically, --split="Health, Faith" extracts those entries plus a remainder',
     { bareValue: 'auto' },
   ),
   types: Flag.stringArray(typesDescription, {
@@ -85,9 +81,8 @@ export default class JournalNewTask extends Command {
     const { when, all, ai, inspectInitialContext, dryRun, fromAudio, fromVideo } = args
     const types = args.types
 
-    // A recorded video takes its own route: extract audio, transcribe, then
-    // section and summarize. Unlike --from-audio it needs no --types, because
-    // the type is always Video.
+    // Both recordings share organization and filing after the clean pass;
+    // video first extracts its audio.
     if (fromVideo !== undefined) {
       // A bare `--from-video` arrives as the string 'true', meaning "find it on
       // the Desktop" rather than naming a file. Same convention --from-audio
@@ -105,132 +100,18 @@ export default class JournalNewTask extends Command {
       })
     }
 
-    // Handle --from-audio pipeline: transcribe → clean (no summarize)
-    const useAudioPipeline = fromAudio !== undefined
-
-    if (useAudioPipeline) {
-      const journalType = types[0]
-
-      // Delegate to audio:transcript:clean which handles: transcribe → clean
-      const cleanResult = await tasks.run('audio:transcript:clean', {
+    if (fromAudio !== undefined) {
+      return journalFromAudio({
         fromAudio,
+        when,
+        types,
+        split: args.split,
         fresh: args.fresh,
+        noAutoTag: args.noAutoTag,
+        noAutoRel: args.noAutoRel,
+        context,
+        tasks,
       })
-      if (!cleanResult.ok || !cleanResult.data) {
-        return CommandResult.fail(`Audio pipeline failed: ${cleanResult.message}`)
-      }
-
-      const data = cleanResult.data
-
-      output.log(`\nTranscript cleaned: ${data.appliedCount} corrections applied, ${data.skippedCount} skipped`)
-
-      // Show extracted metadata for confirmation
-      let journalWhen = when
-      let rel = [...data.who, ...data.rel].filter(Boolean)
-
-      output.log(colors.cyan('\n─── Journal Metadata ───'))
-      output.log(colors.white(`  Type:     ${journalType}`))
-      output.log(colors.white(`  When:     ${journalWhen.date} ${journalWhen.time}`))
-      output.log(colors.white(`  Who:      ${data.who.length > 0 ? data.who.join(', ') : '(none)'}`))
-      output.log(colors.white(`  Rel:      ${data.rel.length > 0 ? data.rel.join(', ') : '(none)'}`))
-      output.log(colors.cyan('────────────────────────'))
-
-      // Ask for corrections when running in a terminal
-      if (isTerminal()) {
-        const corrections = await askForCorrections(output)
-        if (corrections) {
-          output.log(colors.cyan('\nParsing corrections...'))
-
-          // An explicitly typed `when:` is read here, not by the model — it
-          // can't then normalize an extended hour, roll the date forward, or
-          // pick the year for a partial date. Applied before the call so a
-          // model failure can't discard it. When it declines, say so: the AI
-          // gets the value, and the user should know a guess is coming.
-          const typedTime = extractTypedTime(corrections, context.notebookNow.date)
-          if (typedTime) {
-            journalWhen = new PlainDateTime(
-              typedTime.hasDate ? typedTime.value : `${journalWhen.date} ${typedTime.value}`,
-            )
-            if (typedTime.yearInferred) {
-              output.log(colors.gray(`  Typed time "${typedTime.raw}" read as ${typedTime.value}`))
-            }
-          } else {
-            const rawTime = labelledTimeRaw(corrections)
-            if (rawTime) {
-              output.log(
-                colors.yellow(
-                  `  Typed time "${rawTime}" isn't HH:MM, MM-DD HH:MM, or YYYY-MM-DD HH:MM — the AI will interpret it`,
-                ),
-              )
-            }
-          }
-
-          try {
-            const parseResult = await generateText({
-              ...aiModel('balanced'),
-              prompt: `Parse these user corrections for journal metadata. Extract any fields the user is updating.
-
-Current metadata:
-- when: ${journalWhen.date} ${journalWhen.time}
-- rel: ${JSON.stringify(rel)}
-
-Today's date: ${context.notebookNow.date}
-
-User corrections:
-${corrections}
-
-Return ONLY a JSON object with the fields that should be updated. Rules:
-- "when" must be in format "YYYY-MM-DD HH:MM" (zero-padded)
-- A date given without a year resolves to its most recent occurrence on or before today's
-  date. Never invent a year.
-- Hours are NOT capped at 23. Notebook time files late-night work under the day it started,
-  so "2026-03-31 25:30" means 01:30 the next morning and is a deliberate, valid value. Copy
-  such times through exactly — never normalize them, never roll the date forward, never
-  report them as invalid or ask the user to clarify them.
-- "rel" must be an array of strings
-- Only include fields that the user explicitly wants to change
-- DO NOT include fields the user didn't mention`,
-            })
-
-            const parsed = extractJson<{ when?: string; rel?: string[] }>(parseResult.text)
-
-            if (!typedTime && parsed.when) {
-              journalWhen = new PlainDateTime(parsed.when)
-            }
-            if (Array.isArray(parsed.rel)) {
-              rel = parsed.rel
-            }
-
-            output.log(colors.green('Applied corrections.'))
-          } catch (err) {
-            output.log(colors.yellow(`Failed to parse corrections: ${err}`))
-          }
-        }
-      }
-
-      // Build journal document using fromMarkdown so YAML is serialized properly
-      const bodyMarkdown = [
-        `# **${journalType}: ${journalWhen.date} - ${journalWhen.plainDate.dayShort} - ${journalWhen.time}**`,
-        '',
-        data.cleanedText,
-      ].join('\n')
-
-      const doc = JournalDocument.fromMarkdown(bodyMarkdown)
-      doc.yaml['rel'] = rel.length > 0 ? rel : null
-      doc.yaml['tags'] = `Journal/${journalType.replaceAll(' ', '-')}`
-
-      const ddfw = new DayDirFileWriter(journalWhen.plainDate)
-      const fileSlug = slugify(journalType)
-      const filePath = await ddfw.write(`journal/${fileSlug}.md`, doc.toMarkdown())
-      const fullPath = path.join(ddfw.fullDir, filePath)
-
-      // The entry is filed: the pipeline's run record has nothing left to pick up.
-      if (data.run) await clearTranscriptRun(data.run)
-
-      output.log(`\n  Successfully created ${filePath}.\n`)
-      if (context.platform === CommandPlatform.Console) openEditor([{ file: fullPath, line: 1, column: 0 }])
-
-      return CommandResult.success()
     }
 
     let journalTypes = types
@@ -389,56 +270,4 @@ function shuffleArray(array: unknown[]): void {
     const j = Math.floor(Math.random() * (i + 1))
     ;[array[i], array[j]] = [array[j], array[i]]
   }
-}
-
-async function askForCorrections(output: OutputHandler): Promise<string | null> {
-  output.log(colors.cyan('\nAny corrections? (Enter to accept, or type changes)'))
-  output.log(colors.gray('  e.g., "when: 2026-03-03 22:30" or "rel: Alice, Bob"'))
-
-  const isTTY = isTerminal()
-  const decoder = new TextDecoder()
-  const chunks: string[] = []
-
-  writeStdout(colors.cyan('> '))
-
-  if (isTTY) {
-    setRaw(true)
-  }
-
-  try {
-    while (true) {
-      const buf = new Uint8Array(1)
-      const n = await readStdin(buf)
-      if (n === null) break
-
-      const byte = buf[0]
-
-      if (byte === 13 || byte === 10) {
-        writeStdout('\n')
-        break
-      }
-      if (byte === 3) {
-        writeStdout('\n')
-        return null
-      }
-      if (byte === 127 || byte === 8) {
-        if (chunks.length > 0) {
-          chunks.pop()
-          writeStdout('\b \b')
-        }
-        continue
-      }
-
-      const char = decoder.decode(buf.subarray(0, 1))
-      chunks.push(char)
-      writeStdout(buf)
-    }
-  } finally {
-    if (isTTY) {
-      setRaw(false)
-    }
-  }
-
-  const input = chunks.join('').trim()
-  return input || null
 }

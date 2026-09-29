@@ -24,6 +24,7 @@ import { createHash } from 'node:crypto'
 import { createReadStream } from 'node:fs'
 import { mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import * as path from 'node:path'
+import type { RecordedJournalState } from '#commands/all/journal/lib/recordedJournal.ts'
 import { DIR_STATE } from '#config'
 import type { ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
 import type { Rename } from './renames.ts'
@@ -115,12 +116,13 @@ export interface StageData {
   extract: ExtractStage
   questions: QuestionsStage
   filed: FiledStage
+  journal: RecordedJournalState
 }
 
 export type RunStage = keyof StageData
 
 /** In the order the pipeline reaches them */
-export const STAGES: RunStage[] = ['raw', 'analysis', 'review', 'writeup', 'extract', 'questions', 'filed']
+export const STAGES: RunStage[] = ['raw', 'analysis', 'review', 'writeup', 'extract', 'questions', 'filed', 'journal']
 
 export interface Checkpoint<S extends RunStage> {
   /** Notebook time the stage finished, YYYY-MM-DD HH:MM */
@@ -170,6 +172,7 @@ export async function sha256Of(filePath: string): Promise<string> {
 /** The step after the stages done, in the ladder's words; null when nothing is done */
 export function nextStep(done: RunStage[]): string | null {
   const has = (stage: RunStage) => done.includes(stage)
+  if (has('journal')) return 'Organizing and filing journals'
   if (has('filed')) return 'Action items'
   if (has('questions')) return 'Filing'
   if (has('extract')) return 'Checking the write-up'

@@ -1,5 +1,35 @@
 /* ============ meeting from a file ============ */
 
+.sky-journal-types h2 {
+  font-size: 24px;
+  font-weight: 600;
+  margin: 0;
+}
+
+.sky-journal-types p {
+  line-height: 1.6;
+}
+
+.sky-journal-types summary {
+  cursor: pointer;
+  color: var(--sky-text-2);
+}
+
+.sky-journal-type-options {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  margin: 20px 0;
+}
+
+.sky-journal-results {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 0;
+  list-style: none;
+}
+
 .sky-document-capture {
   display: flex;
   flex-direction: column;

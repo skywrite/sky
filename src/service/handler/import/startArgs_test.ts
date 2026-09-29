@@ -184,14 +184,14 @@ test('startArgs() — the other doors', () => {
   const note = startArgs(memo, fields({ kind: 'note', when: '2026-01-27 09:30' }), '/tmp/memo.m4a')
   assert({
     given: 'a memo filed as a journal entry, when untouched',
-    should: 'run journal:new with its type and nothing stated',
+    should: 'detect types after transcription with nothing stated',
     actual: {
       command: journal.command,
-      types: journal.args.types,
+      split: journal.args.split,
       rawArgs: journal.rawArgs,
       clock: journal.args.clock,
     },
-    expected: { command: 'journal:new', types: ['Mood'], rawArgs: { _: [] }, clock: undefined },
+    expected: { command: 'journal:new', split: 'auto', rawArgs: { _: [] }, clock: undefined },
   })
   assert({
     given: 'a memo filed as a note, when changed',

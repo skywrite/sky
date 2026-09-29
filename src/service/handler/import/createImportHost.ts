@@ -105,13 +105,23 @@ function notebookWhen(instant: ZonedDateTime, timeDir: string): string {
 }
 
 /** Where a filed document is, relative to the notebook root. */
-function filedPath(data: unknown, when: PlainDateTime, config: typeof ConfigModule): string | null {
+export function filedPaths(
+  data: unknown,
+  when: PlainDateTime,
+  config: Pick<typeof ConfigModule, 'DIR_TIME' | 'DIR_BASE'>,
+): string[] {
   const d = (data ?? {}) as { file?: unknown; filePath?: unknown; files?: unknown }
-  const first = Array.isArray(d.files) ? d.files[0] : undefined
-  const rel = [d.file, d.filePath, first].find((v): v is string => typeof v === 'string' && v.length > 0)
-  if (!rel) return null
-  const absolute = path.isAbsolute(rel) ? rel : path.join(config.DIR_TIME, dayDir(when.plainDate), rel)
-  return path.relative(config.DIR_BASE, absolute)
+  const candidates = Array.isArray(d.files) ? d.files : [d.file, d.filePath]
+  return [
+    ...new Set(
+      candidates
+        .filter((v): v is string => typeof v === 'string' && v.length > 0)
+        .map((rel) => {
+          const absolute = path.isAbsolute(rel) ? rel : path.join(config.DIR_TIME, dayDir(when.plainDate), rel)
+          return path.relative(config.DIR_BASE, absolute)
+        }),
+    ),
+  ]
 }
 
 export function createImportHost(config: typeof ConfigModule, env: Record<string, string>): ImportRoutesOptions {
@@ -244,8 +254,9 @@ export function createImportHost(config: typeof ConfigModule, env: Record<string
       filePaths,
     )
     const result = yield* runCommand(command, { context: CommandContext.server(config, env), args, rawArgs, signal })
-    const file = filedPath(result.data, PlainDateTime.fromString(fields.when.slice(0, 16)), config)
-    if (!result.ok) return { ok: false, message: result.message ?? `${command} did not finish`, file }
+    const files = filedPaths(result.data, PlainDateTime.fromString(fields.when.slice(0, 16)), config)
+    const file = files[0] ?? null
+    if (!result.ok) return { ok: false, message: result.message ?? `${command} did not finish`, file, files }
     if (fields.appendTo) {
       const data = result.data as { added?: number; undo?: AudioAppendUndo } | undefined
       job.audioAdded = data?.added ?? 0
@@ -258,7 +269,7 @@ export function createImportHost(config: typeof ConfigModule, env: Record<string
         job.canUndo = true
       }
     }
-    return { ok: true, file }
+    return { ok: true, file, files }
   }
 
   return {

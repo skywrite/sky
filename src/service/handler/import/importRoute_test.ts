@@ -1,5 +1,6 @@
 import { readdir, readFile, stat } from 'node:fs/promises'
 import * as path from 'node:path'
+import { Hono } from 'hono'
 import type { PromptEvent, RunEvent } from '#commands/lib/core/runCommand.ts'
 import type { PromptRequest } from '#commands/lib/prompt/Prompter.ts'
 import { readAudioHeader } from '#lib/media/readAudioHeader.ts'
@@ -8,6 +9,7 @@ import { assert, test } from '#test'
 import { CAF_TEST_HEADER } from '../../../test/audioFixtures.ts'
 import { createTestHttpApp } from '../httpTestHelpers.ts'
 import type { ImportEvent, ImportJob, ImportRoutesOptions, RunOutcome } from './mod.ts'
+import { createImportRoutes } from './mod.ts'
 import {
   readAudio,
   readDocument,
@@ -48,6 +50,47 @@ Jane Doe: Yes. The floor moves to the usage tier.
 `
 
 const FILED = 'time/2026/W05/01-27/actions/meetings/0931_Zoom_Jane-Doe_Atlas-pricing-sync.md'
+
+test('all journal results survive the event stream and reload, and selected links reach every entry', async () => {
+  const w = await world()
+  const files = ['time/2031/W11/03-16/journal/Health.md', 'time/2031/W11/03-16/journal/Gratitude.md']
+  const linked: string[] = []
+  w.options.run = async function* () {
+    return { ok: true, file: files[0], files }
+  }
+  w.options.links = {
+    validate: async () => {},
+    update: async (file) => {
+      linked.push(file)
+    },
+  }
+  const app = new Hono().route('/import', createImportRoutes(w.options))
+  const { job } = (await (
+    await app.request('/import', { method: 'POST', body: upload('journal.m4a', 'mock recording') })
+  ).json()) as { job: ImportJob }
+  await postJson(app, `/import/${job.id}/links`, { links: ['Jane Doe'] })
+  await postJson(app, `/import/${job.id}/start`, { kind: 'journal', when: '2031-03-16 08:00' })
+  const streamed = await events(
+    await app.request(`/import/${job.id}/events`),
+    (event) => event.type === 'state' && event.state === 'done',
+  )
+  const last = streamed.at(-1)
+  const snapshot = (await (await app.request(`/import/${job.id}`)).json()) as { job: ImportJob }
+  // A link update also waits for the job's queued writes to finish.
+  await postJson(app, `/import/${job.id}/links`, { links: ['Atlas'] })
+  const saved = JSON.parse(await readFile(path.join(w.dir, job.id, 'job.json'), 'utf8')) as ImportJob
+  assert({
+    given: 'an import that creates two journals',
+    should: 'persist and stream every result and apply both link changes to each entry',
+    actual: [
+      last?.type === 'state' ? last.result?.files : null,
+      snapshot.job.result?.files,
+      saved.result?.files,
+      linked,
+    ],
+    expected: [files, files, files, [...files, ...files]],
+  })
+})
 
 interface World {
   options: ImportRoutesOptions
@@ -714,12 +757,12 @@ test('a recording is heard and matched to the calendar before it starts', async 
       calendar: 'Atlas pricing sync',
     },
   })
-  const bad = await postJson(app, `/import/${job.id}/start`, { kind: 'journal', when: '2026-01-27 09:31' })
+  const started = await postJson(app, `/import/${job.id}/start`, { kind: 'journal', when: '2026-01-27 09:31' })
   assert({
-    given: 'a journal without a type',
-    should: 'be refused',
-    actual: [bad.status, ((await bad.json()) as { message: string }).message],
-    expected: [400, 'a journal needs a type'],
+    given: 'a journal before its recording has been transcribed',
+    should: 'start without requiring a type up front',
+    actual: started.status,
+    expected: 200,
   })
 })
 

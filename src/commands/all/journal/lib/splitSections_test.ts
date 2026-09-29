@@ -1,5 +1,23 @@
 import { assert, test } from '#test'
-import { buildEntryMarkdown, parseSectionedBody, validateGroups } from './splitSections.ts'
+import { buildEntryMarkdown, mergeGroupsByType, parseSectionedBody, validateGroups } from './splitSections.ts'
+
+test('returning types and unclassified sections become one entry each', () => {
+  const groups = mergeGroupsByType([
+    { title: 'Sleep', summary: 'Rested.', journalType: 'Health', sections: [0] },
+    { title: 'A thought', summary: 'A tangent.', sections: [1] },
+    { title: 'Walking', summary: 'Walked.', journalType: 'Health', sections: [2] },
+    { title: 'Another thought', summary: 'Another tangent.', sections: [3] },
+  ])
+  assert({
+    given: 'a model that separated returns to the same type and several leftover topics',
+    should: 'keep one Health entry and one remainder in spoken order',
+    actual: groups.map((group) => [group.journalType, group.sections]),
+    expected: [
+      ['Health', [0, 2]],
+      [undefined, [1, 3]],
+    ],
+  })
+})
 
 const BODY = [
   '## Summary',

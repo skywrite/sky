@@ -47,6 +47,17 @@ The Links picker is available before Start and during review; after filing
 it lives in Details. Persistence and reference rules are documented in
 [Links between notebook records](../../links/docs/README.md).
 
+Journal recordings choose their types after transcription and names review.
+Start runs `journal:new --from-audio --split`; the checked type suggestions
+arrive as a multiselect under `journal-types`. Each selected type becomes an
+entry, with a remainder for other content, a content-based name, and the same
+retained audio attachment. Results carry `file` for existing single-document
+consumers and `files` for the full set; explicit links reach every entry.
+The initiating browser tab opens the results in Explorer tabs once, and the
+completed import lists each link for browsers that block automatic tabs.
+The shared audio/video pipeline and retry invariants live in
+[Recorded journals](../../../../commands/all/journal/docs/README.md).
+
 One door for every file kind. The kind picks the command:
 
 | Dropped | Door |

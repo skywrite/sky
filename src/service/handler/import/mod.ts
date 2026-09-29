@@ -57,7 +57,9 @@ export type {
 export type { ImportKind, ImportSource, ReadBack } from './readback.ts'
 export type { RunEvent } from '#commands/lib/core/runCommand.ts'
 
-export type RunOutcome = { ok: true; file: string | null } | { ok: false; message: string; file?: string | null }
+export type RunOutcome =
+  | { ok: true; file: string | null; files?: string[] }
+  | { ok: false; message: string; file?: string | null; files?: string[] }
 
 export interface ImportRoutesOptions {
   undoAudio?: (job: ImportJob) => Promise<void>
@@ -188,7 +190,6 @@ function parseStart(body: unknown, job: ImportJob): StartFields | string {
   } else if (!WHEN.test(when)) return 'when must be YYYY-MM-DD HH:MM'
   const category = b.category === 'Personal' ? 'Personal' : 'Professional'
   const journalType = typeof b.journalType === 'string' && b.journalType.trim() ? b.journalType.trim() : null
-  if (kind === 'journal' && !journalType) return 'a journal needs a type'
   let audioSpeakers: Record<string, string> | undefined
   let to: string | undefined
   if (readback.source === 'imessage-audio') {
@@ -257,11 +258,13 @@ export function createImportRoutes(options: ImportRoutesOptions): Hono {
     try {
       if (desired.length > 0 || linked.length > 0) {
         if (!options.links) throw new Error('Link saving is not available.')
-        await options.links.update(
-          job.result.file,
-          desired,
-          linked.filter((v) => !desired.includes(v)),
-        )
+        for (const file of job.result.files ?? [job.result.file]) {
+          await options.links.update(
+            file,
+            desired,
+            linked.filter((v) => !desired.includes(v)),
+          )
+        }
       }
       job.linked = [...desired]
       job.linkError = null
@@ -656,7 +659,9 @@ export function createImportRoutes(options: ImportRoutesOptions): Hono {
         record.job.tick = null
         if (outcome.ok) {
           await withLinks(record.job.id, async () => {
-            record.job.result = outcome.file ? { file: outcome.file } : null
+            record.job.result = outcome.file
+              ? { file: outcome.file, ...(outcome.files ? { files: outcome.files } : {}) }
+              : null
             await saveLinks(record)
             const action = record.job.fields?.appendTo ? 'Added to conversation' : 'Filed'
             record.job.line = outcome.file ? `${action} · ${path.basename(outcome.file).replace(/\.md$/, '')}` : action
@@ -666,7 +671,7 @@ export function createImportRoutes(options: ImportRoutesOptions): Hono {
         } else {
           if (outcome.file) {
             await withLinks(record.job.id, async () => {
-              record.job.result = { file: outcome.file! }
+              record.job.result = { file: outcome.file!, ...(outcome.files ? { files: outcome.files } : {}) }
               await saveLinks(record)
             })
           }

@@ -1,14 +1,12 @@
 import * as path from 'node:path'
-import { generateObject } from 'ai'
-import { z } from 'zod'
 import { Command, CommandResult, dayNoFutureArg, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import slugify from '#lib/string/slugify.ts'
-import { aiModel } from '#shared/ai/models.ts'
 import { DIR_TIME } from '#shared/config.ts'
 import { readDir, readTextFile, rename, writeTextFile } from '#shared/fs/mod.ts'
 import JournalDocument from '#shared/models/Journal/document/mod.ts'
 import { dayDir } from '#shared/nbfs/mod.ts'
+import { summarizeJournals } from './lib/summaries.ts'
 
 const params = {
   day: dayNoFutureArg(),
@@ -28,15 +26,6 @@ interface JournalFile {
   baseName: string
   content: string
 }
-
-const SummarySchema = z.object({
-  summaries: z.array(
-    z.object({
-      fileName: z.string(),
-      summary: z.string().describe('5-7 word summary capturing the emotional/thematic essence'),
-    }),
-  ),
-})
 
 export default class JournalRenameTask extends Command {
   static override description: CommandDescription = {
@@ -75,13 +64,9 @@ export default class JournalRenameTask extends Command {
 
     output.log(`Generating summaries for ${journals.length} journal(s)...`)
 
-    const result = await generateObject({
-      ...aiModel('reasoning'),
-      schema: SummarySchema,
-      prompt: buildPrompt(journals),
-    })
+    const summaries = await summarizeJournals(journals, context.signal)
 
-    for (const { fileName, summary } of result.object.summaries) {
+    for (const { fileName, summary } of summaries) {
       const journal = journals.find((j) => j.fileName === fileName)
       if (!journal) continue
 
@@ -111,22 +96,4 @@ function hasBody(doc: JournalDocument): boolean {
     .split('\n')
     .filter((line) => !/^#{1,6}\s/.test(line.trim()))
     .some((line) => line.trim() !== '')
-}
-
-function buildPrompt(journals: JournalFile[]): string {
-  const parts: string[] = []
-
-  parts.push('Generate a 5-7 word Title Case summary for each journal entry below.')
-  parts.push('Capture the emotional or thematic essence. Be specific, not generic.')
-  parts.push('Do NOT use filler words like "Reflections on" or "Thoughts about".')
-  parts.push('Use Title Case (capitalize each word).')
-  parts.push('')
-
-  for (const j of journals) {
-    parts.push(`--- ${j.fileName} ---`)
-    parts.push(j.content)
-    parts.push('')
-  }
-
-  return parts.join('\n')
 }

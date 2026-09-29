@@ -27,6 +27,20 @@ export type EntryGroup = {
   journalType?: string
 }
 
+/** One entry per type, plus one remainder, even if a model split a returning topic into several groups. */
+export function mergeGroupsByType(groups: EntryGroup[]): EntryGroup[] {
+  const merged = new Map<string, EntryGroup>()
+  for (const group of groups) {
+    const key = group.journalType?.replaceAll(' ', '-').toLowerCase() ?? ''
+    const prior = merged.get(key)
+    if (prior) {
+      prior.sections.push(...group.sections)
+      prior.summary = [prior.summary, group.summary].filter(Boolean).join(' ')
+    } else merged.set(key, { ...group, sections: [...group.sections] })
+  }
+  return [...merged.values()].sort((a, b) => Math.min(...a.sections) - Math.min(...b.sections))
+}
+
 /**
  * Split a sectioned body into its `## ` sections. The `## Summary` section is
  * captured separately — it describes the whole recording and does not belong

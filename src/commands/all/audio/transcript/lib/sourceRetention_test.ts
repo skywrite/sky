@@ -166,7 +166,14 @@ async function world(extension = 'm4a') {
   await writeFile(audio, 'mock recording bytes')
   const now = new ZonedDateTime(NOW, 'UTC')
   const context = CommandContext.test(
-    { ...config, DIR_ATTACHMENTS: path.join(root, 'attachments') },
+    {
+      ...config,
+      DIR_BASE: root,
+      DIR_TIME: path.join(root, 'time'),
+      DIR_STATE: path.join(root, 'state'),
+      DIR_ATTACHMENTS: path.join(root, 'attachments'),
+      FILE_ABOUT_ME: path.join(root, 'about-me.md'),
+    },
     { notebookNow: now, systemNow: now },
   ).fork({ platform: CommandPlatform.Server, compositionDepth: 1 })
   const options = { dir: path.join(root, 'runs'), now: () => NOW }

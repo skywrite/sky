@@ -6,9 +6,7 @@ import { commandDescriptionToSchema } from '#commands/lib/jsonSchema.ts'
 import transformTypedParamsArgs from '#commands/lib/transformTypedParamsArgs/mod.ts'
 import { CommandResult, type CommandTypesRegistry } from '#commands/mod.ts'
 import * as config from '#config'
-import { DayDirFileWriter } from '#lib/nbfs/mod.ts'
 import { startArgs } from '#service/handler/import/startArgs.ts'
-import * as sys from '#shared/sys/mod.ts'
 import { assert, test } from '#test'
 import { PlainDateTime, ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
 import JournalNewTask from './new.ts'
@@ -99,20 +97,32 @@ test('journal:new types preserve defaults, inheritance and override precedence',
   }
 })
 
-test('journal:new accepts the web importer array and custom audio journal names', async () => {
+test('journal:new accepts explicit custom audio journal names', async () => {
   const file = '/tmp/mock-journal-recording.m4a'
-  const start = startArgs(
-    { source: 'audio', runKey: null, suggestedWhen: WHEN.toString() },
-    { kind: 'journal', when: WHEN.toString(), journalType: 'Reflection', category: 'Personal', fresh: false },
-    file,
-  )
   await withJournalService({}, async (tasks, received) => {
-    await tasks.run(start.command, start.args)
+    await tasks.run('journal:new', { fromAudio: file, types: ['Reflection'] })
     assert({
       given: 'a journal import with a custom journal type',
       should: 'reach the handler with the full journal name and the recording path',
       actual: received.at(-1),
       expected: { types: ['Reflection'], fromAudio: file },
+    })
+  })
+})
+
+test('journal imports defer types until after transcription', async () => {
+  const start = startArgs(
+    { source: 'audio', runKey: null, suggestedWhen: WHEN.toString() },
+    { kind: 'journal', when: WHEN.toString(), journalType: null, category: 'Personal', fresh: false },
+    '/tmp/mock-recording.m4a',
+  )
+  await withJournalService({}, async (tasks, received) => {
+    const result = await tasks.run(start.command, start.args)
+    assert({
+      given: 'a web journal with no preselected type',
+      should: 'start the split pipeline without requiring --types',
+      actual: [result.ok, start.args.split, received[0]?.fromAudio],
+      expected: [true, 'auto', '/tmp/mock-recording.m4a'],
     })
   })
 })
@@ -131,65 +141,6 @@ test('journal:new array normalization does not mutate caller values or reuse a d
       expected: [[' Mood '], { types: ['Mood'], fromAudio: undefined }, { types: ['Mood'], fromAudio: undefined }],
     })
   })
-})
-
-test('journal:new audio imports use the full custom type in the journal document', async () => {
-  const context = CommandContext.test(config, { notebookNow: NOW, systemNow: NOW })
-  const children = new CommandService(context)
-  const clean = spyOn(children, 'run').mockImplementation(async (name) => {
-    if (name !== 'audio:transcript:clean') throw new Error(`Unexpected command: ${name}`)
-    return CommandResult.success({
-      cleanedText: 'A mock reflection.',
-      who: [],
-      rel: [],
-      appliedCount: 0,
-      skippedCount: 0,
-    })
-  })
-  class ImportJournal extends JournalNewTask {
-    override run(call: Parameters<JournalNewTask['run']>[0]) {
-      return super.run({ ...call, tasks: children })
-    }
-  }
-  const tasks = new CommandService(context)
-  const load = spyOn(tasks, 'get').mockResolvedValue(ImportJournal)
-  const writes: string[] = []
-  const write = spyOn(DayDirFileWriter.prototype, 'write').mockImplementation(async (file, content) => {
-    writes.push(content)
-    return file
-  })
-  const terminal = spyOn(sys, 'isTerminal').mockReturnValue(false)
-  try {
-    const start = startArgs(
-      { source: 'audio', runKey: null, suggestedWhen: WHEN.toString() },
-      { kind: 'journal', when: WHEN.toString(), journalType: 'Reflection', category: 'Personal', fresh: false },
-      '/tmp/mock-journal-recording.m4a',
-    )
-    const result = await tasks.run(start.command, start.args)
-    assert({
-      given: 'a web import selecting the custom Reflection journal type',
-      should: 'create one journal with the complete type name and cleaned transcript',
-      actual: {
-        ok: result.ok,
-        writes: writes.length,
-        title: writes[0]?.split('\n').find((line) => line.startsWith('# **')),
-        tagged: writes[0]?.includes('Journal/Reflection'),
-        body: writes[0]?.includes('A mock reflection.'),
-      },
-      expected: {
-        ok: true,
-        writes: 1,
-        title: '# **Reflection: 2031-03-16 - Sun - 08:00**',
-        tagged: true,
-        body: true,
-      },
-    })
-  } finally {
-    terminal.mockRestore()
-    write.mockRestore()
-    load.mockRestore()
-    clean.mockRestore()
-  }
 })
 
 test('journal:new CLI audio validation still requires explicitly supplied types', async () => {
