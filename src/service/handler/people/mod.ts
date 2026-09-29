@@ -62,6 +62,16 @@ export function createPeopleRoutes(
       .parse(await c.req.json())
     return c.json(await profiles!.addNote(input.type, input.id, input.revision, input.text))
   })
+  app.post('/activity/unlink', async (c) => {
+    const input = z
+      .object({
+        type,
+        id: z.string().min(1).max(2048),
+        path: z.string().min(1).max(2048),
+      })
+      .parse(await c.req.json())
+    return c.json(await profiles!.unlinkActivity(input.type, input.id, input.path))
+  })
   const references = z.object({
     type,
     id: z.string().min(1).max(2048),

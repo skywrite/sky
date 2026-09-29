@@ -46,6 +46,7 @@ export interface ProfileActivity {
   path: string
   label: string
   date?: string
+  via: string
 }
 
 export interface ProfileDetail extends ProfileSummary {

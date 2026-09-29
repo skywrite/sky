@@ -1,5 +1,5 @@
 import './people.css'
-import { Button, Modal, Select, Textarea, TextInput } from '@mantine/core'
+import { ActionIcon, Button, Modal, Select, Textarea, TextInput } from '@mantine/core'
 import { type Key, type MouseEvent, type ReactNode, useCallback, useEffect, useState } from 'react'
 import type { LinkedInImport } from '#lib/linkedin/types.ts'
 import {
@@ -114,12 +114,18 @@ function ProfilePage({
   edit,
   addNote,
   updateReferences,
+  unlinkActivity,
+  unlinking,
+  activityError,
 }: {
   profile: ProfileDetail
   navigate: (path: string) => void
   edit: () => void
   addNote: () => void
   updateReferences: () => void
+  unlinkActivity: (path: string) => void
+  unlinking: string | null
+  activityError: string
 }) {
   const emails = [...new Set([...profile.emailBusiness, ...profile.emailPersonal])]
   const hasDetails = Boolean(
@@ -192,6 +198,11 @@ function ProfilePage({
           {profile.activity.length > 0 && (
             <section>
               <h2>Recent activity</h2>
+              {activityError && (
+                <p className="sky-people-error" role="alert">
+                  {activityError}
+                </p>
+              )}
               <ul className="sky-people-activity">
                 {profile.activity.map((item) => (
                   <li key={item.path}>
@@ -199,6 +210,20 @@ function ProfilePage({
                       {item.label}
                     </AppLink>
                     {item.date && <time dateTime={item.date}>{item.date.slice(0, 10)}</time>}
+                    {item.via === 'rel' && (
+                      <ActionIcon
+                        variant="danger-quiet"
+                        size="sm"
+                        className="sky-people-activity-remove"
+                        aria-label={`Unlink ${item.label} from ${profile.name}`}
+                        title={`Remove ${profile.name} from this file's rel field`}
+                        loading={unlinking === item.path}
+                        disabled={unlinking !== null}
+                        onClick={() => unlinkActivity(item.path)}
+                      >
+                        <span aria-hidden="true">×</span>
+                      </ActionIcon>
+                    )}
                   </li>
                 ))}
               </ul>
@@ -309,6 +334,8 @@ export function PeopleMain({
   const [note, setNote] = useState('')
   const [noteError, setNoteError] = useState('')
   const [savingNote, setSavingNote] = useState(false)
+  const [unlinking, setUnlinking] = useState<string | null>(null)
+  const [activityError, setActivityError] = useState('')
   const [referencesOpen, setReferencesOpen] = useState(false)
   /** The name a save just replaced, which the references dialog starts with */
   const [replaced, setReplaced] = useState<string>()
@@ -362,7 +389,7 @@ export function PeopleMain({
     }
   }, [index?.linkedInAvailable, editing, job?.status])
   useEffect(() => {
-    if (editing || noteOpen || referencesOpen) return
+    if (editing || noteOpen || referencesOpen || unlinking !== null) return
     const abort = new AbortController()
     const refresh = () => {
       if (!document.hidden) void load(abort.signal)
@@ -374,7 +401,7 @@ export function PeopleMain({
       clearInterval(timer)
       window.removeEventListener('focus', refresh)
     }
-  }, [load, editing, noteOpen, referencesOpen])
+  }, [load, editing, noteOpen, referencesOpen, unlinking])
   const saved = (next: ProfileDetail) => {
     // A new name leaves the old one in other files: offer to update them, as a rename does
     if (profile && profile.id === next.id && profile.name !== next.name)
@@ -409,6 +436,24 @@ export function PeopleMain({
       setNoteError(error instanceof Error ? error.message : 'Could not save your note.')
     } finally {
       setSavingNote(false)
+    }
+  }
+  const unlinkActivity = async (path: string) => {
+    if (!profile || unlinking !== null) return
+    setUnlinking(path)
+    setActivityError('')
+    try {
+      setProfile(
+        await peopleApi<ProfileDetail>('/activity/unlink', {
+          type: profile.type,
+          id: profile.id,
+          path,
+        }),
+      )
+    } catch (error) {
+      setActivityError(error instanceof Error ? error.message : 'Could not unlink this activity. Try again.')
+    } finally {
+      setUnlinking(null)
     }
   }
   const rows = index ? (route.type === 'person' ? index.people : index.orgs) : []
@@ -479,6 +524,9 @@ export function PeopleMain({
               edit={() => setEditing(true)}
               addNote={() => setNoteOpen(true)}
               updateReferences={() => setReferencesOpen(true)}
+              unlinkActivity={(path) => void unlinkActivity(path)}
+              unlinking={unlinking}
+              activityError={activityError}
             />
           )
         ) : (

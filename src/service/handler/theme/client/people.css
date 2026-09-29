@@ -291,15 +291,36 @@
 .sky-people-activity li {
   padding: 15px 0;
   border-top: 1px solid var(--sky-border-soft);
-  display: flex;
-  justify-content: space-between;
-  gap: 20px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 12px;
   font-size: 16px;
 }
+.sky-people-activity li > a {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
 .sky-people-activity time {
+  grid-column: 2;
   font-size: 13px;
   color: var(--sky-dim);
   flex: none;
+}
+.sky-people-activity-remove {
+  grid-column: 3;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+.sky-people-activity li:hover .sky-people-activity-remove,
+.sky-people-activity li:focus-within .sky-people-activity-remove,
+.sky-people-activity-remove[data-loading] {
+  opacity: 1;
+}
+@media (hover: none) {
+  .sky-people-activity-remove {
+    opacity: 1;
+  }
 }
 .sky-people-form {
   display: flex;
@@ -571,8 +592,16 @@
     padding: 24px 0 0;
   }
   .sky-people-activity li {
-    flex-direction: column;
+    grid-template-columns: minmax(0, 1fr) auto;
     gap: 4px;
+  }
+  .sky-people-activity time {
+    grid-column: 1;
+    grid-row: 2;
+  }
+  .sky-people-activity-remove {
+    grid-column: 2;
+    grid-row: 1 / span 2;
   }
   .sky-people-empty {
     padding: 46px 0;

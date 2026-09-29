@@ -26,6 +26,8 @@ import splitYamlMarkdown from '#shared/models/Markdown/util/splitYamlMarkdown.ts
 import OrganizationDocument from '#shared/models/Organization/mod.ts'
 import PersonDocument from '#shared/models/Person/mod.ts'
 import { fetchNowSync } from '#shared/nbfs/mod.ts'
+import { changeLinks } from '../links/content.ts'
+import { MarkdownSaveConflictError, readMarkdownContent, saveMarkdownContent } from '../markdown-preview/content.ts'
 import { isPathWithinRoot, isPathWithinRoots } from '../markdown-preview/request.ts'
 import { backlinksOf } from '../vocabulary/mod.ts'
 import { renderProfileNotes } from './notes.ts'
@@ -253,6 +255,32 @@ export function createPeopleStore(store: MarkdownStore, baseDir: string, dirs: s
       spellings: spellingUses(store, base, { type, id, name: summary.name, aliases: summary.aliases }),
       ...(renameFile ? { renameFile } : {}),
     }
+  }
+
+  async function unlinkActivity(type: ProfileType, id: string, activityPath: string): Promise<ProfileDetail> {
+    return withProcessLock(lock, async () => {
+      const target = find(type, id).path
+      await safeFile(target)
+      const file = path.resolve(base, activityPath)
+      await safeFile(file)
+      if (!backlinksOf(store, base, id).some((item) => item.path === activityPath && item.via === 'rel'))
+        throw new ProfileError('This activity is no longer linked through rel. Reload the profile.', 409)
+      const current = await readMarkdownContent(file)
+      const identity = (value: string) => {
+        const ref = store.resolve(value, { sourceFilePath: file })
+        return 'path' in ref ? ref.path : value
+      }
+      const content = changeLinks(current.content, [], [target], identity)
+      try {
+        if (content !== current.content) await saveMarkdownContent(file, content, current.version)
+      } catch (error) {
+        if (error instanceof MarkdownSaveConflictError)
+          throw new ProfileError('This activity file changed while saving. Try unlinking it again.', 409)
+        throw error
+      }
+      store.set(file, content)
+      return detail(type, id)
+    })
   }
 
   /** A profile's current name and the other spellings it lists, for updating references. */
@@ -615,5 +643,5 @@ export function createPeopleStore(store: MarkdownStore, baseDir: string, dirs: s
       return detail(type, id)
     })
   }
-  return { index, detail, resolveRoute, save, addNote, previewReferences, updateReferences }
+  return { index, detail, resolveRoute, save, addNote, unlinkActivity, previewReferences, updateReferences }
 }

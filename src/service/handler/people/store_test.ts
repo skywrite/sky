@@ -392,6 +392,132 @@ test('Profile HTTP routes serve real URLs, validate writes, append notes, and ke
   }
 })
 
+test('Unlinking activity removes every resolved alias for only the selected profile', async () => {
+  const f = await fixture()
+  try {
+    const person = 'people/Jane-Doe.md'
+    const namesake = 'people/Jane-Doe-2.md'
+    const note = 'time/2026/W07/02-12/actions/notes/Atlas.md'
+    const body = '\n# Atlas planning\n\nJane Doe led the discussion.\n\nKeep **every** line.\n'
+    await f.seed(person, '---\nname: [Jane Doe, Jay, Janie]\n---\n')
+    await f.seed(namesake, '---\nname: [Jane Doe, Jenny]\n---\n')
+    await f.seed('people/Alex-Kim.md', '---\nname: Alex Kim\n---\n')
+    await f.seed('orgs/Atlas.md', '---\nname: Atlas\n---\n')
+    await f.seed(
+      note,
+      `---\n# Keep this comment\nsummary: Atlas planning\nrel:\n  - Jay\n  - jAnIe\n  - Jenny\n  - ${namesake}\n  - Alex Kim\n  - Atlas\ncustom: keep\n---\n${body}`,
+    )
+    const before = await f.profiles.detail('person', person)
+    const after = await f.profiles.unlinkActivity('person', person, note)
+    const remaining = await f.profiles.detail('person', namesake)
+    assert({
+      given: 'activity linked by two aliases, alongside a namesake and other links',
+      should: 'remove only this profile from rel, preserve metadata and prose, and refresh activity immediately',
+      actual: [
+        before.activity.map((item) => [item.path, item.via]),
+        after.activity,
+        remaining.activity.map((item) => item.path),
+        await readFile(path.join(f.root, note), 'utf8'),
+        await readFile(path.join(f.root, person), 'utf8'),
+      ],
+      expected: [
+        [[note, 'rel']],
+        [],
+        [note],
+        `---\n# Keep this comment\nsummary: Atlas planning\nrel:\n  - Jenny\n  - ${namesake}\n  - Alex Kim\n  - Atlas\ncustom: keep\n---\n${body}`,
+        '---\nname: [Jane Doe, Jay, Janie]\n---\n',
+      ],
+    })
+  } finally {
+    await f.close()
+  }
+})
+
+test('Activity unlink HTTP writes handle scalar and last links and preserve other relationship fields', async () => {
+  const f = await fixture()
+  try {
+    const person = 'people/Jane-Doe.md'
+    const scalar = 'time/2026/W07/02-12/actions/notes/Atlas.md'
+    const last = 'time/2026/W07/02-11/actions/messages/Hello.md'
+    await f.seed(person, '---\nname: Jane Doe\n---\n')
+    await f.seed(scalar, '---\nsummary: Atlas planning\nrel: Jane Doe, projects/Atlas\n---\n\n# Notes\n')
+    await f.seed(last, '---\nsummary: Hello\nrel: [Jane Doe]\nfrom: Jane Doe\n---\n\n# Message\n')
+    const unlink = (file: string) =>
+      f.app.request('/people/_api/activity/unlink', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'person', id: person, path: file }),
+      })
+    const scalarResponse = await unlink(scalar)
+    const lastResponse = await unlink(last)
+    const detail = (await lastResponse.json()) as ProfileDetail
+    const repeated = await unlink(last)
+    assert({
+      given: 'a scalar rel and a final rel link also present in from',
+      should: 'save both files, keep from and its activity, and refuse to remove the remaining non-rel connection',
+      actual: [
+        scalarResponse.status,
+        lastResponse.status,
+        repeated.status,
+        detail.activity.map((item) => [item.path, item.via]),
+        await readFile(path.join(f.root, scalar), 'utf8'),
+        await readFile(path.join(f.root, last), 'utf8'),
+      ],
+      expected: [
+        200,
+        200,
+        409,
+        [[last, 'from']],
+        '---\nsummary: Atlas planning\nrel:\n  - projects/Atlas\n---\n\n# Notes\n',
+        '---\nsummary: Hello\nrel: []\nfrom: Jane Doe\n---\n\n# Message\n',
+      ],
+    })
+  } finally {
+    await f.close()
+  }
+})
+
+test('Activity unlink rejects non-rel links, unlinked files, traversal and symlinks', async () => {
+  const f = await fixture()
+  try {
+    const person = 'people/Jane-Doe.md'
+    const meeting = 'time/2026/W07/02-12/actions/meetings/Atlas.md'
+    const unlinked = 'time/2026/W07/02-12/actions/notes/Unlinked.md'
+    const linked = 'time/2026/W07/02-12/actions/notes/Linked.md'
+    const raw = '---\nrel: [Jane Doe]\n---\n\n# Notes\n'
+    await f.seed(person, '---\nname: Jane Doe\n---\n')
+    await f.seed(meeting, '---\nwho: Jane Doe\n---\n')
+    await f.seed(unlinked, '---\nrel: [projects/Atlas]\n---\n')
+    await f.seed(linked, raw)
+    const outside = path.join(f.root, 'outside.md')
+    await writeFile(outside, raw)
+    await rm(path.join(f.root, linked))
+    await symlink(outside, path.join(f.root, linked))
+    const statuses: number[] = []
+    for (const file of [meeting, unlinked, '../outside.md', linked]) {
+      const response = await f.app.request('/people/_api/activity/unlink', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'person', id: person, path: file }),
+      })
+      statuses.push(response.status)
+    }
+    assert({
+      given: 'files that are not removable rel activity or regular files in the notebook roots',
+      should: 'reject every request and leave every file untouched',
+      actual: [
+        statuses,
+        await readFile(outside, 'utf8'),
+        await readFile(path.join(f.root, meeting), 'utf8'),
+        await readFile(path.join(f.root, unlinked), 'utf8'),
+      ],
+      expected: [[409, 409, 403, 403], raw, '---\nwho: Jane Doe\n---\n', '---\nrel: [projects/Atlas]\n---\n'],
+    })
+  } finally {
+    await f.close()
+  }
+})
+
 test('Profile URLs survive name edits, file moves and a new store, without reusing removed namesakes', async () => {
   const f = await fixture()
   try {
