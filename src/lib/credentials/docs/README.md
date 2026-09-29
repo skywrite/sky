@@ -8,7 +8,10 @@ updated: 2026-09-29
 This library sits alongside `lib/secrets`. Existing commands, integration setup,
 token refreshes and browser runners continue using their existing interfaces.
 Importing this module does not connect an account, read a credential, prompt for
-authorization, or write configuration.
+authorization, or write configuration. The
+[private browser worker](../../browser/docs/README.md#credential-backed-tasks)
+uses the 1Password adapter only after independent native approval; Settings
+cannot invoke that sign-in flow.
 
 ## Items, fields and references
 
@@ -164,4 +167,6 @@ WebAuthn JSON types and a host-supplied origin/session binding. It can report
 completion, required user interaction, cancellation or lack of support.
 Neither storage adapter implements it or claims that a passkey's presence means
 Sky can authenticate with it. Apple Passwords, passkey transport and automatic
-TOTP filling are not implemented.
+TOTP filling are not implemented. The private browser's first password-login
+flow uses a native account choice and leaves codes, passkeys and unsupported
+forms to the existing person-in-browser handoff.

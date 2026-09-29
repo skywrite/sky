@@ -218,16 +218,20 @@ class StdioTransport implements Transport {
 
   request(method: string, params: unknown, options: CallOptions): Promise<unknown> {
     if (this.ended) return Promise.reject(new McpError('The browser server has stopped'))
+    if (options.signal?.aborted) return Promise.reject(new McpError('Stopped'))
     const id = this.nextId++
     const timeoutMs = options.timeoutMs ?? CALL_TIMEOUT_MS
     return new Promise<unknown>((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(id)
+        options.signal?.removeEventListener('abort', onAbort)
+        this.send({ jsonrpc: '2.0', method: 'notifications/cancelled', params: { requestId: id } })
         reject(new McpError(`${method} did not answer within ${Math.round(timeoutMs / 1000)}s`))
       }, timeoutMs)
       const onAbort = () => {
         this.pending.delete(id)
         clearTimeout(timer)
+        this.send({ jsonrpc: '2.0', method: 'notifications/cancelled', params: { requestId: id } })
         reject(options.signal?.reason instanceof Error ? options.signal.reason : new McpError('Stopped'))
       }
       options.signal?.addEventListener('abort', onAbort, { once: true })

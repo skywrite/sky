@@ -5,6 +5,7 @@ import type { ResolvedModel } from '#shared/ai/models.ts'
 import { attachBrowserDriver, closeTab, firstUrl } from '../mcp/browserDriver.ts'
 import { type McpClient, McpError } from '../mcp/client.ts'
 import { claimDownloads, type DownloadClaim, splitResult, type ToolCaller } from '../mcp/tools.ts'
+import { launchPrivateBrowser } from '../signIn/launch.ts'
 import { type Advice, type AdviceTrigger, advise, type AdviseOptions, type AdviseResult } from './advisor.ts'
 import { type AskJev, decide, type Decision, JevAnswerError, nextBest } from './decide.ts'
 import type { Operation } from './questions.ts'
@@ -99,6 +100,7 @@ export interface JevTaskOptions {
   headless?: boolean
   /** Where Sky's browser lives; the default is ~/.sky/browser */
   browserRoot?: string
+  privateSignIn?: boolean
   /** Test seam over the browser driver: a scripted session in place of the real one */
   browser?: BrowserSession
   /** Test seam over attaching to the driver, for the restart after a crash */
@@ -155,6 +157,12 @@ export async function runJevTask(options: JevTaskOptions): Promise<JevTaskResult
   let claim: DownloadClaim | undefined
   const launch = async (): Promise<BrowserSession> => {
     if (options.launch) return options.launch()
+    if (options.privateSignIn)
+      return launchPrivateBrowser({
+        objective: options.objective,
+        filesDir: options.filesDir,
+        headless: options.headless,
+      })
     const { client, driver } = await attachBrowserDriver({ headless: options.headless, root: options.browserRoot })
     claim = { from: driver.downloadsDir, to: options.filesDir }
     return client
@@ -185,6 +193,7 @@ export async function runJevTask(options: JevTaskOptions): Promise<JevTaskResult
   const expectsDownload = /\bdownload/i.test(options.objective)
   /** The control whose click last produced a download — by what it is, since refs change with every snapshot */
   let downloadedFrom: string | undefined
+  const attemptedSignIn = new Set<string>()
   const rowKey = (row: ActionRow): string => {
     // A link's own address tells rows apart only when it is a real one of its own;
     // four "Download Document" links sharing one script address are four rows.
@@ -209,7 +218,13 @@ export async function runJevTask(options: JevTaskOptions): Promise<JevTaskResult
       // The server died under this call. The profile keeps the session, so a
       // fresh server back on the same page can go on; the call itself is a
       // failed move for the record.
-      if (!stopped(error) || (options.browser && !options.launch) || relaunches >= MAX_RELAUNCHES) throw error
+      if (
+        options.privateSignIn ||
+        !stopped(error) ||
+        (options.browser && !options.launch) ||
+        relaunches >= MAX_RELAUNCHES
+      )
+        throw error
       relaunches++
       remember(`The browser server stopped during ${name}; started it again${lastUrl ? ` at ${lastUrl}` : ''}.`)
       say(`The browser server stopped; starting it again${lastUrl ? ` at ${lastUrl}` : ''}`)
@@ -547,6 +562,18 @@ export async function runJevTask(options: JevTaskOptions): Promise<JevTaskResult
         break
       }
       if (asks || risky) {
+        if (asks && !risky && options.privateSignIn && !attemptedSignIn.has(table.url)) {
+          attemptedSignIn.add(table.url)
+          say('Requesting permission to sign in with 1Password')
+          const login = splitResult(
+            await browser.callTool('sign_in', {}, { signal: options.abortSignal, timeoutMs: 300000 }),
+          )
+          if (login.output.ok && login.output.text === '{"status":"submitted"}') {
+            remember('The private browser submitted the approved login. Checking whether sign-in completed.')
+            lastPrint = undefined
+            continue
+          }
+        }
         const message = needsYouMessage(table, decision)
         entry.note = asks ? 'Asked the person.' : 'Asked before a risky move.'
         say(
@@ -692,9 +719,9 @@ export async function runJevTask(options: JevTaskOptions): Promise<JevTaskResult
     }
     if (outcome === 'out_of_steps') reason = `The task used all ${maxSteps} steps.`
   } finally {
-    // A finished task's tab closes; a stopped or blocked one stays for the person to see.
-    if (outcome === 'done' && !options.browser) await closeTab(browser as McpClient)
-    await browser.close() // the driver and its window stay up
+    // The private worker always destroys its context. Shared-driver tabs retain their earlier lifecycle.
+    if (outcome === 'done' && !options.browser && !options.privateSignIn) await closeTab(browser as McpClient)
+    await browser.close()
   }
 
   const files = await filesIn(options.filesDir)

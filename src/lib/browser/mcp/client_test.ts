@@ -20,6 +20,7 @@ rl.on('line', (line) => {
   if (msg.method === 'initialize')
     return send({ jsonrpc: '2.0', id: msg.id, result: { protocolVersion: msg.params.protocolVersion, capabilities: { tools: {} }, serverInfo: { name: 'Fake', version: '0.1' } } })
   if (msg.method === 'notifications/initialized') return
+  if (msg.method === 'notifications/cancelled') { process.stderr.write('cancelled ' + msg.params.requestId + '\\n'); return }
   if (msg.method === 'tools/list')
     return send({ jsonrpc: '2.0', id: msg.id, result: { tools: [{ name: 'echo', description: 'Echo', inputSchema: { type: 'object', properties: { text: { type: 'string' } } } }] } })
   if (msg.method === 'tools/call') {
@@ -47,6 +48,28 @@ async function fakeServer(): Promise<{ client: McpClient; stderr: string[]; clea
   })
   return { client, stderr, cleanup: () => rm(root, { recursive: true, force: true }) }
 }
+
+test('stdio cancellation reaches the credential-owning worker', async () => {
+  const { client, stderr, cleanup } = await fakeServer()
+  try {
+    const abort = new AbortController()
+    const request = client.callTool('echo', { hang: true }, { signal: abort.signal }).catch(() => null)
+    abort.abort()
+    await request
+    await client.listTools()
+    // stderr is a separate pipe: close drains the child before inspecting it.
+    await client.close()
+    assert({
+      given: 'a revoked task while its worker is waiting',
+      should: 'send cancellation for the pending request',
+      actual: stderr.some((line) => line.startsWith('cancelled ')),
+      expected: true,
+    })
+  } finally {
+    await client.close()
+    await cleanup()
+  }
+})
 
 test('the client completes the handshake, lists tools, and calls one', async () => {
   const { client, stderr, cleanup } = await fakeServer()

@@ -5,12 +5,13 @@ import colors from 'picocolors'
 import { createFileTools, READ_FILE_TOOL } from '#commands/lib/chat/fileTools.ts'
 import { Arg, Command, CommandResult } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
-import { DIR_ATTACHMENTS } from '#config'
+import { DIR_ATTACHMENTS, DIR_STATE } from '#config'
 import { askWith } from '#lib/browser/jev/decide.ts'
 import { runEpilogue } from '#lib/browser/jev/epilogue.ts'
 import { runJevTask } from '#lib/browser/jev/runJevTask.ts'
 import { runBrowserTask, WAIT_FOR_PERSON_TOOL } from '#lib/browser/task/runTask.ts'
 import { createTaskDir } from '#lib/browser/task/taskDir.ts'
+import { PasswordManagerSettingsStore } from '#lib/credentials/passwordManagers.ts'
 import { aiModel, getProfile, resolveProfile, roleProfile } from '#shared/ai/models.ts'
 import { createTypeSafeClient } from '#shared/ai/typesafe/client.ts'
 import { readSkyConfigFile } from '#shared/config/loader.ts'
@@ -95,10 +96,20 @@ export default class BrowserTaskCommand extends Command {
     const now = context.notebookNow
     const objective = args.objective.trim()
     if (!objective) return CommandResult.fail('Say what to do in the browser, in plain words.')
+    const passwordManagers = await new PasswordManagerSettingsStore(
+      path.join(DIR_STATE, 'credentials', 'sources.json'),
+    ).read()
+    const privateSignIn = passwordManagers.sources.length > 0
 
     const task = await createTaskDir(now, objective)
     output.log(colors.dim(`Task folder: ${task.dir}`))
-    output.log(colors.dim('Sky’s browser opens a tab of its own for this task; the window stays open after.'))
+    output.log(
+      colors.dim(
+        privateSignIn
+          ? 'Sky opens a private browser for this task. Approve sign-in in the native dialog; the session closes when the task ends.'
+          : 'Sky’s browser opens a tab of its own for this task; the window stays open after.',
+      ),
+    )
     // Jev drives unless the Experimental switch is set off; then the reasoning model does.
     const jev = readSkyConfigFile()?.parsed.experimental?.jevBrowser !== false
     output.log(
@@ -182,6 +193,7 @@ export default class BrowserTaskCommand extends Command {
         today: now.plainDateTime.plainDate,
         attachmentsRoot: DIR_ATTACHMENTS,
         cwd: task.filesDir,
+        allowedRoot: privateSignIn ? task.filesDir : undefined,
         onAttachments: (files) => attachments.push(...files),
       }),
       ...createSaveFileTool({ filesDir: task.filesDir, cwd: process.cwd() }),
@@ -199,6 +211,7 @@ export default class BrowserTaskCommand extends Command {
           taskDir: task.dir,
           filesDir: task.filesDir,
           onNeedsYou,
+          privateSignIn,
           onStep: (line) => output.log(colors.dim(line)),
           abortSignal: context.signal,
         })
@@ -267,6 +280,7 @@ export default class BrowserTaskCommand extends Command {
         when: `${now.date} ${now.time}`,
         tools,
         onNeedsYou,
+        privateSignIn,
         onEvent,
         abortSignal: context.signal,
       })

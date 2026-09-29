@@ -4,7 +4,8 @@ import { jsonSchema, tool } from 'ai'
 import type { ResolvedModel } from '#shared/ai/models.ts'
 import ChatEngine, { type ChatEngineEvent, type TurnCut, type TurnResult } from '#shared/models/Chat/ChatEngine/mod.ts'
 import { attachBrowserDriver, closeTab } from '../mcp/browserDriver.ts'
-import { browserToolsFrom } from '../mcp/tools.ts'
+import { BROWSER_TOOL_NAMES, browserToolsFrom } from '../mcp/tools.ts'
+import { launchPrivateBrowser } from '../signIn/launch.ts'
 import { browserTaskInstructions } from './prompt.ts'
 
 // One browser task: Sky's chat engine drives the browser server's tools
@@ -37,6 +38,8 @@ export interface BrowserTaskOptions {
   headless?: boolean
   /** Where Sky's browser lives; the default is ~/.sky/browser */
   browserRoot?: string
+  /** Configured password managers use a separate, disposable browser with native per-use approval. */
+  privateSignIn?: boolean
 }
 
 export interface BrowserTaskResult {
@@ -54,12 +57,24 @@ export interface BrowserTaskResult {
 }
 
 export async function runBrowserTask(options: BrowserTaskOptions): Promise<BrowserTaskResult> {
-  const { client, driver } = await attachBrowserDriver({ headless: options.headless, root: options.browserRoot })
+  const connection = options.privateSignIn
+    ? {
+        client: await launchPrivateBrowser({
+          objective: options.objective,
+          filesDir: options.filesDir,
+          headless: options.headless,
+        }),
+        driver: undefined,
+      }
+    : await attachBrowserDriver({ headless: options.headless, root: options.browserRoot })
+  const { client, driver } = connection
   let finished = false
   try {
     const definitions = await client.listTools()
     const browserTools = browserToolsFrom(client, definitions, {
-      downloads: { from: driver.downloadsDir, to: options.filesDir },
+      downloads: driver ? { from: driver.downloadsDir, to: options.filesDir } : undefined,
+      allow: options.privateSignIn ? [...BROWSER_TOOL_NAMES, 'sign_in'] : BROWSER_TOOL_NAMES,
+      timeoutMs: options.privateSignIn ? 300000 : undefined,
     })
     const waitForPerson = tool({
       description:
@@ -87,7 +102,13 @@ export async function runBrowserTask(options: BrowserTaskOptions): Promise<Brows
     engine.appendUserMessage(options.objective, options.when)
     const result = await engine.runTurn({
       abortSignal: options.abortSignal,
-      instructions: [browserTaskInstructions({ objective: options.objective, filesDir: options.filesDir })],
+      instructions: [
+        browserTaskInstructions({
+          objective: options.objective,
+          filesDir: options.filesDir,
+          privateSignIn: options.privateSignIn,
+        }),
+      ],
       tools,
       toolApproval: {},
     })
@@ -108,8 +129,8 @@ export async function runBrowserTask(options: BrowserTaskOptions): Promise<Brows
       toolNames: Object.keys(tools),
     }
   } finally {
-    // A finished task's tab closes; a stopped or cut-short one stays for the person to see.
-    if (finished) await closeTab(client)
-    await client.close() // the driver and its window stay up
+    // The private worker always destroys its context. Shared-driver tabs retain their earlier lifecycle.
+    if (finished && !options.privateSignIn) await closeTab(client)
+    await client.close()
   }
 }

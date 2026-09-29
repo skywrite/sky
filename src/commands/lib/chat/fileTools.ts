@@ -13,7 +13,7 @@
  */
 
 import { Buffer } from 'node:buffer'
-import { stat } from 'node:fs/promises'
+import { realpath, stat } from 'node:fs/promises'
 import * as os from 'node:os'
 import * as path from 'node:path'
 import { jsonSchema, type Tool, tool, type UserContent } from 'ai'
@@ -45,6 +45,8 @@ export interface FileToolsOptions {
   attachmentsRoot: string
   /** Where a relative path resolves from — the user's shell directory */
   cwd: string
+  /** A private browser task may read its downloads only, never profiles, logs, or provider state. */
+  allowedRoot?: string
   /** Fires once per read with the copy's attachment ref — the host carries it into the transcript */
   onAttachments: (files: Attachment[]) => void
 }
@@ -177,6 +179,17 @@ export async function readFile(
 ): Promise<{ output: ReadFileOutput; document?: LoadedDocument }> {
   const resolved = resolveFilePath(input.path, options.cwd)
   const fail = (error: string) => ({ output: { success: false, error } as ReadFileOutput })
+
+  if (options.allowedRoot) {
+    try {
+      const [root, file] = await Promise.all([realpath(options.allowedRoot), realpath(resolved)])
+      const relative = path.relative(root, file)
+      if (!relative || relative.startsWith(`..${path.sep}`) || relative === '..' || path.isAbsolute(relative))
+        return fail('This browser task can read only its downloaded files.')
+    } catch {
+      return fail('This browser task can read only its downloaded files.')
+    }
+  }
 
   let info
   try {

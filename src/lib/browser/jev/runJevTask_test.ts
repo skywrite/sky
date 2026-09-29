@@ -66,6 +66,54 @@ async function fixture() {
   return { root, filesDir, cleanup: () => rm(root, { recursive: true, force: true }) }
 }
 
+test('Jev requests private sign-in once and falls back to the person after refusal', async () => {
+  for (const status of ['submitted', 'declined'] as const) {
+    const { root, filesDir, cleanup } = await fixture()
+    const calls: string[] = []
+    let signedIn = false
+    let asks = 0
+    const browser: BrowserSession = {
+      callTool: async (name) => {
+        calls.push(name)
+        if (name === 'browser_snapshot') return text(signedIn ? DOCUMENTS : SIGN_IN)
+        if (name === 'sign_in') {
+          signedIn = status === 'submitted'
+          return text(JSON.stringify({ status }))
+        }
+        return text('ok')
+      },
+      close: async () => {
+        calls.push('close')
+      },
+    }
+    try {
+      const result = await runJevTask({
+        objective: 'Open https://atlas.example and view my account.',
+        taskDir: root,
+        filesDir,
+        browser,
+        privateSignIn: true,
+        onNeedsYou: async () => {
+          asks++
+          return false
+        },
+        ask: async () =>
+          signedIn
+            ? reply({ operation: pick('done'), ...quiet, done: { noul: 0.96 } })
+            : reply({ operation: pick('ask_person'), ...quiet, needs_person: { noul: 0.98 } }),
+      })
+      assert({
+        given: `private sign-in ${status}`,
+        should: 'request only intent, check the next page after submission, and preserve manual fallback',
+        actual: [calls.filter((name) => name === 'sign_in').length, asks, result.outcome, calls.at(-1)],
+        expected: [1, status === 'submitted' ? 0 : 1, status === 'submitted' ? 'done' : 'stopped', 'close'],
+      })
+    } finally {
+      await cleanup()
+    }
+  }
+})
+
 test('the loop asks the person on a sign-in page, then clicks the 2025 form and finishes', async () => {
   const { root, filesDir, cleanup } = await fixture()
   const calls: string[] = []

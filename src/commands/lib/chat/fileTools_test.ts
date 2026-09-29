@@ -6,7 +6,7 @@
  */
 
 import { Buffer } from 'node:buffer'
-import { mkdir, writeFile } from 'node:fs/promises'
+import { mkdir, symlink, writeFile } from 'node:fs/promises'
 import * as os from 'node:os'
 import * as path from 'node:path'
 import { toolModelMessageSchema } from 'ai'
@@ -45,6 +45,32 @@ async function names(dir: string): Promise<string[]> {
   for await (const entry of readDir(dir)) out.push(entry.name)
   return out.sort()
 }
+
+test('private browser file reads cannot escape through paths or symlinks', async () => {
+  const { cwd, options, recorded } = await setup()
+  const files = path.join(cwd, 'downloads')
+  await mkdir(files)
+  await writeFile(path.join(files, 'statement.txt'), 'Atlas statement')
+  await writeFile(path.join(cwd, 'private.txt'), 'synthetic-private-data')
+  await symlink(path.join(cwd, 'private.txt'), path.join(files, 'linked.txt'))
+  const restricted = { ...options, cwd: files, allowedRoot: files }
+  const denied = await Promise.all(
+    ['../private.txt', path.join(cwd, 'private.txt'), 'linked.txt'].map((file) => readFile({ path: file }, restricted)),
+  )
+  assert({
+    given: 'relative, absolute, and symlink escapes from a private task',
+    should: 'reject reads before copying attachments',
+    actual: [denied.every((reply) => !reply.output.success && !reply.document), recorded.length],
+    expected: [true, 0],
+  })
+  const allowed = await readFile({ path: 'statement.txt' }, restricted)
+  assert({
+    given: 'a task-owned document',
+    should: 'allow normal document inspection',
+    actual: [allowed.output.success, allowed.document],
+    expected: [true, { kind: 'text', text: 'Atlas statement' }],
+  })
+})
 
 /** Embed a tool output exactly as the SDK embeds it before validating. */
 function asToolMessage(output: unknown) {

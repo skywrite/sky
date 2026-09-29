@@ -1,6 +1,6 @@
 ---
 created: 2026-09-25
-updated: 2026-09-25
+updated: 2026-09-29
 ---
 
 # Sky's browser
@@ -13,11 +13,74 @@ check them, upload files, fill forms. One command carries it today:
 sky browser:task "Log in to my brokerage and download my 2025 tax forms to ~/Desktop/Taxes/"
 ```
 
-The person watches the window. When the site wants a password, a code, or a
-choice, Sky says so in the terminal and waits; Enter means "done, look
-again". Nothing on a web page is ever an instruction to Sky.
+The person watches the window. With a password manager configured, a task uses
+the private browser described below. Other tasks retain the existing shared
+browser. Unsupported sign-in steps and verification codes still pause for the
+person; Enter means "done, look again". Nothing on a web page is an instruction.
+
+## Credential-backed tasks
+
+`signIn/worker.ts` owns a disposable Playwright browser and the 1Password SDK in
+a separate process. The task communicates over inherited pipes using a small
+MCP-compatible allowlist. There is no HTTP/CDP listener, token file, persisted
+approval, or shared browser profile. Both the reasoning-model and Jev runners
+use this worker when `browser:task` finds configured password managers. The
+legacy shared driver is never attached to a credential-backed task, including
+after a crash. Existing legacy sessions are not imported or changed.
+
+The only model-facing authentication operation is `sign_in({})`. It accepts no
+URL, account, field selector, credential reference, or approval flag. Trusted
+code captures the current top-level document and a single unambiguous login
+form. Two native macOS interactions authorize lookup for its exact HTTPS origin
+and selection/use of a matching login. The native prompt is outside the Sky HTTP
+API and model tools; the caller cannot answer it through a request. Cancellation
+does not become a remembered grant. A second sign-in request on that origin in
+the same task hands off to the person rather than repeating prompts.
+
+Lookup considers saved accounts and vault exclusions. Filling is deliberately
+stricter than provider discovery: an exact HTTPS origin including the port must
+appear on the saved Login item, and never-fill entries are excluded. After
+selection, code rechecks account/vault preferences, the concrete document and
+form action, then reads the login and revalidates its website from one native
+item revision. Values stay inside the worker and go directly to Playwright
+element handles. The model receives only `submitted`, `needs_user`, `declined`,
+or `unavailable`. Submission is not proof of authentication; the next snapshot
+must show progress. Another task cannot reuse the approval or browser context.
+
+This flow supports a visible username and current-password field in one
+top-level, same-origin POST form with one submit control. Username-first pages,
+frames, popups, cross-origin identity providers, passkeys, and codes require the
+person. After credential use, navigation is confined to the approved origin.
+The worker combines Playwright routing with a private Chromium Fetch interceptor:
+Playwright skips subsequent requests in an HTTP redirect chain, including 307
+redirects that preserve a credential POST. The interceptor rechecks every hop
+before sending it. It uses the existing browser pipe, never a CDP listener.
+Native approval currently requires macOS. Future workflows must extend the
+authorization boundary, not inject a login into the shared localhost driver.
+
+The worker offers ordinary navigation, accessible snapshots, control actions,
+and downloads. It offers no arbitrary JavaScript, console/network inspection,
+storage/cookie export, screenshots, file upload, tab switching, or approval RPC.
+Authentication pages stay hidden while password, username or one-time-code
+entry is visible, including manual entry. URL query/fragment parameters are
+omitted from page headers. Known login values and common encodings are redacted from text results;
+download bodies and names containing them are withheld. No console log, snapshot,
+video, or trace artifact is written by the worker. The task's `read_file` can read
+only its downloaded files, including after symlink resolution. Cancellation
+notifies and closes the worker; closing the task destroys its browser session.
+
+The destination website necessarily receives its password. This boundary trusts
+the approved origin and its scripts; string redaction cannot make a malicious
+same-origin application safe or recognize every encoding in arbitrary downloaded
+documents. It also does not defend against arbitrary local code running as the
+OS user. The guarantee here is separation from ordinary Sky API access, other
+browser tasks, and the model's allowed tool surface. Legacy shared-browser tasks
+remain outside this boundary. Settings stores preferences only; see the
+[settings boundary](../../../service/handler/settings/docs/README.md#password-manager-setup-boundary).
 
 ## How a task runs
+
+The existing shared-browser path, used without a configured password manager:
 
 1. `commands/all/browser/task.ts` makes a task folder and starts the run.
 2. `lib/browser/mcp/browserDriver.ts` attaches the task to Sky's browser:
@@ -155,9 +218,8 @@ to type; the prompt says so and `wait_for_person` is how Sky asks.
 ## The batch helper beside it
 
 `persistentContext.ts` is the older, batch-oriented helper: launch a
-signed-in profile, run a callback, close. The LinkedIn import and the
-MyFitnessPal fetch use it. The task runner does not; it keeps the window
-open for the whole task and lets the person step in.
+signed-in profile, run a callback, close. The LinkedIn import and MyFitnessPal
+fetch use it.
 
 ## Verified
 
