@@ -6,6 +6,7 @@ import { meetingInterval } from '#lib/calendarScheduler/validation.ts'
 import { calendarInstant, calendarLocal, instantNow } from '#universal/dates/nbdt/mod.ts'
 import { withGoogleBrowser } from './browserSession.ts'
 import { GoogleBrowserSignInRequired, googleBrowserSignInMessage } from './browserSignIn.ts'
+import { addCalendarGuest, calendarGuestEmails, calendarGuestRow } from './calendarGuests.ts'
 import { formDate, formTime, zoomMeetingUrl } from './createCalendarMeeting.ts'
 
 const emails = (guests: { email: string }[]) => [...new Set(guests.map((guest) => guest.email.toLowerCase()))].sort()
@@ -73,10 +74,7 @@ async function readTiming(page: Page) {
 }
 
 async function verifyGuests(page: Page, event: CalendarEventSnapshot, fields: CalendarEventFields) {
-  const actual = await page
-    .getByRole('tabpanel', { name: 'Guests', exact: true })
-    .locator('[role="treeitem"][data-email]')
-    .evaluateAll((items) => items.map((item) => item.getAttribute('data-email')!.toLowerCase()))
+  const actual = await calendarGuestEmails(page)
   const ignored = new Set([event.ref.account.toLowerCase(), event.ref.calendarId.toLowerCase()])
   const expected = [...emails(fields.guests), ...event.resourceEmails].filter((email) => !ignored.has(email))
   if (!same([...new Set(actual.filter((email) => !ignored.has(email)))].sort(), [...new Set(expected)].sort()))
@@ -166,22 +164,13 @@ export async function prepareCalendarEventUpdate(
   for (const email of emails(event.fields.guests)) {
     if (wanted.has(email)) continue
     // data-email is the exact identity; visible names are allowed to collide.
-    const exactRow = page.locator(`[role="treeitem"][data-email=${JSON.stringify(email)}]`)
+    const exactRow = calendarGuestRow(page, email)
     await exactRow.getByRole('button', { name: /remove/i }).click()
   }
   const existing = new Set(emails(event.fields.guests))
   for (const guest of fields.guests) {
     if (existing.has(guest.email.toLowerCase())) continue
-    const input = page.getByRole('combobox', { name: 'Guests', exact: true })
-    await input.fill(guest.email)
-    await input.press('Enter')
-    await page.waitForFunction(
-      (email) =>
-        [...document.querySelectorAll('[role="treeitem"][data-email]')].some(
-          (item) => item.getAttribute('data-email')?.toLowerCase() === email.toLowerCase(),
-        ),
-      guest.email,
-    )
+    await addCalendarGuest(page, guest.email)
   }
   await verifyGuests(page, event, fields)
   await preserveConference(page, event)

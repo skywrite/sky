@@ -6,6 +6,7 @@ import { getEvent, listEvents, type CalendarEvent } from '#lib/google/calendar.t
 import type { GoogleClient } from '#lib/google/client.ts'
 import { calendarInstant, calendarNow, instantNow, PlainDate } from '#universal/dates/nbdt/mod.ts'
 import { GoogleBrowserSignInRequired, googleBrowserSignInMessage } from './browserSignIn.ts'
+import { addCalendarGuest, calendarGuestEmails } from './calendarGuests.ts'
 import { calendarRecurrenceMatches, calendarRepeatSummaryMatches } from './calendarRecurrence.ts'
 import { prepareCalendarRecurrence } from './calendarRecurrenceEditor.ts'
 
@@ -155,22 +156,8 @@ export async function prepareCalendarMeeting(page: Page, meeting: CalendarMeetin
   ) {
     throw new Error('Calendar did not keep the agenda. Nothing was saved.')
   }
-  for (const guest of meeting.guests) {
-    const input = page.getByRole('combobox', { name: 'Guests', exact: true })
-    await input.fill(guest.email)
-    await input.press('Enter')
-    await page.waitForFunction(
-      (email) =>
-        [...document.querySelectorAll('[role="treeitem"][data-email]')].some(
-          (item) => item.getAttribute('data-email')?.toLowerCase() === email.toLowerCase(),
-        ),
-      guest.email,
-    )
-  }
-  const guests = await page
-    .getByRole('tabpanel', { name: 'Guests', exact: true })
-    .locator('[role="treeitem"][data-email]')
-    .evaluateAll((items) => items.map((item) => item.getAttribute('data-email')!.toLowerCase()))
+  for (const guest of meeting.guests) await addCalendarGuest(page, guest.email)
+  const guests = await calendarGuestEmails(page)
   const actual = [...new Set(guests)].filter((email) => email !== meeting.account.toLowerCase()).sort()
   const expected = meeting.guests.map((guest) => guest.email.toLowerCase()).sort()
   if (JSON.stringify(actual) !== JSON.stringify(expected))
