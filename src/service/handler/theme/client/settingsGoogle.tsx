@@ -601,7 +601,7 @@ function CalendarBlock({ settings, onChanged }: { settings: SettingsData | null;
               <span className="sky-set-line">
                 {status || warn ? (
                   <>
-                    Needs a working TypeSafe API key. <a href="/settings/connections">Set up TypeSafe</a>.
+                    Needs a working TypeSafe API key. <a href="/settings/connections/typesafe">Set up TypeSafe</a>.
                   </>
                 ) : (
                   'Checking the TypeSafe connection…'

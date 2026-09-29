@@ -268,6 +268,29 @@ function del(app: App, url: string): Promise<Response> {
   return Promise.resolve(app.request(url, { method: 'DELETE' }))
 }
 
+test('connections account discovery does not read unrelated secret values', async () => {
+  const { app, secrets } = hostWith()
+  const reads: string[] = []
+  const get = secrets.get.bind(secrets)
+  secrets.get = async (category, name) => {
+    reads.push(category)
+    return get(category, name)
+  }
+  const response = await app.request('/?accountsOnly=true')
+  const data = (await response.json()) as ConnectionsData
+  assert({
+    given: 'the account page over a Keychain containing other credentials',
+    should: 'retain account grants without reading generic secret bodies',
+    actual: [
+      response.status,
+      data.google.accounts.length,
+      data.secrets,
+      reads.every((category) => category === 'google'),
+    ],
+    expected: [200, 1, [], true],
+  })
+})
+
 test({ name: 'connections route - the payload is presence, never a value' }, async () => {
   const { app } = hostWith()
   const response = await app.request('/')

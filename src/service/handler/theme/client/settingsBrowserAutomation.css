@@ -1,0 +1,176 @@
+.sky-browser-managers .sky-block-pad {
+  padding-top: 0;
+}
+.sky-browser-manager-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 18px 0;
+}
+.sky-browser-manager-row + .sky-browser-manager-row {
+  border-top: 1px solid var(--sky-border-soft);
+}
+.sky-cred-provider-icon {
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border-radius: 13px;
+  flex: none;
+  background: var(--sky-bg);
+  border: 1px solid var(--sky-border-soft);
+  color: var(--sky-text-2);
+}
+.sky-cred-provider-icon[data-provider='1password'] {
+  background: #eaf2ff;
+  border-color: #dce7f8;
+  color: #2463b4;
+}
+.sky-browser-manager-copy {
+  flex: 1;
+  min-width: 0;
+}
+.sky-browser-manager-title {
+  font-weight: 550;
+  font-size: 18px;
+  line-height: 1.4;
+}
+.sky-browser-manager-sub {
+  color: var(--sky-dim);
+  font-size: 15px;
+  margin-top: 3px;
+  overflow-wrap: anywhere;
+}
+.sky-browser-manager-actions,
+.sky-browser-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.sky-browser-help {
+  font-size: 15px;
+  color: var(--sky-dim);
+  line-height: 1.65;
+  margin: 12px 0 0;
+}
+.sky-browser-lead {
+  font-size: 17px;
+  color: var(--sky-text-2);
+  line-height: 1.65;
+  margin: 0 0 24px;
+}
+.sky-browser-form {
+  display: grid;
+  gap: 18px;
+}
+.sky-browser-form p {
+  margin: 0;
+}
+.sky-browser-form [role='status'] {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.sky-browser-error {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  color: var(--sky-action-danger);
+}
+.sky-browser-error span {
+  flex: 1;
+}
+.sky-browser-link {
+  color: var(--sky-accent);
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.sky-browser-link:focus-visible {
+  outline: 2px solid var(--sky-action-focus);
+  outline-offset: 3px;
+}
+.sky-browser-account {
+  padding-bottom: 24px;
+}
+.sky-browser-account + .sky-browser-account {
+  border-top: 1px solid var(--sky-border-soft);
+}
+.sky-browser-vaults {
+  margin: 6px 0 22px 60px;
+  display: grid;
+  gap: 16px;
+}
+.sky-browser-confirm {
+  padding: 16px;
+  border-radius: 12px;
+  background: var(--sky-action-danger-soft);
+  font-size: 15px;
+  margin-top: 12px;
+}
+.sky-browser-confirm p {
+  margin: 0 0 12px;
+}
+.sky-browser-provider-setup {
+  padding: 18px 20px;
+  border-radius: 12px;
+  background: var(--sky-side);
+  color: var(--sky-text-2);
+  font-size: 15px;
+  line-height: 1.6;
+}
+.sky-browser-provider-setup strong {
+  color: var(--sky-text);
+  font-weight: 550;
+}
+.sky-browser-provider-setup p {
+  font-size: inherit;
+  margin: 8px 0 12px;
+}
+.sky-browser-provider-setup ul {
+  margin: 12px 0;
+  padding-left: 20px;
+}
+.sky-browser-provider-setup li + li {
+  margin-top: 12px;
+}
+.sky-browser-provider-setup li span {
+  display: block;
+}
+[data-mantine-color-scheme='dark'] .sky-cred-provider-icon[data-provider='1password'] {
+  background: #21344e;
+  border-color: #304968;
+  color: #96bce8;
+}
+@media (max-width: 600px) {
+  .sky-browser-manager-row {
+    display: grid;
+    grid-template-columns: 44px minmax(0, 1fr);
+    column-gap: 12px;
+    row-gap: 8px;
+  }
+  .sky-browser-manager-row > .sky-cred-provider-icon {
+    grid-column: 1;
+    grid-row: 1 / 3;
+    align-self: start;
+  }
+  .sky-browser-manager-copy,
+  .sky-browser-manager-actions,
+  .sky-browser-manager-row > .sky-set-off {
+    grid-column: 2;
+  }
+  .sky-browser-manager-title {
+    font-size: 17px;
+  }
+  .sky-browser-manager-sub {
+    font-size: 14px;
+  }
+  .sky-browser-vaults {
+    margin-left: 0;
+  }
+}

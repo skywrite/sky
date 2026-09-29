@@ -1,6 +1,6 @@
 ---
 created: 2026-08-30
-updated: 2026-09-27
+updated: 2026-09-29
 ---
 
 # Settings — the web's settings section
@@ -20,7 +20,8 @@ People & Orgs appears above the Settings heading in this sidebar. Its pages and
 record storage are owned by [People & Orgs](../../people/docs/README.md).
 
 Settings use one level of navigation: Appearance; Me (About me, Writing style);
-AI (Models, Audio transcription, Voice, Prompts); Connections; Extensions; Notebook; Advanced; Experimental; About Sky.
+AI (Models, Audio transcription, Voice, Prompts); Connections; Browser automation;
+Extensions; Notebook; Advanced; Experimental; About Sky.
 Group labels open their first page; the adjacent disclosure toggles their children.
 `theme/client/settingsRoutes.ts` owns canonical paths and legacy aliases, including
 prompt detail paths. Existing `/settings/ai`, `/settings/voice`,
@@ -77,12 +78,16 @@ Pages:
   customizations used by the runtime loader. New prompt and Restore built-in are
   available. See the [prompt library design](../../../../_shared-ts/prompts/docs/README.md)
   for storage, references, conflict handling, and runtime behavior.
-- **Connections** — the keychain's page (`connections.ts`, its host in
+- **Connections** — account integrations (`connections.ts`, its host in
   `createConnectionsHost.ts`, the pane in `theme/client/settingsConnections.tsx`).
+  Google, Slack and Beeper retain their existing setup and account management.
+  API keys stay with their integrations; the TypeSafe service row links to
+  its validated key setup. Accounts that lose
+  Keychain access retain their contextual Restore access action.
   Since 2026-09-16 the Accounts block carries a Beeper row: Connect runs
   the desktop app's own approval page and stores the grant as
   `beeper/desktop`, a token made in Beeper is accepted instead, and its
-  grant stays out of the keychain list below. See `lib/beeper/docs/README.md`.
+  grant stays managed by the connection. See `lib/beeper/docs/README.md`.
   Since 2026-09-22 a connected Beeper row reads which networks are saved
   and which wait, and leads to Beeper's own page.
 - **Connections → Beeper** — `/settings/connections/beeper`, the first
@@ -117,30 +122,23 @@ Pages:
   account the side of the day its saved mail is filed under. The choice is
   `google.accountCategories` in `config.jsonc`, keyed by lower-case email; see
   `commands/all/google/email/docs/README.md`.
-  Since 2026-09-17 the Keychain card opens with a TypeSafe API key row:
-  Add pastes the key, the service asks TypeSafe to list its models with
-  it, and only an accepted key is stored as `typesafe/main`; the row says
-  Connected, Refused (TypeSafe no longer takes the stored key) or Not
-  set, with the models the key may use, and the raw entry stays out of
-  the list below. See `_shared-ts/ai/docs/2026-09-17-typesafe-jev.md`.
-  Two cards. Accounts: Slack as agent-slack reports it (its test, and a
-  Brave re-import when the test fails — `sky slack:auth`'s two moves,
-  shared through `commands/all/slack/lib/authStatus.ts`); every Google
-  account with what its grant covers (Mail, Calendar, Drive, Docs — read
-  off the token's scopes); and the Google Cloud client Sky signs in as. A
-  sign-in runs `sky google:auth`'s loopback flow inside the service: the
-  consent page opens in a browser tab, the redirect lands on 127.0.0.1 on
-  the machine the service runs on, and the page asks after the sign-in by
-  id until it is done. Keychain: every other entry, complete — the
-  `secrets:list`, `secrets:set` and `secrets:delete` of the terminal over
-  the same store. A row reads in plain words: a key stored under a
-  provider's name is "<Provider> API key"; a login shows its username; a
-  key long enough shows its last four characters, so two keys can be
-  told apart. The store's filler name for a category's single entry
-  (`KEY_ENTRY_NAME`) is filled in for a blank name and never printed.
-  Change and Remove on each row (every remove asks twice), and a form to
-  add one as a key/token or a login. Presence only: a value never comes
-  back out whole.
+- **Browser automation** — `/settings/browser-automation`: password manager
+  setup, native approval for supported password logins, and the manual handoff
+  for other authentication steps. One 1Password row groups
+  accounts; Manage shows saved vaults and optional exclusions. Connect discovers
+  local accounts and starts native approval without an account-entry form.
+  Setup instructions appear only after a connection failure. All accessible
+  vaults are included by default. Settings reads saved metadata without contacting
+  providers; Refresh vaults is explicit. Apple Passwords is marked unavailable:
+  storing Sky's API keys in Keychain does not supply Apple Passwords login access.
+  The old `/settings/credentials` page resolves here. Provider contracts remain
+  in [credential providers](../../../../lib/credentials/docs/README.md).
+- **Connections → TypeSafe** — `/settings/connections/typesafe`: the existing
+  validated key setup. Only an accepted key is stored as `typesafe/main`; the
+  row reports Connected, Refused or Not set, and the models the key may use.
+  Google setup and Connections link here; the former `/settings/credentials/typesafe`
+  link remains supported. See
+  `_shared-ts/ai/docs/2026-09-17-typesafe-jev.md`.
 - **Extensions** — `/settings/extensions`: the installed extensions, each
   with its version, author, categories, or why it did not load, a switch,
   and Reload. An extension with a settings screen opens at
@@ -190,7 +188,38 @@ The service process keeps its boot-time `#config`; everything the page
 serves is read fresh per request (`load()`), and the voice is resolved
 per session, so no restart is needed for any settable key.
 
-### Writes into the keychain
+### Password manager setup boundary
+
+`createBrowserAutomationHost.ts` supplies account discovery and a vault-only
+inspection function. Its host cannot list items, read fields, generate codes,
+or modify provider items. `GET /settings/_api/browser-automation` reads saved
+account/vault metadata only, including after restart or provider locking.
+Native SDKs can renew authorization internally, so even a vault listing belongs
+behind an explicit Connect or Refresh action, never a Settings page load.
+
+The setup API supports Connect, Refresh, Disconnect, vault exclusions, and opening
+1Password settings. Responses are not cached and provider errors are sanitized.
+The entire former `/settings/_api/credentials` API returns 410, including secret
+reads, OTP, inspection and generic mutations. Keeping a reveal endpoint while
+removing its UI would preserve the original exposure.
+
+Saved setup is **not authorization to use a credential or an authenticated browser**.
+The page reports native approval availability for configured accounts on macOS;
+there is no API or setting that approves a task or drives the browser. The
+[private browser worker](../../../../lib/browser/docs/README.md#credential-backed-tasks)
+enforces independent native approval for each site's login and owns an isolated
+task session. Local-request checks alone are not that boundary. Provider access
+during setup does not establish it either.
+
+`state/credentials/sources.json` remains at its existing path to preserve account
+identities and exclusions. The old destination field is accepted for compatibility,
+never exposed or used. The library's bindings file is left alone. State uses strict
+schemas, a process lock and atomic owner-only writes. Invalid state is reported
+rather than silently reset. `lib/credentials/passwordManagers.ts` owns this shared
+preference schema; the settings host and private browser read the same rules.
+No secret or session token is persisted here.
+
+### Existing connection and Keychain setup routes
 
 Keychain timeouts, background access, and the explicit Restore access action
 follow the [shared Keychain contract](../../../../lib/secrets/docs/README.md).
@@ -209,22 +238,16 @@ TypeSafe first and stores the key only when it is accepted, else 400 with
 the reason; `DELETE typesafe` removes it. Names are
 `SECRET_CATEGORY` / `SECRET_NAME` — letters, digits, dots, dashes, underscores, and
 for names `@` and `+`, since an account email is a name; a blank name
-becomes the filler. Values are never read back whole: `GET connections`
+becomes the filler. Values are never read back whole through these legacy routes: `GET connections`
 answers the index plus, for a login, its username, and for a long key,
-its last four characters.
+its last four characters. The Connections page requests `?accountsOnly=true`,
+which skips generic secret reads. The legacy list remains compatible with
+existing API consumers; Browser automation does not consume it.
 
-The form and write route share the pure rules in `secretValidation.ts`.
-Each edited or blurred field validates locally: its outline and message
-update as the person types, without a request or moving focus. Untouched
-fields start quiet; a blank optional name is valid. Save is disabled until
-the visible fields are valid. Changing between a key and a login checks
-only the fields that apply to that kind.
-
-The route also validates and returns `{ field, message }` with status 400.
-For a server rejection, the form highlights and focuses that input and
-places the message directly below it. Connection and keychain failures
-remain form-level alerts. The browser never infers a field from an error's
-wording; all entered values remain available to correct and retry.
+The legacy write route validates with the pure rules in
+`secretValidation.ts` and returns `{ field, message }` with status 400
+for invalid input. Service-specific setup forms own their validation
+and error presentation.
 
 ## The host seam
 
@@ -232,17 +255,20 @@ wording; all entered values remain available to correct and retry.
 machine: config snapshot, voices, model rows, editor detection, memory
 count, git build, write, reveal (`open`, macOS), and `connections` — a
 `ConnectionsHost`: the keychain (`SecretsProvider`), the environment,
-the keyed providers, Google's sign-in, agent-slack. Tests script every
-part; nothing in the route tests touches the real machine or the real
-keychain — the connections tests run over `TestSecretsProvider`.
+the keyed providers, Google's sign-in, agent-slack. Its `browserAutomation` host
+owns password manager setup metadata only. Tests
+script every part; route and browser tests use fake SDK clients and
+`TestSecretsProvider`, never real accounts or the real Keychain.
 
 ## Where each kind of setting lives (ruled 2026-08-30)
 
 | Kind | Home |
 | --- | --- |
 | Preferences and app wiring | `~/.sky/config.jsonc` — readable, shareable |
-| Account credentials | the keychain, through `context.secrets` — the Connections page |
+| Account integration grants | the keychain, through `context.secrets`; managed by Connections |
+| Website logins, passkeys and verification codes | the user's password manager; no inventory or secret reads in Settings |
+| Password manager setup preferences | `state/credentials/sources.json` — metadata only, not sign-in authorization |
 | Provider API keys | the keychain, under the provider's name (Cerebras and TypeSafe read their entries; TypeSafe's has a row of its own, checked with TypeSafe); `src/.env` is still what OpenAI and Anthropic read, and the page does not show those — keychain-first for them is the open rung |
 
-The config file stays free of secrets. This page never shows a key or
-a credential; Connections shows presence, never values.
+The config file stays free of secrets. Connections shows presence, usernames
+and key tails. Settings has no endpoint for revealing stored credential values.

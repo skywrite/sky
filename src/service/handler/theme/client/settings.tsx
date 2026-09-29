@@ -6,9 +6,9 @@
  * ~/.sky/config.jsonc through the service and applied on the spot:
  * theme and text size to this page, the voice to the next call. The
  * Advanced pane keeps the whole file readable — every key, its value,
- * and where it came from. Connections is the keychain's page — accounts
- * and keys, presence only — in settingsConnections.tsx. Experimental
- * holds opt-in features still taking shape.
+ * and where it came from. Connections manages account integrations;
+ * Browser automation manages password manager setup without exposing saved credentials.
+ * Experimental holds opt-in features still taking shape.
  */
 
 import { Button, SegmentedControl, Select, useMantineColorScheme } from '@mantine/core'
@@ -18,7 +18,8 @@ import { ExtensionsPane } from './extensions.tsx'
 import { AboutMePane } from './settingsAboutMe.tsx'
 import { BeeperMain } from './settingsBeeper.tsx'
 import { Block, mono, refusalOf, Row, UNREACHABLE } from './settingsBlocks.tsx'
-import { ConnectionsPane } from './settingsConnections.tsx'
+import { BrowserAutomationMain } from './settingsBrowserAutomation.tsx'
+import { ConnectionsPane, TypeSafeMain } from './settingsConnections.tsx'
 import { GoogleMain } from './settingsGoogle.tsx'
 import { AIPane } from './settingsModels.tsx'
 import { PromptsMain } from './settingsPrompts.tsx'
@@ -450,7 +451,7 @@ function ExperimentalPane({ data, change }: { data: SettingsData; change: Return
       </Row>
       <Row
         label="Jev drives the browser"
-        sub="On by default. When Sky does a task in the browser, Jev picks each move from a table of what is on the page, in a fraction of a second, and your reasoning model reads the page when Jev is stuck, types into fields, checks the files, and writes the report. Needs your TypeSafe API key, under Credentials. Off hands the browser to your reasoning model instead."
+        sub="On by default. When Sky does a task in the browser, Jev picks each move from a table of what is on the page, in a fraction of a second, and your reasoning model reads the page when Jev is stuck, types into fields, checks the files, and writes the report. Needs your TypeSafe API key, under Connections. Off hands the browser to your reasoning model instead."
       >
         <SegmentedControl
           aria-label="Jev drives the browser"
@@ -734,10 +735,12 @@ export function SettingsMain({
 }) {
   const { data, note, change, reload } = useSettings()
   const page = SETTINGS_PAGES[section]
+  if (section === 'browser-automation') return <BrowserAutomationMain navigate={navigate} back={back} />
   if (section === 'prompts') return <PromptsMain path={path} navigate={navigate} back={back} />
   if (section === 'connections' && connectionPageOf(path) === 'beeper') return <BeeperMain navigate={navigate} />
   if (section === 'connections' && connectionPageOf(path) === 'google')
     return <GoogleMain navigate={navigate} settings={data} onSettingsChanged={reload} />
+  if (section === 'connections' && connectionPageOf(path) === 'typesafe') return <TypeSafeMain navigate={navigate} />
 
   return (
     <div className="sky-main">

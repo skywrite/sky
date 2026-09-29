@@ -14,6 +14,7 @@ import { loadSkyConfig, readSkyConfigFile, SKY_CONFIG_PATH } from '#shared/confi
 import { removeConfigValue, setConfigValue } from '#shared/config/write.ts'
 import { createPromptCatalog } from '#shared/prompts/load.ts'
 import { createAboutMeHost } from './createAboutMeHost.ts'
+import { createBrowserAutomationHost } from './createBrowserAutomationHost.ts'
 import { createConnectionsHost } from './createConnectionsHost.ts'
 import {
   BOOLEAN_KEYS,
@@ -45,6 +46,7 @@ function aboutBuild(): Promise<{ version: string | null; date: string | null }> 
 
 /** The settings page over the real machine: the file, the preferences, the keychain, git, Finder. */
 export function createSettingsHost(): SettingsRoutesOptions {
+  const connections = createConnectionsHost()
   return {
     macWhisperModels: getMacWhisperModels,
     load: () => ({
@@ -106,7 +108,8 @@ export function createSettingsHost(): SettingsRoutesOptions {
       setConfigValue(['google', 'accountCategories', email], category)
       return Promise.resolve()
     },
-    connections: createConnectionsHost(),
+    connections,
+    browserAutomation: createBrowserAutomationHost(),
     aboutMe: createAboutMeHost(notebookConfig),
     prompts: createPromptCatalog(),
     writingVoice: createWritingLessons(notebookConfig),

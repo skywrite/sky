@@ -103,14 +103,14 @@ test(
         const refreshPending = new Promise<void>((resolve) => {
           finishRefresh = resolve
         })
-        await page.route('**/settings/_api/connections', async (route) => {
+        await page.route('**/settings/_api/connections?accountsOnly=true', async (route) => {
           if (recovered) await refreshPending
           await route.fulfill({
             json: {
               ...(recovered ? {} : { accessError: 'Keychain access needs your attention.' }),
               google: {
                 client: true,
-                accounts: [{ email: 'jane@example.com', grants: recovered ? ['Mail', 'Calendar'] : [] }],
+                accounts: [{ email: 'jane@example.com', grants: recovered ? ['Mail', 'Calendar'] : [], missing: [] }],
                 setup: [],
               },
               secrets: [],
@@ -118,6 +118,9 @@ test(
           })
         })
         await page.route('**/settings/_api/connections/slack', (route) => route.fulfill({ json: { installed: false } }))
+        await page.route('**/settings/_api/connections/beeper', (route) =>
+          route.fulfill({ json: { running: false, connected: false, accounts: [] } }),
+        )
         let restores = 0
         let finish!: () => void
         await page.route('**/settings/_api/connections/restore', async (route) => {
@@ -166,7 +169,7 @@ test(
         await restore.click()
         await page.getByRole('status').getByText('Restoring access…', { exact: false }).waitFor()
         await retryRequest
-        const refreshing = page.waitForRequest('**/settings/_api/connections')
+        const refreshing = page.waitForRequest('**/settings/_api/connections?accountsOnly=true')
         finish()
         await refreshing
         assert({

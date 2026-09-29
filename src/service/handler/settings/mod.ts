@@ -1,12 +1,10 @@
 /**
  * Settings — the app's preferences as a page, one section at a time.
  *
- * The page is mainstream-shaped: Appearance, Voice, AI, Connections,
- * Notebook, Advanced, About. What a person changes here is written back
- * to ~/.sky/config.jsonc (comments preserved); what is shown is read
- * fresh on every request. Connections — accounts and keys — is the
- * keychain's page, in connections.ts: presence in, presence out, never
- * a value.
+ * Preferences are written back to ~/.sky/config.jsonc (comments preserved)
+ * and read fresh on every request. Connections owns account integrations;
+ * Browser automation owns password manager setup. Credential values have no
+ * read API and stay in their provider, outside configuration.
  *
  * Advanced keeps the earlier configuration view: every key with its
  * value and where it came from — the file, a default, or an environment
@@ -29,6 +27,8 @@ import type { GoogleAccountCategory, SkyConfig } from '#shared/config/types.ts'
 import type { PromptCatalog } from '#shared/prompts/catalog.ts'
 import { isEffort, optionsWithEffort } from '#universal/ai/effort.ts'
 import { createAboutMeRoutes, type AboutMeHost } from './aboutMe.ts'
+import type { BrowserAutomationHost } from './browserAutomation/host.ts'
+import { createBrowserAutomationRoutes } from './browserAutomation/routes.ts'
 import { type ConnectionsHost, createConnectionsRoutes } from './connections.ts'
 import { createPromptRoutes } from './prompts.ts'
 import { createWritingVoiceRoutes } from './writingVoice.ts'
@@ -309,8 +309,10 @@ export interface SettingsHost {
   writeAccountCategory: (email: string, category: GoogleAccountCategory) => Promise<void>
   /** Opens a folder, or the config file, on this machine */
   reveal: (target: RevealTarget) => Promise<void>
-  /** Accounts and keys over the keychain; absent, /connections is not served */
+  /** Account integrations and their compatible setup routes. */
   connections?: ConnectionsHost
+  /** Password manager setup only; never credential use or browser control. */
+  browserAutomation?: BrowserAutomationHost
   prompts?: PromptCatalog
   writingVoice?: WritingDraftStore
   aboutMe?: AboutMeHost
@@ -452,8 +454,13 @@ export function createSettingsRoutes(options: SettingsRoutesOptions): Hono {
     }
   })
 
-  // Accounts and keys — the keychain's page, routes of its own.
+  // Integration keys and browser password manager setup have separate hosts.
   if (options.connections) app.route('/connections', createConnectionsRoutes(options.connections))
+  if (options.browserAutomation)
+    app.route('/browser-automation', createBrowserAutomationRoutes(options.browserAutomation))
+  // Retire the entire inventory API, including read/OTP and generic provider writes.
+  app.all('/credentials', (c) => c.json({ message: 'The credential inventory API has been removed.' }, 410))
+  app.all('/credentials/*', (c) => c.json({ message: 'The credential inventory API has been removed.' }, 410))
   if (options.aboutMe) app.route('/about-me', createAboutMeRoutes(options.aboutMe))
   if (options.prompts) app.route('/prompts', createPromptRoutes(options.prompts))
   if (options.writingVoice) app.route('/writing-voice', createWritingVoiceRoutes(options.writingVoice))

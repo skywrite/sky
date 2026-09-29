@@ -7,6 +7,9 @@ updated: 2026-09-29
 
 This library sits alongside `lib/secrets`. Existing commands, integration setup,
 token refreshes and browser runners continue using their existing interfaces.
+The [Browser automation settings page](../../../service/handler/settings/docs/README.md)
+uses account discovery and explicit vault inspection only. It has no item
+inventory, credential reads, OTP responses, or generic provider writes.
 Importing this module does not connect an account, read a credential, prompt for
 authorization, or write configuration. The
 [private browser worker](../../browser/docs/README.md#credential-backed-tasks)

@@ -47,6 +47,12 @@ export const SETTINGS_PAGES = {
     group: null,
     description: 'Connect the accounts and services that help Sky work with you.',
   },
+  'browser-automation': {
+    label: 'Browser automation',
+    href: '/settings/browser-automation',
+    group: null,
+    description: 'How Sky works with websites and signs in with your help.',
+  },
   extensions: {
     label: 'Extensions',
     href: '/settings/extensions',
@@ -92,11 +98,14 @@ export function settingsSectionOf(path: string): SettingsSection | null {
   for (const [id, page] of Object.entries(SETTINGS_PAGES)) {
     if (
       clean === page.href ||
-      ((id === 'prompts' || id === 'connections' || id === 'extensions') && clean.startsWith(`${page.href}/`))
+      ((id === 'prompts' || id === 'connections' || id === 'browser-automation' || id === 'extensions') &&
+        clean.startsWith(`${page.href}/`))
     )
       return id as SettingsSection
   }
   if (clean === '/settings/ai') return 'models'
+  if (clean === '/settings/credentials/typesafe') return 'connections'
+  if (clean === '/settings/credentials' || clean.startsWith('/settings/credentials/')) return 'browser-automation'
   if (clean === '/settings/appearance') return 'appearance'
   if (clean === '/settings/about-me' || clean === '/settings/me/about') return 'about-me'
   if (clean === '/settings/voice') return 'voice'
@@ -106,7 +115,7 @@ export function settingsSectionOf(path: string): SettingsSection | null {
 }
 
 /** The connections that have a page of their own under Connections. */
-export const CONNECTION_PAGES = ['beeper', 'google'] as const
+export const CONNECTION_PAGES = ['beeper', 'google', 'typesafe'] as const
 export type ConnectionPage = (typeof CONNECTION_PAGES)[number]
 
 export function connectionHref(page: ConnectionPage): string {
@@ -115,6 +124,7 @@ export function connectionHref(page: ConnectionPage): string {
 
 export function connectionPageOf(path: string): ConnectionPage | null {
   const clean = path.replace(/\/$/, '')
+  if (clean === '/settings/credentials/typesafe') return 'typesafe'
   return CONNECTION_PAGES.find((page) => clean === connectionHref(page)) ?? null
 }
 

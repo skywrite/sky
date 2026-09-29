@@ -1,21 +1,17 @@
 /**
- * Connections — the accounts and keys Sky signs in with, as a page.
+ * Connections — the account integrations Sky signs in with.
  *
- * The page sees presence only: which keychain entries exist, and for whom.
- * A value goes in through a form and never comes back out — a key shows its
- * last four characters, so two keys can be told apart. A Google account
- * signs in here the way `sky google:auth` does in the terminal: the consent
+ * A Google account signs in here the way `sky google:auth` does: the consent
  * page opens in a tab, and Sky's service receives the redirect on this
  * machine. Slack is agent-slack's: its test is shown, a re-import offered.
- * Beeper Desktop approves Sky on its own page, opened from here. TypeSafe's
- * key is checked with TypeSafe before it goes in, and the row says whether
- * TypeSafe still takes it.
+ * Beeper Desktop approves Sky on its own page, opened from here. API keys
+ * belong to their integrations; TypeSafe validates its key before storage.
  */
 
-import { Button, PasswordInput, SegmentedControl, TextInput } from '@mantine/core'
+import { Button, PasswordInput, TextInput } from '@mantine/core'
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
-import { SECRET_FIELDS, secretFieldError, type SecretField } from '../../settings/secretValidation.ts'
 import { Block, mono, refusalOf, Row, UNREACHABLE } from './settingsBlocks.tsx'
+import { ConnectionPage } from './settingsConnectionPage.tsx'
 import { connectionHref } from './settingsRoutes.ts'
 
 // ── What the service answers (mirrors handler/settings/connections.ts) ──
@@ -96,20 +92,13 @@ export function postJson(url: string, body: unknown): Promise<Response | null> {
   }).catch(() => null)
 }
 
-/** One keychain entry, gone. Resolves to null, or to what went wrong. */
-function removeSecret(category: string, name: string): Promise<string | null> {
-  return fetch(`${API}/secret/${encodeURIComponent(category)}/${encodeURIComponent(name)}`, { method: 'DELETE' })
-    .catch(() => null)
-    .then(refusalOf)
-}
-
 export function useConnections() {
   const [data, setData] = useState<ConnectionsData | null>(null)
   const [note, setNote] = useState<string | null>(null)
 
   const reload = useCallback(async () => {
     try {
-      const r = await fetch(API)
+      const r = await fetch(`${API}?accountsOnly=true`)
       if (r.ok) {
         const next = (await r.json()) as ConnectionsData
         setData(next)
@@ -478,197 +467,6 @@ function AccountsBlock({ data, navigate }: { data: ConnectionsData; navigate: (t
   )
 }
 
-// ── A keychain entry, written ───────────────────────────────────────
-
-function SecretForm({
-  category,
-  name,
-  type,
-  valueLabel,
-  onDone,
-  onCancel,
-}: {
-  /** With `name`, the entry is fixed — the form only takes its value */
-  category?: string
-  name?: string
-  /** Fixed, the form offers no choice of type */
-  type?: 'secret' | 'login'
-  valueLabel?: string
-  onDone: () => void
-  onCancel: () => void
-}) {
-  const fixed = Boolean(category && name)
-  const [cat, setCat] = useState(category ?? '')
-  const [which, setWhich] = useState(name ?? '')
-  const [kind, setKind] = useState<'secret' | 'login'>(type ?? 'secret')
-  const [value, setValue] = useState('')
-  const [user, setUser] = useState('')
-  const [pass, setPass] = useState('')
-  const [warn, setWarn] = useState<string | null>(null)
-  const [invalid, setInvalid] = useState<{ field: SecretField; message: string } | null>(null)
-  const [touched, setTouched] = useState<Partial<Record<SecretField, boolean>>>({})
-  const [busy, setBusy] = useState(false)
-  const form = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    if (invalid) form.current?.querySelector<HTMLInputElement>(`input[name="${invalid.field}"]`)?.focus()
-  }, [invalid])
-
-  const values = { category: cat, name: which, value, user, pass }
-  const active: SecretField[] = [
-    ...(fixed ? [] : (['category', 'name'] as const)),
-    ...(kind === 'secret' ? (['value'] as const) : (['user', 'pass'] as const)),
-  ]
-  const firstInvalid = active.find((field) => secretFieldError(field, values[field]))
-  const touch = (field: SecretField) => setTouched((current) => ({ ...current, [field]: true }))
-  const fieldProps = (field: SecretField) => {
-    const error =
-      (touched[field] ? secretFieldError(field, values[field]) : null) ??
-      (invalid?.field === field ? invalid.message : undefined)
-    return {
-      name: field,
-      error,
-      'aria-invalid': Boolean(error) || undefined,
-      disabled: busy,
-      onBlur: () => touch(field),
-    }
-  }
-  const edited = (field: SecretField) => {
-    touch(field)
-    setInvalid((current) => (current?.field === field ? null : current))
-    setWarn(null)
-  }
-
-  const ready = firstInvalid === undefined
-
-  const save = async () => {
-    if (busy) return
-    if (firstInvalid) {
-      touch(firstInvalid)
-      form.current?.querySelector<HTMLInputElement>(`input[name="${firstInvalid}"]`)?.focus()
-      return
-    }
-    setBusy(true)
-    setWarn(null)
-    setInvalid(null)
-    const target = { category: cat, ...(which.trim() ? { name: which } : {}) }
-    const body = kind === 'secret' ? { ...target, type: kind, value } : { ...target, type: kind, user, pass }
-    const response = await postJson(`${API}/secret`, body)
-    const detail =
-      response?.status === 400
-        ? ((await response
-            .clone()
-            .json()
-            .catch(() => null)) as { field?: unknown } | null)
-        : null
-    const refusal = await refusalOf(response)
-    setBusy(false)
-    if (refusal) {
-      const field = SECRET_FIELDS.find((field) => field === detail?.field)
-      if (field && !(fixed && (field === 'category' || field === 'name'))) setInvalid({ field, message: refusal })
-      else setWarn(refusal)
-    } else onDone()
-  }
-
-  return (
-    <div className="sky-set-form" ref={form}>
-      {!fixed && (
-        <div className="sky-set-form-grid">
-          <TextInput
-            {...fieldProps('category')}
-            size="sm"
-            label="What it is for"
-            value={cat}
-            onChange={(e) => {
-              setCat(e.currentTarget.value)
-              edited('category')
-            }}
-            placeholder="cerebras, notion, email…"
-            classNames={{ input: 'sky-set-mono-input' }}
-          />
-          <TextInput
-            {...fieldProps('name')}
-            size="sm"
-            label="Which one (optional)"
-            value={which}
-            onChange={(e) => {
-              setWhich(e.currentTarget.value)
-              edited('name')
-            }}
-            placeholder="personal, work — or leave blank"
-            classNames={{ input: 'sky-set-mono-input' }}
-          />
-        </div>
-      )}
-      {!type && (
-        <SegmentedControl
-          size="xs"
-          disabled={busy}
-          value={kind}
-          onChange={(v) => {
-            setKind(v as 'secret' | 'login')
-            setInvalid((current) => (current?.field === 'category' || current?.field === 'name' ? current : null))
-            setWarn(null)
-          }}
-          data={[
-            { value: 'secret', label: 'Key or token' },
-            { value: 'login', label: 'Login' },
-          ]}
-        />
-      )}
-      {kind === 'secret' ? (
-        <PasswordInput
-          {...fieldProps('value')}
-          size="sm"
-          label={valueLabel ?? 'Value'}
-          value={value}
-          onChange={(e) => {
-            setValue(e.currentTarget.value)
-            edited('value')
-          }}
-          placeholder="Paste it here"
-        />
-      ) : (
-        <div className="sky-set-form-grid">
-          <TextInput
-            {...fieldProps('user')}
-            size="sm"
-            label="Username"
-            value={user}
-            onChange={(e) => {
-              setUser(e.currentTarget.value)
-              edited('user')
-            }}
-          />
-          <PasswordInput
-            {...fieldProps('pass')}
-            size="sm"
-            label="Password"
-            value={pass}
-            onChange={(e) => {
-              setPass(e.currentTarget.value)
-              edited('pass')
-            }}
-          />
-        </div>
-      )}
-      {warn && (
-        <p className="sky-set-warn" role="alert">
-          {warn}
-        </p>
-      )}
-      <div className="sky-set-form-foot">
-        <Button size="sm" variant="primary" disabled={busy || !ready} onClick={() => void save()}>
-          Save to keychain
-        </Button>
-        <Button size="sm" disabled={busy} onClick={onCancel}>
-          Cancel
-        </Button>
-      </div>
-    </div>
-  )
-}
-
 // ── TypeSafe: the key for Jev, checked with TypeSafe ────────────────
 
 export function useTypeSafe() {
@@ -723,7 +521,7 @@ export function useTypeSafe() {
   return { status, busy, warn, hint, saveKey, remove }
 }
 
-function TypeSafeRow({ last }: { last: boolean }) {
+export function TypeSafeRow({ last }: { last: boolean }) {
   const { status, busy, warn, hint, saveKey, remove } = useTypeSafe()
   const [form, setForm] = useState(false)
   const [key, setKey] = useState('')
@@ -829,78 +627,21 @@ function TypeSafeRow({ last }: { last: boolean }) {
   )
 }
 
-// ── The keychain: every entry, by name ──────────────────────────────
-
-function KeychainBlock({ secrets, reload }: { secrets: SecretRow[]; reload: () => void }) {
-  const [editing, setEditing] = useState<'new' | string | null>(null)
-  const [confirming, setConfirming] = useState<string | null>(null)
-  const [warn, setWarn] = useState<string | null>(null)
-
-  const done = () => {
-    setEditing(null)
-    reload()
-  }
-  const remove = async (row: SecretRow) => {
-    setConfirming(null)
-    setWarn(await removeSecret(row.category, row.name))
-    reload()
-  }
-
+export function TypeSafeMain({ navigate }: { navigate: (to: string) => void }) {
   return (
-    <Block
-      head="Keychain"
-      note="Everything Sky keeps in your keychain, apart from the Google entries above. Values stay there; a key shows its last four characters so you can tell which one it is."
+    <ConnectionPage
+      name="TypeSafe"
+      gives="Connect Jev’s decision models to Sky. Your API key is saved in the OS credential store."
+      navigate={navigate}
     >
-      <TypeSafeRow last={secrets.length === 0 && editing !== 'new'} />
-      {secrets.map((row, index) => {
-        const id = `${row.category}/${row.name}`
-        const open = editing === id
-        return (
-          <Fragment key={id}>
-            <Row label={row.label} sub={row.sub || undefined} last={index === secrets.length - 1 && !open}>
-              {row.tail && mono(`•••• ${row.tail}`)}
-              <Button size="compact-sm" onClick={() => setEditing(open ? null : id)}>
-                Change
-              </Button>
-              {confirming === id ? (
-                <Button size="compact-sm" variant="danger" onClick={() => void remove(row)}>
-                  Really remove
-                </Button>
-              ) : (
-                <Button size="compact-sm" onClick={() => setConfirming(id)}>
-                  Remove
-                </Button>
-              )}
-            </Row>
-            {open && (
-              <SecretForm
-                category={row.category}
-                name={row.name}
-                type={row.type}
-                valueLabel={row.type === 'secret' ? row.label : undefined}
-                onDone={done}
-                onCancel={() => setEditing(null)}
-              />
-            )}
-          </Fragment>
-        )
-      })}
-      {editing === 'new' ? (
-        <SecretForm onDone={done} onCancel={() => setEditing(null)} />
-      ) : (
-        <div className="sky-set-foot">
-          <Button size="sm" variant="primary" onClick={() => setEditing('new')}>
-            ＋ Add to keychain
-          </Button>
-        </div>
-      )}
-      {warn && <p className="sky-set-warn">{warn}</p>}
-    </Block>
+      <Block head="API key">
+        <TypeSafeRow last />
+      </Block>
+    </ConnectionPage>
   )
 }
 
-// ── The pane ────────────────────────────────────────────────────────
-
+/** Account and API key setup stays with each integration. */
 export function ConnectionsPane({ navigate }: { navigate: (to: string) => void }) {
   const { data, note, reload } = useConnections()
   const [restoring, setRestoring] = useState(false)
@@ -924,10 +665,10 @@ export function ConnectionsPane({ navigate }: { navigate: (to: string) => void }
   return (
     <>
       {note && <div className="sky-condensed">— {note} —</div>}
-      {data && (
+      {data && (data.accessError || restoring || restoreError || restoreNote) && (
         <Block
-          head="Keychain access"
-          note="Background checks stay quiet. Restore access here if macOS needs your approval."
+          head="Account access"
+          note="Restore access here if macOS needs your approval to read connected accounts."
         >
           {!restoring && (restoreError || data.accessError) && (
             <p className="sky-set-warn" role="alert">
@@ -941,12 +682,14 @@ export function ConnectionsPane({ navigate }: { navigate: (to: string) => void }
           {!restoring && restoreNote && <p role="status">{restoreNote}</p>}
         </Block>
       )}
-      {data && (
-        <>
-          <AccountsBlock data={data} navigate={navigate} />
-          <KeychainBlock secrets={data.secrets} reload={reload} />
-        </>
-      )}
+      {data && <AccountsBlock data={data} navigate={navigate} />}
+      <Block head="Services">
+        <Row label="TypeSafe" sub="Jev’s decision model. Configure its API key." last>
+          <Button size="compact-sm" onClick={() => navigate(connectionHref('typesafe'))}>
+            Manage key
+          </Button>
+        </Row>
+      </Block>
     </>
   )
 }

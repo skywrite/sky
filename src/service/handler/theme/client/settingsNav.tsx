@@ -79,6 +79,7 @@ export function SettingsNav({
       ))}
       <div className="sky-settings-group">
         {page('connections')}
+        {page('browser-automation')}
         {page('extensions')}
         {page('notebook')}
       </div>

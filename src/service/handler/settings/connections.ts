@@ -1,19 +1,17 @@
 /**
- * Connections — the accounts and keys Sky signs in with, over the keychain.
+ * Connections — account integrations and their existing Keychain setup routes.
  *
- * Everything the page is told is presence: which entries exist, of what
- * type, for whom. A value never leaves the keychain through these routes —
- * it goes in, and only its name comes back, plus a key's last few
- * characters so two keys can be told apart. The Google entries sit under
- * Accounts; every other entry is one list, complete, so this page is
- * `sky secrets:list`, `secrets:set` and `secrets:delete` for the same store.
+ * The account page requests accountsOnly to skip generic secret reads.
+ * The legacy list/write/delete routes remain compatible with existing
+ * consumers; their responses contain presence, usernames and key tails,
+ * never complete secret values. Password manager setup lives separately
+ * under Browser automation and does not consume these legacy secret routes.
  *
  * Slack's credentials are agent-slack's: the page reports its test and can
  * re-import them from Brave, the way `sky slack:auth` does. Beeper Desktop
  * signs in from here the way `sky beeper:auth` does, or takes a token made
- * in the app; its grant has its own row and stays out of the keychain list.
- * TypeSafe's key has a row of its own too: it is stored once TypeSafe has
- * accepted it, and the row says whether TypeSafe still does.
+ * in the app. TypeSafe's validated setup lives under Connections; its
+ * key is still stored only after TypeSafe accepts it.
  */
 
 import { Hono } from 'hono'
@@ -266,7 +264,7 @@ export function secretRow(index: IndexEntry, entry: SecretEntry | null, provider
   return { category: index.category, name: index.name, type: index.type, label, sub, ...(tail ? { tail } : {}) }
 }
 
-export async function describeConnections(host: ConnectionsHost): Promise<ConnectionsData> {
+export async function describeConnections(host: ConnectionsHost, includeSecrets = true): Promise<ConnectionsData> {
   const { secrets } = host
   const index = await secrets.list()
   let accessError: string | undefined
@@ -297,9 +295,11 @@ export async function describeConnections(host: ConnectionsHost): Promise<Connec
         e.category !== TYPESAFE_SECRET.category,
     )
     .sort((a, b) => a.category.localeCompare(b.category) || a.name.localeCompare(b.name))
-  const rows = await Promise.all(
-    rest.map(async (e) => secretRow(e, await secrets.get(e.category, e.name).catch(unavailable), providers)),
-  )
+  const rows = includeSecrets
+    ? await Promise.all(
+        rest.map(async (e) => secretRow(e, await secrets.get(e.category, e.name).catch(unavailable), providers)),
+      )
+    : []
 
   return {
     ...(accessError ? { accessError } : {}),
@@ -403,7 +403,7 @@ export function createConnectionsRoutes(host: ConnectionsHost): Hono {
   // Everything the page shows — presence, never a value.
   app.get('/', async (c) => {
     try {
-      return c.json(await describeConnections(host))
+      return c.json(await describeConnections(host, c.req.query('accountsOnly') !== 'true'))
     } catch (err) {
       return c.json(message(err), 500)
     }
