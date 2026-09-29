@@ -1,12 +1,14 @@
 import { z } from 'zod'
 import type { CalendarFields, CalendarTiming } from '#lib/calendarScheduler/types.ts'
 import { calendarInterval, PlainDate, PlainDateTime } from '#universal/dates/nbdt/mod.ts'
+import { recurrenceSchema, validateRecurrence } from './recurrence.ts'
 
 export const meetingTimingSchema = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   time: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
   timezone: z.string().trim().min(1).max(100),
   duration: z.number().int().min(5).max(720),
+  recurrence: recurrenceSchema.optional(),
 })
 
 export const meetingFieldsSchema = meetingTimingSchema.extend({
@@ -20,6 +22,7 @@ export const meetingFieldsSchema = meetingTimingSchema.extend({
 export function meetingInterval(timing: CalendarTiming) {
   meetingTimingSchema.parse(timing)
   new PlainDate(timing.date)
+  validateRecurrence(timing.date, timing.recurrence)
   try {
     return calendarInterval(
       new PlainDateTime({ date: timing.date, time: timing.time }),

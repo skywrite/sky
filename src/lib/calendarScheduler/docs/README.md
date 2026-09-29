@@ -1,6 +1,6 @@
 ---
 created: 2026-09-07
-updated: 2026-09-12
+updated: 2026-09-28
 ---
 
 # CalendarScheduler
@@ -128,7 +128,18 @@ availability matches the original review key. A missing draft, wrong operation o
 failed read cannot produce an approval or execute a write. Save still rechecks
 availability and the provider event version.
 
-For multiple dates, prepare each event before saving, then call `calendar_schedule`
+A recurring meeting is one immutable draft, one approval and one native Google
+Calendar series. Daily, weekly, monthly and yearly repeats are anchored to the
+start date and local IANA time, with an interval and optional inclusive end date
+or occurrence count. No requested end means no end date; callers must never
+invent a horizon or expand a series into separate events. Weekly uses the start
+weekday, monthly its day number, and yearly its month and day. Multiple weekdays,
+skipped dates and ordinal monthly patterns remain explicit unsupported results.
+The composer provides repeat controls. Availability checks and their review
+key cover the first occurrence and exact recurrence; the review explicitly says
+later dates and guests are not checked. A series is not promised conflict-free.
+
+For separate one-time events explicitly requested by the user, prepare each before saving, then call `calendar_schedule`
 once with comma-separated draft IDs in `send` (up to 50). The policy reads every
 draft; all solo blocks run directly, and any invitations share one approval card
 or spoken confirmation showing every event. `/send-batch` validates all drafts
@@ -229,12 +240,22 @@ same server-side browser; the computer running Sky must be available.
 
 The adapter chooses the primary calendar by ID, checks the signed-in
 account, selects Zoom when requested before adding guests, and verifies the guest emails,
-title, date and times before Save. Selecting Zoom before guests avoids a
+title, date, times and the full repeat summary before Save. Selecting Zoom before guests avoids a
 race with Google's automatic conferencing. The template's `ctz` supplies
 the explicit event zone. After Save, it handles Google's invitation and
 external-guest prompts and reads the event back through the Calendar API,
 matching timing, guests, busy status and the requested conference (or its absence)
-before reporting success. Solo events do not wait for an invitation prompt.
+before reporting success. Recurrence is set through the editor's custom repeat
+controls in the event's local time. Do not put an RRULE in the template URL:
+Google can shift its end date or weekday when interpreting it across timezones.
+Verify the full repeat summary before creating conferencing or saving;
+the API readback still checks the native RRULE and timezone. A recurring
+save reads the native parent via the occurrence's `recurringEventId`, checks its
+rule, timezone and complete event fields, and returns the parent's identity.
+An expanded occurrence alone cannot prove a series, and a one-time event cannot
+satisfy a recurring draft. Existing series IDs are included in the pre-save
+baseline so an old series cannot be mistaken for the new one.
+Solo events do not wait for an invitation prompt.
 Readback excludes event IDs present before creation, so a pre-existing identical
 block cannot be mistaken for a successful save.
 

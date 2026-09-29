@@ -25,6 +25,7 @@ test('calendar interpretation uses the civil clock and live scored contacts befo
             time: '01:00',
             timezone: 'America/New_York',
             duration: 30,
+            recurrence: null,
             people: ['JD'],
             conference: 'zoom',
             description: '',
@@ -100,6 +101,7 @@ test('calendar interpretation retains a solo hold without looking up a recipient
             time: '13:00',
             timezone: 'America/New_York',
             duration: 120,
+            recurrence: null,
             people: [],
             conference: 'none',
             description: '',
@@ -146,5 +148,59 @@ test('calendar interpretation retains a solo hold without looking up a recipient
     })
   } finally {
     selectedModel.mockRestore()
+  }
+})
+
+test('recurrence interpretation produces one complete series using the provider-supported schema', async () => {
+  const model = new MockLanguageModelV4({
+    doGenerate: {
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify({
+            title: 'Atlas planning',
+            date: '2030-10-25',
+            requestedWeekday: 'Friday',
+            time: '15:00',
+            timezone: 'America/New_York',
+            duration: 30,
+            recurrence: { frequency: 'weekly', interval: 2, ends: { type: 'after', count: 13, date: null } },
+            people: [],
+            conference: 'none',
+            description: '',
+            assumptions: [],
+            questions: [],
+            unsupported: [],
+          }),
+        },
+      ],
+      finishReason: { unified: 'stop', raw: 'stop' },
+      usage: {
+        inputTokens: { total: 1, noCache: 1, cacheRead: 0, cacheWrite: 0 },
+        outputTokens: { total: 1, text: 1, reasoning: 0 },
+      },
+      warnings: [],
+    },
+  })
+  const selected = spyOn(models, 'aiModelByProfile').mockReturnValue({ model })
+  try {
+    const draft = await parseMeeting(
+      'Atlas planning every other Friday from 2030-10-25 at 3pm, for 13 occurrences, no guests.',
+      'America/New_York',
+      async () => [],
+    )
+    assert({
+      given: 'a repeat frequency and explicit count in the parser response',
+      should: 'retain the recurrence in one draft and avoid oneOf, which Cerebras rejects',
+      actual: [
+        draft.fields.recurrence,
+        draft.unsupported,
+        draft.questions,
+        JSON.stringify(model.doGenerateCalls[0]!.responseFormat).includes('oneOf'),
+      ],
+      expected: [{ frequency: 'weekly', interval: 2, ends: { type: 'after', count: 13 } }, [], [], false],
+    })
+  } finally {
+    selected.mockRestore()
   }
 })

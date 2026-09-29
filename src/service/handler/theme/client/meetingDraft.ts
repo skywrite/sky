@@ -1,6 +1,16 @@
 import type { CalendarDraft, CalendarFields, CalendarInvitee } from '#lib/calendarScheduler/types.ts'
 
-const editableFields = ['title', 'date', 'time', 'timezone', 'duration', 'description', 'conference'] as const
+const editableFields = [
+  'title',
+  'date',
+  'time',
+  'timezone',
+  'duration',
+  'description',
+  'conference',
+  'recurrence',
+] as const
+const sameField = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b)
 const normalized = (value: string) => value.trim().toLowerCase()
 
 function sameInvitee(a: CalendarInvitee, b: CalendarInvitee): boolean {
@@ -25,8 +35,8 @@ export function mergeMeetingDraft(
   let fields = { ...next.fields, account: current.fields.account || next.fields.account }
   for (const key of editableFields) {
     if (
-      (editedDuringRequest.has(key) || (previous && next.fields[key] === previous.fields[key])) &&
-      current.fields[key] !== next.fields[key]
+      (editedDuringRequest.has(key) || (previous && sameField(next.fields[key], previous.fields[key]))) &&
+      !sameField(current.fields[key], next.fields[key])
     )
       fields = { ...fields, [key]: current.fields[key] }
   }
@@ -56,7 +66,7 @@ export function mergeMeetingDraft(
     )
       invitees.push(invitee)
   }
-  const keptFieldEdits = editableFields.some((key) => fields[key] !== next.fields[key])
+  const keptFieldEdits = editableFields.some((key) => !sameField(fields[key], next.fields[key]))
   return {
     ...next,
     fields,

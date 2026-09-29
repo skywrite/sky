@@ -94,7 +94,13 @@ export function availabilityOf(
   const reviewKey = createHash('sha256')
     .update(
       JSON.stringify({
-        timing: { date: timing.date, time: timing.time, timezone: timing.timezone, duration: timing.duration },
+        timing: {
+          date: timing.date,
+          time: timing.time,
+          timezone: timing.timezone,
+          duration: timing.duration,
+          recurrence: timing.recurrence,
+        },
         conflicts: events
           .filter((event) => event.conflict)
           .map(({ id, title, start, end }) => ({ id, title, start, end })),
@@ -103,6 +109,7 @@ export function availabilityOf(
     )
     .digest('hex')
   return {
+    ...(timing.recurrence ? { scope: 'first_occurrence' as const } : {}),
     date: timing.date,
     timezone: timing.timezone,
     events,

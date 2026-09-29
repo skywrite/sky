@@ -12,7 +12,7 @@ export const eventRefSchema = z
   .strict()
 
 export const eventFieldsSchema = meetingFieldsSchema
-  .omit({ conference: true })
+  .omit({ conference: true, recurrence: true })
   .extend({
     guests: z.array(meetingFieldsSchema.shape.guests.element).max(50),
     location: z.string().max(2000),

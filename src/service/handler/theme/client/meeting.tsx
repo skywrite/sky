@@ -2,6 +2,7 @@ import { Alert, Button, Loader, Modal, Select, Textarea, TextInput } from '@mant
 import { useMediaQuery } from '@mantine/hooks'
 import { useEffect, useRef, useState } from 'react'
 import { calendarConference } from '#lib/calendarScheduler/conference.ts'
+import { recurrenceLabel } from '#lib/calendarScheduler/recurrence.ts'
 import type {
   CalendarAvailability,
   CalendarDraft,
@@ -93,7 +94,9 @@ function DaySchedule({
                 ? `${conflicts.length} scheduling conflict${conflicts.length === 1 ? '' : 's'}`
                 : available.warnings.length
                   ? 'Availability is incomplete'
-                  : 'This time is clear'}
+                  : available.scope === 'first_occurrence'
+                    ? 'The first occurrence is clear'
+                    : 'This time is clear'}
             </strong>
             <p>
               {conflicts.length
@@ -143,6 +146,8 @@ function DaySchedule({
             </p>
           ))}
           <p className="sky-meeting-note">
+            {available.scope === 'first_occurrence' &&
+              'Only the first occurrence is checked; later dates are not checked. '}
             {available.calendars.length} calendar{available.calendars.length === 1 ? '' : 's'} checked. Guests’
             availability isn’t checked.
           </p>
@@ -182,7 +187,13 @@ export function MeetingDialog({ opened, onClose }: { opened: boolean; onClose: (
   const submitting = useRef(false)
   const fields = draft?.fields
   const timingKey = fields
-    ? JSON.stringify({ date: fields.date, time: fields.time, timezone: fields.timezone, duration: fields.duration })
+    ? JSON.stringify({
+        date: fields.date,
+        time: fields.time,
+        timezone: fields.timezone,
+        duration: fields.duration,
+        recurrence: fields.recurrence,
+      })
     : ''
   const active = sending || job?.state === 'creating'
   const parseContext = useRef({ timezone: '', account: '' })
@@ -487,7 +498,13 @@ export function MeetingDialog({ opened, onClose }: { opened: boolean; onClose: (
               <span className="sky-meeting-success" aria-hidden="true">
                 ✓
               </span>
-              <h2>{sentFields?.guests.length ? 'Meeting scheduled' : 'Time blocked'}</h2>
+              <h2>
+                {sentFields?.recurrence
+                  ? 'Series scheduled'
+                  : sentFields?.guests.length
+                    ? 'Meeting scheduled'
+                    : 'Time blocked'}
+              </h2>
               <p>{job.result?.title}</p>
               {sentFields && (
                 <p className="sky-meeting-note">
@@ -495,6 +512,12 @@ export function MeetingDialog({ opened, onClose }: { opened: boolean; onClose: (
                   <br />
                   {sentFields.timezone}
                   <br />
+                  {sentFields.recurrence && (
+                    <>
+                      {recurrenceLabel(sentFields)}
+                      <br />
+                    </>
+                  )}
                   {sentFields.guests.length
                     ? `Invitations sent to ${sentFields.guests.map((guest) => guest.name || guest.email).join(', ')}.`
                     : 'Only on your calendar.'}
@@ -674,6 +697,98 @@ export function MeetingDialog({ opened, onClose }: { opened: boolean; onClose: (
                       }}
                       comboboxProps={{ withinPortal: false }}
                     />
+                    <Select
+                      label="Repeat"
+                      value={fields.recurrence?.frequency ?? 'none'}
+                      data={[
+                        { value: 'none', label: 'Does not repeat' },
+                        { value: 'daily', label: 'Daily' },
+                        { value: 'weekly', label: 'Weekly' },
+                        { value: 'monthly', label: 'Monthly' },
+                        { value: 'yearly', label: 'Yearly' },
+                      ]}
+                      onChange={(value) => {
+                        if (value === 'none') change('recurrence', undefined)
+                        else if (value === 'daily' || value === 'weekly' || value === 'monthly' || value === 'yearly')
+                          change('recurrence', {
+                            frequency: value,
+                            interval: fields.recurrence?.interval ?? 1,
+                            ends: fields.recurrence?.ends ?? { type: 'never' },
+                          })
+                      }}
+                      comboboxProps={{ withinPortal: false }}
+                    />
+                    {fields.recurrence && (
+                      <>
+                        <div className="sky-meeting-when">
+                          <TextInput
+                            label="Repeat every"
+                            type="number"
+                            min={1}
+                            max={99}
+                            value={fields.recurrence.interval}
+                            onChange={(event) =>
+                              change('recurrence', {
+                                ...fields.recurrence!,
+                                interval: Number(event.currentTarget.value),
+                              })
+                            }
+                          />
+                          <Select
+                            label="Ends"
+                            value={fields.recurrence.ends.type}
+                            data={[
+                              { value: 'never', label: 'Never' },
+                              { value: 'on', label: 'On date' },
+                              { value: 'after', label: 'After' },
+                            ]}
+                            onChange={(value) => {
+                              if (value === 'never' || value === 'on' || value === 'after')
+                                change('recurrence', {
+                                  ...fields.recurrence!,
+                                  ends:
+                                    value === 'on'
+                                      ? { type: 'on', date: fields.date }
+                                      : value === 'after'
+                                        ? { type: 'after', count: 1 }
+                                        : { type: 'never' },
+                                })
+                            }}
+                            comboboxProps={{ withinPortal: false }}
+                          />
+                          {fields.recurrence.ends.type === 'on' && (
+                            <TextInput
+                              label="End date"
+                              type="date"
+                              min={fields.date}
+                              value={fields.recurrence.ends.date}
+                              onChange={(event) =>
+                                change('recurrence', {
+                                  ...fields.recurrence!,
+                                  ends: { type: 'on', date: event.currentTarget.value },
+                                })
+                              }
+                            />
+                          )}
+                          {fields.recurrence.ends.type === 'after' && (
+                            <TextInput
+                              label="Occurrences"
+                              type="number"
+                              min={1}
+                              max={730}
+                              value={fields.recurrence.ends.count}
+                              onChange={(event) =>
+                                change('recurrence', {
+                                  ...fields.recurrence!,
+                                  ends: { type: 'after', count: Number(event.currentTarget.value) },
+                                })
+                              }
+                            />
+                          )}
+                        </div>
+                        <p className="sky-meeting-note">{recurrenceLabel(fields)}</p>
+                      </>
+                    )}
                     {draft.assumptions.length > 0 && <p className="sky-meeting-note">{draft.assumptions.join(' ')}</p>}
                     {draft.questions.length > 0 && (
                       <p className="sky-meeting-questions">{draft.questions.join(' ')} Adjust the details above.</p>
@@ -758,7 +873,13 @@ export function MeetingDialog({ opened, onClose }: { opened: boolean; onClose: (
               <Button onClick={onClose}>Cancel</Button>
               {draft && (
                 <Button variant={conflicts ? 'warning' : 'primary'} disabled={!canCreate} onClick={() => void create()}>
-                  {guests.length || unresolved ? 'Create & send invites' : 'Create event'}
+                  {fields?.recurrence
+                    ? guests.length || unresolved
+                      ? 'Create series & send invites'
+                      : 'Create series'
+                    : guests.length || unresolved
+                      ? 'Create & send invites'
+                      : 'Create event'}
                 </Button>
               )}
             </div>

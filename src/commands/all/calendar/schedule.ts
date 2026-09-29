@@ -40,13 +40,14 @@ export default class CalendarSchedule extends Command {
   static override description: CommandDescription = {
     name: 'calendar:schedule',
     description:
-      'Schedule Google Calendar events: solo time blocks, holds, or meetings with optional guests and Zoom. Call with the user’s request BEFORE asking for a day, emails or duration; the scheduler interprets the words and looks up saved contacts. Defaults: today, local timezone, 30 minutes; me/myself is the organizer. Preparation saves nothing. Ask only returned unresolved questions. When ready, call send: draftId. Solo blocks save without another confirmation; sending invitations requires approval. For multiple dates, prepare each event first, then send all draft IDs comma-separated in ONE call so any invitation approval covers the whole batch. Use status with the same IDs for receipts; never replace uncertain events. calendar_update edits existing events.',
+      'Schedule Google Calendar events or native recurring series: solo blocks or meetings with optional guests and Zoom. Daily, weekly, monthly and yearly recurrence is supported with an interval and optional end date or count. Prepare ONE draft per series, never separate events; no end date unless requested. Earlier unsupported-recurrence results are obsolete: use the original request and settled details to prepare one fresh series draft, not old batch IDs. Call with the user’s request BEFORE asking for a day, emails or duration; the scheduler interprets the words and looks up saved contacts. Defaults: today, local timezone, 30 minutes; me/myself is the organizer. Preparation sends nothing. If status is unsupported, stop and explain the limitation; do not reword the request to bypass it. Ask only returned unresolved questions. When ready, call send: draftId. Solo blocks save without another confirmation; invitations require approval. Only for separately requested one-time events, prepare each then send all IDs comma-separated in ONE call. Use status with the same IDs for receipts. Never replace successful or uncertain events. calendar_update edits existing events.',
     descriptionLong: [
       'A request resolves optional guests and conferencing, date, time, duration, and calendar conflicts.',
       'In a terminal, choose unresolved details; solo blocks save directly and invitations require confirmation.',
       'JSON, piped and composed calls return questions or a draft ID without interactive prompts.',
       'Use --send <draft-id> to create that exact event and send invitations only when it has guests.',
-      'For several dates, prepare each event and use --send <id-1>,<id-2>,<id-3> to create them together.',
+      'For explicitly requested separate events, prepare each and use --send <id-1>,<id-2>,<id-3> together.',
+      'Recurring series use one draft and one native Calendar event. Support daily, weekly, monthly or yearly on the start date, with an interval and optional end date or count. Never expand a series into a batch.',
       'Use calendar:update to edit or reschedule an existing event.',
       'Requires the running Sky service and its connected Google Calendar browser. Zoom is needed only for Zoom events.',
       'The command returns structured data to callers; --json also prints it for shell automation.',

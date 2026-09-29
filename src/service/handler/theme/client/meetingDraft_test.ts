@@ -86,3 +86,32 @@ test('edits made while an AI response is pending take precedence over that respo
     expected: ['16:30', 60, 'sam', []],
   })
 })
+
+test('manual repeat changes survive a fresh interpretation of unchanged recurrence', () => {
+  const previous: CalendarDraft = {
+    ...initial,
+    fields: { ...initial.fields, recurrence: { frequency: 'weekly', interval: 1, ends: { type: 'never' } } },
+  }
+  const current: CalendarDraft = {
+    ...previous,
+    fields: {
+      ...previous.fields,
+      recurrence: { frequency: 'weekly', interval: 2, ends: { type: 'after', count: 13 } },
+    },
+  }
+  const next = structuredClone(previous)
+  next.fields.time = '17:00'
+  assert({
+    given: 'manual repeat edits followed by the same AI recurrence in a newly parsed object',
+    should: 'keep the repeat edits while accepting the changed time',
+    actual: mergeMeetingDraft(current, previous, next).fields,
+    expected: { ...current.fields, time: '17:00' },
+  })
+  const single = { ...current, fields: { ...current.fields, recurrence: undefined } }
+  assert({
+    given: 'a user switching the meeting back to a single occurrence',
+    should: 'retain that choice when unrelated wording changes',
+    actual: mergeMeetingDraft(single, previous, next).fields.recurrence,
+    expected: undefined,
+  })
+})

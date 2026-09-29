@@ -1,12 +1,13 @@
 ---
 created: 2026-09-06
-updated: 2026-09-12
+updated: 2026-09-28
 ---
 
 # Scheduling a meeting
 
 The New meeting button on `/clock` opens `theme/client/meeting.tsx`: a
-dialog on desktop and a full-screen composer on phones. The component is
+dialog on desktop and a full-screen composer on phones. Repeat controls and native
+series behavior are defined by the [shared scheduler](../../../../lib/calendarScheduler/docs/README.md#chat-and-voice). The component is
 reusable; scheduling does not belong to the clock converter. It keeps Sky's
 theme, with a scrollable body and an always-visible action footer.
 Its shared header, spacing, action roles and footer follow the
@@ -52,6 +53,7 @@ Its shared header, spacing, action roles and footer follow the
    Choosing a contact with no saved email keeps their identity and focuses
    an email field. The invitee stays unresolved until an address is supplied.
 3. The selected day's owned Google calendars appear alongside the draft.
+   Repeating meetings check the first occurrence only, as labeled in the review.
    Busy all-day, overnight, solo, focus and out-of-office entries count;
    free, declined, cancelled, working-location and birthday entries do not
    block time. Shared copies of an event deduplicate by iCal UID and start.

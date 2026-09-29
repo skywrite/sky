@@ -4,6 +4,7 @@ import {
   type CalendarMeeting,
   finishCalendarInvitation,
   savedMeetingMatches,
+  templateUrl,
   zoomMeetingUrl,
 } from '#lib/google/createCalendarMeeting.ts'
 import { assert, test } from '#test'
@@ -39,6 +40,21 @@ const EVENT: CalendarEvent = {
   status: 'confirmed',
   conferenceUrl: URL,
 }
+
+test('recurring editor templates leave recurrence to the local repeat controls', () => {
+  const url = new globalThis.URL(
+    templateUrl({
+      ...MEETING,
+      recurrence: { frequency: 'weekly', interval: 1, ends: { type: 'on', date: '2030-11-08' } },
+    }),
+  )
+  assert({
+    given: 'a series with a civil end date in a zone west of UTC',
+    should: 'keep the local timing without a template RRULE that Google can shift to the following day',
+    actual: [url.searchParams.get('dates'), url.searchParams.get('ctz'), url.searchParams.has('recur')],
+    expected: ['20300503T150000/20300503T153000', MEETING.timezone, false],
+  })
+})
 
 test('Calendar Zoom readback must match the exact guests, instant and Zoom conference', () => {
   assert({
@@ -144,5 +160,55 @@ test('a disappearing Calendar editor waits for delayed send and external-guest c
     should: 'complete both prompts once and verify the resulting event',
     actual: [sent, invited, tick, result.title],
     expected: [1, 1, 4, MEETING.title],
+  })
+})
+
+test('a recurring invitation verifies the parent and returns one series receipt after one notification', async () => {
+  const meeting: CalendarMeeting = {
+    ...MEETING,
+    recurrence: { frequency: 'weekly', interval: 1, ends: { type: 'never' } },
+  }
+  let sent = 0
+  let reads = 0
+  const page = {
+    getByRole: (_role: string, { name }: { name: string }) => ({
+      isVisible: async () => name === 'Send' && !sent,
+      click: async () => {
+        sent++
+      },
+    }),
+    waitForTimeout: async () => {},
+  } as unknown as Page
+  const series = {
+    ...EVENT,
+    id: 'atlas-series',
+    timezone: MEETING.timezone,
+    recurrence: ['RRULE:FREQ=WEEKLY;BYDAY=FR'],
+    htmlLink: 'https://example.com/calendar/series',
+  }
+  const instance = { ...EVENT, recurringEventId: series.id }
+  const result = await finishCalendarInvitation(
+    page,
+    meeting,
+    URL,
+    async () => [instance],
+    async (id) => {
+      if (id !== series.id) throw new Error('Wrong series')
+      reads++
+      return series
+    },
+  )
+  assert({
+    given: 'an expanded occurrence after saving the recurring invitation',
+    should: 'read the native parent rule and complete only one invitation flow',
+    actual: [
+      sent,
+      reads,
+      result.event?.eventId,
+      result.calendarUrl,
+      savedMeetingMatches(instance, meeting, URL),
+      savedMeetingMatches(EVENT, meeting, URL),
+    ],
+    expected: [1, 1, series.id, series.htmlLink, false, false],
   })
 })

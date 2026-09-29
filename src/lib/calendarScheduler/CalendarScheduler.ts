@@ -120,7 +120,11 @@ export class CalendarScheduler {
     const affectsGuests = [draft.fields, ...(draft.update ? [draft.update.fields] : [])].some((fields) =>
       fields.guests.some((guest) => guest.email.toLowerCase() !== fields.account.toLowerCase()),
     )
-    const action = draft.update ? 'Save these event changes' : 'Create this event'
+    const action = draft.update
+      ? 'Save these event changes'
+      : draft.fields.recurrence
+        ? 'Create this recurring series'
+        : 'Create this event'
     const delivery = affectsGuests
       ? draft.update
         ? ' and notify guests.'
@@ -173,6 +177,7 @@ export class CalendarScheduler {
         time: 'Specify an unambiguous time.',
         timezone: 'Specify a valid timezone.',
         duration: 'Use a duration of 5–720 whole minutes.',
+        recurrence: 'Choose a repeat frequency, interval, and valid end date or occurrence count.',
         description: 'Keep the agenda under 8,000 characters.',
         guests: 'Use at most 50 guests with valid email addresses, or leave the guest list empty.',
         conference: 'Choose Zoom or no video conferencing.',

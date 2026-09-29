@@ -174,7 +174,7 @@ test('missing times, past times and unsupported recurrence cannot produce a send
         const draft = await parse(...args)
         if (change === 'missing-time') draft.fields.time = ''
         if (change === 'past-time') draft.fields.date = '2030-04-01'
-        if (change === 'recurrence') draft.unsupported = ['Repeating meetings are unsupported.']
+        if (change === 'recurrence') draft.unsupported = ['Skipping selected dates in a series is unsupported.']
         return draft
       }
       const prepared = await schedulerFor(host).prepare({ request: 'A meeting request' })
@@ -294,5 +294,41 @@ test('a calendar draft with an uncertain save is never sent again', async () =>
       should: 'keep the uncertain receipt through retry and restart',
       actual: [job.state, retried.state, sent.length],
       expected: ['uncertain', 'uncertain', 1],
+    })
+  }))
+
+test('one recurring draft survives restart and creates one native series on repeated send', async () =>
+  fixture(async (host, sent) => {
+    const originalParse = host.parse
+    host.parse = async (...args) => {
+      const draft = await originalParse(...args)
+      return {
+        ...draft,
+        fields: { ...draft.fields, recurrence: { frequency: 'weekly', interval: 1, ends: { type: 'never' } } },
+      }
+    }
+    const prepared = await schedulerFor(host).prepare({ request: 'Meet Jane every Friday at 3pm for Atlas planning.' })
+    const restored = schedulerFor(host)
+    const approval = await restored.approval(prepared.draftId!, 'schedule')
+    assert({
+      given: 'a weekly request with no end date',
+      should: 'prepare one complete series for approval and limit the availability claim to the first date',
+      actual: [
+        prepared.status,
+        prepared.availability?.scope,
+        prepared.fields.recurrence,
+        approval.summary.includes('Weekly on Friday · No end date'),
+        sent.length,
+      ],
+      expected: ['ready', 'first_occurrence', { frequency: 'weekly', interval: 1, ends: { type: 'never' } }, true, 0],
+    })
+    await Promise.all([restored.send(prepared.draftId!), restored.send(prepared.draftId!)])
+    const result = await finished(restored, prepared.draftId!)
+    await schedulerFor(host).send(prepared.draftId!)
+    assert({
+      given: 'approval, parallel sends and a later retry',
+      should: 'create exactly one series and return its existing receipt',
+      actual: [result?.state, sent.length, sent[0]?.recurrence],
+      expected: ['created', 1, prepared.fields.recurrence],
     })
   }))

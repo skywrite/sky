@@ -1,4 +1,5 @@
 import { calendarConference } from './conference.ts'
+import { recurrenceLabel } from './recurrence.ts'
 import type { CalendarJob, CalendarJobBatch, CalendarPreparation } from './types.ts'
 import type { CalendarUpdatePreparation } from './updateTypes.ts'
 
@@ -7,6 +8,7 @@ export function describePreparation(prepared: CalendarPreparation): string {
   const lines = [
     fields.title || 'Calendar event',
     `${fields.date || '(date needed)'} ${fields.time || '(time needed)'} · ${fields.timezone} · ${fields.duration} min`,
+    ...(fields.recurrence ? [`Repeats: ${recurrenceLabel(fields)}`] : []),
     `Organizer: ${fields.account || '(choose an account)'}`,
     ...fields.guests.map((guest) => `Invite: ${guest.name ? `${guest.name} <${guest.email}>` : guest.email}`),
     ...(!fields.guests.length && !prepared.invitees.length ? ['Guests: none (only you)'] : []),
@@ -21,6 +23,10 @@ export function describePreparation(prepared: CalendarPreparation): string {
   }
   if (!fields.account && prepared.accounts.length) lines.push(`Accounts: ${prepared.accounts.join(', ')}`)
   if (availability) {
+    if (fields.recurrence)
+      lines.push(
+        `Availability checked for the first occurrence, ${fields.date}, only. Later dates and guests’ availability are not checked.`,
+      )
     const conflicts = availability.events.filter((event) => event.conflict)
     lines.push(
       ...conflicts.map((event) => `Conflict: ${event.title} · ${event.start} – ${event.end} · ${event.calendar}`),

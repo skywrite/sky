@@ -1,10 +1,12 @@
 import type { Page } from 'playwright'
 import { calendarConference } from '#lib/calendarScheduler/conference.ts'
-import type { CreatedCalendarEvent } from '#lib/calendarScheduler/types.ts'
+import type { CalendarRecurrence, CreatedCalendarEvent } from '#lib/calendarScheduler/types.ts'
 import { withGoogleBrowser } from '#lib/google/browserSession.ts'
-import { listEvents, type CalendarEvent } from '#lib/google/calendar.ts'
+import { getEvent, listEvents, type CalendarEvent } from '#lib/google/calendar.ts'
 import type { GoogleClient } from '#lib/google/client.ts'
 import { calendarInstant, calendarNow, instantNow, PlainDate } from '#universal/dates/nbdt/mod.ts'
+import { calendarRecurrenceMatches, calendarRepeatSummaryMatches } from './calendarRecurrence.ts'
+import { prepareCalendarRecurrence } from './calendarRecurrenceEditor.ts'
 
 export interface CalendarMeeting {
   title: string
@@ -21,6 +23,7 @@ export interface CalendarMeeting {
   endTime: string
   guests: Array<{ name: string; email: string }>
   conference?: 'none' | 'zoom'
+  recurrence?: CalendarRecurrence
 }
 
 export function zoomMeetingUrl(href: string): string | null {
@@ -60,6 +63,7 @@ export function savedMeetingMatches(event: CalendarEvent, meeting: CalendarMeeti
     !event.resourceEmails?.length &&
     !event.allDay &&
     event.title === meeting.title &&
+    calendarRecurrenceMatches(event, meeting) &&
     calendarInstant(event.start) === calendarInstant(meeting.start) &&
     calendarInstant(event.end) === calendarInstant(meeting.end) &&
     JSON.stringify(actual) === JSON.stringify(expected) &&
@@ -69,7 +73,7 @@ export function savedMeetingMatches(event: CalendarEvent, meeting: CalendarMeeti
   )
 }
 
-function templateUrl(meeting: CalendarMeeting): string {
+export function templateUrl(meeting: CalendarMeeting): string {
   const url = new URL('https://calendar.google.com/calendar/render')
   url.searchParams.set('action', 'TEMPLATE')
   url.searchParams.set('authuser', meeting.account)
@@ -129,8 +133,7 @@ export async function prepareCalendarMeeting(page: Page, meeting: CalendarMeetin
   await selectCalendar(page, meeting)
   if (await page.getByRole('checkbox', { name: 'All day', exact: true }).isChecked())
     throw new Error('Calendar interpreted this as an all-day event. Nothing was saved.')
-  if (!(await page.getByRole('combobox', { name: 'Recurrence', exact: true }).innerText()).includes('Does not repeat'))
-    throw new Error('Calendar selected a repeating meeting. Nothing was saved.')
+  await prepareCalendarRecurrence(page, meeting)
 
   const conference = calendarConference(meeting)
   if (conference === 'zoom') {
@@ -189,9 +192,13 @@ export async function prepareCalendarMeeting(page: Page, meeting: CalendarMeetin
     (await readDate('Start date')) !== meeting.date ||
     (await readDate('End date')) !== meeting.endDate ||
     (await readTime('Start time')) !== meeting.time ||
-    (await readTime('End time')) !== meeting.endTime
+    (await readTime('End time')) !== meeting.endTime ||
+    !calendarRepeatSummaryMatches(
+      await page.getByRole('combobox', { name: 'Recurrence', exact: true }).innerText(),
+      meeting,
+    )
   ) {
-    throw new Error('Calendar did not keep the reviewed title, date, and time. Nothing was saved.')
+    throw new Error('Calendar did not keep the reviewed title, date, time, and repeat schedule. Nothing was saved.')
   }
   if (conference === 'none') return ''
   const zoomUrl = zoomMeetingUrl(
@@ -207,6 +214,7 @@ export async function finishCalendarInvitation(
   meeting: CalendarMeeting,
   zoomUrl: string,
   read: () => Promise<CalendarEvent[]>,
+  readSeries?: (id: string) => Promise<CalendarEvent>,
 ): Promise<CreatedCalendarEvent> {
   let sent = meeting.guests.length === 0
   let invitedOutside = false
@@ -223,7 +231,27 @@ export async function finishCalendarInvitation(
     }
     // The editor can disappear before either confirmation arrives. Its disappearance alone is not a send.
     if (sent && !(await page.getByRole('textbox', { name: 'Title', exact: true }).isVisible())) {
-      const saved = (await read()).find((event) => savedMeetingMatches(event, meeting, zoomUrl))
+      const candidates = await read()
+      let saved: CalendarEvent | undefined
+      const checked = new Set<string>()
+      for (const candidate of candidates) {
+        const id = candidate.recurringEventId
+        if (meeting.recurrence && id) {
+          if (!readSeries || checked.has(id)) continue
+          if (
+            !savedMeetingMatches(
+              { ...candidate, recurringEventId: undefined, recurrence: undefined },
+              { ...meeting, recurrence: undefined },
+              zoomUrl,
+            )
+          )
+            continue
+          checked.add(id)
+          const series = await readSeries(id)
+          if (series.id === id && savedMeetingMatches(series, meeting, zoomUrl)) saved = series
+        } else if (savedMeetingMatches(candidate, meeting, zoomUrl)) saved = candidate
+        if (saved) break
+      }
       if (saved?.htmlLink)
         return {
           title: saved.title,
@@ -264,7 +292,9 @@ export async function createCalendarMeeting(
           timeZone: meeting.timezone,
         })
       : await read()
-  const previousIds = new Set(previous.map((event) => event.id))
+  const previousIds = new Set(
+    previous.flatMap((event) => [event.id, ...(event.recurringEventId ? [event.recurringEventId] : [])]),
+  )
   const used = new Set(previous.flatMap((event) => (event.conferenceUrl ? [zoomId(event.conferenceUrl)] : [])))
   return withGoogleBrowser({ headless: true }, async (context) => {
     const page = await context.newPage()
@@ -279,8 +309,16 @@ export async function createCalendarMeeting(
         throw new Error('This meeting time has passed. Choose a future time.')
       await hooks.saving()
       await page.getByRole('button', { name: 'Save', exact: true }).click()
-      return await finishCalendarInvitation(page, meeting, zoomUrl, async () =>
-        (await read()).filter((event) => !previousIds.has(event.id)),
+      return await finishCalendarInvitation(
+        page,
+        meeting,
+        zoomUrl,
+        async () =>
+          (await read()).filter(
+            (event) =>
+              !previousIds.has(event.id) && !(event.recurringEventId && previousIds.has(event.recurringEventId)),
+          ),
+        (id) => getEvent(client, meeting.calendarId, id),
       )
     } finally {
       await page.close().catch(() => undefined)

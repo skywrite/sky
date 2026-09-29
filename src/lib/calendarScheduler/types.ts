@@ -17,6 +17,12 @@ export interface CalendarGuest {
   email: string
 }
 
+export interface CalendarRecurrence {
+  frequency: 'daily' | 'weekly' | 'monthly' | 'yearly'
+  interval: number
+  ends: { type: 'never' } | { type: 'on'; date: string } | { type: 'after'; count: number }
+}
+
 export interface CalendarInvitee {
   query: string
   candidates: CalendarContact[]
@@ -31,6 +37,8 @@ export interface CalendarFields {
   time: string
   timezone: string
   duration: number
+  /** One native series, anchored to the start date and local time. Omitted for a single event. */
+  recurrence?: CalendarRecurrence
   account: string
   guests: CalendarGuest[]
   /** Defaults to no conference for solo events, or Zoom when guests are invited. */
@@ -38,7 +46,7 @@ export interface CalendarFields {
   description: string
 }
 
-export type CalendarTiming = Pick<CalendarFields, 'date' | 'time' | 'timezone' | 'duration'>
+export type CalendarTiming = Pick<CalendarFields, 'date' | 'time' | 'timezone' | 'duration' | 'recurrence'>
 
 export interface CalendarDraft {
   fields: CalendarFields
@@ -67,6 +75,7 @@ export interface CalendarDayEvent {
 }
 
 export interface CalendarAvailability {
+  scope?: 'first_occurrence'
   date: string
   timezone: string
   events: CalendarDayEvent[]
