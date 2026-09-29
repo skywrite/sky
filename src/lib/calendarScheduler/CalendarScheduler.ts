@@ -130,7 +130,23 @@ export class CalendarScheduler {
         ? ' and notify guests.'
         : ' and send invitations.'
       : ' on your calendar.'
-    return { summary: `${action}${delivery}\n${summary}`, needsApproval: affectsGuests && !(await this.jobs.get(id)) }
+    const job = await this.jobs.get(id)
+    return {
+      summary: `${action}${delivery}\n${summary}`,
+      needsApproval: affectsGuests && !job,
+      ...(!draft.update
+        ? {
+            draft: {
+              id,
+              fields: draft.fields,
+              assumptions: draft.assumptions ?? [],
+              reviewKey: draft.reviewKey,
+              availability: draft.availability,
+              job: job ?? undefined,
+            },
+          }
+        : {}),
+    }
   }
 
   async prepare(input: CalendarRequest, signal?: AbortSignal): Promise<CalendarPreparation> {
@@ -222,6 +238,8 @@ export class CalendarScheduler {
         fields,
         reviewKey: availability.reviewKey,
         summary: describePreparation(result),
+        assumptions: result.assumptions,
+        availability,
       })
     }
     return result
@@ -233,6 +251,10 @@ export class CalendarScheduler {
       .object({
         fields: z.unknown(),
         assumptions: z.array(z.string().max(1000)).max(50).default([]),
+        reviewKey: z
+          .string()
+          .regex(/^[a-f0-9]{64}$/)
+          .optional(),
       })
       .strict()
       .parse(input)
@@ -241,6 +263,8 @@ export class CalendarScheduler {
     const setup = await this.host.setup()
     if (!setup.accounts.includes(fields.account)) throw new Error('Choose a connected Google account.')
     const availability = await this.host.availability(fields)
+    if (reviewed.reviewKey && reviewed.reviewKey !== availability.reviewKey)
+      throw new Error('Calendar availability changed. Check your day again before saving these edits.')
     const result: CalendarPreparation = {
       status: 'ready',
       fields,
@@ -256,6 +280,8 @@ export class CalendarScheduler {
       fields,
       reviewKey: availability.reviewKey,
       summary: describePreparation(result),
+      assumptions: result.assumptions,
+      availability,
     })
     return result
   }

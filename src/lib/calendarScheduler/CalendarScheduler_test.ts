@@ -316,7 +316,7 @@ test('one recurring draft survives restart and creates one native series on repe
       actual: [
         prepared.status,
         prepared.availability?.scope,
-        prepared.fields.recurrence,
+        approval.draft?.fields.recurrence,
         approval.summary.includes('Weekly on Friday · No end date'),
         sent.length,
       ],

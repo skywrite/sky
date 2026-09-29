@@ -20,6 +20,7 @@ import { logAIError } from '#shared/ai/errorLog.ts'
 import type { ToolApprovalConfig } from '#shared/models/Chat/ChatEngine/mod.ts'
 import { researchContext, type ResearchContext } from '#shared/models/Chat/researchContext.ts'
 import truncate from '#shared/strings/truncate.ts'
+import { CalendarSchedulingTurn, type CalendarSchedulingRun } from './calendarScheduling.ts'
 
 // -----------------------------------------------------------------------------
 // Discovery
@@ -82,6 +83,8 @@ export interface ExternalFileRef {
 export interface CreateNotebookToolsOptions {
   /** Supplied by the host, so task provenance never depends on a model inventing a URL. */
   sourceChat?: string
+  /** Retained scheduling results keep rejected workarounds blocked across turns and recovery. */
+  calendarHistory?: () => readonly CalendarSchedulingRun[]
   researchContext?: ResearchContext
   legalReviewContext?: LegalReviewChatContext
   onOpenQuestions?: OnOpenQuestions
@@ -300,7 +303,16 @@ export async function runToolCommand(
       .join(': ')
     const error = truncate(detail || `Failed: ${entry.commandName}`, MAX_TOOL_ERROR_CHARS)
     if (reviewTurn) reviewAttempts.set(reviewTurn, { failure: error })
+    // Calendar failures carry durable receipts and the exact human-edited fields.
+    // Dropping them leaves the model with only the older preparation and encourages a replacement invite.
+    const receipt =
+      (entry.commandName === 'calendar:schedule' || entry.commandName === 'calendar:update') &&
+      result.data &&
+      typeof result.data === 'object'
+        ? (JSON.parse(JSON.stringify(result.data)) as Record<string, unknown>)
+        : {}
     return {
+      ...receipt,
       success: false,
       // Business-rule 'fail' vs unexpected 'error' — the model reads this.
       status: result.status,
@@ -351,6 +363,7 @@ export async function createNotebookTools(
 ): Promise<Record<string, unknown>> {
   const discovered = await discoverAIChatTools()
   const tools: Record<string, unknown> = {}
+  const calendarTurn = new CalendarSchedulingTurn(options.calendarHistory)
 
   discoveredTools.length = 0
 
@@ -363,8 +376,10 @@ export async function createNotebookTools(
       description: entry.description,
       inputSchema: jsonSchema<Record<string, unknown>>(schema),
       // The SDK hands each call the turn's abort signal; the command gets it as its own.
-      execute: (input: Record<string, unknown>, call?: { abortSignal?: AbortSignal }) =>
-        runToolCommand(tasks, entry, input, { ...options, signal: call?.abortSignal }),
+      execute: (input: Record<string, unknown>, call?: { abortSignal?: AbortSignal }) => {
+        const run = () => runToolCommand(tasks, entry, input, { ...options, signal: call?.abortSignal })
+        return entry.commandName === 'calendar:schedule' ? calendarTurn.run(input, run) : run()
+      },
     })
   }
 

@@ -1,7 +1,7 @@
 import { link, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import * as path from 'node:path'
 import { z } from 'zod'
-import type { CalendarFields } from './types.ts'
+import type { CalendarAvailability, CalendarFields } from './types.ts'
 import type { CalendarEventSnapshot } from './updateTypes.ts'
 
 interface SavedDraft {
@@ -10,6 +10,8 @@ interface SavedDraft {
   update?: CalendarEventSnapshot
   /** The exact review presented by chat and voice, including conflicts and assumptions. */
   summary?: string
+  assumptions?: string[]
+  availability?: CalendarAvailability
 }
 
 /** Immutable prepared invitations. Sending uses these exact fields without another model call. */

@@ -58,6 +58,8 @@ export interface ApprovalDecision {
   approved: boolean
   /** Travels back to the model with the response — it reads this. */
   reason: string
+  /** Trusted host replacement after the person edits and approves a tool's draft. */
+  input?: Record<string, unknown>
 }
 
 /**
@@ -718,6 +720,29 @@ export default class ChatEngine {
             ),
           )
           abortSignal?.throwIfAborted()
+          if (decision.approved && decision.input) {
+            // The SDK executes the call from history on continuation. Update that
+            // exact call, not just the separate approval-request representation.
+            let replaced = false
+            this.messages = this.messages.map((message) => {
+              if (message.role !== 'assistant' || !Array.isArray(message.content)) return message
+              return {
+                ...message,
+                content: message.content.map((part) => {
+                  if (
+                    part.type !== 'tool-call' ||
+                    part.toolCallId !== toolCall.toolCallId ||
+                    part.toolName !== toolCall.toolName
+                  )
+                    return part
+                  replaced = true
+                  return { ...part, input: decision.input }
+                }),
+              }
+            })
+            if (!replaced) throw new Error('The edited tool call is no longer available. Nothing was sent.')
+            toolCall.input = decision.input
+          }
           if (!decision.approved) {
             progress.end(toolCall.toolCallId, toolCall.toolName, {
               error: decision.reason ?? 'Tool call was declined.',

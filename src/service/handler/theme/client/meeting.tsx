@@ -14,38 +14,13 @@ import type {
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import { mergeMeetingDraft } from './meetingDraft.ts'
 import { MeetingGuests } from './meetingGuests.tsx'
+import { MeetingRequestError, meetingRequest } from './meetingRequest.ts'
+export { MeetingRequestError, meetingRequest } from './meetingRequest.ts'
 import './meeting.css'
 
 const PENDING_KEY = 'sky-meeting-request'
 const browserTimezone = () => Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
 const zones = () => [...new Set(['UTC', browserTimezone(), ...Intl.supportedValuesOf('timeZone')])]
-
-class MeetingRequestError extends Error {
-  constructor(
-    message: string,
-    readonly status: number,
-  ) {
-    super(message)
-  }
-}
-
-async function request<T>(url: string, body?: unknown, signal?: AbortSignal): Promise<T> {
-  const response = await fetch(
-    `/meetings/_api/${url}`,
-    body === undefined
-      ? { signal }
-      : {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body),
-          signal,
-        },
-  )
-  const data = (await response.json().catch(() => ({}))) as T & { message?: string }
-  if (!response.ok)
-    throw new MeetingRequestError(data.message ?? 'Could not reach the meeting service. Try again.', response.status)
-  return data
-}
 
 function clock(time: string): string {
   const [hours, minutes] = time.split(':').map(Number)
@@ -64,7 +39,196 @@ function eventClock(value: string, day: string): string {
   return `${value.startsWith(day) ? '' : `${value.slice(0, 10)} · `}${clock(value.slice(11, 16))}`
 }
 
-function DaySchedule({
+export function MeetingDetails({
+  draft,
+  accounts,
+  onChange,
+}: {
+  draft: CalendarDraft
+  accounts: string[]
+  onChange: (change: (draft: CalendarDraft) => CalendarDraft) => void
+}) {
+  const fields = draft.fields
+  const guests = draft.invitees
+    .flatMap((invitee) => (invitee.selected ? [invitee.selected] : []))
+    .filter((guest) => guest.email.toLowerCase() !== fields.account.toLowerCase())
+  const conference = calendarConference({ ...fields, guests })
+  const change = <K extends keyof CalendarFields>(key: K, value: CalendarFields[K]) =>
+    onChange((current) => ({ ...current, assumptions: [], questions: [], fields: { ...current.fields, [key]: value } }))
+  return (
+    <section className="sky-meeting-details" aria-label="Meeting details">
+      <div className="sky-meeting-section-label sky-meeting-details-heading">Your event</div>
+      <TextInput
+        className="sky-meeting-title-field"
+        label="Title"
+        aria-label="Meeting title"
+        value={fields.title}
+        onChange={(event) => change('title', event.currentTarget.value)}
+      />
+      <MeetingGuests
+        value={draft.invitees}
+        onChange={(invitees) => onChange((current) => ({ ...current, assumptions: [], invitees }))}
+      />
+      <div className="sky-meeting-when">
+        <TextInput
+          label="Date"
+          type="date"
+          value={fields.date}
+          onChange={(event) => change('date', event.currentTarget.value)}
+        />
+        <TextInput
+          label="Time"
+          type="time"
+          value={fields.time}
+          onChange={(event) => change('time', event.currentTarget.value)}
+        />
+        <TextInput
+          label="Minutes"
+          type="number"
+          min={5}
+          max={720}
+          step={5}
+          value={fields.duration}
+          onChange={(event) => change('duration', Number(event.currentTarget.value))}
+        />
+      </div>
+      <Select
+        label="Timezone"
+        searchable
+        data={[...new Set([fields.timezone, ...zones()])].filter(Boolean)}
+        value={fields.timezone}
+        onChange={(value) => {
+          if (value) change('timezone', value)
+        }}
+        comboboxProps={{ withinPortal: false }}
+      />
+      <Select
+        label="Repeat"
+        value={fields.recurrence?.frequency ?? 'none'}
+        data={[
+          { value: 'none', label: 'Does not repeat' },
+          { value: 'daily', label: 'Daily' },
+          { value: 'weekly', label: 'Weekly' },
+          { value: 'monthly', label: 'Monthly' },
+          { value: 'yearly', label: 'Yearly' },
+        ]}
+        onChange={(value) => {
+          if (value === 'none') change('recurrence', undefined)
+          else if (value === 'daily' || value === 'weekly' || value === 'monthly' || value === 'yearly')
+            change('recurrence', {
+              frequency: value,
+              interval: fields.recurrence?.interval ?? 1,
+              ends: fields.recurrence?.ends ?? { type: 'never' },
+            })
+        }}
+        comboboxProps={{ withinPortal: false }}
+      />
+      {fields.recurrence && (
+        <>
+          <div className="sky-meeting-when">
+            <TextInput
+              label="Repeat every"
+              type="number"
+              min={1}
+              max={99}
+              value={fields.recurrence.interval}
+              onChange={(event) =>
+                change('recurrence', { ...fields.recurrence!, interval: Number(event.currentTarget.value) })
+              }
+            />
+            <Select
+              label="Ends"
+              value={fields.recurrence.ends.type}
+              data={[
+                { value: 'never', label: 'Never' },
+                { value: 'on', label: 'On date' },
+                { value: 'after', label: 'After' },
+              ]}
+              onChange={(value) => {
+                if (value === 'never' || value === 'on' || value === 'after')
+                  change('recurrence', {
+                    ...fields.recurrence!,
+                    ends:
+                      value === 'on'
+                        ? { type: 'on', date: fields.date }
+                        : value === 'after'
+                          ? { type: 'after', count: 1 }
+                          : { type: 'never' },
+                  })
+              }}
+              comboboxProps={{ withinPortal: false }}
+            />
+            {fields.recurrence.ends.type === 'on' && (
+              <TextInput
+                label="End date"
+                type="date"
+                min={fields.date}
+                value={fields.recurrence.ends.date}
+                onChange={(event) =>
+                  change('recurrence', { ...fields.recurrence!, ends: { type: 'on', date: event.currentTarget.value } })
+                }
+              />
+            )}
+            {fields.recurrence.ends.type === 'after' && (
+              <TextInput
+                label="Occurrences"
+                type="number"
+                min={1}
+                max={730}
+                value={fields.recurrence.ends.count}
+                onChange={(event) =>
+                  change('recurrence', {
+                    ...fields.recurrence!,
+                    ends: { type: 'after', count: Number(event.currentTarget.value) },
+                  })
+                }
+              />
+            )}
+          </div>
+          <p className="sky-meeting-note">{recurrenceLabel(fields)}</p>
+        </>
+      )}
+      {draft.assumptions.length > 0 && <p className="sky-meeting-note">{draft.assumptions.join(' ')}</p>}
+      {draft.questions.length > 0 && (
+        <p className="sky-meeting-questions">{draft.questions.join(' ')} Adjust the details above.</p>
+      )}
+      <Select
+        label="Video"
+        aria-label="Video conferencing"
+        data={[
+          { value: 'none', label: 'None' },
+          { value: 'zoom', label: 'Zoom' },
+        ]}
+        value={conference}
+        onChange={(value) => {
+          if (value === 'none' || value === 'zoom') change('conference', value)
+        }}
+        comboboxProps={{ withinPortal: false }}
+      />
+      <Select
+        label="From"
+        aria-label="Send from"
+        placeholder="Choose your Google account"
+        data={accounts}
+        value={fields.account || null}
+        onChange={(value) => change('account', value ?? '')}
+        comboboxProps={{ withinPortal: false }}
+      />
+      <details className="sky-meeting-description">
+        <summary>{fields.description ? 'Agenda or note' : 'Add an agenda or note'}</summary>
+        <Textarea
+          aria-label="Agenda or note"
+          minRows={3}
+          autosize
+          value={fields.description}
+          onChange={(event) => change('description', event.currentTarget.value)}
+        />
+      </details>
+    </section>
+  )
+}
+
+export function DaySchedule({
   available,
   busy,
   error,
@@ -230,7 +394,11 @@ export function MeetingDialog({ opened, onClose }: { opened: boolean; onClose: (
     const editsAtStart = { ...fieldEdits.current }
     const timer = setTimeout(() => {
       setParsing(true)
-      void request<CalendarDraft>('parse', { query: text, timezone: parseContext.current.timezone }, controller.signal)
+      void meetingRequest<CalendarDraft>(
+        'parse',
+        { query: text, timezone: parseContext.current.timezone },
+        controller.signal,
+      )
         .then((next) => {
           if (controller.signal.aborted || sequence !== parseSequence.current) return
           next.fields.account = parseContext.current.account
@@ -261,7 +429,7 @@ export function MeetingDialog({ opened, onClose }: { opened: boolean; onClose: (
   useEffect(() => {
     if (!opened) return
     const controller = new AbortController()
-    request<CalendarSetup>('setup', undefined, controller.signal)
+    meetingRequest<CalendarSetup>('setup', undefined, controller.signal)
       .then((data) => {
         setSetup(data)
         if (!data.accounts.length) setError('Connect a Google account with calendar access in Settings → Connections.')
@@ -313,7 +481,7 @@ export function MeetingDialog({ opened, onClose }: { opened: boolean; onClose: (
     const controller = new AbortController()
     setChecking(true)
     const timer = setTimeout(() => {
-      request<CalendarAvailability>('preview', timing, controller.signal)
+      meetingRequest<CalendarAvailability>('preview', timing, controller.signal)
         .then((data) => {
           if (!controller.signal.aborted) setAvailable(data)
         })
@@ -345,7 +513,7 @@ export function MeetingDialog({ opened, onClose }: { opened: boolean; onClose: (
     let timer: ReturnType<typeof setTimeout>
     const poll = async () => {
       try {
-        const next = await request<CalendarJob>(`jobs/${encodeURIComponent(job.id)}`)
+        const next = await meetingRequest<CalendarJob>(`jobs/${encodeURIComponent(job.id)}`)
         if (stopped) return
         setJob(next)
         setError('')
@@ -420,7 +588,7 @@ export function MeetingDialog({ opened, onClose }: { opened: boolean; onClose: (
       /* Server idempotency still covers this page. */
     }
     try {
-      setJob(await request<CalendarJob>('create', { id, fields: finalFields, reviewKey: available.reviewKey }))
+      setJob(await meetingRequest<CalendarJob>('create', { id, fields: finalFields, reviewKey: available.reviewKey }))
     } catch (failure) {
       if (failure instanceof MeetingRequestError && [400, 403, 415].includes(failure.status)) {
         setError(failure.message)
@@ -431,7 +599,7 @@ export function MeetingDialog({ opened, onClose }: { opened: boolean; onClose: (
       }
       // A lost POST response may follow a successful save. Query the same id before offering a retry.
       try {
-        setJob(await request<CalendarJob>(`jobs/${id}`))
+        setJob(await meetingRequest<CalendarJob>(`jobs/${id}`))
       } catch {
         setError(failure instanceof Error ? failure.message : 'Could not start the meeting.')
         setJob({
@@ -651,180 +819,18 @@ export function MeetingDialog({ opened, onClose }: { opened: boolean; onClose: (
               <>
                 {draft.unsupported.length > 0 && <Alert color="yellow">{draft.unsupported.join(' ')}</Alert>}
                 <div className="sky-meeting-review" aria-busy={stale || parsing}>
-                  <section className="sky-meeting-details" aria-label="Meeting details">
-                    <div className="sky-meeting-section-label sky-meeting-details-heading">Your event</div>
-                    <TextInput
-                      className="sky-meeting-title-field"
-                      label="Title"
-                      aria-label="Meeting title"
-                      value={fields.title}
-                      onChange={(event) => change('title', event.currentTarget.value)}
-                    />
-                    <MeetingGuests
-                      value={draft.invitees}
-                      onChange={(invitees) => setDraft((current) => (current ? { ...current, invitees } : current))}
-                    />
-                    <div className="sky-meeting-when">
-                      <TextInput
-                        label="Date"
-                        type="date"
-                        value={fields.date}
-                        onChange={(event) => change('date', event.currentTarget.value)}
-                      />
-                      <TextInput
-                        label="Time"
-                        type="time"
-                        value={fields.time}
-                        onChange={(event) => change('time', event.currentTarget.value)}
-                      />
-                      <TextInput
-                        label="Minutes"
-                        type="number"
-                        min={5}
-                        max={720}
-                        step={5}
-                        value={fields.duration}
-                        onChange={(event) => change('duration', Number(event.currentTarget.value))}
-                      />
-                    </div>
-                    <Select
-                      label="Timezone"
-                      searchable
-                      data={[...new Set([fields.timezone, ...zones()])].filter(Boolean)}
-                      value={fields.timezone}
-                      onChange={(value) => {
-                        if (value) change('timezone', value)
-                      }}
-                      comboboxProps={{ withinPortal: false }}
-                    />
-                    <Select
-                      label="Repeat"
-                      value={fields.recurrence?.frequency ?? 'none'}
-                      data={[
-                        { value: 'none', label: 'Does not repeat' },
-                        { value: 'daily', label: 'Daily' },
-                        { value: 'weekly', label: 'Weekly' },
-                        { value: 'monthly', label: 'Monthly' },
-                        { value: 'yearly', label: 'Yearly' },
-                      ]}
-                      onChange={(value) => {
-                        if (value === 'none') change('recurrence', undefined)
-                        else if (value === 'daily' || value === 'weekly' || value === 'monthly' || value === 'yearly')
-                          change('recurrence', {
-                            frequency: value,
-                            interval: fields.recurrence?.interval ?? 1,
-                            ends: fields.recurrence?.ends ?? { type: 'never' },
-                          })
-                      }}
-                      comboboxProps={{ withinPortal: false }}
-                    />
-                    {fields.recurrence && (
-                      <>
-                        <div className="sky-meeting-when">
-                          <TextInput
-                            label="Repeat every"
-                            type="number"
-                            min={1}
-                            max={99}
-                            value={fields.recurrence.interval}
-                            onChange={(event) =>
-                              change('recurrence', {
-                                ...fields.recurrence!,
-                                interval: Number(event.currentTarget.value),
-                              })
-                            }
-                          />
-                          <Select
-                            label="Ends"
-                            value={fields.recurrence.ends.type}
-                            data={[
-                              { value: 'never', label: 'Never' },
-                              { value: 'on', label: 'On date' },
-                              { value: 'after', label: 'After' },
-                            ]}
-                            onChange={(value) => {
-                              if (value === 'never' || value === 'on' || value === 'after')
-                                change('recurrence', {
-                                  ...fields.recurrence!,
-                                  ends:
-                                    value === 'on'
-                                      ? { type: 'on', date: fields.date }
-                                      : value === 'after'
-                                        ? { type: 'after', count: 1 }
-                                        : { type: 'never' },
-                                })
-                            }}
-                            comboboxProps={{ withinPortal: false }}
-                          />
-                          {fields.recurrence.ends.type === 'on' && (
-                            <TextInput
-                              label="End date"
-                              type="date"
-                              min={fields.date}
-                              value={fields.recurrence.ends.date}
-                              onChange={(event) =>
-                                change('recurrence', {
-                                  ...fields.recurrence!,
-                                  ends: { type: 'on', date: event.currentTarget.value },
-                                })
-                              }
-                            />
-                          )}
-                          {fields.recurrence.ends.type === 'after' && (
-                            <TextInput
-                              label="Occurrences"
-                              type="number"
-                              min={1}
-                              max={730}
-                              value={fields.recurrence.ends.count}
-                              onChange={(event) =>
-                                change('recurrence', {
-                                  ...fields.recurrence!,
-                                  ends: { type: 'after', count: Number(event.currentTarget.value) },
-                                })
-                              }
-                            />
-                          )}
-                        </div>
-                        <p className="sky-meeting-note">{recurrenceLabel(fields)}</p>
-                      </>
-                    )}
-                    {draft.assumptions.length > 0 && <p className="sky-meeting-note">{draft.assumptions.join(' ')}</p>}
-                    {draft.questions.length > 0 && (
-                      <p className="sky-meeting-questions">{draft.questions.join(' ')} Adjust the details above.</p>
-                    )}
-                    <Select
-                      label="Video conferencing"
-                      data={[
-                        { value: 'none', label: 'None' },
-                        { value: 'zoom', label: 'Zoom' },
-                      ]}
-                      value={conference}
-                      onChange={(value) => {
-                        if (value === 'none' || value === 'zoom') change('conference', value)
-                      }}
-                      comboboxProps={{ withinPortal: false }}
-                    />
-                    <Select
-                      label="From"
-                      aria-label="Send from"
-                      placeholder="Choose your Google account"
-                      data={setup?.accounts ?? []}
-                      value={fields.account || null}
-                      onChange={(value) => change('account', value ?? '')}
-                      comboboxProps={{ withinPortal: false }}
-                    />
-                    <details className="sky-meeting-description">
-                      <summary>Add an agenda or note</summary>
-                      <Textarea
-                        aria-label="Agenda or note"
-                        minRows={3}
-                        autosize
-                        value={fields.description}
-                        onChange={(event) => change('description', event.currentTarget.value)}
-                      />
-                    </details>
-                  </section>
+                  <MeetingDetails
+                    draft={draft}
+                    accounts={setup?.accounts ?? []}
+                    onChange={(update) => {
+                      const next = update(draft)
+                      for (const key of Object.keys(next.fields) as Array<keyof CalendarFields>) {
+                        if (next.fields[key] !== fields[key])
+                          fieldEdits.current[key] = (fieldEdits.current[key] ?? 0) + 1
+                      }
+                      setDraft((current) => (current ? update(current) : current))
+                    }}
+                  />
                   <DaySchedule
                     available={available}
                     busy={checking}
@@ -889,3 +895,5 @@ export function MeetingDialog({ opened, onClose }: { opened: boolean; onClose: (
     </Modal>
   )
 }
+
+export { clock as meetingClock, dayLabel as meetingDayLabel }

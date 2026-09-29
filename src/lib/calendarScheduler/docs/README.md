@@ -128,6 +128,17 @@ availability matches the original review key. A missing draft, wrong operation o
 failed read cannot produce an approval or execute a write. Save still rechecks
 availability and the provider event version.
 
+Web chat renders creation approvals as meeting drafts using the composer's shared
+fields and guest picker. The approval carries saved fields, assumptions and the
+availability snapshot; the browser does not reconstruct an event from prose.
+Editing checks availability again and saves a new immutable draft. The pending
+approval replaces its draft IDs and increments a revision, so another tab cannot
+approve an older preview. Only the host supplies replacement tool input to the
+engine, which replaces the matching call in SDK history before continuing;
+changing the visible card alone would still execute the original invitation.
+The final creation action approves that saved revision. Receipt polling reads the
+same job IDs and never resends them; unconfirmed outcomes point back to Calendar.
+
 A recurring meeting is one immutable draft, one approval and one native Google
 Calendar series. Daily, weekly, monthly and yearly repeats are anchored to the
 start date and local IANA time, with an interval and optional inclusive end date
@@ -135,14 +146,30 @@ or occurrence count. No requested end means no end date; callers must never
 invent a horizon or expand a series into separate events. Weekly uses the start
 weekday, monthly its day number, and yearly its month and day. Multiple weekdays,
 skipped dates and ordinal monthly patterns remain explicit unsupported results.
-The composer provides repeat controls. Availability checks and their review
+The composer and chat share repeat controls. Availability checks and their review
 key cover the first occurrence and exact recurrence; the review explicitly says
 later dates and guests are not checked. A series is not promised conflict-free.
+
+Older unsupported results do not describe current recurrence capabilities. A new
+request can prepare a fresh series draft using the already-settled details; old
+separate-event batches remain blocked. For genuinely unsupported requirements,
+the chat tool factory owns a scheduling queue per user turn:
+an `unsupported` result blocks subsequent preparations and sends, including
+already-queued parallel calls, until the next user turn. Draft IDs prepared in
+a turn containing an unsupported result stay blocked in later turns too. The web
+host derives those IDs from retained tool results and checks them before presenting
+an approval, accepting it, or editing its drafts into replacement IDs. Execution
+checks the same history. This survives recovery; a per-turn guard alone would let
+a later message revive the discarded batch. Receipt reads stay available.
+Exact-input repetition detection alone cannot catch this loop because every
+attempted date and newly generated draft ID differs.
 
 For separate one-time events explicitly requested by the user, prepare each before saving, then call `calendar_schedule`
 once with comma-separated draft IDs in `send` (up to 50). The policy reads every
 draft; all solo blocks run directly, and any invitations share one approval card
-or spoken confirmation showing every event. `/send-batch` validates all drafts
+or spoken confirmation showing every event. The web card lists the dates compactly,
+opens one event's details or editor at a time, and names the total event count on
+the creation button. `/send-batch` validates all drafts
 and their accounts/times before starting creation. Each event keeps its own
 immutable draft and durable job receipt. Batch results contain `jobs`, including
 individual failures or uncertain saves; use the same IDs in `status` or retry

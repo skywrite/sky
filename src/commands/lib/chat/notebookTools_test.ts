@@ -172,6 +172,43 @@ test('runToolCommand outputs satisfy the SDK message schema', async () => {
   })
 })
 
+test('failed calendar sends preserve the edited draft and durable receipt in model context', async () => {
+  const receipt = {
+    id: 'edited-draft',
+    attemptId: 'edited-draft',
+    state: 'failed',
+    retryable: true,
+    fields: {
+      title: 'Atlas launch review',
+      date: '2030-05-03',
+      time: '16:15',
+      duration: 45,
+      description: 'Review the revised proposal.',
+      recurrence: { frequency: 'weekly', interval: 2, ends: { type: 'never' } },
+    },
+    result: undefined,
+  }
+  const out = await runToolCommand(
+    stubTasks(CommandResult.fail('Creation failed: sign in to Calendar.', receipt)),
+    { toolName: 'calendar_schedule', commandName: 'calendar:schedule' },
+    { send: receipt.id },
+  )
+  assert({
+    given: 'a failed send after a human changed the subject, timing, duration, agenda and recurrence',
+    should: 'return those exact fields and original identity as SDK-valid JSON rather than only an error string',
+    actual: [
+      out.id,
+      out.attemptId,
+      out.state,
+      out.fields,
+      out.retryable,
+      out.success,
+      toolModelMessageSchema.safeParse(asToolMessage(out)).success,
+    ],
+    expected: [receipt.id, receipt.attemptId, receipt.state, receipt.fields, true, false, true],
+  })
+})
+
 test('runToolCommand flattens success payloads to plain JSON', async () => {
   class Artifact {
     url: string

@@ -14,6 +14,9 @@ import * as path from 'node:path'
 import { Hono } from 'hono'
 import { bodyLimit } from 'hono/body-limit'
 import { streamSSE } from 'hono/streaming'
+import { calendarDraftRefusal } from '#commands/lib/chat/calendarScheduling.ts'
+import type { CalendarSchedulerClient } from '#lib/calendarScheduler/client.ts'
+import type { CalendarPreparedDraft } from '#lib/calendarScheduler/types.ts'
 import type { LegalReviewStore } from '#lib/legalReview/store.ts'
 import type { WritingDraftStore } from '#lib/writingVoice/drafts.ts'
 import type { ResolvedModel } from '#shared/ai/models.ts'
@@ -45,6 +48,7 @@ import { hold } from '../../activity.ts'
 import { explorerHref } from '../explorer/mod.ts'
 import { prettyModel } from '../settings/mod.ts'
 import { branchPoints } from './branchPoint.ts'
+import { recoverCalendarApprovals, restoreAnsweredApprovals, type ReviseCalendarApproval } from './calendarApproval.ts'
 import { callSubject } from './callSubject.ts'
 import { registerWritingDraftRoutes } from './drafts.ts'
 import { createChatFileRoutes, readChatFiles } from './files.ts'
@@ -76,6 +80,8 @@ export interface ApprovalCard {
   lines: string[]
   /** The file the call is scoped to, when a go can stand for the session ("allow for this file") */
   sessionKey?: string
+  calendar?: CalendarPreparedDraft[]
+  revision?: number
 }
 
 export interface PendingApproval extends ApprovalCard {
@@ -93,7 +99,10 @@ export interface AnsweredApproval extends PendingApproval {
  * Puts a tool call to the person and resolves with their answer — the
  * routes' half of the session's approval handler. The turn waits on it.
  */
-export type AskApproval = (card: ApprovalCard) => Promise<ApprovalDecision & { always?: boolean }>
+export type AskApproval = (
+  card: ApprovalCard,
+  reviseCalendar?: ReviseCalendarApproval,
+) => Promise<ApprovalDecision & { always?: boolean }>
 
 /**
  * A tool's own words as it works, as the host hears them from the
@@ -139,6 +148,7 @@ export interface ToolRun {
 export interface ThreadRestore {
   id: string
   runs?: ToolRun[]
+  answered?: AnsweredApproval[]
   prefs?: ThreadPrefs
   title?: string | null
   /** When the thread started; absent, it starts now — a fresh branch does */
@@ -247,6 +257,7 @@ export interface ChatSettingsHost {
 }
 
 export interface ChatRoutesOptions {
+  calendarClient?: Pick<CalendarSchedulerClient, 'approval'>
   sourceLinks?: ChatSourceLinks
   selectionStarts?: SelectionStartOptions
   writingDrafts?: WritingDraftStore
@@ -354,9 +365,19 @@ export interface Thread {
   /** Where the running turn's events go; null between turns */
   sink: ((event: WireEvent) => void) | null
   /** Tool calls held for the person's go, by approval id */
-  pending: Map<string, PendingApproval & { resolve: (decision: ApprovalDecision & { always?: boolean }) => void }>
+  pending: Map<
+    string,
+    PendingApproval & {
+      resolve: (decision: ApprovalDecision & { always?: boolean }) => void
+      reviseCalendar?: ReviseCalendarApproval
+      replacementInput?: Record<string, unknown>
+      revising?: boolean
+    }
+  >
   /** The calls answered so far, oldest first */
   answered: AnsweredApproval[]
+  /** Lazy legacy recovery avoids calling the service's calendar API while it is still starting. */
+  recoverCalendar?: () => Promise<void>
   /** Every tool run so far, oldest first — the running one is the last without a status */
   runs: ToolRun[]
   /** The query set currently being gathered, before its context log entry exists. */
@@ -629,7 +650,7 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
       // A tool call held for the person: the card goes down the stream (and
       // waits on the thread for a page that opens later); the answer route
       // resolves it. The turn waits meanwhile.
-      const ask: AskApproval = (card) =>
+      const ask: AskApproval = (card, reviseCalendar) =>
         new Promise((resolve) => {
           const thread = threads.get(id)
           if (!thread) {
@@ -640,8 +661,19 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
             resolve({ approved: false, reason: 'The response was stopped.' })
             return
           }
+          const refused =
+            card.calendar &&
+            calendarDraftRefusal(
+              thread.runs,
+              card.calendar.map((draft) => draft.id),
+              thread.session.turns.length,
+            )
+          if (refused) {
+            resolve({ approved: false, reason: refused })
+            return
+          }
           const approval: PendingApproval = { id: crypto.randomUUID(), ...card }
-          thread.pending.set(approval.id, { ...approval, resolve })
+          thread.pending.set(approval.id, { ...approval, resolve, reviseCalendar })
           thread.state = 'waiting'
           thread.updatedAt = ++tick
           thread.sink?.({ type: 'approval-request', approval })
@@ -709,7 +741,7 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
             busy: false,
             sink: null,
             pending: new Map(),
-            answered: [],
+            answered: restore?.answered ?? restoreAnsweredApprovals(restore?.resume?.recovery?.host?.answered) ?? [],
             runs:
               restore?.runs ??
               restoreToolRuns(restore?.resume?.recovery?.host?.runs) ??
@@ -751,6 +783,16 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
             }
           }
           threads.set(id, thread)
+          if (restore && options.calendarClient) {
+            let recovery: Promise<void> | undefined
+            thread.recoverCalendar = () =>
+              (recovery ??= recoverCalendarApprovals(thread.runs, options.calendarClient!, thread.answered).then(
+                (cards) => {
+                  thread.answered.push(...cards)
+                  thread.recoverCalendar = undefined
+                },
+              ))
+          }
           session.snapshotOnSend = true
           session.snapshotHostState = () => ({
             saves: thread.saves,
@@ -760,6 +802,7 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
             parentId: thread.parent?.id ?? null,
             saved: savedOf(thread, baseDir),
             runs: thread.runs,
+            answered: thread.answered,
           })
           pending.delete(id)
           return thread
@@ -1215,6 +1258,7 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
     const id = c.req.param('id')
     const thread = threads.get(id)
     if (!thread) return c.json({ message: 'no such thread' }, 404)
+    await thread.recoverCalendar?.()
     return c.json({
       id,
       title: titleOf(thread),
@@ -1231,12 +1275,16 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
       documents: thread.session.paths.length,
       kept: keptOf(thread),
       busy: thread.busy,
-      pending: [...thread.pending.values()].map(({ id: approvalId, toolName, lines, sessionKey }) => ({
-        id: approvalId,
-        toolName,
-        lines,
-        sessionKey,
-      })),
+      pending: [...thread.pending.values()].map(
+        ({ id: approvalId, toolName, lines, sessionKey, calendar, revision }) => ({
+          id: approvalId,
+          toolName,
+          lines,
+          sessionKey,
+          calendar,
+          revision,
+        }),
+      ),
       answered: thread.answered,
       runs: thread.runs,
       queries: [
@@ -1253,6 +1301,52 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
     })
   })
 
+  app.post('/:id/approvals/:approvalId/calendar', async (c) => {
+    const thread = threads.get(c.req.param('id'))
+    const approval = thread?.pending.get(c.req.param('approvalId'))
+    if (!thread || !approval?.calendar || !approval.reviseCalendar)
+      return c.json({ message: 'This meeting draft is no longer waiting for review.' }, 404)
+    const body = await c.req.json().catch(() => null)
+    if (approval.revising || body?.revision !== approval.revision)
+      return c.json({ message: 'This draft changed in another window. Reload it before continuing.' }, 409)
+    const refused = calendarDraftRefusal(
+      thread.runs,
+      approval.calendar.map((draft) => draft.id),
+      thread.session.turns.length,
+    )
+    if (refused) return c.json({ message: refused }, 409)
+    approval.revising = true
+    try {
+      const revised = await approval.reviseCalendar(approval.calendar, body.drafts)
+      if (thread.pending.get(approval.id) !== approval)
+        return c.json({ message: 'This meeting draft is no longer waiting for review.' }, 409)
+      const refused = calendarDraftRefusal(
+        thread.runs,
+        approval.calendar.map((draft) => draft.id),
+        thread.session.turns.length,
+      )
+      if (refused) return c.json({ message: refused }, 409)
+      approval.calendar = revised.calendar
+      approval.lines = revised.lines
+      approval.replacementInput = revised.input
+      approval.revision = (approval.revision ?? 0) + 1
+      const {
+        resolve: _resolve,
+        reviseCalendar: _revise,
+        replacementInput: _input,
+        revising: _revising,
+        ...card
+      } = approval
+      thread.updatedAt = ++tick
+      thread.sink?.({ type: 'approval-request', approval: card })
+      return c.json(card)
+    } catch (error) {
+      return c.json({ message: error instanceof Error ? error.message : 'Could not save the meeting edits.' }, 400)
+    } finally {
+      approval.revising = false
+    }
+  })
+
   // The person's answer to a held tool call. The turn resumes with it: an
   // approved call runs, a declined one is reported to the model as such.
   app.post('/:id/approvals/:approvalId', async (c) => {
@@ -1260,25 +1354,59 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
     if (!thread) return c.json({ message: 'no such thread' }, 404)
     const approval = thread.pending.get(c.req.param('approvalId'))
     if (!approval) return c.json({ message: 'no such approval — it may have been answered already' }, 404)
-    const body = (await c.req.json().catch(() => null)) as { approved?: unknown; always?: unknown } | null
+    const body = (await c.req.json().catch(() => null)) as {
+      approved?: unknown
+      always?: unknown
+      revision?: unknown
+    } | null
     if (typeof body?.approved !== 'boolean') return c.json({ message: 'expected { approved: true | false }' }, 400)
+    if (approval.revising || (body.approved && approval.calendar && body.revision !== approval.revision))
+      return c.json({ message: 'This draft changed. Review the latest meeting details before sending.' }, 409)
+    const refused =
+      body.approved && approval.calendar
+        ? calendarDraftRefusal(
+            thread.runs,
+            approval.calendar.map((draft) => draft.id),
+            thread.session.turns.length,
+          )
+        : undefined
+    const approved = body.approved && !refused
     // "Allow for this file": a go that stands for the session, when the card offered one.
-    const always = body.approved && body.always === true && approval.sessionKey !== undefined
+    const always = approved && body.always === true && approval.sessionKey !== undefined
 
     thread.pending.delete(approval.id)
     // The message that asked is the last turn; the reply lands after it.
     const at = thread.session.turns.length
-    const { resolve, ...card } = approval
-    thread.answered.push({ ...card, approved: body.approved, at })
+    const { resolve, reviseCalendar: _revise, replacementInput, revising: _revising, ...card } = approval
+    const answered = { ...card, approved, at }
+    thread.answered.push(answered)
+    if (card.calendar) {
+      try {
+        // Preserve the edited card before the provider can begin an external save.
+        await snapshotThread(thread)
+      } catch {
+        thread.answered = thread.answered.filter((entry) => entry !== answered)
+        thread.pending.set(approval.id, approval)
+        return c.json({ message: 'Could not retain this meeting review. Try again before sending.' }, 500)
+      }
+    }
     if (thread.pending.size === 0) thread.state = 'thinking'
     thread.updatedAt = ++tick
-    thread.sink?.({ type: 'approval-answered', id: approval.id, approved: body.approved, at })
+    thread.sink?.({ type: 'approval-answered', id: approval.id, approved, at })
     resolve(
-      body.approved
-        ? { approved: true, reason: 'User approved', always }
-        : { approved: false, reason: 'User declined. Do not request this tool again.' },
+      approved
+        ? {
+            approved: true,
+            reason: card.calendar
+              ? `User approved these exact saved meeting details. They supersede earlier scheduling text and drafts; preserve them during recovery: ${JSON.stringify(card.calendar.map(({ id, fields }) => ({ draftId: id, fields })))}`
+              : 'User approved',
+            always,
+            ...(replacementInput ? { input: replacementInput } : {}),
+          }
+        : { approved: false, reason: refused ?? 'User declined. Do not request this tool again.' },
     )
-    return c.json({ id: approval.id, approved: body.approved, at, waiting: thread.pending.size })
+    if (refused) return c.json({ message: refused, approved: false }, 409)
+    return c.json({ id: approval.id, approved, at, waiting: thread.pending.size })
   })
 
   // What the model sees: the last rebuild's records, kept and cut, and the

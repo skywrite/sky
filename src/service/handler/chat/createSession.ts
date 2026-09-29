@@ -28,6 +28,7 @@ import CommandContext from '#commands/lib/core/CommandContext.ts'
 import CommandService from '#commands/lib/core/CommandService.ts'
 import { commandNameToToolName } from '#commands/lib/jsonSchema.ts'
 import { EventOutput, type OutputEvent } from '#commands/lib/output/EventOutput.ts'
+import { CalendarSchedulerClient } from '#lib/calendarScheduler/client.ts'
 import { legalReviewBrief, legalReviewContext } from '#lib/legalReview/chat.ts'
 import { createLegalReviewer } from '#lib/legalReview/runtime.ts'
 import { summarizeTranscript } from '#lib/notebook/enrich/summarize.ts'
@@ -62,6 +63,7 @@ import { fitBudget } from '#universal/ai/readingBudget.ts'
 import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import { prettyModel, PROVIDER_LABEL, ROLE_LABEL } from '../settings/mod.ts'
 import { approvalCard } from './approvalCard.ts'
+import { calendarApprovalPrompt, restoreAnsweredApprovals } from './calendarApproval.ts'
 import { unsavedDraftsOf } from './drafts.ts'
 import { chatFileContext } from './files.ts'
 import { prepareChatImageResult } from './images.ts'
@@ -398,6 +400,7 @@ export function createChatHost(config: typeof ConfigModule, env: Record<string, 
             ...createFileTools({ today, attachmentsRoot: config.DIR_ATTACHMENTS, cwd: config.DIR_HOME, onAttachments }),
             ...(await createNotebookTools(toolTasks, {
               sourceChat: sourceChatHref(id),
+              calendarHistory: runs,
               researchContext: hooks.researchContext,
               legalReviewContext: legalReviewContext(hooks, config.DIR_ATTACHMENTS, `chat:${id}`),
               prepareResult: prepareChatImageResult({
@@ -429,6 +432,14 @@ export function createChatHost(config: typeof ConfigModule, env: Record<string, 
       approvalHandler: async ({ toolName, input: raw, abortSignal }) => {
         // The card and the key read the call as the command will: blanks dropped.
         const input = withoutBlankStrings(raw as Record<string, unknown>)
+        if (toolName === 'calendar_schedule' && input.send) {
+          const card = await calendarApprovalPrompt(
+            input,
+            new CalendarSchedulerClient(`http://localhost:${context.config.PORT_SERVER}`),
+          )
+          abortSignal?.throwIfAborted()
+          return ask({ toolName, lines: card.lines, calendar: card.calendar, revision: 0 }, card.revise)
+        }
         const sessionKey = getApprovalSessionKey(toolName)?.(input)
         const lines = await approvalCard(toolName, input, getApprovalFormatter(toolName), context)
         abortSignal?.throwIfAborted()
@@ -483,6 +494,7 @@ export function createChatHost(config: typeof ConfigModule, env: Record<string, 
           restores.push({
             id: ref.session,
             runs: restoreToolRuns(host?.runs),
+            answered: restoreAnsweredApprovals(host?.answered),
             startTime: ref.startTime,
             state,
             approvals,
@@ -527,6 +539,7 @@ export function createChatHost(config: typeof ConfigModule, env: Record<string, 
 
   return {
     createSession,
+    calendarClient: new CalendarSchedulerClient(`http://localhost:${config.PORT_SERVER}`),
     sourceLinks,
     selectionStarts: { dir: path.join(config.DIR_STATE_AI_CHATS, 'selection-starts') },
     writingDrafts,

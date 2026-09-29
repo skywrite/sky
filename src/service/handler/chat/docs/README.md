@@ -1,6 +1,6 @@
 ---
 created: 2026-09-01
-updated: 2026-09-23
+updated: 2026-09-28
 ---
 
 # Chat over HTTP — a thread, its tuning, and the story of its context
@@ -325,7 +325,8 @@ a person can see and touch:
   terminal's pid — and every one becomes a thread again: in the day's list
   and the rail with its turns on the page at once, its context restored at
   its next message, and the same model, reading budget, and filing preference.
-  Recovery includes the full model history with tool calls and results; a
+  Recovery includes the full model history with tool calls and results and
+  answered approval cards, including the exact edited calendar drafts; a
   continued saved chat keeps its file identity. Only ending a thread removes
   its snapshot. A stop mid-turn preserves the unanswered message and all
   completed turns. A browser continuation whose thread cannot be restored
@@ -413,8 +414,9 @@ a person can see and touch:
   `busy`) and follows the turn by re-reading the thread until it settles.
   The day's list shows such a thread as `waiting` with "needs your go".
 - **Calendar invitations and updates.** The calendar tools prepare and read
-  receipts without asking; sending or saving uses an asynchronous formatter to
-  show the stored event details before approval. See the
+  receipts without asking. Creation approvals show an editable meeting draft
+  using the `/clock` composer's controls, followed by the creation receipt and
+  Calendar/Zoom links. Updates retain their before/after approval summary. See the
   [calendar workflow](../../../../lib/calendarScheduler/docs/README.md#chat-and-voice).
 - **Tool progress and inspection.** The engine emits `tool-execution-start`
   as streamed arguments begin (`preparing`) and immediately before execution
@@ -426,6 +428,9 @@ a person can see and touch:
   parameters, result, error, and any command activity. An expanded inspector
   stays open through completion and preserves text selection during polling.
   `callSubject` provides a short input summary beside the tool name.
+  Calendar preparation calls share one expandable activity row even while a reply
+  is running. Its labels come from scheduler results: a ready draft, missing
+  details and an unsupported request are distinct from a created event.
 
   Progress is a shared engine contract: new tools require no individual UI
   wiring. `ToolProgress` merges local execution and provider stream events,

@@ -111,6 +111,17 @@ export interface CalendarApproval {
   summary: string
   /** Derived from saved guests, including guests removed by an update. */
   needsApproval: boolean
+  /** Exact saved creation draft, for interactive review in chat. */
+  draft?: CalendarPreparedDraft
+}
+
+export interface CalendarPreparedDraft {
+  id: string
+  fields: CalendarFields
+  assumptions: string[]
+  reviewKey: string
+  availability?: CalendarAvailability
+  job?: CalendarJob
 }
 
 export interface CalendarSchedulerHost {
@@ -144,4 +155,6 @@ export interface CalendarPreparation extends CalendarDraft {
 export interface CalendarReview {
   fields: CalendarFields
   assumptions?: string[]
+  /** When supplied by an editor, changed availability requires another review. */
+  reviewKey?: string
 }

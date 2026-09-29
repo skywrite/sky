@@ -14,6 +14,7 @@ import {
   useRef,
   useState,
 } from 'react'
+import type { CalendarPreparedDraft } from '#lib/calendarScheduler/types.ts'
 import type { WritingDraftView } from '#lib/writingVoice/draftTypes.ts'
 import { splitChatFiles } from '#universal/ai/chatFiles.ts'
 import { splitChatImages } from '#universal/ai/chatImages.ts'
@@ -26,6 +27,8 @@ import { ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
 import type { BranchPoint } from '../../chat/branchPoint.ts'
 import type { UnwindBlocker } from '../../chat/unwind.ts'
 import { ChatActivity, type TurnQueries } from './chatActivity.tsx'
+import { calendarActivitySummary, calendarRunLabel } from './chatCalendarActivity.ts'
+import { ChatCalendarDraft } from './chatCalendarDraft.tsx'
 import { clearChatDraft, useChatDraft, type ChatDraft } from './chatDraft.ts'
 import { FileClips, Paperclip, type PendingChatFile, useChatFiles } from './chatFiles.tsx'
 import { ChatImages, replyImages } from './chatImages.tsx'
@@ -111,6 +114,8 @@ export interface Approval {
   lines: string[]
   /** Set when a go can stand for the session — the card offers "allow for this file" */
   sessionKey?: string
+  calendar?: CalendarPreparedDraft[]
+  revision?: number
 }
 
 /** A call the person answered — kept in the thread as the record of what was allowed. */
@@ -408,7 +413,14 @@ function reduce(state: ThreadState, action: Action): ThreadState {
     case 'emptied':
       return { ...initial(state.id), loaded: true, settings: state.settings, contextVersion: state.contextVersion + 1 }
     case 'approval':
-      if (state.approvals.some((a) => a.id === action.approval.id)) return state
+      if (state.answered.some((a) => a.id === action.approval.id)) return state
+      if (state.approvals.some((a) => a.id === action.approval.id))
+        return {
+          ...state,
+          approvals: state.approvals.map((a) =>
+            a.id === action.approval.id && (action.approval.revision ?? 0) > (a.revision ?? 0) ? action.approval : a,
+          ),
+        }
       return { ...state, approvals: [...state.approvals, action.approval], gather: WAITING }
     case 'answered': {
       // The card stays, settled, as the record of what was allowed; the
@@ -839,15 +851,18 @@ export function useChat(id: string) {
   // The person's answer to a held call. The stream carries the same news
   // back; either arrival clears the card.
   const answer = useCallback(
-    async (approvalId: string, approved: boolean, always = false) => {
+    async (approvalId: string, approved: boolean, always = false, revision?: number) => {
       if (!state.id) return
       const id = state.id
       const response = await fetch(`/chat/${id}/approvals/${approvalId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ approved, always }),
+        body: JSON.stringify({ approved, always, revision }),
       }).catch(() => null)
-      if (!response?.ok) return
+      if (!response?.ok) {
+        const failure = await response?.json().catch(() => null)
+        throw new Error(failure?.message ?? 'Could not reach Sky. Try again.')
+      }
       const body = (await response.json()) as { approved: boolean; at: number }
       dispatch({ type: 'answered', id, approvalId, approved: body.approved, at: body.at })
     },
@@ -1290,6 +1305,7 @@ export function useChat(id: string) {
     setSaves,
     reload,
     answer,
+    updateApproval: (approval: Approval) => dispatch({ type: 'approval', id: state.id, approval }),
     branch,
     unwind,
   }
@@ -1433,13 +1449,11 @@ function RunView({ run }: { run: Run }) {
   const running = run.status === null
   // A Stop reaches the command through its signal; until the run ends, the chip says what the wait is.
   const stopping = useContext(StoppingContext) && running
+  const calendarLabel = calendarRunLabel(run)
   const progressLabel = stopping
     ? 'Stopping'
-    : run.phase === 'preparing'
-      ? 'Preparing inputs'
-      : run.phase === 'waiting'
-        ? 'Waiting for approval'
-        : 'Running'
+    : (calendarLabel ??
+      (run.phase === 'preparing' ? 'Preparing inputs' : run.phase === 'waiting' ? 'Waiting for approval' : 'Running'))
   // Keep an explicitly opened inspector and its text selection through completion.
   const seconds = useElapsed(run.started, running)
   const took = run.finished === undefined ? undefined : Math.max(0, Math.floor((run.finished - run.started) / 1000))
@@ -1464,7 +1478,7 @@ function RunView({ run }: { run: Run }) {
           </span>
           <span className="sky-tool-fold-name">{toolDisplayName(run.tool)}</span>
           {took !== undefined && <span className="sky-tool-fold-time">{elapsedLabel(took)}</span>}
-          <span className="sky-tool-fold-summary">{run.summary ?? last}</span>
+          <span className="sky-tool-fold-summary">{calendarLabel ?? run.summary ?? last}</span>
         </button>
       ) : (
         <button
@@ -1482,7 +1496,7 @@ function RunView({ run }: { run: Run }) {
           {toolDisplayName(run.tool)}
           {run.subject && <span className="sky-tool-subject">{run.subject}</span>}
           <span className="sky-tool-meta">
-            {running ? progressLabel : run.status === 'success' ? 'Completed' : 'Failed'}
+            {running ? progressLabel : (calendarLabel ?? (run.status === 'success' ? 'Completed' : 'Failed'))}
           </span>
           {(running || took !== undefined) && (
             <span className="sky-tool-meta">{elapsedLabel(running ? seconds : took!)}</span>
@@ -1531,15 +1545,56 @@ function RunView({ run }: { run: Run }) {
   )
 }
 
-/** Runs shown as they are: one chip each, watched as they work. */
+function CalendarRunGroup({ runs }: { runs: Run[] }) {
+  const [open, setOpen] = useState(false)
+  const running = runs.some((run) => run.status === null)
+  const stopping = useContext(StoppingContext) && running
+  return (
+    <div className="sky-tool-group sky-calendar-activity">
+      <button
+        type="button"
+        className="sky-tool-fold"
+        data-act="true"
+        onClick={() => setOpen((value) => !value)}
+        aria-expanded={open}
+        aria-label="Calendar activity"
+      >
+        <span className="sky-tool-caret" aria-hidden="true">
+          {open ? '▾' : '▸'}
+        </span>
+        {running && <span className="sky-tool-pulse" role="progressbar" aria-label="Calendar progress" />}
+        <span className="sky-tool-fold-name">Calendar activity</span>
+        <span className="sky-tool-fold-summary">{stopping ? 'Stopping' : calendarActivitySummary(runs)}</span>
+      </button>
+      {open &&
+        runs.map((run, i) => (
+          <Fragment key={run.callId ?? `${run.tool}-${run.at}-${i}`}>
+            <RunView run={run} />
+          </Fragment>
+        ))}
+    </div>
+  )
+}
+
+/** Keep scheduling activity compact while a turn runs, including after a reload. */
 function RunRows({ runs }: { runs: Run[] }) {
+  const groups: Run[][] = []
+  for (const run of runs) {
+    const prior = groups.at(-1)
+    if (run.tool === 'calendar_schedule' && prior?.[0].tool === 'calendar_schedule') prior.push(run)
+    else groups.push([run])
+  }
   return (
     <div className="sky-tool-runs">
-      {runs.map((run, i) => (
-        <Fragment key={`${run.tool}-${run.at}-${i}`}>
-          <RunView run={run} />
-        </Fragment>
-      ))}
+      {groups.map((group, i) => {
+        const run = group[0]
+        const key = run.callId ?? `${run.tool}-${run.at}-${i}`
+        return (
+          <Fragment key={key}>
+            {run.tool === 'calendar_schedule' ? <CalendarRunGroup runs={group} /> : <RunView run={run} />}
+          </Fragment>
+        )
+      })}
     </div>
   )
 }
@@ -1555,9 +1610,8 @@ function runsLabel(runs: Run[]): string {
 }
 
 /**
- * The tools a reply ran. While the reply is being made every call shows as
- * it happens — that is the part worth watching. Once the reply is done, a
- * handful of calls or more fold to one line, a caret and a count, and open
+ * The tools a reply ran. Calendar calls share an expandable activity row.
+ * Once the reply is done, a handful of calls or more fold to one line, a caret and a count, and open
  * again on a click.
  */
 function RunList({ runs, folded = false }: { runs: Run[]; folded?: boolean }) {
@@ -1659,13 +1713,44 @@ function ApprovalCard({
   approval,
   answered,
   onAnswer,
+  chatId,
+  onChange,
+  settled,
 }: {
   approval: Approval
   /** How it was answered, when it was */
   answered?: boolean
-  onAnswer?: (approved: boolean, always?: boolean) => void
+  onAnswer?: (approved: boolean, always?: boolean, revision?: number) => Promise<void>
+  chatId?: string
+  onChange?: (approval: Approval) => void
+  settled?: boolean
 }) {
   const [raw, setRaw] = useState(false)
+  const [error, setError] = useState('')
+  const [answering, setAnswering] = useState(false)
+  if (approval.calendar?.length)
+    return (
+      <ChatCalendarDraft
+        approval={approval}
+        answered={answered}
+        onAnswer={onAnswer}
+        chatId={chatId}
+        onChange={onChange}
+        settled={settled}
+      />
+    )
+  const answer = async (approved: boolean, always = false) => {
+    if (answering || !onAnswer) return
+    setAnswering(true)
+    setError('')
+    try {
+      await onAnswer(approved, always)
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : 'Could not answer. Try again.')
+    } finally {
+      setAnswering(false)
+    }
+  }
   const text = approval.lines.join('\n')
   const rich = raw ? null : renderMarkdown(approval.toolName.startsWith('slack') ? slackToMarkdown(text) : text)
   return (
@@ -1691,19 +1776,20 @@ function ApprovalCard({
       )}
       {onAnswer && answered === undefined && (
         <div className="sky-ask-acts">
-          <Button variant="primary" size="sm" onClick={() => onAnswer(true)}>
+          <Button variant="primary" size="sm" disabled={answering} onClick={() => void answer(true)}>
             Allow
           </Button>
           {approval.sessionKey && (
-            <Button variant="primary-quiet" size="sm" onClick={() => onAnswer(true, true)}>
+            <Button variant="primary-quiet" size="sm" disabled={answering} onClick={() => void answer(true, true)}>
               Allow for this file
             </Button>
           )}
-          <Button size="sm" onClick={() => onAnswer(false)}>
+          <Button size="sm" disabled={answering} onClick={() => void answer(false)}>
             Not now
           </Button>
         </div>
       )}
+      {error && <p role="alert">{error}</p>}
     </div>
   )
 }
@@ -1878,7 +1964,7 @@ export function ThreadColumn({
       .filter((card) => card.at === at)
       .map((card) => (
         <Fragment key={card.id}>
-          <ApprovalCard approval={card} answered={card.approved} />
+          <ApprovalCard approval={card} answered={card.approved} settled={state.phase === 'idle'} />
         </Fragment>
       ))
   // A wrapper element would re-indent the whole transcript; the body stays put.
@@ -2018,14 +2104,16 @@ export function ThreadColumn({
         .filter((card) => card.at >= state.turns.length)
         .map((card) => (
           <Fragment key={card.id}>
-            <ApprovalCard approval={card} answered={card.approved} />
+            <ApprovalCard approval={card} answered={card.approved} settled={state.phase === 'idle'} />
           </Fragment>
         ))}
       {state.approvals.map((approval) => (
         <Fragment key={approval.id}>
           <ApprovalCard
             approval={approval}
-            onAnswer={(approved, always) => void answer(approval.id, approved, always)}
+            chatId={state.id}
+            onChange={chat.updateApproval}
+            onAnswer={(approved, always, revision) => answer(approval.id, approved, always, revision)}
           />
         </Fragment>
       ))}

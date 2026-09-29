@@ -785,6 +785,58 @@ function mockStep(parts: unknown[], unified: 'tool-calls' | 'stop' | 'error') {
   }
 }
 
+test('the SDK executes the exact host-reviewed input after an edited approval', async () => {
+  const executed: unknown[] = []
+  const model = new MockLanguageModelV3({
+    doStream: [
+      mockStep(
+        [{ type: 'tool-call', toolCallId: 'calendar-edit', toolName: 'schedule', input: '{"send":"original-draft"}' }],
+        'tool-calls',
+      ),
+      mockStep(
+        [
+          { type: 'text-start', id: 'done' },
+          { type: 'text-delta', id: 'done', delta: 'Created.' },
+          { type: 'text-end', id: 'done' },
+        ],
+        'stop',
+      ),
+    ],
+  })
+  const engine = new ChatEngine({
+    model: { model },
+    approvalHandler: async () => ({
+      approved: true,
+      reason: 'User reviewed an edit.',
+      input: { send: 'reviewed-draft' },
+    }),
+  })
+  engine.appendUserMessage('Schedule the meeting.')
+  await engine.runTurn({
+    instructions: ['Test'],
+    toolApproval: { schedule: 'user-approval' },
+    tools: {
+      schedule: {
+        inputSchema: jsonSchema({ type: 'object', properties: { send: { type: 'string' } }, required: ['send'] }),
+        execute: async (input: unknown) => {
+          executed.push(input)
+          return 'Created.'
+        },
+      },
+    },
+  })
+  assert({
+    given: 'a human edit after the model prepared its tool arguments',
+    should: 'execute only the reviewed arguments and retain them in model history',
+    actual: [
+      executed,
+      JSON.stringify(model.doStreamCalls[1].prompt).includes('reviewed-draft'),
+      JSON.stringify(model.doStreamCalls[1].prompt).includes('original-draft'),
+    ],
+    expected: [[{ send: 'reviewed-draft' }], true, false],
+  })
+})
+
 test('the streaming path re-tails the cache breakpoint on every tool step', async () => {
   const model = new MockLanguageModelV3({
     doStream: [
