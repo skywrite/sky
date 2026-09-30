@@ -24,6 +24,7 @@ import { gatherHealthData, type HealthData } from './_health.ts'
 import { type DayPriceData, gatherDayPriceData } from './_prices.ts'
 import { serializeSummaryContext } from './lib/contextRecord.ts'
 import gatherDayDocs from './lib/gatherDayDocs.ts'
+import { type StreakCompletion, streakCompletion, streakRow } from './lib/streaks.ts'
 
 const PROMPT_FILE = new URL('./prompts/day.prompt.md', import.meta.url).pathname
 
@@ -66,9 +67,9 @@ export default class SummaryDayTask extends Command {
     name: 'summary:day',
     description: "Generate AI-powered daily summary - what got done, what didn't",
     descriptionLong: [
-      'Creates a summary.md file in the day directory.',
-      'Facts-first mirror: Done, Not Done, Commitments Made, Health, Signals.',
-      'Feeds into weekly summary for planning.',
+      'Creates a summary.md file in the day directory: the day compressed once, for reading tomorrow and for search later.',
+      'Sections: Day at a Glance, Done, Not Done, Commitments Made, Waiting On, Time, Health, Signals, Insights, Archival, Asset Prices - every line names its source file.',
+      'The day is self-contained: nothing in it depends on another day. A closing Where Things Stand section names what the day touched and where each stood.',
     ],
     usage: [
       'sky summary:day                    # Summarize today',
@@ -173,6 +174,11 @@ export default class SummaryDayTask extends Command {
     const dayEntry = docs.find((d) => d.kind === 'day')
     const location = dayEntry?.doc.yaml['location'] as string | undefined
 
+    // Streaks reach the model as the day's completion only. The day file's
+    // own list carries running counts, which depend on other days and would
+    // be wrong in a write-once file when days are ended out of order.
+    const streaks = dayEntry ? streakCompletion(dayEntry.doc.toMarkdown()) : null
+
     // 4. Collate: background section first (entities and thread antecedents,
     // type-priority order), then the day's documents in gathered order —
     // day.md stays last, closest to the generation point, so the model can
@@ -215,7 +221,7 @@ export default class SummaryDayTask extends Command {
     const promptTemplate = await this.loadPromptTemplate()
 
     // 7. Build user prompt (date context + collated markdown + health data + prices + location)
-    const userPrompt = this.buildUserPrompt(day, collatedMarkdown, healthData, priceData, location)
+    const userPrompt = this.buildUserPrompt(day, collatedMarkdown, healthData, priceData, location, streaks)
 
     const kinds = { journal: 0, action: 0, day: 0 }
     for (const d of docs) kinds[d.kind]++
@@ -352,6 +358,7 @@ export default class SummaryDayTask extends Command {
     healthData: HealthData,
     priceData: DayPriceData,
     location?: string,
+    streaks: StreakCompletion | null = null,
   ): string {
     const parts: string[] = []
 
@@ -378,7 +385,14 @@ export default class SummaryDayTask extends Command {
     }
 
     // Health data section (if any data exists)
-    if (healthData.sleep || healthData.weight || healthData.strength || healthData.distance || healthData.work) {
+    if (
+      healthData.sleep ||
+      healthData.weight ||
+      healthData.strength ||
+      healthData.distance ||
+      healthData.work ||
+      streaks
+    ) {
       parts.push('## Health Data')
       parts.push('')
 
@@ -409,6 +423,11 @@ export default class SummaryDayTask extends Command {
       if (healthData.work) {
         const notesPart = healthData.work.notes ? ` - ${healthData.work.notes}` : ''
         parts.push(`- **Work**: ${healthData.work.duration} hrs${notesPart}`)
+      }
+
+      // Completion only - the day's own fact. Counts never reach the model.
+      if (streaks) {
+        parts.push(`- **Streaks**: ${streakRow(streaks)}`)
       }
 
       parts.push('')

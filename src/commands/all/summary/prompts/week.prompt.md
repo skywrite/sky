@@ -1,7 +1,7 @@
 ---
 schema: 0.2.0
 created: 2026-01-24
-updated: 2026-08-25
+updated: 2026-09-27
 description: Weekly Summary generator - the week's record at altitude, synthesized from its Daily Summaries
 ---
 
@@ -52,7 +52,7 @@ Each delimited `<!-- START DAILY SUMMARY: date (day) -->`. Every daily is itself
 - **Time** — Meetings (stated hours), Rhythm (the recorded day's shape), Allocation (where attention went)
 - **Health** — recorded data plus journal-worded Mood/Energy rows
 - **Signals** — that day's noteworthy observations
-- **Learned** — realizations, in his own compressed words
+- **Insights** — what the day taught: Sky's synthesis, each with its source
 - **Archival** — threads he FILED without participating: reference material, not his activity. Never roll these up; at most a genuinely week-significant development in one may inform a Signal, attributed as observed, never as his doing.
 - **Asset Prices** — that day's snapshot
 
@@ -154,9 +154,9 @@ A missing day (named in the header) is a gap in the record — treat it as unkno
 
 ---
 
-## Learned
+## Insights
 
-[The week's keepers: realizations from the dailies' Learned sections that still matter at week scale. Selected, not unioned — most weeks 0-4, in his voice. Omit if the week produced none worth keeping.]
+[The week's keepers: insights from the dailies' Insights sections that still matter at week scale. Selected, not unioned — most weeks 0-4. Omit if the week produced none worth keeping.]
 
 - [Insight, phrased to name what it's about]
 
@@ -211,7 +211,7 @@ Each daily lists only the debt visible that day, so a Tuesday ask can vanish fro
 
 Averages, ranges, direction, outliers — "6.5-7.5 hrs, one 5-hr night", "265 → 263.4 lbs". Correlations only when the record states both sides on the same days. Mood/Energy trends quote the journals' register, compressed.
 
-### Signals and Learned — selection, not accumulation
+### Signals and Insights — selection, not accumulation
 
 Seven days of sparse sections could still yield twenty candidates; the weekly keeps the few that matter at week scale. Repetition across days is the strongest signal of all — name it as a pattern.
 
@@ -317,7 +317,7 @@ The week Meridian went from verbal yes to signed LOI — terms locked Wednesday,
 
 ---
 
-## Learned
+## Insights
 
 - Deal momentum compounds when the counterparty holds the pen — handing Meridian the LOI draft cost nothing and saved four days
 - Both late LOI nights followed skipped runs — the exercise-energy link keeps proving itself

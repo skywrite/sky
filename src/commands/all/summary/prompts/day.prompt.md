@@ -1,6 +1,6 @@
 ---
 created: 2026-01-03
-updated: 2026-08-29
+updated: 2026-09-27
 description: Daily Summary generator - facts-first mirror of the day
 ---
 
@@ -16,6 +16,11 @@ The summary serves three purposes:
 3. The day's canonical record: downstream AI tools load this summary INSTEAD of the day's raw files. Anything you leave out is invisible to them; anything you get wrong becomes the record.
 
 Core question this answers: **"What did I get done today? Was it meaningful?"**
+
+Two properties every line must have:
+
+- **Sourced.** Each line names the file it came from (rules below). Purpose 3 is why: a reader months from now, human or tool, opens the file behind the line instead of trusting the line.
+- **Self-contained.** The summary is written once and never revised, and days are sometimes ended out of order. So nothing in it may depend on another day - no streak counts, no "still waiting since Tuesday", no week totals. State what happened or was true on this day; the app computes anything that spans days from the files.
 
 ---
 
@@ -43,7 +48,7 @@ Some `messages/` files carry an `ARCHIVAL` marker in their path comment, after t
 Filename time prefixes can exceed 24:00 - `25-30` is late night still belonging to this day. Treat them as-is.
 
 **4. day.md - last, deliberately**
-The day's authoritative plan/done record: Most Important, Work/Personal Commitments, Todos, Complete, Incomplete, Dropped. It arrives after the evidence so you reconcile everything you just read against it.
+The day's authoritative plan/done record: Most Important, Work/Personal Commitments, Todos, Complete, Incomplete, Dropped. It arrives after the evidence so you reconcile everything you just read against it. Its Streaks list carries a running day count in every item (`No sugar — 47d`): ignore those counts entirely. The header's Health Data block carries a **Streaks** row with the day's completion, and that row is the only place streaks appear (rules below).
 
 **Strikethrough means DONE.** `~~item~~` is completed regardless of which section it appears in. An item in Commitments/Todos without strikethrough is not done.
 
@@ -69,7 +74,7 @@ Transcripts of {{me.firstName}} working with an AI tool. Speaker headings may ca
 
 ## Day at a Glance
 
-[If location provided, put it on its own bold line first, then a blank line. Then ONE sentence characterizing the day - and stop. No bullets in this section: the sentence already names the day's arcs, so bullets here can only repeat it (or pre-repeat Done).]
+[If location provided, put it on its own bold line first, then a blank line. Then ONE short sentence - under 20 words - naming the day's arc, and stop. No bullets in this section: the sentence already names the day, so bullets here can only repeat it (or pre-repeat Done).]
 
 **Location:** Tokyo, Japan
 
@@ -79,29 +84,29 @@ Transcripts of {{me.firstName}} working with an AI tool. Speaker headings may ca
 
 ## Done
 
-[What got completed - synthesized from all sources, grouped into the four categories below. Omit any category with no items.]
+[What got completed - synthesized from all sources, grouped into the four categories below. One fact per bullet, under 25 words, ending with its source tag. Omit any category with no items.]
 
 **Strategic**
-[Decisions made, key meetings, high-leverage work that moves the needle. Lead decision items with "Decided:"]
-- [Item]
+[Decisions made, key meetings, high-leverage work that moves the needle. Lead decision items with "Decided:" - one decision per line]
+- [One fact] [source]
 
 **Operational**
 [Messages, routine tasks, follow-ups, administrative work]
-- [Item]
+- [One fact] [source]
 
 **Health**
-[Exercise, sleep-related actions, medical, wellness]
-- [Item]
+[Exercise, sleep-related actions, medical, wellness - never a streak; those live in the Health table]
+- [One fact] [source]
 
 **Personal**
 [Family time, hobbies, non-work activities, personal growth]
-- [Item]
+- [One fact] [source]
 
 ---
 
 ## Not Done
 
-[Planned but didn't happen: the Incomplete section plus any Commitments/Todos items without strikethrough.]
+[What {{me.firstName}} left open in the day file: the Incomplete section plus any Commitments/Todos items without strikethrough, in his own words. State them; never grade them. Streaks never appear here.]
 
 - [Item]: [Why if known, otherwise just state it]
 
@@ -109,21 +114,21 @@ Transcripts of {{me.firstName}} working with an AI tool. Speaker headings may ca
 
 ## Commitments Made
 
-[Promises to people with deadlines, extracted from meetings, messages, and AI sessions. Omit the section entirely if none were made.]
+[Promises {{me.firstName}} made THIS DAY to a specific person, with the deadline when one was stated - from meetings, messages, and AI sessions. Only what was said today: never a promise carried from an earlier day, and never a check on whether an earlier promise was kept. Omit the section entirely if none were made.]
 
-| Commitment | To Whom | Due |
-|------------|---------|-----|
-| [What was promised] | [Person] | [When] |
+| Commitment | To Whom | Due | Source |
+|------------|---------|-----|--------|
+| [What was promised] | [Person] | [When] | [source] |
 
 ---
 
 ## Waiting On
 
-[The mirror of Commitments Made: what others owe {{me.firstName}} - his explicit asks of them, and their explicit promises to him - still open at day's end. Omit the section entirely if nothing is pending.]
+[The mirror of Commitments Made: what {{me.firstName}} asked of others THIS DAY, and what others promised him this day, that the day's own evidence doesn't show answered. Only asks and promises made today, each with its source - never one carried from an earlier day, and no judgment about whether it is still open now; the Outbox tracks the balance across days. Omit the section entirely if nothing was asked or promised.]
 
-| Waiting On | From Whom | Expected |
-|------------|----------|----------|
-| [What's owed] | [Person] | [When, if stated] |
+| Waiting On | From Whom | Expected | Source |
+|------------|----------|----------|--------|
+| [What's owed] | [Person] | [When, if stated] | [source] |
 
 ---
 
@@ -141,13 +146,14 @@ Transcripts of {{me.firstName}} working with an AI tool. Speaker headings may ca
 
 ## Health
 
-[Rows with recorded data only - the header's Health Data block first, journal statements second. When a journal records mood or energy, the Mood/Energy rows are REQUIRED: compress the journal's own words into a short phrase, don't flatten to High/Medium/Low. Omit rows nothing was recorded for; omit the whole section if nothing was. Never infer mood or energy on days without journals.]
+[Rows with recorded data only - the header's Health Data block first (its Streaks row copied verbatim: the day's completion, never a count), journal statements second. When a journal records mood or energy, the Mood/Energy rows are REQUIRED: compress the journal's own words into a short phrase, don't flatten to High/Medium/Low. Omit rows nothing was recorded for; omit the whole section if nothing was. Never infer mood or energy on days without journals.]
 
 | Metric | Value |
 |--------|-------|
 | Sleep | [range and/or hours] |
 | Weight | [if recorded] |
 | Exercise | [what was done] |
+| Streaks | [the header's Streaks row, verbatim] |
 | Energy | [journal's words, when journaled] |
 | Mood | [journal's words, when journaled] |
 
@@ -157,15 +163,15 @@ Transcripts of {{me.firstName}} working with an AI tool. Speaker headings may ca
 
 [Only if genuinely noteworthy. Sparse. Omit the section if nothing qualifies.]
 
-- **[Person/Topic]**: [What's notable and why]
+- **[Person/Topic]**: [What's notable and why] [source]
 
 ---
 
-## Learned
+## Insights
 
-[The day's realizations: things {{me.firstName}} came to understand, positions he shifted, questions he opened - from any source in the day (AI sessions, journal entries, meetings). Sparse like Signals: most days 0-3 bullets, compressed from his own words. Omit the section if the day produced none.]
+[What the day teaches - the realizations worth carrying beyond it. Your synthesis, drawn from the whole day: a journal entry tagged Lessons-Learned is the first source; a realization {{me.firstName}} voiced in a chat or a meeting is one; a pattern this day's evidence shows is one too. 0-3 bullets, each one insight in one sentence with its source. Omit the section when the day taught nothing. Never a fact restated as a lesson, never advice.]
 
-- [Insight, phrased to name what it's about]
+- [Insight, phrased to name what it's about] [source]
 
 ---
 
@@ -184,6 +190,14 @@ Transcripts of {{me.firstName}} working with an AI tool. Speaker headings may ca
 | Asset | Price |
 |-------|-------|
 | [SYMBOL] | $[VALUE] |
+
+---
+
+## Where Things Stand
+
+[Last, always. One line per matter the day touched - a deal, a person's situation, a project, a decision in progress - with where it stands at day's end. Its name, a dash, its state in a word (opened, moved, decided, stalled, closed, shipped, or a better one), a colon, one clause of what happened. This is the day's index: search lands here, and the weekly follows a matter across its days. 3-10 lines; anything named in Done, Commitments Made, Waiting On or Signals belongs here.]
+
+- [Matter] — [state]: [where it stands, one clause]
 ```
 
 ---
@@ -193,6 +207,10 @@ Transcripts of {{me.firstName}} working with an AI tool. Speaker headings may ca
 ### Grounded, or absent
 
 Every line must trace to something in the input. If you cannot point at the file that supports an item, leave the item out. Omission is honest; inference is fabrication - and because downstream tools treat this summary as the record, a fabricated line outlives the day.
+
+### Every line names its source
+
+Every bullet ends with a source tag in square brackets, and every table row has a Source column: the medium of the file the line rests on and its time - `[slack 13:05]`, `[email 15:01]`, `[meeting 10:00]`, `[chat 14:38]`, `[recap]`, `[journal]`, `[day]`, `[tracking]`. The time is the file's HH-MM prefix or its `when:` start; omit it when the file has none. One tag per line, the file that best supports it. A line you cannot tag is a line you cannot write. Sections built from the header (Health, Asset Prices) and sections that already name their file (Time, Archival) carry no tags.
 
 ### Mirror, don't judge
 
@@ -204,9 +222,11 @@ Every line must trace to something in the input. If you cannot point at the file
 
 Don't mirror day.md's structure or inventory every file. A meeting contributes one line: that it happened and its key outcome. Detail earns its place by mattering tomorrow.
 
+One fact per bullet, under 25 words, no semicolons. A second fact is a second bullet; a decision and the action that followed it are two lines.
+
 ### Extract commitments carefully
 
-A commitment is a promise to a specific person with a deadline (explicit or implied). Look for:
+A commitment is a promise {{me.firstName}} made on this day to a specific person, with a deadline (explicit or implied). Look for:
 - "I'll send you X by Friday"
 - "Let me get back to you on that"
 - "I'll review and respond"
@@ -216,10 +236,11 @@ Do NOT include:
 - Vague intentions
 - Internal notes-to-self
 - Things others committed to do - those belong in Waiting On
+- Promises from earlier days, whether or not they were kept today - the day is self-contained
 
 ### Track what {{me.firstName}} is owed
 
-A Waiting On row is an explicit ask he made of someone, or an explicit promise someone made to him, that the day's later evidence doesn't show fulfilled. Check before adding: if the reply or deliverable arrived later the same day, the loop is closed - leave it out. Never infer that he's "probably waiting" on something; only stated asks and stated promises qualify.
+A Waiting On row is an explicit ask he made of someone THIS DAY, or an explicit promise someone made to him this day. Check before adding: if the reply or deliverable arrived later the same day, the loop closed inside the day - leave it out. Never infer that he's "probably waiting" on something; only stated asks and stated promises qualify, each with its source. An ask from an earlier day is not this day's row, however open it still is.
 
 ### Time - only stated numbers
 
@@ -249,7 +270,7 @@ A recap (`actions/recaps/`) is generated evidence of {{me.firstName}}'s activity
 - Session spans and event times are {{me.firstName}}'s own artifacts for Rhythm, extended hours included.
 - A span is engagement evidence, never a work-hours figure: "a 09:02-11:28 session (18 prompts)" is honest; "coded 2.4 h" is invented. The no-total-hours rule applies unchanged.
 - A recap's `rel:` names its Allocation theme.
-- A coding session that shipped nothing still counts - its outcome is whatever it produced: a decision, a spec, a Learned insight.
+- A coding session that shipped nothing still counts - its outcome is whatever it produced: a decision, a spec, an Insight.
 
 ### What counts as Done
 
@@ -259,6 +280,8 @@ A recap (`actions/recaps/`) is generated evidence of {{me.firstName}}'s activity
 - Messages handled (never ARCHIVAL-marked ones)
 - AI-session outcomes {{me.firstName}} used
 - Work shipped in recaps (merged PRs, pushed commits) - synthesized to the feature level
+
+Never a streak. A streak's completion lives in the Health table's Streaks row and nowhere else: not in Done, not in Not Done, and never as a count.
 
 **Strategic** decisions, key meetings, high-leverage work; **Operational** messages, routine tasks, admin; **Health** exercise, wellness, medical; **Personal** family, hobbies, non-work.
 
@@ -272,19 +295,24 @@ Only flag something genuinely noteworthy:
 
 Most days have 0-2 signals. Don't manufacture them.
 
-### Learned - the day's realizations
+### Insights - what the day teaches
 
-A Learned bullet is something {{me.firstName}} came to understand, decided about himself, or started questioning - not something he produced. Any source in the day qualifies: an AI reflection session, a journal entry, a remark in a meeting.
+An Insight is something this day makes visible that will matter beyond it - about {{me.firstName}}, a person, a risk, or how the work goes. Draw them from the whole day:
 
-- His only when he voiced or adopted it. An assistant's advice he didn't take up is not a learning; his own words are the evidence.
-- It belongs to the day he had it. A journal entry reflecting on yesterday yields a Learned bullet today - the recounted events stay yesterday's and are never re-reported as today's activity.
-- When a session's only yield is the insight, the Learned bullet is its record - Done doesn't need a second line for the session having happened.
-- Phrase each bullet to name what it's about, compressed from his own words.
-- Sparse like Signals: most days 0-3. Never manufacture insight to fill the section.
+- Journal entries tagged Lessons-Learned are the first source and always candidates - compress them, keep his meaning.
+- A realization he voiced in a chat or a meeting is one.
+- A pattern this day's evidence shows is one too - the late night that followed the skipped run, the thread that moved only once he handed the pen over - stated as an observation from this day's files, never as advice.
+- It belongs to the day it surfaced. A journal entry reflecting on yesterday yields an Insight today; the recounted events stay yesterday's and are never re-reported as today's activity.
+- When a session's only yield is the insight, the Insight is its record - Done doesn't need a second line for the session having happened.
+- Sparse: 0-3, most days fewer. Never manufacture one to fill the section, and never restate a fact as a lesson.
+
+### Where Things Stand - the day's index
+
+A matter is anything a future question will be about: a deal, a person's situation, a project, a decision in progress. List every one the day touched with its state at day's end, in one clause each. Name them the way the files name them so search finds them. The weekly summary follows a matter across days, so the section is always written, even on a quiet day.
 
 ### Length
 
-A typical day lands around 40-80 lines. A heavy day earns more, a quiet day less - length follows substance, never a quota. Omit empty sections instead of padding them.
+A typical day lands around 40-80 lines. A heavy day earns more, a quiet day less - length follows substance, never a quota. Omit empty sections instead of padding them; one fact per bullet is what keeps the number honest.
 
 ---
 
@@ -297,22 +325,23 @@ A typical day lands around 40-80 lines. A heavy day earns more, a quiet day less
 
 **Location:** San Francisco, California
 
-Roadmap-and-investors day: Q1 priorities locked with Chen, redesign direction settled with Maria, infrastructure budget approved.
+Roadmap-and-investors day: Q1 priorities locked with Chen, the redesign settled with Maria.
 
 ---
 
 ## Done
 
 **Strategic**
-- Decided: authentication first in the Q1 roadmap, push notifications deferred (with Chen)
-- Decided: mobile redesign goes with Concept C (with Maria)
-- Decided: reserved-instance infrastructure budget - $12k/month savings expected
+- Decided: authentication first in the Q1 roadmap, push notifications deferred, with Chen [meeting 10:00]
+- Decided: the mobile redesign goes with Concept C, with Maria [meeting 13:30]
+- Decided: reserved-instance infrastructure budget, $12k a month in expected savings [chat 09:42]
+- Reviewed the Q4 investor report draft with Marcus [meeting 16:00]
 
 **Operational**
-- Investor relations update with Marcus - Q4 report draft reviewed
+- Answered Northwind's security questionnaire, the last open item before their pilot [email 14:35]
 
 **Health**
-- Morning run (3 miles)
+- Morning run, 3 miles in 28 minutes [tracking]
 
 ---
 
@@ -325,20 +354,20 @@ Roadmap-and-investors day: Q1 priorities locked with Chen, redesign direction se
 
 ## Commitments Made
 
-| Commitment | To Whom | Due |
-|------------|---------|-----|
-| Review API migration plan | Chen Wei | Monday |
-| Send updated roadmap to stakeholders | Team | This week |
-| Compile 3 customer case studies | Marcus (for Northwind) | End of January |
+| Commitment | To Whom | Due | Source |
+|------------|---------|-----|--------|
+| Review the API migration plan | Chen Wei | Monday | meeting 10:00 |
+| Send the updated roadmap to stakeholders | Team | This week | meeting 10:00 |
+| Compile 3 customer case studies | Marcus (for Northwind) | End of January | meeting 16:00 |
 
 ---
 
 ## Waiting On
 
-| Waiting On | From Whom | Expected |
-|------------|----------|----------|
-| Payment integration timeline | Chen Wei | Thursday |
-| Redesign cost estimate | Maria | - |
+| Waiting On | From Whom | Expected | Source |
+|------------|----------|----------|--------|
+| Payment integration timeline | Chen Wei | Thursday | slack 09:42 |
+| Redesign cost estimate | Maria | - | meeting 13:30 |
 
 ---
 
@@ -359,21 +388,22 @@ Roadmap-and-investors day: Q1 priorities locked with Chen, redesign direction se
 | Sleep | 21:45-5:30 (7.5 hrs) |
 | Weight | 264.8 lbs |
 | Exercise | 3 mile run, 28 min |
+| Streaks | done: morning pages, no sugar; not done: inbox zero |
 | Mood | Optimistic, focused - eager to ship the redesign |
 
 ---
 
 ## Signals
 
-- **Chen Wei**: Flagged potential delay on payment integration - may affect March 15 launch
-- **Sarah Mitchell**: Proactive on cost optimization - delivered analysis before asked
+- **Chen Wei**: Flagged potential delay on payment integration - may affect March 15 launch [slack 09:42]
+- **Sarah Mitchell**: Proactive on cost optimization - delivered analysis before asked [email 11:20]
 
 ---
 
-## Learned
+## Insights
 
-- Yesterday's redesign debate was sunk-cost defense of Concept A, not conviction - caught it in the morning journal
-- The reserved-instance math generalizes: every recurring vendor is worth checking for commitment discounts
+- The redesign debate was sunk-cost defense of Concept A, not conviction - the morning journal named it and the 13:30 review confirmed it [journal]
+- Every recurring vendor is worth checking for commitment discounts - the reserved-instance math generalizes [chat 09:42]
 
 ---
 
@@ -389,5 +419,13 @@ Roadmap-and-investors day: Q1 priorities locked with Chen, redesign direction se
 |-------|-------|
 | BTC | $104,250 |
 | SPY | $602 |
-| EXOD | $4.87 |
+
+---
+
+## Where Things Stand
+
+- Q1 roadmap — decided: authentication first, Chen owes the payment-integration timeline Thursday
+- Mobile redesign — decided: Concept C, cost estimate pending from Maria
+- Northwind pilot — moved: questionnaire answered, three case studies promised by end of January
+- Infrastructure budget — decided: reserved instances, $12k a month expected
 ```
