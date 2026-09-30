@@ -45,7 +45,8 @@ export function effortLevels(profile: EffortProfile): readonly Effort[] {
     if (/^claude-(?:opus|sonnet)-4-6(?:$|-\d{8}$)/.test(profile.model)) return ['low', 'medium', 'high', 'max']
   }
   // https://developers.openai.com/api/docs/models/gpt-6-astra
-  if (profile.provider === 'openai' && /^gpt-6-astra(?:$|-)/.test(profile.model)) return EFFORTS
+  // https://developers.openai.com/api/docs/models/gpt-6.1-sol
+  if (profile.provider === 'openai' && /^gpt-6(?:-astra|\.1-sol)(?:$|-)/.test(profile.model)) return EFFORTS
   const current = presetEffort(profile)
   return current ? [current] : []
 }

@@ -75,6 +75,9 @@ export const PROFILES = {
     model: 'gpt-6-astra',
     options: { reasoningEffort: 'low', serviceTier: 'priority' },
   }),
+  // GPT-6.1 Sol reasons by default (it has no `none` effort). Effort stays the API default
+  // (medium); --ai-effort reaches low through max. Standard processing, unlike Astra's priority.
+  'default-gpt-6.1-sol': defineProfile({ provider: 'openai', model: 'gpt-6.1-sol', contextWindow: 1_050_000 }),
   'default-local-reasoning': defineProfile({
     provider: 'lm-studio',
     model: 'qwen3.6-35b-a3b',

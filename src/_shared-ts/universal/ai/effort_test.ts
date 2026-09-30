@@ -34,3 +34,12 @@ test('effort levels for Opus 5.5', () => {
     expected: undefined,
   })
 })
+
+test('effort levels for GPT-6.1 Sol', () => {
+  assert({
+    given: 'the GPT-6.1 Sol model with no preset effort',
+    should: 'advertise every effort level, as GPT-6 Astra does',
+    actual: effortLevels({ provider: 'openai', model: 'gpt-6.1-sol' }),
+    expected: EFFORTS,
+  })
+})

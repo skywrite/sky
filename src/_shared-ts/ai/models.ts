@@ -178,7 +178,7 @@ const SAMPLING_KEYS = ['temperature', 'topP', 'topK'] as const
 /** True when a profile turns on extended thinking. */
 function thinkingEnabled(profile: ModelProfile): boolean {
   // These models reason by default even when a custom preset omits thinking.
-  if (profile.provider === 'openai' && /^gpt-6-astra(?:$|-)/.test(profile.model)) return true
+  if (profile.provider === 'openai' && /^gpt-6(?:-astra|\.1-sol)(?:$|-)/.test(profile.model)) return true
   if (
     profile.provider === 'anthropic' &&
     /^claude-(?:opus-5(?:-5)?|sonnet-5(?:-5)?|fable-5(?:-1)?)(?:$|-\d{8}$)/.test(profile.model)

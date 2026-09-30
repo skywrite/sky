@@ -3,6 +3,7 @@ import type { SkyConfig } from '#shared/config/types.ts'
 test('custom reasoning presets suppress unsupported sampling without an explicit thinking option', () => {
   const presets = [
     defineProfile({ provider: 'openai', model: 'gpt-6-astra' }),
+    defineProfile({ provider: 'openai', model: 'gpt-6.1-sol' }),
     defineProfile({ provider: 'anthropic', model: 'claude-sonnet-5' }),
     defineProfile({ provider: 'anthropic', model: 'claude-sonnet-5-5' }),
   ]
@@ -14,6 +15,7 @@ test('custom reasoning presets suppress unsupported sampling without an explicit
       return [resolved.temperature, resolved.topP, resolved.maxOutputTokens]
     }),
     expected: [
+      [undefined, undefined, 1000],
       [undefined, undefined, 1000],
       [undefined, undefined, 1000],
       [undefined, undefined, 1000],
@@ -341,6 +343,28 @@ for (const effort of ['low', 'high', 'xhigh'] as const) {
     })
   })
 }
+
+test('default-gpt-6.1-sol runs at the API default effort and takes an effort override', () => {
+  const resolved = aiModelByProfile('default-gpt-6.1-sol')
+  assert({
+    given: 'the default-gpt-6.1-sol profile',
+    should: 'resolve to gpt-6.1-sol with its 1.05M-token window',
+    actual: [modelId(resolved.model), resolved.contextWindow],
+    expected: ['gpt-6.1-sol', 1_050_000],
+  })
+  assert({
+    given: 'no preset options',
+    should: 'send no openai options: API-default effort, standard processing',
+    actual: resolved.providerOptions?.['openai'],
+    expected: undefined,
+  })
+  assert({
+    given: 'a max effort override',
+    should: 'land under providerOptions.openai',
+    actual: aiModelByProfile('default-gpt-6.1-sol', { effort: 'max' }).providerOptions?.['openai'],
+    expected: { reasoningEffort: 'max' },
+  })
+})
 
 test('aiModelByProfile resolves by name and rejects unknown names', () => {
   assert({
