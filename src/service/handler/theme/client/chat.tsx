@@ -2395,10 +2395,12 @@ export function ChatMain({
   const busy = state.phase !== 'idle'
   const draft = useChatDraft(state.id)
   const attachments = useChatFiles(state.id, busy || voiceMode || call.preparing || call.syncing || call.unsaved, draft)
-  const empty = state.turns.length === 0 && !state.gather && !call.visible
-  // The end button needs something to end: a turn, or a draft in the composer.
-  // With nothing sent there is nothing to save, so it reads Discard.
+  const empty = state.turns.length === 0 && !state.interrupted && !state.gather && !call.visible
+  // The end button needs something to end: a turn, a message a restart
+  // interrupted, or a draft in the composer. With no turn there is nothing
+  // to save, so it reads Discard.
   const started = state.turns.length > 0 || call.voice.state.turns.some((turn) => turn.who === 'you')
+  const endable = started || state.interrupted !== null || draft.present
   const [panel, setPanel] = useState(false)
   const replyMode = state.parent?.kind === 'thread'
   const [replyVersion, setReplyVersion] = useState(0)
@@ -2480,7 +2482,7 @@ export function ChatMain({
               </Button>
             )}
             {!voiceMode && <TemporaryControl chat={chat} />}
-            {!voiceMode && (started || draft.present) && (
+            {!voiceMode && endable && (
               <Button
                 size="sm"
                 className="sky-chat-close"

@@ -528,8 +528,9 @@ a person can see and touch:
   removes recovery without a transcript, day entry, memory, or person facts.
   Discard is the explicit end of an active conversation; a server restart
   is not. See [2026-09-07](2026-09-07-recovery-is-independent-of-filing.md).
-  The end button shows once the thread holds anything: a turn, or a draft
-  in the composer. With nothing sent there is nothing to save, so it reads
+  The end button shows once the thread holds anything: a turn, a message a
+  restart interrupted, or a draft in the composer. With no turn there is
+  nothing to save, so it reads
   Discard whatever the filing choice. Discard then forgets the draft and the
   tuning chosen for the thread, in the browser and in the service. Every
   thread the service ends takes its browser draft with it, reply threads
