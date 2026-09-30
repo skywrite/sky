@@ -39,7 +39,7 @@ const PREVIOUS_HOPS = 2
 
 // The summary is the day's canonical record and feeds every downstream
 // consumer — worth the top-tier model.
-const DEFAULT_PROFILE = 'default-fable-5'
+const DEFAULT_PROFILE = 'default-fable-5.1'
 
 const params = {
   effort: aiEffortFlag(),

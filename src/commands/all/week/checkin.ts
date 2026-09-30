@@ -26,7 +26,7 @@ const CONTEXT_BUDGET_TOKENS = 300_000
 
 // Grading is judgment against the record — same top-tier model as the
 // summaries the record is made of.
-const DEFAULT_PROFILE = 'default-fable-5'
+const DEFAULT_PROFILE = 'default-fable-5.1'
 
 const params = {
   effort: aiEffortFlag(),

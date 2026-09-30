@@ -29,7 +29,7 @@ const CONTEXT_BUDGET_TOKENS = 300_000
 
 // The weekly is the week's canonical record and the primary input to weekly
 // planning — same top-tier model as the dailies it is built from.
-const DEFAULT_PROFILE = 'default-fable-5'
+const DEFAULT_PROFILE = 'default-fable-5.1'
 
 const params = {
   effort: aiEffortFlag(),
