@@ -151,7 +151,8 @@ const DOCUMENT_TYPES: Record<string, TypeDef> = {
     fields: {
       name: { type: 'String!', description: 'Organization name' },
       slug: { type: 'String', description: 'URL-friendly identifier', nullable: true },
-      site: { type: 'String', description: 'Website URL', nullable: true },
+      site: { type: 'String', description: 'Website URL (the first, when there are several)', nullable: true },
+      sites: { type: '[String!]!', description: 'Every website URL' },
       sector: { type: 'String', description: 'Industry sector', nullable: true },
       subcategory: { type: 'String', description: 'Subcategory', nullable: true },
       description: { type: 'String', description: 'Brief description', nullable: true },
@@ -322,11 +323,32 @@ const DOCUMENT_TYPES: Record<string, TypeDef> = {
       summary: { type: 'String', description: 'Conversation summary', nullable: true },
       provider: { type: 'String', description: 'AI provider (claude, openai, etc.)', nullable: true },
       model: { type: 'String', description: 'Model name', nullable: true },
-      turns: { type: 'Int!', description: 'Number of conversation turns' },
+      turns: { type: 'Int!', description: 'Number of conversation turns the file itself holds' },
       tags: { type: '[String!]!', description: 'Tags' },
       rel: { type: '[String!]!', description: 'Related entities' },
-      markdown: { type: 'String!', description: 'Full conversation transcript' },
+      markdown: { type: 'String!', description: "The file as written — a branch's own turns only" },
       path: { type: 'String!', description: 'File path' },
+      parent: {
+        type: 'ChatParent',
+        description: 'The conversation this branch or reply thread belongs to; null for a root chat',
+        nullable: true,
+      },
+      inherited: {
+        type: 'Int!',
+        description: "Messages at the head of the thread that are the parent's (two per inherited turn)",
+      },
+      branches: {
+        type: '[Chat!]!',
+        description: 'The chats that branched from this one (one level; their own branches are not filled in)',
+      },
+      replyThreads: {
+        type: '[Chat!]!',
+        description: "Replies attached to this chat's responses; branches have their own threads",
+      },
+      thread: {
+        type: 'String!',
+        description: "The whole conversation a branch is: its parents' turns through the branch point, then its own",
+      },
     },
   },
   Note: {
@@ -352,6 +374,14 @@ const AUXILIARY_TYPES: Record<string, TypeDef> = {
     fields: {
       current: { type: '[String!]!', description: 'Current organizations' },
       past: { type: '[String!]!', description: 'Past organizations' },
+    },
+  },
+  ChatParent: {
+    description: 'Where a branch or reply thread came from.',
+    fields: {
+      path: { type: 'String!', description: "The parent chat's path, relative to the notebook root" },
+      turn: { type: 'Int!', description: 'The turn the branch left after' },
+      kind: { type: 'String!', description: 'branch or thread' },
     },
   },
 }

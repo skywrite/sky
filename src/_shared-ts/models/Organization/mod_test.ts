@@ -171,6 +171,49 @@ test('Organization.toMarkdown - serializes correctly', () => {
   })
 })
 
+test('Organization.sites - reads one website or several as one list', () => {
+  const sitesOf = (yaml: Record<string, unknown>) => {
+    const org = Organization.create({ name: 'Atlas', ...yaml })
+    return { site: org.site, sites: org.sites }
+  }
+
+  assert({
+    given: 'an organization with one website in site',
+    should: 'list that website',
+    actual: sitesOf({ site: 'https://atlas.example' }),
+    expected: { site: 'https://atlas.example', sites: ['https://atlas.example'] },
+  })
+
+  assert({
+    given: 'an organization with several websites in sites',
+    should: 'list them all and give the first as site',
+    actual: sitesOf({ sites: ['https://atlas.example', 'https://atlas-labs.example'] }),
+    expected: { site: 'https://atlas.example', sites: ['https://atlas.example', 'https://atlas-labs.example'] },
+  })
+
+  assert({
+    given: 'websites written as a ;-separated scalar',
+    should: 'split them into the list',
+    actual: sitesOf({ sites: 'https://atlas.example; https://atlas-labs.example' }).sites,
+    expected: ['https://atlas.example', 'https://atlas-labs.example'],
+  })
+
+  assert({
+    given: 'a hand-edited file carrying both site and sites',
+    should: 'lead with site and drop the repeat',
+    actual: sitesOf({ site: 'https://atlas.example', sites: ['https://atlas-labs.example', 'https://atlas.example'] })
+      .sites,
+    expected: ['https://atlas.example', 'https://atlas-labs.example'],
+  })
+
+  assert({
+    given: 'an organization with no website',
+    should: 'list nothing and have no site',
+    actual: sitesOf({}),
+    expected: { site: undefined, sites: [] },
+  })
+})
+
 test('Organization.kind - returns unknown when no kind tag set', () => {
   const yaml = {
     name: 'Anthropic',

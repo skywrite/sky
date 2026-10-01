@@ -33,6 +33,21 @@ export function kindFromTags(tags: Iterable<string>): OrgKind {
   return 'unknown'
 }
 
+/**
+ * An organization's websites as one list. The file keeps one website in `site`
+ * and several in `sites`, never both; a hand-edited file may carry both, so
+ * `site` leads and repeats are dropped. Either key may be a list or a
+ * `;`-separated scalar.
+ */
+export function sitesFromYaml(yaml: Record<string, unknown>): string[] {
+  const list = (value: unknown): string[] =>
+    (Array.isArray(value) ? value : typeof value === 'string' ? value.split(';') : [])
+      .filter((item): item is string => typeof item === 'string')
+      .map((item) => item.trim())
+      .filter(Boolean)
+  return [...new Set([...list(yaml['site']), ...list(yaml['sites'])])]
+}
+
 export default class OrganizationDocument extends Document {
   constructor(yaml: Record<string, unknown> = {}, markdown = '', yamlError?: string) {
     // Normalize tags to string format if they're an array or other format
@@ -54,8 +69,13 @@ export default class OrganizationDocument extends Document {
     return this.yaml['slug'] as string
   }
 
+  /** The first website; `sites` has them all. */
   get site(): string | undefined {
-    return this.yaml['site'] as string | undefined
+    return this.sites[0]
+  }
+
+  get sites(): string[] {
+    return sitesFromYaml(this.yaml)
   }
 
   get sector(): string {

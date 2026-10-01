@@ -244,6 +244,63 @@ test('executeQuery - returns orgs with derived kind', async () => {
   })
 })
 
+test('executeQuery - returns every website of an org', async () => {
+  const store = {
+    ...createMockStore(),
+    orgs: createMockCollection([
+      {
+        doc: Document.fromMarkdown(`---
+name: Atlas
+sites:
+  - https://atlas.example
+  - https://atlas-labs.example
+---
+A research lab.`),
+        path: '/test/orgs/atlas.md',
+      },
+      {
+        doc: Document.fromMarkdown(`---
+name: Cedar
+site: https://cedar.example
+---
+A foundation.`),
+        path: '/test/orgs/cedar.md',
+      },
+      {
+        doc: Document.fromMarkdown(`---
+name: Birch
+---
+No website.`),
+        path: '/test/orgs/birch.md',
+      },
+    ]),
+  } as unknown as MarkdownStore
+
+  const result = await executeQuery<{ orgs: Array<{ name: string; site: string | null; sites: string[] }> }>(
+    '{ orgs { name site sites } }',
+    store,
+  )
+
+  assert({
+    given: 'orgs with several websites, one website, and none',
+    should: 'list every website and give the first as site',
+    // GraphQL rows have no prototype; the copies compare as plain objects
+    actual: [result.errors, result.data?.orgs.map((org) => ({ ...org }))],
+    expected: [
+      undefined,
+      [
+        {
+          name: 'Atlas',
+          site: 'https://atlas.example',
+          sites: ['https://atlas.example', 'https://atlas-labs.example'],
+        },
+        { name: 'Cedar', site: 'https://cedar.example', sites: ['https://cedar.example'] },
+        { name: 'Birch', site: null, sites: [] },
+      ],
+    ],
+  })
+})
+
 test('executeQuery - returns errors for invalid query', async () => {
   const store = createMockStore()
   const query = '{ invalidField }'

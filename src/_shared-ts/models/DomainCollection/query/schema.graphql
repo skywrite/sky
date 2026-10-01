@@ -7,7 +7,7 @@
 #
 # To modify the schema, edit generate.ts and re-run the generator.
 #
-# Generated at: 2026-08-23T11:26:22.445Z
+# Generated at: 2026-10-01T22:00:41.350Z
 # =============================================================================
 
 type Query {
@@ -149,7 +149,8 @@ Organization/company record
 type Org {
   name: String! # Organization name
   slug: String # URL-friendly identifier
-  site: String # Website URL
+  site: String # Website URL (the first, when there are several)
+  sites: [String!]! # Every website URL
   sector: String # Industry sector
   subcategory: String # Subcategory
   description: String # Brief description
@@ -329,15 +330,6 @@ type Chat {
 }
 
 """
-Where a branch or reply thread came from.
-"""
-type ChatParent {
-  path: String! # The parent chat's path, relative to the notebook root
-  turn: Int! # The turn the branch left after
-  kind: String! # branch or thread
-}
-
-"""
 Free-form note capture (text, voice memo, whiteboard photo)
 """
 type Note {
@@ -371,6 +363,15 @@ Current and past organizations for a person
 type PersonOrgs {
   current: [String!]! # Current organizations
   past: [String!]! # Past organizations
+}
+
+"""
+Where a branch or reply thread came from.
+"""
+type ChatParent {
+  path: String! # The parent chat's path, relative to the notebook root
+  turn: Int! # The turn the branch left after
+  kind: String! # branch or thread
 }
 
 # =============================================================================
