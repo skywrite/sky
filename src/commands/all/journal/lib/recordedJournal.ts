@@ -111,7 +111,7 @@ export async function fileRecordedJournal(
         if (!state) {
           output.stage('sections', 'Organizing the journal')
           const recording = await dependencies.organize(options.cleanedText, signal)
-          // Allocate names once in the notebook timezone, including seconds, independently of the filing date.
+          // Allocate the attachment's timestamp once, independently of the filing date.
           const created = dependencies
             .now()
             .toZonedDateTimeISO(context.notebookNow.timezone)
@@ -279,8 +279,10 @@ export async function fileRecordedJournal(
             )
             doc.yaml['attachments'] = [{ file: capture.attachment }]
             const slug = slugify(group.title, { preserveCase: true, suggestedLength: 70 }) || 'Recorded-Journal'
+            const typeSlug = slugify(type, { preserveCase: true }) || 'Misc'
             entry = {
-              file: path.join(config.DIR_TIME, dayDir(when.plainDate), 'journal', `${capture.stamp}_${slug}.md`),
+              // The day directory already dates the journal; its name identifies the type and subject.
+              file: path.join(config.DIR_TIME, dayDir(when.plainDate), 'journal', `${typeSlug}_${slug}.md`),
               content: doc.toMarkdown(),
               written: false,
             }

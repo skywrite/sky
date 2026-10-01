@@ -166,10 +166,7 @@ test('audio and video journals review suggested types, reunite returning topics,
           docs.map((doc) => doc.attachments[0]?.file),
         ],
         expected: [
-          [
-            '2031-03-16_091234_Feeling-Rested-After-Sleep-And-Walking.md',
-            '2031-03-16_091234_Grateful-For-Help-With-Atlas-Today.md',
-          ],
+          ['Health_Feeling-Rested-After-Sleep-And-Walking.md', 'Gratitude_Grateful-For-Help-With-Atlas-Today.md'],
           [null, ['Jane Doe']],
           [attachment],
           [attachment, attachment],
@@ -283,14 +280,14 @@ test('journal naming failure has a descriptive fallback and never overwrites an 
     // Reserve the same name the suggested title would use.
     const dir = path.join(f.options.context.config.DIR_TIME, dayDir(WHEN.plainDate), 'journal')
     await mkdir(dir, { recursive: true })
-    const existing = path.join(dir, '2031-03-16_091234_Rest.md')
+    const existing = path.join(dir, 'Health_Rest.md')
     await writeFile(existing, 'An existing unrelated journal.')
     const result = await fileRecordedJournal(prepared, f.models)
     assert({
       given: 'failed naming and a filename collision',
       should: 'save the journals with a numeric suffix while keeping the existing document',
       actual: [result.ok, path.basename(result.data!.files[0]), await readFile(existing, 'utf8')],
-      expected: [true, '2031-03-16_091234_Rest-2.md', 'An existing unrelated journal.'],
+      expected: [true, 'Health_Rest-2.md', 'An existing unrelated journal.'],
     })
   } finally {
     await rm(f.base, { recursive: true, force: true })

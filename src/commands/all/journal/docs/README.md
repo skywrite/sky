@@ -21,10 +21,10 @@ slices the corrected text in code. A boundary that cannot be located fails
 before filing. The video split's grouping functions allocate every section
 exactly once and reunite returns to a topic. Each entry gets its own short body
 summary, plus a specific title from the naming helper shared with
-`journal:rename`. Naming failure retains a descriptive fallback. Filenames are
-allocated once with second-precision creation time in the notebook timezone,
-case-preserved titles, and atomic collision handling; their filing day is the
-chosen recording day.
+`journal:rename`. Naming failure retains a descriptive fallback. Imported
+journal filenames use `Type_Summary.md` with case-preserved slugs: the day
+directory supplies the date. Names are allocated once with atomic collision
+handling and numeric suffixes; their filing day is the chosen recording day.
 
 One copy of the source recording is retained in that day's attachments and
 referenced by every entry. Retention must succeed before filing. It uses the
