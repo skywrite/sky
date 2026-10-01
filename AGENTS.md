@@ -157,6 +157,13 @@ When a change meets the threshold above, use its existing topic home and the sma
 - For the universal inbox, the intended outcome is for Sky to respond on the user's behalf to most inbound messages and requests, preserving the user's decision capacity for their highest-value work as a CEO. Design around delegated resolution and meaningful human decisions.
 - Preserve clear descriptions of each situation and access to prior/source messages. This context should make the decisions that reach the user easier to understand and resolve.
 
+### Browser Page Titles
+
+- Whenever creating or changing a web UI screen, ensure its browser tab/page title (`<title>` / `document.title`) reflects what the user is currently viewing or working on. This applies to every screen, including existing screens touched by the change.
+- Use the most specific meaningful user-facing context available: the selected tracker metric, open document or meeting title, person or project name, chat subject, or section name. Follow Sky's existing title conventions. For example, a synthetic `/tracking/sample-metric` page could use `sky · Sample Metric`.
+- Loading, empty, and error states must still identify the screen with a useful fallback title. A generic `sky` alone is insufficient.
+- Keep the title in sync with navigation, the active item, and changes to the item's name or title. Verify direct page loads, navigation between screens, and browser back/forward navigation; shell updates and background refreshes must preserve the current screen's title.
+
 ### HTML Mocks
 
 **All HTML mocks and mockups must be created in a temporary folder outside the repository**, such as a directory created with `mktemp -d /tmp/sky-html-mock.XXXXXX`. Keep their supporting CSS, JavaScript, images, and preview artifacts in that temporary folder too. Never create them in the repo root or any repo subdirectory, including gitignored folders.

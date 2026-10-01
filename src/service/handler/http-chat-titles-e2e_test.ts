@@ -36,6 +36,10 @@ test(
           kept: 0,
           documents: 0,
         }
+        // The temporary notebook has no clock or calendar; this test scripts its day schedule.
+        await page.route('**/day/*/schedule', (route) =>
+          route.fulfill({ json: { read: true, errors: [], meetings: [] } }),
+        )
         await page.route('**/chat', async (route) => {
           await route.fulfill({
             json: {

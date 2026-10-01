@@ -112,20 +112,39 @@ test(
         if (shots)
           await page!.screenshot({ path: path.join(shots, `${name}.png`), fullPage: true, animations: 'disabled' })
       }
+      const waitForTitle = (title: string) => page.waitForFunction((expected) => document.title === expected, title)
       const daily = page.locator('.sky-tracking-day')
       await page.goto(`${origin}/`)
       await daily.getByRole('link', { name: 'View trends', exact: true }).click()
       await page.waitForURL('**/tracking')
       await page.getByRole('heading', { name: 'Sleep', exact: true }).waitFor()
+      await waitForTitle('sky · Tracking')
       assert({
         given: 'View trends in Today’s Tracking section',
         should: 'open existing trackers without a Tracking sidebar destination',
         actual: [
           await page.locator('.sky-tracking-card').count(),
           await page.getByRole('button', { name: 'Tracking', exact: true }).count(),
+          await page.title(),
         ],
-        expected: [4, 0],
+        expected: [4, 0, 'sky · Tracking'],
       })
+      await page.getByRole('link', { name: 'View Sleep history', exact: true }).click()
+      await waitForTitle('sky · Sleep')
+      const metricTitle = await page.title()
+      await page.goBack()
+      await waitForTitle('sky · Tracking')
+      const overviewTitle = await page.title()
+      await page.goForward()
+      await waitForTitle('sky · Sleep')
+      assert({
+        given: 'a tracker opened from the overview, then browser back and forward',
+        should: 'keep the browser title aligned with the active tracking screen',
+        actual: [metricTitle, overviewTitle, await page.title()],
+        expected: ['sky · Sleep', 'sky · Tracking', 'sky · Sleep'],
+      })
+      await page.locator('.sky-tracking-breadcrumb').getByRole('link', { name: 'Tracking', exact: true }).click()
+      await waitForTitle('sky · Tracking')
       await shot('overview-desktop')
       await page.goto(`${origin}/`)
       await daily.getByRole('textbox', { name: 'Sleep in hr', exact: true }).fill('7h 30m')
@@ -153,6 +172,7 @@ test(
       await daily.getByRole('button', { name: 'Edit Sleep', exact: true }).waitFor()
 
       await page.goto(`${origin}/tracking/sleep`)
+      await waitForTitle('sky · Sleep')
       const edit = page.getByRole('button', { name: 'Edit Sleep on 2030-06-18', exact: true })
       await edit.click()
       let dialog = page.getByRole('dialog')
@@ -184,9 +204,9 @@ test(
       await page.getByText('A short nap', { exact: true }).waitFor()
       assert({
         given: 'a background refresh with new file content',
-        should: 'show the new row and preserve selection in an unchanged row',
-        actual: await page.evaluate(() => getSelection()?.toString()),
-        expected: 'Read before bed',
+        should: 'show the new row and preserve the title and selection in an unchanged row',
+        actual: [await page.evaluate(() => getSelection()?.toString()), await page.title()],
+        expected: ['Read before bed', 'sky · Sleep'],
       })
       await page.evaluate(() => getSelection()?.removeAllRanges())
 
@@ -227,6 +247,8 @@ test(
       await dialog.getByRole('button', { name: 'Cancel', exact: true }).click()
 
       await page.goto(`${origin}/tracking/new`)
+      await waitForTitle('sky · New tracker')
+      const setupTitle = await page.title()
       await page.getByRole('textbox', { name: 'Name', exact: true }).fill('Energy')
       await page.getByRole('textbox', { name: 'Question to ask you', exact: true }).fill('How was your energy today?')
       await page.getByRole('textbox', { name: 'Answer 1 name', exact: true }).fill('energy')
@@ -237,11 +259,30 @@ test(
       await page.getByRole('button', { name: 'Start tracking', exact: true }).click()
       await page.waitForURL('**/tracking/energy')
       await page.getByRole('heading', { name: 'Energy', exact: true }).waitFor()
+      await waitForTitle('sky · Energy')
       assert({
         given: 'the setup screen',
         should: 'persist a new definition using the selected question, fields and window',
-        actual: (await f.store.report()).metrics.find((m) => m.tracker.name === 'energy')!.tracker.ask,
-        expected: 'evening',
+        actual: [
+          setupTitle,
+          (await f.store.report()).metrics.find((m) => m.tracker.name === 'energy')!.tracker.ask,
+          await page.title(),
+        ],
+        expected: ['sky · New tracker', 'evening', 'sky · Energy'],
+      })
+      await page.getByRole('button', { name: 'Tracker settings', exact: true }).click()
+      await page.getByRole('menuitem', { name: 'Edit tracker', exact: true }).click()
+      await waitForTitle('sky · Edit Energy')
+      const editingTitle = await page.title()
+      await page.getByRole('textbox', { name: 'Name', exact: true }).fill('Evening energy')
+      await page.getByRole('button', { name: 'Save changes', exact: true }).click()
+      await page.getByRole('heading', { name: 'Evening energy', exact: true }).waitFor()
+      await waitForTitle('sky · Evening energy')
+      assert({
+        given: 'editing a tracker and saving a changed name',
+        should: 'identify the editing task and then reflect the saved tracker title',
+        actual: [editingTitle, await page.title()],
+        expected: ['sky · Edit Energy', 'sky · Evening energy'],
       })
       await page.getByRole('button', { name: 'Tracker settings', exact: true }).click()
       await page.getByRole('menuitem', { name: 'Archive tracker', exact: true }).click()
@@ -251,9 +292,19 @@ test(
 
       for (const width of [390, 768, 1440]) {
         await page.setViewportSize({ width, height: 1000 })
-        for (const route of ['/tracking', '/tracking/sleep', '/tracking/new', '/']) {
+        for (const route of ['/tracking', '/tracking/sleep', '/tracking/new', '/tracking/energy/edit', '/']) {
           await page.goto(`${origin}${route}`)
           await page.locator(route === '/' ? '.sky-tracking-day-heading' : '.sky-tracking-heading').waitFor()
+          if (route.startsWith('/tracking'))
+            await waitForTitle(
+              route === '/tracking/sleep'
+                ? 'sky · Sleep'
+                : route === '/tracking/new'
+                  ? 'sky · New tracker'
+                  : route.endsWith('/edit')
+                    ? 'sky · Edit Evening energy'
+                    : 'sky · Tracking',
+            )
           assert({
             given: `${route} at ${width}px`,
             should: 'keep the page within the viewport',
@@ -371,6 +422,35 @@ test(
           errors,
         ],
         expected: [true, true, []],
+      })
+      await page.goto(`${origin}/tracking/sample-metric`)
+      await page.getByRole('heading', { name: 'Tracker unavailable', exact: true }).waitFor()
+      await waitForTitle('sky · Tracking')
+      assert({
+        given: 'an unavailable tracker',
+        should: 'use a tracking title instead of the previously viewed tracker title',
+        actual: await page.title(),
+        expected: 'sky · Tracking',
+      })
+      let release!: () => void
+      const held = new Promise<void>((resolve) => {
+        release = resolve
+      })
+      await page.route('**/tracking/_api/report*', async (route) => {
+        await held
+        await route.fulfill({ status: 503, json: { message: 'Synthetic tracking service unavailable.' } })
+      })
+      await page.goto(`${origin}/tracking/sleep`)
+      await page.getByText('Loading tracking…', { exact: true }).waitFor()
+      await waitForTitle('sky · Tracking')
+      const loadingTitle = await page.title()
+      release()
+      await page.getByRole('alert').getByText('Synthetic tracking service unavailable.', { exact: false }).waitFor()
+      assert({
+        given: 'a tracking report that is loading and then fails',
+        should: 'keep a useful screen title through both states',
+        actual: [loadingTitle, await page.title(), errors],
+        expected: ['sky · Tracking', 'sky · Tracking', []],
       })
     } catch (error) {
       if (shots && currentPage)

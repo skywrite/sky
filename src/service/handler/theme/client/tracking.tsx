@@ -155,6 +155,14 @@ export function TrackingMain({ path, navigate }: { path: string; navigate: (path
   const actions = useTrackingActions(data.refresh)
   const { report } = data
   const selected = report?.metrics.find((metric) => metric.tracker.name === name)
+  const pageTitle = creating
+    ? 'New tracker'
+    : editing
+      ? `Edit ${selected?.tracker.title || 'tracker'}`
+      : selected?.tracker.title || 'Tracking'
+  useEffect(() => {
+    document.title = `sky · ${pageTitle}`
+  }, [pageTitle])
   const column =
     selected?.tracker.columns.find((candidate) => candidate.name === columnName) ??
     (selected ? primaryTrackingColumn(selected.tracker) : undefined)
