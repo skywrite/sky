@@ -14,10 +14,15 @@ export function expectJournalTabs(id: string) {
   }
 }
 
-export function openJournalFiles(files: string[]) {
-  for (const file of new Set(files)) {
-    const href = `/explorer/${file.split('/').map(encodeURIComponent).join('/')}`
-    window.open(href, '_blank', 'noopener')
+export async function openJournalTabs(id: string, once = false): Promise<void> {
+  const response = await fetch(`/import/${encodeURIComponent(id)}/open`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ once }),
+  })
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}))
+    throw new Error(error.message ?? 'The journal tabs could not be opened.')
   }
 }
 
@@ -30,13 +35,29 @@ export function openCompletedJournals(job: ImportJob) {
     /* See above. */
   }
   if (!expected) return
-  // Mark before opening: SSE and the background poll can both report completion.
+  // Mark the attempt before requesting: SSE and the background poll can both report completion.
   opened.add(job.id)
   pending.delete(job.id)
   try {
-    sessionStorage.setItem(key(job.id), 'opened')
+    sessionStorage.setItem(key(job.id), 'opening')
   } catch {
     /* See above. */
   }
-  openJournalFiles(job.result.files ?? [job.result.file])
+  void openJournalTabs(job.id, true).then(
+    () => {
+      try {
+        sessionStorage.setItem(key(job.id), 'opened')
+      } catch {
+        /* See above. */
+      }
+    },
+    () => {
+      // Keep the saved links and explicit Open journals action available after a failed attempt.
+      try {
+        sessionStorage.setItem(key(job.id), 'failed')
+      } catch {
+        /* See above. */
+      }
+    },
+  )
 }

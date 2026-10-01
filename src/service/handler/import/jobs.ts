@@ -114,6 +114,8 @@ export interface ImportJob {
   title: string
   /** What was filed, relative to the notebook root */
   result: { file: string; files?: string[] } | null
+  /** Successful opening prevents automatic requests from reopening this import. */
+  journalsOpened?: boolean
   audioAdded?: number
   canUndo?: boolean
   undone?: boolean

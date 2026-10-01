@@ -36,6 +36,7 @@ import { JournalTypes } from '#shared/models/Journal/mod.ts'
 import { dayDir, fetchNowSync } from '#shared/nbfs/mod.ts'
 import { PlainDate, PlainDateTime, ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
 import type { CalendarMatch, ImportJob, ImportRoutesOptions, Listen, RunOutcome, StagedFile } from './mod.ts'
+import { openJournals } from './openJournals.ts'
 import {
   opening,
   type ReadBack,
@@ -277,6 +278,7 @@ export function createImportHost(config: typeof ConfigModule, env: Record<string
   }
 
   return {
+    openJournals: (files) => openJournals(files, config.PORT_SERVER),
     audioConversations: {
       list: (day) => listAudioConversations(config, day),
       get: async (file) => (await readAudioConversation(config, file)).conversation,

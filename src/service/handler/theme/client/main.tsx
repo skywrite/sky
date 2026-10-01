@@ -157,7 +157,7 @@ function Canvas() {
       : { path: '/', label: 'Today' }
   useEffect(() => {
     // These screens set their own titles from the content they display.
-    if (isOutbox || peopleRoute || placesRoute !== null || isTracking || importId) return
+    if (isOutbox || peopleRoute || placesRoute !== null || isTracking || importId || explorerFile !== null) return
     document.title = threadId
       ? `sky:chat - ${chatTitle}`
       : isAudition
@@ -165,7 +165,18 @@ function Canvas() {
         : isStreaks
           ? 'sky · streaks'
           : 'sky'
-  }, [threadId, chatTitle, isAudition, isStreaks, isOutbox, peopleRoute, placesRoute, isTracking, importId])
+  }, [
+    threadId,
+    chatTitle,
+    isAudition,
+    isStreaks,
+    isOutbox,
+    peopleRoute,
+    placesRoute,
+    isTracking,
+    importId,
+    explorerFile,
+  ])
   const isToday = dayYmd === null
   const others = threads.filter((t) => !t.id.startsWith('day-'))
   const onDayPage =
@@ -262,7 +273,7 @@ function Canvas() {
     )
       return
     event.preventDefault()
-    navigate(url.pathname)
+    navigate(url.pathname + url.search + url.hash)
   }
 
   return (
@@ -480,7 +491,7 @@ function Canvas() {
           <DocView
             file={explorerFile}
             go={navigate}
-            edit={search === '?edit'}
+            edit={new URLSearchParams(search).has('edit')}
             onImportConversation={queue.takeConversation}
           />
         ) : meetingRoute ? (

@@ -647,6 +647,16 @@ export function DocView({
   const outline = useOutline(scrollRef, [doc?.path, doc?.html, editing])
   const segments = file.split('/')
   const name = segments[segments.length - 1]
+  const titleRow = frontmatter.rows.find(
+    (row) => ['summary', 'title', 'name'].includes(row.key) && typeof row.value === 'string' && row.value.trim(),
+  )
+  const title =
+    (doc?.path === file || editing) && titleRow
+      ? String(titleRow.value)
+      : name?.replace(/\.md$/i, '').replaceAll('-', ' ') || 'Explorer'
+  useEffect(() => {
+    document.title = `sky · ${title}`
+  }, [title])
 
   const exportPdf = async () => {
     if (exporting) return

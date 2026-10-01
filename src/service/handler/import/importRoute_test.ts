@@ -92,6 +92,115 @@ test('all journal results survive the event stream and reload, and selected link
   })
 })
 
+test('journal opening uses stored results, deduplicates automatic requests, and supports explicit reopening', async () => {
+  const w = await world()
+  const files = ['time/2031/W11/03-16/journal/Health_Walking.md', 'time/2031/W11/03-16/journal/Gratitude_Atlas.md']
+  const opened: string[][] = []
+  w.options.run = async function* () {
+    return { ok: true, file: files[0], files: [...files, files[0]] }
+  }
+  w.options.openJournals = async (files) => {
+    opened.push(files)
+    await Promise.resolve()
+  }
+  // A link save needing retry keeps the completed import available across service restarts.
+  w.options.links = {
+    validate: async () => {},
+    update: async () => {
+      throw new Error('Synthetic link save failure.')
+    },
+  }
+  const app = new Hono().route('/import', createImportRoutes(w.options))
+  const { job } = (await (
+    await app.request('/import', { method: 'POST', body: upload('journal.m4a', 'mock recording') })
+  ).json()) as { job: ImportJob }
+  const unfinished = await postJson(app, `/import/${job.id}/open`, {})
+  await postJson(app, `/import/${job.id}/links`, { links: ['Atlas'] })
+  await postJson(app, `/import/${job.id}/start`, { kind: 'journal', when: '2031-03-16 08:00' })
+  await events(
+    await app.request(`/import/${job.id}/events`),
+    (event) => event.type === 'state' && event.state === 'done',
+  )
+  const crossOrigin = await app.request(`/import/${job.id}/open`, {
+    method: 'POST',
+    headers: { Origin: 'https://example.com' },
+    body: '{}',
+  })
+  const crossSite = await app.request(`/import/${job.id}/open`, {
+    method: 'POST',
+    headers: { 'Sec-Fetch-Site': 'cross-site' },
+    body: '{}',
+  })
+  const [first, concurrent] = await Promise.all([
+    postJson(app, `/import/${job.id}/open`, { once: true }),
+    postJson(app, `/import/${job.id}/open`, { once: true }),
+  ])
+  const replay = await postJson(app, `/import/${job.id}/open`, { once: true })
+  const restarted = new Hono().route('/import', createImportRoutes(w.options))
+  const afterRestart = await postJson(restarted, `/import/${job.id}/open`, { once: true })
+  const explicit = await postJson(restarted, `/import/${job.id}/open`, {
+    files: ['https://example.com/ignored'],
+    origin: 'https://example.com',
+  })
+  const missing = await postJson(restarted, '/import/missing/open', {})
+  const saved = JSON.parse(await readFile(path.join(w.dir, job.id, 'job.json'), 'utf8')) as ImportJob
+  assert({
+    given: 'concurrent completion notifications, replay, service restart, and an explicit Open journals action',
+    should:
+      'open the full stored set once automatically and once explicitly, ignoring caller URLs and rejecting other sites',
+    actual: [
+      [unfinished, crossOrigin, crossSite, first, concurrent, replay, afterRestart, explicit, missing].map(
+        (r) => r.status,
+      ),
+      opened,
+      saved.journalsOpened,
+      saved.result?.files,
+    ],
+    expected: [[409, 403, 403, 200, 200, 200, 200, 200, 404], [files, files], true, [...files, files[0]]],
+  })
+})
+
+test('journal opening failure preserves the saved result and allows retry, including older single-file results', async () => {
+  const w = await world()
+  const file = 'time/2031/W11/03-16/journal/Health_Walking.md'
+  const attempts: string[][] = []
+  w.options.run = async function* () {
+    return { ok: true, file }
+  }
+  w.options.openJournals = async (files) => {
+    attempts.push(files)
+    if (attempts.length === 1) throw new Error('OS opener unavailable.')
+  }
+  const app = new Hono().route('/import', createImportRoutes(w.options))
+  const { job } = (await (
+    await app.request('/import', { method: 'POST', body: upload('journal.m4a', 'mock recording') })
+  ).json()) as { job: ImportJob }
+  await postJson(app, `/import/${job.id}/start`, { kind: 'journal', when: '2031-03-16 08:00' })
+  await events(
+    await app.request(`/import/${job.id}/events`),
+    (event) => event.type === 'state' && event.state === 'done',
+  )
+  const failed = await postJson(app, `/import/${job.id}/open`, { once: true })
+  const snapshot = (await (await app.request(`/import/${job.id}`)).json()) as { job: ImportJob }
+  const retried = await postJson(app, `/import/${job.id}/open`, { once: true })
+  const replay = await postJson(app, `/import/${job.id}/open`, { once: true })
+  assert({
+    given: 'a saved journal and a temporary OS opening failure',
+    should: 'retain the result, report the failure, and retry without duplicate tabs after success',
+    actual: [
+      failed.status,
+      await failed.json(),
+      snapshot.job.state,
+      snapshot.job.result?.file,
+      snapshot.job.journalsOpened,
+      retried.status,
+      replay.status,
+      attempts,
+    ],
+    expected: [503, { message: 'OS opener unavailable.' }, 'done', file, undefined, 200, 200, [[file], [file]]],
+  })
+})
+
 interface World {
   options: ImportRoutesOptions
   runs: ImportJob[]

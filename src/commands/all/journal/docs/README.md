@@ -38,8 +38,10 @@ A partially filed retry preserves previously saved entries and their edits.
 The command returns every saved path, including partial results on failure.
 The import host persists those paths and applies the Links selection to each.
 Only the browser tab that started or accepted the import attempts to open the
-Explorer tabs on completion; replayed events and polling must not reopen them.
-All result links remain available when browser popup settings block that attempt.
+Explorer pages on completion; replayed events and polling must not reopen them.
+The service uses the OS opener for one browser tab per saved journal, bypassing
+browser popup restrictions. Open journals explicitly opens the full set again,
+and individual result links remain available if the OS opener fails.
 
 The web transport and import lifecycle are documented in
 [the import README](../../../../service/handler/import/docs/README.md).

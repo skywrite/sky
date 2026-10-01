@@ -46,7 +46,7 @@ import { dayFileHref, sizeLabel } from './files.tsx'
 import { DocumentRail } from './frontmatter/Rail.tsx'
 import { useCompletions } from './frontmatter/rows.tsx'
 import { useFrontmatter } from './frontmatter/useFrontmatter.ts'
-import { expectJournalTabs, openCompletedJournals, openJournalFiles } from './journalImportTabs.ts'
+import { expectJournalTabs, openCompletedJournals, openJournalTabs } from './journalImportTabs.ts'
 import { JournalTypesReview } from './journalTypes.tsx'
 import { LinksInput } from './links.tsx'
 import { RenderedHtml } from './renderedHtml.tsx'
@@ -2785,6 +2785,19 @@ export function ImportMain({
   }, [job?.title])
   const [undoing, setUndoing] = useState(false)
   const [undoError, setUndoError] = useState<string | null>(null)
+  const [openingJournals, setOpeningJournals] = useState(false)
+  const [openError, setOpenError] = useState<string | null>(null)
+  const openJournals = async () => {
+    setOpeningJournals(true)
+    setOpenError(null)
+    try {
+      await openJournalTabs(id)
+    } catch (error) {
+      setOpenError((error as Error).message)
+    } finally {
+      setOpeningJournals(false)
+    }
+  }
   const undoAudio = async () => {
     setUndoing(true)
     setUndoError(null)
@@ -2861,7 +2874,7 @@ export function ImportMain({
             </Button>
           )}
           {journalFiles ? (
-            <Button size="sm" variant="primary" onClick={() => openJournalFiles(journalFiles)}>
+            <Button size="sm" variant="primary" disabled={openingJournals} onClick={() => void openJournals()}>
               Open journals
             </Button>
           ) : (
@@ -2967,9 +2980,8 @@ export function ImportMain({
                       </li>
                     ))}
                   </ul>
-                  <div className="sky-lead">
-                    Each journal opens in its own tab. If your browser blocks new tabs, use the links above.
-                  </div>
+                  <div className="sky-lead">Open journals opens each entry in a separate browser tab.</div>
+                  {openError && <div role="alert">{openError}</div>}
                 </Block>
               )}
               {job.result && !journalFiles && (

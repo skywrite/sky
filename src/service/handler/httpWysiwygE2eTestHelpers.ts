@@ -57,9 +57,13 @@ const AUTOSAVE_MS = 1400
 
 export const ROOT = '.sky-wysiwyg[contenteditable]'
 
-async function launchChromiumOrSkip(t: TestContext): Promise<Browser> {
+async function launchChromiumOrSkip(t: TestContext, popupBlocking = false): Promise<Browser> {
   try {
-    return await chromium.launch({ headless: true, executablePath: BRAVE_EXECUTABLE_PATH })
+    return await chromium.launch({
+      headless: true,
+      executablePath: BRAVE_EXECUTABLE_PATH,
+      ignoreDefaultArgs: popupBlocking ? ['--disable-popup-blocking'] : undefined,
+    })
   } catch (error) {
     if (
       error instanceof Error &&
@@ -141,6 +145,8 @@ export async function runWysiwygE2e(
     store?: boolean
     /** Serve the day page too: its routes, and the import routes a drop on it needs */
     day?: boolean
+    /** Use ordinary browser popup restrictions instead of Playwright's permissive default. */
+    popupBlocking?: boolean
     now?: ZonedDateTime
     mostImportant?: MostImportantAI
     /** Script an import's read-back and run when testing the day import flow */
@@ -197,9 +203,10 @@ export async function runWysiwygE2e(
         ...(options.week ? { week: options.week(notebookBaseDir) } : {}),
       },
     )
-    browser = await launchChromiumOrSkip(t)
+    browser = await launchChromiumOrSkip(t, options.popupBlocking)
     server = startAppServer(app)
-    const page = await browser.newPage()
+    const context = await browser.newContext()
+    const page = await context.newPage()
     const errors: string[] = []
     page.on('pageerror', (error) => errors.push(`pageerror: ${error.message}`))
     page.on('console', (message) => {

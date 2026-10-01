@@ -53,8 +53,11 @@ arrive as a multiselect under `journal-types`. Each selected type becomes an
 entry, with a remainder for other content, a content-based name, and the same
 retained recording attachment. Results carry `file` for existing single-document
 consumers and `files` for the full set; explicit links reach every entry.
-The initiating browser tab opens the results in Explorer tabs once, and the
-completed import lists each link for browsers that block automatic tabs.
+The initiating browser tab asks the service to open one browser tab per saved
+journal through the OS opener. `POST /import/:id/open` reads only the stored
+results; automatic requests use `once` so replay and reload cannot duplicate
+tabs. Open journals explicitly opens the full set again. The completed import
+also lists each entry separately.
 The shared audio/video pipeline and retry invariants live in
 [Recorded journals](../../../../commands/all/journal/docs/README.md).
 

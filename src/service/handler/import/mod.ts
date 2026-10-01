@@ -62,6 +62,8 @@ export type RunOutcome =
   | { ok: false; message: string; file?: string | null; files?: string[] }
 
 export interface ImportRoutesOptions {
+  /** Open the stored journal results as separate browser tabs through the OS. */
+  openJournals?: (files: string[]) => Promise<void>
   undoAudio?: (job: ImportJob) => Promise<void>
   audioConversations?: {
     list: (day: string) => Promise<AudioConversation[]>
@@ -240,6 +242,7 @@ export function createImportRoutes(options: ImportRoutesOptions): Hono {
   const loaded = store.load()
   const app = new Hono()
   const linkWrites = new Map<string, Promise<void>>()
+  const openingJournals = new Map<string, Promise<void>>()
   // A selection arriving as the command finishes must land before or after filing, never between reads.
   const withLinks = (id: string, action: () => Promise<void>): Promise<void> => {
     const work = (linkWrites.get(id) ?? Promise.resolve()).catch(() => {}).then(action)
@@ -722,6 +725,42 @@ export function createImportRoutes(options: ImportRoutesOptions): Hono {
     record.job.line = 'Cancelled.'
     await store.setState(record, 'cancelled')
     return c.json({ job: summarize(record.job) })
+  })
+
+  app.post('/:id/open', async (c) => {
+    const origin = c.req.header('Origin')
+    if ((origin && origin !== new URL(c.req.url).origin) || c.req.header('Sec-Fetch-Site') === 'cross-site')
+      return c.json({ message: 'Open journals from the Sky app.' }, 403)
+    await loaded
+    const record = store.get(c.req.param('id'))
+    if (!record) return notFound(c)
+    const { job } = record
+    if (job.state !== 'done' || job.fields?.kind !== 'journal' || !job.result)
+      return c.json({ message: 'There are no completed journals to open.' }, 409)
+    const openJournals = options.openJournals
+    if (!openJournals) return c.json({ message: 'Opening browser tabs is unavailable.' }, 503)
+    const body = await c.req.json().catch(() => null)
+    const files = [...new Set(job.result.files?.length ? job.result.files : [job.result.file])]
+    try {
+      const current = openingJournals.get(job.id)
+      if (current) await current
+      else if (body?.once !== true || !job.journalsOpened) {
+        const opening = (async () => {
+          await openJournals(files)
+          job.journalsOpened = true
+          await store.persist(job)
+        })()
+        openingJournals.set(job.id, opening)
+        try {
+          await opening
+        } finally {
+          openingJournals.delete(job.id)
+        }
+      }
+      return c.json({ opened: true, files })
+    } catch (error) {
+      return c.json({ message: (error as Error).message }, 503)
+    }
   })
 
   app.post('/:id/undo', async (c) => {
