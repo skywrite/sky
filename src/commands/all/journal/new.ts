@@ -38,7 +38,7 @@ const params = {
     },
   ),
   fromVideo: Flag.string(
-    'Path to a recorded video journal, or omit path to search Desktop. Files under the Video type.',
+    'Path to a recorded video journal, or omit path to search Desktop. Reviews suggested journal types before filing.',
     { optional: true },
   ),
   noAutoTag: Flag.bool('Skip automatic tagging from the archived-journal tag corpus', { default: false }),
@@ -76,7 +76,7 @@ export default class JournalNewTask extends Command {
     postProcess: [validateFromAudioRequiresTypes],
   }
 
-  async run({ args, context, tasks }: CommandArgs<Params>): Promise<CommandResult> {
+  async run({ args, context, tasks, rawArgs }: CommandArgs<Params>): Promise<CommandResult> {
     const { config, output } = context
     const { when, all, ai, inspectInitialContext, dryRun, fromAudio, fromVideo } = args
     const types = args.types
@@ -91,6 +91,7 @@ export default class JournalNewTask extends Command {
       return await journalFromVideo({
         videoPath,
         when,
+        whenStated: rawArgs.when !== undefined,
         context,
         tasks,
         noAutoTag: args.noAutoTag,

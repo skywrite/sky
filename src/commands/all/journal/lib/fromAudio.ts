@@ -2,7 +2,7 @@ import { runOptionsFor, TranscriptRun } from '#commands/all/audio/transcript/lib
 import { CommandResult } from '#commands/mod.ts'
 import type { CommandArgs } from '#commands/mod.ts'
 import type { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
-import { fileRecordedJournal } from './recordedJournal.ts'
+import { fileRecordedJournal, recordedJournalPlan } from './recordedJournal.ts'
 
 export async function journalFromAudio(options: {
   fromAudio: string
@@ -16,14 +16,7 @@ export async function journalFromAudio(options: {
   tasks: CommandArgs['tasks']
 }) {
   const { context, tasks } = options
-  context.output.plan([
-    { id: 'transcribe', label: 'Transcribing' },
-    { id: 'names', label: 'Checking names' },
-    { id: 'sections', label: 'Organizing the journal' },
-    ...(options.split ? [{ id: 'journal-types', label: 'Choosing journal types' }] : []),
-    { id: 'journal-summary', label: 'Naming the journal entries' },
-    { id: 'file', label: 'Saving journals and recording' },
-  ])
+  context.output.plan(recordedJournalPlan('Audio', options.split))
   const result = await tasks.run('audio:transcript:clean', { fromAudio: options.fromAudio, fresh: options.fresh })
   if (!result.ok || !result.data) return CommandResult.fail(`Audio pipeline failed: ${result.message}`)
   const clean = result.data

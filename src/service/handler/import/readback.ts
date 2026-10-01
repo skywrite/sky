@@ -17,17 +17,19 @@ import SRT from '#commands/all/audio/transcript/lib/SRT/mod.ts'
 import ZoomVTT from '#commands/all/audio/transcript/lib/ZoomVTT/mod.ts'
 import { isNoteDocument } from '#commands/all/notes/lib/documentInput.ts'
 import { audioContainerFromHeader } from '#lib/media/audioHeader.ts'
+import { VIDEO_EXTENSIONS } from '#lib/media/video.ts'
 
 /** The kinds a recording may be filed as: every door that takes audio. */
 export type RecordingKind = 'meeting' | 'journal' | 'note' | 'message' | 'event'
 /** Those, and a video, which comes in as its transcript. */
 export type ImportKind = RecordingKind | 'video'
-/** What arrived: a file of one of five kinds, or text dragged onto the day (`selection`). */
+/** What arrived: a file, or text dragged onto the day (`selection`). */
 export type ImportSource =
   | 'transcript'
   | 'srt'
   | 'text'
   | 'audio'
+  | 'video'
   | 'imessage-audio'
   | 'image'
   | 'selection'
@@ -76,8 +78,10 @@ export interface ReadBack {
 /** Contents win for recordings. The filename only hints at the remaining import families. */
 export function sourceOf(name: string, header?: Uint8Array): ImportSource | null {
   const container = header ? audioContainerFromHeader(header) : null
-  if (container) return container === 'caf' ? 'imessage-audio' : 'audio'
+  if (container === 'caf') return 'imessage-audio'
   const ext = path.extname(name).toLowerCase()
+  if (VIDEO_EXTENSIONS.some((video) => video === ext)) return 'video'
+  if (container) return 'audio'
   if (ext === '.vtt') return 'transcript'
   if (ext === '.srt') return 'srt'
   if (ext === '.txt') return 'text'
@@ -254,6 +258,16 @@ export function readAudio(sizeBytes: number, durationSeconds: number | null, lim
   }
 }
 
+/** Video bytes stay local; the transcription limit applies to the extracted audio. */
+export function readVideo(durationSeconds: number | null): ReadBack {
+  return {
+    ...readAudio(0, durationSeconds),
+    source: 'video',
+    kinds: ['journal'],
+    summary: ['Video recording', lengthLabel(durationSeconds)].filter(Boolean).join(' · '),
+  }
+}
+
 /** CAF clips dropped from Messages are conversation turns, never dictated meeting notes. */
 export function readIMessageAudio(
   sizeBytes: number,
@@ -294,6 +308,6 @@ export function readUnknown(name: string): ReadBack {
   const ext = path.extname(name).toLowerCase() || 'that kind of'
   return refused(
     'text',
-    `Sky doesn't take ${ext} files. Drop a PDF, Office or Markdown document, a Zoom transcript (.vtt or .txt), a video's .srt, a voice memo, a notetaker's .txt, or a screenshot of a conversation.`,
+    `Sky doesn't take ${ext} files. Drop a PDF, Office or Markdown document, a Zoom transcript (.vtt or .txt), a video recording or .srt, a voice memo, a notetaker's .txt, or a screenshot of a conversation.`,
   )
 }

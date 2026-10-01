@@ -47,6 +47,7 @@ import {
   readText,
   readTranscript,
   readUnknown,
+  readVideo,
   RECORDING_KINDS,
   type RecordingKind,
   sourceOf,
@@ -138,9 +139,12 @@ export function createImportHost(config: typeof ConfigModule, env: Record<string
     if (source === 'document') return readDocument(name)
     const info = await probeMedia(filePath).catch(() => null)
     const limit = transcriptionUploadLimit(loadSkyConfig().ai.models.transcription)
-    const audio = info?.formatName?.split(',').includes('caf')
-      ? readIMessageAudio(size, info.durationSeconds, limit)
-      : readAudio(size, info?.durationSeconds ?? null, limit)
+    const audio =
+      info?.hasVideo || (source === 'video' && !info)
+        ? readVideo(info?.durationSeconds ?? null)
+        : info?.formatName?.split(',').includes('caf')
+          ? readIMessageAudio(size, info.durationSeconds, limit)
+          : readAudio(size, info?.durationSeconds ?? null, limit)
     if (audio.refusal) return audio
     if (!info || !info.hasAudio)
       return {
@@ -196,7 +200,7 @@ export function createImportHost(config: typeof ConfigModule, env: Record<string
     // A screenshot or a dragged text is a conversation, and an .srt a video,
     // not a meeting; and a dragged text's time is only when it was dropped.
     // The calendar has nothing to say about any of them.
-    if (['image', 'srt', 'selection', 'document', 'imessage-audio'].includes(readback.source)) return null
+    if (['image', 'srt', 'video', 'selection', 'document', 'imessage-audio'].includes(readback.source)) return null
     const day = new PlainDate(when.slice(0, 10))
     const start = minutesOf(when.slice(11))
     const check = await checkDayMeetings(secrets, day, config.DIR_TIME)

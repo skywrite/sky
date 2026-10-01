@@ -1,6 +1,6 @@
 ---
 created: 2026-09-28
-updated: 2026-09-28
+updated: 2026-10-01
 ---
 
 # Recorded journals
@@ -9,7 +9,9 @@ Audio and video journals share `lib/recordedJournal.ts` after the existing
 `audio:transcript:clean` pipeline finishes transcription and names review.
 Type detection must use the corrected recording; the import's opening preview
 only chooses the kind of record. The web importer starts `journal:new` with
-`--from-audio --split`, then renders the command's journal-type multiselect.
+`--from-audio --split` or `--from-video --split`, then renders the command's
+journal-type multiselect. Video journals review suggested types by default
+on the CLI too, after extracting and cleaning their audio.
 Suggestions are checked, existing custom types and new-notebook defaults are
 available, and an unchecked topic stays in the remainder entry. Selecting no
 types keeps one complete entry.

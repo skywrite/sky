@@ -14,7 +14,11 @@ import { journalFromVideo } from './fromVideo.ts'
 import * as journal from './recordedJournal.ts'
 
 test('video journals share the corrected-text pipeline, retain the video source, and remove extracted scratch audio', async () => {
-  for (const succeeds of [true, false]) {
+  for (const [succeeds, stated] of [
+    [true, false],
+    [true, true],
+    [false, false],
+  ]) {
     const base = await makeTempDir({ prefix: 'sky-video-journal-' })
     const source = path.join(base, 'recording.mp4')
     const audio = path.join(base, 'extracted', 'audio.m4a')
@@ -49,14 +53,28 @@ test('video journals share the corrected-text pipeline, retain the video source,
     const file = spyOn(journal, 'fileRecordedJournal').mockImplementation(async (options) => {
       assert({
         given: 'a cleaned video journal',
-        should: 'pass the original video, recording start, and split choice to shared filing',
-        actual: [options.source, options.when.toString(), options.kind, options.split, options.cleanedText],
-        expected: [source, '2031-03-16 09:00', 'Video', 'auto', 'Jane Doe helped with Atlas.'],
+        should: 'review suggested types after corrections, retain the video, and respect a stated filing time',
+        actual: [
+          options.source,
+          options.when.toString(),
+          options.kind,
+          options.split,
+          options.reviewTypes,
+          options.cleanedText,
+        ],
+        expected: [
+          source,
+          stated ? when.toString() : '2031-03-16 09:00',
+          'Video',
+          'auto',
+          true,
+          'Jane Doe helped with Atlas.',
+        ],
       })
       return CommandResult.success({ files: ['journal/Atlas.md', 'journal/Health.md'] })
     })
     try {
-      const result = await journalFromVideo({ videoPath: source, when, context, tasks, split: 'auto' })
+      const result = await journalFromVideo({ videoPath: source, when, whenStated: stated, context, tasks })
       assert({
         given: `transcription ${succeeds ? 'succeeds' : 'fails'}`,
         should: 'clean up extracted audio while preserving the video and complete result list',

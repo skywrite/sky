@@ -80,6 +80,18 @@ function validGroups(groups: EntryGroup[], count: number) {
   return [...groups].sort((a, b) => Math.min(...a.sections) - Math.min(...b.sections))
 }
 
+export function recordedJournalPlan(kind: 'Audio' | 'Video', split?: string) {
+  return [
+    ...(kind === 'Video' ? [{ id: 'extract-audio', label: 'Extracting audio' }] : []),
+    { id: 'transcribe', label: 'Transcribing' },
+    { id: 'names', label: 'Checking names' },
+    { id: 'sections', label: 'Organizing the journal' },
+    ...(split ? [{ id: 'journal-types', label: 'Choosing journal types' }] : []),
+    { id: 'journal-summary', label: 'Naming the journal entries' },
+    { id: 'file', label: 'Saving journals and recording' },
+  ]
+}
+
 /** Audio and video share the corrected-text → types → entries → retained recording pipeline. */
 export async function fileRecordedJournal(
   options: RecordedJournalOptions,

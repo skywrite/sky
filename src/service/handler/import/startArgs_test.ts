@@ -13,6 +13,16 @@ const fields = (over: Partial<StartFields>): StartFields => ({
   ...over,
 })
 
+test('a recorded video starts the reviewed journal split through the video door', () => {
+  const start = startArgs({ ...memo, source: 'video' }, fields({ kind: 'journal' }), '/tmp/mock-recording.mov')
+  assert({
+    given: 'a video recording selected for import',
+    should: 'extract video audio and review detected journal types before filing',
+    actual: [start.command, start.args.fromVideo, start.args.fromAudio, start.args.split, start.rawArgs],
+    expected: ['journal:new', '/tmp/mock-recording.mov', undefined, 'auto', { _: [] }],
+  })
+})
+
 test('an existing conversation sends new audio to append without creating a day entry', () => {
   const file = 'time/2026/W05/01-27/actions/messages/09-30_iMessage-Audio_Atlas.md'
   const start = startArgs(

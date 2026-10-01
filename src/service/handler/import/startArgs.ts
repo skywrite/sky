@@ -105,7 +105,12 @@ export function startArgs(job: StartContext, fields: StartFields, input: string 
     case 'journal':
       return {
         command: 'journal:new',
-        args: { fromAudio: filePath, split: 'auto', when, fresh },
+        args: {
+          ...(job.source === 'video' ? { fromVideo: filePath } : { fromAudio: filePath }),
+          split: 'auto',
+          when,
+          fresh,
+        },
         rawArgs,
       }
     case 'note':

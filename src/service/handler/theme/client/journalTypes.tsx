@@ -56,7 +56,7 @@ export function JournalTypesReview({
         <div className="sky-journal-type-options">{choices(false)}</div>
       </details>
       <p className="sky-lead">
-        Other topics stay together in a remainder entry. The original audio is kept with every journal.
+        Other topics stay together in a remainder entry. The original recording is kept with every journal.
       </p>
       {error && <p role="alert">{error}</p>}
       <div className="sky-form-foot">

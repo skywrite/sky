@@ -28,6 +28,7 @@ import {
 } from '#commands/all/notes/lib/documentInput.ts'
 import type { PlaceAnswer, PlaceItem, PlacePrompt } from '#commands/lib/prompt/Prompter.ts'
 import { inspectAudioBlob } from '#lib/media/audioHeader.ts'
+import { VIDEO_EXTENSIONS } from '#lib/media/video.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import {
   dayLabel,
@@ -72,7 +73,7 @@ export interface ImportJob {
   files?: ImportJob['file'][]
   readback: {
     /** `selection` is text dragged onto the day */
-    source: 'transcript' | 'srt' | 'text' | 'audio' | 'imessage-audio' | 'image' | 'selection' | 'document'
+    source: 'transcript' | 'srt' | 'text' | 'audio' | 'video' | 'imessage-audio' | 'image' | 'selection' | 'document'
     kinds: ImportKind[]
     summary: string
     detail: string | null
@@ -430,8 +431,10 @@ export function acceptsImports(): string {
     '.txt',
     ...NOTE_DOCUMENT_EXTENSIONS,
     ...RECORDING_EXTS,
+    ...VIDEO_EXTENSIONS,
     ...IMAGE_EXTS,
     'audio/*',
+    'video/*',
     'image/*',
   ].join(',')
 }
@@ -442,8 +445,11 @@ async function refusedBeforeUpload(file: File, audioCap: number): Promise<string
   const ext = dot > 0 ? file.name.slice(dot).toLowerCase() : ''
   const mb = (file.size / 1024 / 1024).toFixed(0)
   const container = await inspectAudioBlob(file).catch(() => null)
+  // The server probes video candidates; only their extracted audio goes to the transcriber.
+  const video =
+    container !== 'caf' && (VIDEO_EXTENSIONS.some((video) => video === ext) || file.type.startsWith('video/'))
   const recording = Boolean(container) || RECORDING_EXTS.includes(ext) || file.type.startsWith('audio/')
-  if (recording && file.size > audioCap) {
+  if (!video && recording && file.size > audioCap) {
     return `The recording is ${mb} MB, over the ${audioCap / 1024 / 1024} MB limit. Trim it, or record shorter parts.`
   }
   const image = !container && (IMAGE_EXTS.includes(ext) || file.type.startsWith('image/'))
@@ -799,6 +805,8 @@ function whenNote(source: ImportJob['readback']['source'], proposed: boolean, la
       return proposed
         ? `when the memo was recorded · ${label} · a time you say in it wins`
         : 'yours · wins over what the memo says'
+    case 'video':
+      return proposed ? `when the video was recorded · ${label} · edit if needed` : 'yours · used for these journals'
     case 'imessage-audio':
       return proposed
         ? `from the first audio file's saved time · ${label} · edit if needed`
@@ -840,14 +848,14 @@ function nextLine(kind: ImportKind, source: ImportJob['readback']['source'], cou
     return 'Sky reads the conversation out of the text, checks what it read with you, and files it as a message under the day.'
   }
   const heard =
-    source === 'audio'
+    source === 'audio' || source === 'video'
       ? 'Sky transcribes it, checks unsure names with you'
       : 'Sky cleans the transcript, checks unsure names with you'
   switch (kind) {
     case 'meeting':
       return `${heard}, writes the meeting up, and files it under the day with its action items.`
     case 'journal':
-      return `${heard}, then suggests journal types for you to choose. Each entry is named and saved with the original audio.`
+      return `${heard}, then suggests journal types for you to choose. Each entry is named and saved with the original recording.`
     case 'note':
       return `${heard}, and files it as a note under the day, transcript and all.`
     case 'message':
@@ -1068,17 +1076,19 @@ function ConfirmBody({
   }
   const selection = source === 'selection'
   const sourceWord =
-    source === 'audio'
-      ? 'a voice memo'
-      : source === 'text'
-        ? 'a text file'
-        : source === 'selection'
-          ? 'dropped text'
-          : source === 'image'
-            ? count > 1
-              ? `${count} screenshots`
-              : 'a screenshot'
-            : 'a transcript'
+    source === 'video'
+      ? 'a video recording'
+      : source === 'audio'
+        ? 'a voice memo'
+        : source === 'text'
+          ? 'a text file'
+          : source === 'selection'
+            ? 'dropped text'
+            : source === 'image'
+              ? count > 1
+                ? `${count} screenshots`
+                : 'a screenshot'
+              : 'a transcript'
   // The title says what this makes — "New meeting from a transcript" — and follows the choice below.
   const title = refusal
     ? `Sky cannot take ${selection ? 'this text' : count > 1 ? 'these files' : 'this file'}`
@@ -2770,6 +2780,9 @@ export function ImportMain({
   onStartAgain: (job: ImportJob) => void
 }) {
   const { job, events, missing, refresh } = useImportFeed(id)
+  useEffect(() => {
+    document.title = `sky · ${job?.title ?? 'Import'}`
+  }, [job?.title])
   const [undoing, setUndoing] = useState(false)
   const [undoError, setUndoError] = useState<string | null>(null)
   const undoAudio = async () => {

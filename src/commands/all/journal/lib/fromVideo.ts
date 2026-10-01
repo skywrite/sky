@@ -4,26 +4,28 @@ import { runOptionsFor, TranscriptRun } from '#commands/all/audio/transcript/lib
 import { CommandResult } from '#commands/mod.ts'
 import type { CommandArgs } from '#commands/mod.ts'
 import { extractAudio, probeMedia } from '#lib/media/ffmpeg/mod.ts'
+import { VIDEO_EXTENSIONS } from '#lib/media/video.ts'
 import { exists } from '#shared/fs/mod.ts'
 import { Instant, PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import { desktopFilesByExt } from '../../audio/transcript/lib/desktopFiles.ts'
-import { fileRecordedJournal } from './recordedJournal.ts'
+import { fileRecordedJournal, recordedJournalPlan } from './recordedJournal.ts'
 
-/** Containers a screen or camera recording plausibly arrives in. */
-export const VIDEO_EXTENSIONS = ['.mp4', '.mov', '.m4v', '.webm', '.mkv'] as const
+export { VIDEO_EXTENSIONS } from '#lib/media/video.ts'
 
-/** The journal type a video entry files under; the tag follows from it. */
+/** Recording provenance stamped on video journal entries. */
 export const VIDEO_JOURNAL_TYPE = 'Video'
 
 export interface FromVideoOptions {
   /** Explicit path, or undefined to take the newest video off the Desktop. */
   videoPath?: string
   when: PlainDateTime
+  /** A date/time the caller chose takes precedence over the recording's clock. */
+  whenStated?: boolean
   context: CommandArgs['context']
   tasks: CommandArgs['tasks']
   noAutoTag?: boolean
   noAutoRel?: boolean
-  /** 'auto' groups by subject; "Health, Faith" extracts those entries plus a remainder. */
+  /** Defaults to 'auto'; "Health, Faith" proposes those types plus a remainder. */
   split?: string
   /** Start over: forget what an earlier run of the recording already produced. */
   fresh?: boolean
@@ -45,6 +47,8 @@ export interface FromVideoOptions {
 export async function journalFromVideo(options: FromVideoOptions): Promise<CommandResult> {
   const { context, tasks } = options
   const { output } = context
+  const split = options.split ?? 'auto'
+  output.plan(recordedJournalPlan('Video', split))
 
   // 1. Find the recording.
   let videoPath = options.videoPath
@@ -68,13 +72,15 @@ export async function journalFromVideo(options: FromVideoOptions): Promise<Comma
     return CommandResult.fail(`${path.basename(videoPath)} has no audio track, so there is nothing to transcribe.`)
   }
 
-  const when = await resolveRecordingStart(
-    videoPath,
-    media.durationSeconds,
-    media.creationTime,
-    options.when,
-    context.notebookNow.timezone,
-  )
+  const when = options.whenStated
+    ? options.when
+    : await resolveRecordingStart(
+        videoPath,
+        media.durationSeconds,
+        media.creationTime,
+        options.when,
+        context.notebookNow.timezone,
+      )
   if (media.durationSeconds !== null) {
     output.log(`Length: ${Math.round(media.durationSeconds / 60)}m, recorded from ${when.date} ${when.time}`)
   }
@@ -90,13 +96,15 @@ export async function journalFromVideo(options: FromVideoOptions): Promise<Comma
 
   // 3. Video containers are not what the transcription endpoints want, and the
   //    video stream would be most of an upload that only needs the audio.
-  output.log('Extracting audio...')
+  context.signal?.throwIfAborted()
+  output.stage('extract-audio', 'Extracting audio')
   const audioPath = await extractAudio(videoPath)
 
   try {
     const cleanResult = await tasks.run('audio:transcript:clean', { fromAudio: audioPath, run: run.key })
     if (!cleanResult.ok || !cleanResult.data) return CommandResult.fail(`Transcription failed: ${cleanResult.message}`)
     const clean = cleanResult.data
+    context.signal?.throwIfAborted()
     if (!clean.cleanedText.trim()) return CommandResult.fail('The transcript came back empty.')
     return await fileRecordedJournal({
       ...options,
@@ -106,6 +114,8 @@ export async function journalFromVideo(options: FromVideoOptions): Promise<Comma
       rel: [...clean.who, ...clean.rel].filter(Boolean),
       when,
       run,
+      split,
+      reviewTypes: true,
     })
   } finally {
     await rm(path.dirname(audioPath), { recursive: true, force: true })

@@ -13,6 +13,7 @@ import {
   readText,
   readTranscript,
   readUnknown,
+  readVideo,
   sourceOf,
 } from './readback.ts'
 
@@ -54,13 +55,28 @@ test('sourceOf', () => {
       'notes.txt',
       'memo.m4a',
       'song.MP3',
+      'journal.MOV',
+      'journal.mp4',
       'reply.CAF',
       'chat.png',
       'photo.HEIC',
       'deck.pdf',
       'archive.zip',
     ].map((name) => sourceOf(name)),
-    expected: ['transcript', 'srt', 'text', 'audio', 'audio', 'audio', 'image', 'image', 'document', null],
+    expected: [
+      'transcript',
+      'srt',
+      'text',
+      'audio',
+      'audio',
+      'video',
+      'video',
+      'audio',
+      'image',
+      'image',
+      'document',
+      null,
+    ],
   })
   assert({
     given: 'CAF contents under misleading names and a non-CAF recording named .caf',
@@ -274,6 +290,16 @@ test('readAudio', () => {
   })
 })
 
+test('video recordings offer journal import without applying the audio provider cap to video bytes', () => {
+  const video = readVideo(252)
+  assert({
+    given: 'a recorded video that will be transcribed from its extracted audio',
+    should: 'offer the journal workflow and recording duration',
+    actual: [video.source, video.kinds, video.summary, video.durationMinutes, video.refusal],
+    expected: ['video', ['journal'], 'Video recording · 4 min 12 s', 4.2, null],
+  })
+})
+
 test('audio import uses the selected provider limit for recordings and conversation turns', () => {
   const limit = 500 * 1024 * 1024
   const recording = 100 * 1024 * 1024
@@ -334,7 +360,7 @@ test('lengthLabel and readUnknown', () => {
     should: 'say so and name what it does take',
     actual: readUnknown('archive.zip').refusal,
     expected:
-      "Sky doesn't take .zip files. Drop a PDF, Office or Markdown document, a Zoom transcript (.vtt or .txt), a video's .srt, a voice memo, a notetaker's .txt, or a screenshot of a conversation.",
+      "Sky doesn't take .zip files. Drop a PDF, Office or Markdown document, a Zoom transcript (.vtt or .txt), a video recording or .srt, a voice memo, a notetaker's .txt, or a screenshot of a conversation.",
   })
 })
 

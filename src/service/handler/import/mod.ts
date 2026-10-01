@@ -106,6 +106,7 @@ export interface ImportRoutesOptions {
 function titleOf(file: StagedFile, readback: ReadBack, when: string): string {
   const time = when.slice(11).replace(/^0/, '')
   if (readback.source === 'audio') return `Voice memo ${time}`
+  if (readback.source === 'video') return `Video journal ${time}`
   if (readback.source === 'imessage-audio') return `iMessage Audio ${time}`
   if (readback.source === 'image') return `Screenshot ${time}`
   if (readback.source === 'selection') return `Text ${time}`

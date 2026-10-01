@@ -157,7 +157,7 @@ function Canvas() {
       : { path: '/', label: 'Today' }
   useEffect(() => {
     // These screens set their own titles from the content they display.
-    if (isOutbox || peopleRoute || placesRoute !== null || isTracking) return
+    if (isOutbox || peopleRoute || placesRoute !== null || isTracking || importId) return
     document.title = threadId
       ? `sky:chat - ${chatTitle}`
       : isAudition
@@ -165,7 +165,7 @@ function Canvas() {
         : isStreaks
           ? 'sky · streaks'
           : 'sky'
-  }, [threadId, chatTitle, isAudition, isStreaks, isOutbox, peopleRoute, placesRoute, isTracking])
+  }, [threadId, chatTitle, isAudition, isStreaks, isOutbox, peopleRoute, placesRoute, isTracking, importId])
   const isToday = dayYmd === null
   const others = threads.filter((t) => !t.id.startsWith('day-'))
   const onDayPage =

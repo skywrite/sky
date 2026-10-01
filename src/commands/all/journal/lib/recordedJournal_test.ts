@@ -27,9 +27,9 @@ const GROUPS = [
   { title: 'Support', summary: 'Grateful for help with Atlas.', journalType: 'Gratitude', sections: [1] },
 ]
 
-async function fixture(answer: string[] | null = ['Health', 'Gratitude']) {
+async function fixture(answer: string[] | null = ['Health', 'Gratitude'], kind: 'Audio' | 'Video' = 'Audio') {
   const base = await makeTempDir({ prefix: 'sky-recorded-journal-' })
-  const source = path.join(base, 'recording.m4a')
+  const source = path.join(base, kind === 'Video' ? 'recording.mp4' : 'recording.m4a')
   await writeFile(source, 'synthetic audio bytes')
   const calls: string[] = []
   let review: MultiselectPrompt | undefined
@@ -97,7 +97,7 @@ async function fixture(answer: string[] | null = ['Health', 'Gratitude']) {
     scope: async (_names, entry) => (entry.body.includes('Jane Doe') ? ['Jane Doe'] : []),
   }
   const options: Parameters<typeof fileRecordedJournal>[0] = {
-    kind: 'Audio',
+    kind,
     source,
     cleanedText: SPEECH,
     rel: ['Jane Doe'],
@@ -134,58 +134,61 @@ test('sections are cut from the corrected recording without rewriting or losing 
   })
 })
 
-test('audio journals review suggested types, reunite returning topics, name each entry and keep one recording', async () => {
-  const f = await fixture()
-  try {
-    const result = await fileRecordedJournal(f.options, f.models)
-    const files = result.data?.files ?? []
-    const docs = await Promise.all(
-      files.map(async (file) => JournalDocument.fromMarkdown(await readFile(file, 'utf8'))),
-    )
-    const attachments = path.join(f.options.context.config.DIR_ATTACHMENTS, dayAttachmentsDir(WHEN.plainDate))
-    assert({
-      given: 'two detected types with a return to Health later in the recording',
-      should: 'review before naming and save each complete entry',
-      actual: [result.ok, f.calls, f.review()?.initial, docs.map((doc) => doc.yaml['summary'])],
-      expected: [
-        true,
-        ['organize', 'suggest', 'review', 'name'],
-        ['Health', 'Gratitude'],
-        ['Feeling Rested After Sleep And Walking', 'Grateful For Help With Atlas Today'],
-      ],
-    })
-    assert({
-      given: 'the saved journals',
-      should: 'keep the original audio once and scope related people per entry',
-      actual: [
-        files.map((file) => path.basename(file)),
-        docs.map((doc) => doc.yaml['rel']),
-        await readdir(attachments),
-        docs.map((doc) => doc.attachments[0]?.file),
-      ],
-      expected: [
-        [
-          '2031-03-16_091234_Feeling-Rested-After-Sleep-And-Walking.md',
-          '2031-03-16_091234_Grateful-For-Help-With-Atlas-Today.md',
+test('audio and video journals review suggested types, reunite returning topics, name each entry and keep one recording', async () => {
+  for (const kind of ['Audio', 'Video'] as const) {
+    const f = await fixture(undefined, kind)
+    const attachment = `2031-03-16_091234_Rest-And-Help-With-Atlas${path.extname(f.source)}`
+    try {
+      const result = await fileRecordedJournal(f.options, f.models)
+      const files = result.data?.files ?? []
+      const docs = await Promise.all(
+        files.map(async (file) => JournalDocument.fromMarkdown(await readFile(file, 'utf8'))),
+      )
+      const attachments = path.join(f.options.context.config.DIR_ATTACHMENTS, dayAttachmentsDir(WHEN.plainDate))
+      assert({
+        given: 'two detected types with a return to Health later in the recording',
+        should: 'review before naming and save each complete entry',
+        actual: [result.ok, f.calls, f.review()?.initial, docs.map((doc) => doc.yaml['summary'])],
+        expected: [
+          true,
+          ['organize', 'suggest', 'review', 'name'],
+          ['Health', 'Gratitude'],
+          ['Feeling Rested After Sleep And Walking', 'Grateful For Help With Atlas Today'],
         ],
-        [null, ['Jane Doe']],
-        ['2031-03-16_091234_Rest-And-Help-With-Atlas.m4a'],
-        ['2031-03-16_091234_Rest-And-Help-With-Atlas.m4a', '2031-03-16_091234_Rest-And-Help-With-Atlas.m4a'],
-      ],
-    })
-    assert({
-      given: 'filing completed',
-      should: 'preserve the source and every spoken section, then remove retry data',
-      actual: [
-        await readFile(f.source, 'utf8'),
-        docs[0].markdown.includes(SECTIONS[0].body) && docs[0].markdown.includes(SECTIONS[2].body),
-        docs[1].markdown.includes(SECTIONS[1].body),
-        await f.options.run.get('journal'),
-      ],
-      expected: ['synthetic audio bytes', true, true, null],
-    })
-  } finally {
-    await rm(f.base, { recursive: true, force: true })
+      })
+      assert({
+        given: 'the saved journals',
+        should: 'keep the original audio once and scope related people per entry',
+        actual: [
+          files.map((file) => path.basename(file)),
+          docs.map((doc) => doc.yaml['rel']),
+          await readdir(attachments),
+          docs.map((doc) => doc.attachments[0]?.file),
+        ],
+        expected: [
+          [
+            '2031-03-16_091234_Feeling-Rested-After-Sleep-And-Walking.md',
+            '2031-03-16_091234_Grateful-For-Help-With-Atlas-Today.md',
+          ],
+          [null, ['Jane Doe']],
+          [attachment],
+          [attachment, attachment],
+        ],
+      })
+      assert({
+        given: 'filing completed',
+        should: 'preserve the source and every spoken section, then remove retry data',
+        actual: [
+          await readFile(f.source, 'utf8'),
+          docs[0].markdown.includes(SECTIONS[0].body) && docs[0].markdown.includes(SECTIONS[2].body),
+          docs[1].markdown.includes(SECTIONS[1].body),
+          await f.options.run.get('journal'),
+        ],
+        expected: ['synthetic audio bytes', true, true, null],
+      })
+    } finally {
+      await rm(f.base, { recursive: true, force: true })
+    }
   }
 })
 
