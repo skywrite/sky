@@ -154,9 +154,24 @@ test('readText', () => {
   })
   assert({
     given: 'a WebVTT body in a .txt',
-    should: 'send it to the transcript door',
-    actual: readText(VTT, 'notes.txt').refusal,
-    expected: 'notes.txt is a WebVTT transcript — save it as .vtt.',
+    should: 'offer a meeting with its transcript length, speakers and turns',
+    actual: readText(VTT, 'notes.txt'),
+    expected: {
+      source: 'transcript',
+      kinds: ['meeting'],
+      summary: 'Zoom transcript · 47 minutes · 3 turns',
+      detail: 'Jane Doe, Alex Chen',
+      durationMinutes: 47,
+      clockStartSeconds: null,
+      speakers: ['Jane Doe', 'Alex Chen'],
+      refusal: null,
+    },
+  })
+  assert({
+    given: 'a .TXT export with a byte-order mark, leading blank lines and Windows line endings',
+    should: 'recognize its VTT contents',
+    actual: readText(`\uFEFF\r\n${VTT.replace(/\n/g, '\r\n')}`, 'notes.TXT'),
+    expected: readText(VTT, 'notes.txt'),
   })
   const back = readText('[0:00] Jane: Morning.\n[0:12] Alex: Morning.\n[11:40] Jane: Done.', 'notes.txt')
   assert({
@@ -165,6 +180,47 @@ test('readText', () => {
     actual: [back.summary, back.kinds, back.refusal],
     expected: ['Notetaker text · 12 minutes · 3 stamped turns', ['meeting', 'message'], null],
   })
+  assert({
+    given: 'ordinary text without timestamps',
+    should: 'offer the plain-text meeting and message workflows',
+    actual: readText('Jane Doe: Let us review the Atlas plan.', 'notes.txt'),
+    expected: {
+      source: 'text',
+      kinds: ['meeting', 'message'],
+      summary: 'Notetaker text',
+      detail: null,
+      durationMinutes: null,
+      clockStartSeconds: null,
+      speakers: [],
+      refusal: null,
+    },
+  })
+})
+
+test('VTT imports require readable dialogue', () => {
+  const bodies = [
+    'WEBVTT\n',
+    'WEBVTT\n\n1\ninvalid timestamps\nJane Doe: Morning.\n',
+    'WEBVTT\n\n00:00:01.000 --> 00:00:04.000\n<v Jane Doe>   </v>\n',
+    '09:00:00 --> 09:00:02\n   \n',
+  ]
+  for (const body of bodies) {
+    const vtt = readTranscript(body, 'notes.vtt')
+    const txt = readText(body, 'notes.txt')
+    assert({
+      given: 'a VTT header or cue structure without readable dialogue, under either extension',
+      should: 'refuse the transcript before offering a meeting',
+      actual: [vtt.source, vtt.kinds, vtt.refusal, txt.source, txt.kinds, txt.refusal],
+      expected: [
+        'transcript',
+        [],
+        'notes.vtt has no transcript dialogue.',
+        'transcript',
+        [],
+        'notes.txt has no transcript dialogue.',
+      ],
+    })
+  }
 })
 
 test('readSelection', () => {
@@ -278,7 +334,7 @@ test('lengthLabel and readUnknown', () => {
     should: 'say so and name what it does take',
     actual: readUnknown('archive.zip').refusal,
     expected:
-      "Sky doesn't take .zip files. Drop a PDF, Office or Markdown document, a Zoom transcript (.vtt), a video's .srt, a voice memo, a notetaker's .txt, or a screenshot of a conversation.",
+      "Sky doesn't take .zip files. Drop a PDF, Office or Markdown document, a Zoom transcript (.vtt or .txt), a video's .srt, a voice memo, a notetaker's .txt, or a screenshot of a conversation.",
   })
 })
 
@@ -302,8 +358,8 @@ test('readTranscript, a transcript without a header', () => {
   })
   assert({
     given: 'the same body in a .txt',
-    should: 'send it to the transcript door, as a headered one is',
-    actual: readText(HEADERLESS, 'notes.txt').refusal,
-    expected: 'notes.txt is a WebVTT transcript — save it as .vtt.',
+    should: 'offer a meeting with the same duration, speakers and clock start',
+    actual: readText(HEADERLESS, 'notes.txt'),
+    expected: back,
   })
 })

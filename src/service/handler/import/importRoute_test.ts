@@ -639,7 +639,7 @@ test('POST /import refuses a file sky does not take, and start refuses it too', 
     actual: [job.state, job.error, start.status],
     expected: [
       'failed',
-      "Sky doesn't take .zip files. Drop a PDF, Office or Markdown document, a Zoom transcript (.vtt), a video's .srt, a voice memo, a notetaker's .txt, or a screenshot of a conversation.",
+      "Sky doesn't take .zip files. Drop a PDF, Office or Markdown document, a Zoom transcript (.vtt or .txt), a video's .srt, a voice memo, a notetaker's .txt, or a screenshot of a conversation.",
       400,
     ],
   })

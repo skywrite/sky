@@ -123,13 +123,14 @@ function refused(source: ImportSource, refusal: string): ReadBack {
   }
 }
 
-/** A .vtt: Zoom's transcript, or a captioner's headerless one, read for what the confirm dialog says back. */
+/** VTT contents: Zoom's transcript, or a captioner's headerless one, in a .vtt or .txt. */
 export function readTranscript(text: string, name: string): ReadBack {
   if (!ZoomVTT.isVtt(text)) {
     const why = SRT.isSrt(text) ? 'is an SRT transcript — save it as .srt' : 'is not a WebVTT transcript'
     return refused('transcript', `${name} ${why}.`)
   }
   const vtt = ZoomVTT.parse(text)
+  if (!vtt.cues.some((cue) => cue.text.trim())) return refused('transcript', `${name} has no transcript dialogue.`)
   const minutes = vtt.durationMinutes
   const speakers = vtt.speakers
   const length = minutes === null ? null : lengthLabel(minutes * 60)
@@ -173,12 +174,12 @@ export function readSrt(text: string, name: string): ReadBack {
 }
 
 /**
- * A .txt: a notetaker's copy of speaker lines, and nothing wrapped. Offered
- * as a meeting first, and as a message: a conversation saved as text, a
- * chat's export, is a .txt too.
+ * A .txt may be Zoom's VTT export, or a notetaker's copy of speaker lines.
+ * Plain text is offered as a meeting first, and as a message: a conversation
+ * saved as text, a chat's export, is a .txt too.
  */
 export function readText(text: string, name: string): ReadBack {
-  if (ZoomVTT.isVtt(text)) return refused('text', `${name} is a WebVTT transcript — save it as .vtt.`)
+  if (ZoomVTT.isVtt(text)) return readTranscript(text, name)
   if (SRT.isSrt(text)) return refused('text', `${name} is an SRT transcript — save it as .srt.`)
   if (isRtf(text)) return refused('text', `${name} is RTF, not plain text. Convert it to .txt first.`)
   if (!text.trim()) return refused('text', `${name} is empty.`)
@@ -293,6 +294,6 @@ export function readUnknown(name: string): ReadBack {
   const ext = path.extname(name).toLowerCase() || 'that kind of'
   return refused(
     'text',
-    `Sky doesn't take ${ext} files. Drop a PDF, Office or Markdown document, a Zoom transcript (.vtt), a video's .srt, a voice memo, a notetaker's .txt, or a screenshot of a conversation.`,
+    `Sky doesn't take ${ext} files. Drop a PDF, Office or Markdown document, a Zoom transcript (.vtt or .txt), a video's .srt, a voice memo, a notetaker's .txt, or a screenshot of a conversation.`,
   )
 }

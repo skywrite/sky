@@ -1,6 +1,6 @@
 ---
 created: 2026-09-01
-updated: 2026-09-28
+updated: 2026-10-01
 ---
 
 # Meeting from a file — the import
@@ -17,10 +17,10 @@ read back at once, and, on Start, the matching command runs inside the
 service the way the terminal runs it. Everything the job says travels as
 server-sent events.
 
-- `readback.ts` — what a file is, before anything runs. A `.vtt` is parsed
-  for its length, speakers and turns, and an `.srt` the same way (its cues
-  count from zero, so it says nothing about the clock); a `.txt` for its
-  stamped turns; a recording for its size (its length comes from the container, probed by
+- `readback.ts` — what a file is, before anything runs. VTT in a `.vtt` or
+  `.txt` is parsed for its length, speakers and turns, and an `.srt` the same
+  way (its cues count from zero, so it says nothing about the clock); plain
+  text for its stamped turns; a recording for its size (its length comes from the container, probed by
   the host); a screenshot for its size and its pixels (`lib/media/image`
   reads the header); a dragged text for its lines and its first words;
   a document for its format, leaving the work time to the person.
@@ -62,9 +62,9 @@ One door for every file kind. The kind picks the command:
 
 | Dropped | Door |
 | --- | --- |
-| `.vtt` | `meeting:new --from-zoom-vtt` |
+| VTT contents in `.vtt` or `.txt` | `meeting:new --from-zoom-vtt` |
 | `.srt` | `video:new --from-srt` — a video's transcript; a Loom's, a caption file's |
-| `.txt` | the kind chosen in the dialog: `meeting:new --from-text` (first), or `message:new --from-text` — a chat's export |
+| plain-text `.txt` | the kind chosen in the dialog: `meeting:new --from-text` (first), or `message:new --from-text` — a chat's export |
 | text dragged in | the same two doors on the text, staged as `selection.txt`: a message first, a meeting first when its lines carry a notetaker's stamps |
 | other audio | the kind chosen in the dialog: `meeting:new` and `event:new` with `--from-voice-memo`, or `journal:new`, `notes:new`, `message:new` with `--from-audio` |
 | CAF audio (detected from its contents) | `message:new --from-audio-turns` with medium `iMessage Audio`, or `message:append` for an existing destination; every file is one turn |

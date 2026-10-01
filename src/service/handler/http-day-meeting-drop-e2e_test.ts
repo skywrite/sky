@@ -7,7 +7,7 @@ import dayFile from '#shared/nbfs/dayFile.ts'
 import { assert, test } from '#test'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import { dispatchFileDrag, dispatchFileDrop, runWysiwygE2e } from './httpWysiwygE2eTestHelpers.ts'
-import { readAudio, readTranscript } from './import/readback.ts'
+import { readAudio, readText, readTranscript } from './import/readback.ts'
 import { type StartArgs, startArgs } from './import/startArgs.ts'
 
 const DAY = new PlainDate('2026-08-05')
@@ -29,7 +29,11 @@ test(
         day: true,
         imports: {
           read: async ({ path: file, name, size }) =>
-            name.endsWith('.m4a') ? readAudio(size, 60) : readTranscript(await readFile(file, 'utf8'), name),
+            name.endsWith('.m4a')
+              ? readAudio(size, 60)
+              : name.endsWith('.txt')
+                ? readText(await readFile(file, 'utf8'), name)
+                : readTranscript(await readFile(file, 'utf8'), name),
           listen: async () => ({ kind: 'journal', opening: 'A few thoughts.', guess: 'Sounds like a journal.' }),
           run: async function* (job, file) {
             if (!job.fields) throw new Error('Missing import fields')
@@ -104,7 +108,11 @@ test(
           expected: [true, 'solid', '2px', 'drop to import', 1, 0],
         })
 
-        for (const file of [recap, { name: 'memo.m4a', type: 'audio/mp4', text: 'mock recording' }]) {
+        for (const file of [
+          recap,
+          { name: 'recap.txt', type: 'text/plain', text: TRANSCRIPT },
+          { name: 'memo.m4a', type: 'audio/mp4', text: 'mock recording' },
+        ]) {
           await dispatchFileDrop(page, `${ROW} .sky-dr-who`, file)
           await page.waitForSelector('.sky-confirm-title:has-text("New meeting")')
           if (file.name.endsWith('.m4a'))
@@ -141,7 +149,7 @@ test(
           await page.waitForSelector(ROW)
         }
         assert({
-          given: 'both imports started from the slot',
+          given: 'VTT, TXT and audio imports started from the slot',
           should: 'run meeting:new through the correct source door with the chosen time stated',
           actual: runs.map((run) => ({
             command: run.command,
@@ -150,7 +158,7 @@ test(
             clock: run.args.clock,
             rawArgs: run.rawArgs,
           })),
-          expected: ['recap.vtt', 'memo.m4a'].map((file) => ({
+          expected: ['recap.vtt', 'recap.txt', 'memo.m4a'].map((file) => ({
             command: 'meeting:new',
             file,
             when: '2026-08-05 09:30',
@@ -190,7 +198,11 @@ test(
         day: true,
         imports: {
           read: async ({ path: file, name, size }) =>
-            name.endsWith('.m4a') ? readAudio(size, 60) : readTranscript(await readFile(file, 'utf8'), name),
+            name.endsWith('.m4a')
+              ? readAudio(size, 60)
+              : name.endsWith('.txt')
+                ? readText(await readFile(file, 'utf8'), name)
+                : readTranscript(await readFile(file, 'utf8'), name),
           suggestWhen: () => '2026-08-09 15:45',
           listen: async () => ({ kind: 'journal', opening: 'A few thoughts.', guess: 'Sounds like a journal.' }),
           run: async function* (job, file) {
@@ -216,9 +228,11 @@ test(
         await page.route('**/day/*/schedule', (route) => route.fulfill({ json: calendar }))
         await page.setViewportSize({ width: 1400, height: 900 })
         const transcript = { name: 'unscheduled.vtt', type: 'text/vtt', text: TRANSCRIPT }
+        const textTranscript = { name: 'unscheduled.txt', type: 'text/plain', text: TRANSCRIPT }
         const audio = { name: 'unscheduled.m4a', type: 'audio/mp4', text: 'mock recording' }
         const cases = [
           { calendar, target: `${SECTION} .sky-rail-sec-h`, file: transcript, time: '15:45', stated: false },
+          { calendar, target: `${SECTION} .sky-rail-sec-h`, file: textTranscript, time: '15:45', stated: false },
           {
             calendar: { read: true, meetings: [], errors: [] },
             target: SECTION,
