@@ -5,6 +5,7 @@ import './aiControls.css'
 /** The same click, drag, and keyboard control in chat and preset settings. */
 export function EffortControl({
   value,
+  defaultValue = null,
   levels,
   onChange,
   label = 'Effort',
@@ -13,6 +14,7 @@ export function EffortControl({
   resetLabel = 'Use model default',
 }: {
   value: Effort | null
+  defaultValue?: Effort | null
   key?: Key | null
   levels: readonly Effort[]
   onChange: (value: Effort | null) => void | Promise<void>
@@ -25,7 +27,7 @@ export function EffortControl({
   const [pending, setPending] = useState(false)
   const pointer = useRef<number | null>(null)
   const latest = useRef<Effort | null>(null)
-  const selected = draft ?? value
+  const selected = draft ?? value ?? defaultValue
   const at = levels.indexOf(selected as Effort)
   const locked = disabled || pending
   const commit = async (next: Effort | null) => {

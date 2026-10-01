@@ -328,7 +328,7 @@ for (const effort of ['low', 'high', 'xhigh'] as const) {
   })
 }
 
-test('default-gpt-6.1-sol runs at the API default effort and takes an effort override', () => {
+test('default-gpt-6.1-sol runs at high effort and takes an effort override', () => {
   const resolved = aiModelByProfile('default-gpt-6.1-sol')
   assert({
     given: 'the default-gpt-6.1-sol profile',
@@ -337,10 +337,10 @@ test('default-gpt-6.1-sol runs at the API default effort and takes an effort ove
     expected: ['gpt-6.1-sol', 1_050_000],
   })
   assert({
-    given: 'no preset options',
-    should: 'send no openai options: API-default effort, standard processing',
+    given: 'the preset effort',
+    should: 'send high reasoning effort with standard processing',
     actual: resolved.providerOptions?.['openai'],
-    expected: undefined,
+    expected: { reasoningEffort: 'high' },
   })
   assert({
     given: 'a max effort override',

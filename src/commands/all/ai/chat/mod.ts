@@ -39,7 +39,7 @@ import { ACTIONS_DIR, AI_CHATS_DIR, dayAIChatsDir, fetchNow } from '#shared/nbfs
 import truncate from '#shared/strings/truncate.ts'
 import { timingLine } from '#shared/timing/summary.ts'
 import { contextAdjustmentText } from '#universal/ai/contextAdjustment.ts'
-import { presetEffort } from '#universal/ai/effort.ts'
+import { effectiveEffort } from '#universal/ai/effort.ts'
 import { fitBudget } from '#universal/ai/readingBudget.ts'
 import { toolDisplayName } from '#universal/ai/toolDisplay.ts'
 import { gatherContext } from '../_lib/gatherContext.ts'
@@ -531,7 +531,8 @@ export default class AiChatTask extends Command {
       profile: {
         model: reasoningProfile.model,
         preset: reasoningProfileName,
-        effort: args.effort && args.effort !== 'default' ? args.effort : (presetEffort(reasoningProfile) ?? undefined),
+        effort:
+          args.effort && args.effort !== 'default' ? args.effort : (effectiveEffort(reasoningProfile) ?? undefined),
       },
       producers: contextProducers(tasks),
       ambient: ctx,

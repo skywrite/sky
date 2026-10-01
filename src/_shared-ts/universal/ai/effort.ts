@@ -32,6 +32,24 @@ export function presetEffort(profile: EffortProfile): Effort | null {
   return isEffort(value) ? value : null
 }
 
+/** Known API defaults, without adding an explicit option to the preset or request. */
+export function modelDefaultEffort(profile: EffortProfile): Effort | null {
+  // https://developers.openai.com/api/docs/models/gpt-6.1-sol
+  if (profile.provider === 'openai' && /^gpt-6\.1-sol(?:$|-)/.test(profile.model)) return 'medium'
+  // https://platform.claude.com/docs/en/build-with-claude/effort
+  if (profile.provider === 'anthropic' && effortLevels(profile).length > 1)
+    return /^claude-opus-5-5(?:$|-\d{8}$)/.test(profile.model) ? 'medium' : 'high'
+  return null
+}
+
+/** The effort a preset runs at; preserve unfamiliar explicit values instead of guessing. */
+export function effectiveEffort(profile: EffortProfile): Effort | null {
+  const value = (profile.options as Record<string, unknown> | undefined)?.[
+    profile.provider === 'anthropic' ? 'effort' : 'reasoningEffort'
+  ]
+  return value === undefined ? modelDefaultEffort(profile) : presetEffort(profile)
+}
+
 /** Only advertise levels the model accepts; an unfamiliar model keeps its existing options. */
 export function effortLevels(profile: EffortProfile): readonly Effort[] {
   if (profile.provider === 'anthropic') {

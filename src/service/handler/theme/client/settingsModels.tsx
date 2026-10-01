@@ -1,6 +1,14 @@
 import { Button, NumberInput, Select, Textarea, TextInput } from '@mantine/core'
 import { useState, type Key } from 'react'
-import { effortLabel, effortLevels, optionsWithEffort, presetEffort, type Effort } from '#universal/ai/effort.ts'
+import {
+  effectiveEffort,
+  effortLabel,
+  effortLevels,
+  modelDefaultEffort,
+  optionsWithEffort,
+  presetEffort,
+  type Effort,
+} from '#universal/ai/effort.ts'
 import { EffortControl } from './effortControl.tsx'
 import type { ProfileRow, SettingsData } from './settings.tsx'
 import { Block, refusalOf } from './settingsBlocks.tsx'
@@ -139,6 +147,7 @@ function PresetEditor({
             <EffortControl
               key={`${draft.provider}/${draft.model}`}
               value={effort}
+              defaultValue={modelDefaultEffort(draft)}
               levels={effortLevels(draft)}
               onChange={setEffort}
             />
@@ -297,6 +306,7 @@ export function AIPane({ data, reload }: { data: SettingsData; reload: () => Pro
                   <EffortControl
                     label={`Default effort for ${role.label}`}
                     value={presetEffort(profile)}
+                    defaultValue={effectiveEffort(profile)}
                     levels={effortLevels(profile)}
                     disabled={busy}
                     onChange={(value) =>
@@ -339,7 +349,7 @@ export function AIPane({ data, reload }: { data: SettingsData; reload: () => Pro
                   {profile.roles.length ? ` · ${profile.roles.join(' & ')}` : ''}
                 </span>
               </span>
-              <span>{effortLabel(presetEffort(profile))}</span>
+              <span>{effortLabel(effectiveEffort(profile))}</span>
               <span aria-hidden="true">{editing === profile.name ? '⌃' : '⌄'}</span>
             </button>
             {editing === profile.name && (

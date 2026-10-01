@@ -7,7 +7,7 @@ import { PROFILES, getAllProfiles, getRoles, type ResolvedModel } from '#shared/
 import type { SkyConfig } from '#shared/config/types.ts'
 import { env } from '#shared/sys/mod.ts'
 import { assert, test } from '#test'
-import { effortLevels, presetEffort, validateEffort } from '#universal/ai/effort.ts'
+import { effectiveEffort, effortLevels, validateEffort } from '#universal/ai/effort.ts'
 import { FILE_CHAT_REPLY, fileChatHost } from './chat/filesTestHelpers.ts'
 import { createTestHttpApp } from './httpTestHelpers.ts'
 import { prettyModel, ROLE_LABEL, type SettingsHost } from './settings/mod.ts'
@@ -93,7 +93,7 @@ test(
           contextWindow: profile.contextWindow,
           builtin: name in PROFILES,
           group: profile.model,
-          effort: { default: presetEffort(profile), levels: effortLevels(profile) },
+          effort: { default: effectiveEffort(profile), levels: effortLevels(profile) },
         })),
       resolve: (name, effort = 'default') => {
         const profile = getAllProfiles(config.ai)[name]
@@ -105,7 +105,7 @@ test(
             provider: profile.provider,
             model: profile.model,
             preset: name,
-            effort: effort === 'default' ? (presetEffort(profile) ?? undefined) : effort,
+            effort: effort === 'default' ? (effectiveEffort(profile) ?? undefined) : effort,
           },
           contextWindow: profile.contextWindow,
         }
@@ -208,12 +208,86 @@ test(
         actual: [(await toggle.textContent())?.includes('Medium effort'), await temporary.getAttribute('aria-checked')],
         expected: [true, 'true'],
       })
+      await toggle.click()
+      for (const [model, defaultEffort] of [
+        ['GPT 6.1 Sol', 'High'],
+        ['Claude Sonnet 5.5', 'High'],
+      ]) {
+        await page.getByRole('combobox', { name: 'Model', exact: true }).click()
+        await page.getByRole('option', { name: model, exact: true }).click()
+        await page.waitForFunction(
+          (level) => document.querySelector('.sky-chat-effort-field [aria-checked="true"]')?.textContent === level,
+          defaultEffort,
+        )
+        assert({
+          given: `selecting ${model} without an effort override`,
+          should: 'select its effective preset default while keeping the chat on inherited effort',
+          actual: [
+            await effort.getByRole('radio', { name: defaultEffort, exact: true }).getAttribute('aria-checked'),
+            (await toggle.textContent())?.includes(`${defaultEffort} effort`),
+            (await (await page.request.get(`${origin}/chat/tuning/settings`)).json()).effort,
+          ],
+          expected: ['true', true, 'default'],
+        })
+        await effort.getByRole('radio', { name: 'Low', exact: true }).click()
+        await page.getByRole('button', { name: 'Use preset default', exact: true }).click()
+        await page.waitForFunction(
+          (level) => document.querySelector('.sky-chat-effort-field [aria-checked="true"]')?.textContent === level,
+          defaultEffort,
+        )
+        await page.reload()
+        await toggle.click()
+        assert({
+          given: `clearing ${model}'s override and reloading`,
+          should: 'restore the highlighted preset default',
+          actual: await effort.getByRole('radio', { name: defaultEffort, exact: true }).getAttribute('aria-checked'),
+          expected: 'true',
+        })
+      }
+      await page.getByRole('combobox', { name: 'Model', exact: true }).click()
+      await page.getByRole('option', { name: 'Claude Opus 5.5', exact: true }).click()
+      await effort.getByRole('radio', { name: 'Medium', exact: true }).click()
+      await page.waitForFunction(() =>
+        document.querySelector('[aria-label="Chat settings"]')?.textContent?.includes('Medium effort'),
+      )
       await page.goto(`${origin}/settings/ai/models`)
       await capture('settings-before-interaction')
       const thinking = page.getByRole('combobox', { name: 'Default preset for Thinking', exact: true })
       await thinking.click()
       await page.getByRole('option', { name: 'default-sonnet-5.5', exact: true }).click()
       const roleEffort = page.getByRole('radiogroup', { name: 'Default effort for Thinking', exact: true })
+      await page.waitForFunction(
+        () =>
+          document.querySelector('[aria-label="Default effort for Thinking"] [aria-checked="true"]')?.textContent ===
+          'High',
+      )
+      assert({
+        given: 'Sonnet 5.5 inherited in model settings',
+        should: 'highlight High without adding an explicit effort option',
+        actual: [
+          await roleEffort.getByRole('radio', { name: 'High', exact: true }).getAttribute('aria-checked'),
+          config.ai.profiles?.['default-sonnet-5.5']?.options?.effort,
+        ],
+        expected: ['true', undefined],
+      })
+      await page.locator('.sky-preset-toggle').filter({ hasText: 'default-sonnet-5.5' }).click()
+      assert({
+        given: 'editing a preset that inherits the model default',
+        should: 'highlight High in the preset editor',
+        actual: await page
+          .locator('.sky-preset-editor')
+          .getByRole('radio', { name: 'High', exact: true })
+          .getAttribute('aria-checked'),
+        expected: 'true',
+      })
+      await page.getByRole('button', { name: 'Save preset', exact: true }).click()
+      await page.locator('.sky-preset-editor').waitFor({ state: 'hidden' })
+      assert({
+        given: 'saving an inherited default without changing it',
+        should: 'keep the effort option omitted',
+        actual: config.ai.profiles?.['default-sonnet-5.5']?.options?.effort,
+        expected: undefined,
+      })
       await roleEffort.getByRole('radio', { name: 'Low', exact: true }).click()
       await page.waitForFunction(
         () =>

@@ -58,7 +58,7 @@ import type { ResumeSession } from '#shared/models/Chat/ChatStore/mod.ts'
 import { buildChatTranscript, CHAT_ENRICH } from '#shared/models/Chat/enrich.ts'
 import { isAIChatPath, parseTimePath } from '#shared/nbfs/mod.ts'
 import truncate from '#shared/strings/truncate.ts'
-import { effortLevels, isEffortOverride, presetEffort } from '#universal/ai/effort.ts'
+import { effectiveEffort, effortLevels, isEffortOverride } from '#universal/ai/effort.ts'
 import { fitBudget } from '#universal/ai/readingBudget.ts'
 import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import { prettyModel, PROVIDER_LABEL, ROLE_LABEL } from '../settings/mod.ts'
@@ -250,7 +250,7 @@ export function modelChoices(): ModelChoice[] {
     provider: PROVIDER_LABEL[profile.provider] ?? profile.provider,
     roles: rolesBy.get(name) ?? [],
     contextWindow: profile.contextWindow,
-    effort: { default: presetEffort(profile), levels: effortLevels(profile) },
+    effort: { default: effectiveEffort(profile), levels: effortLevels(profile) },
     builtin: name in PROFILES,
     group: JSON.stringify([
       profile.provider,
@@ -287,7 +287,7 @@ export function createChatSettingsHost(): ChatSettingsHost {
         profile: {
           model: profile.model,
           preset: name,
-          effort: effort === 'default' ? (presetEffort(profile) ?? undefined) : effort,
+          effort: effort === 'default' ? (effectiveEffort(profile) ?? undefined) : effort,
         },
         contextWindow: profile.contextWindow,
       }
@@ -357,7 +357,7 @@ export function createChatHost(config: typeof ConfigModule, env: Record<string, 
       profile: {
         model: profile.model,
         preset: profileName,
-        effort: prefs.effort && prefs.effort !== 'default' ? prefs.effort : (presetEffort(profile) ?? undefined),
+        effort: prefs.effort && prefs.effort !== 'default' ? prefs.effort : (effectiveEffort(profile) ?? undefined),
       },
       producers: contextProducers(tasks),
       ambient: await gatherContext(today, config.DIR_TIME, config.DIR_DATA, WEB_CHAT.days, {
