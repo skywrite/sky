@@ -451,14 +451,17 @@ function ChatsSection({
                 {row.title}
               </a>
             ) : (
-              <button
-                type="button"
+              <a
                 className="sky-dr-label sky-dr-open"
                 title={row.title}
-                onClick={() => row.target.kind === 'live' && onOpenThread(row.target.id)}
+                href={
+                  row.target.kind === 'live'
+                    ? `/thread/${encodeURIComponent(row.target.id)}`
+                    : fileHref(row.target.path)
+                }
               >
                 {row.title}
-              </button>
+              </a>
             )}
             {row.path && (
               <DayChatResume

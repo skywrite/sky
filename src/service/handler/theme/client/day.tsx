@@ -1041,13 +1041,16 @@ function ChatsCard({
                   {row.title}
                 </a>
               ) : (
-                <button
-                  type="button"
+                <a
                   className="sky-day-chat-open"
-                  onClick={() => row.target.kind === 'live' && onOpenThread(row.target.id)}
+                  href={
+                    row.target.kind === 'live'
+                      ? `/thread/${encodeURIComponent(row.target.id)}`
+                      : fileHref(row.target.path)
+                  }
                 >
                   {row.title}
-                </button>
+                </a>
               )}
               {row.path && (
                 <DayChatResume

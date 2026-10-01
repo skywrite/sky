@@ -267,7 +267,7 @@ function Canvas() {
       if (result) setChatNotices((prev) => [...prev.filter((n) => n.id !== id), { id, title, ...result }])
     })
   }
-  // A link into the explorer — a row on the day, a link inside a document — turns the page in place.
+  // Ordinary clicks on internal document and chat links turn the page in place.
   const onLinkClick = (event: MouseEvent) => {
     if (event.defaultPrevented || event.button !== 0) return
     if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
@@ -277,6 +277,7 @@ function Canvas() {
     if (url.origin !== location.origin) return
     if (url.hash && url.pathname === location.pathname && url.search === location.search) return
     if (
+      !url.pathname.startsWith('/thread/') &&
       !url.pathname.startsWith('/explorer/') &&
       filesRouteOf(url.pathname) === null &&
       meetingRouteOf(url.pathname) === null
