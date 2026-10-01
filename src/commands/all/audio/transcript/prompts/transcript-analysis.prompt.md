@@ -1,13 +1,13 @@
 ---
 schema: 0.2.0
 created: 2026-01-13
-updated: 2026-09-05
+updated: 2026-10-01
 description: Analyze transcript for transcription errors and clean-up opportunities
 ---
 
 Analyze this raw transcript and identify issues to fix.
 
-**IMPORTANT**: Your job is to clean up transcription errors and verbal artifacts. Do NOT change formatting, speaker labels, punctuation, or sentence structure. Only fix the specific issues described below.
+**IMPORTANT**: Your job is to clean up transcription errors and verbal artifacts, and express quantitative values in numerical form. Keep layout, speaker labels, punctuation outside numeric expressions, and sentence structure unchanged. Only fix the specific issues described below.
 
 ## Transcript
 
@@ -69,17 +69,23 @@ Keep each issue's `originalText` to the SMALLEST span that contains the error �
 
 4. **OBVIOUS ERRORS**: Clear mishearings where context makes the correct word unambiguous
 
+5. **NUMBERS AND AMOUNTS** (type: "number"): Use digits for quantitative values, including weights, measurements, money, percentages, counts, ages, durations, and years. Do this even when the words were transcribed correctly; number formatting is an intentional cleanup correction.
+   - Use conventional unit and currency notation when explicitly stated: "one hundred eighty-four point six pounds" → "184.6 lbs", "one thousand two hundred fifty dollars and seventy-five cents" → "$1,250.75", "twelve point five percent" → "12.5%", "three appointments" → "3 appointments", "forty-five minutes" → "45 minutes". Also normalize mixed forms such as "184.6 pounds" → "184.6 lbs".
+   - Preserve the exact value, sign, range, and stated decimal precision, including trailing zeros. Do not round, convert units or currencies, infer missing units, or guess an ambiguous value. Already numerical values with conventional notation need no correction.
+   - Return literal `originalText` → `suggestedFix` pairs, including the full quantity and its unit or currency when present. Use the smallest additional surrounding phrase needed to target a quantitative use safely: replacements apply to every matching occurrence. Never globally replace a number word that also appears in a name or idiom.
+   - Leave names, titles, idioms, and nonquantitative speech unchanged (e.g., "One Direction", "one of a kind", "a million thanks"). An uncertain numeric value belongs in review with type "number", not an invented high-confidence correction.
+
 ### Review needed (confidence: "medium" or "low") - User prompted:
 
-5. **UNCLEAR WORDS**: Transcription errors where the correct word is ambiguous
+6. **UNCLEAR WORDS**: Transcription errors where the correct word is ambiguous
 
-6. **TECHNICAL TERMS**: Domain-specific vocabulary, acronyms that may be wrong
+7. **TECHNICAL TERMS**: Domain-specific vocabulary, acronyms that may be wrong
 
-7. **NAME SPELLING**: Person names, company names, place names. **If a name phonetically matches a known contact, use HIGH confidence and auto-fix.** If a name does NOT match any known contact, use MEDIUM confidence and prompt user to confirm or provide the correct spelling.
+8. **NAME SPELLING**: Person names, company names, place names. **If a name phonetically matches a known contact, use HIGH confidence and auto-fix.** If a name does NOT match any known contact, use MEDIUM confidence and prompt user to confirm or provide the correct spelling.
 
-8. **INAUDIBLE MARKERS**: `[inaudible]`, `[unclear]`, `[unintelligible]` - flag for user to provide context
+9. **INAUDIBLE MARKERS**: `[inaudible]`, `[unclear]`, `[unintelligible]` - flag for user to provide context
 
-9. **CROSSTALK**: `[crosstalk]`, `[overlapping]` - user decides to remove or clarify
+10. **CROSSTALK**: `[crosstalk]`, `[overlapping]` - user decides to remove or clarify
 
 ### Confidence levels:
 
@@ -119,7 +125,7 @@ If no participants or mentioned people can be identified, use empty arrays. Do N
 {
   "issues": [
     {
-      "type": "filler" | "stutter" | "false_start" | "unclear" | "technical" | "name" | "inaudible" | "crosstalk",
+      "type": "filler" | "stutter" | "false_start" | "number" | "unclear" | "technical" | "name" | "inaudible" | "crosstalk",
       "confidence": "high" | "medium" | "low",
       "occurrences": 25,
       "originalText": "the smallest span containing the error — a word or short phrase, never a whole sentence",

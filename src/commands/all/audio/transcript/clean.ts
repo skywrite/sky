@@ -148,7 +148,7 @@ const TranscriptIssueSchema = z.object({
   issues: z.array(
     z.object({
       type: z
-        .enum(['filler', 'stutter', 'false_start', 'unclear', 'technical', 'name', 'inaudible', 'crosstalk'])
+        .enum(['filler', 'stutter', 'false_start', 'number', 'unclear', 'technical', 'name', 'inaudible', 'crosstalk'])
         .catch('unclear'),
       confidence: z.enum(['high', 'medium', 'low']),
       occurrences: z.number().int().positive().catch(1).default(1),
@@ -194,6 +194,8 @@ function issueTypeLabel(type: TranscriptIssue['type']): string {
       return 'Unclear word'
     case 'technical':
       return 'Technical term'
+    case 'number':
+      return 'Number or amount'
     case 'name':
       return 'Name spelling'
     case 'inaudible':

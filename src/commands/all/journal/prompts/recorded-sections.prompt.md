@@ -2,12 +2,15 @@
 schema: 0.2.0
 description: Identify topical boundaries in a corrected spoken journal without rewriting its words
 created: 2026-09-28
-updated: 2026-09-28
+updated: 2026-10-01
 ---
 
 Organize this corrected spoken journal into topical sections in spoken order.
 Give the recording a specific five to seven word Title Case title in the
 speaker's vocabulary, and a short summary of what it covers.
+In the title, summary, and headings, keep quantitative values in numerical form
+with the recording's units, currency symbols, and exact precision. Never spell
+them out, round them, or convert units or currencies.
 
 For each section, return a concrete topical heading and its first six to twelve
 words, copied exactly from the recording, including punctuation. For a shorter
