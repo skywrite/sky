@@ -26,20 +26,25 @@ export default class PlacesCompletionProvider implements vscode.CompletionItemPr
     }
 
     return dirEntries
-      .filter((entry) => !entry.name.startsWith('.'))
+      .filter(
+        (entry) =>
+          !entry.name.startsWith('.') && (entry.isDirectory() || (entry.isFile() && entry.name.endsWith('.md'))),
+      )
       .map((entry) => {
-        const name = path.parse(entry.name).name // chop off file extension (noop for dirs)
-        const item = new vscode.CompletionItem(name)
+        const isDirectory = entry.isDirectory()
+        const name = isDirectory ? entry.name : path.parse(entry.name).name
+        const label = isDirectory ? `${name}/` : name
+        const kind = isDirectory ? vscode.CompletionItemKind.Folder : vscode.CompletionItemKind.File
+        const item = new vscode.CompletionItem(label, kind)
+        item.detail = isDirectory ? 'Browse places' : 'Place link'
         item.range = new vscode.Range(position, position)
+        item.insertText = label
 
-        if (entry.isDirectory()) {
-          item.insertText = `${name}/`
+        if (isDirectory) {
           item.command = {
             command: 'editor.action.triggerSuggest',
             title: 'Trigger Suggest',
           }
-        } else if (entry.isFile() && entry.name.endsWith('.md')) {
-          item.insertText = name
         }
 
         return item
