@@ -150,11 +150,27 @@ export function placeLabel(place: Pick<PlaceFields, 'kind' | 'category'>): strin
 export function placeMapHref(
   place: Pick<PlaceFields, 'googleMapsUrl' | 'googlePlaceId' | 'coordinates' | 'name' | 'address'>,
 ): string {
-  if (/^https:\/\/(?:www\.)?google\.[a-z.]+\/maps\b/.test(place.googleMapsUrl)) return place.googleMapsUrl
+  const saved = place.googleMapsUrl.trim()
+  try {
+    const url = new URL(saved)
+    if (['https:', 'http:'].includes(url.protocol) && !url.username && !url.password) return saved
+  } catch {
+    // Missing or invalid saved links fall back to a Maps search.
+  }
   const query = place.coordinates
     ? `${place.coordinates.latitude},${place.coordinates.longitude}`
     : [place.name, place.address].filter(Boolean).join(', ')
   return `https://www.google.com/maps/search/?${new URLSearchParams({ api: '1', query, ...(place.googlePlaceId ? { query_place_id: place.googlePlaceId } : {}) })}`
+}
+export function placeAppleMapsHref(place: Pick<PlaceFields, 'coordinates' | 'name' | 'address'>): string {
+  return `https://maps.apple.com/?${new URLSearchParams({
+    q: place.name || place.address,
+    ...(place.coordinates
+      ? { ll: `${place.coordinates.latitude},${place.coordinates.longitude}` }
+      : place.address
+        ? { address: place.address }
+        : {}),
+  })}`
 }
 export function isWithinPlace(place: PlaceSummary, ref: string, places: readonly PlaceSummary[]): boolean {
   const byRef = new Map(places.map((p) => [p.ref.toLowerCase(), p]))

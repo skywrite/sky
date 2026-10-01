@@ -48,6 +48,47 @@ const failure = async (work: Promise<unknown>) => {
   }
 }
 
+test('Legacy venue categories reach the web UI without rewriting files or overriding explicit categories', async () => {
+  const f = await fixture()
+  try {
+    const samples = [
+      { file: 'FR/Paris/drink/Atlas-Cafe', yaml: 'GoogleMaps: { type: restaurant }', category: 'drink' },
+      { file: 'FR/Paris/eat/Atlas-Kitchen', yaml: '', category: 'eat' },
+      { file: 'Atlas-Lodge', yaml: 'GoogleMaps: { type: lodging }', category: 'stay' },
+      { file: 'FR/Paris/drink/Atlas-Office', yaml: 'type: office', category: 'office' },
+      { file: 'Atlas-Visit', yaml: 'GoogleMaps: { type: unrecognized }', category: '' },
+      { file: 'FR/Paris/drink/Atlas-Area', yaml: 'kind: area', category: '' },
+    ]
+    for (const sample of samples) {
+      const id = `places/locations/${sample.file}.md`
+      const raw = `---\nname: ${sample.file.split('/').at(-1)}\n${sample.yaml}\n---\nSample notes.\n`
+      await f.seed(id, raw)
+      const detail = await f.places.detail(id)
+      assert({
+        given: `a saved place with ${sample.yaml || 'only a category directory'}`,
+        should: 'show its category consistently in the index and detail without changing its file',
+        actual: [
+          f.places.index().find((place) => place.id === id)?.category,
+          detail.category,
+          await readFile(path.join(f.root, id), 'utf8'),
+        ],
+        expected: [sample.category, sample.category, raw],
+      })
+      if (sample.category) {
+        const saved = await f.places.save({ ...detail, address: '12 Example Street' })
+        assert({
+          given: 'an unrelated edit to an older place',
+          should: 'preserve its category and reference',
+          actual: [saved.category, saved.ref],
+          expected: [sample.category, detail.ref],
+        })
+      }
+    }
+  } finally {
+    await f.close()
+  }
+})
+
 test('Places preserve legacy references, YAML comments and prose through metadata edits, rename and file moves', async () => {
   const f = await fixture()
   try {

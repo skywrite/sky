@@ -40,6 +40,7 @@ export function PlacesMain({ route, navigate }: { route: string; navigate: (href
   )
   const [selected, setSelected] = useState<string | null>(null),
     [archived, setArchived] = useState(false)
+  const [visibleIds, setVisibleIds] = useState<ReadonlySet<string> | null>(null)
   const [editor, setEditor] = useState<{ initial?: PlaceDetail; coordinates?: Coordinates; manual?: boolean } | null>(
     null,
   )
@@ -122,8 +123,17 @@ export function PlacesMain({ route, navigate }: { route: string; navigate: (href
       )
     })
     .sort((a, b) => a.name.localeCompare(b.name))
-  const venues = filtered.filter((place) => place.kind === 'venue'),
-    areas = filtered.filter((place) => place.kind !== 'venue')
+  // Only narrow the sidebar: sending viewport matches back to the map would refit it on every pan.
+  const inMapArea = view === 'map' && visibleIds !== null
+  const shown = inMapArea ? filtered.filter((place) => visibleIds.has(place.id)) : filtered
+  const venues = shown.filter((place) => place.kind === 'venue'),
+    areas = shown.filter((place) => place.kind !== 'venue')
+  const unmapped = filtered.filter((place) => !place.coordinates).length
+  const outsideMap = inMapArea && filtered.length > 0 && !shown.length
+  const changeView = (mode: 'map' | 'list') => {
+    setView(mode)
+    localStorage.setItem('sky-places-view', mode)
+  }
   const showCount = (kind: string) =>
     kind === 'all'
       ? available.length
@@ -261,10 +271,7 @@ export function PlacesMain({ route, navigate }: { route: string; navigate: (href
                           key={mode}
                           aria-pressed={view === mode}
                           className={view === mode ? 'active' : ''}
-                          onClick={() => {
-                            setView(mode)
-                            localStorage.setItem('sky-places-view', mode)
-                          }}
+                          onClick={() => changeView(mode)}
                         >
                           <PlaceIcon name={mode} size={17} />
                           {mode === 'map' ? 'Map' : 'List'}
@@ -309,6 +316,7 @@ export function PlacesMain({ route, navigate }: { route: string; navigate: (href
                         setSelected(null)
                       }}
                       clearable
+                      clearButtonProps={{ 'aria-label': 'Clear category filter', 'aria-hidden': false, tabIndex: 0 }}
                       data={Object.entries({
                         ...placeCategories,
                         ...Object.fromEntries(Object.entries(placeKinds).filter(([kind]) => kind !== 'venue')),
@@ -319,12 +327,20 @@ export function PlacesMain({ route, navigate }: { route: string; navigate: (href
                     <section className="sky-places-results" aria-label="Saved places">
                       <div className="sky-places-results-heading">
                         <span>
-                          {filtered.length} {filtered.length === 1 ? 'place' : 'places'}
+                          {shown.length} {shown.length === 1 ? 'place' : 'places'}
                         </span>
-                        <span>{archived ? 'Archived' : 'Saved in your notebook'}</span>
+                        <span>
+                          {inMapArea
+                            ? archived
+                              ? 'Archived · In this map area'
+                              : 'In this map area'
+                            : archived
+                              ? 'Archived'
+                              : 'Saved in your notebook'}
+                        </span>
                       </div>
                       <div className="sky-places-scroll">
-                        {filtered.length ? (
+                        {shown.length ? (
                           <>
                             {venues.length > 0 && (
                               <>
@@ -346,13 +362,19 @@ export function PlacesMain({ route, navigate }: { route: string; navigate: (href
                         ) : (
                           <div className="sky-places-no-results">
                             <PlaceIcon name="search" size={28} />
-                            <h2>No places found</h2>
+                            <h2>{outsideMap ? 'No places in this map area' : 'No places found'}</h2>
                             <p>
-                              {archived
-                                ? 'No archived places match these filters.'
-                                : 'Try a different name or clear your filters.'}
+                              {outsideMap
+                                ? 'Move or zoom out on the map, or switch to List to see all matching places.'
+                                : archived
+                                  ? 'No archived places match these filters.'
+                                  : 'Try a different name or clear your filters.'}
                             </p>
-                            <Button onClick={clear}>Clear filters</Button>
+                            {outsideMap ? (
+                              <Button onClick={() => changeView('list')}>View list</Button>
+                            ) : (
+                              <Button onClick={clear}>Clear filters</Button>
+                            )}
                           </div>
                         )}
                       </div>
@@ -366,8 +388,10 @@ export function PlacesMain({ route, navigate }: { route: string; navigate: (href
                             setSelected(null)
                           }}
                         />
-                        {view === 'map' && venues.some((p) => !p.coordinates) && (
-                          <span>{venues.filter((p) => !p.coordinates).length} without a map location</span>
+                        {view === 'map' && unmapped > 0 && (
+                          <button className="sky-places-unmapped" onClick={() => changeView('list')}>
+                            {unmapped} without a map location · View list
+                          </button>
                         )}
                       </div>
                     </section>
@@ -376,8 +400,10 @@ export function PlacesMain({ route, navigate }: { route: string; navigate: (href
                         <PlacesMap
                           places={filtered}
                           config={maps}
+                          fitKey={JSON.stringify([query.trim().toLowerCase(), area])}
                           selected={selected}
                           onSelect={setSelected}
+                          onVisiblePlacesChange={setVisibleIds}
                           navigate={navigate}
                           onAdd={(coordinates) => setEditor({ coordinates })}
                           onSetup={() => setSetup(true)}

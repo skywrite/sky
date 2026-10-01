@@ -36,6 +36,31 @@ const paths: Record<string, ReactNode> = {
     </>
   ),
   tree: <path d="m12 2-7 9h4l-5 6h16l-5-6h4l-7-9ZM12 17v5" />,
+  camera: (
+    <>
+      <path d="M8 5l2-2h4l2 2h4a2 2 0 0 1 2 2v12H2V7a2 2 0 0 1 2-2h4Z" />
+      <circle cx="12" cy="12" r="4" />
+    </>
+  ),
+  bag: <path d="M4 7h16l1 14H3L4 7ZM8 8V6a4 4 0 0 1 8 0v2" />,
+  plane: <path d="m22 2-7 20-4-9-9-4L22 2ZM11 13 22 2" />,
+  dumbbell: <path d="M2 9v6M5 6v12M5 12h14M19 6v12M22 9v6" />,
+  medical: <path d="M8 3h8v5h5v8h-5v5H8v-5H3V8h5V3Z" />,
+  worship: <path d="M12 2v6M9 5h6M4 21V12l8-5 8 5v9H4ZM9 21v-5a3 3 0 0 1 6 0v5" />,
+  stadium: (
+    <>
+      <ellipse cx="12" cy="8" rx="10" ry="4" />
+      <path d="M2 8v8c0 5 20 5 20 0V8M6 12v7M12 12v8M18 12v7M5 5V2M19 5V2" />
+    </>
+  ),
+  activity: <path d="m12 2 3 7 7 3-7 3-3 7-3-7-7-3 7-3 3-7Z" />,
+  neighborhood: <path d="m2 9 5-4 5 4M3 8v12h8V8M7 20v-5M13 5l4-3 5 4M14 5v15h7V5M17 9h1M17 13h1M17 17h1" />,
+  compass: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="m16 8-2 6-6 2 2-6 6-2Z" />
+    </>
+  ),
   locate: (
     <>
       <circle cx="12" cy="12" r="6" />
@@ -79,9 +104,7 @@ export function PlaceIcon({ name = 'pin', size = 20 }: { name?: string; size?: n
 }
 export function placeIconName(place: Pick<PlaceFields, 'kind' | 'category'>) {
   return place.kind !== 'venue'
-    ? place.kind === 'country'
-      ? 'globe'
-      : 'city'
+    ? { country: 'globe', region: 'map', city: 'city', neighborhood: 'neighborhood', area: 'compass' }[place.kind]
     : (
         {
           drink: 'coffee',
@@ -89,8 +112,16 @@ export function placeIconName(place: Pick<PlaceFields, 'kind' | 'category'>) {
           stay: 'bed',
           office: 'building',
           residence: 'home',
+          visit: 'camera',
           park: 'tree',
+          shop: 'bag',
+          travel: 'plane',
           learn: 'book',
+          fitness: 'dumbbell',
+          medical: 'medical',
+          church: 'worship',
+          stadium: 'stadium',
+          do: 'activity',
         } as Record<string, string>
       )[place.category] || 'pin'
 }

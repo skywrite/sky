@@ -1,6 +1,7 @@
 import { lstat, mkdir, readdir, readFile } from 'node:fs/promises'
 import * as path from 'node:path'
 import { isMap, parseDocument } from 'yaml'
+import { MAP_TYPE_DIR } from '#commands/all/places/_google.ts'
 import { withProcessLock } from '#lib/jobs/files.ts'
 import { createDayFile } from '#lib/nbfs/createDayFile.ts'
 import { atomicWrite, hash } from '#lib/outbox/files.ts'
@@ -9,7 +10,7 @@ import { slugify } from '#lib/string/mod.ts'
 import { workstreamIdentityTime } from '#lib/workstreams/identities.ts'
 import type MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
 import splitYamlMarkdown from '#shared/models/Markdown/util/splitYamlMarkdown.ts'
-import PlaceDocument, { normalizePlaceRef } from '#shared/models/Place/mod.ts'
+import PlaceDocument, { normalizePlaceRef, PLACE_TYPES } from '#shared/models/Place/mod.ts'
 import { fetchNowSync } from '#shared/nbfs/mod.ts'
 import { isPathWithinRoot, isPathWithinRoots } from '../markdown-preview/request.ts'
 import { renderProfileNotes } from '../people/notes.ts'
@@ -31,7 +32,7 @@ const text = (value: unknown) => (typeof value === 'string' ? value : '')
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b)
 const strings = (value: unknown): string[] =>
   (Array.isArray(value) ? value : [value]).filter((v): v is string => typeof v === 'string')
-function fields(doc: PlaceDocument): PlaceFields {
+function fields(doc: PlaceDocument, ref: string): PlaceFields {
   const loc = doc.location
   const latitude = loc?.latitude,
     longitude = loc?.longitude
@@ -44,10 +45,19 @@ function fields(doc: PlaceDocument): PlaceFields {
     Math.abs(longitude) <= 180
       ? { latitude, longitude }
       : null
+  // Older venues keep their category in the reference directory or GoogleMaps.type.
+  const directory = ref.split('/').at(-2) ?? ''
+  const google = doc.yaml.GoogleMaps
+  const googleType = google && typeof google === 'object' ? text((google as Record<string, unknown>).type) : ''
+  const category =
+    text(doc.type) ||
+    (PLACE_TYPES.has(directory) ? directory : '') ||
+    (MAP_TYPE_DIR as Record<string, string>)[googleType] ||
+    ''
   return {
     name: doc.name,
     kind: doc.kind,
-    category: text(doc.type),
+    category: doc.kind === 'venue' ? category : '',
     aliases: doc.aliases,
     parent: doc.parent ?? '',
     address: doc.address ?? '',
@@ -92,7 +102,7 @@ export function createPlacesStore(store: MarkdownStore, baseDir: string, dirs: s
   function index(): PlaceSummary[] {
     if (cache?.version === store.version) return cache.places
     const places: PlaceSummary[] = entries().map(({ path: file, placePath, value: doc }) => {
-      const value = fields(doc)
+      const value = fields(doc, placePath)
       return {
         ...value,
         id: relative(file),
@@ -241,9 +251,9 @@ export function createPlacesStore(store: MarkdownStore, baseDir: string, dirs: s
           'This place changed since you opened it. Your draft is still here; reload the place before saving.',
           409,
         )
-      const all = index(),
-        previous = current ? fields(current.doc) : blankPlace()
+      const all = index()
       const self = input.id ? all.find((p) => p.id === input.id)! : null
+      const previous = current ? fields(current.doc, self!.ref) : blankPlace()
       const parent = input.parent ? all.find((p) => p.ref === normalizePlaceRef(input.parent)) : null
       if (input.parent && (!parent || !store.places.findByPlacePath(input.parent) || parent.kind === 'venue'))
         throw new PlaceError('Choose an existing city, neighborhood, region, or country as the parent.')

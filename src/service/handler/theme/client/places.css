@@ -301,6 +301,17 @@
 .sky-places-results-footer .mantine-Checkbox-label {
   font-size: 12px;
 }
+.sky-places-unmapped {
+  border: 0;
+  padding: 0;
+  background: none;
+  color: var(--sky-accent);
+  font: inherit;
+  cursor: pointer;
+}
+.sky-places-unmapped:hover {
+  text-decoration: underline;
+}
 .sky-places-map-region {
   min-width: 0;
   position: relative;
@@ -453,18 +464,46 @@
   text-decoration: underline;
 }
 .sky-places-map-preview {
-  position: absolute;
-  bottom: 40px;
-  left: 20px;
-  width: min(310px, calc(100% - 84px));
-  border-radius: 14px;
+  width: min(310px, calc(100vw - 96px));
+  box-sizing: border-box;
   padding: 19px;
   background: var(--sky-bg);
   color: var(--sky-text);
+  font-family: var(--mantine-font-family);
+}
+.sky-places-map .gm-style-iw-c {
+  padding: 0 !important;
+  overflow: hidden;
+  border-radius: 14px;
+  background: var(--sky-bg);
   box-shadow:
     0 8px 34px #1c23232a,
     0 0 0 1px #1c232309;
-  z-index: 10;
+}
+.sky-places-map .gm-style-iw-d {
+  overflow: auto !important;
+}
+.sky-places-map .gm-style-iw-tc::after {
+  background: var(--sky-bg);
+}
+.sky-places-map-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--sky-border-soft);
+}
+.sky-places-map-links a {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--sky-accent);
+  font-size: 13px;
+  text-decoration: none;
+}
+.sky-places-map-links a:hover {
+  text-decoration: underline;
 }
 .sky-places-preview-heading {
   display: flex;
@@ -1281,7 +1320,6 @@
   }
   .sky-places-map-preview {
     padding: 15px;
-    left: 12px;
   }
   .sky-places-map-preview strong {
     font-size: 16px;

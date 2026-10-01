@@ -2,7 +2,15 @@
 import { Button, useComputedColorScheme } from '@mantine/core'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { placeHref, placeLabel, type Coordinates, type MapsConfig, type PlaceSummary } from '../../places/types.ts'
+import {
+  placeAppleMapsHref,
+  placeHref,
+  placeLabel,
+  placeMapHref,
+  type Coordinates,
+  type MapsConfig,
+  type PlaceSummary,
+} from '../../places/types.ts'
 import { PlaceAvatar, PlaceIcon, placeIconName } from './placesIcons.tsx'
 
 let loading: Promise<typeof google.maps> | undefined
@@ -50,8 +58,10 @@ const zoomFor = (place: PlaceSummary) =>
 export function PlacesMap({
   places,
   config,
+  fitKey,
   selected = null,
   onSelect,
+  onVisiblePlacesChange,
   navigate,
   onAdd,
   onSetup,
@@ -59,8 +69,11 @@ export function PlacesMap({
 }: {
   places: PlaceSummary[]
   config: MapsConfig
+  /** Changing search or location can fit the map; other filters only change markers. */
+  fitKey?: string
   selected?: string | null
   onSelect?: (ref: string | null) => void
+  onVisiblePlacesChange?: (ids: ReadonlySet<string> | null) => void
   navigate: (href: string) => void
   onAdd?: (coordinates: Coordinates) => void
   onSetup: () => void
@@ -72,12 +85,15 @@ export function PlacesMap({
   const [retry, setRetry] = useState(0)
   const [placing, setPlacing] = useState(false)
   const [dropped, setDropped] = useState<Coordinates | null>(null)
+  const [visibleCount, setVisibleCount] = useState<number | null>(null)
+  const popupElement = useMemo(() => document.createElement('div'), [])
+  const droppedMarker = useRef<google.maps.marker.AdvancedMarkerElement | null>(null)
   const [portals, setPortals] = useState<Array<{ place: PlaceSummary; element: HTMLSpanElement }>>([])
   const markers = useRef<
     Array<{ ref: string; marker: google.maps.marker.AdvancedMarkerElement; element: HTMLSpanElement }>
   >([])
-  const callbacks = useRef({ onSelect, onAdd, placing })
-  callbacks.current = { onSelect, onAdd, placing }
+  const callbacks = useRef({ onSelect, onAdd, onVisiblePlacesChange, placing })
+  callbacks.current = { onSelect, onAdd, onVisiblePlacesChange, placing }
   const scheme = useComputedColorScheme('light')
   const pointKey = JSON.stringify(
     places
@@ -93,6 +109,7 @@ export function PlacesMap({
   )
   // Polls with unchanged coordinates keep the viewport and Google's marker DOM intact.
   const points = useMemo(() => places.filter((p) => p.coordinates), [pointKey])
+  const autoFitKey = fitKey ?? pointKey
   const chosen = places.find((p) => p.ref === selected)
   useEffect(() => {
     if (!config.browserKey || !container.current) return
@@ -171,7 +188,6 @@ export function PlacesMap({
     })
     markers.current = nodes
     setPortals(nodes)
-    fit()
     return () => {
       for (const { marker } of nodes) {
         marker.map = null
@@ -181,13 +197,40 @@ export function PlacesMap({
     }
   }, [map, points, mini])
   useEffect(() => {
+    fit()
+  }, [map, autoFitKey, mini])
+  useEffect(() => {
+    if (!map || error) {
+      setVisibleCount(null)
+      callbacks.current.onVisiblePlacesChange?.(null)
+      return
+    }
+    const update = () => {
+      const bounds = map.getBounds()
+      const visible = bounds
+        ? new Set(points.filter((place) => bounds.contains(position(place.coordinates!))).map((place) => place.id))
+        : null
+      setVisibleCount(visible?.size ?? null)
+      callbacks.current.onVisiblePlacesChange?.(visible)
+    }
+    const listener = map.addListener('idle', update)
+    update()
+    return () => {
+      listener.remove()
+      callbacks.current.onVisiblePlacesChange?.(null)
+    }
+  }, [map, points, error])
+  useEffect(() => {
     for (const item of markers.current) {
       item.element.dataset.selected = String(item.ref === selected)
       item.marker.zIndex = item.ref === selected ? 1000 : 1
     }
     if (chosen?.coordinates && map) {
-      map.panTo(position(chosen.coordinates))
-      if ((map.getZoom() ?? 0) < zoomFor(chosen) - 2) map.setZoom(zoomFor(chosen) - 2)
+      const point = position(chosen.coordinates)
+      if ((map.getZoom() ?? 0) < zoomFor(chosen) - 2) {
+        map.setCenter(point)
+        map.setZoom(zoomFor(chosen) - 2)
+      } else if (!map.getBounds()?.contains(point)) map.panTo(point)
     }
   }, [selected, map, points])
   useEffect(() => {
@@ -197,10 +240,32 @@ export function PlacesMap({
       position: position(dropped),
       title: 'New place location',
     })
+    droppedMarker.current = marker
     return () => {
       marker.map = null
+      droppedMarker.current = null
     }
   }, [map, dropped])
+  useEffect(() => {
+    if (!map || mini || error) return
+    const anchor = placing ? droppedMarker.current : markers.current.find((item) => item.ref === selected)?.marker
+    if (!anchor) return
+    const popup = new google.maps.InfoWindow({
+      content: popupElement,
+      headerDisabled: true,
+      ariaLabel: placing ? 'New place here' : chosen?.name,
+      maxWidth: 340,
+    })
+    popup.open({ map, anchor, shouldFocus: false })
+    const listener = popup.addListener('close', () => {
+      if (placing) setDropped(null)
+      else callbacks.current.onSelect?.(null)
+    })
+    return () => {
+      listener.remove()
+      popup.close()
+    }
+  }, [map, points, selected, placing, dropped, mini, error, popupElement])
   useEffect(() => {
     map?.setOptions({ draggableCursor: placing ? 'crosshair' : undefined })
   }, [map, placing])
@@ -243,9 +308,9 @@ export function PlacesMap({
         <>
           {!mini && (
             <div className="sky-places-map-controls">
-              <button onClick={fit} aria-label="Show all places on map">
+              <button onClick={fit} aria-label="Show all places on map" title="Show all matching places">
                 <PlaceIcon name="locate" size={17} />
-                {points.length} on map
+                {visibleCount ?? points.length} on map
               </button>
               {onAdd && (
                 <button
@@ -275,42 +340,64 @@ export function PlacesMap({
               </button>
             </div>
           )}
-          {dropped && placing && (
-            <div className="sky-places-map-preview">
-              <strong>New place here</strong>
-              <p>
-                {dropped.latitude.toFixed(5)}, {dropped.longitude.toFixed(5)}
-              </p>
-              <Button
-                variant="primary"
-                onClick={() => {
-                  onAdd?.(dropped)
-                  setPlacing(false)
-                  setDropped(null)
-                }}
-              >
-                Add place here
-              </Button>
-            </div>
-          )}
-          {chosen && !mini && !placing && (
-            <div className="sky-places-map-preview">
-              <div className="sky-places-preview-heading">
-                <PlaceAvatar place={chosen} />
-                <div>
-                  <strong>{chosen.name}</strong>
-                  <small>{placeLabel(chosen)}</small>
+          {dropped &&
+            placing &&
+            createPortal(
+              <div className="sky-places-map-preview">
+                <div className="sky-places-preview-heading">
+                  <div>
+                    <strong>New place here</strong>
+                  </div>
+                  <button onClick={() => setDropped(null)} aria-label="Close new place preview">
+                    <PlaceIcon name="close" size={16} />
+                  </button>
                 </div>
-                <button onClick={() => onSelect?.(null)} aria-label="Close place preview">
-                  <PlaceIcon name="close" size={16} />
-                </button>
-              </div>
-              <p>{chosen.address || chosen.locationLabel}</p>
-              <Button variant="primary-quiet" onClick={() => navigate(placeHref(chosen.ref))}>
-                View place <PlaceIcon name="right" size={16} />
-              </Button>
-            </div>
-          )}
+                <p>
+                  {dropped.latitude.toFixed(5)}, {dropped.longitude.toFixed(5)}
+                </p>
+                <Button
+                  variant="primary"
+                  onClick={() => {
+                    onAdd?.(dropped)
+                    setPlacing(false)
+                    setDropped(null)
+                  }}
+                >
+                  Add place here
+                </Button>
+              </div>,
+              popupElement,
+            )}
+          {chosen &&
+            !mini &&
+            !placing &&
+            createPortal(
+              <div className="sky-places-map-preview">
+                <div className="sky-places-preview-heading">
+                  <PlaceAvatar place={chosen} />
+                  <div>
+                    <strong>{chosen.name}</strong>
+                    <small>{placeLabel(chosen)}</small>
+                  </div>
+                  <button onClick={() => onSelect?.(null)} aria-label="Close place preview">
+                    <PlaceIcon name="close" size={16} />
+                  </button>
+                </div>
+                <p>{chosen.address || chosen.locationLabel}</p>
+                <Button variant="primary-quiet" onClick={() => navigate(placeHref(chosen.ref))}>
+                  View place <PlaceIcon name="right" size={16} />
+                </Button>
+                <div className="sky-places-map-links">
+                  <a href={placeAppleMapsHref(chosen)} target="_blank" rel="noopener noreferrer">
+                    Apple Maps <PlaceIcon name="external" size={13} />
+                  </a>
+                  <a href={placeMapHref(chosen)} target="_blank" rel="noopener noreferrer">
+                    Google Maps <PlaceIcon name="external" size={13} />
+                  </a>
+                </div>
+              </div>,
+              popupElement,
+            )}
         </>
       )}
     </div>

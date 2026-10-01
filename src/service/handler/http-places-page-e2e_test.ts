@@ -8,40 +8,409 @@ import { env } from '#shared/sys/mod.ts'
 import { assert, test } from '#test'
 import { ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
 import { createTestHttpApp } from './httpTestHelpers.ts'
-import { blankPlace, type MapsConfig, type MapsHost } from './places/types.ts'
+import { blankPlace, placeCategories, type MapsConfig, type MapsHost } from './places/types.ts'
 
 // Only the third-party map canvas is scripted. Routes, files, forms, markers and refreshes run in the real app.
 const mapScript = `
-  const events = { clearInstanceListeners() {}, addListenerOnce(map, event, callback) { setTimeout(callback, 0); } };
+  const events = {
+    clearInstanceListeners(instance) { instance.handlers = {}; },
+    addListenerOnce(map, event, callback) {
+      const listener = map.addListener(event, () => { listener.remove(); callback(); });
+      return listener;
+    }
+  };
+  class Bounds {
+    constructor(value) { this.value = value; this.points = []; }
+    extend(point) { this.points.push(point); return this; }
+    contains(point) {
+      const b = this.value;
+      return point.lat >= b.south && point.lat <= b.north &&
+        (b.west <= b.east ? point.lng >= b.west && point.lng <= b.east : point.lng >= b.west || point.lng <= b.east);
+    }
+  }
   class MapView {
     constructor(element, options) {
       this.element = element; this.center = options.center; this.zoom = options.zoom; this.handlers = {};
+      this.markerCount = 0;
       element.style.background = 'repeating-linear-gradient(45deg, #e9efe9, #e9efe9 40px, #f8faf8 40px, #f8faf8 43px)';
-      element.addEventListener('click', event => { if (event.target === element) this.handlers.click?.({ latLng: this.getCenter() }); });
+      element.addEventListener('click', event => { if (event.target === element) this.emit('click', { latLng: this.getCenter() }); });
+      element.addEventListener('sky-test-map-bounds', event => { this.bounds = new Bounds(event.detail); this.idle(); });
+      this.fitCount = 0;
     }
-    addListener(name, callback) { this.handlers[name] = callback; }
-    fitBounds(bounds) { this.center = bounds.points[0] || this.center; }
-    setCenter(value) { this.center = value; }
-    panTo(value) { this.center = value; }
-    setZoom(value) { this.zoom = value; }
+    addListener(name, callback) {
+      const listeners = this.handlers[name] ||= new Set(); listeners.add(callback);
+      return { remove: () => listeners.delete(callback) };
+    }
+    emit(name, value) { for (const callback of this.handlers[name] || []) callback(value); }
+    idle() {
+      this.element.dataset.viewport = JSON.stringify({ center: this.center, zoom: this.zoom, bounds: this.bounds?.value });
+      clearTimeout(this.timer); this.timer = setTimeout(() => this.emit('idle'), 0);
+    }
+    fitBounds(bounds) {
+      this.center = bounds.points[0] || this.center;
+      this.bounds = new Bounds({
+        south: Math.min(...bounds.points.map(p => p.lat)) - .02,
+        north: Math.max(...bounds.points.map(p => p.lat)) + .02,
+        west: Math.min(...bounds.points.map(p => p.lng)) - .02,
+        east: Math.max(...bounds.points.map(p => p.lng)) + .02
+      });
+      this.element.dataset.fitCount = String(++this.fitCount); this.idle();
+    }
+    setCenter(value) { this.center = value; this.bounds = null; this.idle(); }
+    panTo(value) { this.setCenter(value); }
+    setZoom(value) { this.zoom = value; this.bounds = null; this.idle(); }
     getZoom() { return this.zoom; }
+    getBounds() {
+      const span = 360 / 2 ** this.zoom;
+      return this.bounds || new Bounds({ south: this.center.lat - span, north: this.center.lat + span,
+        west: this.center.lng - span, east: this.center.lng + span });
+    }
     getCenter() { return { lat: () => this.center.lat, lng: () => this.center.lng }; }
     setOptions() {}
   }
   class Marker {
     constructor(options) {
       this.element = document.createElement('button'); this.element.setAttribute('aria-label', options.title);
-      this.element.style.cssText = 'position:relative;margin:100px 35px 20px;border:0;background:transparent;';
+      const i = options.map.markerCount++;
+      this.element.style.cssText = 'position:absolute;left:' + (12 + i % 5 * 17) + '%;top:' + (48 + Math.floor(i / 5) * 17) + '%;border:0;background:transparent;';
       if (options.content) this.element.append(options.content); this.map = options.map;
     }
     set map(value) { if (value) value.element.append(this.element); else this.element.remove(); }
     addListener(name, callback) { this.element.addEventListener(name, event => { event.stopPropagation(); callback(event); }); }
   }
+  class InfoWindow {
+    constructor(options) {
+      this.handlers = {}; this.element = document.createElement('div');
+      this.element.className = 'gm-style-iw-c'; this.element.setAttribute('role', 'dialog');
+      this.element.setAttribute('aria-label', options.ariaLabel); this.element.append(options.content);
+      this.element.style.cssText = 'position:absolute;z-index:1001;transform:translate(-50%,-100%);';
+    }
+    addListener(name, callback) { return MapView.prototype.addListener.call(this, name, callback); }
+    open({ map, anchor }) {
+      this.element.dataset.anchor = anchor.element.getAttribute('aria-label');
+      map.element.append(this.element);
+      const position = () => {
+        const area = map.element.getBoundingClientRect(), pin = anchor.element.getBoundingClientRect();
+        const half = this.element.offsetWidth / 2;
+        const x = Math.max(half + 10, Math.min(area.width - half - 10, pin.left - area.left + pin.width / 2));
+        const y = Math.max(this.element.offsetHeight + 10, pin.top - area.top - 8);
+        anchor.element.style.left = (x - pin.width / 2) + 'px';
+        anchor.element.style.top = (y + 8) + 'px';
+        this.element.style.left = x + 'px'; this.element.style.top = y + 'px';
+      };
+      position(); this.listener = map.addListener('idle', position);
+    }
+    close() { this.listener?.remove(); this.element.remove(); }
+  }
   window.google = { maps: { Map: MapView, ColorScheme: { LIGHT: 'LIGHT', DARK: 'DARK' }, event: events,
-    LatLngBounds: class { points = []; extend(point) { this.points.push(point); } },
+    LatLngBounds: Bounds, InfoWindow,
     marker: { AdvancedMarkerElement: Marker }, importLibrary: async () => ({ AdvancedMarkerElement: Marker }) } };
   window.skyPlacesMapsReady();
 `
+
+test(
+  {
+    name: 'Places show category icons and keep sidebar results within the map viewport',
+    ignore: env.get('SKY_BROWSER_TESTS') !== '1',
+    timeout: 120_000,
+  },
+  async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'sky-places-viewport-'))
+    const dirs = ['places', 'people', 'orgs', 'library'].map((dir) => path.join(root, dir))
+    await Promise.all(dirs.map((dir) => mkdir(dir)))
+    const categories = Object.keys(placeCategories)
+    const savedGoogleLink = 'https://maps.google.com/?cid=424242'
+    const sharedGoogleLink = 'https://maps.app.goo.gl/ExampleAtlasPlace'
+    for (const [i, category] of categories.entries()) {
+      const file = path.join(dirs[0], 'locations', category === 'drink' ? 'FR/Paris/drink' : '', `Atlas-${category}.md`)
+      await mkdir(path.dirname(file), { recursive: true })
+      const metadata =
+        category === 'drink'
+          ? `GoogleMaps: { type: cafe, url: "${savedGoogleLink}" }`
+          : category === 'eat'
+            ? `GoogleMaps: { type: restaurant }\ngoogleMapsUrl: "${sharedGoogleLink}"`
+            : `type: ${category}`
+      await writeFile(
+        file,
+        `---\nname: Atlas ${category}\n${metadata}\nlocation: { latitude: ${48.85837 + i / 100}, longitude: ${2.294481 + i / 100} }\n---\nSample notes.\n`,
+      )
+    }
+    await writeFile(
+      path.join(dirs[0], 'locations', 'Atlas-Unmapped.md'),
+      '---\nname: Atlas Unmapped\ntype: visit\n---\n',
+    )
+    const store = await MarkdownStore.build({
+      placesDir: dirs[0],
+      peopleDirs: [dirs[1]],
+      orgDirs: [dirs[2]],
+      libraryDir: dirs[3],
+    })
+    const app = createTestHttpApp(dirs, {
+      markdownStore: store,
+      places: {
+        placesDir: dirs[0],
+        stateDir: path.join(root, '.state'),
+        maps: {
+          config: async () => ({
+            browserKey: 'sample-browser-key',
+            mapId: '',
+            searchAvailable: false,
+            configurable: false,
+          }),
+          configure: async () => {
+            throw new Error('Unused in this test.')
+          },
+          search: async () => [],
+          detail: async () => blankPlace(),
+        },
+      },
+    })
+    const server = serve({ fetch: app.fetch, hostname: '127.0.0.1', port: 0 }),
+      address = server.address()
+    if (!address || typeof address === 'string') throw new Error('Missing test server address.')
+    let browser
+    try {
+      browser = await chromium.launch({
+        headless: true,
+        executablePath: env.get('SKY_BROWSER_EXECUTABLE') || undefined,
+      })
+      const page = await browser.newPage({ viewport: { width: 1600, height: 1040 } })
+      const errors: string[] = []
+      page.on('pageerror', (error) => errors.push(error.message))
+      await page.route('https://maps.googleapis.com/maps/api/js?*', (route) =>
+        route.fulfill({ contentType: 'text/javascript', body: mapScript }),
+      )
+      const capture = async (name: string) => {
+        const dir = env.get('SKY_PLACES_SCREENSHOTS')
+        if (dir) {
+          await mkdir(dir, { recursive: true })
+          await page.waitForTimeout(200)
+          await page.screenshot({ path: path.join(dir, `${name}.png`) })
+        }
+      }
+      const canvas = page.locator('.sky-places-map-canvas')
+      const rowNames = () => page.locator('.sky-places-results .sky-places-row-copy > strong').allTextContents()
+      const viewport = async (north: number, south: number, east: number, west: number) => {
+        await canvas.evaluate(
+          (element, bounds) => element.dispatchEvent(new CustomEvent('sky-test-map-bounds', { detail: bounds })),
+          { north, south, east, west },
+        )
+      }
+      await page.goto(`http://127.0.0.1:${address.port}/places`)
+      await page.getByText('In this map area', { exact: true }).waitFor()
+      await page.getByText(`${categories.length} on map`, { exact: true }).waitFor()
+      const rowIcons = await page
+        .locator('.sky-places-results .sky-places-avatar svg')
+        .evaluateAll((icons) => icons.map((icon) => icon.innerHTML))
+      const markerIcons = await page
+        .locator('.sky-places-pin svg')
+        .evaluateAll((icons) => icons.map((icon) => icon.innerHTML))
+      assert({
+        given: 'every supported category, including legacy drink and restaurant records',
+        should: 'use distinct category icons consistently in rows and map markers',
+        actual: [rowIcons.length, new Set(rowIcons).size, markerIcons],
+        expected: [categories.length, categories.length, rowIcons],
+      })
+      await capture('10-category-icons')
+      await page.getByRole('button', { name: 'Select Atlas drink', exact: true }).click()
+      const preview = page.getByRole('dialog', { name: 'Atlas drink', exact: true })
+      await preview.getByRole('button', { name: 'View place', exact: true }).waitFor()
+      const apple = new URL(
+        (await preview.getByRole('link', { name: 'Apple Maps', exact: true }).getAttribute('href'))!,
+      )
+      const google = await preview.getByRole('link', { name: 'Google Maps', exact: true }).getAttribute('href')
+      assert({
+        given: 'a selected place marker',
+        should: 'anchor its popup and preserve its saved Google Maps destination',
+        actual: [
+          await preview.getAttribute('data-anchor'),
+          apple.hostname,
+          apple.searchParams.get('q'),
+          apple.searchParams.get('ll'),
+          google,
+        ],
+        expected: ['Select Atlas drink', 'maps.apple.com', 'Atlas drink', '48.85837,2.294481', savedGoogleLink],
+      })
+      await capture('13-anchored-popup')
+      await page.getByRole('button', { name: 'Select Atlas eat', exact: true }).click()
+      await page
+        .getByRole('dialog', { name: 'Atlas eat', exact: true })
+        .getByRole('link', { name: 'Apple Maps', exact: true })
+        .waitFor()
+      assert({
+        given: 'a saved Google Maps share link',
+        should: 'use the same link in the popup',
+        actual: await page
+          .getByRole('dialog', { name: 'Atlas eat', exact: true })
+          .getByRole('link', { name: 'Google Maps', exact: true })
+          .getAttribute('href'),
+        expected: sharedGoogleLink,
+      })
+      await page.getByRole('button', { name: 'Close place preview', exact: true }).click()
+      await page.getByRole('button', { name: 'Show all places on map', exact: true }).click()
+      const initialFits = await canvas.getAttribute('data-fit-count')
+      await viewport(48.86, 48.85, 2.3, 2.29)
+      await page.getByText('1 on map', { exact: true }).waitFor()
+      await page.getByRole('button', { name: 'Select Atlas drink', exact: true }).click()
+      await preview.evaluate((element) => element.setAttribute('data-kept', 'true'))
+      const refresh = page.waitForResponse((response) => new URL(response.url()).pathname === '/places/_api')
+      await page.evaluate(() => window.dispatchEvent(new Event('focus')))
+      await refresh
+      await page.waitForTimeout(100)
+      assert({
+        given: 'a zoomed map and a background refresh with unchanged places',
+        should: 'show only the visible venue, preserve the viewport and keep offscreen markers available',
+        actual: [
+          await rowNames(),
+          await canvas.getAttribute('data-fit-count'),
+          await page.locator('.sky-places-pin').count(),
+          await preview.getAttribute('data-kept'),
+          await page.title(),
+        ],
+        expected: [['Atlas drink'], initialFits, categories.length, 'true', 'sky · Places'],
+      })
+      await page.getByRole('button', { name: 'Close place preview', exact: true }).click()
+      await capture('11-map-area')
+      await viewport(48.87, 48.86, 2.31, 2.3)
+      await page.getByRole('link', { name: 'Open Atlas eat', exact: true }).waitFor()
+      assert({
+        given: 'a pan to another venue',
+        should: 'replace the sidebar results',
+        actual: await rowNames(),
+        expected: ['Atlas eat'],
+      })
+      await viewport(1, 0, 1, 0)
+      await page.getByRole('heading', { name: 'No places in this map area', exact: true }).waitFor()
+      await page.getByText('0 on map', { exact: true }).waitFor()
+      await page.getByRole('button', { name: 'Show all places on map', exact: true }).click()
+      await page.getByText(`${categories.length} on map`, { exact: true }).waitFor()
+      await viewport(48.86, 48.85, 2.3, 2.29)
+      await page.getByText('1 on map', { exact: true }).waitFor()
+      await page.getByRole('textbox', { name: 'Search your places', exact: true }).fill('Atlas eat')
+      await page.getByRole('link', { name: 'Open Atlas eat', exact: true }).waitFor()
+      assert({
+        given: 'a search for an offscreen venue',
+        should: 'fit the matching place and update the sidebar',
+        actual: await rowNames(),
+        expected: ['Atlas eat'],
+      })
+      await page.getByRole('textbox', { name: 'Search your places', exact: true }).fill('')
+      await page.getByText(`${categories.length} on map`, { exact: true }).waitFor()
+      await viewport(48.86, 48.85, 2.3, 2.29)
+      await page.getByText('1 on map', { exact: true }).waitFor()
+      const categoryViewport = await canvas.getAttribute('data-viewport')
+      await page.getByRole('combobox', { name: 'Filter by category', exact: true }).click()
+      await page.getByRole('option', { name: 'Restaurant', exact: true }).click()
+      await page.getByRole('heading', { name: 'No places in this map area', exact: true }).waitFor()
+      assert({
+        given: 'a category whose places are outside the current map area',
+        should: 'update the markers without changing the zoom, center or bounds',
+        actual: [
+          await rowNames(),
+          await canvas.getAttribute('data-viewport'),
+          await page.locator('.sky-places-pin').count(),
+        ],
+        expected: [[], categoryViewport, 1],
+      })
+      await capture('15-category-filter-stays-zoomed')
+      await page.getByRole('button', { name: 'Clear category filter', exact: true }).click()
+      await page.getByText('1 on map', { exact: true }).waitFor()
+      assert({
+        given: 'a cleared category filter',
+        should: 'restore matching places in the same map area',
+        actual: [await rowNames(), await canvas.getAttribute('data-viewport')],
+        expected: [['Atlas drink'], categoryViewport],
+      })
+      await page.getByRole('combobox', { name: 'Filter by category', exact: true }).click()
+      await page.getByRole('option', { name: 'Restaurant', exact: true }).click()
+      await page.getByText('0 on map', { exact: true }).waitFor()
+      await page.getByRole('button', { name: 'Show all places on map', exact: true }).click()
+      await page.getByText('1 on map', { exact: true }).waitFor()
+      assert({
+        given: 'a category filter',
+        should: 'include legacy restaurant records',
+        actual: await rowNames(),
+        expected: ['Atlas eat'],
+      })
+      await page.getByRole('textbox', { name: 'Search your places', exact: true }).fill('missing sample')
+      await page.getByRole('heading', { name: 'No places found', exact: true }).waitFor()
+      await page.getByRole('button', { name: 'Clear filters', exact: true }).click()
+      await page.getByText(`${categories.length} on map`, { exact: true }).waitFor()
+      await page.getByRole('button', { name: '1 without a map location · View list', exact: true }).click()
+      await page.getByRole('link', { name: 'Open Atlas Unmapped', exact: true }).waitFor()
+      assert({
+        given: 'a place without coordinates',
+        should: 'remain accessible with every matching place in List view',
+        actual: (await rowNames()).length,
+        expected: categories.length + 1,
+      })
+      await page.getByRole('button', { name: 'Map', exact: true }).click()
+      await page.getByText(`${categories.length} on map`, { exact: true }).waitFor()
+      await page.setViewportSize({ width: 390, height: 844 })
+      await viewport(48.86, 48.85, 2.3, 2.29)
+      await page.getByText('1 on map', { exact: true }).waitFor()
+      await capture('12-map-area-mobile')
+      assert({
+        given: 'the same map on a phone',
+        should: 'filter results without horizontal overflow',
+        actual: [await rowNames(), await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth)],
+        expected: [['Atlas drink'], false],
+      })
+      await page.getByRole('button', { name: 'Select Atlas drink', exact: true }).click()
+      await preview.getByRole('link', { name: 'Apple Maps', exact: true }).waitFor()
+      await capture('14-mobile-popup')
+      const popupBox = await preview.boundingBox(),
+        mapBox = await canvas.boundingBox()
+      assert({
+        given: 'a selected marker on a phone',
+        should: 'keep both map links and the popup inside the map',
+        actual: [
+          await preview.getByRole('link', { name: 'Google Maps', exact: true }).isVisible(),
+          Boolean(
+            popupBox &&
+            mapBox &&
+            popupBox.x >= mapBox.x &&
+            popupBox.x + popupBox.width <= mapBox.x + mapBox.width &&
+            popupBox.y >= mapBox.y &&
+            popupBox.y + popupBox.height <= mapBox.y + mapBox.height,
+          ),
+        ],
+        expected: [true, true],
+      })
+      await page.evaluate(() => window.dispatchEvent(new Event('sky-places-map-error')))
+      await page.getByRole('heading', { name: 'Map unavailable', exact: true }).waitFor()
+      await page.getByRole('link', { name: 'Open Atlas Unmapped', exact: true }).waitFor()
+      assert({
+        given: 'a map failure after zooming',
+        should: 'restore all matching rows',
+        actual: (await rowNames()).length,
+        expected: categories.length + 1,
+      })
+      await page.getByRole('link', { name: 'Open Atlas eat', exact: true }).click()
+      await page.waitForFunction(() => document.title === 'sky · Atlas eat')
+      await page.goBack()
+      await page.waitForFunction(() => document.title === 'sky · Places')
+      await page.goForward()
+      await page.waitForFunction(() => document.title === 'sky · Atlas eat')
+      await page.reload()
+      await page.waitForFunction(() => document.title === 'sky · Atlas eat')
+      assert({
+        given: 'map interactions, direct loads and browser navigation',
+        should: 'keep the screen title and saved Maps link in sync without browser errors',
+        actual: [
+          await page.title(),
+          await page.getByRole('link', { name: 'Open in Google Maps', exact: true }).getAttribute('href'),
+          errors,
+        ],
+        expected: ['sky · Atlas eat', sharedGoogleLink, []],
+      })
+    } finally {
+      await browser?.close()
+      await new Promise<void>((resolve) => server.close(() => resolve()))
+      await rm(root, { recursive: true, force: true })
+    }
+  },
+)
 
 test(
   {
