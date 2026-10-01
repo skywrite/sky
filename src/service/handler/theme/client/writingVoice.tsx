@@ -1,5 +1,5 @@
 import { Button, Select, Textarea, TextInput } from '@mantine/core'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import type { VoiceDraft, VoiceEditRecord, VoiceRules } from '#lib/writingVoice/types.ts'
 import { Block } from './settingsBlocks.tsx'
 import './writingVoice.css'
@@ -30,6 +30,8 @@ function EditCard({
   const [text, setText] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const answerHintId = useId()
+  const ownAnswerId = useId()
   const act = async (action: string, answer?: { option?: number; text?: string }) => {
     if (busy) return
     setBusy(true)
@@ -69,32 +71,71 @@ function EditCard({
         </p>
       ) : example.question ? (
         <>
-          <p className="sky-writing-question">{example.question.question}</p>
+          <h3 className="sky-writing-question">{example.question.question}</h3>
           <div className="sky-writing-change">
-            <div>
-              <span>From</span>
+            <div className="sky-writing-excerpt">
+              <span>Sky's draft</span>
               <p>{example.question.before || '(added text)'}</p>
             </div>
-            <div>
-              <span>To</span>
+            <div className="sky-writing-excerpt sky-writing-excerpt-revised">
+              <span>Your revision</span>
               <p>{example.question.after || '(removed text)'}</p>
             </div>
           </div>
-          <div className="sky-writing-choices">
+          <p className="sky-writing-answer-hint" id={answerHintId}>
+            Choose the reason that fits your edit. Your answer helps Sky draft in your voice.
+          </p>
+          <div
+            className="sky-writing-choices"
+            role="group"
+            aria-label="Reason for your revision"
+            aria-describedby={answerHintId}
+          >
             {example.question.options.map((option, index) => (
-              <Button key={index} disabled={busy} onClick={() => void act('answer', { option: index })}>
-                {option}
+              <Button
+                key={index}
+                className="sky-writing-choice"
+                disabled={busy}
+                onClick={() => void act('answer', { option: index })}
+              >
+                <span className="sky-writing-choice-number" aria-hidden="true">
+                  {index + 1}
+                </span>
+                <span className="sky-writing-choice-text">{option}</span>
+                <svg
+                  className="sky-writing-choice-arrow"
+                  width="20"
+                  height="20"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.6"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="M5 12h14m-6-6 6 6-6 6" />
+                </svg>
               </Button>
             ))}
-            <Button variant="primary-quiet" disabled={busy} onClick={() => setOwn(!own)}>
-              Write my own
-            </Button>
           </div>
+          <Button
+            className="sky-writing-own-toggle"
+            variant="primary-quiet"
+            disabled={busy}
+            aria-expanded={own}
+            aria-controls={ownAnswerId}
+            onClick={() => setOwn(!own)}
+            leftSection={<span aria-hidden="true">+</span>}
+          >
+            Write my own
+          </Button>
           {own && (
-            <div className="sky-writing-own">
+            <div className="sky-writing-own" id={ownAnswerId}>
               <Textarea
                 autoFocus
                 label="What would you like Sky to learn?"
+                placeholder="Explain why you made this change…"
                 value={text}
                 onChange={(event) => setText(event.currentTarget.value)}
                 autosize

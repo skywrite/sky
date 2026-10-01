@@ -9,8 +9,7 @@
   margin-bottom: 16px;
 }
 
-.sky-writing-actions,
-.sky-writing-choices {
+.sky-writing-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
@@ -34,14 +33,16 @@
 }
 
 .sky-writing-question {
+  font-size: 1.15em;
+  line-height: 1.4;
   font-weight: 600;
-  margin: 12px 0 18px;
+  margin: 12px 0 20px;
 }
 
 .sky-writing-change {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 24px;
+  gap: 12px;
 }
 
 .sky-writing-change p {
@@ -50,23 +51,111 @@
   margin: 6px 0 12px;
 }
 
-.sky-writing-choices .mantine-Button-root {
-  height: auto;
-  min-height: 44px;
-  padding-top: 10px;
-  padding-bottom: 10px;
-  max-width: 100%;
+.sky-writing-excerpt {
+  padding: 16px 20px;
+  border-radius: var(--mantine-radius-lg);
+  background: var(--sky-side);
 }
 
-.sky-writing-choices .mantine-Button-label {
+.sky-writing-excerpt-revised {
+  background: color-mix(in srgb, var(--sky-accent) 5%, var(--sky-bg));
+}
+
+.sky-writing-excerpt-revised > span {
+  color: var(--sky-accent);
+}
+
+.sky-writing-excerpt p {
+  margin-bottom: 0;
+}
+
+.sky-writing-answer-hint {
+  margin: 24px 0 12px;
+  color: var(--sky-text-2);
+  font-size: 0.9em;
+}
+
+.sky-writing-choices {
+  display: grid;
+  gap: 12px;
+}
+
+.sky-writing-choices .sky-writing-choice {
+  width: 100%;
+  height: auto;
+  min-height: 64px;
+  padding: 16px 18px;
+  border: 1px solid var(--sky-border-soft);
+  border-radius: var(--mantine-radius-lg);
+  background: var(--sky-bg);
+  color: var(--sky-text);
+  font: inherit;
+  font-weight: 400;
+}
+
+.sky-writing-choices .sky-writing-choice:not(:disabled):is(:hover, :focus-visible) {
+  border-color: var(--sky-accent);
+  background: color-mix(in srgb, var(--sky-accent) 5%, var(--sky-bg));
+}
+
+.sky-writing-choices .sky-writing-choice:disabled {
+  opacity: 0.55;
+}
+
+.sky-writing-choice .mantine-Button-inner {
+  width: 100%;
+}
+
+.sky-writing-choice .mantine-Button-label {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) 20px;
+  align-items: start;
+  gap: 14px;
+  width: 100%;
   white-space: normal;
   text-align: left;
+}
+
+.sky-writing-choice-number {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--sky-side);
+  color: var(--sky-text-2);
+  font-size: 0.8em;
+  font-weight: 600;
+}
+
+.sky-writing-choice-text {
+  padding-top: 2px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.sky-writing-choice-arrow {
+  margin-top: 6px;
+  color: var(--sky-dim);
+}
+
+.sky-writing-choice:not(:disabled):is(:hover, :focus-visible) .sky-writing-choice-number {
+  background: var(--sky-accent-soft);
+  color: var(--sky-accent);
+}
+
+.sky-writing-own-toggle {
+  margin: 10px 0 0;
 }
 
 .sky-writing-own {
   display: grid;
   justify-items: start;
   gap: 12px;
+  margin-top: 12px;
+  padding: 18px;
+  border-radius: var(--mantine-radius-lg);
+  background: var(--sky-side);
 }
 
 .sky-writing-own .mantine-Textarea-root {
@@ -86,6 +175,17 @@
 @media (max-width: 650px) {
   .sky-writing-change {
     grid-template-columns: minmax(0, 1fr);
-    gap: 12px;
+  }
+
+  .sky-writing-excerpt {
+    padding: 14px 16px;
+  }
+
+  .sky-writing-choices .sky-writing-choice {
+    padding: 14px;
+  }
+
+  .sky-writing-choice .mantine-Button-label {
+    gap: 10px;
   }
 }

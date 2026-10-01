@@ -189,7 +189,9 @@ function Canvas() {
             ? 'sky · audition'
             : isStreaks
               ? 'sky · streaks'
-              : 'sky'
+              : settingsSection === 'writing-voice'
+                ? 'sky · Writing style'
+                : 'sky'
   }, [
     threadId,
     chatTitle,
@@ -205,6 +207,7 @@ function Canvas() {
     dayTitle,
     isWeek,
     weekTitle,
+    settingsSection,
   ])
   const isToday = dayYmd === null
   const others = threads.filter((t) => !t.id.startsWith('day-'))
