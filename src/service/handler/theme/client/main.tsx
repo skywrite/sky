@@ -155,30 +155,6 @@ function Canvas() {
     chatDay && day && chatDay !== day.today.ymd
       ? { path: `/${chatDay}`, label: shortLabel(chatDay) }
       : { path: '/', label: 'Today' }
-  useEffect(() => {
-    // These screens set their own titles from the content they display.
-    if (isOutbox || peopleRoute || placesRoute !== null || isTracking || importId || explorerFile !== null) return
-    document.title = threadId
-      ? `sky:chat - ${chatTitle}`
-      : isAudition
-        ? 'sky · audition'
-        : isStreaks
-          ? 'sky · streaks'
-          : 'sky'
-  }, [
-    threadId,
-    chatTitle,
-    isAudition,
-    isStreaks,
-    isOutbox,
-    peopleRoute,
-    placesRoute,
-    isTracking,
-    importId,
-    explorerFile,
-  ])
-  const isToday = dayYmd === null
-  const others = threads.filter((t) => !t.id.startsWith('day-'))
   const onDayPage =
     threadId === null &&
     importId === null &&
@@ -198,6 +174,40 @@ function Canvas() {
     filesRoute === null &&
     meetingRoute === null &&
     explorerFile === null
+  const dayTitle = day?.day.ymd === (dayYmd ?? day?.today.ymd) ? day?.day.dateLabel : (dayYmd ?? 'Today')
+  const weekTitle = weekId || thisWeek?.id
+  useEffect(() => {
+    // These screens set their own titles from the content they display.
+    if (isOutbox || peopleRoute || placesRoute !== null || isTracking || importId || explorerFile !== null) return
+    document.title = onDayPage
+      ? `sky · ${dayTitle ?? 'Today'}`
+      : isWeek
+        ? `sky · ${weekTitle ? `Week ${weekTitle}` : 'This week'}`
+        : threadId
+          ? `sky:chat - ${chatTitle}`
+          : isAudition
+            ? 'sky · audition'
+            : isStreaks
+              ? 'sky · streaks'
+              : 'sky'
+  }, [
+    threadId,
+    chatTitle,
+    isAudition,
+    isStreaks,
+    isOutbox,
+    peopleRoute,
+    placesRoute,
+    isTracking,
+    importId,
+    explorerFile,
+    onDayPage,
+    dayTitle,
+    isWeek,
+    weekTitle,
+  ])
+  const isToday = dayYmd === null
+  const others = threads.filter((t) => !t.id.startsWith('day-'))
   const showDateNav = onDayPage || isWeek || isStreaks || filesRoute !== null || meetingRoute !== null
   const activeDayYmd = filesRoute?.ymd ?? meetingRoute?.ymd ?? dayYmd
   const dayImports = importRows.filter((job) =>
