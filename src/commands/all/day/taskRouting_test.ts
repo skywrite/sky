@@ -21,6 +21,53 @@ import MoveTodos from './todo/move-future.ts'
 const TODAY = new PlainDate('2031-03-16')
 const LATER = TODAY.addDays(1)
 
+test('carrying and importing identical task blocks preserves their multiplicity', async () => {
+  await withDayNotebook(async (notebook) => {
+    const { config } = notebook.context
+    const file = path.join(config.DIR_TIME, dayFile(TODAY))
+    const source = `---\n---\n\n## Professional Todos\n\n- Review the budget\n  Keep these notes.\n- Review the budget\n  Keep these notes.\n`
+    await outputFile(file, source)
+    await new MoveTodos().run({
+      ...notebook,
+      args: { old: TODAY, new: LATER, category: 'Professional Todos', noIncomplete: false },
+    })
+    const scheduled = await readTextFile(config.FILE_SCHEDULE_PROFESSIONAL)
+    const scheduleRows = planSections(scheduled).find((section) => section.title === LATER.ymd)!.rows
+    assert({
+      given: 'two identical unfinished blocks carried to next week',
+      should: 'retain both copies and their notes in the schedule and the incomplete record',
+      actual: {
+        scheduled: scheduleRows.map((row) => row.raw),
+        notes: scheduled.match(/Keep these notes/g)?.length,
+        incomplete: planSections(await readTextFile(file)).find(
+          (section) => section.title === 'Professional Incomplete',
+        )?.rows.length,
+      },
+      expected: { scheduled: ['Review the budget', 'Review the budget'], notes: 2, incomplete: 2 },
+    })
+    // Simulate one copy saved by an interrupted earlier import.
+    await outputFile(
+      path.join(config.DIR_TIME, dayFile(LATER)),
+      `## Professional Todos\n\n- Review the budget\n  Keep these notes.\n`,
+    )
+    await new ImportSchedule().run({ ...notebook, args: { day: LATER } })
+    await new ImportSchedule().run({ ...notebook, args: { day: LATER } })
+    const imported = await readTextFile(path.join(config.DIR_TIME, dayFile(LATER)))
+    assert({
+      given: 'one prior copy and two scheduled copies, followed by an import retry',
+      should: 'consume the prior copy once, import the remaining copy and preserve both notes',
+      actual: {
+        rows: planSections(imported).find((section) => section.title === 'Professional Todos')?.rows.length,
+        notes: imported.match(/Keep these notes/g)?.length,
+        remaining: planSections(await readTextFile(config.FILE_SCHEDULE_PROFESSIONAL))
+          .flatMap((section) => section.rows)
+          .filter((row) => row.raw).length,
+      },
+      expected: { rows: 2, notes: 2, remaining: 0 },
+    })
+  })
+})
+
 test('CLI adds prepare missing current-week days and schedule every type beyond Sunday', async () => {
   await withDayNotebook(async (notebook) => {
     const { config } = notebook.context

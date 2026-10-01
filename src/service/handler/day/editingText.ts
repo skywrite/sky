@@ -5,30 +5,26 @@ import { orderPlanList } from './order.ts'
 export { ItemEditError, planSection, planSections, listRow, type PlanBlock } from '#lib/nbfs/listBlocks.ts'
 import { ItemEditError, planSection, listRow, type PlanBlock } from '#lib/nbfs/listBlocks.ts'
 
-export function editableRow(content: string, list: string, raw: string): PlanBlock & { index: number } {
+export function editableRow(
+  content: string,
+  list: string,
+  raw: string,
+  occurrence?: number,
+): PlanBlock & { index: number } {
   if (!/^(?:most important|reminders|(?:.*\s)?(?:todos|commitments|incomplete))$/i.test(list))
     throw new ItemEditError('This list is not editable here.', 400)
-  return listRow(content, list, raw)
+  return listRow(content, list, raw, occurrence)
 }
 
 /** Replace or move the whole block, retaining its bullet, notes, links and original line endings. */
 export function replaceEditedBlock(
   content: string,
-  address: { list: string; raw: string; block: string },
+  address: { list: string; raw: string; block: string; occurrence?: number },
   destination: { list: string; block: string; index?: number },
 ): string {
-  const row = editableRow(content, address.list, address.raw)
+  const row = editableRow(content, address.list, address.raw, address.occurrence)
   if (row.block !== address.block)
     throw new ItemEditError('This item or its notes changed. Reload the day before trying again.')
-  const raw = destination.block
-    .split(/\r?\n/)[0]
-    .replace(/^\s*[-*+]\s*/, '')
-    .trim()
-  const duplicates =
-    planSection(content, destination.list)?.rows.filter(
-      (candidate) => candidate.raw === raw && candidate.from !== row.from,
-    ) ?? []
-  if (duplicates.length) throw new ItemEditError('An identical item already exists in that list.')
   if (destination.list === address.list) {
     return orderPlanList(content.slice(0, row.from) + destination.block + content.slice(row.to), address.list)
   }
@@ -68,9 +64,9 @@ export function replaceEditedBlock(
   return orderPlanList(orderPlanList(result, address.list), destination.list)
 }
 
-export function editPlanItem(content: string, list: string, raw: string, fields: DayEditFields) {
+export function editPlanItem(content: string, list: string, raw: string, fields: DayEditFields, occurrence?: number) {
   raw = raw.split(/\r?\n/)[0]
-  const row = editableRow(content, list, raw)
+  const row = editableRow(content, list, raw, occurrence)
   const original = itemEditFields({ raw, list })
   const destination =
     fields.kind === original.kind &&
@@ -93,9 +89,16 @@ export function editPlanItem(content: string, list: string, raw: string, fields:
   const head = row.block.split(/\r?\n/)[0]
   const bullet = head.match(/^(\s*[-*+]\s*)/)?.[1] ?? '- '
   const block = bullet + nextRaw + row.block.slice(head.length)
-  const before = { list, raw, block: row.block, index: row.index }
-  const after = { list: destination, raw: nextRaw, block }
+  const before = { list, raw, block: row.block, index: row.index, occurrence }
+  const after = {
+    list: destination,
+    raw: nextRaw,
+    block,
+    occurrence: (planSection(content, destination)?.rows ?? []).filter(
+      (candidate) => candidate.raw === nextRaw && (destination !== list || candidate.from < row.from),
+    ).length,
+  }
   const edited = replaceEditedBlock(content, before, after)
-  after.block = editableRow(edited, after.list, after.raw).block
+  after.block = editableRow(edited, after.list, after.raw, after.occurrence).block
   return { before, after, content: edited }
 }

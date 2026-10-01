@@ -12,15 +12,17 @@ import * as path from 'node:path'
 import { Hono, type MiddlewareHandler } from 'hono'
 import { setMostImportantComplete } from '#lib/mostImportant/store.ts'
 import { hash, withLock } from '#lib/outbox/files.ts'
-import { updateWorkstreamDay, workstreamDayRemoval } from '#lib/workstreams/day.ts'
+import { updateWorkstreamDay, workstreamDayReference, workstreamDayRemoval } from '#lib/workstreams/day.ts'
 import { writeTextFile } from '#shared/fs/mod.ts'
 import DayDocument from '#shared/models/Day/mod.ts'
 import { createEditingRoutes } from './editing.ts'
+import { ItemEditError } from './editingText.ts'
 import isDay from './isDay.ts'
 import { bodyOf, dayFileOf, type ItemRoutesOptions } from './itemContext.ts'
 import { orderPlanList } from './order.ts'
 import { createDayOrganizer } from './organizing.ts'
 import { createPlanningRoutes } from './planning.ts'
+import { createRowActions } from './rowActions.ts'
 
 type ItemAddress = Record<string, unknown> & { list: string; raw: string }
 
@@ -30,10 +32,12 @@ function isItemAddress(body: Record<string, unknown> | null): body is ItemAddres
 
 export function createItemRoutes(options: ItemRoutesOptions): Hono {
   const app = new Hono()
+  const rows = createRowActions(options)
+  app.onError((error, c) => c.json({ error: error.message }, error instanceof ItemEditError ? error.status : 500))
   const guard: MiddlewareHandler = async (c, next) => {
     if (
       c.req.method !== 'POST' ||
-      !/\/item(?:\/(?:delete|restore|add|pull|undo|edit(?:\/undo)?|organize\/(?:move|reorder|order|undo)))?$/.test(
+      !/\/item(?:\/(?:delete|restore|add|pull|undo|row\/undo|edit(?:\/undo)?|organize\/(?:move|reorder|order|undo)))?$/.test(
         c.req.path,
       )
     )
@@ -59,6 +63,7 @@ export function createItemRoutes(options: ItemRoutesOptions): Hono {
     const body = await bodyOf(c)
     if (!isItemAddress(body) || typeof body.done !== 'boolean')
       return c.json({ error: 'expected {list, raw, done}' }, 400)
+    if (body.occurrence !== undefined && !workstreamDayReference(body.raw)) return rows.change(c, body, body.done)
     const day = await dayFileOf(c, options)
     if (day instanceof Response) return day
     const result = DayDocument.toggleItem(day.content, body.list, body.raw, body.done)
@@ -88,6 +93,7 @@ export function createItemRoutes(options: ItemRoutesOptions): Hono {
   app.post('/:ymd/item/delete', async (c) => {
     const body = await bodyOf(c)
     if (!isItemAddress(body)) return c.json({ error: 'expected {list, raw}' }, 400)
+    if (body.occurrence !== undefined && !workstreamDayReference(body.raw)) return rows.change(c, body)
     const day = await dayFileOf(c, options)
     if (day instanceof Response) return day
     const result = DayDocument.deleteItem(day.content, body.list, body.raw)
@@ -134,6 +140,7 @@ export function createItemRoutes(options: ItemRoutesOptions): Hono {
     return c.json(await options.view(day.ymd))
   })
 
+  app.route('/', rows.routes)
   app.route('/', createPlanningRoutes(options))
   const organizer = createDayOrganizer(options)
   app.route('/', organizer.routes)

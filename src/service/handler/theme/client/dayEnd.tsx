@@ -3,6 +3,7 @@ import { Button, Drawer, Modal } from '@mantine/core'
 import { useMediaQuery } from '@mantine/hooks'
 import { Fragment, useEffect, useRef, useState } from 'react'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
+import { dayItemKey } from '../../day/organizingTypes.ts'
 import { clock, type DayData, type DayItem, Tick } from './day.tsx'
 import { useSchedule } from './dayRail.tsx'
 import { fileHref } from './explorer.tsx'
@@ -39,18 +40,22 @@ export function openItems(record: DayData['record']): DayItem[] {
   )
 }
 
-/** One item's identity across a check-off: its list and its words, strike marks aside. */
-const keyOf = (item: DayItem) => `${item.list}\n${item.text}`
+const keyOf = dayItemKey
 
 /** A write that answers with the day's fresh view, or the reason it did not land. */
-async function send(route: string, body: unknown): Promise<{ view: DayData | null; error: string | null }> {
+async function send(
+  route: string,
+  body: unknown,
+): Promise<{ view: (DayData & { item?: DayItem }) | null; error: string | null }> {
   try {
     const response = await fetch(route, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(body),
     })
-    const json = (await response.json().catch(() => null)) as (DayData & { error?: string; view?: DayData }) | null
+    const json = (await response.json().catch(() => null)) as
+      | (DayData & { item?: DayItem; error?: string; view?: DayData })
+      | null
     if (!response.ok || !json || json.error)
       return { view: json?.view ?? null, error: json?.error ?? `That did not go through (${response.status}).` }
     return { view: json, error: null }
@@ -110,7 +115,7 @@ export function EndDayDialog({
   const [error, setError] = useState<string | null>(null)
   const schedule = useSchedule(ymd)
   // The open items as the dialog opened: a tick shows as done without the row leaving.
-  const listed = useRef<DayItem[] | null>(null)
+  const listed = useRef<Array<{ key: string; item: DayItem }> | null>(null)
 
   useEffect(() => {
     let alive = true
@@ -128,14 +133,15 @@ export function EndDayDialog({
     }
   }, [ymd])
 
-  if (view && listed.current === null) listed.current = openItems(view.record)
+  if (view && listed.current === null)
+    listed.current = openItems(view.record).map((item) => ({ key: keyOf(item), item }))
   const current = new Map<string, DayItem>(
     (view ? [...openItems(view.record), ...doneItems(view.record)] : []).map((item) => [keyOf(item), item]),
   )
   // A completed reminder leaves the plan: gone from the fresh view means done, and it stays done.
-  const rows = (listed.current ?? []).map((item) => {
+  const rows = (listed.current ?? []).map(({ key, item }) => {
     const present = current.get(keyOf(item))
-    return { item, done: present ? present.done : true, present: Boolean(present) }
+    return { key, item: present ?? item, done: present ? present.done : true, present: Boolean(present) }
   })
   const stillOpen = rows.filter((row) => !row.done).length
   const weekday = new PlainDate(ymd).dayLong
@@ -150,9 +156,28 @@ export function EndDayDialog({
   const tick = async (item: DayItem, done: boolean) => {
     setBusy(keyOf(item))
     setError(null)
-    // The original line, unstruck: the item route matches with strike marks ignored.
-    const result = await send(`/day/${ymd}/item`, { list: item.list, raw: item.raw, done })
-    if (result.view) apply(result.view)
+    const result = await send(`/day/${ymd}/item`, {
+      list: item.list,
+      raw: item.raw,
+      occurrence: item.occurrence,
+      revision: item.revision,
+      done,
+    })
+    if (result.view) {
+      const changed = result.view.item
+      if (changed && listed.current) {
+        const firstLine = (item: DayItem) => item.raw.split(/\r?\n/)[0]
+        listed.current = listed.current.map((entry) => {
+          if (keyOf(entry.item) === keyOf(item)) return { ...entry, item: changed }
+          if (entry.item.list !== item.list || firstLine(item) === firstLine(changed)) return entry
+          let occurrence = entry.item.occurrence ?? 0
+          if (firstLine(entry.item) === firstLine(item) && occurrence > (item.occurrence ?? 0)) occurrence--
+          if (firstLine(entry.item) === firstLine(changed) && occurrence >= (changed.occurrence ?? 0)) occurrence++
+          return { ...entry, item: { ...entry.item, occurrence } }
+        })
+      }
+      apply(result.view)
+    }
     if (result.error) setError(result.error)
     setBusy(null)
   }
@@ -182,8 +207,8 @@ export function EndDayDialog({
         <div className="sky-end-section">
           <span className="sky-choice-label">Still open</span>
           <div className="sky-end-list">
-            {rows.map(({ item, done, present }) => (
-              <Fragment key={keyOf(item)}>
+            {rows.map(({ key, item, done, present }) => (
+              <Fragment key={key}>
                 <OpenRow
                   item={item}
                   done={done}

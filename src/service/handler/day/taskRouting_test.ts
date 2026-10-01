@@ -35,6 +35,54 @@ ended:
 [brief]: https://example.com/atlas
 `
 
+test('next-week moves retain matching scheduled rows and Undo removes only the moved copies', async () => {
+  await withDayNotebook(async ({ context }) => {
+    const { config } = context
+    const file = path.join(config.DIR_TIME, dayFile(SOURCE))
+    const source = `## Professional Todos\n\n- Review the budget\n  Keep the source notes.\n- Review the budget\n  Keep the source notes.\n`
+    const scheduled = `## ${LATER.ymd}\n\n- Review the budget\n  Keep the existing notes.\n- Review the budget\n  Keep the source notes.\n`
+    await outputFile(file, source)
+    await outputFile(config.FILE_SCHEDULE_PROFESSIONAL, scheduled)
+    const app = createDayRoutes({
+      timeDir: config.DIR_TIME,
+      markdownBaseDir: config.DIR_BASE,
+      today: () => TODAY,
+      ownerNames: [],
+    })
+    const view = (await (await app.request(`/${SOURCE.ymd}`)).json()) as DayView
+    const response = await post(app, SOURCE, 'organize/move', {
+      items: view.record.todos,
+      date: LATER.ymd,
+      requestId: randomUUID(),
+    })
+    const result = (await response.json()) as { undo: string }
+    const moved = await readTextFile(config.FILE_SCHEDULE_PROFESSIONAL)
+    assert({
+      given: 'two matching source rows and two existing scheduled copies',
+      should: 'retain all four scheduled blocks and their notes',
+      actual: {
+        status: response.status,
+        copies: moved.match(/- Review the budget/g)?.length,
+        sourceNotes: moved.match(/Keep the source notes/g)?.length,
+        existing: moved.includes('Keep the existing notes.'),
+      },
+      expected: { status: 200, copies: 4, sourceNotes: 3, existing: true },
+    })
+    await outputFile(config.FILE_SCHEDULE_PROFESSIONAL, moved + '\nA later note.\n')
+    const undo = await post(app, SOURCE, 'organize/undo', { id: result.undo })
+    assert({
+      given: 'Undo after an unrelated schedule edit',
+      should: 'restore the source and keep only the original scheduled copies and later note',
+      actual: {
+        status: undo.status,
+        source: await readTextFile(file),
+        schedule: await readTextFile(config.FILE_SCHEDULE_PROFESSIONAL),
+      },
+      expected: { status: 200, source, schedule: scheduled + '\nA later note.\n' },
+    })
+  })
+})
+
 const post = (app: ReturnType<typeof createDayRoutes>, day: PlainDate, route: string, body: unknown) =>
   app.request(`/${day.ymd}/item/${route}`, {
     method: 'POST',

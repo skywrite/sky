@@ -71,9 +71,19 @@ export function planSection(content: string, title: string): PlanSection | undef
   return found[0]
 }
 
-export function listRow(content: string, list: string, raw: string): PlanBlock & { index: number } {
+export function listRow(
+  content: string,
+  list: string,
+  raw: string,
+  occurrence?: number,
+): PlanBlock & { index: number } {
   const rows = planSection(content, list)?.rows ?? []
   const matches = rows.filter((row) => row.raw === raw.split(/\r?\n/)[0])
+  if (occurrence !== undefined) {
+    const row = Number.isSafeInteger(occurrence) && occurrence >= 0 ? matches[occurrence] : undefined
+    if (!row) throw new ItemEditError('This item changed. Reload the day before trying again.')
+    return { ...row, index: rows.indexOf(row) }
+  }
   if (matches.length !== 1)
     throw new ItemEditError(
       matches.length
@@ -83,8 +93,8 @@ export function listRow(content: string, list: string, raw: string): PlanBlock &
   return { ...matches[0], index: rows.indexOf(matches[0]) }
 }
 
-export function removeBlock(content: string, list: string, raw: string): string {
-  const row = listRow(content, list, raw)
+export function removeBlock(content: string, list: string, raw: string, occurrence?: number): string {
+  const row = listRow(content, list, raw, occurrence)
   if (planSection(content, list)!.rows.length === 1)
     return content.slice(0, row.from) + (row.block.match(/^\s*[-*+]/)?.[0] ?? '-') + content.slice(row.to)
   const newline = content.slice(row.to).match(/^\r?\n/)?.[0] ?? ''
@@ -103,9 +113,6 @@ export function insertBlock(content: string, list: string, input: string, index?
   const eol = content.includes('\r\n') ? '\r\n' : '\n'
   const section = planSection(content, list)
   let block = input.replace(/\r?\n/g, eol)
-  const raw = blockRaw(block)
-  if (section?.rows.some((row) => row.raw === raw))
-    throw new ItemEditError('An identical item is already on the destination day. Nothing was moved.')
   const prefix = block.match(/^(\s*[-*+]\s+)/)?.[0]
   const targetPrefix = section?.rows.find((row) => row.raw)?.block.match(/^(\s*[-*+]\s+)/)?.[0] ?? '- '
   if (prefix && prefix !== targetPrefix) {

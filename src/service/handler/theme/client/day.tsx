@@ -92,6 +92,7 @@ export interface DayItem {
   list: string
   /** The item exactly as stored — the write-back address */
   raw: string
+  occurrence?: number
   revision?: string
   workstream?: { id: string; activityId: string; kind: string; error?: string }
 }
@@ -202,10 +203,10 @@ const UNDO_MS = 8000
 /** Sorts untimed items after every timed one. */
 const NO_TIME = 100000
 
-/** Stable across the strike itself — the raw gains `~~` when checked, the key must not. */
+/** Each repeated row keeps its own render and pending-action state. */
 function itemKey(item: DayItem): string {
   if (item.workstream) return `${item.workstream.id}:${item.workstream.activityId}`
-  return `${item.list}\u0000${item.raw.replace(/~~/g, '').trim()}`
+  return dayItemKey(item)
 }
 
 function minutesOf(time: string | null): number | null {
@@ -257,6 +258,7 @@ interface UndoState {
   how: Leaving
   /** Where a deleted item stood in its list — the address Undo puts it back at */
   at: number | null
+  id?: string
 }
 
 interface CheckOff {
@@ -316,7 +318,14 @@ function useCheckOff(ymd: string, applyView: (view: DayData) => void, readOnly: 
       return null
     }
   }
-  const post = (list: string, raw: string, done: boolean) => send<DayData>('', { list, raw, done })
+  const post = (item: Pick<DayItem, 'list' | 'raw' | 'occurrence' | 'revision'>, done: boolean) =>
+    send<DayData & { itemUndo?: string; item?: DayItem }>('', {
+      list: item.list,
+      raw: item.raw,
+      occurrence: item.occurrence,
+      revision: item.revision,
+      done,
+    })
 
   const hold = (undo: UndoState) => {
     if (undoTimer.current) clearTimeout(undoTimer.current)
@@ -337,11 +346,19 @@ function useCheckOff(ymd: string, applyView: (view: DayData) => void, readOnly: 
     const key = itemKey(item)
     if (phases[key]) return
     setPhases((p) => ({ ...p, [key]: 'struck' }))
-    void post(item.list, item.raw, true).then((view) => {
+    void post(item, true).then((view) => {
       dropPhase(key)
       if (!view) return
       applyView(view)
-      hold({ key, list: item.list, raw: item.raw, text: item.text, how: 'done', at: null })
+      hold({
+        key: view.item ? itemKey(view.item) : key,
+        list: item.list,
+        raw: item.raw,
+        text: item.text,
+        how: 'done',
+        at: null,
+        id: view.itemUndo,
+      })
     })
   }
 
@@ -352,7 +369,12 @@ function useCheckOff(ymd: string, applyView: (view: DayData) => void, readOnly: 
     setPhases((p) => ({ ...p, [key]: 'removed' }))
     // The row finishes collapsing before the view without it lands, so it never blinks out.
     const collapsed = new Promise<void>((done) => window.setTimeout(done, 380))
-    const written = send<{ at: number; view: DayData }>('/delete', { list: item.list, raw: item.raw })
+    const written = send<{ at: number; view: DayData; undo?: string }>('/delete', {
+      list: item.list,
+      raw: item.raw,
+      occurrence: item.occurrence,
+      revision: item.revision,
+    })
     void Promise.all([written, collapsed]).then(([result]) => {
       if (!result) {
         // The write did not land — the row pops back untouched.
@@ -361,7 +383,7 @@ function useCheckOff(ymd: string, applyView: (view: DayData) => void, readOnly: 
       }
       applyView(result.view)
       dropPhase(key)
-      hold({ key, list: item.list, raw: item.raw, text: item.text, how, at: result.at })
+      hold({ key, list: item.list, raw: item.raw, text: item.text, how, at: result.at, id: result.undo })
     })
   }
 
@@ -371,10 +393,11 @@ function useCheckOff(ymd: string, applyView: (view: DayData) => void, readOnly: 
     if (!held) return
     if (undoTimer.current) clearTimeout(undoTimer.current)
     setUndo(null)
-    const back =
-      held.at !== null
+    const back = held.id
+      ? send<DayData>('/row/undo', { id: held.id })
+      : held.at !== null
         ? send<DayData>('/restore', { list: held.list, raw: held.raw, at: held.at })
-        : post(held.list, held.raw, false)
+        : post(held, false)
     void back.then((view) => {
       dropPhase(held.key)
       if (view) applyView(view)
@@ -394,7 +417,7 @@ function useCheckOff(ymd: string, applyView: (view: DayData) => void, readOnly: 
       }
       return held
     })
-    void post(item.list, item.raw, false).then((view) => {
+    void post(item, false).then((view) => {
       dropPhase(key)
       if (view) applyView(view)
     })
@@ -554,7 +577,7 @@ function PlanRow({
   const editor = useItemEditing()
   const organize = useItemOrganizing()
   const organizing = organize.active
-  const active = editor.draft?.item.list === item.list && editor.draft.item.raw === item.raw
+  const active = Boolean(editor.draft && dayItemKey(editor.draft.item) === dayItemKey(item))
   const inline = active && editor.draft?.mode === 'inline'
   const locked = Boolean(editor.draft) || editor.busy || organize.busy || organizing
   const editable = !readOnly && !phase && !item.workstream && !organizing && !organize.busy
@@ -728,7 +751,7 @@ function PlanRow({
                 <button
                   type="button"
                   className="sky-item-details"
-                  data-item={JSON.stringify([item.list, item.raw.split(/\r?\n/)[0]])}
+                  data-item={dayItemKey({ ...item, raw: item.raw.split(/\r?\n/)[0] })}
                   aria-label="Item details"
                   title={item.workstream ? 'Open activity details' : 'Item details'}
                   disabled={Boolean(phase) || editor.busy || (locked && !active)}

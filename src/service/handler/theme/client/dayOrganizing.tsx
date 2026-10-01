@@ -205,7 +205,7 @@ export function useDayOrganizing(
       }
     }
   }
-  const address = ({ list, raw, revision }: DayItem) => ({ list, raw, revision })
+  const address = ({ list, raw, occurrence, revision }: DayItem) => ({ list, raw, occurrence, revision })
   /** `keys`: the arrow keys moved the row, so its grip keeps the focus; a dropped row shows no focus ring. */
   const reorder = (item: DayItem, neighbor: DayItem, after: boolean, keys = false) => {
     if (item.list !== neighbor.list || dayItemKey(item) === dayItemKey(neighbor)) return
@@ -213,7 +213,14 @@ export function useDayOrganizing(
     const ordered = rows.filter((row) => dayItemKey(row) !== dayItemKey(item))
     ordered.splice(ordered.findIndex((row) => dayItemKey(row) === dayItemKey(neighbor)) + (after ? 1 : 0), 0, item)
     if (ordered.every((row, index) => dayItemKey(row) === dayItemKey(rows[index]))) return
-    focusAfterSave.current = keys ? dayItemKey(item) : null
+    focusAfterSave.current = keys
+      ? dayItemKey({
+          ...item,
+          occurrence: ordered
+            .slice(0, ordered.indexOf(item))
+            .filter((row) => row.raw.split(/\r?\n/)[0] === item.raw.split(/\r?\n/)[0]).length,
+        })
+      : null
     return save('reorder', { list: item.list, items: ordered.map(address) })
   }
   const canReorder = (item: DayItem) =>

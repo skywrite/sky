@@ -388,12 +388,20 @@ export function createWeekRoutes(options: WeekRoutesOptions): Hono {
     if (
       !(isQueueFile(body?.file) || isScheduleFile(body?.file)) ||
       typeof body.list !== 'string' ||
-      typeof body.raw !== 'string'
+      typeof body.raw !== 'string' ||
+      (body.occurrence !== undefined &&
+        (!Number.isSafeInteger(body.occurrence) || Number(body.occurrence) < 0 || typeof body.revision !== 'string'))
     )
       return c.json({ error: 'expected {file, list, raw}' }, 400)
     const lockDir = options.taskStateDir ?? path.join(tmpdir(), `sky-week-tasks-${hash(options.timeDir)}`)
     const { file, list, raw } = body
-    const edit = await withLock(path.join(lockDir, 'schedule.lock'), () => removeItem(options.timeDir, file, list, raw))
+    const address =
+      body.occurrence === undefined
+        ? undefined
+        : { occurrence: body.occurrence as number, revision: body.revision as string }
+    const edit = await withLock(path.join(lockDir, 'schedule.lock'), () =>
+      removeItem(options.timeDir, file, list, raw, address),
+    )
     if (edit === 'missing') return c.json({ error: 'no such line — the file changed under the page' }, 404)
     return c.json(await buildWeekView(options, week.toString()))
   })

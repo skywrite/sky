@@ -40,7 +40,8 @@ export async function carryItems(
         const block = moveItemMarkdown(row.block, source, sourceFile, destination.file)
         target = appendTaskBlock(target, to, list, block, destination.filed === 'schedule')
         if (!options.copy) {
-          after = removeBlock(after, list, row.raw)
+          // Rows are consumed in source order, so the first remaining occurrence is this copy.
+          after = removeBlock(after, list, row.raw, 0)
           if (options.incomplete)
             after = insertBlock(after, list.replace(/(?:Todos|Commitments)$/, 'Incomplete'), row.block)
         }

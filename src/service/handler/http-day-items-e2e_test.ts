@@ -60,7 +60,7 @@ for (const { name, reminders, remaining } of [
         assert({
           given: 'a completed reminder',
           should: 'leave no Done today entry',
-          actual: await page.locator('.sky-block-head').filter({ hasText: 'Done today' }).count(),
+          actual: await page.locator('.sky-done-text').count(),
           expected: 0,
         })
 

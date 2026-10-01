@@ -15,7 +15,15 @@ import { dayEnd } from './ended.ts'
 import isDay from './isDay.ts'
 import { bodyOf, dayFileOf, type ItemRoutesOptions } from './itemContext.ts'
 import { orderPlanList, planOrder, setPlanOrder } from './order.ts'
-import { arrangeBlocks, blockRaw, blockRevision, checkedBlock, insertBlock, removeBlock } from './organizingText.ts'
+import {
+  arrangeBlocks,
+  blockRaw,
+  blockRevision,
+  checkedBlock,
+  insertBlock,
+  removeBlock,
+  savedRow,
+} from './organizingText.ts'
 import { dayItemKey, type DayItemAddress } from './organizingTypes.ts'
 import { moveItemMarkdown } from './planningText.ts'
 
@@ -25,8 +33,8 @@ interface Change {
   after: string | undefined
 }
 interface MovedBlock {
-  before: { list: string; raw: string; block: string; index: number }
-  after: { file: string; list: string; raw: string; block: string }
+  before: { list: string; raw: string; block: string; index: number; occurrence?: number }
+  after: { file: string; list: string; raw: string; block: string; occurrence: number }
 }
 interface Operation {
   day: string
@@ -52,12 +60,14 @@ function addresses(value: unknown): DayItemAddress[] {
         item &&
         typeof item.list === 'string' &&
         typeof item.raw === 'string' &&
+        (item.occurrence === undefined || (Number.isSafeInteger(item.occurrence) && item.occurrence >= 0)) &&
         typeof item.revision === 'string' &&
         /^[a-f0-9]{64}$/.test(item.revision),
     )
   )
     throw new ItemEditError('Select up to 100 items from the current day.', 400)
-  if (new Set(value.map(dayItemKey)).size !== value.length) throw new ItemEditError('Select each item only once.', 400)
+  if (new Set(value.map((item) => dayItemKey({ ...item, raw: item.raw.split(/\r?\n/)[0] }))).size !== value.length)
+    throw new ItemEditError('Select each item only once.', 400)
   return value as DayItemAddress[]
 }
 
@@ -141,7 +151,9 @@ export function createDayOrganizer(options: ItemRoutesOptions) {
       let source = day.content
       const moved: MovedBlock[] = []
       for (const { address, row } of rows) {
-        const edited = input.edit ? editPlanItem(day.content, address.list, address.raw, input.edit).after : null
+        const edited = input.edit
+          ? editPlanItem(day.content, address.list, address.raw, input.edit, address.occurrence).after
+          : null
         if (
           edited &&
           (workstreamDayReference(edited.raw) || DayDocument.isItemDone(edited.raw) !== DayDocument.isItemDone(row.raw))
@@ -164,14 +176,30 @@ export function createDayOrganizer(options: ItemRoutesOptions) {
           destinations.set(file, change)
         }
         const block = moveItemMarkdown(edited?.block ?? row.block, day.content, day.file, file)
-        change.after = appendTaskBlock(change.after!, date, list, block, filed === 'schedule')
-        source = removeBlock(source, address.list, address.raw)
         const raw = blockRaw(filed === 'schedule' ? scheduledBlock(block, list) : block)
+        const occurrence =
+          planSection(change.after!, destination.list)?.rows.filter((row) => row.raw === raw).length ?? 0
+        change.after = appendTaskBlock(change.after!, date, list, block, filed === 'schedule')
         moved.push({
-          before: { list: address.list, raw: row.raw, block: row.block, index: row.index },
-          after: { file, list: destination.list, raw, block: listRow(change.after, destination.list, raw).block },
+          before: {
+            list: address.list,
+            raw: row.raw,
+            block: row.block,
+            index: row.index,
+            occurrence: address.occurrence,
+          },
+          after: {
+            file,
+            list: destination.list,
+            raw,
+            occurrence,
+            block: listRow(change.after, destination.list, raw, occurrence).block,
+          },
         })
       }
+      // Remove later occurrences first so earlier duplicates retain their validated addresses.
+      for (const { address } of [...rows].reverse())
+        source = removeBlock(source, address.list, address.raw, address.occurrence)
       const changes = [...destinations.values(), { file: day.file, before: day.content, after: source }]
       // Keep a destination copy before removing anything from the source.
       await writeChanges(changes, options.writePlanning)
@@ -278,15 +306,12 @@ export function createDayOrganizer(options: ItemRoutesOptions) {
               }
               after = orderAddedItems(change.before!, after, new Set(operation.moved.map((item) => item.before.list)))
             } else {
-              for (const item of operation.moved.filter((item) => item.after.file === change.file)) {
-                const row = listRow(after, item.after.list, item.after.raw)
-                if (
-                  blockRevision(row.block, after, change.file) !==
-                  blockRevision(item.after.block, change.after!, change.file)
-                )
-                  throw new ItemEditError('A moved item or its notes changed. It cannot be undone automatically.')
-                after = removeBlock(after, item.after.list, item.after.raw)
-              }
+              const rows = operation.moved
+                .filter((item) => item.after.file === change.file)
+                .map((item) => ({ item, row: savedRow(current, change.after!, change.file, item.after) }))
+                .sort((a, b) => b.row.from - a.row.from)
+              for (const { item, row } of rows)
+                after = removeBlock(after, item.after.list, item.after.raw, row.occurrence)
             }
           } else {
             for (const list of operation.lists ?? []) {

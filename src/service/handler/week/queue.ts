@@ -21,6 +21,7 @@ import * as path from 'node:path'
 import { appendWeekNext } from '#commands/all/week/lib/weekNext.ts'
 import { planSection, removeBlock } from '#lib/nbfs/listBlocks.ts'
 import { readScheduledItem } from '#lib/nbfs/scheduledItems.ts'
+import { hash } from '#lib/outbox/files.ts'
 import { exists, readTextFile, writeTextFile } from '#shared/fs/mod.ts'
 import type { PlainDate, Week } from '#universal/dates/nbdt/mod.ts'
 
@@ -59,6 +60,8 @@ export interface ScheduledItem {
   category: Category
   raw: string
   file: ScheduleFile
+  occurrence?: number
+  revision?: string
 }
 
 export interface ScheduledGroup {
@@ -188,7 +191,18 @@ export async function readWeekQueue(timeDir: string, week: Week, today: PlainDat
     for (const section of sectionsOf(lines)) {
       if (!YMD.test(section.title) || !section.bullets.length) continue
       const items = groups.get(section.title) ?? []
-      items.push(...section.bullets.map((b) => scheduledItem(b.text, file)))
+      const occurrences = new Map<string, number>()
+      items.push(
+        ...section.bullets.map((b) => {
+          const item = scheduledItem(b.text, file)
+          if (section.bullets.filter((row) => row.text === b.text).length > 1) {
+            item.occurrence = occurrences.get(b.text) ?? 0
+            item.revision = hash(lines.join('\n'))
+            occurrences.set(b.text, item.occurrence + 1)
+          }
+          return item
+        }),
+      )
       groups.set(section.title, items)
     }
   }
@@ -239,6 +253,7 @@ export async function removeItem(
   file: QueueFile | ScheduleFile,
   list: string,
   raw: string,
+  address?: { occurrence: number; revision: string },
 ): Promise<LineEdit> {
   const lines = await readLines(path.join(timeDir, file))
   if (!lines) return 'missing'
@@ -247,7 +262,8 @@ export async function removeItem(
     const content = lines.join('\n')
     const section = planSection(content, list)
     if (!section?.rows.some((row) => row.raw === raw)) return 'missing'
-    let after = removeBlock(content, list, raw)
+    if (address && hash(content) !== address.revision) return 'missing'
+    let after = removeBlock(content, list, raw, address?.occurrence)
     const remaining = planSection(after, list)
     if (remaining && !remaining.rows.some((row) => row.raw)) {
       const region = after.slice(remaining.from, remaining.end)

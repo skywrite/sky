@@ -1,6 +1,6 @@
 ---
 created: 2026-09-04
-updated: 2026-09-28
+updated: 2026-10-01
 ---
 
 # The week page
@@ -74,6 +74,8 @@ be waiting for it in the standing files at the top of `time/`:
   [date-routing rule](../../../../commands/all/day/docs/README.md#task-dates-choose-their-destination):
   this week goes straight to a day; later dates go to the schedule. Task-list
   annotations are hidden from displayed text but retained for day-start import.
+  Repeated task text follows the [day item's copy-preservation rule](../../day/docs/README.md#the-days-items);
+  scheduled copies have separate occurrence addresses and reject stale removals.
 
 The × on any of these lines is the person's hand: the line leaves, and a
 list it leaves empty leaves with it. Nothing else empties the queue —
@@ -101,7 +103,7 @@ All under `/week/_api`, mounted when the service has a notebook.
 | `POST /:id/day/:ymd/start` | day:start for the day; answers the view |
 | `POST /:id/day/:ymd/end` | day:end for the day; answers the view |
 | `POST /:id/queue` | `{text, category, day?}` → Week-Next, or the schedule file under the day |
-| `POST /:id/queue/remove` | `{file, list, raw}` → the line leaves |
+| `POST /:id/queue/remove` | `{file, list, raw, occurrence?, revision?}` → the selected complete block leaves |
 | `POST /:id/queue/promote` | `{file, list, raw}` → the line moves from its list into Week-Next |
 
 A command that fails answers 502 with its message; without a command host

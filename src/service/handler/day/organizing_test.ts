@@ -41,7 +41,7 @@ tz: America/Chicago
 
 async function withDays(
   run: (env: {
-    post: (route: string, body: unknown, origin?: string) => Promise<Response>
+    post: (route: string, body: unknown, origin?: string, day?: string) => Promise<Response>
     view: (day?: string) => Promise<DayView>
     read: (day?: string) => Promise<string | undefined>
     write: (day: string, content: string) => Promise<void>
@@ -66,8 +66,8 @@ async function withDays(
   })
   try {
     await run({
-      post: async (route, body, origin) =>
-        app.request(`/${DAY}/item/${route}`, {
+      post: async (route, body, origin, day = DAY) =>
+        app.request(`/${day}/item${route ? `/${route}` : ''}`, {
           method: 'POST',
           headers: { 'content-type': 'application/json', ...(origin ? { Origin: origin } : {}) },
           body: JSON.stringify(body),
@@ -81,12 +81,205 @@ async function withDays(
   }
 }
 const selected = (view: DayView) =>
-  [view.record.todos[0], view.record.commitments[1], view.record.reminders[0]].map(({ list, raw, revision }) => ({
-    list,
-    raw,
-    revision,
-  }))
+  [view.record.todos[0], view.record.commitments[1], view.record.reminders[0]].map(
+    ({ list, raw, occurrence, revision }) => ({
+      list,
+      raw,
+      occurrence,
+      revision,
+    }),
+  )
 type Result = { view: DayView; undo: string; message: string; date?: string; undoRoute?: string }
+
+const REPEATED = `---
+started: 08:00
+ended:
+---
+
+## Professional Todos
+
+- Review the budget
+  Notes for the first copy.
+- Review the budget
+  Notes shared by two separate copies.
+  - Keep the nested checklist.
+- Review the budget
+  Notes shared by two separate copies.
+  - Keep the nested checklist.
+- Share the outline
+`
+const EXISTING = `## Professional Todos
+
+- Review the budget
+  Notes for the existing copy.
+- Review the budget
+  Notes shared by two separate copies.
+  - Keep the nested checklist.
+`
+
+test('moves keep repeated rows, destination copies and notes, with idempotent retry and precise Undo', async () => {
+  await withDays(async ({ post, view, read, write }) => {
+    await write(TARGET, EXISTING)
+    const input = { items: (await view()).record.todos, date: TARGET, requestId: randomUUID() }
+    const response = await post('organize/move', input)
+    const result = (await response.json()) as Result
+    const saved = (await read(TARGET))!
+    const target = await view(TARGET)
+    assert({
+      given: 'repeated selected rows and matching destination rows, including completely identical blocks',
+      should: 'move the whole selection, keeping every copy and its notes',
+      actual: {
+        status: response.status,
+        source: (await view()).record.todos.length,
+        target: target.record.todos.map((item) => [item.text, item.occurrence, Boolean(item.revision)]),
+        nested: saved.match(/Keep the nested checklist/g)?.length,
+        existing: saved.includes('Notes for the existing copy.'),
+        sourceNotes: saved.includes('Notes for the first copy.'),
+        retry: (await post('organize/move', input)).status,
+        unchangedOnRetry: (await read(TARGET)) === saved,
+      },
+      expected: {
+        status: 200,
+        source: 0,
+        target: [
+          ['Review the budget', 0, true],
+          ['Review the budget', 1, true],
+          ['Review the budget', 2, true],
+          ['Review the budget', 3, true],
+          ['Review the budget', 4, true],
+          ['Share the outline', 0, true],
+        ],
+        nested: 3,
+        existing: true,
+        sourceNotes: true,
+        retry: 200,
+        unchangedOnRetry: true,
+      },
+    })
+    await write(DAY, (await read())! + '\nA later source note.\n')
+    await write(
+      TARGET,
+      saved.replace('Notes for the existing copy.', 'Updated notes for the existing copy.') +
+        '\nA later target note.\n',
+    )
+    const undo = await post('organize/undo', { id: result.undo })
+    assert({
+      given: 'Undo after unrelated prose and an existing duplicate were edited',
+      should: 'remove only the moved copies and preserve the existing copies and newer edits',
+      actual: { status: undo.status, source: await read(), target: await read(TARGET) },
+      expected: {
+        status: 200,
+        source: REPEATED + '\nA later source note.\n',
+        target:
+          EXISTING.replace('Notes for the existing copy.', 'Updated notes for the existing copy.') +
+          '\nA later target note.\n',
+      },
+    })
+  }, REPEATED)
+})
+
+test('identical rows can be reordered, edited, checked and deleted individually with Undo', async () => {
+  await withDays(async ({ post, view, read, write }) => {
+    const original = (await view()).record.todos
+    const reordered = await post('organize/reorder', {
+      list: original[0].list,
+      items: [original[2], original[0], original[1], original[3]],
+      requestId: randomUUID(),
+    })
+    const order = (await reordered.json()) as Result
+    assert({
+      given: 'a permutation containing identical first lines and blocks',
+      should: 'save each row once',
+      actual: reordered.status,
+      expected: 200,
+    })
+    await post('organize/undo', { id: order.undo })
+    const item = (await view()).record.todos[2]
+    const edited = await post('edit', {
+      list: item.list,
+      raw: item.raw,
+      occurrence: item.occurrence,
+      revision: item.revision,
+      text: 'Review the revised budget',
+      requestId: randomUUID(),
+    })
+    const edit = (await edited.json()) as Result
+    assert({
+      given: 'editing the last matching row',
+      should: 'change only its title and retain its notes',
+      actual: {
+        status: edited.status,
+        titles: edit.view.record.todos.map((item) => item.text),
+        nested: (await read())?.match(/Keep the nested checklist/g)?.length,
+      },
+      expected: {
+        status: 200,
+        titles: ['Review the budget', 'Review the budget', 'Review the revised budget', 'Share the outline'],
+        nested: 2,
+      },
+    })
+    await write(DAY, (await read())! + '\nA later note.\n')
+    await post('edit/undo', { id: edit.undo })
+    const before = (await read())!
+    const checked = await post('', { ...(await view()).record.todos[2], done: true })
+    const check = (await checked.json()) as DayView & { itemUndo: string }
+    assert({
+      given: 'checking the last matching row',
+      should: 'complete just that copy with its notes attached',
+      actual: {
+        status: checked.status,
+        done: check.record.todos.filter((item) => item.done).length,
+        nested: (await read())?.includes(
+          '- ~~Review the budget~~\n  Notes shared by two separate copies.\n  - Keep the nested checklist.',
+        ),
+      },
+      expected: { status: 200, done: 1, nested: true },
+    })
+    await post('row/undo', { id: check.itemUndo })
+    assert({
+      given: 'Undo after completing one copy',
+      should: 'restore every copy exactly',
+      actual: await read(),
+      expected: before,
+    })
+    const deleted = await post('delete', (await view()).record.todos[2])
+    const deletion = (await deleted.json()) as { view: DayView; undo: string }
+    assert({
+      given: 'deleting the last matching row',
+      should: 'remove only that complete block',
+      actual: {
+        status: deleted.status,
+        copies: deletion.view.record.todos.filter((item) => item.text === 'Review the budget').length,
+        nested: (await read())?.match(/Keep the nested checklist/g)?.length,
+      },
+      expected: { status: 200, copies: 2, nested: 1 },
+    })
+    await write(DAY, (await read())! + '\nAnother later note.\n')
+    await post('row/undo', { id: deletion.undo })
+    assert({
+      given: 'Undo of a duplicate deletion after a later edit',
+      should: 'restore the deleted copy without losing later prose',
+      actual: await read(),
+      expected: before + '\nAnother later note.\n',
+    })
+  }, REPEATED)
+})
+
+test('a changed duplicate group invalidates old occurrences instead of targeting another copy', async () => {
+  await withDays(async ({ post, view, read }) => {
+    const items = (await view()).record.todos
+    await post('delete', items[0])
+    const before = await read()
+    const stale = await post('organize/move', { items: [items[1]], date: TARGET, requestId: randomUUID() })
+    const staleCheck = await post('', { ...items[1], done: true })
+    assert({
+      given: 'a preceding copy was deleted after selection',
+      should: 'reject old addresses without changing another matching copy',
+      actual: { move: stale.status, check: staleCheck.status, content: await read(), target: await read(TARGET) },
+      expected: { move: 409, check: 409, content: before, target: undefined },
+    })
+  }, REPEATED)
+})
 
 for (const eol of ['\n', '\r\n'])
   test(`moving mixed task blocks preserves notes and links within the week (${eol.length})`, async () => {
@@ -171,7 +364,7 @@ test('move undo restores exact source bytes and removes only an untouched day cr
   })
 })
 
-test('moves reject stale notes, duplicate destinations, invalid dates, ended days and foreign origins without writes', async () => {
+test('moves reject stale notes, invalid dates, ended days and foreign origins without writes', async () => {
   await withDays(async ({ post, view, read, write }) => {
     const input = { items: selected(await view()), date: TARGET, requestId: randomUUID() }
     for (const date of ['2026-02-30', '2026-01-26', DAY]) {
@@ -203,13 +396,6 @@ test('moves reject stale notes, duplicate destinations, invalid dates, ended day
       should: 'leave both days intact',
       actual: { status: (await post('organize/move', input)).status, source: await read(), target: await read(TARGET) },
       expected: { status: 409, source: CONTENT, target: ended },
-    })
-    await write(TARGET, '## Reminders\n\n- Water the plants\n')
-    assert({
-      given: 'an identical task already in the target list',
-      should: 'reject the entire batch',
-      actual: { status: (await post('organize/move', input)).status, source: await read() },
-      expected: { status: 409, source: CONTENT },
     })
   })
 })

@@ -58,6 +58,8 @@ export interface ScheduledItem {
   category: 'Professional' | 'Personal'
   raw: string
   file: string
+  occurrence?: number
+  revision?: string
 }
 
 export interface ScheduledGroup {
@@ -373,7 +375,7 @@ function CheckinBlock({ checkins }: { checkins: NonNullable<WeekData['checkins']
 interface QueueActions {
   busy: string | null
   add: (text: string, category: 'Professional' | 'Personal', day: string | null) => Promise<boolean>
-  remove: (file: string, list: string, raw: string) => void
+  remove: (file: string, list: string, raw: string, address?: { occurrence?: number; revision?: string }) => void
   promote: (file: string, list: string, raw: string) => void
 }
 
@@ -485,12 +487,16 @@ function ScheduledBlock({
     const timed = group.items.some((i) => i.time)
     const mixed = new Set(group.items.map((i) => i.category)).size > 1
     return group.items.map((item) => (
-      <div className="sky-qrow" key={`${item.file} ${group.date} ${item.raw}`}>
+      <div className="sky-qrow" key={`${item.file} ${group.date} ${item.raw} ${item.occurrence ?? 0}`}>
         {timed && <span className="sky-when">{item.time ? clock(item.time) : ''}</span>}
         <span>{item.text}</span>
         {withDate && <span className="sky-from">{shortDate(group.date)}</span>}
         {(mixed || withDate) && item.category === 'Personal' && <span className="sky-pchip">Personal</span>}
-        <RemoveButton onClick={() => actions.remove(item.file, group.date, item.raw)} />
+        <RemoveButton
+          onClick={() =>
+            actions.remove(item.file, group.date, item.raw, { occurrence: item.occurrence, revision: item.revision })
+          }
+        />
       </div>
     ))
   }
@@ -635,7 +641,7 @@ export function WeekMain({
   const actions: QueueActions = {
     busy,
     add: (text, category, day) => send('add', '/queue', { text, category, ...(day ? { day } : {}) }),
-    remove: (file, list, raw) => void send(`remove:${raw}`, '/queue/remove', { file, list, raw }),
+    remove: (file, list, raw, address) => void send(`remove:${raw}`, '/queue/remove', { file, list, raw, ...address }),
     promote: (file, list, raw) => void send(`promote:${raw}`, '/queue/promote', { file, list, raw }),
   }
 

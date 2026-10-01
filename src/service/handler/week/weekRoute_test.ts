@@ -342,6 +342,31 @@ async function post(
   return { status: response.status, view: response.status === 200 ? json : null, error: json.error ?? null }
 }
 
+test('scheduled duplicate rows have independent removal addresses and reject stale copies', async () => {
+  const { base, timeDir } = await weekNotebook()
+  const file = path.join(timeDir, 'schedule-professional.md')
+  const source =
+    '## 2026-09-07\n\n- Review the budget\n  Keep the first notes.\n- Review the budget\n  Keep the second notes.\n'
+  await writeFile(file, source)
+  const app = createWeekRoutes({ markdownBaseDir: base, timeDir, now: NOW })
+  const view = (await (await app.request('/2026-W37')).json()) as WeekView
+  const items = view.queue!.scheduled.inWeek[0].items
+  const removed = await post(app, '/2026-W37/queue/remove', { ...items[1], list: '2026-09-07' })
+  assert({
+    given: 'removing the second matching scheduled row',
+    should: 'remove only its complete block',
+    actual: { status: removed.status, source: await readFile(file, 'utf8') },
+    expected: { status: 200, source: '## 2026-09-07\n\n- Review the budget\n  Keep the first notes.\n' },
+  })
+  const stale = await post(app, '/2026-W37/queue/remove', { ...items[0], list: '2026-09-07' })
+  assert({
+    given: 'a removal using the previous duplicate group revision',
+    should: 'leave the remaining copy untouched',
+    actual: { status: stale.status, source: await readFile(file, 'utf8') },
+    expected: { status: 404, source: '## 2026-09-07\n\n- Review the budget\n  Keep the first notes.\n' },
+  })
+})
+
 test({ name: 'week route - something for next week lands in the queue, or under its day' }, async () => {
   const { base, timeDir } = await weekNotebook()
   const app = createWeekRoutes({ markdownBaseDir: base, timeDir, now: NOW })

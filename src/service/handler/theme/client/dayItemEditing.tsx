@@ -14,11 +14,12 @@ import {
 import { createPortal, flushSync } from 'react-dom'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import { itemEditFields, type DayEditFields, type DayEditKind } from '../../day/editingTypes.ts'
+import { dayItemKey } from '../../day/organizingTypes.ts'
 import { normalizeDayTime } from '../../day/planningTypes.ts'
 import type { DayData, DayItem } from './day.tsx'
 import { DayCalendarIcon, DayDatePicker, dayDateLabel } from './dayDatePicker.tsx'
 
-const keyOf = (item: DayItem) => JSON.stringify([item.list, item.raw])
+const keyOf = dayItemKey
 const editFields = (item: DayItem, date: string) => ({ ...itemEditFields(item), date })
 interface Draft {
   item: DayItem
@@ -133,10 +134,10 @@ export function DayItemEditing({
       )
     }
   }, [day, readOnly])
-  const restoreFocus = (item: { list: string; raw: string }) => {
+  const restoreFocus = (item: { list: string; raw: string; occurrence?: number }) => {
     requestAnimationFrame(() => {
       const button = [...document.querySelectorAll<HTMLButtonElement>('.sky-item-details')].find(
-        (element) => element.dataset.item === JSON.stringify([item.list, item.raw.split(/\r?\n/)[0]]),
+        (element) => element.dataset.item === dayItemKey({ ...item, raw: item.raw.split(/\r?\n/)[0] }),
       )
       button?.focus({ preventScroll: true })
     })
@@ -187,6 +188,7 @@ export function DayItemEditing({
     const input = {
       list: draft.item.list,
       raw: draft.item.raw,
+      occurrence: draft.item.occurrence,
       revision: draft.item.revision,
       ...(draft.mode === 'inline' ? { text: fields.text } : fields),
     }
@@ -200,7 +202,7 @@ export function DayItemEditing({
         view: DayData
         undo: string
         message: string
-        item: { list: string; raw: string }
+        item: { list: string; raw: string; occurrence?: number }
         undoRoute?: string
         date?: string
         href?: string

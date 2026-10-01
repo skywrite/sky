@@ -1,6 +1,6 @@
 ---
 created: 2026-09-03
-updated: 2026-09-28
+updated: 2026-10-01
 ---
 
 # The day's items, the day's rail, and the day's files
@@ -45,8 +45,11 @@ or a mobile bottom sheet for text, type, category, time and date. Moving from in
 editing into Details does not save. Save commits; Cancel discards. Refreshes
 preserve drafts, including when a changed or ended day prevents saving.
 
-`editing.ts` addresses the exact task heading and first line, refusing ambiguous
-or stale matches. `editingText.ts` edits or moves its entire Markdown block so
+`editing.ts` addresses the exact task heading, first line and occurrence, refusing
+stale matches. Repeated text is allowed, including identical blocks; occurrences
+distinguish individual copies without adding IDs to Markdown. A duplicate's revision
+also covers its matching sibling blocks so a stale occurrence cannot target another
+copy after one is changed or removed. `editingText.ts` edits or moves its entire Markdown block so
 notes and nested items travel with it; text fields retain inline Markdown and
 reference definitions stay in the file. The day label reads only the first line,
 while `raw` retains attached notes. Destination bullet markers must match to
@@ -84,7 +87,8 @@ future-day template, or a dated entry in a schedule file, writes that destinatio
 removes the source blocks. It resolves references and rebases relative links,
 including links in notes. A revision covers both the block and its resolved
 references, so a stale selection cannot move newly changed notes or links.
-Duplicate destinations and ended days reject the entire batch. Linked workstream
+Matching destination rows are retained alongside the moved copies. Ended days
+reject the entire batch. Linked workstream
 activities retain their canonical scheduling flow instead of bypassing their
 participation history through a raw Markdown move.
 
@@ -143,18 +147,19 @@ attachments can still be opened and added.
 
 | Route | Does |
 | --- | --- |
-| `POST /day/:ymd/item/organize/move` | `{items: [{list, raw, revision}], date, requestId}` → move a selection to a date, answers `{view, undo, date}` |
+| `POST /day/:ymd/item/organize/move` | `{items: [{list, raw, occurrence, revision}], date, requestId}` → move a selection to a date, answers `{view, undo, date}` |
 | `POST /day/:ymd/item/organize/reorder` | `{list, items, requestId}` → save a complete, revision-checked list permutation |
 | `POST /day/:ymd/item/organize/order` | `{order: "time" \| "manual", requestId}` → save the commitment ordering preference |
 | `POST /day/:ymd/item/organize/undo` | `{id}` → reverse a move, reorder or ordering preference |
-| `POST /day/:ymd/item/edit` | `{list, raw, text, revision?, kind?, category?, time?, date?, requestId}` → edit or move a task block, answers `{view, undo, undoRoute?, item, date?}` |
+| `POST /day/:ymd/item/edit` | `{list, raw, occurrence?, text, revision?, kind?, category?, time?, date?, requestId}` → edit or move a task block, answers `{view, undo, undoRoute?, item, date?}` |
 | `POST /day/:ymd/item/edit/undo` | `{id}` → undo an edit without overwriting later task changes |
 | `POST /day/:ymd/item/add` | `{kind, text, category?, time?, requestId}` → add an item, answers `{view, undo, message}` |
 | `GET /day/:ymd/item/next` | The current Next candidates, including already-on-day and unavailable rows |
 | `POST /day/:ymd/item/pull` | `{kind, ids, requestId}` → move selected Next items, answers `{view, undo, message}` |
 | `POST /day/:ymd/item/undo` | `{id}` → reverse an addition or move, answers the view |
-| `POST /day/:ymd/item` | `{list, raw, done}` → strike or un-strike, answers the view |
-| `POST /day/:ymd/item/delete` | `{list, raw}` → delete an item or complete a reminder, answers `{at, view}` |
+| `POST /day/:ymd/item` | `{list, raw, occurrence?, revision?, done}` → strike or un-strike, answers the view with an `itemUndo` token for addressed rows |
+| `POST /day/:ymd/item/delete` | `{list, raw, occurrence?, revision?}` → delete an item or complete a reminder, answers `{at, view, undo?}` |
+| `POST /day/:ymd/item/row/undo` | `{id}` → restore an addressed row's complete block, preserving other copies and later unrelated changes |
 | `POST /day/:ymd/item/restore` | `{list, raw, at}` → the line returns at `at`, answers the view |
 
 A miss — the day changed under the page — is a 404 and writes nothing.
@@ -170,7 +175,8 @@ instead of treating a checkbox as a business decision. Promoted activities open
 their sub-workstream. Broken references remain visible with a repair message.
 
 Day item requests check their origin and serialize app writes with workstream
-planning. Ordinary unlinked rows retain the raw-text operations described above.
+planning. Ordinary unlinked web rows use occurrence- and revision-checked block
+operations; legacy callers without an occurrence retain the Day model's line operations.
 The swipe itself is `theme/client/swipe.ts`: horizontal only, so a touch
 that moves more up or down than sideways stays the page's scroll.
 

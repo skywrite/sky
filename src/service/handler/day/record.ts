@@ -18,7 +18,7 @@ import type { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import { editableRow } from './editingText.ts'
 import { dayEnd } from './ended.ts'
 import { planOrder } from './order.ts'
-import { blockRevision } from './organizingText.ts'
+import { rowRevision } from './organizingText.ts'
 import type { CommitmentOrder } from './organizingTypes.ts'
 
 /** One bullet from the day file: a plan, a promise, or a thing done. */
@@ -35,6 +35,7 @@ export interface DayItem {
   list: string
   /** The item exactly as stored, strike marks included — the write-back address */
   raw: string
+  occurrence?: number
   revision?: string
   workstream?: { id: string; activityId: string; kind: string; error?: string }
 }
@@ -261,15 +262,21 @@ export async function buildDayRecord(input: DayRecordInput): Promise<DayRecord> 
       const heading = list.title.trim()
       const category = categoryOf(heading)
       // A bare `-` is an empty slot a template or sweep left behind, not an item.
+      const occurrences = new Map<string, number>()
       const items = list.items
         .map((raw) => raw.trim())
         .filter(Boolean)
         .map((raw) => {
           const item = parseItem(raw, category, heading)
+          const firstLine = raw.split(/\r?\n/)[0]
+          const occurrence = occurrences.get(firstLine) ?? 0
+          occurrences.set(firstLine, occurrence + 1)
           try {
-            item.revision = blockRevision(editableRow(content, heading, raw).block, content, file)
+            const row = editableRow(content, heading, raw, occurrence)
+            item.occurrence = occurrence
+            item.revision = rowRevision(content, file, heading, row.block, item.occurrence)
           } catch {
-            /* Duplicate or non-plan rows stay visible without a bulk mutation address. */
+            /* Non-plan rows stay visible without a bulk mutation address. */
           }
           return item
         })

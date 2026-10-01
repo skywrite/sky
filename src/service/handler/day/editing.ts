@@ -7,7 +7,7 @@ import { editableRow } from './editingText.ts'
 import { itemEditFields, type DayEditFields } from './editingTypes.ts'
 import { bodyOf, dayFileOf, type ItemRoutesOptions } from './itemContext.ts'
 import type { DayOrganizer } from './organizing.ts'
-import { blockRevision, checkedBlock } from './organizingText.ts'
+import { checkedBlock, rowRevision, savedRow } from './organizingText.ts'
 import { normalizeDayTime } from './planningTypes.ts'
 
 interface EditOperation {
@@ -65,6 +65,8 @@ export function createEditingRoutes(options: ItemRoutesOptions, organizer: DayOr
       !body ||
       typeof body.list !== 'string' ||
       typeof body.raw !== 'string' ||
+      (body.occurrence !== undefined && typeof body.revision !== 'string') ||
+      (body.occurrence !== undefined && (!Number.isSafeInteger(body.occurrence) || Number(body.occurrence) < 0)) ||
       typeof body.text !== 'string' ||
       typeof body.requestId !== 'string' ||
       !/^[a-f0-9-]{36}$/.test(body.requestId)
@@ -74,6 +76,7 @@ export function createEditingRoutes(options: ItemRoutesOptions, organizer: DayOr
     if (day instanceof Response) return day
     if (workstreamDayReference(body.raw))
       throw new ItemEditError('Edit this activity in its workstream to keep its details in sync.')
+    const occurrence = body.occurrence as number | undefined
     const fields = fieldsOf(body, body.list, body.raw)
     if (body.date !== undefined && typeof body.date !== 'string')
       throw new ItemEditError('Choose a destination date.', 400)
@@ -83,10 +86,17 @@ export function createEditingRoutes(options: ItemRoutesOptions, organizer: DayOr
           {
             list: body.list,
             raw: body.raw,
+            occurrence,
             revision:
               typeof body.revision === 'string'
                 ? body.revision
-                : blockRevision(editableRow(day.content, body.list, body.raw).block, day.content, day.file),
+                : rowRevision(
+                    day.content,
+                    day.file,
+                    body.list,
+                    editableRow(day.content, body.list, body.raw, occurrence).block,
+                    occurrence,
+                  ),
           },
         ],
         date: body.date,
@@ -94,7 +104,7 @@ export function createEditingRoutes(options: ItemRoutesOptions, organizer: DayOr
         edit: fields,
       })
     }
-    const request = JSON.stringify({ list: body.list, raw: body.raw, fields })
+    const request = JSON.stringify({ list: body.list, raw: body.raw, occurrence, revision: body.revision, fields })
     cleanup()
     const previous = operations.get(body.requestId)
     if (previous) {
@@ -107,9 +117,9 @@ export function createEditingRoutes(options: ItemRoutesOptions, organizer: DayOr
         item: previous.result.after,
       })
     }
-    const result = editPlanItem(day.content, body.list, body.raw, fields)
+    const result = editPlanItem(day.content, body.list, body.raw, fields, occurrence)
     if (typeof body.revision === 'string')
-      checkedBlock(day.content, day.file, { list: body.list, raw: body.raw, revision: body.revision })
+      checkedBlock(day.content, day.file, { list: body.list, raw: body.raw, occurrence, revision: body.revision })
     if (workstreamDayReference(result.after.raw))
       throw new ItemEditError('Add linked activities from their workstream.', 400)
     if (DayDocument.isItemDone(result.after.raw) !== DayDocument.isItemDone(body.raw.split(/\r?\n/)[0]))
@@ -139,10 +149,18 @@ export function createEditingRoutes(options: ItemRoutesOptions, organizer: DayOr
     const day = await dayFileOf(c, options)
     if (day instanceof Response) return day
     if (!operation.undone) {
+      const row =
+        day.content === operation.result.content
+          ? undefined
+          : savedRow(day.content, operation.result.content, day.file, operation.result.after)
       const after =
         day.content === operation.result.content
           ? operation.before
-          : replaceEditedBlock(day.content, operation.result.after, operation.result.before)
+          : replaceEditedBlock(
+              day.content,
+              { ...operation.result.after, occurrence: row!.occurrence },
+              operation.result.before,
+            )
       await write(day.file, day.content, after)
       operation.undone = true
     }

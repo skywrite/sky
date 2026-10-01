@@ -58,16 +58,29 @@ export default class DayScheduleUpdateTask extends Command {
             .flatMap((section) => section.rows)
             .filter((row) => row.raw)
           if (!rows.length) continue
+          const comparable = (text: string) => text.replace(/\r\n/g, '\n').replace(/^\s*[-*+]\s+/, '- ')
+          // Only copies present before this import can satisfy an interrupted import.
+          // A newly appended row must not consume another identical scheduled task.
+          const available = new Map<string, number>()
           for (const row of rows) {
             const item = readScheduledItem(row.block, category)
             const block = moveItemMarkdown(item.block, content, schedule, file)
             // An interrupted prior import may have saved the day but not drained
             // the schedule. Consume only an identical copy; changed notes still
             // conflict rather than silently losing either version.
-            const existing = planSection(after, item.list)?.rows.find((row) => row.raw === blockRaw(block))
-            const comparable = (text: string) => text.replace(/\r\n/g, '\n').replace(/^\s*[-*+]\s+/, '- ')
-            if (!existing || comparable(moveItemMarkdown(existing.block, after, file, file)) !== comparable(block))
-              after = appendTaskBlock(after, day, item.list, block, false)
+            const key = JSON.stringify([item.list, comparable(block)])
+            if (!available.has(key))
+              available.set(
+                key,
+                (planSection(before ?? '', item.list)?.rows ?? []).filter(
+                  (row) =>
+                    row.raw === blockRaw(block) &&
+                    comparable(moveItemMarkdown(row.block, before!, file, file)) === comparable(block),
+                ).length,
+              )
+            const copies = available.get(key)!
+            if (copies) available.set(key, copies - 1)
+            else after = appendTaskBlock(after, day, item.list, block, false)
             count++
           }
           let remaining = content
