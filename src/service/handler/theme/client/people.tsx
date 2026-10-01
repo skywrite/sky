@@ -2,6 +2,7 @@ import './people.css'
 import { ActionIcon, Button, Modal, Select, Textarea, TextInput } from '@mantine/core'
 import { type Key, type MouseEvent, type ReactNode, useCallback, useEffect, useState } from 'react'
 import type { LinkedInImport } from '#lib/linkedin/types.ts'
+import { normalizePlaceRef } from '#shared/models/Place/reference.ts'
 import {
   profileHref,
   type PeopleIndex,
@@ -9,6 +10,7 @@ import {
   type ProfileSummary,
   type ProfileType,
 } from '../../people/types.ts'
+import { placeHref } from '../../places/types.ts'
 import { fileHref } from './explorer.tsx'
 import { ExtensionProfileCards } from './extensions.tsx'
 import { peopleApi } from './peopleApi.ts'
@@ -128,6 +130,7 @@ function ProfilePage({
   activityError: string
 }) {
   const emails = [...new Set([...profile.emailBusiness, ...profile.emailPersonal])]
+  const locationRef = normalizePlaceRef(profile.location)
   const hasDetails = Boolean(
     emails.length ||
     profile.sites.length ||
@@ -264,7 +267,15 @@ function ProfilePage({
             {profile.location && (
               <>
                 <dt>Location</dt>
-                <dd>{profile.location}</dd>
+                <dd>
+                  {locationRef ? (
+                    <AppLink href={placeHref(locationRef)} navigate={navigate}>
+                      {profile.location}
+                    </AppLink>
+                  ) : (
+                    profile.location
+                  )}
+                </dd>
               </>
             )}
             {profile.met && (
