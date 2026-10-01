@@ -14,11 +14,10 @@ import type { ConversationMessage } from '../type.d.ts'
  * whether the message needs anything MORE: a person, record, or message
  * the conversation has not brought in, or a look at the notebook to check
  * something. "Draft it", "send it", "spell that out", "make it shorter"
- * need nothing more. The verdict is a probability, and the line it is held
- * to sits low on purpose: a wrong skip answers without the notebook, a
- * wrong read costs what every turn costs today.
+ * need nothing more. Skip below 20% before a reading, or 30% once an
+ * assembly exists: a follow-up can reuse the notebook evidence it has.
  */
-export const SKIP_BELOW = 0.2
+const SKIP_BELOW = { needs_notebook: 0.2, needs_more: 0.3 }
 /** How much of each recent turn the judge sees — enough to tell what the conversation is about. */
 const TURN_CHARS = 400
 const RECENT_TURNS = 4
@@ -79,7 +78,7 @@ export function contextPreflight(
     const answer = 'needs_more' in result.answers ? result.answers.needs_more : result.answers.needs_notebook
     return {
       needsNotebook: answer.noul,
-      skipped: answer.noul < SKIP_BELOW,
+      skipped: answer.noul < SKIP_BELOW[question],
       question,
       model: result.model,
       ms: Math.round(now() - started),

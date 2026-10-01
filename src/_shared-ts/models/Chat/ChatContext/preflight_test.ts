@@ -2,15 +2,17 @@ import { TypeSafeClient } from '@typesafe-ai/sdk'
 import type { AIUsageRecord } from '#shared/ai/usageLog.ts'
 import type { ConversationMessage } from '#shared/models/Chat/type.d.ts'
 import { assert, test } from '#test'
-import { contextPreflight, SKIP_BELOW } from './preflight.ts'
+import { contextPreflight } from './preflight.ts'
 
 function judge(noul: number) {
   const bodies: Record<string, unknown>[] = []
   const fetchFn = (async (_input: RequestInfo | URL, init?: RequestInit) => {
-    bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>)
+    const body = JSON.parse(String(init?.body)) as Record<string, unknown>
+    bodies.push(body)
+    const question = Object.keys(body.questions as object)[0]!
     const answer = {
       model: 'jev-1.13.0',
-      answers: { needs_notebook: { type: 'noul', noul } },
+      answers: { [question]: { type: 'noul', noul } },
       usage: { input_tokens: 80, output_tokens: 0 },
     }
     return new Response(JSON.stringify(answer), { status: 200, headers: { 'content-type': 'application/json' } })
@@ -59,17 +61,23 @@ test('the preflight sends the message with the recent turns trimmed, and reads a
   })
 })
 
-test('the preflight reads anything at or over the line as a turn that reads', async () => {
-  const sure = judge(0.91)
-  const edge = judge(SKIP_BELOW)
+test('the preflight skips below 20% before a reading and below 30% once context is available', async () => {
+  const probabilities = [0.19, 0.2, 0.27, 0.29, 0.3, 0.91]
+  const skips = (assembled: boolean) =>
+    Promise.all(
+      probabilities.map(async (probability) => {
+        const verdict = await judge(probability).preflight('Shorten the Atlas outline.', RECENT, { assembled })
+        return verdict?.skipped
+      }),
+    )
   assert({
-    given: 'judges at 91% and exactly on the line',
-    should: 'read in both cases',
-    actual: [
-      (await sure.preflight('What is on my calendar?', [], { assembled: false }))?.skipped,
-      (await edge.preflight('Hmm.', [], { assembled: true }))?.skipped,
+    given: 'the same probabilities before and after a notebook reading, including both boundaries',
+    should: 'reuse existing context below 30% while keeping the first-reading threshold at 20%',
+    actual: [await skips(false), await skips(true)],
+    expected: [
+      [true, false, false, false, false, false],
+      [true, true, true, true, false, false],
     ],
-    expected: [false, false],
   })
 })
 
