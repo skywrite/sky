@@ -1,7 +1,7 @@
 ---
 schema: 0.2.0
 created: 2026-01-24
-updated: 2026-09-27
+updated: 2026-09-30
 description: Weekly Summary generator - the week's record at altitude, synthesized from its Daily Summaries
 ---
 
@@ -44,7 +44,8 @@ Delimited `<!-- START CHECKINS TRAIL -->`. The week's accountability ledger: a "
 **6. The Daily Summaries, chronologically**
 Each delimited `<!-- START DAILY SUMMARY: date (day) -->`. Every daily is itself a generated, curated record — each of its lines already traces to that day's raw files — with these sections (any may be absent on a sparse day):
 
-- **Day at a Glance** — location and a one-sentence characterization
+- **Day at a Glance** — a concrete headline, optional location, and a short story of the day (older summaries have a one-sentence characterization)
+- **Meaningful Moments** — a few memorable events with context and links to the day's original sources; optional, and absent in older summaries
 - **Done** — grouped Strategic / Operational / Health / Personal; decisions lead with `Decided:`
 - **Not Done** — planned but didn't happen
 - **Commitments Made** — promises {{me.firstName}} made (what / to whom / due)
@@ -55,6 +56,9 @@ Each delimited `<!-- START DAILY SUMMARY: date (day) -->`. Every daily is itself
 - **Insights** — what the day taught: Sky's synthesis, each with its source
 - **Archival** — threads he FILED without participating: reference material, not his activity. Never roll these up; at most a genuinely week-significant development in one may inform a Signal, attributed as observed, never as his doing.
 - **Asset Prices** — that day's snapshot
+- **Where Things Stand** — each matter's state at the end of that day
+
+The opening story and Meaningful Moments present selected events that may also appear in Done or other detailed sections. Count each underlying event once. Read the full daily record: the opening's selection is not a completeness filter for the week.
 
 A missing day (named in the header) is a gap in the record — treat it as unknown, never guess at its contents.
 

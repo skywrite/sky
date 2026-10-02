@@ -68,7 +68,8 @@ export default class SummaryDayTask extends Command {
     description: "Generate AI-powered daily summary - what got done, what didn't",
     descriptionLong: [
       'Creates a summary.md file in the day directory: the day compressed once, for reading tomorrow and for search later.',
-      'Sections: Day at a Glance, Done, Not Done, Commitments Made, Waiting On, Time, Health, Signals, Insights, Archival, Asset Prices - every line names its source file.',
+      'Opens with a recognizable headline, a short story, and Meaningful Moments linked to original day files, generated alongside the detailed record.',
+      'Detailed sections: Done, Not Done, Commitments Made, Waiting On, Time, Health, Signals, Insights, Archival, Asset Prices - every line names its source file.',
       'The day is self-contained: nothing in it depends on another day. A closing Where Things Stand section names what the day touched and where each stood.',
     ],
     usage: [
@@ -364,6 +365,8 @@ export default class SummaryDayTask extends Command {
 
     // Header with date context
     parts.push(`# Daily Input for ${day.ymd} (${day.dayShort})`)
+    parts.push('')
+    parts.push(`**Summary directory (relative to time/):** ${dayDir(day)}`)
     parts.push('')
     if (location) {
       parts.push(`**Location**: ${location}`)
