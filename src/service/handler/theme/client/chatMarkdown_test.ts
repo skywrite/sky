@@ -1,5 +1,5 @@
 import { assert, test } from '#test'
-import { renderChatMarkdown } from './chatMarkdown.ts'
+import { renderChatMarkdown, renderStreamingChatMarkdown, settleStreamingMarkdown } from './chatMarkdown.ts'
 import { renderStatic } from './wysiwyg/render.ts'
 
 test('chat markdown renders a legacy Slack draft as readable prose', () => {
@@ -85,5 +85,90 @@ test('chat markdown escapes HTML and retains code quoted inside a Slack draft', 
       '<p>Keep <code>*literal*</code> as code.</p>',
       '<pre><code class="language-js">const value = "*literal*"</code></pre></blockquote>',
     ].join('\n'),
+  })
+})
+
+test('a reply still being written reads as formatted text, never as raw marks', () => {
+  const caret = '<span class="sky-caret" aria-hidden="true"></span>'
+  for (const [given, source, expected] of [
+    ['bold opened and not yet closed', 'Four tabs: **Visi', [`<p>Four tabs: <strong>Visi${caret}</strong></p>`]],
+    ['half of the closing bold mark', 'Four tabs: **Vision*', [`<p>Four tabs: <strong>Vision${caret}</strong></p>`]],
+    [
+      'a bold mark with nothing after it',
+      'Four tabs: **Vision** and **',
+      [`<p>Four tabs: <strong>Vision</strong> and ${caret}</p>`],
+    ],
+    ['bold stopped at a space', 'Four tabs: **What has ', [`<p>Four tabs: <strong>What has${caret}</strong> </p>`]],
+    ['italic opened and not yet closed', 'Read *Atlas no', [`<p>Read <em>Atlas no${caret}</em></p>`]],
+    ['a code span opened and not yet closed', 'Run `sky day:st', [`<p>Run <code>sky day:st${caret}</code></p>`]],
+    [
+      'a link whose address is still arriving',
+      'See [the plan](https://example.com/pl',
+      [`<p>See the plan${caret}</p>`],
+    ],
+    ['a link whose text is still arriving', 'See [the pl', [`<p>See the pl${caret}</p>`]],
+    [
+      'a list item being written under finished blocks',
+      'Intro:\n\n- one\n- **two',
+      ['<p>Intro:</p>', `<ul><li>one</li>\n<li><strong>two${caret}</strong></li></ul>`],
+    ],
+    ['a list marker arriving straight under a paragraph', 'Intro:\n-', [`<p>Intro:${caret}</p>`]],
+    ['arithmetic, which opens nothing', 'It is 2 * 3 and a * b', [`<p>It is 2 * 3 and a * b${caret}</p>`]],
+  ] as const) {
+    assert({
+      given,
+      should: 'render the finished form with the caret after the last word',
+      actual: renderStreamingChatMarkdown(source),
+      expected: [...expected],
+    })
+  }
+})
+
+test('a reply still being written leaves code and finished lines as written', () => {
+  assert({
+    given: 'marks inside an open code fence, including a shorter fence nested in a longer one',
+    should: 'keep them literal',
+    actual: [
+      settleStreamingMarkdown('```ts\nconst a = **1'),
+      settleStreamingMarkdown('````slack\n*Review*\n\n```js\nconst value = `x'),
+    ],
+    expected: ['```ts\nconst a = **1', '````slack\n*Review*\n\n```js\nconst value = `x'],
+  })
+  assert({
+    given: 'an unclosed mark on an earlier line',
+    should: 'settle only the line being written',
+    actual: settleStreamingMarkdown('A stray ** here\nand **more'),
+    expected: 'A stray ** here\nand **more**',
+  })
+})
+
+test('a streamed reply arrives at the HTML the finished reply shows', () => {
+  const reply = [
+    'Four tabs: **Vision** (the vision), `sky day:start`, *Atlas* and [the plan](https://example.com/plan).',
+    '## Next',
+    '- one **two**\n- three',
+    '```ts\nconst a = `x` * 2\n```',
+    '| a | b |\n|---|---|\n| 1 | 2 |',
+    'Done.',
+  ].join('\n\n')
+  const raw: string[] = []
+  for (let end = 1; end < reply.length; end++) {
+    const html = renderStreamingChatMarkdown(reply.slice(0, end)).join('\n')
+    const prose = html.replace(/<pre>[\s\S]*?<\/pre>/g, '').replace(/<[^>]+>/g, '')
+    if (/\*\*|`|\]\(/.test(prose)) raw.push(reply.slice(0, end))
+  }
+  assert({
+    given: 'a reply cut at every character',
+    should: 'never show a raw bold, code or link mark outside a code block',
+    actual: raw,
+    expected: [],
+  })
+  assert({
+    given: 'the whole reply',
+    should: 'match the finished rendering, apart from the caret',
+    actual: renderStreamingChatMarkdown(reply)
+      .join('\n')
+      .replace(/<span class="sky-caret"[^>]*><\/span>/, ''),
+    expected: renderChatMarkdown(reply),
   })
 })

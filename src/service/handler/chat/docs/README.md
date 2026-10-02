@@ -238,6 +238,12 @@ a person can see and touch:
 - **Text stays selected through background refreshes.** Completed replies
   and rich approval previews use the
   [shared HTML renderer](../../theme/docs/README.md#text-selection-and-rendered-html).
+- **A reply reads as rendered markdown while it is written.** The line
+  under the caret is shown as it will read once finished: an opened bold,
+  italic or code span closes where the text stops, and a link shows its
+  text until its address arrives (`settleStreamingMarkdown` in
+  `theme/client/chatMarkdown.ts`). The page redraws only the block being
+  written (`RenderedBlocks`), so a selection in the blocks above it holds.
 - **Stop replaces the send arrow while a reply runs.** `POST /chat/:id/stop`
   aborts that thread's model request and releases pending approvals, including
   from a reloaded page. The partial reply is kept with a stopped notice in

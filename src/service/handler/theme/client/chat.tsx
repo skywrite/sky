@@ -32,7 +32,7 @@ import { ChatCalendarDraft } from './chatCalendarDraft.tsx'
 import { clearChatDraft, useChatDraft, type ChatDraft } from './chatDraft.ts'
 import { FileClips, Paperclip, type PendingChatFile, useChatFiles } from './chatFiles.tsx'
 import { ChatImages, replyImages } from './chatImages.tsx'
-import { renderChatMarkdown } from './chatMarkdown.ts'
+import { renderChatMarkdown, renderStreamingChatMarkdown } from './chatMarkdown.ts'
 import { chatMessageId, ChatTurnNavigation } from './chatNavigation.tsx'
 import { ChatSelectionMenu } from './chatSelection.tsx'
 import { QuestionMenu, UnwindNote, type UnwindNoteState, useUnwind } from './chatUnwind.tsx'
@@ -43,7 +43,7 @@ import { ContextPanel } from './context.tsx'
 import { ChatControls, TemporaryControl, type ThreadSettings } from './controls.tsx'
 import { fileHref } from './explorer.tsx'
 import { LegalReviewSummary } from './legalReview.tsx'
-import { RenderedHtml } from './renderedHtml.tsx'
+import { RenderedBlocks, RenderedHtml } from './renderedHtml.tsx'
 import { ReplyDetails } from './replyDetails.tsx'
 import {
   ReplyThreadLink,
@@ -2694,6 +2694,15 @@ export function TurnView({
     const { text, files } = splitChatFiles(turn.content)
     return { text, files, html: text ? renderMarkdown(text) : null }
   }, [turn.role, turn.content])
+  // The reply being written reads as it will when finished — null on any rendering failure, leaving the raw text to stand.
+  const streamed = useMemo(() => {
+    if (!streaming || turn.role !== 'assistant' || splitChatImages(turn.content).text === '') return null
+    try {
+      return renderStreamingChatMarkdown(turn.content)
+    } catch {
+      return null
+    }
+  }, [streaming, turn.role, turn.content])
 
   if (userMessage) {
     const { text, files, html } = userMessage
@@ -2755,6 +2764,8 @@ export function TurnView({
           <WritingDraftReply {...writingDrafts} content={content} html={turn.html} />
         ) : turn.html ? (
           <RenderedHtml className="sky-body sky-rendered" html={turn.html} />
+        ) : streamed ? (
+          <RenderedBlocks className="sky-body sky-rendered" blocks={streamed} />
         ) : (
           <div className="sky-body">
             {/* A reply that has only called tools so far has no paragraph yet — one caret, below. */}
