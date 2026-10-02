@@ -267,3 +267,72 @@ test('specific record searches beat incidental matches on frequently linked peop
     expected: ['Jane equity review', 'Jane equity review'],
   })
 })
+
+test('equally good name matches rank by interaction score and last contact, not by saved links', () => {
+  const person = (name: string, extra: Partial<LinkItem>): LinkItem => ({
+    value: name,
+    title: name,
+    path: `people/${name.replace(' ', '-')}.md`,
+    kind: 'person',
+    ...extra,
+  })
+  const items: LinkItem[] = [
+    person('Jane Doe', { linkCount: 40, interactionScore: 2, lastContact: '2023-01-10', date: '2026-01-05' }),
+    person('Jane Roe', { linkCount: 20, interactionScore: 15, lastContact: '2026-01-20', date: '2026-01-02' }),
+    person('Jane Poe', { linkCount: 2, interactionScore: 4, lastContact: '2026-01-25' }),
+    person('Jane Moe', { linkCount: 1, interactionScore: 0.5, lastContact: '2024-06-01' }),
+    person('Jane Loe', { interactionScore: 0.5, lastContact: '2025-06-01' }),
+    person('Jane Koe', { linkCount: 3 }),
+    {
+      value: 'projects/Jane-Launch',
+      title: 'Jane Launch',
+      path: 'projects/open/Jane-Launch',
+      kind: 'project',
+      linkCount: 50,
+    },
+  ]
+  assert({
+    given: 'namesakes where the most linked person is a dormant contact',
+    should: 'lead with the highest score, break equal scores by last contact, and leave unscored records to links',
+    actual: searchLinks(items, 'jane', [], '', '').map((item) => item.title),
+    expected: ['Jane Roe', 'Jane Poe', 'Jane Doe', 'Jane Loe', 'Jane Moe', 'Jane Launch', 'Jane Koe'],
+  })
+})
+
+test('suggestions take the top of each type in turn and leave out the notebook owner', () => {
+  const items: LinkItem[] = [
+    { value: 'Jane Doe', title: 'Jane Doe', path: 'people/Jane-Doe.md', kind: 'person', interactionScore: 900 },
+    { value: 'Bob Example', title: 'Bob Example', path: 'people/Bob.md', kind: 'person', interactionScore: 300 },
+    { value: 'Alex Example', title: 'Alex Example', path: 'people/Alex.md', kind: 'person', interactionScore: 200 },
+    { value: 'Sam Park', title: 'Sam Park', path: 'people/Sam-Park.md', kind: 'person', linkCount: 500 },
+    { value: 'Example Studio', title: 'Example Studio', path: 'orgs/Studio.md', kind: 'org', interactionScore: 400 },
+    { value: 'Acme', title: 'Acme', path: 'orgs/Acme.md', kind: 'org', interactionScore: 250, linkCount: 10 },
+    { value: 'projects/Atlas', title: 'Atlas', path: 'projects/open/Atlas', kind: 'project', linkCount: 120 },
+    {
+      value: 'projects/Widget-V2',
+      title: 'Widget-V2',
+      path: 'projects/open/Widget-V2',
+      kind: 'project',
+      linkCount: 40,
+    },
+  ]
+  const all = searchLinks(items, '', [], '', '', 'jane doe')
+  assert({
+    given: 'scored people and orgs, linked projects, and the owner as the top-scored person',
+    should: 'suggest the best person, org and project in turn without the owner, who stays findable',
+    actual: [
+      all.filter((item) => item.frequent).map((item) => item.title),
+      all.some((item) => item.title === 'Jane Doe' && !item.frequent),
+      searchLinks(items, 'jane', [], '', '', 'Jane Doe')[0]?.title,
+    ],
+    expected: [['Bob Example', 'Example Studio', 'Atlas', 'Alex Example', 'Acme', 'Widget-V2'], true, 'Jane Doe'],
+  })
+  assert({
+    given: 'only People selected',
+    should: 'suggest every scored or linked person, scored first',
+    actual: searchLinks(items, '', ['person'], '', '', 'Jane Doe')
+      .filter((item) => item.frequent)
+      .map((item) => item.title),
+    expected: ['Bob Example', 'Alex Example', 'Sam Park'],
+  })
+})

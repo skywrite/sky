@@ -446,3 +446,34 @@ test('ScoringStore - mentions aid relevance while familiarity follows direct con
     expected: [false, 3],
   })
 })
+
+test('ScoringStore - last contact follows direct contact only, across aliases and removal', () => {
+  const scoring = new ScoringStore()
+  scoring.recordPersonInteraction('Jane Doe', '2026-01-10', 10, referenceDate, '/nb/meeting.md')
+  scoring.recordPersonInteraction('Janie', '2026-01-20', 5, referenceDate, '/nb/email.md')
+  scoring.recordPersonInteraction('Jane Doe', '2026-01-30', 2, referenceDate, '/nb/day.md', 'mention')
+  const dates = () =>
+    scoring
+      .getPeopleWithScores(['Jane Doe'], () => ['Jane Doe', 'Janie'])
+      .map((person) => [person.lastInteraction, person.lastContact])
+  assert({
+    given: 'a meeting, a later email under an alias, and a still later mention',
+    should: 'date the last contact by the email and the last interaction by the mention',
+    actual: dates(),
+    expected: [['2026-01-30', '2026-01-20']],
+  })
+  scoring.forgetSource('/nb/email.md')
+  assert({
+    given: 'the email removed',
+    should: 'fall back to the earlier meeting',
+    actual: dates(),
+    expected: [['2026-01-30', '2026-01-10']],
+  })
+  scoring.forgetSource('/nb/meeting.md')
+  assert({
+    given: 'only the mention left',
+    should: 'have no contact date',
+    actual: dates(),
+    expected: [['2026-01-30', null]],
+  })
+})

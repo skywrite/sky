@@ -59,6 +59,8 @@ export interface PersonScore {
   /** Direct contact and family only; absent means familiarity is unknown. */
   familiarityScore?: number
   lastInteraction: string | null // ISO date
+  /** The latest direct contact (ISO date); a mention never moves it. */
+  lastContact?: string | null
   interactionCount: number
 }
 
@@ -105,17 +107,29 @@ interface Contribution {
   dateStr: string
   points: number
   familiarityPoints?: number
+  /** Direct contact with a person, not a mention */
+  contact?: boolean
 }
 
-/** The entries of one person as one: scores and counts added, the latest interaction kept. */
+/** The entries of one person as one: scores and counts added, the latest interaction and contact kept. */
 function asOnePerson(name: string, entries: Iterable<PersonScore>): PersonScore {
-  const one = { name, score: 0, familiarityScore: 0, lastInteraction: null as string | null, interactionCount: 0 }
+  const one = {
+    name,
+    score: 0,
+    familiarityScore: 0,
+    lastInteraction: null as string | null,
+    lastContact: null as string | null,
+    interactionCount: 0,
+  }
   for (const entry of entries) {
     one.score += entry.score
     one.familiarityScore += entry.familiarityScore ?? 0
     one.interactionCount += entry.interactionCount
     if (entry.lastInteraction && (!one.lastInteraction || entry.lastInteraction > one.lastInteraction)) {
       one.lastInteraction = entry.lastInteraction
+    }
+    if (entry.lastContact && (!one.lastContact || entry.lastContact > one.lastContact)) {
+      one.lastContact = entry.lastContact
     }
   }
   return one
@@ -175,6 +189,7 @@ export class ScoringStore extends EventEmitter {
     const weighted = weight * recencyMultiplier
     const points = kind === 'mention' ? weighted * PERSON_MENTION_MULTIPLIER : weighted
     const familiarityPoints = kind === 'direct' ? weighted : 0
+    const contact = kind === 'direct'
 
     if (existing) {
       existing.score += points
@@ -184,16 +199,18 @@ export class ScoringStore extends EventEmitter {
       if (!existing.lastInteraction || dateStr > existing.lastInteraction) {
         existing.lastInteraction = dateStr
       }
+      if (contact && (!existing.lastContact || dateStr > existing.lastContact)) existing.lastContact = dateStr
     } else {
       this._personScores.set(name, {
         name,
         score: points,
         familiarityScore: familiarityPoints,
         lastInteraction: dateStr,
+        lastContact: contact ? dateStr : null,
         interactionCount: 1,
       })
     }
-    if (source) this.contribute(source, { kind: 'person', name, dateStr, points, familiarityPoints })
+    if (source) this.contribute(source, { kind: 'person', name, dateStr, points, familiarityPoints, contact })
   }
 
   /**
@@ -304,12 +321,15 @@ export class ScoringStore extends EventEmitter {
     }
 
     const latest = new Map<string, string>()
+    const latestContact = new Map<string, string>()
     for (const list of this._bySource.values()) {
-      for (const { kind, name, dateStr } of list) {
+      for (const { kind, name, dateStr, contact } of list) {
         const key = `${kind}\n${name}`
         if (!affected.has(key)) continue
         const known = latest.get(key)
         if (!known || dateStr > known) latest.set(key, dateStr)
+        const knownContact = latestContact.get(key)
+        if (contact && (!knownContact || dateStr > knownContact)) latestContact.set(key, dateStr)
       }
     }
 
@@ -324,8 +344,13 @@ export class ScoringStore extends EventEmitter {
         const map = kind === 'person' ? this._personScores : this._orgScores
         const entry = map.get(name)
         if (!entry) continue
-        if (entry.interactionCount <= 0) map.delete(name)
-        else entry.lastInteraction = latest.get(key) ?? entry.lastInteraction
+        if (entry.interactionCount <= 0) {
+          map.delete(name)
+          continue
+        }
+        entry.lastInteraction = latest.get(key) ?? entry.lastInteraction
+        // Remaining files decide; when only mentions remain, there is no contact date.
+        if (kind === 'person' && latest.has(key)) (entry as PersonScore).lastContact = latestContact.get(key) ?? null
       }
     }
     return true

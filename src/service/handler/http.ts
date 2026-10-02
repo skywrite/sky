@@ -24,6 +24,7 @@ import { type AutomationsRoutesOptions, createAutomationRoutes } from './automat
 import { type ChatRoutesOptions, createChatRoutes } from './chat/mod.ts'
 import { type ClockRoutesOptions, createClockRoutes } from './clock/mod.ts'
 import { createDayRoutes } from './day/mod.ts'
+import { loadOwnerNames } from './day/record.ts'
 import { createDayScheduleHost } from './day/schedule.ts'
 import { createExplorerRoutes, explorerHref } from './explorer/mod.ts'
 import { type ExtensionRoutesOptions, createExtensionRoutes } from './extensions/routes.ts'
@@ -142,7 +143,10 @@ export function createHttpApp(options: HttpHandlerOptions): Hono {
   } = options
 
   const app = new Hono()
-  const links = createLinks(markdownStore, markdownBaseDir, markdownDirs)
+  const links = createLinks(markdownStore, markdownBaseDir, markdownDirs, {
+    scores: () => scoresFrom(store.getPeopleWithScores(), store.getOrganizationsWithScores(), []),
+    owner: async () => (await loadOwnerNames(chat?.aboutMePath))[0],
+  })
   const profiles =
     options.people && markdownStore
       ? createPeopleStore(markdownStore, markdownBaseDir, markdownDirs, {

@@ -27,7 +27,11 @@ export interface LinkItem {
   summary?: string
   /** Distinct indexed records linking to this person, org, or project. */
   linkCount?: number
-  /** Promoted into the frequently linked section of an unqueried search. */
+  /** The notebook's interaction score for a person or org: what Sky ranks people by everywhere. */
+  interactionScore?: number
+  /** A person's latest direct contact (YYYY-MM-DD). */
+  lastContact?: string
+  /** Promoted into the suggestions of an unqueried search. */
   frequent?: boolean
   /** Geographic context distinguishes places with the same name. */
   hint?: string

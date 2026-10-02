@@ -58,6 +58,10 @@ Each reported person has two deterministic totals:
   contribute zero, however numerous. It is available in the same GraphQL
   `peopleWithScores` query and score subscriptions.
 
+`lastInteraction` is the newest record of any kind, mentions included.
+`lastContact` is the newest direct contact only; the link picker shows it.
+Removing a file recomputes both from the files that remain.
+
 A profile tagged `Person/Family` or any descendant such as
 `Person/Family/Spouse` receives a permanent 100 points in both totals.
 Matching is case-insensitive and respects slash boundaries; `Person/Spouse`,

@@ -38,10 +38,12 @@ function dateLabel(date: string | undefined, today: string): string {
 }
 
 function Detail({ item }: { item: LinkItem }) {
+  // A profile's own date only says when the file changed; for a person, the last contact tells namesakes apart.
+  const when = item.kind === 'person' ? item.lastContact && `last contact ${item.lastContact}` : item.date
   return (
     <>
       <span className="sky-link-meta">
-        {[item.kind.charAt(0).toUpperCase() + item.kind.slice(1), item.date, item.people].filter(Boolean).join(' · ')}
+        {[item.kind.charAt(0).toUpperCase() + item.kind.slice(1), when, item.people].filter(Boolean).join(' · ')}
       </span>
       {item.hint && <span className="sky-link-meta">{item.hint}</span>}
       {item.parent && (
@@ -209,7 +211,7 @@ function Picker({
     const label = query.trim()
       ? 'Search results'
       : item.frequent
-        ? 'Frequently linked'
+        ? 'Suggested'
         : PRIMARY_LINK_KINDS.includes(item.kind)
           ? primaryOnly
             ? 'More records'

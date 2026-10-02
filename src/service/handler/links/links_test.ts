@@ -3,6 +3,8 @@ import * as os from 'node:os'
 import * as path from 'node:path'
 import MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
 import { assert, test } from '#test'
+import { PlainDate } from '#universal/dates/nbdt/mod.ts'
+import { INTERACTION_WEIGHTS, Store } from '../../store.ts'
 import { createTestHttpApp } from '../httpTestHelpers.ts'
 import { createImportRoutes, type ImportJob, type ImportRoutesOptions } from '../import/mod.ts'
 import { readSrt } from '../import/readback.ts'
@@ -113,6 +115,39 @@ test('link picker finds person aliases and ranks them before paginating newer co
         ['  JAY ', 'jd', 'janie', 'JANE_doe'].map(async (query) => (await search(query, 0, '')).items[0]?.value),
       ),
       expected: ['Jane Doe', 'Jane Doe', 'Jane Doe', 'Jane Doe'],
+    })
+  } finally {
+    await rm(base, { recursive: true, force: true })
+  }
+})
+
+test('link picker ranks namesakes by the notebook interaction score and dates people by direct contact', async () => {
+  const base = await mkdtemp(path.join(os.tmpdir(), 'notebook-link-scores-'))
+  const people = path.join(base, 'people')
+  try {
+    await mkdir(people)
+    for (const name of ['Jane Doe', 'Jane Roe'])
+      await writeFile(
+        path.join(people, `${name.replace(' ', '-')}.md`),
+        `---\nname: ${name}\nupdated: 2026-01-01\n---\n`,
+      )
+    const markdownStore = await MarkdownStore.build({ peopleDirs: [people], orgDirs: [], timeDirs: [] })
+    const scoring = new Store()
+    scoring.update('people', new Set(['Jane Doe', 'Jane Roe']))
+    const today = new PlainDate(2026, 1, 27)
+    scoring.recordInteraction('Jane Doe', '2023-01-10', INTERACTION_WEIGHTS.meeting, today)
+    scoring.recordInteraction('Jane Roe', '2026-01-20', INTERACTION_WEIGHTS.meeting, today)
+    scoring.recordInteraction('Jane Roe', '2026-01-25', INTERACTION_WEIGHTS.day, today, undefined, 'mention')
+    const app = createTestHttpApp([people], { markdownStore, store: scoring })
+    const { items } = (await (await app.request('/docs/_api/links?q=jane&kind=person')).json()) as LinkSearch
+    assert({
+      given: 'two namesakes: one met years ago, one met last week and mentioned since',
+      should: 'rank the recent contact first and date each by contact, not by the mention',
+      actual: items.map((item) => [item.title, item.lastContact]),
+      expected: [
+        ['Jane Roe', '2026-01-20'],
+        ['Jane Doe', '2023-01-10'],
+      ],
     })
   } finally {
     await rm(base, { recursive: true, force: true })

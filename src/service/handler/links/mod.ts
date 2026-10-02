@@ -7,6 +7,7 @@ import { fetchNowSync } from '#shared/nbfs/mod.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import { readMarkdownContent, saveMarkdownContent } from '../markdown-preview/content.ts'
 import { isPathWithinRoot, isPathWithinRoots, resolveMarkdownPreviewRequest } from '../markdown-preview/request.ts'
+import type { Scores } from '../vocabulary/mod.ts'
 import { linkCatalog, searchLinks } from './catalog.ts'
 import { changeLinks } from './content.ts'
 import type { ImportLinksHost, LinkItem } from './types.ts'
@@ -25,10 +26,16 @@ export function createLinks(
   store: MarkdownStore | null,
   base: string,
   dirs: string[],
+  options: {
+    /** The notebook's interaction scores, which rank people and orgs */
+    scores?: () => Scores
+    /** The owner's full name, left out of suggestions */
+    owner?: () => Promise<string | undefined>
+  } = {},
 ): { routes: Hono; host: ImportLinksHost } {
   const routes = new Hono()
   const writes = new Map<string, Promise<void>>()
-  const catalog = () => (store ? linkCatalog(store, base, dirs) : Promise.resolve([]))
+  const catalog = () => (store ? linkCatalog(store, base, dirs, options.scores?.()) : Promise.resolve([]))
   const lookup = (items: LinkItem[], value: string, source?: string) => {
     const exact = items.find((item) => item.value === value)
     if (exact) return exact
@@ -108,12 +115,14 @@ export function createLinks(
       .flatMap((value) => value.split(','))
       .map((value) => value.trim())
       .filter(Boolean)
+    const query = c.req.query('q') ?? ''
     const matches = searchLinks(
-      (await catalog()).filter((item) => !item.needsCreation || c.req.query('q')?.trim() || kinds.includes('place')),
-      c.req.query('q') ?? '',
+      (await catalog()).filter((item) => !item.needsCreation || query.trim() || kinds.includes('place')),
+      query,
       kinds,
       c.req.query('day') ?? '',
       c.req.query('exclude') ?? '',
+      query.trim() ? '' : ((await options.owner?.()) ?? ''),
     )
     const raw = Number(c.req.query('offset') ?? 0)
     const offset = Number.isFinite(raw) ? Math.max(0, Math.trunc(raw)) : 0

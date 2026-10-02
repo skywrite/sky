@@ -6,7 +6,7 @@ import { dayDir, isActionPath } from '#shared/nbfs/mod.ts'
 import parseTimePath from '#shared/nbfs/parseTimePath.ts'
 import { docDate, docTitle } from '../home/docMeta.ts'
 import { isPathWithinRoots } from '../markdown-preview/request.ts'
-import { vocabularyOf } from '../vocabulary/mod.ts'
+import { type Scores, vocabularyOf } from '../vocabulary/mod.ts'
 import { linkFrequency } from './frequency.ts'
 import { type LinkItem, type LinkKind, PRIMARY_LINK_KINDS } from './types.ts'
 
@@ -38,8 +38,27 @@ function branch(doc: Document, store: MarkdownStore, base: string): LinkItem['pa
   }
 }
 
-/** The existing index supplies records at every nesting depth; no notebook walk per search. */
-export async function linkCatalog(store: MarkdownStore, base: string, dirs: string[]): Promise<LinkItem[]> {
+/** A person's or org's interaction score, looked up by name as the front matter completions do. */
+function interactionOf(item: LinkItem, scores: Scores | undefined): Pick<LinkItem, 'interactionScore' | 'lastContact'> {
+  const name = item.value.toLowerCase()
+  if (item.kind === 'person') {
+    const hit = scores?.people.get(name)
+    return hit ? { interactionScore: hit.score, ...(hit.lastContact ? { lastContact: hit.lastContact } : {}) } : {}
+  }
+  const org = item.kind === 'org' ? scores?.orgs.get(name) : undefined
+  return org ? { interactionScore: org.score } : {}
+}
+
+/**
+ * The existing index supplies records at every nesting depth; no notebook walk per search.
+ * Scores are read per call: they change independently of the markdown index.
+ */
+export async function linkCatalog(
+  store: MarkdownStore,
+  base: string,
+  dirs: string[],
+  scores?: Scores,
+): Promise<LinkItem[]> {
   const vocabulary = await vocabularyOf(store, base)
   const items: LinkItem[] = vocabulary.entities
     .filter((e) => isPathWithinRoots(path.resolve(base, e.path), dirs))
@@ -92,7 +111,7 @@ export async function linkCatalog(store: MarkdownStore, base: string, dirs: stri
     else items.push(item)
   }
   const counts = linkFrequency(store, base, dirs, items)
-  return items.map((item) => ({ ...item, linkCount: counts.get(item.path) }))
+  return items.map((item) => ({ ...item, linkCount: counts.get(item.path), ...interactionOf(item, scores) }))
 }
 
 function normalizeSearch(value: string): string {
@@ -131,12 +150,26 @@ function relevance(item: LinkItem, query: string, terms: string[]): { score: num
   return { score: terms.every((term) => searchable.includes(term)) ? 1 : 0, entityName: false }
 }
 
+/**
+ * Equally good name matches go to whoever Sky ranks highest everywhere else: the interaction score,
+ * then the latest contact. Projects have no score, so their saved links decide.
+ */
+function byInteraction(a: LinkItem, b: LinkItem): number {
+  return (
+    (b.interactionScore ?? 0) - (a.interactionScore ?? 0) ||
+    (b.lastContact ?? '').localeCompare(a.lastContact ?? '') ||
+    (b.linkCount ?? 0) - (a.linkCount ?? 0)
+  )
+}
+
 export function searchLinks(
   items: LinkItem[],
   query: string,
   kinds: string | readonly string[],
   day: string,
   exclude: string,
+  /** The notebook owner's name: never suggested, though a search still finds them */
+  owner = '',
 ): LinkItem[] {
   const normalized = normalizeSearch(query)
   const terms = normalized.split(' ').filter(Boolean)
@@ -151,7 +184,7 @@ export function searchLinks(
       (a, b) =>
         Number(b.entityName) - Number(a.entityName) ||
         b.score - a.score ||
-        (a.entityName ? (b.item.linkCount ?? 0) - (a.item.linkCount ?? 0) : 0) ||
+        (a.entityName ? byInteraction(a.item, b.item) : 0) ||
         (b.item.date ?? '').localeCompare(a.item.date ?? '') ||
         a.item.title.localeCompare(b.item.title) ||
         a.item.path.localeCompare(b.item.path),
@@ -160,10 +193,24 @@ export function searchLinks(
   if (normalized) return matches
 
   const primaryOnly = selected.size > 0 && [...selected].every((kind) => PRIMARY_LINK_KINDS.includes(kind as LinkKind))
-  const frequent = matches
-    .filter((item) => PRIMARY_LINK_KINDS.includes(item.kind) && (item.linkCount ?? 0) > 0)
-    .sort((a, b) => (b.linkCount ?? 0) - (a.linkCount ?? 0) || a.title.localeCompare(b.title))
-    .slice(0, primaryOnly ? undefined : 6)
+  const me = normalizeSearch(owner)
+  const suggestible = (item: LinkItem) =>
+    ((item.interactionScore ?? 0) > 0 || (item.linkCount ?? 0) > 0) &&
+    !(
+      me &&
+      item.kind === 'person' &&
+      [item.title, ...(item.aliases ?? [])].some((name) => normalizeSearch(name) === me)
+    )
+  // A score and a link count don't compare, so suggestions take the top of each type in turn.
+  const ranked = PRIMARY_LINK_KINDS.map((kind) =>
+    matches
+      .filter((item) => item.kind === kind && suggestible(item))
+      .sort((a, b) => byInteraction(a, b) || a.title.localeCompare(b.title)),
+  )
+  const suggested: LinkItem[] = []
+  for (let rank = 0; ranked.some((list) => rank < list.length); rank++)
+    for (const list of ranked) if (rank < list.length) suggested.push(list[rank]!)
+  const frequent = suggested.slice(0, primaryOnly ? undefined : 6)
   const promoted = new Set(frequent.map((item) => item.path))
   return [
     ...frequent.map((item) => ({ ...item, frequent: true })),

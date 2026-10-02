@@ -1,6 +1,6 @@
 ---
 created: 2026-09-06
-updated: 2026-09-22
+updated: 2026-10-01
 ---
 
 # Links between notebook records
@@ -26,8 +26,12 @@ Record previews follow the
 `GET /docs/_api/links` searches the existing markdown index by title,
 aliases, summary, people, tags, date and path. Direct name or alias matches
 on people, orgs and projects lead. Within these, exact matches precede
-prefixes, word prefixes and substrings; saved link frequency breaks ties
-before record date. Record titles follow, then contextual matches, with
+prefixes, word prefixes and substrings. Equally good matches follow the
+notebook's interaction score, as global search, front matter completions
+and meeting invites do, then the latest direct contact. Projects have no
+score, so saved link frequency orders them. A person's row shows their
+last direct contact, not the profile's edit date. Record titles follow,
+then contextual matches, with
 newer records first within each relevance tier. A meeting's filename or
 participant is context, not an alternate name receiving the entity boost.
 Every search term must match, so adding a topic still brings specific
@@ -41,9 +45,13 @@ still apply before pagination; each page has forty records. Date filtering
 appears for time records and clears when a person, org or project joins the
 selection. Pending link choices survive filtering and pagination.
 
-Empty search promotes up to six frequently
-linked people, orgs and projects before recent records; a selection containing
-only those entity types orders all linked entities by frequency. Counts are
+Empty search suggests up to six people, orgs and projects before recent
+records, taking the best of each type in turn: people and orgs by
+interaction score, projects by link frequency. A score and a link count
+share no scale, so neither type crowds out the others. The owner named in
+About me is never suggested; a search still finds them. A selection
+containing only those entity types suggests every scored or linked entity
+of those types. Link counts are
 distinct source records with a saved `rel`, deduplicated across aliases and
 limited to the permitted roots. Self-links and membership in the containing
 project do not count. These are saved relationships, including automatic ones,
@@ -85,8 +93,9 @@ record's Linked from section reflects the new connection immediately.
 
 ## Verification
 
-`catalog_test.ts` covers name/title relevance, contextual matching and
-filters. `links_test.ts` covers aliases, ranking before pagination, branches,
+`catalog_test.ts` covers name/title relevance, contextual matching,
+filters, score ranking and suggestions. `links_test.ts` covers aliases,
+the route's scores, ranking before pagination, branches,
 reference resolution, metadata preservation, backlinks, validation, resume
 and a selection racing filing. `../http-links-e2e_test.ts` exercises person
 search order on desktop and phone, keyboard selection by alias, a video
@@ -94,5 +103,6 @@ import before Start, a branch added during review, reload and previews.
 
 ## Notes
 
+- [2026-10-01 — namesakes rank by interaction score](2026-10-01-namesakes-rank-by-interaction-score.md)
 - [2026-09-07 — names before incidental matches](2026-09-07-names-before-incidental-matches.md)
 - [2026-09-06 — links across an import](2026-09-06-links-across-an-import.md)

@@ -237,7 +237,7 @@ for (const width of [1500, 430]) {
               expected,
             )
           }
-          await page.getByRole('heading', { name: 'Frequently linked', exact: true }).waitFor()
+          await page.getByRole('heading', { name: 'Suggested', exact: true }).waitFor()
           assert({
             given: 'the picker first opened',
             should: 'start unfiltered',
