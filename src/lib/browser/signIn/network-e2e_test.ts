@@ -17,6 +17,7 @@ test(
   { timeout: 30000 },
   async () => {
     const password = 'mock-private-password'
+    const code = '246810'
     let escaped = 0
     const sink = await listen((_request, response) => {
       escaped++
@@ -34,7 +35,7 @@ test(
       const page = await browser.newPage()
       await guardBrowserRequests(page, {
         origin: () => source.origin,
-        containsLogin: (text) => text.includes(password),
+        containsLogin: (text) => text.includes(password) || text.includes(code),
       })
       await page.goto(source.origin)
       const posted = await page.evaluate(async (password) => {
@@ -45,6 +46,14 @@ test(
           return false
         }
       }, password)
+      const postedCode = await page.evaluate(async (code) => {
+        try {
+          await fetch('/redirect-post', { method: 'POST', body: code })
+          return true
+        } catch {
+          return false
+        }
+      }, code)
       await page.goto(`${source.origin}/same-origin`)
       const safePath = new URL(page.url()).pathname
       let navigated = true
@@ -52,10 +61,10 @@ test(
         navigated = false
       })
       assert({
-        given: 'a 307 that preserves the login body, a cross-origin 302, and a same-origin 302',
+        given: '307 redirects that preserve password and code bodies, a cross-origin 302, and a same-origin 302',
         should: 'block both origin escapes before any request reaches the sink, while allowing the safe redirect',
-        actual: [posted, navigated, escaped, safePath],
-        expected: [false, false, 0, '/safe'],
+        actual: [posted, postedCode, navigated, escaped, safePath],
+        expected: [false, false, false, 0, '/safe'],
       })
     } finally {
       await browser.close()

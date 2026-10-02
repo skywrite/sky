@@ -1,6 +1,6 @@
 ---
 created: 2026-09-25
-updated: 2026-09-29
+updated: 2026-10-02
 ---
 
 # Sky's browser
@@ -32,7 +32,8 @@ The only model-facing authentication operation is `sign_in({})`. It accepts no
 URL, account, field selector, credential reference, or approval flag. Trusted
 code captures the current top-level document and a single unambiguous login
 form. Two native macOS interactions authorize lookup for its exact HTTPS origin
-and selection/use of a matching login. The native prompt is outside the Sky HTTP
+and selection/use of a matching login, including one saved verification code if
+needed. The native prompt is outside the Sky HTTP
 API and model tools; the caller cannot answer it through a request. Cancellation
 does not become a remembered grant. A second sign-in request on that origin in
 the same task hands off to the person rather than repeating prompts.
@@ -73,6 +74,29 @@ video, or trace artifact is written by the worker. The task's `read_file` can re
 only its downloaded files, including after symlink resolution. Cancellation
 notifies and closes the worker; closing the task destroys its browser session.
 
+### Verification continuation
+
+After submitting the approved password, the broker can retain an in-memory,
+single-use continuation for two minutes. It identifies only that login's one
+TOTP field and native item revision. On the next snapshot or LinkedIn workflow
+step, the worker can capture one empty code field and one submit button in a
+same-origin, top-level POST form. It fetches a fresh code only then, checking the
+account, vault exclusions, item revision, website, concrete document and controls
+again before filling. The native prompt explicitly includes this code use.
+
+Consuming the continuation precedes any provider read. There is no code tool,
+API response, stored grant, fallback to another item, or automatic retry after a
+rejected code. Cancellation, ordinary tool actions/navigation, or observing a
+page without credential entry revokes the continuation. The model cannot reuse
+it for a later transaction challenge. Known codes join password redaction and
+the request/download guards before filling. Provider-supplied expiry is checked;
+the 1Password SDK does not supply expiry, so its code is fetched at use time.
+
+Missing/ambiguous authenticators, SMS/email/recovery challenges, already populated
+fields, split boxes, embedded controls and unsupported forms stay with the person
+in the browser. The worker hides verification controls even for manual entry;
+handoff instructions never ask for a code in chat.
+
 The destination website necessarily receives its password. This boundary trusts
 the approved origin and its scripts; string redaction cannot make a malicious
 same-origin application safe or recognize every encoding in arbitrary downloaded
@@ -92,14 +116,15 @@ decision. Website credentials and the authenticated browser stay inside the
 worker; the normal People HTTP API still exposes only job progress and a draft.
 
 `lib/linkedin/browser.ts` owns the deterministic flow: open the profile, use the
-shared sign-in broker once if needed, wait for the person to finish verification,
+shared sign-in broker once if needed, complete supported saved-code challenges
+or wait for the person to finish verification,
 return from LinkedIn's feed to the selected profile, and capture its main content.
 All navigation is confined to `https://www.linkedin.com`. The import job closes
 the browser before sending evidence to its extraction model. Completion, failure,
 cancellation, or the five-minute deadline disposes the session. The previous
 persistent LinkedIn profile is neither read nor modified. No configured password
 manager or a declined approval leaves manual sign-in available in the private
-window. Codes, passkeys and unsupported login variants still require the person.
+window. Other codes, passkeys and unsupported login variants still require the person.
 
 ## How a task runs
 

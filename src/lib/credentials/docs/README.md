@@ -1,6 +1,6 @@
 ---
 created: 2026-09-27
-updated: 2026-09-29
+updated: 2026-10-02
 ---
 
 # Credential providers
@@ -99,6 +99,11 @@ exposed through the application model.
 username and password from the same native revision. It is consumed only by the
 private browser worker after approval; never expose this through a Settings route.
 
+When the item has exactly one TOTP field, `readLogin` also returns a field/revision
+binding without its code or seed. `readLoginOtp` revalidates that binding and the
+exact origin on a fresh native item read. The browser owns the short-lived,
+single-use [verification continuation](../../browser/docs/README.md#verification-continuation).
+
 The adapter obtains TOTP codes from the SDK's computed OTP field details. That
 API supplies no expiry, so the result leaves it unspecified. An expired desktop
 authorization reports `access-required`; reconnecting is an explicit host action.
@@ -169,7 +174,7 @@ real credentials. The public factories are the only connection entry points.
 WebAuthn JSON types and a host-supplied origin/session binding. It can report
 completion, required user interaction, cancellation or lack of support.
 Neither storage adapter implements it or claims that a passkey's presence means
-Sky can authenticate with it. Apple Passwords, passkey transport and automatic
-TOTP filling are not implemented. The private browser's first password-login
-flow uses a native account choice and leaves codes, passkeys and unsupported
-forms to the existing person-in-browser handoff.
+Sky can authenticate with it. Apple Passwords and passkey transport are not
+implemented. The private browser uses a native account choice and can complete
+one saved-code challenge after password submission. Other codes, passkeys and
+unsupported forms stay with the person in the browser.

@@ -1,6 +1,7 @@
 import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises'
 import * as os from 'node:os'
 import * as path from 'node:path'
+import { setTimeout as delay } from 'node:timers/promises'
 import type { Item } from '@1password/sdk'
 import type { Page } from 'playwright'
 import type { McpTextContent, McpToolResult } from '#lib/browser/mcp/client.ts'
@@ -36,6 +37,7 @@ async function fixture(
     dir: string
     counts: { lookup: number; choose: number; read: number; submitted: number }
     options: SignInBrokerOptions
+    item: Item
     manuallySignIn: () => Promise<void>
   }) => Promise<void>,
 ) {
@@ -131,6 +133,7 @@ async function fixture(
       dir,
       counts,
       options,
+      item,
       manuallySignIn: async () => {
         signedIn = true
         await page.goto('https://www.linkedin.com/feed/')
@@ -147,6 +150,40 @@ async function step(browser: PrivateBrowserSession) {
   if (reply.isError) throw new Error('Import step failed')
   return LinkedInBrowserResult.parse(JSON.parse((reply.content[0] as McpTextContent).text))
 }
+
+test(
+  'Person import completes a saved authenticator challenge without asking for a code',
+  { timeout: 30000 },
+  async () => {
+    await fixture(async (f) => {
+      f.item.fields.push({
+        id: 'otp',
+        title: 'Authenticator',
+        fieldType: 'Totp',
+        value: 'mock-seed',
+        details: { type: 'Otp', content: { code: CODE } },
+      } as Item['fields'][number])
+      const outcomes = [await step(f.browser)]
+      for (let i = 0; i < 30 && outcomes.at(-1)?.status !== 'ready'; i++) {
+        await delay(100)
+        outcomes.push(await step(f.browser))
+      }
+      const serialized = JSON.stringify(outcomes)
+      assert({
+        given: 'a LinkedIn password login with a saved authenticator',
+        should: 'complete the challenge in the private worker and return only profile evidence',
+        actual: [
+          outcomes.at(-1)?.status,
+          f.counts,
+          [USERNAME, PASSWORD, CODE, 'mock-seed'].some((value) => serialized.includes(value)),
+          outcomes.some((outcome) => outcome.status === 'needs_user'),
+          await readdir(path.join(f.dir, 'files')),
+        ],
+        expected: ['ready', { lookup: 1, choose: 1, read: 2, submitted: 1 }, false, false, []],
+      })
+    })
+  },
+)
 
 test(
   'Person import uses protected sign-in, hands off verification, and closes before extraction',

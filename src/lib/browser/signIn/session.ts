@@ -13,6 +13,7 @@ import { SignInBroker, type SignInResult } from './broker.ts'
 import { captureSignInForm } from './form.ts'
 import { guardBrowserRequests } from './network.ts'
 import { LoginRedactor } from './redaction.ts'
+import { captureVerificationForm, verificationVisible } from './verification.ts'
 
 const target = z.string().regex(/^(?:f\d+)?e\d+$/)
 const element = z.string().max(500).optional()
@@ -231,6 +232,7 @@ export class PrivateBrowserSession {
   async close(): Promise<void> {
     if (this.closed) return
     this.closed = true
+    this.options.broker.revoke()
     await this.context.close().catch(() => {})
     await this.browser.close().catch(() => {})
     await Promise.allSettled(this.downloads)
@@ -239,12 +241,22 @@ export class PrivateBrowserSession {
 
   private async privateEntry(): Promise<boolean> {
     return (
+      (await verificationVisible(this.page)) ||
       (await this.page
         .locator(
           'input[type="password"]:visible, input[autocomplete~="one-time-code"]:visible, input[autocomplete~="username"]:visible',
         )
         .count()) > 0
     )
+  }
+
+  private async verify(signal?: AbortSignal): Promise<SignInResult> {
+    const form = await captureVerificationForm(this.page, (code) => {
+      this.redactor.rememberValue(code)
+    })
+    if (form) return this.options.broker.verify(form, signal)
+    this.options.broker.revoke()
+    return { status: 'needs_user' }
   }
 
   private visibleUrl(): string {
@@ -273,6 +285,7 @@ export class PrivateBrowserSession {
   }
 
   private async signIn(signal?: AbortSignal): Promise<SignInResult> {
+    if (await verificationVisible(this.page)) return this.verify(signal)
     const protect = (origin: string, login: LoginValues) => {
       this.allowedOrigin = origin
       this.redactor.remember(login)
@@ -303,6 +316,22 @@ export class PrivateBrowserSession {
     }
     options.signal?.addEventListener('abort', abort, { once: true })
     try {
+      // Continuation is owned here, not a model tool: the code never enters a tool request or response.
+      if (this.linkedIn || ['browser_snapshot', 'browser_wait_for', 'sign_in'].includes(name)) {
+        if (await verificationVisible(this.page)) {
+          const verification = await this.verify(options.signal)
+          if (name === 'sign_in') return result(JSON.stringify(verification))
+          if (verification.status === 'submitted') {
+            if (this.linkedIn) return result('{"status":"waiting"}')
+            if (await this.privateEntry())
+              return result(
+                this.redactor.text(
+                  `- Page URL: ${this.visibleUrl()}\n- Page Title: Finishing sign-in\n\n\`\`\`yaml\n- paragraph: A saved verification code was submitted. Take a fresh snapshot to check whether sign-in completed.\n\`\`\``,
+                ),
+              )
+          }
+        } else if (!(await this.privateEntry())) this.options.broker.revoke()
+      } else this.options.broker.revoke()
       if (this.linkedIn) return result(JSON.stringify(await this.linkedIn.step(options.signal)))
       if (name === 'sign_in') {
         return result(JSON.stringify(await this.signIn(options.signal)))
@@ -310,7 +339,7 @@ export class PrivateBrowserSession {
       if (name !== 'browser_navigate' && name !== 'browser_navigate_back' && (await this.privateEntry())) {
         return result(
           this.redactor.text(
-            `- Page URL: ${this.visibleUrl()}\n- Page Title: Sign-in needs you\n\n\`\`\`yaml\n- paragraph: ${this.redactor.active ? 'The sign-in step needs the person. Use wait_for_person to finish or enter a verification code in the browser.' : 'A sign-in or verification step is required. Use sign_in for a password login, or wait_for_person to complete the step in the browser.'} Credential entry is hidden.\n\`\`\``,
+            `- Page URL: ${this.visibleUrl()}\n- Page Title: Sign-in needs you\n\n\`\`\`yaml\n- paragraph: ${this.redactor.active ? 'The sign-in step needs the person. Use wait_for_person to finish in the browser, including any code from SMS, email, or an authenticator app. Never ask them to paste a code into chat.' : 'A sign-in or verification step is required. Use sign_in for a password login, or wait_for_person to complete the step in the browser.'} Credential entry is hidden.\n\`\`\``,
           ),
         )
       }

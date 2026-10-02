@@ -1,7 +1,13 @@
 import { SensitiveValue } from '#lib/credentials/SensitiveValue.ts'
 import type { CredentialSummary } from '#lib/credentials/types.ts'
 import { assert, test } from '#test'
-import { SignInBroker, type LoginSource, type SignInBrokerOptions, type SignInTarget } from './broker.ts'
+import {
+  SignInBroker,
+  type LoginSource,
+  type SignInBrokerOptions,
+  type SignInTarget,
+  type VerificationTarget,
+} from './broker.ts'
 import { approvalLabel } from './nativeApproval.ts'
 import { LoginRedactor } from './redaction.ts'
 
@@ -56,7 +62,22 @@ function fixture() {
         },
         readLogin: async () => {
           calls.push('read')
-          return { username: new SensitiveValue('jane@example.com'), password: new SensitiveValue(secret) }
+          return {
+            username: new SensitiveValue('jane@example.com'),
+            password: new SensitiveValue(secret),
+            otp: { field: { id: 'otp' }, revision: '1' },
+          }
+        },
+        readLoginOtp: async (ref, origin, binding) => {
+          if (
+            ref.itemId !== 'login' ||
+            origin !== target.origin ||
+            binding.field.id !== 'otp' ||
+            binding.revision !== '1'
+          )
+            throw new Error('Verification escaped the approved login')
+          calls.push('otp')
+          return { code: new SensitiveValue('246810') }
         },
       }
     },
@@ -89,6 +110,122 @@ test('native approval precedes provider access; tool output contains only the ou
       ['lookup-approval', 'connect', 'list', 'use-approval', 'read', 'submit', 'dispose'],
     ],
   })
+})
+
+function verificationTarget(f: ReturnType<typeof fixture>): VerificationTarget {
+  return {
+    origin: f.target.origin,
+    current: f.target.current,
+    dispose: f.target.dispose,
+    submit: async (otp, authorized) => {
+      if (!(await authorized())) return 'needs_user'
+      if (!otp.code.use((code) => code === '246810')) throw new Error('Unexpected code')
+      f.calls.push('verified')
+      return 'submitted'
+    },
+  }
+}
+
+test('verification uses only the approved login once and has no standalone credential access', async () => {
+  const f = fixture()
+  const broker = new SignInBroker(f.options)
+  const before = await broker.verify(verificationTarget(f))
+  await broker.signIn(f.target)
+  const verified = await broker.verify(verificationTarget(f))
+  const repeated = await broker.verify(verificationTarget(f))
+  assert({
+    given: 'verification before sign-in, after sign-in, and a repeated request',
+    should: 'use only the one fresh code authorized by password selection, with safe status output',
+    actual: [before, verified, repeated, f.calls.filter((call) => ['otp', 'verified', 'use-approval'].includes(call))],
+    expected: [
+      { status: 'needs_user' },
+      { status: 'submitted' },
+      { status: 'needs_user' },
+      ['use-approval', 'otp', 'verified'],
+    ],
+  })
+})
+
+test('verification grants expire and are revoked by cancellation, changed targets, and changed source permissions', async () => {
+  for (const change of [
+    'expired',
+    'aborted',
+    'disconnected',
+    'excluded',
+    'origin',
+    'document',
+    'revoked',
+    'during-read',
+    'provider-error',
+    'expired-code',
+  ] as const) {
+    const f = fixture()
+    let now = 0
+    f.options.now = () => now
+    const abort = new AbortController()
+    const connect = f.options.connect
+    f.options.connect = async (source) => {
+      const provider = await connect(source)
+      return {
+        ...provider,
+        readLoginOtp: async (...args: Parameters<NonNullable<typeof provider.readLoginOtp>>) => {
+          const code = await provider.readLoginOtp!(...args)
+          if (change === 'during-read') f.disconnect()
+          if (change === 'provider-error') throw new Error('246810')
+          return change === 'expired-code' ? { ...code, expiresAt: '2000-01-01T00:00:00Z' } : code
+        },
+      }
+    }
+    const broker = new SignInBroker(f.options)
+    await broker.signIn(f.target)
+    const target = verificationTarget(f)
+    if (change === 'expired') now = 120_001
+    if (change === 'aborted') abort.abort()
+    if (change === 'disconnected') f.disconnect()
+    if (change === 'excluded') f.source.excludedVaultIds.push('vault')
+    if (change === 'origin') target.origin = 'https://elsewhere.example'
+    if (change === 'document') f.changePage()
+    if (change === 'revoked') broker.revoke()
+    const outcome = await broker.verify(target, abort.signal)
+    await broker.verify(target)
+    assert({
+      given: change,
+      should: 'never submit, leak an error value, or retry the code read',
+      actual: [
+        f.calls.includes('verified'),
+        JSON.stringify(outcome).includes('246810'),
+        f.calls.filter((c) => c === 'otp').length,
+      ],
+      expected: [false, false, ['during-read', 'provider-error', 'expired-code'].includes(change) ? 1 : 0],
+    })
+  }
+})
+
+test('verification accepts fresh computed codes and rejects malformed code values or expiry', async () => {
+  for (const value of ['fresh', 'seed', 'expiry']) {
+    const f = fixture()
+    const connect = f.options.connect
+    f.options.connect = async (source) => ({
+      ...(await connect(source)),
+      readLoginOtp: async () => ({
+        code: new SensitiveValue(value === 'seed' ? 'otpauth://totp/example?secret=MOCK' : '246810'),
+        expiresAt: value === 'expiry' ? 'invalid' : '2999-01-01T00:00:00Z',
+      }),
+    })
+    const broker = new SignInBroker(f.options)
+    await broker.signIn(f.target)
+    const result = await broker.verify(verificationTarget(f))
+    assert({
+      given: value,
+      should: 'submit only a usable computed code and keep all values out of the result',
+      actual: [
+        f.calls.includes('verified'),
+        JSON.stringify(result).includes('246810'),
+        JSON.stringify(result).includes('MOCK'),
+      ],
+      expected: [value === 'fresh', false, false],
+    })
+  }
 })
 
 test('cancellation, navigation and exclusion never turn approval into a reusable grant', async () => {

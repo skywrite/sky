@@ -1,6 +1,6 @@
 import type { Client, Item, ItemCategory, ItemField, ItemFieldType, ItemOverview, Website } from '@1password/sdk'
 import { credentialError, CredentialError } from '../errors.ts'
-import { matchesLoginOrigin, type LoginValues } from '../login.ts'
+import { matchesLoginOrigin, type LoginOtp, type LoginValues } from '../login.ts'
 import { onePasswordRequest } from '../onePasswordRequest.ts'
 import { SensitiveValue } from '../SensitiveValue.ts'
 import type {
@@ -92,7 +92,27 @@ export class OnePasswordCredentialProvider implements CredentialProvider {
       const password = item.fields.find((field) => !field.sectionId && field.id === 'password')
       if (!username?.value || !password?.value || password.fieldType !== 'Concealed')
         throw new CredentialError('unsupported')
-      return { username: new SensitiveValue(username.value), password: new SensitiveValue(password.value) }
+      const codes = item.fields.filter((field) => field.fieldType === 'Totp')
+      return {
+        username: new SensitiveValue(username.value),
+        password: new SensitiveValue(password.value),
+        ...(codes.length === 1
+          ? { otp: { field: { id: codes[0].id, sectionId: codes[0].sectionId }, revision: String(item.version) } }
+          : {}),
+      }
+    })
+  }
+
+  /** Fresh code for the approved login only, never a search for another item's authenticator. */
+  readLoginOtp(ref: ItemRef, origin: string, binding: LoginOtp): Promise<OtpCode> {
+    return this.call(async () => {
+      validateFields([binding.field])
+      const item = await this.load(ref)
+      this.checkRevision(item, binding.revision)
+      if (!matchesLoginOrigin(this.summary(item), origin)) throw new CredentialError('invalid-input')
+      const codes = item.fields.filter((field) => field.fieldType === 'Totp')
+      if (codes.length !== 1 || fieldKey(codes[0]) !== fieldKey(binding.field)) throw new CredentialError('unsupported')
+      return this.otp(codes[0])
     })
   }
 
@@ -188,11 +208,15 @@ export class OnePasswordCredentialProvider implements CredentialProvider {
     return this.call(async () => {
       validateFields([ref])
       const field = this.field(await this.load(ref.item), ref)
-      if (field.fieldType !== 'Totp') throw new CredentialError('unsupported')
-      if (field.details?.type !== 'Otp' || !field.details.content.code) throw new CredentialError('unavailable')
-      // The SDK supplies a current code, but no expiry. Do not invent a 30s lifetime.
-      return { code: new SensitiveValue(field.details.content.code) }
+      return this.otp(field)
     })
+  }
+
+  private otp(field: ItemField): OtpCode {
+    if (field.fieldType !== 'Totp') throw new CredentialError('unsupported')
+    if (field.details?.type !== 'Otp' || !field.details.content.code) throw new CredentialError('unavailable')
+    // The SDK supplies a current code, but no expiry. Do not invent a 30s lifetime.
+    return { code: new SensitiveValue(field.details.content.code) }
   }
 
   private load(ref: ItemRef): Promise<Item> {

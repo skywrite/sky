@@ -1,10 +1,17 @@
 import type { SensitiveValue } from './SensitiveValue.ts'
-import type { CredentialSummary } from './types.ts'
+import type { CredentialSummary, FieldSelector } from './types.ts'
+
+/** Binds a follow-up code to the same field and item revision as the approved password. */
+export interface LoginOtp {
+  field: FieldSelector
+  revision: string
+}
 
 /** The private browser consumes these; they never cross the model/tool transport. */
 export interface LoginValues {
   username: SensitiveValue
   password: SensitiveValue
+  otp?: LoginOtp
 }
 
 export function secureOrigin(value: string): string | null {

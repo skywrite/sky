@@ -280,6 +280,56 @@ test('1Password resolves exact fields and exposes OTP only through its separate 
   })
 })
 
+test('login verification binds a fresh code to the approved item revision, origin, and field', async () => {
+  const { provider, ref, stored } = fixture()
+  const login = await provider.readLogin(ref, 'https://example.com')
+  if (!login.otp) throw new Error('Missing authenticator binding')
+  const item = stored.get('vault-a')!
+  const field = item.fields.find((field) => field.fieldType === 'Totp')!
+  field.details = { type: 'Otp', content: { code: '654321' } } as typeof field.details
+  const code = await provider.readLoginOtp(ref, 'https://example.com', login.otp)
+  const wrongOrigin = await provider.readLoginOtp(ref, 'https://other.example', login.otp).catch((e) => e.code)
+  item.version++
+  const edited = await provider.readLoginOtp(ref, 'https://example.com', login.otp).catch((e) => e.code)
+  item.version--
+  field.id = 'different-authenticator'
+  const replaced = await provider.readLoginOtp(ref, 'https://example.com', login.otp).catch((e) => e.code)
+  provider.setExcludedVaultIds(['vault-a'])
+  const excluded = await provider.readLoginOtp(ref, 'https://example.com', login.otp).catch((e) => e.code)
+  assert({
+    given: 'a saved authenticator and changes after password approval',
+    should: 'fetch a fresh code without a seed, expiry guess, or fallback to changed items',
+    actual: [
+      code.code.use((value) => value),
+      code.expiresAt,
+      wrongOrigin,
+      edited,
+      replaced,
+      excluded,
+      JSON.stringify([login, code]).includes('654321'),
+      JSON.stringify(login).includes('mock-seed'),
+    ],
+    expected: ['654321', undefined, 'invalid-input', 'conflict', 'unsupported', 'excluded', false, false],
+  })
+})
+
+test('ambiguous or missing authenticators never become a login verification binding', async () => {
+  for (const count of [0, 2]) {
+    const { provider, ref, stored } = fixture()
+    const item = stored.get('vault-a')!
+    const field = item.fields.find((field) => field.fieldType === 'Totp')!
+    item.fields = item.fields.filter((field) => field.fieldType !== 'Totp')
+    for (let i = 0; i < count; i++) item.fields.push({ ...field, id: `code-${i}` })
+    const login = await provider.readLogin(ref, 'https://example.com')
+    assert({
+      given: `${count} authenticator fields on the selected login`,
+      should: 'leave verification to the person',
+      actual: login.otp,
+      expected: undefined,
+    })
+  }
+})
+
 test('1Password creation stores generic secret fields and keeps its provider-assigned identity', async () => {
   const { provider, stored } = fixture()
   const item = await provider.create({

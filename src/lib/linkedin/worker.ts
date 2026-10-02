@@ -30,7 +30,8 @@ const stages = {
   opening: 'Opening the LinkedIn profile in a private browser…',
   signing_in: 'Approve Sky’s sign-in request and choose your LinkedIn login in the dialog on this computer.',
   waiting: 'Finishing LinkedIn sign-in…',
-  needs_user: 'Finish signing in or complete verification in the browser window. Sky will continue automatically.',
+  needs_user:
+    'Finish signing in or complete verification in the browser window. Enter any code there from your SMS, email, or authenticator app. Sky will continue automatically.',
   loading_profile: 'The requested profile is open. Waiting for its content to become readable…',
   reading: 'Reading the selected profile…',
 }

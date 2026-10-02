@@ -39,7 +39,7 @@ export function nativeSignInApproval(objective: string, signal?: AbortSignal): S
       ])) === 'allow',
     choose: async (origin, choices) => {
       const answer = await run(CHOOSE, [
-        `Allow this browser task to sign in at:\n${origin}\n\nTask: ${approvalLabel(objective)}\n\nThe login and signed-in session are used only for this task.`,
+        `Allow this browser task to sign in at:\n${origin}\n\nTask: ${approvalLabel(objective)}\n\nSky can use this login's password and, if needed, one verification code saved with it. The login and signed-in session are used only for this task.`,
         ...choices.map(
           (choice, index) =>
             `${index + 1}. ${approvalLabel(choice.title)} — ${approvalLabel(choice.account)} — ${approvalLabel(choice.vault)}`,
