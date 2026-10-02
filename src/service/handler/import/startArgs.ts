@@ -5,7 +5,7 @@
  * A recording can be filed as any kind: the meeting and event doors take it
  * as --from-voice-memo, the rest as --from-audio. A transcript is a meeting.
  * Text — a .txt, or a text dragged onto the day — is a meeting or a message,
- * each by --from-text. A screenshot is a message, by --from-image. An .srt is
+ * each by --from-text. Images become messages or notes, by --from-image. An .srt is
  * a video, by --from-srt.
  *
  * The dialog's When arrives either as sky's own proposal, untouched, or as
@@ -20,7 +20,7 @@
  */
 
 import { basename } from 'node:path'
-import { documentWorkWhen } from '#commands/all/notes/lib/documentInput.ts'
+import { documentWorkWhen, isAttachmentNote } from '#commands/all/notes/lib/documentInput.ts'
 import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import type { StartFields } from './jobs.ts'
 import type { ReadBack } from './readback.ts'
@@ -58,12 +58,12 @@ export function startArgs(job: StartContext, fields: StartFields, input: string 
       rawArgs: { _: [] },
     }
   }
-  if (job.source === 'document') {
+  if (isAttachmentNote(job.source, fields.kind)) {
     const work = documentWorkWhen(fields.when)
     return {
       command: 'notes:new',
       args: {
-        fromFile: filePath,
+        ...(job.source === 'image' ? { fromImage: filePaths.join(',') } : { fromFile: filePath }),
         summary: fields.summary,
         body: fields.body,
         workWhen: work.toString(),

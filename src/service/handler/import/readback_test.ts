@@ -330,21 +330,21 @@ test('local audio imports accept recordings above either cloud provider limit', 
 test('readImage', () => {
   assert({
     given: 'a screenshot whose header states its pixels',
-    should: 'say so and offer it as a message',
+    should: 'describe the image without assuming its contents',
     actual: [readImage(254_000, { width: 1170, height: 2532 }).summary, readImage(254_000, null).summary],
-    expected: ['Screenshot · 1170 × 2532', 'Screenshot'],
+    expected: ['Image · 1170 × 2532', 'Image'],
   })
   assert({
     given: 'the kinds a screenshot can be',
-    should: 'be a message only',
+    should: 'offer a message or notes',
     actual: [readImage(254_000, null).kinds, readImage(254_000, null).source, readImage(254_000, null).refusal],
-    expected: [['message'], 'image', null],
+    expected: [['message', 'note'], 'image', null],
   })
   assert({
     given: "an image over the model's cap",
     should: 'refuse up front',
     actual: readImage(IMAGE_LIMIT_BYTES + 1.5 * 1024 * 1024, { width: 5120, height: 2880 }).refusal,
-    expected: 'The screenshot is 9 MB, over the 7.5 MB limit. Crop it, or save it as a JPEG.',
+    expected: 'The image is 9 MB, over the 7.5 MB limit. Crop it, or save it as a JPEG.',
   })
 })
 
@@ -360,7 +360,7 @@ test('lengthLabel and readUnknown', () => {
     should: 'say so and name what it does take',
     actual: readUnknown('archive.zip').refusal,
     expected:
-      "Sky doesn't take .zip files. Drop a PDF, Office or Markdown document, a Zoom transcript (.vtt or .txt), a video recording or .srt, a voice memo, a notetaker's .txt, or a screenshot of a conversation.",
+      "Sky doesn't take .zip files. Drop a PDF, Office or Markdown document, a Zoom transcript (.vtt or .txt), a video recording or .srt, a voice memo, a notetaker's .txt, or an image of a conversation or notes.",
   })
 })
 

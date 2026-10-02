@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import * as path from 'node:path'
 import { makeTempDir, readDir } from '#shared/fs/mod.ts'
 import { assert, test } from '#test'
@@ -6,6 +6,42 @@ import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import { copyFileDedup, copyToDayAttachments } from './attachments.ts'
 
 const DAY = new PlainDate('2026-01-27')
+
+test('an image capture owns a separate copy so renaming it cannot break another note', async () => {
+  const root = await tmp()
+  const dayDir = path.join(root, '2026', '01', '27')
+  await mkdir(dayDir, { recursive: true })
+  const existing = path.join(dayDir, 'Atlas.png')
+  await writeFile(existing, 'synthetic shared image')
+  try {
+    const copies = await Promise.all(
+      Array.from({ length: 2 }, () =>
+        copyToDayAttachments({
+          sourcePath: existing,
+          attachmentsRoot: root,
+          day: DAY,
+          fileName: 'Atlas.png',
+          unique: true,
+        }),
+      ),
+    )
+    const copiedPaths = copies.map((copy) => copy!.path)
+    await Promise.all(copiedPaths.map((file) => rm(file)))
+    assert({
+      given: 'two captures of an image that another note already references',
+      should: 'allocate separate copies and leave the shared file intact when those copies are removed',
+      actual: [
+        new Set(copiedPaths).size,
+        copiedPaths.includes(existing),
+        await names(dayDir),
+        await readFile(existing, 'utf8'),
+      ],
+      expected: [2, false, ['Atlas.png'], 'synthetic shared image'],
+    })
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
 
 test('concurrent attachment copies publish whole files without overwriting', async () => {
   const source = await tmp()

@@ -377,7 +377,7 @@ test('POST /import keeps four screenshots together through upload, reopen and st
       status: 201,
       jobs: 1,
       files,
-      summary: '4 screenshots → 1 message',
+      summary: '4 images',
       contents: ['screenshot 1', 'screenshot 2', 'screenshot 3', 'screenshot 4'],
       times,
     },
@@ -569,7 +569,7 @@ test('POST /import refuses an entire screenshot group when a later image exceeds
     expected: [
       2,
       'failed',
-      'chat-2.png: The screenshot is 8 MB, over the 7.5 MB limit. Crop it, or save it as a JPEG.',
+      'chat-2.png: The image is 8 MB, over the 7.5 MB limit. Crop it, or save it as a JPEG.',
       400,
       0,
     ],
@@ -682,58 +682,69 @@ test('POST /import stages a transcript and reads it back', async () => {
   })
 })
 
-test('a document import keeps the selected day, validates work times, and exposes a saved note after failure', async () => {
-  const w = await world()
-  const filed = 'time/2026/W05/01-27/actions/notes/Atlas-report.md'
-  let attempts = 0
-  w.options.run = async function* () {
-    yield { type: 'line', text: 'The note is saved.', level: 'log', command: 'notes:new', depth: 1 }
-    return ++attempts === 1
-      ? { ok: false, file: filed, message: 'Synthetic summary failure' }
-      : { ok: true, file: filed }
+test('document and image notes validate work times and retain saved results through retries and restart', async () => {
+  for (const image of [false, true]) {
+    const w = await world()
+    const filed = 'time/2026/W05/01-27/actions/notes/Atlas-report.md'
+    let attempts = 0
+    w.options.run = async function* () {
+      yield { type: 'line', text: 'The note is saved.', level: 'log', command: 'notes:new', depth: 1 }
+      return ++attempts === 1
+        ? { ok: false, file: filed, message: 'Synthetic summary failure' }
+        : { ok: true, file: filed }
+    }
+    let app = createTestHttpApp([path.join(w.notebook, 'time')], { imports: w.options })
+    const form = upload(image ? 'Atlas-plan.png' : 'Atlas-report.pdf', 'synthetic document', 1_000_000)
+    form.append('day', '2026-01-27')
+    const uploaded = await app.request('/import', { method: 'POST', body: form })
+    const { job } = (await uploaded.json()) as { job: ImportJob }
+    const start = {
+      kind: 'note',
+      when: '2026-01-27 15:30 - 16:30',
+      summary: 'Worked on the Atlas report',
+      body: 'Revised the recommendations.',
+    }
+    const invalid = await postJson(app, `/import/${job.id}/start`, { ...start, when: '2026-01-27 16:30 - 15:30' })
+    assert({
+      given: `${image ? 'an image' : 'a PDF'} with an old modified time and a selected filing day`,
+      should: 'offer a note on that day and reject a reversed work range',
+      actual: [job.readback.source, job.readback.kinds, job.day, invalid.status],
+      expected: [image ? 'image' : 'document', image ? ['message', 'note'] : ['note'], '2026-01-27', 400],
+    })
+    await postJson(app, `/import/${job.id}/start`, start)
+    await events(
+      await app.request(`/import/${job.id}/events`),
+      (event) => event.type === 'state' && event.state === 'failed',
+    )
+    const failed = (await (await app.request(`/import/${job.id}`)).json()).job as ImportJob
+    assert({
+      given: 'a failure after the note is saved',
+      should: 'retain the saved path and work wording for retry',
+      actual: [failed.result, failed.fields?.when, failed.fields?.summary],
+      expected: [{ file: filed }, start.when, start.summary],
+    })
+    app = createTestHttpApp([path.join(w.notebook, 'time')], { imports: w.options })
+    const changed = await postJson(app, `/import/${job.id}/start`, { ...start, summary: 'Changed capture' })
+    const switched = await postJson(app, `/import/${job.id}/start`, { kind: 'message', when: '2026-01-27 15:30' })
+    assert({
+      given: 'a saved note reopened after a service restart',
+      should: 'reject changed capture details or switching the saved note to a message',
+      actual: [changed.status, switched.status],
+      expected: [400, 400],
+    })
+    const retry = await postJson(app, `/import/${job.id}/start`, start)
+    await events(
+      await app.request(`/import/${job.id}/events`),
+      (event) => event.type === 'state' && event.state === 'done',
+    )
+    const duplicate = await postJson(app, `/import/${job.id}/start`, start)
+    assert({
+      given: 'retrying then starting an already completed import',
+      should: 'allow the retry and reject a duplicate start',
+      actual: [retry.status, duplicate.status, attempts],
+      expected: [200, 409, 2],
+    })
   }
-  const app = createTestHttpApp([path.join(w.notebook, 'time')], { imports: w.options })
-  const form = upload('Atlas-report.pdf', '%PDF synthetic', 1_000_000)
-  form.append('day', '2026-01-27')
-  const uploaded = await app.request('/import', { method: 'POST', body: form })
-  const { job } = (await uploaded.json()) as { job: ImportJob }
-  const start = {
-    kind: 'note',
-    when: '2026-01-27 15:30 - 16:30',
-    summary: 'Worked on the Atlas report',
-    body: 'Revised the recommendations.',
-  }
-  const invalid = await postJson(app, `/import/${job.id}/start`, { ...start, when: '2026-01-27 16:30 - 15:30' })
-  assert({
-    given: 'a PDF with an old modified time and a selected filing day',
-    should: 'offer a note on that day and reject a reversed work range',
-    actual: [job.readback.source, job.readback.kinds, job.suggestedWhen, job.runKey, invalid.status],
-    expected: ['document', ['note'], '2026-01-27', null, 400],
-  })
-  await postJson(app, `/import/${job.id}/start`, start)
-  await events(
-    await app.request(`/import/${job.id}/events`),
-    (event) => event.type === 'state' && event.state === 'failed',
-  )
-  const failed = (await (await app.request(`/import/${job.id}`)).json()).job as ImportJob
-  assert({
-    given: 'a failure after the note is saved',
-    should: 'retain the saved path and work wording for retry',
-    actual: [failed.result, failed.fields?.when, failed.fields?.summary],
-    expected: [{ file: filed }, start.when, start.summary],
-  })
-  const retry = await postJson(app, `/import/${job.id}/start`, start)
-  await events(
-    await app.request(`/import/${job.id}/events`),
-    (event) => event.type === 'state' && event.state === 'done',
-  )
-  const duplicate = await postJson(app, `/import/${job.id}/start`, start)
-  assert({
-    given: 'retrying then starting an already completed import',
-    should: 'allow the retry and reject a duplicate start',
-    actual: [retry.status, duplicate.status, attempts],
-    expected: [200, 409, 2],
-  })
 })
 
 test('POST /import refuses a file sky does not take, and start refuses it too', async () => {
@@ -748,7 +759,7 @@ test('POST /import refuses a file sky does not take, and start refuses it too', 
     actual: [job.state, job.error, start.status],
     expected: [
       'failed',
-      "Sky doesn't take .zip files. Drop a PDF, Office or Markdown document, a Zoom transcript (.vtt or .txt), a video recording or .srt, a voice memo, a notetaker's .txt, or a screenshot of a conversation.",
+      "Sky doesn't take .zip files. Drop a PDF, Office or Markdown document, a Zoom transcript (.vtt or .txt), a video recording or .srt, a voice memo, a notetaker's .txt, or an image of a conversation or notes.",
       400,
     ],
   })

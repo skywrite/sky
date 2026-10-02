@@ -10,7 +10,7 @@ Design notes for `src/service/handler/import/` and the page that fronts it,
 
 ## What is built
 
-A document, a transcript, a recording, a screenshot or a video's `.srt` dropped on the
+A document, a transcript, a recording, an image or a video's `.srt` dropped on the
 day page becomes an **import job**, and so does text dragged onto it out of
 another app: the upload is staged under `<user-data>/imports/<id>/`,
 read back at once, and, on Start, the matching command runs inside the
@@ -21,7 +21,7 @@ server-sent events.
   `.txt` is parsed for its length, speakers and turns, and an `.srt` the same
   way (its cues count from zero, so it says nothing about the clock); plain
   text for its stamped turns; a recording for its size (its length comes from the container, probed by
-  the host); a screenshot for its size and its pixels (`lib/media/image`
+  the host); an image for its size and its pixels (`lib/media/image`
   reads the header); a dragged text for its lines and its first words;
   a document for its format, leaving the work time to the person.
   A file sky does not take, or cannot, gets a sentence.
@@ -72,10 +72,10 @@ One door for every file kind. The kind picks the command:
 | text dragged in | the same two doors on the text, staged as `selection.txt`: a message first, a meeting first when its lines carry a notetaker's stamps |
 | other audio | the kind chosen in the dialog: `meeting:new` and `event:new` with `--from-voice-memo`, or `journal:new`, `notes:new`, `message:new` with `--from-audio` |
 | CAF audio (detected from its contents) | `message:new --from-audio-turns` with medium `iMessage Audio`, or `message:append` for an existing destination; every file is one turn |
-| image | `message:new --from-image` — a screenshot of a conversation |
+| image | Message: `message:new --from-image`; Notes: `notes:new --from-image --work-when` — captures the written text and Markdown structure |
 | `.pdf`, `.docx`, `.pptx`, `.xlsx`, `.md` | `notes:new --from-file` — a note about work, with the document attached and summarized |
 
-Screenshots dropped or selected together form one import and one message.
+Images dropped or selected together form one import, with Message or Notes chosen in the dialog.
 The dialog lists every file, and the job keeps the complete group when reopened.
 Audio filenames and MIME types are hints: Messages can export CAF bytes with
 an `.m4a` filename. The browser reads a bounded header before grouping files;
@@ -135,8 +135,8 @@ are destinations, and symlinks are refused. A temporary Undo receipt stays
 with the import and restores the previous file only if it has not changed
 since the addition.
 
-Other file kinds remain separate imports. Each screenshot retains its capture
-time so `message:new` can read the conversation in capture order; size limits
+Other file kinds remain separate imports. Each image retains its capture
+time so either reader can read the pages in capture order; size limits
 apply to each image, and a refused image blocks the whole group.
 
 Document imports open **Record work** with an editable activity suggested from
@@ -148,6 +148,14 @@ The dialog shows summarization progress and explains that it is safe to close;
 closing it leaves the work running. Completion uses the same temporary bottom
 notification surface as a saved chat, with Open note or a failure's retry path.
 The Files page's Create note action uses this same flow.
+
+Images chosen as Notes use the same Record work fields, save-first checkpoint,
+background progress, and completion notification. They retain every original
+and render the full text using the existing image-note reader, preserving
+wording, lists, checkboxes, and tables, with `[illegible]` for unreadable text.
+The selected work time wins over dates written in the image. Message keeps the
+conversation review flow. Switching before Start preserves both time inputs;
+after a note starts, retries keep its original details and destination.
 
 Document retries use the import job's identity, not the file's content hash:
 the same PDF can represent separate work sessions. `notes/lib/fromDocument.ts`
@@ -182,7 +190,7 @@ batch; the terminal keeps its multiselect). They arrive as `prompt` events
 and are answered through `POST /import/:id/answer`; the answer rides on the
 `answered` event, so after Accept the page can show where each item went,
 grouped by day, with the day a link away. Where an item lands is
-`commands/all/meeting/docs/README.md`. A screenshot has one stop:
+`commands/all/meeting/docs/README.md`. An image filed as a message has one stop:
 `message:new` shows the conversation it read and the fields beside it, and
 asks for corrections in the same loop; the platform is a `select` when the
 screenshot did not say. The screenshot moves into the day's attachments
@@ -210,7 +218,7 @@ record itself is the transcript pipeline's: see
 
 | Route | Does |
 | --- | --- |
-| `POST /import` | multipart `file` (+ `lastModified`), repeated in matching order for a screenshot or CAF group → one job, read back; optional `day` selects a document's work day; or a `text` field alone for a dragged text |
+| `POST /import` | multipart `file` (+ `lastModified`), repeated in matching order for an image or CAF group → one job, read back; optional `day` selects a document or image note's work day; or a `text` field alone for a dragged text |
 | `GET /import` | the rows for the Running block |
 | `GET /import/audio-conversations?day=YYYY-MM-DD` | eligible saved audio conversations, with participants and a last-turn preview |
 | `GET /import/:id` | one job, plus the journal types the dialog offers |

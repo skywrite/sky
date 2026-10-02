@@ -1,8 +1,9 @@
-import { readFile, readdir, rm, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, readdir, rm, utimes, writeFile } from 'node:fs/promises'
 import * as path from 'node:path'
 import { buildDayRecord } from '#service/handler/day/record.ts'
 import { makeTempDir } from '#shared/fs/mod.ts'
 import { Document } from '#shared/models/Markdown/mod.ts'
+import dayAttachmentsDir from '#shared/nbfs/dayAttachmentsDir.ts'
 import { dayDir, dayFile } from '#shared/nbfs/mod.ts'
 import { assert, test } from '#test'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
@@ -10,6 +11,163 @@ import { documentWorkWhen } from './documentInput.ts'
 import { notesFromDocument } from './fromDocument.ts'
 
 const DAY = new PlainDate('2026-01-27')
+
+test('image notes save every original before reading, and retry the retained pages without losing edits', async () => {
+  const { root, options, notes } = await fixture()
+  try {
+    const sources = ['Atlas-2.heic', 'Atlas-1.png'].map((name) => path.join(root, name))
+    for (const [index, source] of sources.entries()) {
+      await writeFile(source, `synthetic page ${2 - index}`)
+      await utimes(source, 1_700_000_000 + 2 - index, 1_700_000_000 + 2 - index)
+    }
+    let calls = 0
+    const text =
+      '## Atlas plan\n\n- [ ] Ship Widget-V2\n- [x] Review scope\n\n| Item | Count |\n| --- | --- |\n| Widgets | 12 |\n\n[illegible]'
+    const capture = {
+      ...options,
+      source: sources,
+      transcribe: async (files: string[]) => {
+        calls++
+        assert({
+          given: 'reading a group of note images',
+          should: 'already have a saved note and every original in capture order',
+          actual: [(await readdir(notes)).length, await Promise.all(files.map((file) => readFile(file, 'utf8')))],
+          expected: [1, ['synthetic page 1', 'synthetic page 2']],
+        })
+        if (calls === 1) throw new Error('Synthetic read timeout')
+        return { title: 'Atlas launch plan and widget counts', body: text }
+      },
+      summarize: async () => {
+        throw new Error('Image notes must preserve their full text')
+      },
+    }
+    const failed = await notesFromDocument(capture)
+    assert({
+      given: 'a failed image read',
+      should: 'keep the note available',
+      actual: [failed.ok, Boolean(failed.data?.filePath)],
+      expected: [false, true],
+    })
+    const notePath = failed.data!.filePath
+    const saved = Document.fromMarkdown(await readFile(notePath, 'utf8'))
+    await writeFile(
+      notePath,
+      new Document(
+        {
+          ...saved.yaml,
+          attachments: [{ file: 'Atlas-1.png', rel: 'Atlas', caption: 'Keep this caption.' }, { file: 'Atlas-2.heic' }],
+        },
+        `${saved.markdown}\nA manual correction.\n`,
+      ).toMarkdown(),
+    )
+    await Promise.all(sources.map((source) => rm(source)))
+    const retried = await notesFromDocument(capture)
+    const repeated = await notesFromDocument(capture)
+    const note = Document.fromMarkdown(await readFile(notePath, 'utf8'))
+    const attachDir = path.join(options.config.DIR_ATTACHMENTS, dayAttachmentsDir(DAY))
+    const day = await readFile(path.join(options.config.DIR_TIME, dayFile(DAY)), 'utf8')
+    assert({
+      given: 'retrying after the staged images are gone and the note has been edited',
+      should: 'read retained originals once, preserve the markdown and edits, and keep one timed day entry',
+      actual: [
+        retried.ok,
+        repeated.ok,
+        calls,
+        (await readdir(notes)).length,
+        note.attachments.map(({ file }) =>
+          /^\d{4}-\d{2}-\d{2}_\d{6}_Atlas-launch-plan-and-widget-counts-[12]\.(png|heic)$/.test(file),
+        ),
+        note.yaml.when,
+        note.markdown.includes(text),
+        note.markdown.includes('A manual correction.'),
+        note.markdown.split(text).length - 1,
+        day.split(path.basename(notePath)).length - 1,
+      ],
+      expected: [true, true, 2, 1, [true, true], options.when, true, true, 1, 1],
+    })
+    assert({
+      given: 'the image note finishing and then being retried again',
+      should: 'rename every retained file, update its link, preserve metadata and leave no obsolete copies',
+      actual: [
+        (await readdir(attachDir)).sort(),
+        await Promise.all(note.attachments.map(({ file }) => readFile(path.join(attachDir, file), 'utf8'))),
+        note.yaml.attachments,
+      ],
+      expected: [
+        note.attachments.map(({ file }) => file).sort(),
+        ['synthetic page 1', 'synthetic page 2'],
+        [
+          { file: note.attachments[0].file, rel: 'Atlas', caption: 'Keep this caption.' },
+          { file: note.attachments[1].file },
+        ],
+      ],
+    })
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('an interrupted image rename keeps every reference valid and preserves an already shared original', async () => {
+  const { root, options } = await fixture()
+  try {
+    const attachDir = path.join(options.config.DIR_ATTACHMENTS, dayAttachmentsDir(DAY))
+    await mkdir(attachDir, { recursive: true })
+    const source = path.join(attachDir, 'Atlas.png')
+    await writeFile(source, 'synthetic shared image')
+    let reads = 0
+    let enrichments = 0
+    const capture = {
+      ...options,
+      source,
+      transcribe: async () => {
+        reads++
+        return { title: 'Atlas API launch milestones and checklist', body: '## Launch\n\n- Review Atlas API' }
+      },
+      enrich: async () => {
+        if (++enrichments === 1) throw new Error('Synthetic enrichment timeout')
+        return {}
+      },
+    }
+    const failed = await notesFromDocument(capture)
+    const pending = Document.fromMarkdown(await readFile(failed.data!.filePath, 'utf8'))
+    assert({
+      given: 'a failure after choosing the image filename but before updating the note',
+      should: 'keep the saved attachment link readable',
+      actual: [failed.ok, await readFile(path.join(attachDir, pending.attachments[0].file), 'utf8')],
+      expected: [false, 'synthetic shared image'],
+    })
+    const retried = await notesFromDocument(capture)
+    const repeated = await notesFromDocument(capture)
+    const note = Document.fromMarkdown(await readFile(retried.data!.filePath, 'utf8'))
+    const name = note.attachments[0].file
+    assert({
+      given: 'retrying after a partial image rename',
+      should: 'reuse the chosen name and readback, finish its attachment link once, and retain the shared source',
+      actual: [
+        retried.ok,
+        repeated.ok,
+        reads,
+        enrichments,
+        /^\d{4}-\d{2}-\d{2}_\d{6}_Atlas-API-launch-milestones-and-checklist\.png$/.test(name),
+        (await readdir(attachDir)).sort(),
+        await readFile(source, 'utf8'),
+        await readFile(path.join(attachDir, name), 'utf8'),
+      ],
+      expected: [
+        true,
+        true,
+        1,
+        2,
+        true,
+        ['Atlas.png', name].sort(),
+        'synthetic shared image',
+        'synthetic shared image',
+      ],
+    })
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
 
 async function fixture() {
   const root = await makeTempDir({ prefix: 'sky-document-note-' })

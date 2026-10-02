@@ -20,7 +20,7 @@ import slugify from '#lib/string/slugify.ts'
 import { actionKindRel } from '#shared/nbfs/mod.ts'
 import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import { notesFromDocument } from './lib/fromDocument.ts'
-import { notesFromImage } from './lib/fromImage.ts'
+import { demoteBodyHeadings, extractNoteFromImage, notesFromImage, stripCodeFence } from './lib/fromImage.ts'
 
 const params = {
   summary: ArgOrFlag.string('Summary / Header of Notes', { short: 's', optional: true }),
@@ -59,17 +59,25 @@ export default class NotesNewTask extends Command {
 
   async run({ args, context, tasks, rawArgs }: CommandArgs<Params>): Promise<CommandResult<Result>> {
     const { output } = context
-    if (args.fromFile !== undefined) {
-      if (args.fromAudio !== undefined || args.fromImage !== undefined) {
+    const imageCapture = args.fromImage !== undefined && args.workWhen !== undefined
+    if (args.fromFile !== undefined || imageCapture) {
+      if (args.fromAudio !== undefined || (args.fromFile !== undefined && args.fromImage !== undefined)) {
         return CommandResult.fail('Use only one of --from-file, --from-audio, or --from-image.')
       }
+      if (imageCapture && (typeof args.fromImage !== 'string' || args.fromImage === 'true'))
+        return CommandResult.fail('Choose image paths with --from-image when recording work.')
       output.plan([
         { id: 'save', label: 'Saving the note and attachment' },
-        { id: 'summary', label: 'Summarizing the attachment' },
+        { id: 'summary', label: imageCapture ? 'Reading the image text' : 'Summarizing the attachment' },
         { id: 'tags', label: 'Adding tags and links' },
       ])
       return notesFromDocument({
-        source: args.fromFile,
+        source: imageCapture
+          ? args
+              .fromImage!.split(',')
+              .map((file) => file.trim())
+              .filter(Boolean)
+          : args.fromFile!,
         summary: args.summary,
         when: args.workWhen ?? args.when.toString(),
         body: args.body,
@@ -82,6 +90,14 @@ export default class NotesNewTask extends Command {
           const result = await tasks.run('summary:doc', { file })
           if (!result.ok || !result.data) throw new Error(result.message ?? 'Could not summarize the attachment.')
           return result.data.summary
+        },
+        transcribe: async (files) => {
+          const note = await extractNoteFromImage(files, {
+            referenceDate: (args.workWhen ?? args.when.toString()).slice(0, 10),
+            aiContext: args.aiContext,
+            signal: context.signal,
+          })
+          return { title: note.title, body: demoteBodyHeadings(stripCodeFence(note.body)) }
         },
         enrich: async (input) => {
           const [tags, rel] = await Promise.all([

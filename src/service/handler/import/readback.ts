@@ -15,7 +15,7 @@ import { TRANSCRIPTION_MODELS } from '#commands/all/audio/transcript/lib/models.
 import { isRtf, stampedDurationMinutes, turnStamps } from '#commands/all/audio/transcript/lib/plainText.ts'
 import SRT from '#commands/all/audio/transcript/lib/SRT/mod.ts'
 import ZoomVTT from '#commands/all/audio/transcript/lib/ZoomVTT/mod.ts'
-import { isNoteDocument } from '#commands/all/notes/lib/documentInput.ts'
+import { isNoteDocument, NOTE_IMAGE_EXTENSIONS } from '#commands/all/notes/lib/documentInput.ts'
 import { audioContainerFromHeader } from '#lib/media/audioHeader.ts'
 import { VIDEO_EXTENSIONS } from '#lib/media/video.ts'
 
@@ -44,7 +44,7 @@ export const AUDIO_EXTENSIONS = ['.m4a', '.mp3', '.wav', '.aac', '.ogg', '.flac'
 export const AUDIO_LIMIT_BYTES = TRANSCRIPTION_MODELS[0].maxUploadMb * 1024 * 1024
 
 /** What the vision model reads, and HEIC, which the door converts before it does. */
-export const IMAGE_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.webp', '.gif', '.heic', '.heif']
+export const IMAGE_EXTENSIONS = NOTE_IMAGE_EXTENSIONS
 
 /** The model takes 10 MB of base64 per image; that is this many bytes of file. */
 export const IMAGE_LIMIT_BYTES = 7.5 * 1024 * 1024
@@ -284,17 +284,17 @@ export function readIMessageAudio(
   }
 }
 
-/** A screenshot of a conversation: its pixels when the header states them, its size always. */
+/** An image may hold a conversation or notes: its pixels when the header states them, its size always. */
 export function readImage(sizeBytes: number, pixels: { width: number; height: number } | null): ReadBack {
   if (sizeBytes > IMAGE_LIMIT_BYTES) {
     const mb = (sizeBytes / 1024 / 1024).toFixed(0)
-    return refused('image', `The screenshot is ${mb} MB, over the 7.5 MB limit. Crop it, or save it as a JPEG.`)
+    return refused('image', `The image is ${mb} MB, over the 7.5 MB limit. Crop it, or save it as a JPEG.`)
   }
   const size = pixels ? `${pixels.width} × ${pixels.height}` : null
   return {
     source: 'image',
-    kinds: ['message'],
-    summary: ['Screenshot', size].filter((p): p is string => Boolean(p)).join(' · '),
+    kinds: ['message', 'note'],
+    summary: ['Image', size].filter((p): p is string => Boolean(p)).join(' · '),
     detail: null,
     durationMinutes: null,
     clockStartSeconds: null,
@@ -308,6 +308,6 @@ export function readUnknown(name: string): ReadBack {
   const ext = path.extname(name).toLowerCase() || 'that kind of'
   return refused(
     'text',
-    `Sky doesn't take ${ext} files. Drop a PDF, Office or Markdown document, a Zoom transcript (.vtt or .txt), a video recording or .srt, a voice memo, a notetaker's .txt, or a screenshot of a conversation.`,
+    `Sky doesn't take ${ext} files. Drop a PDF, Office or Markdown document, a Zoom transcript (.vtt or .txt), a video recording or .srt, a voice memo, a notetaker's .txt, or an image of a conversation or notes.`,
   )
 }

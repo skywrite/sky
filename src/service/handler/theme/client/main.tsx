@@ -3,6 +3,7 @@ import './shell.css'
 import { Button, MantineProvider } from '@mantine/core'
 import { Fragment, type MouseEvent, useCallback, useEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
+import { isAttachmentNote } from '#commands/all/notes/lib/documentInput.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import { AuditionMain } from './audition.tsx'
 import { AutomationDetail, AutomationsMain, AutomationsSideNav, NewAutomation } from './automations.tsx'
@@ -129,7 +130,10 @@ function Canvas() {
     path,
     ...threads.map((thread) => `${thread.id}:${thread.saved ?? ''}`).sort(),
     ...imports
-      .map((job) => `${job.id}:${job.state}:${job.readback.source === 'document' ? (job.stage?.id ?? '') : ''}`)
+      .map(
+        (job) =>
+          `${job.id}:${job.state}:${isAttachmentNote(job.readback.source, job.fields?.kind) ? (job.stage?.id ?? '') : ''}`,
+      )
       .sort(),
   ].join('\u0000')
   const day = useDay(dayYmd, dayRefreshKey)
@@ -214,7 +218,7 @@ function Canvas() {
   const showDateNav = onDayPage || isWeek || isStreaks || filesRoute !== null || meetingRoute !== null
   const activeDayYmd = filesRoute?.ymd ?? meetingRoute?.ymd ?? dayYmd
   const dayImports = importRows.filter((job) =>
-    job.readback.source === 'document' || job.readback.source === 'imessage-audio'
+    isAttachmentNote(job.readback.source, job.fields?.kind) || job.readback.source === 'imessage-audio'
       ? (job.fields?.when ?? job.suggestedWhen).slice(0, 10) === (activeDayYmd ?? day?.today.ymd)
       : isToday,
   )
@@ -232,7 +236,7 @@ function Canvas() {
     importStarted(job)
     documentNotices.started(job)
     setImportGeneration((generation) => generation + 1)
-    if (job.readback.source !== 'document') openImport(job.id)
+    if (!isAttachmentNote(job.readback.source, job.fields?.kind)) openImport(job.id)
     else {
       const targetDay = job.fields?.when.slice(0, 10)
       if ((onDayPage || filesRoute) && targetDay && targetDay !== (activeDayYmd ?? day?.today.ymd))

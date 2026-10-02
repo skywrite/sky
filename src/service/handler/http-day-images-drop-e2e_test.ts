@@ -65,7 +65,7 @@ test({ name: 'day — four dropped screenshots become one message on desktop and
           ],
           expected: [
             SCREENSHOTS.map((file) => file.name),
-            '4 screenshots → 1 message',
+            '4 images',
             'Sky reads all 4 screenshots as one conversation, checks what it read with you, and files one message under the day.',
             1,
             true,

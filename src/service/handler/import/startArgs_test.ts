@@ -13,6 +13,32 @@ const fields = (over: Partial<StartFields>): StartFields => ({
   ...over,
 })
 
+test('image notes capture all pages with a stated work range and a stable retry identity', () => {
+  const start = startArgs(
+    { ...memo, source: 'image', id: 'note-capture' },
+    fields({ kind: 'note', when: '2026-01-27 15:30 - 16:30', summary: 'Planned Atlas', body: 'Reviewed the scope.' }),
+    ['/tmp/Atlas-1.png', '/tmp/Atlas-2.heic'],
+  )
+  assert({
+    given: 'two images chosen as notes with a work range',
+    should: 'use the save-first note flow and preserve the selected time independently of image dates',
+    actual: [start.command, { ...start.args, when: String(start.args.when) }, start.rawArgs],
+    expected: [
+      'notes:new',
+      {
+        fromImage: '/tmp/Atlas-1.png,/tmp/Atlas-2.heic',
+        summary: 'Planned Atlas',
+        body: 'Reviewed the scope.',
+        workWhen: '2026-01-27 15:30 - 16:30',
+        when: '2026-01-27 15:30',
+        category: 'Professional Complete',
+        run: 'note-capture',
+      },
+      { _: [], when: '2026-01-27 15:30' },
+    ],
+  })
+})
+
 test('a recorded video starts the reviewed journal split through the video door', () => {
   const start = startArgs({ ...memo, source: 'video' }, fields({ kind: 'journal' }), '/tmp/mock-recording.mov')
   assert({

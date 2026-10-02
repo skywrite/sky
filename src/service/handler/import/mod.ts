@@ -18,7 +18,7 @@ import * as path from 'node:path'
 import { Hono } from 'hono'
 import { streamSSE } from 'hono/streaming'
 import type { AudioConversation } from '#commands/all/message/_lib/savedAudioConversation.ts'
-import { documentWorkWhen } from '#commands/all/notes/lib/documentInput.ts'
+import { documentWorkWhen, isAttachmentNote } from '#commands/all/notes/lib/documentInput.ts'
 import type { RunEvent } from '#commands/lib/core/runCommand.ts'
 import { instantNow, PlainDate } from '#universal/dates/nbdt/mod.ts'
 import { hold } from '../../activity.ts'
@@ -104,13 +104,13 @@ export interface ImportRoutesOptions {
   journalTypes: string[]
 }
 
-/** "Voice memo 9:14", "Screenshot 7:44", "Text 16:02", or the file's name without its extension. */
+/** "Voice memo 9:14", "Image 7:44", "Text 16:02", or the file's name without its extension. */
 function titleOf(file: StagedFile, readback: ReadBack, when: string): string {
   const time = when.slice(11).replace(/^0/, '')
   if (readback.source === 'audio') return `Voice memo ${time}`
   if (readback.source === 'video') return `Video journal ${time}`
   if (readback.source === 'imessage-audio') return `iMessage Audio ${time}`
-  if (readback.source === 'image') return `Screenshot ${time}`
+  if (readback.source === 'image') return `Image ${time}`
   if (readback.source === 'selection') return `Text ${time}`
   return file.name.replace(/\.[^.]+$/, '')
 }
@@ -182,7 +182,7 @@ function parseStart(body: unknown, job: ImportJob): StartFields | string {
   if (!KINDS.includes(kind as StartFields['kind'])) return `kind must be one of ${KINDS.join(', ')}`
   if (!readback.kinds.includes(kind as StartFields['kind'])) return `this file cannot be filed as a ${kind}`
   let when = typeof b.when === 'string' ? b.when.trim() : ''
-  if (readback.source === 'document') {
+  if (isAttachmentNote(readback.source, kind)) {
     try {
       when = documentWorkWhen(when).toString()
     } catch (error) {
@@ -231,7 +231,7 @@ function parseStart(body: unknown, job: ImportJob): StartFields | string {
     ...(audioSpeakers ? { audioSpeakers } : {}),
     ...(to ? { to } : {}),
     ...(appendTo ? { appendTo } : {}),
-    ...(readback.source === 'document'
+    ...(isAttachmentNote(readback.source, kind)
       ? { summary: (b.summary as string).trim(), body: typeof b.body === 'string' ? b.body : '' }
       : {}),
   }
@@ -352,7 +352,7 @@ export function createImportRoutes(options: ImportRoutesOptions): Hono {
     if (files.length > 1 && !audioConversation && readbacks.some((readback) => readback.source !== 'image')) {
       await rm(dir, { recursive: true, force: true })
       return c.json(
-        { message: 'Import screenshots together or CAF audio turns together. Other files need separate imports.' },
+        { message: 'Import images together or CAF audio turns together. Other files need separate imports.' },
         400,
       )
     }
@@ -364,13 +364,13 @@ export function createImportRoutes(options: ImportRoutesOptions): Hono {
         ? readbacks[0]
         : {
             ...readbacks[0],
-            summary: `${files.length} ${audioConversation ? 'audio turns' : 'screenshots'} → 1 message`,
+            summary: audioConversation ? `${files.length} audio turns → 1 message` : `${files.length} images`,
             durationMinutes: audioConversation
               ? readbacks.every((item) => item.durationMinutes !== null)
                 ? readbacks.reduce((total, item) => total + item.durationMinutes!, 0)
                 : null
               : readbacks[0].durationMinutes,
-            kinds: refused < 0 ? ['message'] : [],
+            kinds: refused < 0 ? (audioConversation ? ['message'] : ['message', 'note']) : [],
             refusal: refused < 0 ? null : `${files[refused].name}: ${readbacks[refused].refusal}`,
           }
     const proposed = options.suggestWhen(file, readback)
@@ -410,8 +410,7 @@ export function createImportRoutes(options: ImportRoutesOptions): Hono {
       stage: null,
       tick: null,
       line: readback.refusal,
-      title:
-        files.length > 1 && !audioConversation ? `${files.length} screenshots` : titleOf(file, readback, suggestedWhen),
+      title: files.length > 1 && !audioConversation ? `${files.length} images` : titleOf(file, readback, suggestedWhen),
       result: null,
       error: readback.refusal,
       created: instantNow(),
@@ -491,7 +490,7 @@ export function createImportRoutes(options: ImportRoutesOptions): Hono {
     // dialog opening again is when that is looked at.
     if (
       options.record &&
-      job.readback.source !== 'document' &&
+      !isAttachmentNote(job.readback.source, job.fields?.kind) &&
       ((job.files?.length ?? 1) === 1 || job.readback.source === 'imessage-audio') &&
       (job.state === 'failed' || job.state === 'cancelled') &&
       !job.readback.refusal
@@ -615,7 +614,7 @@ export function createImportRoutes(options: ImportRoutesOptions): Hono {
       }
     }
 
-    if (job.readback.source === 'document' && job.fields) {
+    if (isAttachmentNote(job.readback.source, job.fields?.kind) && job.fields) {
       // A retry finishes the capture already saved, even after a restart or cancellation.
       if (JSON.stringify({ ...fields, fresh: false }) !== JSON.stringify({ ...job.fields, fresh: false })) {
         return c.json({ message: 'Retry with the saved details, then edit the note after it finishes.' }, 400)
@@ -626,7 +625,7 @@ export function createImportRoutes(options: ImportRoutesOptions): Hono {
     job.plan = null
     job.stage = null
     job.tick = null
-    if (job.readback.source !== 'document') {
+    if (!isAttachmentNote(job.readback.source, fields.kind)) {
       job.result = null
       job.linked = []
     }

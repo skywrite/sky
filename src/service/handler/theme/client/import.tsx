@@ -22,8 +22,10 @@ import type { AudioConversation } from '#commands/all/message/_lib/savedAudioCon
 import {
   documentActivity,
   documentWorkWhen,
+  isAttachmentNote,
   isNoteDocument,
   NOTE_DOCUMENT_EXTENSIONS,
+  NOTE_IMAGE_EXTENSIONS,
   workDurationLabel,
 } from '#commands/all/notes/lib/documentInput.ts'
 import type { PlaceAnswer, PlaceItem, PlacePrompt } from '#commands/lib/prompt/Prompter.ts'
@@ -418,7 +420,7 @@ export function useImportFeed(id: string | null): ImportFeed {
 
 const RECORDING_EXTS = ['.m4a', '.mp3', '.wav', '.aac', '.ogg', '.flac', '.webm', '.mp4', '.caf']
 export const AUDIO_IMPORT_ACCEPT = [...RECORDING_EXTS, 'audio/*'].join(',')
-const IMAGE_EXTS = ['.png', '.jpg', '.jpeg', '.webp', '.gif', '.heic', '.heif']
+const IMAGE_EXTS = NOTE_IMAGE_EXTENSIONS
 /** Smaller recordings fit either provider; larger ones need the current saved choice. */
 const TRANSCRIBE_CAP = TRANSCRIPTION_MODELS[0].maxUploadMb * 1024 * 1024
 /** The vision model takes 10 MB of base64 per image: this much file. The read-back's cap, and its sentence. */
@@ -454,7 +456,7 @@ async function refusedBeforeUpload(file: File, audioCap: number): Promise<string
   }
   const image = !container && (IMAGE_EXTS.includes(ext) || file.type.startsWith('image/'))
   if (image && file.size > IMAGE_CAP) {
-    return `The screenshot is ${mb} MB, over the 7.5 MB limit. Crop it, or save it as a JPEG.`
+    return `The image is ${mb} MB, over the 7.5 MB limit. Crop it, or save it as a JPEG.`
   }
   return null
 }
@@ -639,7 +641,7 @@ interface Pending extends QueuedImport {
 }
 
 /**
- * Each drop's screenshots or CAF audio turns stay together as one conversation. Other files
+ * Each drop's images stay together as one message or note; CAF audio turns form one conversation. Other files
  * are uploaded and confirmed one at a time, then the next import comes up.
  */
 export function useImportQueue(onStarted: (job: ImportJob) => void, day?: string) {
@@ -668,7 +670,7 @@ export function useImportQueue(onStarted: (job: ImportJob) => void, day?: string
       const imports: QueuedImport[] = []
       for (const file of files) {
         if (screenshots.includes(file)) {
-          if (file === screenshots[0]) imports.push({ files: screenshots, meeting: null })
+          if (file === screenshots[0]) imports.push({ files: screenshots, meeting: null, day: filingDay })
           continue
         }
         if (audioTurns.includes(file)) {
@@ -737,7 +739,7 @@ export function useImportQueue(onStarted: (job: ImportJob) => void, day?: string
     /** Bring a failed import back to the dialog */
     startAgain: (job: ImportJob) => setAgain(job),
     onStarted: (job: ImportJob) => {
-      if (job.readback.source === 'document') {
+      if (isAttachmentNote(job.readback.source, job.fields?.kind)) {
         if (again) setAgain(job)
         else setPending((current) => (current ? { ...current, job } : current))
       } else close()
@@ -763,12 +765,14 @@ function Pills<T extends string>({
   value,
   onChange,
   inline = true,
+  disabled = false,
 }: {
   label: string
   options: { value: T; label: string }[]
   value: T
   onChange: (next: T) => void
   inline?: boolean
+  disabled?: boolean
 }) {
   const pills = (
     <div className="sky-pills">
@@ -778,6 +782,7 @@ function Pills<T extends string>({
           type="button"
           className="sky-pill"
           data-on={o.value === value}
+          disabled={disabled}
           onClick={() => onChange(o.value)}
         >
           {o.label}
@@ -840,6 +845,8 @@ function nextLine(kind: ImportKind, source: ImportJob['readback']['source'], cou
   if (source === 'imessage-audio')
     return 'Sky transcribes the audio, checks unsure names with you, and saves one iMessage Audio conversation with short paragraphs.'
   if (source === 'image') {
+    if (kind === 'note')
+      return `Sky saves your note and ${count > 1 ? 'images' : 'image'}, then reads the text, preserving its wording and structure. You can keep working while it reads.`
     if (count > 1)
       return `Sky reads all ${count} screenshots as one conversation, checks what it read with you, and files one message under the day.`
     return 'Sky reads the conversation off the screenshot, checks what it read with you, and files it as a message under the day.'
@@ -972,16 +979,14 @@ function ConfirmBody({
   const feed = useImportFeed(job?.id ?? null)
   const live = feed.job ?? job
   const kinds = live?.readback.kinds ?? []
-  const documentInput =
+  const documentSource =
     live?.readback.source === 'document' || Boolean(pending?.files[0] && isNoteDocument(pending.files[0].name))
-  const retryDocument = documentInput && Boolean(job?.fields)
   const meeting = pending?.meeting
   // A section drop chooses the day; the file supplies only the editable clock time.
-  const proposedWhen = documentInput
+  const proposedWhen = documentSource
     ? `${pending?.day ?? live?.suggestedWhen.slice(0, 10) ?? todayYmd ?? ''} `
     : (meeting?.when ??
       (meeting?.day && live ? `${meeting.day} ${live.suggestedWhen.split(' ')[1]}` : live?.suggestedWhen))
-  const whenStated = documentInput || Boolean(meeting?.when || job?.fields?.whenStated)
   const dayStated = Boolean(meeting?.day || job?.fields?.dayStated)
   const [touched, setTouched] = useState(Boolean(meeting || job?.fields))
   const categoryTouched = useRef(Boolean(job?.fields?.category))
@@ -991,13 +996,34 @@ function ConfirmBody({
     category: job?.fields?.category ?? live?.listen?.category ?? 'Professional',
     fresh: false,
     summary:
-      job?.fields?.summary ?? (documentInput ? documentActivity(job?.file.name ?? pending?.files[0]?.name ?? '') : ''),
+      job?.fields?.summary ?? (documentSource ? documentActivity(job?.file.name ?? pending?.files[0]?.name ?? '') : ''),
     body: job?.fields?.body ?? '',
   })
   const [starting, setStarting] = useState(false)
   const [started, setStarted] = useState(false)
   const [linkBusy, setLinkBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const documentInput = documentSource || isAttachmentNote(live?.readback.source ?? '', fields.kind)
+  const retryDocument = documentInput && Boolean(job?.fields)
+  const whenStated = documentInput || Boolean(meeting?.when || job?.fields?.whenStated)
+  const imageTimes = useRef<Partial<Record<ImportKind, string>>>({})
+  const changeKind = (kind: ImportKind) => {
+    setTouched(true)
+    if (live?.readback.source === 'image') {
+      imageTimes.current[fields.kind] = fields.when
+      const when =
+        imageTimes.current[kind] ??
+        (kind === 'note'
+          ? `${pending?.day ?? job?.day ?? todayYmd ?? live.suggestedWhen.slice(0, 10)} `
+          : live.suggestedWhen)
+      setFields((f) => ({
+        ...f,
+        kind,
+        when,
+        summary: f.summary || documentActivity(live.file.name),
+      }))
+    } else setFields((f) => ({ ...f, kind }))
+  }
 
   // The read-back lands once the upload finishes; sky's guess a little later. Neither overrides a hand.
   // Until a hand chooses, the kind is the guess, else the read-back's first: the kind set while the
@@ -1170,7 +1196,7 @@ function ConfirmBody({
         {selection ? 'Dropped text' : count > 1 ? `${count} files` : files[0]?.name} · {sizeLabel(size)}
       </div>
       {count > 1 && !audioConversation && (
-        <ul className="sky-confirm-files" aria-label="Screenshots">
+        <ul className="sky-confirm-files" aria-label="Images">
           {files.map((file, index) => (
             <li key={live ? file.name : index}>
               <span>{file.name}</span>
@@ -1304,6 +1330,16 @@ function ConfirmBody({
               ))}
             </ol>
           )}
+          {source === 'image' && (
+            <Pills
+              label="What is it?"
+              inline={false}
+              options={kinds.map((kind) => ({ value: kind, label: kind === 'note' ? 'Notes' : KIND_LABEL[kind] }))}
+              value={fields.kind}
+              onChange={changeKind}
+              disabled={starting || retryDocument}
+            />
+          )}
           {documentInput ? (
             <div className="sky-document-capture">
               <TextInput
@@ -1356,16 +1392,15 @@ function ConfirmBody({
             </div>
           ) : appendTo && audioConversation ? null : (
             <>
-              <Pills
-                label={kinds.length > 1 ? 'What is it?' : 'This becomes'}
-                inline={false}
-                options={kinds.map((k) => ({ value: k, label: KIND_LABEL[k] }))}
-                value={fields.kind}
-                onChange={(kind) => {
-                  setTouched(true)
-                  setFields((f) => ({ ...f, kind }))
-                }}
-              />
+              {source !== 'image' && (
+                <Pills
+                  label={kinds.length > 1 ? 'What is it?' : 'This becomes'}
+                  inline={false}
+                  options={kinds.map((k) => ({ value: k, label: KIND_LABEL[k] }))}
+                  value={fields.kind}
+                  onChange={changeKind}
+                />
+              )}
               <div className="sky-choice-inline">
                 <span className="sky-choice-label">When</span>
                 <input
@@ -1451,7 +1486,9 @@ function ConfirmBody({
                 ? 'Add to conversation'
                 : documentInput
                   ? retryDocument
-                    ? 'Retry summary'
+                    ? source === 'image'
+                      ? 'Retry reading'
+                      : 'Retry summary'
                     : 'Add to day'
                   : 'Start'}
           </Button>
@@ -2880,7 +2917,7 @@ export function ImportMain({
           ) : (
             job?.result && (
               <Button size="sm" variant="primary" component="a" href={fileHref(job.result.file)}>
-                {job.readback.source === 'document' ? 'Open note' : 'Open it'}
+                {isAttachmentNote(job.readback.source, job.fields?.kind) ? 'Open note' : 'Open it'}
               </Button>
             )
           )}
@@ -2888,7 +2925,11 @@ export function ImportMain({
             <>
               {!job.readback.refusal && (
                 <Button size="sm" variant="primary" onClick={() => onStartAgain(job)}>
-                  {job.readback.source === 'document' ? 'Retry summary' : 'Start again'}
+                  {isAttachmentNote(job.readback.source, job.fields?.kind)
+                    ? job.readback.source === 'image'
+                      ? 'Retry reading'
+                      : 'Retry summary'
+                    : 'Start again'}
                 </Button>
               )}
               <Button size="sm" onClick={remove}>

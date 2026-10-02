@@ -26,6 +26,7 @@ export async function sha256File(filePath: string): Promise<string> {
  * - Destination exists with the same hash → no copy, the existing name is reused.
  * - Destination exists with a different hash → `_2`, `_3`, … until a free or
  *   matching name is found.
+ * With `unique`, always allocate a separate copy so its owner can rename or remove it.
  * Returns the final filename (not the full path), or undefined when the source
  * does not exist.
  */
@@ -33,6 +34,7 @@ export async function copyFileDedup(
   sourcePath: string,
   attachDir: string,
   desiredFileName: string,
+  options: { unique?: boolean } = {},
 ): Promise<string | undefined> {
   if (!existsSync(sourcePath)) return undefined
 
@@ -51,6 +53,7 @@ export async function copyFileDedup(
         return targetName
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
+        if (options.unique) continue
         sourceHash ??= await sha256File(temporary)
         if ((await sha256File(targetPath)) === sourceHash) return targetName
       }
@@ -67,11 +70,13 @@ export interface CopyToDayAttachmentsInput {
   day: PlainDate
   /** The name the copy should carry, e.g. `2026-08-28_Chat_Atlas-MSA.pdf` */
   fileName: string
+  /** A capture that will rename its images must own its copies rather than share another note's files. */
+  unique?: boolean
 }
 
 /**
  * Copy one file into a day's attachments directory. A source already sitting
- * in that directory is referenced as it is — never copied beside itself.
+ * in that directory is referenced as it is, unless `unique` requests an owned copy.
  * Returns the attachment reference plus the copy's absolute path, or
  * undefined when the source does not exist.
  */
@@ -81,13 +86,13 @@ export async function copyToDayAttachments(
   const attachDir = path.join(input.attachmentsRoot, dayAttachmentsDir(input.day))
   const source = path.resolve(input.sourcePath)
 
-  if (path.dirname(source) === path.resolve(attachDir)) {
+  if (!input.unique && path.dirname(source) === path.resolve(attachDir)) {
     if (!existsSync(source)) return undefined
     return { attachment: { file: path.basename(source) }, path: source }
   }
 
   await mkdir(attachDir, { recursive: true })
-  const file = await copyFileDedup(source, attachDir, input.fileName)
+  const file = await copyFileDedup(source, attachDir, input.fileName, { unique: input.unique })
   if (!file) return undefined
   return { attachment: { file }, path: path.join(attachDir, file) }
 }

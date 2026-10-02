@@ -1,6 +1,7 @@
 import './dayChatClose.css'
 import { ActionIcon, Button } from '@mantine/core'
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { isAttachmentNote } from '#commands/all/notes/lib/documentInput.ts'
 import { useItemEditing } from './dayItemEditing.tsx'
 import { fileHref } from './explorer.tsx'
 import type { ImportJob } from './import.tsx'
@@ -10,7 +11,7 @@ export function useDocumentNotices(imports: ImportJob[]) {
   const states = useRef(new Map<string, ImportJob['state']>())
   const [notices, setNotices] = useState<ImportJob[]>([])
   const observe = useCallback((job: ImportJob, started = false) => {
-    if (job.readback.source !== 'document') return
+    if (!isAttachmentNote(job.readback.source, job.fields?.kind)) return
     const previous = states.current.get(job.id)
     states.current.set(job.id, job.state)
     if ((job.state === 'done' || job.state === 'failed') && (started || (previous && previous !== job.state)))
@@ -34,15 +35,23 @@ export function DocumentSummaryDialog({
   onRetry: () => void
 }) {
   const busy = job.state === 'running' || job.state === 'needs-you' || job.state === 'new'
+  const images = job.readback.source === 'image'
+  const attachment = (job.files?.length ?? 1) > 1 ? 'attachments' : 'attachment'
   const saved = Boolean(job.result) || job.stage?.id === 'summary' || job.stage?.id === 'tags'
   const title =
     job.state === 'done'
-      ? 'Summary ready'
+      ? images
+        ? 'Notes ready'
+        : 'Summary ready'
       : busy
         ? saved
-          ? 'Summarizing the document…'
+          ? images
+            ? 'Reading the image text…'
+            : 'Summarizing the document…'
           : 'Saving your note…'
-        : 'The summary did not finish'
+        : images
+          ? 'Reading the image text did not finish'
+          : 'The summary did not finish'
   return (
     <>
       <div className="sky-confirm-title" role="status">
@@ -51,14 +60,19 @@ export function DocumentSummaryDialog({
       <div className="sky-lead">{job.fields?.summary ?? job.title}</div>
       {busy ? (
         <>
-          {saved && <p className="sky-lead">Your note and attachment are saved.</p>}
+          {saved && <p className="sky-lead">Your note and {attachment} are saved.</p>}
           <p className="sky-confirm-next">
-            It’s safe to close this dialog. Sky will keep working and let you know when the summary is ready.
+            It’s safe to close this dialog. Sky will keep working and let you know when{' '}
+            {images ? 'the notes are' : 'the summary is'} ready.
           </p>
         </>
       ) : (
         <p className="sky-lead">
-          {job.state === 'done' ? 'The summary has been added to your note.' : (job.error ?? job.line)}
+          {job.state === 'done'
+            ? images
+              ? 'The image text has been added to your note.'
+              : 'The summary has been added to your note.'
+            : (job.error ?? job.line)}
         </p>
       )}
       <div className="sky-dialog-actions">
@@ -70,7 +84,7 @@ export function DocumentSummaryDialog({
         )}
         {!busy && job.state !== 'done' && (
           <Button variant="primary" onClick={onRetry}>
-            Retry summary
+            {images ? 'Retry reading' : 'Retry summary'}
           </Button>
         )}
       </div>
@@ -98,6 +112,7 @@ export function DocumentImportNotice({
   const dismiss = useRef(onDismiss)
   dismiss.current = onDismiss
   const failed = job.state === 'failed'
+  const images = job.readback.source === 'image'
   const covered = blocked || Boolean(editing?.feedbackActive)
   const paused = covered || hovered || focused || hidden
   useEffect(() => {
@@ -128,7 +143,14 @@ export function DocumentImportNotice({
       }}
     >
       <span className="sky-undo-text" role={failed ? 'alert' : 'status'}>
-        {failed ? 'Summary needs attention' : 'Summary ready'} — {job.fields?.summary ?? job.title}
+        {failed
+          ? images
+            ? 'Image text needs attention'
+            : 'Summary needs attention'
+          : images
+            ? 'Notes ready'
+            : 'Summary ready'}{' '}
+        — {job.fields?.summary ?? job.title}
       </span>
       {!failed && job.result ? (
         <Button

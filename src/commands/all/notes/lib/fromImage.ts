@@ -1,4 +1,4 @@
-import { copyFile, mkdir, stat } from 'node:fs/promises'
+import { mkdir, stat, unlink } from 'node:fs/promises'
 import * as path from 'node:path'
 import * as p from '@clack/prompts'
 import { generateObject } from 'ai'
@@ -6,9 +6,10 @@ import colors from 'picocolors'
 import { z } from 'zod'
 import { CommandResult } from '#commands/mod.ts'
 import type { CommandArgs } from '#commands/mod.ts'
-import slugify from '#lib/string/slugify.ts'
+import { copyFileDedup } from '#lib/notebook/attachments.ts'
+import { imageCreationStamp, imageFileName, imageSummary } from '#lib/notebook/imageName.ts'
 import { aiModel } from '#shared/ai/models.ts'
-import { exists, rename } from '#shared/fs/mod.ts'
+import { exists } from '#shared/fs/mod.ts'
 import dayAttachmentsDir from '#shared/nbfs/dayAttachmentsDir.ts'
 import { readPromptFile } from '#shared/prompts/load.ts'
 import { type RenderInput, renderPromptFile } from '#shared/prompts/mod.ts'
@@ -210,7 +211,15 @@ export async function notesFromImage(options: NotesFromImageOptions): Promise<Co
   }
 
   const attachmentFiles = moveConfirm
-    ? await stashImages(imagePaths, when, summary, config.DIR_ATTACHMENTS as string, output)
+    ? await stashImages(
+        imagePaths,
+        when,
+        summary,
+        extraction.body,
+        config.DIR_ATTACHMENTS as string,
+        output,
+        context.signal,
+      )
     : []
 
   return CommandResult.success({
@@ -302,11 +311,12 @@ export interface ExtractOptions {
    * label written on the page. Passed in rather than read from a clock here.
    */
   referenceDate?: string
+  signal?: AbortSignal
 }
 
 export async function extractNoteFromImage(
   imagePaths: string[],
-  { aiContext, referenceDate }: ExtractOptions = {},
+  { aiContext, referenceDate, signal }: ExtractOptions = {},
 ): Promise<ImageNoteExtraction> {
   const imageBlocks = await Promise.all(
     imagePaths.map(async (imagePath) => {
@@ -325,6 +335,7 @@ export async function extractNoteFromImage(
 
   const result = await generateObject({
     ...aiModel('reasoning'),
+    abortSignal: signal,
     schema: ExtractionSchema,
     messages: [{ role: 'user', content: [...imageBlocks, { type: 'text', text: prompt }] }],
   })
@@ -359,9 +370,8 @@ export async function parseNoteCorrections(ctx: CorrectionsContext): Promise<z.i
 }
 
 /**
- * Move the images into the day's attachments, named after the note rather than
- * whatever the camera called them — the same `<date>_notes_<slug><ext>` shape
- * `--from-audio` gives its recording, numbered when there is more than one.
+ * Move the images into the day's attachments with a five to nine word content
+ * summary, numbered in capture order when there is more than one.
  *
  * Warns rather than throws: a failure here must not lose the transcription that
  * was just paid for.
@@ -370,29 +380,35 @@ async function stashImages(
   imagePaths: string[],
   when: PlainDateTime,
   summary: string,
+  body: string,
   attachmentsRoot: string,
   output: CommandArgs['context']['output'],
+  signal?: AbortSignal,
 ): Promise<string[]> {
   const noteDate = when.plainDate
-  const summarySlug = slugify(summary, { preserveCase: true, suggestedLength: 40 })
   const stashed: string[] = []
 
   try {
+    const summarySlug = await imageSummary(summary, body, { signal })
+    const stamp = imageCreationStamp()
     const attachDir = path.join(attachmentsRoot, dayAttachmentsDir(noteDate))
     await mkdir(attachDir, { recursive: true })
 
     for (let i = 0; i < imagePaths.length; i++) {
       const imagePath = imagePaths[i]
-      const indexSuffix = imagePaths.length > 1 ? `_${i + 1}` : ''
-      const name = `${noteDate}_notes_${summarySlug}${indexSuffix}${path.extname(imagePath).toLowerCase()}`
-
-      const destPath = path.join(attachDir, name)
-      await rename(imagePath, destPath).catch(async () => await copyFile(imagePath, destPath))
+      const name = await copyFileDedup(
+        imagePath,
+        attachDir,
+        imageFileName(stamp, summarySlug, path.extname(imagePath), imagePaths.length > 1 ? i + 1 : undefined),
+      )
+      if (!name) throw new Error(`${path.basename(imagePath)} could not be found.`)
       stashed.push(name)
+      if (path.dirname(path.resolve(imagePath)) !== path.resolve(attachDir)) await unlink(imagePath)
     }
 
     output.log(colors.gray(`Moved ${stashed.length} image(s) to ${attachDir}\n`))
   } catch (err) {
+    signal?.throwIfAborted()
     output.error(`Could not move the images into attachments: ${err}`)
   }
 

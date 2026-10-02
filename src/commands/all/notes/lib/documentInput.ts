@@ -1,9 +1,19 @@
 import { PlainDate, When } from '#universal/dates/nbdt/mod.ts'
 
 export const NOTE_DOCUMENT_EXTENSIONS = ['.pdf', '.docx', '.pptx', '.xlsx', '.md']
+export const NOTE_IMAGE_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.webp', '.gif', '.heic', '.heif']
 
 export function isNoteDocument(name: string): boolean {
   return NOTE_DOCUMENT_EXTENSIONS.some((extension) => name.toLowerCase().endsWith(extension))
+}
+
+export function isNoteImage(name: string): boolean {
+  return NOTE_IMAGE_EXTENSIONS.some((extension) => name.toLowerCase().endsWith(extension))
+}
+
+/** Documents and images chosen as notes share save-first capture and retry behavior. */
+export function isAttachmentNote(source: string, kind?: string): boolean {
+  return source === 'document' || (source === 'image' && kind === 'note')
 }
 
 export function documentActivity(name: string): string {

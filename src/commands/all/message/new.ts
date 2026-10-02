@@ -7,7 +7,7 @@
  * the work as it happens.
  */
 
-import { copyFile, mkdir, rename, stat } from 'node:fs/promises'
+import { copyFile, mkdir, rename, stat, unlink } from 'node:fs/promises'
 import * as path from 'node:path'
 import colors from 'picocolors'
 import { desktopFilesByExt } from '#commands/all/audio/transcript/lib/desktopFiles.ts'
@@ -25,6 +25,8 @@ import {
 } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { DayDirFileWriter, messageFileName, writeDayItems } from '#lib/nbfs/mod.ts'
+import { copyFileDedup } from '#lib/notebook/attachments.ts'
+import { imageCreationStamp, imageFileName, imageSummary } from '#lib/notebook/imageName.ts'
 import openEditor from '#lib/shell/openEditor.ts'
 import slugify from '#lib/string/slugify.ts'
 import { exists, readTextFile } from '#shared/fs/mod.ts'
@@ -553,19 +555,29 @@ export default class MessageNewTask extends Command {
           : ''
         const attachDir = path.join(config.DIR_ATTACHMENTS as string, dayAttachmentsDir(messageDate))
         await mkdir(attachDir, { recursive: true })
+        const imageName = conversation ? null : await imageSummary(summary ?? '', body, { signal: context.signal })
+        const imageStamp = imageCreationStamp()
 
         for (let i = 0; i < sources.length; i++) {
           const ip = sources[i]
           const ext = path.extname(ip)
           const indexSuffix = sources.length > 1 ? `_${i + 1}` : ''
-          const newFileName = `${messageDate}_${slugify(medium as string, {
-            preserveCase: true,
-          })}${whoSlugPart}${summarySlugPart}${indexSuffix}${ext}`
+          let newFileName = imageName
+            ? imageFileName(imageStamp, imageName, ext, sources.length > 1 ? i + 1 : undefined)
+            : `${messageDate}_${slugify(medium as string, {
+                preserveCase: true,
+              })}${whoSlugPart}${summarySlugPart}${indexSuffix}${ext}`
 
-          const destPath = path.join(attachDir, newFileName)
-          await rename(ip, destPath).catch(async () => {
-            await copyFile(ip, destPath)
-          })
+          if (imageName) {
+            const copied = await copyFileDedup(ip, attachDir, newFileName)
+            if (!copied) return CommandResult.fail(`File not found: ${ip}`)
+            newFileName = copied
+            // An existing day attachment may still be referenced by another note.
+            if (path.dirname(path.resolve(ip)) !== path.resolve(attachDir)) await unlink(ip)
+          } else
+            await rename(ip, path.join(attachDir, newFileName)).catch(async () => {
+              await copyFile(ip, path.join(attachDir, newFileName))
+            })
           attachmentFiles.push(newFileName)
         }
         output.log(
