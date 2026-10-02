@@ -53,6 +53,10 @@
   font-variant-numeric: tabular-nums;
 }
 
+.sky-plan-length {
+  width: 112px;
+}
+
 .sky-plan-note {
   color: var(--sky-dim);
   font-size: 0.85rem;

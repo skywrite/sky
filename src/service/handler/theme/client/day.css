@@ -577,6 +577,14 @@ a.sky-item-link:focus-visible {
   color: var(--sky-text-2);
 }
 
+/* how long an entry took: in the words' flow, so a phone wraps it with them */
+.sky-entry-length {
+  margin-left: 10px;
+  font-size: 14px;
+  color: var(--sky-dim);
+  white-space: nowrap;
+}
+
 .sky-undo {
   position: absolute;
   left: 50%;

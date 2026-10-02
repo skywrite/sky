@@ -26,6 +26,20 @@ test('DayDocument.addCompleteItem() adds item to existing Complete list', () => 
   })
 })
 
+test('DayDocument.addCompleteItem() writes a length after the time', () => {
+  const day = DayDocument.fromMarkdown(loadFixture('day-full-structure.md'))
+  const result = day.addCompleteItem('Planted the beds', { time: '08:30', length: '90m' })
+
+  assert({
+    given: 'an entry with a length',
+    should: 'write the time, the length, then the arrow',
+    actual: result.lists
+      .find((l) => l.title === 'Professional Complete')
+      ?.items.includes('08:30 90m > Planted the beds'),
+    expected: true,
+  })
+})
+
 test('DayDocument.addCompleteItem() creates list after Reminders when list does not exist', () => {
   const day = DayDocument.fromMarkdown(loadFixture('day-full-structure.md'))
   // Remove the Complete lists to test creation

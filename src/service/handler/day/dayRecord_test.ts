@@ -224,6 +224,46 @@ test({ name: 'day record - meetings, messages, and journals come from what was f
   })
 })
 
+test({ name: 'day record - a Complete entry may say how long it took' }, async () => {
+  const base = await makeTempDir({ prefix: 'sky-day-record-length-' })
+  const timeDir = path.join(base, 'time')
+  const dayDirPath = path.join(timeDir, dayDir(TODAY))
+  await mkdir(dayDirPath, { recursive: true })
+  await writeFile(
+    path.join(timeDir, dayFile(TODAY)),
+    `# **2026-01-27 - Tue**
+
+## Professional Commitments
+
+- 09:00 1h > Standup
+
+## Personal Complete
+
+- 08:30 4h > Ran the bake sale
+- 10:00(45m) > Called the plumber
+- 13:00 > Lunch
+`,
+  )
+  const record = await buildDayRecord({ day: TODAY, timeDir, dayDirPath, markdownBaseDir: base, ownerNames: OWNER })
+
+  assert({
+    given: 'entries with a written length, a hand-typed one, and none, beside a commitment written with a length',
+    should: 'read the entries’ minutes apart from their words, and leave the commitment’s words as written',
+    actual: {
+      done: record.done.map(({ time, minutes, text, raw }) => ({ time, minutes, text, raw })),
+      commitments: record.commitments.map(({ time, minutes, text }) => ({ time, minutes, text })),
+    },
+    expected: {
+      done: [
+        { time: '08:30', minutes: 240, text: 'Ran the bake sale', raw: '08:30 4h > Ran the bake sale' },
+        { time: '10:00', minutes: 45, text: 'Called the plumber', raw: '10:00(45m) > Called the plumber' },
+        { time: '13:00', minutes: undefined, text: 'Lunch', raw: '13:00 > Lunch' },
+      ],
+      commitments: [{ time: '09:00', minutes: undefined, text: '1h > Standup' }],
+    },
+  })
+})
+
 test({ name: 'day record - a day with no file yet has an empty plan, not an error' }, async () => {
   const base = await makeTempDir({ prefix: 'sky-day-record-empty-' })
   const timeDir = path.join(base, 'time')

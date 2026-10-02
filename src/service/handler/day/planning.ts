@@ -13,7 +13,7 @@ import {
   restorePlanItem,
   type NextEntry,
 } from './planningText.ts'
-import { normalizeDayTime, type DayPlanInput, type NextFile } from './planningTypes.ts'
+import { normalizeDayTime, normalizeEntryLength, type DayPlanInput, type NextFile } from './planningTypes.ts'
 
 const FILES: NextFile[] = ['next-professional.md', 'next-personal.md']
 interface Added {
@@ -59,7 +59,10 @@ function inputOf(body: Record<string, unknown> | null): DayPlanInput | null {
   if (kind === 'commitments' || kind === 'complete') {
     if (!time) return null
   } else if (body.time !== undefined && body.time !== '') return null
-  return { kind, text, category: category.trim(), ...(time ? { time } : {}) }
+  // Only a completed entry says how long it took.
+  const length = typeof body.length === 'string' ? normalizeEntryLength(body.length) : null
+  if (body.length !== undefined && body.length !== '' && (kind !== 'complete' || !length)) return null
+  return { kind, text, category: category.trim(), ...(time ? { time } : {}), ...(length ? { length } : {}) }
 }
 
 export function createPlanningRoutes(options: ItemRoutesOptions): Hono {

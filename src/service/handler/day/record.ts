@@ -20,6 +20,7 @@ import { dayEnd } from './ended.ts'
 import { planOrder } from './order.ts'
 import { rowRevision } from './organizingText.ts'
 import type { CommitmentOrder } from './organizingTypes.ts'
+import { splitItemTime } from './planningTypes.ts'
 
 /** One bullet from the day file: a plan, a promise, or a thing done. */
 export interface DayItem {
@@ -29,6 +30,8 @@ export interface DayItem {
   category: string | null
   /** `HH:MM` when the item carries one (done items usually do) */
   time: string | null
+  /** How long a Complete entry took, from `08:30 4h > …` — absent when it does not say */
+  minutes?: number
   /** The document the item points at, when it is a link */
   link: { title: string; path: string } | null
   /** The exact list heading the item lives under — the write-back address */
@@ -120,7 +123,6 @@ export async function loadOwnerNames(aboutMePath: string | undefined): Promise<s
 
 // --- the day file's bullets -----------------------------------------------------
 
-const TIMED = /^(\d{1,2}:\d{2})\s*>?\s*(.*)$/
 const STRUCK = /^~~(.*)~~$/
 
 function firstItemLink(tokens: Token[]): Tokens.Link | null {
@@ -138,21 +140,15 @@ function parseItem(raw: string, category: string | null, list: string): DayItem 
   // Attached notes stay in raw for file operations; only the first line is the task label.
   const head = raw.split(/\r?\n/)[0]
   const done = DayDocument.isItemDone(head)
-  let text = head.replace(STRUCK, '$1')
-  let time: string | null = null
-  const timed = text.match(TIMED)
-  if (timed) {
-    time = timed[1]
-    text = timed[2]
-  }
+  const { time, minutes, text: words } = splitItemTime(head.replace(STRUCK, '$1'), list)
   // The strike may wrap only what follows the time: `09:30 > ~~[t](p)~~`.
-  text = text.replace(STRUCK, '$1').trim()
+  let text = words.replace(STRUCK, '$1').trim()
   const linked = firstItemLink(Lexer.lexInline(text))
   const link = linked ? { title: linked.text, path: linked.href } : null
   if (linked) text = text.replace(linked.raw, linked.text).trim()
   // MI labels organize the notebook; the day view shows just the task.
   text = text.replace(/^MI\/\S+(?:\s*(?:->|→))?\s*/i, '')
-  return { text, done, category, time, link, list, raw }
+  return { text, done, category, time, ...(minutes ? { minutes } : {}), link, list, raw }
 }
 
 /**

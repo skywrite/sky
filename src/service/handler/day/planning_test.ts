@@ -213,6 +213,51 @@ test('timed entries write directly to Complete lists and Undo preserves later ch
   })
 })
 
+test('a completed entry can say how long it took, and Undo removes it whole', async () => {
+  await withNotebook(async ({ post, file }) => {
+    const entry = {
+      kind: 'complete',
+      text: 'Garden: Planted the beds',
+      category: 'Personal',
+      time: '9:30',
+      length: '1h 30m',
+      requestId: randomUUID(),
+    }
+    const added = (await (await post('add', entry)).json()) as DayPlanResult
+    const content = await readFile(file, 'utf8')
+    const rejected = await Promise.all([
+      post('add', { ...entry, length: 'soon', requestId: randomUUID() }),
+      post('add', { ...entry, length: 90, requestId: randomUUID() }),
+      post('add', { kind: 'todos', text: 'A sample task', length: '1h', requestId: randomUUID() }),
+    ])
+    assert({
+      given: 'an entry with a typed length, then lengths that are not one and a length on a to-do',
+      should: 'write the length after the time, show it as minutes, and refuse the rest',
+      actual: {
+        entries: DayDocument.fromMarkdown(content).lists.find((list) => list.title === 'Personal Complete')?.items,
+        done: added.view.record.done.map(({ time, minutes, text }) => ({ time, minutes, text })),
+        message: added.message,
+        rejected: rejected.map((response) => response.status),
+        unchanged: (await readFile(file, 'utf8')) === content,
+      },
+      expected: {
+        entries: ['09:30 90m > Garden: Planted the beds'],
+        done: [{ time: '09:30', minutes: 90, text: 'Garden: Planted the beds' }],
+        message: 'Entry added at 09:30',
+        rejected: [400, 400, 400],
+        unchanged: true,
+      },
+    })
+    await post('undo', { id: added.undo })
+    assert({
+      given: 'Undo of the entry with a length',
+      should: 'restore the day',
+      actual: await readFile(file, 'utf8'),
+      expected: EMPTY,
+    })
+  })
+})
+
 test('Complete entries stay on the selected day outside the planning window', async () => {
   await withNotebook(async ({ app, root, file }) => {
     const later = DAY.addDays(14)

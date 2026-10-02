@@ -123,6 +123,14 @@ otherwise reverses only those items and preserves unrelated edits. Changed
 items or source references require reviewing the files instead of overwriting
 them. Request IDs make retries of a successful save idempotent.
 
+**Add entry** in Done today writes `HH:MM > text` to the category's Complete list.
+On the day under way its time starts at the notebook clock's now
+(`/clock/_api/now`, past 24:00 after midnight); on other days it starts empty.
+An optional length follows the time: `09:30 90m > text`, the `when:` spelling
+without the date — whole hours as `4h`, anything else in minutes. Only Complete
+entries are read with a length (`splitItemTime`), hand-typed `09:30(4h) >`
+included; a plan row keeps such words as written.
+
 The day file's nonempty `ended` marker makes its task lists read-only, including Done today,
 deletion and Undo. A padlock with **Ended** appears beside the task count. Item
 routes recheck the file before a write and return 409 with the ended view to a
@@ -160,7 +168,7 @@ attachments can still be opened and added.
 | `POST /day/:ymd/item/organize/undo` | `{id}` → reverse a move, reorder or ordering preference |
 | `POST /day/:ymd/item/edit` | `{list, raw, occurrence?, text, revision?, kind?, category?, time?, date?, requestId}` → edit or move a task block, answers `{view, undo, undoRoute?, item, date?}` |
 | `POST /day/:ymd/item/edit/undo` | `{id}` → undo an edit without overwriting later task changes |
-| `POST /day/:ymd/item/add` | `{kind, text, category?, time?, requestId}` → add an item, answers `{view, undo, message}` |
+| `POST /day/:ymd/item/add` | `{kind, text, category?, time?, length?, requestId}` → add an item, answers `{view, undo, message}` |
 | `GET /day/:ymd/item/next` | The current Next candidates, including already-on-day and unavailable rows |
 | `POST /day/:ymd/item/pull` | `{kind, ids, requestId}` → move selected Next items, answers `{view, undo, message}` |
 | `POST /day/:ymd/item/undo` | `{id}` → reverse an addition or move, answers the view |

@@ -89,6 +89,7 @@ export interface DayItem {
   done: boolean
   category: string | null
   time: string | null
+  minutes?: number
   link: { title: string; path: string } | null
   /** The exact list heading the item lives under — the write-back address */
   list: string
@@ -1417,6 +1418,9 @@ export function DayView({
                             <span className="sky-when">{item.time ? clock(item.time) : ''}</span>
                             <span className="sky-ptext sky-done-text">
                               <ItemText item={item} href={itemDocLinked(item) ? itemHref(item, at) : null} />
+                              {item.minutes ? (
+                                <span className="sky-entry-length">{workDurationLabel(item.minutes)}</span>
+                              ) : null}
                             </span>
                             {item.category === 'Personal' && <span className="sky-pchip">Personal</span>}
                           </div>

@@ -99,3 +99,85 @@ for (const width of [1500, 390])
       },
     )
   })
+
+for (const width of [1500, 390])
+  test(
+    { name: `Done today starts an entry at now and records how long it took at ${width}px`, timeout: 45000 },
+    async (t) => {
+      await runWysiwygE2e(
+        t,
+        { initialMarkdown: EMPTY, tempPrefix: 'day-complete-length-', file: FILE, day: true },
+        async ({ page, origin, file, errors }) => {
+          await page.setViewportSize({ width, height: 900 })
+          // The notebook clock, scripted: past midnight on the day under way, then on another day.
+          let clockDay = DAY.ymd
+          await page.route('**/clock/_api/now', (route) =>
+            route.fulfill({
+              json: {
+                notebook: { date: clockDay, time: '25:10', timezone: 'America/Chicago' },
+                system: { date: DAY.addDays(1).ymd, time: '01:10', timezone: 'America/Chicago' },
+              },
+            }),
+          )
+          await page.goto(`${origin}/${DAY.ymd}`)
+          const block = page
+            .locator('.sky-block')
+            .filter({ has: page.locator('.sky-bhead', { hasText: 'Done today' }) })
+          const add = block.getByRole('button', { name: 'Add entry', exact: true })
+          await add.click()
+          const form = block.getByRole('form', { name: 'Add entry', exact: true })
+          const time = form.getByRole('textbox', { name: 'Entry time' })
+          await page.waitForFunction(() => document.querySelector<HTMLInputElement>('[aria-label="Entry time"]')?.value)
+          const started = await time.inputValue()
+          await form.getByRole('textbox', { name: 'Item text', exact: true }).fill('Garden: Planted the beds')
+          await time.fill('9:30')
+          const length = form.getByRole('textbox', { name: 'Duration' })
+          await length.fill('90')
+          await add.click()
+          await form.getByRole('alert').filter({ hasText: 'how long it took' }).waitFor()
+          await length.fill('1h 30m')
+          const screenshot = env.get('SKY_BROWSER_SCREENSHOT')
+          if (screenshot)
+            await page.screenshot({ path: `${screenshot}-entry-length-form-${width}.png`, fullPage: true })
+          await add.click()
+          const row = block.locator('.sky-prow').filter({ hasText: 'Garden: Planted the beds' })
+          await row.waitFor()
+          await page.locator('.sky-plan-undo').getByRole('button', { name: 'Dismiss notification' }).click()
+          if (screenshot) await page.screenshot({ path: `${screenshot}-entry-length-row-${width}.png`, fullPage: true })
+          assert({
+            given: 'the form opened at 25:10 on the day under way, then a changed time and a length typed two ways',
+            should: 'start at the notebook clock, refuse the bare number, then save and show the length',
+            actual: {
+              started,
+              entries: DayDocument.fromMarkdown(await readFile(file, 'utf8')).lists.find(
+                (list) => list.title === 'Professional Complete',
+              )?.items,
+              time: await row.locator('.sky-when').innerText(),
+              words: await row.locator('.sky-done-text').evaluate((element) => element.firstChild?.textContent),
+              length: await row.locator('.sky-entry-length').innerText(),
+              overflow: await page.evaluate(() => document.documentElement.scrollWidth > innerWidth),
+            },
+            expected: {
+              started: '25:10',
+              entries: ['09:30 90m > Garden: Planted the beds'],
+              time: '9:30',
+              words: 'Garden: Planted the beds',
+              length: '1 hour 30 min',
+              overflow: false,
+            },
+          })
+
+          clockDay = DAY.addDays(1).ymd
+          const asked = page.waitForResponse('**/clock/_api/now')
+          await block.getByRole('button', { name: 'Add entry', exact: true }).click()
+          await (await asked).finished()
+          assert({
+            given: 'the notebook clock already on the next day',
+            should: 'leave this day’s entry time for the person to fill',
+            actual: { started: await time.inputValue(), errors },
+            expected: { started: '', errors: [] },
+          })
+        },
+      )
+    },
+  )

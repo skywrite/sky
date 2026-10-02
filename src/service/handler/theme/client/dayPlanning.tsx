@@ -2,8 +2,10 @@ import './dayPlanning.css'
 import { ActionIcon, Button, Checkbox, Drawer, Modal, Select, Textarea, TextInput } from '@mantine/core'
 import { useMediaQuery } from '@mantine/hooks'
 import { type FormEvent, useEffect, useRef, useState } from 'react'
+import type { ClockSnapshot } from '../../clock/mod.ts'
 import {
   normalizeDayTime,
+  normalizeEntryLength,
   type DayAddKind,
   type DayPlanInput,
   type DayPlanResult,
@@ -30,6 +32,7 @@ function PlanComposer({
   onOpen,
   onClose,
   onAdd,
+  startTime,
 }: {
   key?: string
   kind: DayAddKind
@@ -40,27 +43,46 @@ function PlanComposer({
   onOpen: () => void
   onClose: () => void
   onAdd: (input: DayPlanInput, requestId: string) => Promise<void>
+  /** The time the form starts at, when there is one to offer */
+  startTime?: () => Promise<string | null>
 }) {
   const [text, setText] = useState('')
   const [category, setCategory] = useState('Professional')
   const [timed, setTimed] = useState(kind === 'commitments' || kind === 'complete')
   const [time, setTime] = useState('')
   const [invalidTime, setInvalidTime] = useState(false)
+  const [length, setLength] = useState('')
+  const [invalidLength, setInvalidLength] = useState(false)
   const field = useRef<HTMLTextAreaElement>(null)
   const trigger = useRef<HTMLButtonElement>(null)
   const wasOpen = useRef(false)
   const request = useRef<{ payload: string; id: string } | null>(null)
+  const start = useRef(startTime)
+  start.current = startTime
   useEffect(() => {
     if (opened) {
       setText('')
       setTime('')
       setTimed(kind === 'commitments' || kind === 'complete')
       setInvalidTime(false)
+      setLength('')
+      setInvalidLength(false)
       request.current = null
       field.current?.focus()
     } else if (wasOpen.current) trigger.current?.focus()
     wasOpen.current = opened
   }, [opened, kind])
+  useEffect(() => {
+    if (!opened || !start.current) return
+    let alive = true
+    // A time typed before the answer arrives stays.
+    void start.current().then((now) => {
+      if (alive && now) setTime((typed) => typed || now)
+    })
+    return () => {
+      alive = false
+    }
+  }, [opened])
   if (!opened)
     return (
       <Button
@@ -79,11 +101,21 @@ function PlanComposer({
     event.preventDefault()
     if (busy || !text.trim()) return
     const normalized = timed ? normalizeDayTime(time) : null
-    if (timed && !normalized) {
-      setInvalidTime(true)
+    const stated = length.trim() ? normalizeEntryLength(length) : null
+    const badTime = timed && !normalized
+    const badLength = Boolean(length.trim()) && !stated
+    if (badTime || badLength) {
+      setInvalidTime(badTime)
+      setInvalidLength(badLength)
       return
     }
-    const input: DayPlanInput = { kind: destination, text, category, ...(normalized ? { time: normalized } : {}) }
+    const input: DayPlanInput = {
+      kind: destination,
+      text,
+      category,
+      ...(normalized ? { time: normalized } : {}),
+      ...(stated ? { length: stated } : {}),
+    }
     const payload = JSON.stringify(input)
     if (request.current?.payload !== payload) request.current = { payload, id: crypto.randomUUID() }
     void onAdd(input, request.current.id)
@@ -170,6 +202,21 @@ function PlanComposer({
               Add a time
             </Button>
           ))}
+        {kind === 'complete' && (
+          <TextInput
+            aria-label="Duration"
+            className="sky-plan-length"
+            placeholder="How long?"
+            value={length}
+            maxLength={24}
+            disabled={busy}
+            error={invalidLength}
+            onChange={(event) => {
+              setLength(event.currentTarget.value)
+              setInvalidLength(false)
+            }}
+          />
+        )}
         <span className="sky-spacer" />
         <Button disabled={busy} onClick={onClose}>
           Cancel
@@ -179,9 +226,13 @@ function PlanComposer({
         </Button>
       </div>
       {timed && kind !== 'complete' && <p className="sky-plan-note">A time makes this a commitment.</p>}
-      {(invalidTime || error) && (
+      {(invalidTime || invalidLength || error) && (
         <p className="sky-plan-error" role="alert">
-          {invalidTime ? 'Enter a time as HH:MM, for example 09:30.' : error}
+          {invalidTime
+            ? 'Enter a time as HH:MM, for example 09:30.'
+            : invalidLength
+              ? 'Enter how long it took, for example 45m, 2h, or 1h 30m.'
+              : error}
         </p>
       )}
     </form>
@@ -465,6 +516,16 @@ export function useDayPlanning(
     setActive(kind)
     setError(null)
   }
+  // An entry on the day under way starts at the notebook's now, past 24:00 after midnight.
+  const startNow = async (): Promise<string | null> => {
+    try {
+      const response = await fetch('/clock/_api/now')
+      const clock = response.ok ? ((await response.json()) as ClockSnapshot) : null
+      return clock?.notebook.date === ymd ? normalizeDayTime(clock.notebook.time) : null
+    } catch {
+      return null
+    }
+  }
   return {
     editing: active !== null || busy,
     undo,
@@ -484,6 +545,7 @@ export function useDayPlanning(
             setError(null)
           }}
           onAdd={(input, requestId) => save('add', { ...input, requestId })}
+          startTime={kind === 'complete' ? startNow : undefined}
         />
       ) : null,
     nextButton: enabled ? (
