@@ -17,6 +17,7 @@ import { DayDirFileWriter, writeDayItems } from '#lib/nbfs/mod.ts'
 import { autoRelMessage, mergeRel } from '#lib/notebook/enrich/autoRel.ts'
 import { autoTagMessage } from '#lib/notebook/enrich/autoTag.ts'
 import slugify from '#lib/string/slugify.ts'
+import TagSet from '#shared/models/TagSet/mod.ts'
 import { actionKindRel } from '#shared/nbfs/mod.ts'
 import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import { notesFromDocument } from './lib/fromDocument.ts'
@@ -25,8 +26,9 @@ import { demoteBodyHeadings, extractNoteFromImage, notesFromImage, stripCodeFenc
 const params = {
   summary: ArgOrFlag.string('Summary / Header of Notes', { short: 's', optional: true }),
   fromFile: Flag.string('Document to attach and summarize', { optional: true }),
-  workWhen: Flag.string('Work date and time, optionally a range: 2026-01-27 15:30 - 16:30', { optional: true }),
-  body: Flag.string('Additional notes about the work', { optional: true }),
+  workWhen: Flag.string('Capture date and time, optionally a range: 2026-01-27 15:30 - 16:30', { optional: true }),
+  body: Flag.string('Additional notes', { optional: true }),
+  tags: Flag.string('Tags separated by semicolons', { optional: true }),
   run: Flag.string('Note import identity for resuming a saved note', { optional: true }),
   fromAudio: Flag.string('Path to audio file, or omit path to search Desktop', {
     short: 'a',
@@ -65,7 +67,7 @@ export default class NotesNewTask extends Command {
         return CommandResult.fail('Use only one of --from-file, --from-audio, or --from-image.')
       }
       if (imageCapture && (typeof args.fromImage !== 'string' || args.fromImage === 'true'))
-        return CommandResult.fail('Choose image paths with --from-image when recording work.')
+        return CommandResult.fail('Choose image paths with --from-image when capturing a note.')
       output.plan([
         { id: 'save', label: 'Saving the note and attachment' },
         { id: 'summary', label: imageCapture ? 'Reading the image text' : 'Summarizing the attachment' },
@@ -81,6 +83,7 @@ export default class NotesNewTask extends Command {
         summary: args.summary,
         when: args.workWhen ?? args.when.toString(),
         body: args.body,
+        tags: args.tags,
         category: args.category,
         run: args.run,
         config: context.config,
@@ -186,14 +189,14 @@ export default class NotesNewTask extends Command {
     // nothing to classify at creation time. Auto-rel runs alongside the
     // pipeline's own extraction rather than instead of it, appending
     // graph-validated refs the transcript or image pass missed.
-    let tags: string | undefined
+    let tags = args.tags ? TagSet.fromString(args.tags).toString() : undefined
     if (useAudioPipeline || useImagePipeline) {
       const enrichInput = { summary, body }
       const [autoTags, autoRel] = await Promise.all([
         args.noAutoTag ? undefined : autoTagMessage(enrichInput, NOTES_ENRICH),
         args.noAutoRel ? undefined : autoRelMessage(enrichInput, NOTES_ENRICH),
       ])
-      tags = autoTags
+      tags = TagSet.fromArray([...TagSet.fromString(tags ?? ''), ...TagSet.fromString(autoTags ?? '')]).toString()
       if (autoTags) output.log(`  Auto-tags: ${autoTags}`)
       const merged = mergeRel(rel, autoRel)
       if (autoRel && merged && merged.length > (rel?.length ?? 0)) {
@@ -219,7 +222,7 @@ export default class NotesNewTask extends Command {
       yamlLines.push('rel:')
     }
 
-    yamlLines.push(tags ? `tags: ${tags}` : 'tags:')
+    yamlLines.push(tags ? `tags: ${JSON.stringify(tags)}` : 'tags:')
 
     if (attachmentFiles.length > 0) {
       yamlLines.push('attachments:')

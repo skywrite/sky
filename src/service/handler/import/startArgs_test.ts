@@ -114,6 +114,7 @@ test('a document starts a timed note with the work wording and a stable retry id
       when: '2026-01-27 23:30 - 25:30',
       summary: 'Worked on the Atlas report',
       body: 'Revised the asks.',
+      tags: 'Strategy; Planning',
     }),
     '/tmp/Atlas.pdf',
   )
@@ -128,6 +129,7 @@ test('a document starts a timed note with the work wording and a stable retry id
       workWhen: start.args.workWhen,
       summary: start.args.summary,
       body: start.args.body,
+      tags: start.args.tags,
       run: start.args.run,
     },
     expected: {
@@ -138,6 +140,7 @@ test('a document starts a timed note with the work wording and a stable retry id
       workWhen: '2026-01-27 23:30 - 25:30',
       summary: 'Worked on the Atlas report',
       body: 'Revised the asks.',
+      tags: 'Strategy; Planning',
       run: 'import-one',
     },
   })

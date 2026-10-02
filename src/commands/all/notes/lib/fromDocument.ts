@@ -12,15 +12,17 @@ import { imageCreationStamp, imageFileName, imageSummary } from '#lib/notebook/i
 import { atomicWrite, readOptional, withLock } from '#lib/outbox/files.ts'
 import slugify from '#lib/string/slugify.ts'
 import { Document } from '#shared/models/Markdown/mod.ts'
+import TagSet from '#shared/models/TagSet/mod.ts'
 import { actionKindRel, dayDir, dayFile } from '#shared/nbfs/mod.ts'
 import { Instant, instantNow, ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
-import { documentActivity, documentWorkWhen, isNoteDocument, isNoteImage } from './documentInput.ts'
+import { documentTitle, documentWorkWhen, isNoteDocument, isNoteImage } from './documentInput.ts'
 
 interface DocumentNoteOptions {
   source: string | string[]
   summary?: string
   when: string
   body?: string
+  tags?: string
   category: string
   /** An import job's identity makes retries idempotent; it is not the content's filename. */
   run?: string
@@ -80,8 +82,8 @@ export async function notesFromDocument(options: DocumentNoteOptions): Promise<C
             sources = ordered.sort((a, b) => a.mtime - b.mtime).map(({ file }) => file)
           }
           const when = documentWorkWhen(options.when)
-          const title = (options.summary ?? documentActivity(path.basename(sources[0]))).trim()
-          if (!title || /[\r\n]/.test(title)) throw new Error('Describe the work in one line.')
+          const title = (options.summary ?? documentTitle(path.basename(sources[0]))).trim()
+          if (!title || /[\r\n]/.test(title)) throw new Error('Enter a title in one line.')
           options.stage('save', 'Saving the note and attachment')
           const copied = await Promise.all(
             sources.map(async (source) => {
@@ -101,12 +103,13 @@ export async function notesFromDocument(options: DocumentNoteOptions): Promise<C
             .toPlainDateTime()
             .toString({ smallestUnit: 'second' })
           const stamp = created.replace('T', '_').replaceAll(':', '')
-          const slug = slugify(title, { preserveCase: true, suggestedLength: 70 }) || 'Document-work'
+          const slug = slugify(title, { preserveCase: true, suggestedLength: 70 }) || 'Document'
           const initial = new Document(
             {
               summary: title,
               when: when.toString(),
               type: 'Notes',
+              ...(options.tags ? { tags: TagSet.fromString(options.tags).toString() } : {}),
               attachments: copied.map((item) => item.attachment),
             },
             // The hidden import identity distinguishes independent identical captures during crash recovery.

@@ -66,6 +66,7 @@ export function startArgs(job: StartContext, fields: StartFields, input: string 
         ...(job.source === 'image' ? { fromImage: filePaths.join(',') } : { fromFile: filePath }),
         summary: fields.summary,
         body: fields.body,
+        ...(fields.tags ? { tags: fields.tags } : {}),
         workWhen: work.toString(),
         when: work.datetime,
         category: `${fields.category} Complete`,

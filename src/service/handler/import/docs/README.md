@@ -1,6 +1,6 @@
 ---
 created: 2026-09-01
-updated: 2026-10-01
+updated: 2026-10-02
 ---
 
 # Meeting from a file — the import
@@ -23,7 +23,7 @@ server-sent events.
   text for its stamped turns; a recording for its size (its length comes from the container, probed by
   the host); an image for its size and its pixels (`lib/media/image`
   reads the header); a dragged text for its lines and its first words;
-  a document for its format, leaving the work time to the person.
+  a document for its format, leaving its editable capture time independent of its contents.
   A file sky does not take, or cannot, gets a sentence.
 - `jobs.ts` — the job store: memory first, a `job.json` beside each upload
   so a restart still knows what was there (a job that was running when the
@@ -73,7 +73,7 @@ One door for every file kind. The kind picks the command:
 | other audio | the kind chosen in the dialog: `meeting:new` and `event:new` with `--from-voice-memo`, or `journal:new`, `notes:new`, `message:new` with `--from-audio` |
 | CAF audio (detected from its contents) | `message:new --from-audio-turns` with medium `iMessage Audio`, or `message:append` for an existing destination; every file is one turn |
 | image | Message: `message:new --from-image`; Notes: `notes:new --from-image --work-when` — captures the written text and Markdown structure |
-| `.pdf`, `.docx`, `.pptx`, `.xlsx`, `.md` | `notes:new --from-file` — a note about work, with the document attached and summarized |
+| `.pdf`, `.docx`, `.pptx`, `.xlsx`, `.md` | `notes:new --from-file` — a captured document or work session, with the document attached and summarized |
 
 Images dropped or selected together form one import, with Message or Notes chosen in the dialog.
 The dialog lists every file, and the job keeps the complete group when reopened.
@@ -139,17 +139,19 @@ Other file kinds remain separate imports. Each image retains its capture
 time so either reader can read the pages in capture order; size limits
 apply to each image, and a refused image blocks the whole group.
 
-Document imports open **Record work** with an editable activity suggested from
-the filename, the viewed day, an empty work-time field, and optional notes.
-The person supplies the time or range; neither the document's dates nor its
-modified time may supply the work time. Add to day saves the note and attachment
+Document imports open **Capture document** with a neutral, editable title suggested
+from the filename, the viewed day, the current notebook time, optional notes,
+and editable tags with notebook suggestions. The title can describe either the
+document being archived or work on it. The person can change the time or add a
+range; neither the document's dates nor its modified time may supply the capture
+time. Add to day saves the note, selected tags, and attachment
 before summarizing and enriching it, and opens the chosen day if it was changed.
 The dialog shows summarization progress and explains that it is safe to close;
 closing it leaves the work running. Completion uses the same temporary bottom
 notification surface as a saved chat, with Open note or a failure's retry path.
 The Files page's Create note action uses this same flow.
 
-Images chosen as Notes use the same Record work fields, save-first checkpoint,
+Images chosen as Notes use the same capture fields, save-first checkpoint,
 background progress, and completion notification. They retain every original
 and render the full text using the existing image-note reader, preserving
 wording, lists, checkboxes, and tables, with `[illegible]` for unreadable text.
@@ -223,7 +225,7 @@ record itself is the transcript pipeline's: see
 | `GET /import/audio-conversations?day=YYYY-MM-DD` | eligible saved audio conversations, with participants and a last-turn preview |
 | `GET /import/:id` | one job, plus the journal types the dialog offers |
 | `GET /import/:id/events` | SSE: every event so far, then live until the job settles |
-| `POST /import/:id/start` | `{kind, when, whenStated?, dayStated?, category?, journalType?, fresh?, summary?, body?, fileOrder?, audioSpeakers?, to?, appendTo?}` — runs the door command; document notes require `summary` and accept a range in `when`; `fileOrder` is the CAF group's complete ordered list of staged names, `audioSpeakers` who speaks in each by staged name, and `to` who a single new clip is to; `appendTo` selects a saved audio conversation; `fresh` starts a transcript pipeline over |
+| `POST /import/:id/start` | `{kind, when, whenStated?, dayStated?, category?, journalType?, fresh?, summary?, body?, tags?, fileOrder?, audioSpeakers?, to?, appendTo?}` — runs the door command; document notes require `summary`, accept a range in `when`, and accept semicolon-separated `tags`; `fileOrder` is the CAF group's complete ordered list of staged names, `audioSpeakers` who speaks in each by staged name, and `to` who a single new clip is to; `appendTo` selects a saved audio conversation; `fresh` starts a transcript pipeline over |
 | `POST /import/:id/answer` | `{promptId, answer}` |
 | `POST /import/:id/cancel`, `/remove` | abandon the run; forget the job and its file |
 | `POST /import/:id/undo` | undo an audio addition while its completed import and unchanged saved result remain available |

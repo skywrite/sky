@@ -1,5 +1,16 @@
 import './import.css'
-import { ActionIcon, Autocomplete, Button, Drawer, Modal, Popover, Select, Textarea, TextInput } from '@mantine/core'
+import {
+  ActionIcon,
+  Autocomplete,
+  Button,
+  Drawer,
+  Modal,
+  Popover,
+  Select,
+  TagsInput,
+  Textarea,
+  TextInput,
+} from '@mantine/core'
 import { useMediaQuery } from '@mantine/hooks'
 import {
   type DragEvent,
@@ -20,7 +31,7 @@ import {
 } from '#commands/all/audio/transcript/lib/models.ts'
 import type { AudioConversation } from '#commands/all/message/_lib/savedAudioConversation.ts'
 import {
-  documentActivity,
+  documentTitle,
   documentWorkWhen,
   isAttachmentNote,
   isNoteDocument,
@@ -31,6 +42,7 @@ import {
 import type { PlaceAnswer, PlaceItem, PlacePrompt } from '#commands/lib/prompt/Prompter.ts'
 import { inspectAudioBlob } from '#lib/media/audioHeader.ts'
 import { VIDEO_EXTENSIONS } from '#lib/media/video.ts'
+import TagSet from '#shared/models/TagSet/mod.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import {
   dayLabel,
@@ -92,6 +104,7 @@ export interface ImportJob {
     relation: 'matches' | 'just-after'
   } | null
   suggestedWhen: string
+  captureWhen?: string
   day?: string
   links?: string[]
   linkError?: string | null
@@ -106,6 +119,7 @@ export interface ImportJob {
     journalType: string | null
     summary?: string
     body?: string
+    tags?: string
     audioSpeakers?: Record<string, string>
     to?: string
     appendTo?: string
@@ -606,8 +620,8 @@ export function DropOverlay({ what = 'files' }: { what?: Dragged }) {
             'Sky asks what it is — a conversation or a meeting — then files it.'
           ) : (
             <>
-              Record work on a document, or import a transcript, voice memo, or conversation. To keep a file with the
-              day as it is, drop it on the File attachments pad.
+              Capture and summarize a document, or import a transcript, voice memo, or conversation. To keep a file with
+              the day as it is, drop it on the File attachments pad.
             </>
           )}
         </div>
@@ -757,6 +771,7 @@ type Fields = {
   fresh: boolean
   summary: string
   body: string
+  tags: string[]
 }
 
 function Pills<T extends string>({
@@ -984,20 +999,22 @@ function ConfirmBody({
   const meeting = pending?.meeting
   // A section drop chooses the day; the file supplies only the editable clock time.
   const proposedWhen = documentSource
-    ? `${pending?.day ?? live?.suggestedWhen.slice(0, 10) ?? todayYmd ?? ''} `
+    ? `${pending?.day ?? live?.day ?? live?.suggestedWhen.slice(0, 10) ?? todayYmd ?? ''} ${live?.captureWhen?.slice(11) ?? live?.suggestedWhen.slice(11) ?? ''}`
     : (meeting?.when ??
       (meeting?.day && live ? `${meeting.day} ${live.suggestedWhen.split(' ')[1]}` : live?.suggestedWhen))
   const dayStated = Boolean(meeting?.day || job?.fields?.dayStated)
   const [touched, setTouched] = useState(Boolean(meeting || job?.fields))
   const categoryTouched = useRef(Boolean(job?.fields?.category))
+  const whenTouched = useRef(Boolean(job?.fields?.when))
   const [fields, setFields] = useState<Fields>({
     kind: meeting ? 'meeting' : (job?.fields?.kind ?? kinds[0] ?? 'meeting'),
     when: job?.fields?.when ?? proposedWhen ?? '',
     category: job?.fields?.category ?? live?.listen?.category ?? 'Professional',
     fresh: false,
     summary:
-      job?.fields?.summary ?? (documentSource ? documentActivity(job?.file.name ?? pending?.files[0]?.name ?? '') : ''),
+      job?.fields?.summary ?? (documentSource ? documentTitle(job?.file.name ?? pending?.files[0]?.name ?? '') : ''),
     body: job?.fields?.body ?? '',
+    tags: [...TagSet.fromString(job?.fields?.tags ?? '')],
   })
   const [starting, setStarting] = useState(false)
   const [started, setStarted] = useState(false)
@@ -1005,6 +1022,8 @@ function ConfirmBody({
   const [error, setError] = useState<string | null>(null)
   const documentInput = documentSource || isAttachmentNote(live?.readback.source ?? '', fields.kind)
   const retryDocument = documentInput && Boolean(job?.fields)
+  const [tagSearch, setTagSearch] = useState('')
+  const tagOptions = useCompletions(documentInput && !retryDocument ? 'tags' : null, tagSearch, { dir: 'time' })
   const whenStated = documentInput || Boolean(meeting?.when || job?.fields?.whenStated)
   const imageTimes = useRef<Partial<Record<ImportKind, string>>>({})
   const changeKind = (kind: ImportKind) => {
@@ -1014,13 +1033,13 @@ function ConfirmBody({
       const when =
         imageTimes.current[kind] ??
         (kind === 'note'
-          ? `${pending?.day ?? job?.day ?? todayYmd ?? live.suggestedWhen.slice(0, 10)} `
+          ? `${pending?.day ?? job?.day ?? todayYmd ?? live.suggestedWhen.slice(0, 10)} ${live.captureWhen?.slice(11) ?? live.suggestedWhen.slice(11)}`
           : live.suggestedWhen)
       setFields((f) => ({
         ...f,
         kind,
         when,
-        summary: f.summary || documentActivity(live.file.name),
+        summary: f.summary || documentTitle(live.file.name),
       }))
     } else setFields((f) => ({ ...f, kind }))
   }
@@ -1032,7 +1051,7 @@ function ConfirmBody({
     if (!live) return
     setFields((f) => ({
       ...f,
-      when: f.when.trim() ? f.when : (proposedWhen ?? live.suggestedWhen),
+      when: !whenTouched.current && (documentSource || !f.when.trim()) ? (proposedWhen ?? live.suggestedWhen) : f.when,
       kind: touched ? f.kind : (live.listen?.kind ?? live.readback.kinds[0] ?? f.kind),
       category: categoryTouched.current ? f.category : (live.listen?.category ?? f.category),
     }))
@@ -1123,7 +1142,9 @@ function ConfirmBody({
       : documentInput
         ? retryDocument
           ? 'Finish the note'
-          : 'Record work'
+          : documentSource
+            ? 'Capture document'
+            : 'Capture note'
         : audioConversation
           ? appendTo
             ? 'Add audio to conversation'
@@ -1137,7 +1158,7 @@ function ConfirmBody({
     try {
       if (documentInput) {
         documentWorkWhen(fields.when)
-        if (!fields.summary.trim()) throw new Error('Describe the work in one line.')
+        if (!fields.summary.trim()) throw new Error('Enter a title in one line.')
       }
       if (audioConversation && files.some((file) => !speakers[file.name]?.trim())) {
         throw new Error("Enter who's speaking in each audio file.")
@@ -1157,7 +1178,15 @@ function ConfirmBody({
               ...(appendTo ? { appendTo } : count === 1 ? { to: to.trim() } : {}),
             }
           : {}),
-        ...(documentInput ? { summary: fields.summary, body: fields.body } : {}),
+        ...(documentInput
+          ? {
+              summary: fields.summary,
+              body: fields.body,
+              ...(fields.tags.length || tagSearch.trim()
+                ? { tags: TagSet.fromArray([...fields.tags, ...tagSearch.split(/[;,\r\n]+/)]).toString() }
+                : {}),
+            }
+          : {}),
       })
       if (documentInput) {
         setStarted(true)
@@ -1343,7 +1372,8 @@ function ConfirmBody({
           {documentInput ? (
             <div className="sky-document-capture">
               <TextInput
-                label="What did you do?"
+                label="Title"
+                description="Name the document, or describe what you did."
                 value={fields.summary}
                 disabled={retryDocument}
                 onChange={(event) => {
@@ -1358,6 +1388,7 @@ function ConfirmBody({
                   value={fields.when.slice(0, 10)}
                   disabled={retryDocument}
                   onChange={(event) => {
+                    whenTouched.current = true
                     const day = event.currentTarget.value
                     setFields((f) => ({ ...f, when: `${day} ${f.when.slice(11)}` }))
                   }}
@@ -1369,9 +1400,11 @@ function ConfirmBody({
                   value={fields.when.slice(11)}
                   disabled={retryDocument}
                   description={
-                    workDuration ?? 'A start time, or a start and end. Extended hours such as 25:30 work too.'
+                    workDuration ??
+                    'Current time by default. Add an end time to record a session; extended hours such as 25:30 work too.'
                   }
                   onChange={(event) => {
+                    whenTouched.current = true
                     const time = event.currentTarget.value
                     setFields((f) => ({ ...f, when: `${f.when.slice(0, 10)} ${time}` }))
                   }}
@@ -1387,6 +1420,32 @@ function ConfirmBody({
                 onChange={(event) => {
                   const body = event.currentTarget.value
                   setFields((f) => ({ ...f, body }))
+                }}
+              />
+              <TagsInput
+                label="Tags"
+                description="Optional · Choose existing tags, type new ones, or drop tags here."
+                placeholder="Add tags"
+                value={fields.tags}
+                searchValue={tagSearch}
+                onSearchChange={setTagSearch}
+                data={[...new Set(tagOptions.map((tag) => tag.value))]}
+                splitChars={[',', ';']}
+                disabled={starting || retryDocument}
+                onChange={(tags) => setFields((f) => ({ ...f, tags }))}
+                onDrop={(event) => {
+                  if (starting || retryDocument || event.dataTransfer.files.length) return
+                  const text = event.dataTransfer.getData('text/plain')
+                  if (!text || event.dataTransfer.types.includes('text/uri-list')) return
+                  event.preventDefault()
+                  event.stopPropagation()
+                  setFields((f) => ({
+                    ...f,
+                    tags: [
+                      ...TagSet.fromArray([...f.tags, ...tagSearch.split(/[;,\r\n]+/), ...text.split(/[;,\r\n]+/)]),
+                    ],
+                  }))
+                  setTagSearch('')
                 }}
               />
             </div>

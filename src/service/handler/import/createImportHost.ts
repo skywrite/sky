@@ -160,7 +160,7 @@ export function createImportHost(config: typeof ConfigModule, env: Record<string
   // way the start is that less the length, spelled in notebook time. A
   // transcript whose cues stamp the time of day says itself when it began.
   const suggestWhen = (file: StagedFile, readback: ReadBack): string => {
-    if (readback.source === 'document') return notebookWhen(ZonedDateTime.now(), config.DIR_TIME).slice(0, 10)
+    if (readback.source === 'document') return notebookWhen(ZonedDateTime.now(), config.DIR_TIME)
     const end = file.lastModified ?? Date.now()
     if (readback.clockStartSeconds !== null) {
       return notebookWhen(startOnSavedDay(end, readback.clockStartSeconds), config.DIR_TIME)
@@ -293,6 +293,7 @@ export function createImportHost(config: typeof ConfigModule, env: Record<string
     dir: path.join(config.DIR_USER_DATA, 'imports'),
     read,
     suggestWhen,
+    captureWhen: () => notebookWhen(ZonedDateTime.now(), config.DIR_TIME),
     listen,
     opening: clipOpening,
     calendar,

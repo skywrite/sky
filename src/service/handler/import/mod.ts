@@ -20,7 +20,8 @@ import { streamSSE } from 'hono/streaming'
 import type { AudioConversation } from '#commands/all/message/_lib/savedAudioConversation.ts'
 import { documentWorkWhen, isAttachmentNote } from '#commands/all/notes/lib/documentInput.ts'
 import type { RunEvent } from '#commands/lib/core/runCommand.ts'
-import { instantNow, PlainDate } from '#universal/dates/nbdt/mod.ts'
+import TagSet from '#shared/models/TagSet/mod.ts'
+import { instantNow, PlainDate, PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import { hold } from '../../activity.ts'
 import { safeAttachmentName } from '../attachments/mod.ts'
 import { linkValues } from '../links/mod.ts'
@@ -78,6 +79,8 @@ export interface ImportRoutesOptions {
   read: (file: { path: string; name: string; size: number }) => Promise<ReadBack>
   /** The when sky proposes for a file, notebook time, YYYY-MM-DD HH:MM */
   suggestWhen: (file: StagedFile, readback: ReadBack) => string
+  /** The current notebook time for document and image-note capture. */
+  captureWhen?: () => string
   /** The first minute of a recording, heard; absent or null when it cannot be */
   listen?: (filePath: string, jobDir: string) => Promise<Listen | null>
   /** The opening words of one CAF clip, so the person can tell the clips apart before naming who speaks */
@@ -189,7 +192,8 @@ function parseStart(body: unknown, job: ImportJob): StartFields | string {
       return (error as Error).message
     }
     if (typeof b.summary !== 'string' || !b.summary.trim() || /[\r\n]/.test(b.summary))
-      return 'Describe the work in one line.'
+      return 'Enter a title in one line.'
+    if (b.tags !== undefined && typeof b.tags !== 'string') return 'Enter tags separated by semicolons.'
   } else if (!WHEN.test(when)) return 'when must be YYYY-MM-DD HH:MM'
   const category = b.category === 'Personal' ? 'Personal' : 'Professional'
   const journalType = typeof b.journalType === 'string' && b.journalType.trim() ? b.journalType.trim() : null
@@ -232,7 +236,11 @@ function parseStart(body: unknown, job: ImportJob): StartFields | string {
     ...(to ? { to } : {}),
     ...(appendTo ? { appendTo } : {}),
     ...(isAttachmentNote(readback.source, kind)
-      ? { summary: (b.summary as string).trim(), body: typeof b.body === 'string' ? b.body : '' }
+      ? {
+          summary: (b.summary as string).trim(),
+          body: typeof b.body === 'string' ? b.body : '',
+          ...(typeof b.tags === 'string' && b.tags.trim() ? { tags: TagSet.fromString(b.tags).toString() } : {}),
+        }
       : {}),
   }
 }
@@ -373,14 +381,16 @@ export function createImportRoutes(options: ImportRoutesOptions): Hono {
             kinds: refused < 0 ? (audioConversation ? ['message'] : ['message', 'note']) : [],
             refusal: refused < 0 ? null : `${files[refused].name}: ${readbacks[refused].refusal}`,
           }
-    const proposed = options.suggestWhen(file, readback)
+    const captureWhen =
+      readback.source === 'document' || readback.source === 'image'
+        ? (options.captureWhen?.() ?? new PlainDateTime().toString())
+        : undefined
+    const proposed = readback.source === 'document' ? captureWhen! : options.suggestWhen(file, readback)
     const suggestedWhen =
       typeof filingDay === 'string'
-        ? readback.source === 'document'
-          ? filingDay
-          : audioConversation
-            ? `${filingDay} ${proposed.slice(11)}`
-            : proposed
+        ? readback.source === 'document' || audioConversation
+          ? `${filingDay} ${proposed.slice(11)}`
+          : proposed
         : proposed
     // Keyed once, now: a filed run moves the upload on, and the key must outlive it.
     const kept =
@@ -401,6 +411,7 @@ export function createImportRoutes(options: ImportRoutesOptions): Hono {
       listen: null,
       calendar: null,
       suggestedWhen,
+      ...(captureWhen ? { captureWhen } : {}),
       ...(typeof filingDay === 'string' ? { day: filingDay } : {}),
       runKey: kept?.key ?? null,
       resume: kept?.resume ?? null,

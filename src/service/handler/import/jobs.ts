@@ -59,6 +59,7 @@ export interface StartFields {
   fresh: boolean
   summary?: string
   body?: string
+  tags?: string
   /** Speaker names keyed by staged filename, so reordering cannot swap identities. */
   audioSpeakers?: Record<string, string>
   /** Who one audio message is to; a conversation's other speakers say it themselves */
@@ -91,6 +92,8 @@ export interface ImportJob {
   calendar: CalendarMatch | null
   /** The when sky proposes, from the file's time and length */
   suggestedWhen: string
+  /** Notebook time at upload, independent of the attachment's modified time. */
+  captureWhen?: string
   /** The viewed day at upload, also used when reopening the conversation picker. */
   day?: string
   /** The pipeline's record key for the file, from its bytes at upload; null when the host keeps none */

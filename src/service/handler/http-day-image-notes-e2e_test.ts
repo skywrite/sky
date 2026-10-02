@@ -40,6 +40,7 @@ test(
         imports: {
           read: async ({ size }) => readImage(size, { width: 1200, height: 2400 }),
           suggestWhen: () => '2025-06-01 08:00',
+          captureWhen: () => '2026-01-29 10:00',
           run: async function* (job, files, signal) {
             runs.push(job)
             const start = startArgs({ ...job, source: job.readback.source }, job.fields!, files)
@@ -51,6 +52,7 @@ test(
               source: String(start.args.fromImage).split(','),
               summary: String(start.args.summary),
               body: String(start.args.body),
+              tags: start.args.tags as string | undefined,
               when: String(start.args.workWhen),
               category: String(start.args.category),
               run: job.id,
@@ -126,15 +128,15 @@ test(
           await dialog.getByRole('button', { name: 'Notes', exact: true }).click()
           assert({
             given: `an image chosen as notes at ${viewport.width}px`,
-            should: 'keep the viewed day and ask for work time instead of using the image clock',
+            should: 'keep the viewed day and prefill the current time independently of the image clock',
             actual: [
               await dialog.getByLabel('Day', { exact: true }).inputValue(),
               await dialog.getByLabel('When', { exact: true }).inputValue(),
             ],
-            expected: [DAY.toString(), ''],
+            expected: [DAY.toString(), '10:00'],
           })
           const activity = `Planned Atlas ${index + 1}`
-          await dialog.getByLabel('What did you do?').fill(activity)
+          await dialog.getByLabel('Title', { exact: true }).fill(activity)
           await dialog.getByLabel('When', { exact: true }).fill('15:30 - 16:30')
           await dialog.getByLabel('Additional notes').fill('Reviewed the scope.')
           await dialog.getByRole('button', { name: 'Message', exact: true }).click()
@@ -149,7 +151,7 @@ test(
             given: 'switching back to Notes',
             should: 'preserve the activity, range, and additional notes',
             actual: [
-              await dialog.getByLabel('What did you do?').inputValue(),
+              await dialog.getByLabel('Title', { exact: true }).inputValue(),
               await dialog.getByLabel('When', { exact: true }).inputValue(),
               await dialog.getByLabel('Additional notes').inputValue(),
             ],
@@ -177,7 +179,7 @@ test(
               given: 'reopening a failed image note',
               should: 'lock its capture details for retry',
               actual: [
-                await dialog.getByLabel('What did you do?').isDisabled(),
+                await dialog.getByLabel('Title', { exact: true }).isDisabled(),
                 await dialog.getByRole('button', { name: 'Message', exact: true }).isDisabled(),
               ],
               expected: [true, true],

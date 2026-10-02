@@ -233,6 +233,7 @@ async function world(): Promise<World & { dir: string; notebook: string }> {
       return readUnknown(name)
     },
     suggestWhen: () => '2026-01-27 09:31',
+    captureWhen: () => '2026-01-29 10:00',
     // Keyed by name here rather than by bytes; what is left to pick up is scripted.
     record: async ({ path: filePath, key }) => ({
       key: key ?? `k-${path.basename(filePath)}`,
@@ -682,7 +683,7 @@ test('POST /import stages a transcript and reads it back', async () => {
   })
 })
 
-test('document and image notes validate work times and retain saved results through retries and restart', async () => {
+test('document and image captures default to current time and retain tags through retries and restart', async () => {
   for (const image of [false, true]) {
     const w = await world()
     const filed = 'time/2026/W05/01-27/actions/notes/Atlas-report.md'
@@ -703,13 +704,28 @@ test('document and image notes validate work times and retain saved results thro
       when: '2026-01-27 15:30 - 16:30',
       summary: 'Worked on the Atlas report',
       body: 'Revised the recommendations.',
+      tags: 'Reference; Planning',
     }
     const invalid = await postJson(app, `/import/${job.id}/start`, { ...start, when: '2026-01-27 16:30 - 15:30' })
     assert({
       given: `${image ? 'an image' : 'a PDF'} with an old modified time and a selected filing day`,
-      should: 'offer a note on that day and reject a reversed work range',
-      actual: [job.readback.source, job.readback.kinds, job.day, invalid.status],
-      expected: [image ? 'image' : 'document', image ? ['message', 'note'] : ['note'], '2026-01-27', 400],
+      should: 'retain the selected day, propose the current capture time, and reject a reversed range',
+      actual: [job.readback.source, job.readback.kinds, job.day, job.captureWhen, job.suggestedWhen, invalid.status],
+      expected: [
+        image ? 'image' : 'document',
+        image ? ['message', 'note'] : ['note'],
+        '2026-01-27',
+        '2026-01-29 10:00',
+        image ? '2026-01-27 09:31' : '2026-01-27 10:00',
+        400,
+      ],
+    })
+    const invalidTags = await postJson(app, `/import/${job.id}/start`, { ...start, tags: ['Planning'] })
+    assert({
+      given: 'invalid capture tags',
+      should: 'explain how to supply them before saving anything',
+      actual: [invalidTags.status, await invalidTags.json()],
+      expected: [400, { message: 'Enter tags separated by semicolons.' }],
     })
     await postJson(app, `/import/${job.id}/start`, start)
     await events(
@@ -719,18 +735,19 @@ test('document and image notes validate work times and retain saved results thro
     const failed = (await (await app.request(`/import/${job.id}`)).json()).job as ImportJob
     assert({
       given: 'a failure after the note is saved',
-      should: 'retain the saved path and work wording for retry',
-      actual: [failed.result, failed.fields?.when, failed.fields?.summary],
-      expected: [{ file: filed }, start.when, start.summary],
+      should: 'retain the saved path, capture wording, and tags for retry',
+      actual: [failed.result, failed.fields?.when, failed.fields?.summary, failed.fields?.tags],
+      expected: [{ file: filed }, start.when, start.summary, start.tags],
     })
     app = createTestHttpApp([path.join(w.notebook, 'time')], { imports: w.options })
     const changed = await postJson(app, `/import/${job.id}/start`, { ...start, summary: 'Changed capture' })
+    const changedTags = await postJson(app, `/import/${job.id}/start`, { ...start, tags: 'Changed' })
     const switched = await postJson(app, `/import/${job.id}/start`, { kind: 'message', when: '2026-01-27 15:30' })
     assert({
       given: 'a saved note reopened after a service restart',
       should: 'reject changed capture details or switching the saved note to a message',
-      actual: [changed.status, switched.status],
-      expected: [400, 400],
+      actual: [changed.status, changedTags.status, switched.status],
+      expected: [400, 400, 400],
     })
     const retry = await postJson(app, `/import/${job.id}/start`, start)
     await events(

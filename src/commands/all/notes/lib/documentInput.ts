@@ -16,15 +16,15 @@ export function isAttachmentNote(source: string, kind?: string): boolean {
   return source === 'document' || (source === 'image' && kind === 'note')
 }
 
-export function documentActivity(name: string): string {
+export function documentTitle(name: string): string {
   const title = name
     .replace(/\.[^.]+$/, '')
     .replace(/[_-]+/g, ' ')
     .trim()
-  return `Worked on ${title || 'the document'}`
+  return title || 'Document'
 }
 
-/** The work's clock is stated by the person; document dates never supply it. */
+/** Capture time is chosen in the dialog; document dates never supply it. */
 export function documentWorkWhen(value: string): When {
   const normalized = value.trim().replace(/[–—]/g, '-')
   const match = /^(\d{4}-\d{2}-\d{2})\s+(\d{1,2}:[0-5]\d)(?:\s*-\s*(\d{1,2}:[0-5]\d))?$/.exec(normalized)

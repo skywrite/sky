@@ -186,6 +186,7 @@ async function fixture() {
     when: '2026-01-27 15:30 - 16:30',
     summary: 'Worked on the Atlas report',
     body: 'Revised the recommendations.',
+    tags: 'Reference; Planning',
     category: 'Professional Complete',
     run: 'test-capture',
     stage: () => {},
@@ -204,9 +205,13 @@ test('document note saves before AI, retries without duplicates, and preserves u
       const saved = await readdir(notes)
       assert({
         given: 'the summary call starting',
-        should: 'already have one note and the original PDF saved',
-        actual: [saved.length, await readFile(file!, 'utf8')],
-        expected: [1, '%PDF-1.4 synthetic report'],
+        should: 'already have one note, its chosen tags, and the original PDF saved',
+        actual: [
+          saved.length,
+          Document.fromMarkdown(await readFile(path.join(notes, saved[0]), 'utf8')).yaml.tags,
+          await readFile(file!, 'utf8'),
+        ],
+        expected: [1, 'Reference; Planning', '%PDF-1.4 synthetic report'],
       })
       throw new Error('Synthetic timeout')
     }
@@ -295,16 +300,17 @@ test('separate document captures retain separate notes and never overwrite a sam
       ],
       expected: [2, true, [{ file: 'Atlas-report.pdf' }], [{ file: 'Atlas-report_2.pdf' }]],
     })
-    const third = await notesFromDocument({ ...options, run: 'third-capture' })
+    const third = await notesFromDocument({ ...options, summary: undefined, body: undefined, run: 'third-capture' })
     assert({
-      given: 'a new session with the same contents and title',
-      should: 'create a separate note and reuse the attachment',
+      given: 'archiving the same document without an activity description',
+      should: 'create a separate note with a neutral title and reuse the attachment',
       actual: [
         Boolean(third.ok),
         (await readdir(notes)).length,
         Document.fromMarkdown(await readFile(third.data!.filePath, 'utf8')).yaml.attachments,
+        Document.fromMarkdown(await readFile(third.data!.filePath, 'utf8')).yaml.summary,
       ],
-      expected: [true, 3, [{ file: 'Atlas-report_2.pdf' }]],
+      expected: [true, 3, [{ file: 'Atlas-report_2.pdf' }], 'Atlas report'],
     })
   } finally {
     await rm(root, { recursive: true, force: true })
