@@ -314,7 +314,7 @@ test(
   },
 )
 
-test({ name: 'rail — projects/ completes a project in Links and saves a working link', timeout: 40000 }, async (t) => {
+test({ name: 'rail — Links offers the open projects and saves a working link', timeout: 40000 }, async (t) => {
   const projectPath = 'projects/open/Widget-V2/_project/overview.md'
   await runWysiwygE2e(
     t,
@@ -333,20 +333,21 @@ test({ name: 'rail — projects/ completes a project in Links and saves a workin
     async ({ page, origin, file, errors }) => {
       await page.setViewportSize({ width: 1400, height: 900 })
       await openEditor(page, origin)
-      const input = page.locator('.sky-rail .sky-prop[data-key="rel"] input')
-      await input.fill('projects/')
-      await page.getByRole('option', { name: /Widget-V2/ }).waitFor()
-      const offered = await page.getByRole('option').locator('.sky-prop-option-label').allTextContents()
-      await input.fill('projects/widget')
-      await page.getByRole('option', { name: /Widget-V2/ }).waitFor()
-      await input.press('Enter')
+      await page.getByRole('button', { name: '+ Add link', exact: true }).click()
+      await page.getByRole('checkbox', { name: 'Include Projects', exact: true }).check()
+      const choice = page.getByRole('checkbox', { name: 'Select Widget-V2', exact: true })
+      await choice.waitFor()
+      const offered = await page.locator('.sky-link-title').allTextContents()
+      await page.getByLabel('Search notebook links').fill('widget')
+      await choice.check()
+      await page.getByRole('button', { name: 'Add 1 link', exact: true }).click()
       await waitForAutosave(page)
       const saved = await readMarkdownFromDisk(file)
       await page.goto(`${origin}/explorer/notes/preview.md`)
-      const link = page.locator('.sky-rail .sky-prop[data-key="rel"] a').filter({ hasText: 'projects/Widget-V2' })
+      const link = page.locator('.sky-rail .sky-prop[data-key="rel"] a').filter({ hasText: 'Widget-V2' })
       await link.waitFor()
       assert({
-        given: 'projects/ followed by a partial project name in Links, selected with Enter',
+        given: 'the Links picker showing projects, then a partial project name searched and its record added',
         should: 'offer only the visible open folder, save projects/Folder, and link to its overview after reload',
         actual: [offered, saved, await link.getAttribute('href'), errors],
         expected: [
