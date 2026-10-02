@@ -4,11 +4,13 @@
 
 import { mkdir, writeFile } from 'node:fs/promises'
 import * as path from 'node:path'
+import { newPersonMarkdown } from '#commands/all/person/lib/create.ts'
 import { exists } from '#shared/fs/mod.ts'
 import dayAttachmentsDir from '#shared/nbfs/dayAttachmentsDir.ts'
 import dayDir from '#shared/nbfs/dayDir.ts'
+import { env } from '#shared/sys/mod.ts'
 import { assert, test } from '#test'
-import { PlainDate } from '#universal/dates/nbdt/mod.ts'
+import { PlainDate, ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
 import {
   modShortcut,
   openEditor,
@@ -195,6 +197,117 @@ test(
             DOC.replace('who: Jane Doe', 'who: Jane Doe, Jamal Reyes'),
             [],
           ],
+        })
+      },
+    )
+  },
+)
+
+test(
+  {
+    name: 'rail — a name with no profile is added to People in one press, reading or editing',
+    timeout: 40000,
+  },
+  async (t) => {
+    const doc = DOC.replace('who: Jane Doe', 'who: Jane Doe, Priya Nair, Sam Rivera, sam@example.com')
+    await runWysiwygE2e(
+      t,
+      {
+        initialMarkdown: doc,
+        tempPrefix: 'wysiwyg-rail-add-person-',
+        files: PEOPLE,
+        store: true,
+        people: true,
+        now: new ZonedDateTime('2026-08-05 12:00', 'America/Chicago'),
+      },
+      async ({ page, origin, file, errors }) => {
+        const notebook = path.dirname(path.dirname(file))
+        const shots = env.get('SKY_EXPLORER_SCREENSHOTS')
+        const shot = async (name: string) => {
+          if (shots) await page.screenshot({ path: path.join(shots, `${name}.png`), animations: 'disabled' })
+        }
+        const who = '.sky-identity .sky-prop[data-key="who"]'
+        const added = () =>
+          page.waitForResponse(
+            (response) => response.url().endsWith('/people/_api/profile') && response.request().method() === 'POST',
+          )
+        await page.setViewportSize({ width: 1400, height: 900 })
+        await page.goto(`${origin}/explorer/notes/preview.md`)
+        await page.waitForSelector(`${who} .sky-prop-chip.new`)
+        const offered = await page
+          .locator(`${who} .sky-prop-chip-add`)
+          .evaluateAll((buttons) => buttons.map((button) => button.getAttribute('aria-label')))
+        await shot('add-person-reading')
+        const first = added()
+        await page.getByRole('button', { name: 'Add Priya Nair to People', exact: true }).click()
+        await first
+        await page.locator(`${who} a.sky-prop-chip.link`, { hasText: 'Priya Nair' }).waitFor()
+        await shot('add-person-reading-added')
+        const reading = {
+          href: await page.locator(`${who} a.sky-prop-chip.link`, { hasText: 'Priya Nair' }).getAttribute('href'),
+          stillOffered: await page.locator(`${who} .sky-prop-chip-add`).count(),
+          file: await readMarkdownFromDisk(path.join(notebook, 'people/2026/pr/Priya-Nair.md')),
+        }
+
+        await openEditor(page, origin)
+        await page.waitForSelector('.sky-identity:not([data-readonly])')
+        const pill = page.locator(`${who} .mantine-Pill-root`, { hasText: 'Sam Rivera' })
+        await pill.locator('.sky-prop-chip-add').waitFor()
+        const marks = () =>
+          page
+            .locator(`${who} .mantine-Pill-root`)
+            .evaluateAll((pills) => pills.map((pill) => pill.textContent?.replace('Add', '').trim()))
+        const before = await marks()
+        await shot('add-person-editing')
+        // The first press meets a service that cannot save yet; the second one goes through.
+        await page.route('**/people/_api/profile', (route) =>
+          route.fulfill({ status: 503, json: { message: 'Your notebook is still loading. Try again in a moment.' } }),
+        )
+        await page.getByRole('button', { name: 'Add Sam Rivera to People', exact: true }).click()
+        const refused = await page.locator(`${who} .sky-prop-problem`).textContent()
+        await shot('add-person-editing-refused')
+        await page.unroute('**/people/_api/profile')
+        const second = added()
+        await page.getByRole('button', { name: 'Add Sam Rivera to People', exact: true }).click()
+        await second
+        await pill.locator('.sky-prop-chip-add').waitFor({ state: 'detached' })
+        await shot('add-person-editing-added')
+        await waitForAutosave(page)
+
+        assert({
+          given:
+            'two names with no profile and an address in who, one added while reading and one while editing after a refused press',
+          should:
+            'offer the names and not the address, make each person as person:new does, point the chip at the new file, say why a refused press added no one, and leave the document as it was',
+          actual: {
+            offered,
+            reading,
+            before,
+            refused,
+            problems: await page.locator(`${who} .sky-prop-problem`).count(),
+            after: await marks(),
+            sam: await readMarkdownFromDisk(path.join(notebook, 'people/2026/sa/Sam-Rivera.md')),
+            doc: await readMarkdownFromDisk(file),
+            errors,
+          },
+          expected: {
+            offered: ['Add Priya Nair to People', 'Add Sam Rivera to People'],
+            reading: {
+              href: '/explorer/people/2026/pr/Priya-Nair.md',
+              stillOffered: 1,
+              file: newPersonMarkdown({ name: 'Priya Nair', met: '2026-08-05', created: '2026-08-05' }),
+            },
+            before: ['◉Jane Doe', '◉Priya Nair', '?Sam Rivera', '?sam@example.com'],
+            refused: 'Sam Rivera was not added. Your notebook is still loading. Try again in a moment.',
+            problems: 0,
+            after: ['◉Jane Doe', '◉Priya Nair', '◉Sam Rivera', '?sam@example.com'],
+            sam: newPersonMarkdown({ name: 'Sam Rivera', met: '2026-08-05', created: '2026-08-05' }),
+            doc,
+            // The browser's own line for the refused press; nothing else went wrong
+            errors: [
+              'console: Failed to load resource: the server responded with a status of 503 (Service Unavailable)',
+            ],
+          },
         })
       },
     )

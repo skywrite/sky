@@ -143,6 +143,8 @@ export async function runWysiwygE2e(
     files?: Record<string, string>
     /** Build the notebook's store too, so completion and name resolution answer */
     store?: boolean
+    /** Serve the People page's routes over that store, so a profile can be saved */
+    people?: boolean
     /** Serve the day page too: its routes, and the import routes a drop on it needs */
     day?: boolean
     /** Use ordinary browser popup restrictions instead of Playwright's permissive default. */
@@ -197,6 +199,16 @@ export async function runWysiwygE2e(
         keep: { searchDirs: [downloads], spotlight: false },
         trashDir: trash,
         ...(options.day ? dayHosts(notebookBaseDir, userDataDir, options.imports) : {}),
+        ...(options.people
+          ? {
+              people: {
+                peopleDir: path.join(notebookBaseDir, 'people'),
+                orgsDir: path.join(notebookBaseDir, 'orgs'),
+                stateDir: path.join(userDataDir, 'state'),
+                now: options.now ? () => options.now! : undefined,
+              },
+            }
+          : {}),
         mostImportant: options.mostImportant,
         now: options.now ? () => options.now! : undefined,
         ...(options.chat ? { chat: options.chat(notebookBaseDir, userDataDir) } : {}),

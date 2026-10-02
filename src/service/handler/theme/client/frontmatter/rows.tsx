@@ -7,6 +7,7 @@ import { Autocomplete, Textarea, TextInput } from '@mantine/core'
 import { Fragment, type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 import { When } from '#universal/dates/nbdt/mod.ts'
 import { LinksInput } from '../links.tsx'
+import { addPerson, AddPersonError, canAddPerson } from './addPerson.ts'
 import { ChipsInput } from './ChipsInput.tsx'
 import { type Completion, fetchCompletions, type Resolved, serves, timeZones } from './complete.ts'
 import { CHIP_KINDS, ENTITY_KINDS, type RowKind, suggestedKeys, TYPE_MARKS } from './kinds.ts'
@@ -92,18 +93,70 @@ export function OptionMark({ type }: { type: string | undefined }) {
   return <span className="sky-prop-mark">{type ? (TYPE_MARKS[type] ?? '') : ''}</span>
 }
 
+/** Why a person was not added from their chip, said under the row. */
+interface AddProblem {
+  name: string
+  text: string
+  /** A profile already has the name: the People page is where to find it */
+  exists: boolean
+}
+
+/** On a chip that names no one the notebook knows: adds the person in one press. */
+function AddPerson({
+  name,
+  onAdded,
+  onProblem,
+}: {
+  name: string
+  onAdded: (hit: Resolved) => void
+  onProblem: (problem: AddProblem | null) => void
+}) {
+  const [busy, setBusy] = useState(false)
+  const label = `Add ${name} to People`
+  return (
+    <button
+      type="button"
+      className="sky-prop-chip-add"
+      title={label}
+      aria-label={label}
+      disabled={busy}
+      // In the chips field a press on a chip goes to the field's input; this one is the button's.
+      onMouseDown={(event) => event.stopPropagation()}
+      onClick={(event) => {
+        event.stopPropagation()
+        setBusy(true)
+        onProblem(null)
+        void addPerson(name)
+          .then(onAdded, (error: unknown) =>
+            onProblem({
+              name,
+              text: error instanceof Error ? error.message : 'The request could not be completed.',
+              exists: error instanceof AddPersonError && error.exists,
+            }),
+          )
+          .finally(() => setBusy(false))
+      }}
+    >
+      {busy ? 'Adding…' : 'Add'}
+    </button>
+  )
+}
+
 export function Chip({
   value,
   resolved,
   entity,
   file,
   kind,
+  action,
 }: {
   value: string
   resolved?: Resolved | null
   entity: boolean
   file: string
   kind: RowKind
+  /** What a chip the notebook does not know offers, after its text */
+  action?: ReactNode
 }) {
   if (kind === 'files') {
     return (
@@ -128,6 +181,7 @@ export function Chip({
     >
       {entity && resolved === null ? <span className="sky-prop-mark">?</span> : null}
       {value}
+      {action}
     </span>
   )
 }
@@ -140,6 +194,7 @@ export function ChipsRow({
   resolved,
   autoFocus,
   onCommit,
+  onResolved,
 }: {
   row: Row
   file: string
@@ -148,18 +203,45 @@ export function ChipsRow({
   resolved: Record<string, Resolved | null>
   autoFocus: boolean
   onCommit: (chips: string[]) => void
+  /** Takes where a name points once its person is added; without it no chip offers to add one */
+  onResolved?: (name: string, hit: Resolved) => void
 }) {
   const chips = Array.isArray(row.value) ? row.value : []
   const entityKind = ENTITY_KINDS[row.kind] ?? null
   const [search, setSearch] = useState('')
   const items = useCompletions(readOnly ? null : entityKind, search, { dir })
+  const [problem, setProblem] = useState<AddProblem | null>(null)
   if (row.kind === 'rel') return <LinksInput values={chips} file={file} readOnly={readOnly} onChange={onCommit} />
+  const addFor = (chip: string) =>
+    onResolved && row.kind === 'people' && resolved[chip] === null && canAddPerson(chip) ? (
+      <AddPerson name={chip} onAdded={(hit) => onResolved(chip, hit)} onProblem={setProblem} />
+    ) : null
+  // Said while the name is still on the row; removing its chip takes the sentence with it.
+  const problemLine =
+    problem && chips.includes(problem.name) ? (
+      <p className="sky-prop-problem" role="alert">
+        {problem.name} was not added. {problem.text}
+        {problem.exists ? (
+          <>
+            {' '}
+            <a href="/people">Open People</a>
+          </>
+        ) : null}
+      </p>
+    ) : null
   if (readOnly || row.kind === 'files') {
     return (
       <div className="sky-prop-chips">
         {chips.map((chip) => (
           <span key={chip} className="sky-prop-chip-wrap">
-            <Chip value={chip} resolved={resolved[chip]} entity={entityKind !== null} file={file} kind={row.kind} />
+            <Chip
+              value={chip}
+              resolved={resolved[chip]}
+              entity={entityKind !== null}
+              file={file}
+              kind={row.kind}
+              action={addFor(chip)}
+            />
             {!readOnly && (
               <button
                 type="button"
@@ -173,38 +255,43 @@ export function ChipsRow({
           </span>
         ))}
         {chips.length === 0 && readOnly ? <span className="sky-prop-empty">—</span> : null}
+        {problemLine}
       </div>
     )
   }
   return (
-    <ChipsInput
-      className="sky-prop-tags"
-      chips={chips}
-      options={items}
-      search={search}
-      onSearch={setSearch}
-      onChange={onCommit}
-      splitChars={row.kind === 'tags' ? [';', ','] : [',']}
-      autoFocus={autoFocus}
-      placeholder="Add…"
-      chipLabel={(chip) => resolved[chip]?.label ?? chip}
-      chipPrefix={(chip) => {
-        const hit = resolved[chip]
-        if (hit) return <Mark type={hit.type} />
-        return entityKind !== null && entityKind !== 'tags' && hit === null ? (
-          <span className="sky-prop-mark">?</span>
-        ) : null
-      }}
-      renderOption={(option) => (
-        <span className="sky-prop-option">
-          <OptionMark type={option.type} />
-          <span className="sky-prop-option-label">{option.label ?? option.value}</span>
-          {option.hint || option.count ? (
-            <span className="sky-prop-option-hint">{option.hint ?? `${option.count} docs`}</span>
-          ) : null}
-        </span>
-      )}
-    />
+    <>
+      <ChipsInput
+        className="sky-prop-tags"
+        chips={chips}
+        options={items}
+        search={search}
+        onSearch={setSearch}
+        onChange={onCommit}
+        splitChars={row.kind === 'tags' ? [';', ','] : [',']}
+        autoFocus={autoFocus}
+        placeholder="Add…"
+        chipLabel={(chip) => resolved[chip]?.label ?? chip}
+        chipPrefix={(chip) => {
+          const hit = resolved[chip]
+          if (hit) return <Mark type={hit.type} />
+          return entityKind !== null && entityKind !== 'tags' && hit === null ? (
+            <span className="sky-prop-mark">?</span>
+          ) : null
+        }}
+        chipAction={addFor}
+        renderOption={(option) => (
+          <span className="sky-prop-option">
+            <OptionMark type={option.type} />
+            <span className="sky-prop-option-label">{option.label ?? option.value}</span>
+            {option.hint || option.count ? (
+              <span className="sky-prop-option-hint">{option.hint ?? `${option.count} docs`}</span>
+            ) : null}
+          </span>
+        )}
+      />
+      {problemLine}
+    </>
   )
 }
 
@@ -450,6 +537,7 @@ export function PropRow({
   body,
   commit,
   parentKey,
+  onResolved,
 }: {
   row: Row
   file: string
@@ -459,6 +547,8 @@ export function PropRow({
   body: string
   commit: (text: string) => void
   parentKey?: string
+  /** Takes where a name points once its person is added from the row */
+  onResolved?: (name: string, hit: Resolved) => void
 }) {
   const dir = file.split('/')[0] ?? ''
   const id = parentKey ? `${parentKey}.${row.key}` : row.key
@@ -475,6 +565,7 @@ export function PropRow({
         resolved={resolved}
         autoFocus={focusKey === id}
         onCommit={(chips) => commit(writeValue(body, row.key, row.kind, chips))}
+        onResolved={onResolved}
       />
     )
   } else {

@@ -15,6 +15,8 @@ export interface FrontmatterState {
   /** Why the YAML could not be read as rows */
   error?: string
   resolved: Record<string, Resolved | null>
+  /** Points a name at a profile just added from its chip */
+  learn: (name: string, hit: Resolved) => void
   /** The key whose control should take focus on its next render */
   focusKey: string | null
   setFocusKey: (key: string | null) => void
@@ -65,5 +67,17 @@ export function useFrontmatter(
     onChange(isEmptyFrontmatter(trimmed) ? null : trimmed)
   }
   const update = (change: (body: string) => string) => commit(change(latest.current))
-  return { body, rows, error: parsed.error, resolved, focusKey, setFocusKey, commit, update, readOnly: !onChange }
+  const learn = (name: string, hit: Resolved) => setResolved((previous) => ({ ...previous, [name]: hit }))
+  return {
+    body,
+    rows,
+    error: parsed.error,
+    resolved,
+    learn,
+    focusKey,
+    setFocusKey,
+    commit,
+    update,
+    readOnly: !onChange,
+  }
 }

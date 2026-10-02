@@ -105,6 +105,11 @@ export async function resolveNames(names: string[], file: string): Promise<Recor
   return out
 }
 
+/** Where a name now points, known without asking: a profile the panel has just added. */
+export function rememberResolution(name: string, value: Resolved): void {
+  remember(resolutions, name, value)
+}
+
 /** The time zones this browser knows, for the `tz` picker. */
 export function timeZones(): string[] {
   try {

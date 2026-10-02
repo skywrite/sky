@@ -162,6 +162,49 @@
   background: var(--sky-hover);
 }
 
+/* on a chip that names no one in People: adds the person */
+.sky-prop-chip-add {
+  border: 0;
+  background: transparent;
+  color: var(--sky-accent);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 500;
+  line-height: 1.4;
+  padding: 0 4px;
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.sky-prop-tags .sky-prop-chip-add {
+  margin-left: 6px;
+}
+
+.sky-prop-chip-add:hover {
+  background: var(--sky-hover);
+}
+
+.sky-prop-chip-add:focus-visible {
+  outline: 2px solid var(--sky-accent);
+  outline-offset: 1px;
+}
+
+.sky-prop-chip-add:disabled {
+  color: var(--sky-dim);
+  cursor: default;
+}
+
+.sky-prop-problem {
+  flex-basis: 100%;
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: var(--mantine-color-orange-7);
+}
+
+.sky-prop-problem a {
+  color: var(--sky-accent);
+}
+
 .sky-prop-text,
 .sky-prop-long {
   display: inline-flex;
