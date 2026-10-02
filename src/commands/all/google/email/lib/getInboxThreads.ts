@@ -49,6 +49,14 @@ export type InboxThreadsResult = {
  */
 export const LISTING_DEPTH = 1000
 
+/** The mailbox has no label of that name — a listing across mailboxes reads it as "nothing here", not as a failure. */
+export class GmailLabelNotFoundError extends Error {
+  constructor(label: string, email: string) {
+    super(`Gmail label "${label}" not found for ${email}`)
+    this.name = 'GmailLabelNotFoundError'
+  }
+}
+
 /**
  * Whether a message counts as saved given its follow's lastActivity cutoff.
  * lastActivity is minute-granular (follow YAML carries no seconds) while Gmail
@@ -77,7 +85,7 @@ export async function getInboxThreads(
 
   const resolved = await resolveLabel(client, label)
   if (!resolved) {
-    throw new Error(`Gmail label "${label}" not found for ${client.email}`)
+    throw new GmailLabelNotFoundError(label, client.email)
   }
   const labelId = resolved.id
   // The thread-level label sync below is persistence hygiene for user

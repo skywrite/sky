@@ -1,6 +1,6 @@
 ---
 created: 2026-09-01
-updated: 2026-09-07
+updated: 2026-10-01
 ---
 
 # google — Workspace commands
@@ -27,9 +27,25 @@ The group's root commands, and where the depth lives:
   and reschedules existing events through `calendar:update`, using shared provider
   reads and `#lib/google/updateCalendarEvent.ts` for the browser update.
 
-Shared plumbing sits in `lib/` (account resolution, cross-account file
-probing, the shared read path) on top of the API client in `#lib/google`.
+Shared plumbing sits in `lib/` (account resolution, the shared read path)
+on top of the API client in `#lib/google`.
+
+## Which account a command uses
+
+With several accounts connected, a command works out the account instead
+of asking (`lib/resolveClient.ts`):
+
+- Something that already exists — a file, a thread, a draft — is opened by
+  whichever account holds it (`findOwningGoogleClient`).
+- A mail listing covers every account, each thread marked with its own.
+- Something new comes from the work account, the one marked Professional
+  on the Google settings page (`resolveGoogleClientForNew`).
+
+`--account` names one outright. Every result says which `account` was used.
+`resolveGoogleClient` is the strict form the rest still use: it fails on an
+open choice, or asks in a top-level terminal run.
 
 ## Narratives
 
+- [2026-10-01 — the account is looked up, not asked](2026-10-01-the-account-is-looked-up-not-asked.md)
 - [2026-09-01 — google:read becomes the chat's read path](2026-09-01-google-read-chat-tool.md)

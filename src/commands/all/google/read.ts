@@ -7,17 +7,19 @@
  */
 
 import { AIChatTool } from '#commands/lib/AIChatTool.ts'
-import { Arg, Command, CommandPlatform, CommandResult, Flag } from '#commands/mod.ts'
+import { Arg, Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
-import { AccountResolutionError, GoogleApiError, listAccountEmails, resolveFileRef } from '#lib/google/mod.ts'
+import { AccountResolutionError, GoogleApiError, resolveFileRef } from '#lib/google/mod.ts'
 import type { WorkspaceKind } from '#lib/google/mod.ts'
-import { probeAccountsForFile } from './lib/probeAccounts.ts'
 import { readWorkspaceFile } from './lib/readWorkspaceFile.ts'
-import { resolveGoogleClient } from './lib/resolveClient.ts'
+import { accountSwitchNote, findOwningGoogleClient } from './lib/resolveClient.ts'
 
 const params = {
   target: Arg.string('Google Docs/Sheets/Slides/Drive URL (native or an uploaded Office file), or a bare file id'),
-  account: Flag.string('Google account (email or unique part of it)', { short: 'a' }),
+  account: Flag.string(
+    'Google account to try first (email or unique part of it); left out, Sky finds the connected account that can open the file',
+    { short: 'a' },
+  ),
   tabId: Flag.string('Docs only: read a single tab by its tabId (a whole-file read lists them), as plain text'),
   offset: Flag.number('Character offset a truncated read said to continue from'),
 }
@@ -58,7 +60,8 @@ export default class GoogleReadTask extends Command {
       'offset it names. A Doc with several tabs exports ALL of them, each opening with its tab title as a ' +
       '# heading, plus a tabs list mapping titles to tabIds; pass tabId to read one tab as plain text. An ' +
       'uploaded Office file is read through its native Google twin — use the returned id for follow-up ' +
-      'calls. Reads only; to edit or create files, use google:agent.',
+      'calls. The file is read from whichever connected account can open it; `account` in the result says ' +
+      'which. Reads only; to edit or create files, use google:agent.',
     usage: [
       'sky google:read <url-or-file-id>',
       'sky google:read <url> --offset 40000',
@@ -79,45 +82,33 @@ export default class GoogleReadTask extends Command {
       return CommandResult.fail(`Not a Google file URL or id: ${args.target}`)
     }
 
-    let client
-    try {
-      client = await resolveGoogleClient({
-        secrets,
-        requested: args.account,
-        interactive: context.platform === CommandPlatform.Console && context.compositionDepth === 0,
-      })
-    } catch (err) {
-      if (err instanceof AccountResolutionError) return CommandResult.fail(err.message)
-      throw err
-    }
-
     // A URL copied from a specific tab reads that tab; an explicit tabId wins.
     const tabId = args.tabId ?? parsed.tabId
 
-    let outcome
+    // Drive answers 404 both for "gone" and "wrong account", so the file is
+    // read from whichever connected account can open it.
+    let found
     try {
-      outcome = await readWorkspaceFile(client, { fileId: parsed.fileId, tabId, offset: args.offset })
+      found = await findOwningGoogleClient({
+        secrets,
+        requested: args.account,
+        what: `The file ${parsed.fileId}`,
+        attempt: (client) => readWorkspaceFile(client, { fileId: parsed.fileId, tabId, offset: args.offset }),
+      })
     } catch (err) {
-      if (err instanceof GoogleApiError && err.status === 404) {
-        // Drive answers 404 both for "gone" and "wrong account" — probe the
-        // other stored accounts so the error names the one that can see it.
-        const others = (await listAccountEmails(secrets)).filter((email) => email !== client.email)
-        const visibleTo = await probeAccountsForFile(secrets, others, parsed.fileId)
-        return CommandResult.fail(
-          visibleTo.length > 0
-            ? `The file is not visible to ${client.email}, but ${visibleTo.join(' and ')} can see it. Retry with account ${visibleTo[0]}`
-            : `File not found for ${client.email}: ${parsed.fileId}. Check the URL — or connect the account that owns it (sky google:auth).`,
-        )
-      }
+      if (err instanceof AccountResolutionError) return CommandResult.fail(err.message)
       if (err instanceof GoogleApiError) {
         return CommandResult.fail(`Google API error reading ${parsed.fileId}: ${err.message}`)
       }
       throw err
     }
+    const { client, value: outcome } = found
     if (!outcome.ok) return CommandResult.fail(outcome.message)
 
     const { read } = outcome
     const notes: string[] = []
+    const switched = accountSwitchNote(found)
+    if (switched) notes.push(switched)
     if (read.convertedFrom) {
       notes.push(
         `"${read.convertedFrom.name}" is an uploaded file Drive stores as-is; this content is its native Google ${read.kind} twin "${read.file.name}" (${read.twinCreated ? 'converted just now' : 'converted earlier, reused'}). Use id ${read.file.id} for every follow-up call.`,

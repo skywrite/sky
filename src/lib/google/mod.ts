@@ -64,7 +64,15 @@ export type {
   SetupPhaseView,
 } from './cloudSetup/mod.ts'
 
-export { AccountResolutionError, AmbiguousAccountError, resolveAccountEmail } from './accounts.ts'
+export {
+  AccountResolutionError,
+  AmbiguousAccountError,
+  accountLookupOrder,
+  accountOrg,
+  defaultAccountEmail,
+  resolveAccountEmail,
+  resolveNewItemAccountEmail,
+} from './accounts.ts'
 
 export { accountCategory } from './accountCategory.ts'
 

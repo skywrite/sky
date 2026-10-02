@@ -9,8 +9,9 @@
 import open from 'open'
 import colors from 'picocolors'
 import { AIChatTool } from '#commands/lib/AIChatTool.ts'
+import type CommandContext from '#commands/lib/core/CommandContext.ts'
 import type { OutputHandler } from '#commands/lib/output/OutputHandler.ts'
-import { Arg, ArgOrFlag, Command, CommandPlatform, CommandResult, Flag } from '#commands/mod.ts'
+import { Arg, ArgOrFlag, Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import {
   AccountResolutionError,
@@ -21,7 +22,9 @@ import {
   updateDraft,
 } from '#lib/google/mod.ts'
 import type { GmailAddress, GmailDraft } from '#lib/google/mod.ts'
-import { resolveGmailClient } from '../lib/resolveGmailClient.ts'
+import type { SecretsProvider } from '#lib/secrets/SecretsProvider.ts'
+import { accountSwitchNote } from '../../lib/resolveClient.ts'
+import { findOwningGmailClient } from '../lib/resolveGmailClient.ts'
 
 const params = {
   draftId: Arg.string('The draft id (from google:email:draft:new or google:email:draft:reply)'),
@@ -31,17 +34,38 @@ const params = {
   ),
   to: Flag.string('Override the recipient(s), comma-separated (default: kept from the draft)', { short: 't' }),
   subject: Flag.string('Override the subject (default: kept from the draft)', { short: 's' }),
-  account: Flag.string('Google account (email or unique part of it)', { short: 'a' }),
+  account: Flag.string(
+    'Google account to try first — the `account` the draft was created in (email or unique part of it); left out, Sky finds the mailbox the draft is in',
+    { short: 'a' },
+  ),
   noOpen: Flag.bool('Do not open the draft in the browser', { default: false }),
 }
 
 type Params = InferParams<typeof params>
-type Result = { report: string; url: string; draftId: string }
+type Result = {
+  report: string
+  url: string
+  draftId: string
+  /** The mailbox the draft waits in */
+  account: string
+  /** Set when another account was tried first and did not hold the draft */
+  accountNote?: string
+}
 
 declare module '#commands/lib/core/CommandTypesRegistry.ts' {
   interface CommandTypesRegistry {
     'google:email:draft:update': { params: Params; result: Result }
   }
+}
+
+/** The mailbox a waiting draft is in, with the draft as it stands — the rewrite happens there. */
+function findDraft(secrets: SecretsProvider, draftId: string, requested: string | undefined) {
+  return findOwningGmailClient({
+    secrets,
+    requested,
+    what: `Gmail draft ${draftId}`,
+    attempt: (client) => getDraft(client, draftId),
+  })
 }
 
 /**
@@ -56,7 +80,8 @@ export default class GoogleEmailDraftUpdateTask extends Command {
       'Replace the text of a waiting Gmail draft — the revision step after google:email:draft:new or ' +
       'google:email:draft:reply. It is never sent: the reworded draft keeps waiting in Gmail for the user to ' +
       'review and send by hand. Pass the draftId the create returned and the FULL new body (it replaces, not ' +
-      'appends); recipient, subject, and reply threading carry forward.',
+      'appends); recipient, subject, and reply threading carry forward. The draft is rewritten in the mailbox ' +
+      'it waits in; `account` in the result says which.',
     usage: [
       'sky google:email:draft:update <draft-id> "Reworked: Thursday works after all — details below."',
       'sky google:email:draft:update <draft-id> -b "..." -s "New subject"',
@@ -64,11 +89,23 @@ export default class GoogleEmailDraftUpdateTask extends Command {
     params,
   }
 
-  static formatApproval(input: Record<string, unknown>, output: OutputHandler): void {
+  static async formatApproval(
+    input: Record<string, unknown>,
+    output: OutputHandler,
+    context?: CommandContext,
+  ): Promise<void> {
     const text = (key: string) => (typeof input[key] === 'string' ? (input[key] as string) : '')
+    // The card names the mailbox the draft waits in; a lookup that fails here fails the run too, and says why there.
+    const from = context
+      ? await findDraft(context.secrets, text('draftId'), text('account') || undefined).then(
+          (found) => found.client.email,
+          () => undefined,
+        )
+      : undefined
     output.log('')
     output.log(colors.bold('Rewrite this Gmail draft? (never sent — you send it from Gmail)'))
     output.log('')
+    if (from) output.log(`  From:  ${from}`)
     output.log(`  Draft: ${text('draftId') || '(no id)'}`)
     if (text('to')) output.log(`  To:    ${text('to')}`)
     if (text('subject')) output.log(`  Subject: ${text('subject')}`)
@@ -86,21 +123,17 @@ export default class GoogleEmailDraftUpdateTask extends Command {
       return CommandResult.fail('Provide the replacement text, e.g. sky google:email:draft:update <draft-id> "..."')
     }
 
-    let client
+    let found
     try {
-      client = await resolveGmailClient({
-        secrets,
-        requested: args.account,
-        interactive: context.platform === CommandPlatform.Console && context.compositionDepth === 0,
-      })
+      found = await findDraft(secrets, args.draftId, args.account)
     } catch (err) {
       if (err instanceof AccountResolutionError) return CommandResult.fail(err.message)
-      throw err
+      return CommandResult.error(err as Error, 'Gmail draft update failed')
     }
+    const { client, value: existing } = found
 
     let updated: GmailDraft
     try {
-      const existing = await getDraft(client, args.draftId)
       const { message } = existing
 
       let to: GmailAddress[]
@@ -133,9 +166,17 @@ export default class GoogleEmailDraftUpdateTask extends Command {
     const url = draftUrl(client.email, updated.messageId)
     if (!args.noOpen) open(url).catch(() => undefined)
 
+    const accountNote = accountSwitchNote(found)
     const report = `Gmail draft rewritten (not sent) in ${client.email} — ${url}`
     output.log('')
+    if (accountNote) output.log(accountNote)
     output.log(report)
-    return CommandResult.success({ report, url, draftId: updated.id })
+    return CommandResult.success({
+      report,
+      url,
+      draftId: updated.id,
+      account: client.email,
+      ...(accountNote ? { accountNote } : {}),
+    })
   }
 }

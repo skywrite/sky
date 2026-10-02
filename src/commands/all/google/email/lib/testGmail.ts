@@ -44,6 +44,21 @@ export async function withGmail(
   }
 }
 
+/** A second mailbox for a test. Requests made as it carry its own token, which `mailboxOf` reads back. */
+export async function addGmailAccount(context: CommandContext, email: string): Promise<void> {
+  await saveAccountTokens(context.secrets, email, {
+    refreshToken: 'rt',
+    accessToken: `at-${email}`,
+    scopes: [GMAIL_SCOPE],
+  })
+}
+
+/** The mailbox a mocked request was made as: the account `withGmail` stores, or one added by `addGmailAccount`. */
+export function mailboxOf(init?: RequestInit): string {
+  const token = (init?.headers as Record<string, string> | undefined)?.Authorization?.replace('Bearer ', '') ?? ''
+  return token.startsWith('at-') ? token.slice(3) : 'jane@example.com'
+}
+
 export async function assertAccountAmbiguity(run: (context: CommandContext) => Promise<CommandResult>): Promise<void> {
   let requests = 0
   const select = spyOn(prompts, 'select').mockResolvedValue('jane@example.com')

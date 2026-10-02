@@ -1,5 +1,6 @@
+import { BufferedOutput } from '#commands/lib/output/BufferedOutput.ts'
 import { assert, test } from '#test'
-import { assertAccountAmbiguity, commandArgs, withGmail } from '../lib/testGmail.ts'
+import { addGmailAccount, assertAccountAmbiguity, commandArgs, withGmail } from '../lib/testGmail.ts'
 import DraftNew from './new.ts'
 
 test('google:email:draft:new returns the draft id for subsequent edits', async () => {
@@ -44,5 +45,43 @@ test('google:email:draft:new fails on ambiguous accounts outside a top-level con
         account: undefined,
       }),
     ),
+  )
+})
+
+test('google:email:draft:new asks with the real From, and never asks for a draft it could not write', async () => {
+  await withGmail(
+    () => new Response('{}', { status: 400 }),
+    async (context) => {
+      const card = async (input: Record<string, unknown>) => {
+        const output = new BufferedOutput()
+        await DraftNew.formatApproval(input, output, context)
+        return output.getLogs().find((line) => line.includes('From:'))
+      }
+      const draft = { body: 'Hello Sam', to: 'sam@example.com' }
+      assert({
+        given: 'one connected mailbox',
+        should: 'ask, and name that mailbox on the card instead of "(default)"',
+        expected: [true, '  From:    jane@example.com'],
+        actual: [await DraftNew.needsApprovalFor(draft, context), await card(draft)],
+      })
+
+      await addGmailAccount(context, 'bob@example.com')
+      assert({
+        given: 'two work mailboxes and no account named, so the run would stop at the account question',
+        should: 'need no go for a call that writes nothing',
+        expected: false,
+        actual: await DraftNew.needsApprovalFor(draft, context),
+      })
+      assert({
+        given: 'the same two mailboxes with one named, and a host that passes no context',
+        should: 'ask, with the named mailbox as From',
+        expected: [true, '  From:    bob@example.com', true],
+        actual: [
+          await DraftNew.needsApprovalFor({ ...draft, account: 'bob' }, context),
+          await card({ ...draft, account: 'bob' }),
+          await DraftNew.needsApprovalFor(draft),
+        ],
+      })
+    },
   )
 })

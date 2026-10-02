@@ -1,18 +1,24 @@
 import { z } from 'zod'
 import { AIChatTool } from '#commands/lib/AIChatTool.ts'
-import { Command, CommandPlatform, CommandResult, Flag } from '#commands/mod.ts'
+import { Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { AccountResolutionError, getLabelCounts, listLabels } from '#lib/google/mod.ts'
 import type { GmailLabelCounts } from '#lib/google/mod.ts'
 import { Instant, PlainDate } from '#universal/dates/nbdt/mod.ts'
-import { getInboxThreads } from '../lib/getInboxThreads.ts'
+import { GmailLabelNotFoundError, getInboxThreads } from '../lib/getInboxThreads.ts'
 import type { InboxThread } from '../lib/getInboxThreads.ts'
-import { resolveGmailClient } from '../lib/resolveGmailClient.ts'
+import { gmailClientsToList } from '../lib/resolveGmailClient.ts'
 
 const params = {
-  account: Flag.string('Google account (email or unique part of it)', { short: 'a' }),
+  account: Flag.string(
+    'Limit the listing to one Google account (email or unique part of it); left out, every connected account',
+    { short: 'a' },
+  ),
   label: Flag.string('Gmail label to read', { default: () => 'Sky/Follow' }),
-  limit: Flag.number('Max threads to fetch', { default: () => 250, schema: z.coerce.number().int().positive() }),
+  limit: Flag.number('Max threads to fetch from each account', {
+    default: () => 250,
+    schema: z.coerce.number().int().positive(),
+  }),
 }
 
 type Params = InferParams<typeof params>
@@ -21,6 +27,8 @@ type Params = InferParams<typeof params>
 interface ViewThreadRow {
   /** Gmail API thread id — pass to google:email:read and google:email:draft:reply. */
   threadId: string
+  /** The mailbox the thread is in */
+  account: string
   subject: string
   from: string
   /** Newest message time, ISO. */
@@ -31,12 +39,51 @@ interface ViewThreadRow {
   followStatus?: InboxThread['followStatus']
 }
 
-type Result = { count: number; label: string; threads: ViewThreadRow[]; totals: GmailLabelCounts | null }
+/** One mailbox's share of the listing. */
+interface ViewAccount {
+  account: string
+  /** Threads listed from this mailbox */
+  threads: number
+  /** Messages in those threads */
+  count: number
+  /** The label's true counts in this mailbox; null when they could not be retrieved */
+  totals: GmailLabelCounts | null
+  /** Set when this mailbox has no label of that name — it holds nothing under it */
+  labelMissing?: true
+  /** Why this mailbox could not be read; its mail is absent from the listing */
+  error?: string
+}
+
+type Result = {
+  count: number
+  label: string
+  threads: ViewThreadRow[]
+  /** The label's true counts over every mailbox listed; null when any of them is unknown */
+  totals: GmailLabelCounts | null
+  accounts: ViewAccount[]
+}
 
 declare module '#commands/lib/core/CommandTypesRegistry.ts' {
   interface CommandTypesRegistry {
     'google:email:inbox:view': { params: Params; result: Result }
   }
+}
+
+const NO_MAIL: GmailLabelCounts = { threadsTotal: 0, messagesTotal: 0, threadsUnread: 0, messagesUnread: 0 }
+
+/** Counts over several mailboxes; unknown as soon as one mailbox's are. */
+function sumTotals(all: Array<GmailLabelCounts | null>): GmailLabelCounts | null {
+  let sum = NO_MAIL
+  for (const totals of all) {
+    if (!totals) return null
+    sum = {
+      threadsTotal: sum.threadsTotal + totals.threadsTotal,
+      messagesTotal: sum.messagesTotal + totals.messagesTotal,
+      threadsUnread: sum.threadsUnread + totals.threadsUnread,
+      messagesUnread: sum.messagesUnread + totals.messagesUnread,
+    }
+  }
+  return sum
 }
 
 @AIChatTool({ needsApproval: false })
@@ -46,16 +93,23 @@ export default class GoogleEmailInboxViewTask extends Command {
     description:
       'List Gmail threads in a label, newest first: sender, subject, date, snippet, and the threadId that ' +
       'google:email:read and google:email:draft:reply take. label INBOX is the inbox, UNREAD is unread mail; ' +
-      "the default is the Sky/Follow bucket. `totals` carries the label's true thread and message counts — " +
-      'answer "how many" from totals, never from the number of listed threads. A null totals means the total ' +
-      'could not be retrieved. Changes nothing.',
+      'the default is the Sky/Follow bucket. Every connected account is listed unless `account` names one; ' +
+      "each thread says which `account` it is in. `totals` carries the label's true thread and message counts " +
+      'over the accounts listed, and `accounts` breaks them down by account — answer "how many" from totals, ' +
+      'never from the number of listed threads. A null totals means the total could not be retrieved; an ' +
+      'account with an `error` could not be read, so say its mail is missing. Changes nothing.',
     descriptionLong: [
       'Gmail-API twin of email:inbox:view, using the OAuth grant from google:auth',
       '(requires the Gmail scope). Shows a compact summary of threads in the',
-      'specified label (default: Sky/Follow). Threads with follows on disk are',
-      'dimmed (saved), others are bright (unsaved).',
+      'specified label (default: Sky/Follow) for every connected account, or the',
+      'one --account names. Threads with follows on disk are dimmed (saved),',
+      'others are bright (unsaved).',
     ],
-    usage: ['sky google:email:inbox:view', 'sky google:email:inbox:view --label INBOX --limit 20'],
+    usage: [
+      'sky google:email:inbox:view',
+      'sky google:email:inbox:view --label INBOX --limit 20',
+      'sky google:email:inbox:view --label INBOX -a work',
+    ],
     params,
   }
 
@@ -63,65 +117,114 @@ export default class GoogleEmailInboxViewTask extends Command {
     const { output, secrets } = context
     const { account, label, limit } = args
 
-    let client
+    // A listing covers every mailbox unless one is named: nobody is asked which.
+    let listing
     try {
-      client = await resolveGmailClient({
-        secrets,
-        requested: account,
-        // A composed or served call must error on ambiguity, not prompt.
-        interactive: context.platform === CommandPlatform.Console && context.compositionDepth === 0,
-      })
+      listing = await gmailClientsToList({ secrets, requested: account })
     } catch (err) {
       if (err instanceof AccountResolutionError) return CommandResult.fail(err.message)
       throw err
     }
+    const { clients } = listing
 
-    try {
-      output.log(`\n  Fetching "${label}" for ${client.email} (limit: ${limit})...\n`)
+    const accounts: ViewAccount[] = listing.skipped.map(({ account: email, reason }) => ({
+      account: email,
+      threads: 0,
+      count: 0,
+      totals: null,
+      error: reason,
+    }))
+    const rows: Array<{ at: number; row: ViewThreadRow }> = []
+    let savedCount = 0
+    let read = 0
+    let failure: unknown
 
-      const { threads, savedCount, labelId } = await getInboxThreads(client, label, {
-        limit,
-        syncLabels: false,
-        followDir: context.config.DIR_STATE_FOLLOW_EMAIL_ACTIVE,
-        followArchiveDir: context.config.DIR_STATE_FOLLOW_EMAIL_ARCHIVE,
-        timeDir: context.config.DIR_TIME,
-      })
+    for (const client of clients) {
+      try {
+        output.log(`\n  Fetching "${label}" for ${client.email} (limit: ${limit})...\n`)
 
-      const totals = await getLabelCounts(client, labelId).catch(() => null)
+        const {
+          threads,
+          savedCount: saved,
+          labelId,
+        } = await getInboxThreads(client, label, {
+          limit,
+          syncLabels: false,
+          followDir: context.config.DIR_STATE_FOLLOW_EMAIL_ACTIVE,
+          followArchiveDir: context.config.DIR_STATE_FOLLOW_EMAIL_ARCHIVE,
+          timeDir: context.config.DIR_TIME,
+        })
 
-      if (threads.length === 0) {
-        output.log('  No messages found.\n')
-        return CommandResult.success({ count: 0, label, threads: [], totals })
-      }
+        const totals = await getLabelCounts(client, labelId).catch(() => null)
 
-      const labelNames = new Map((await listLabels(client)).map((l) => [l.id, l.name]))
-      const msgCount = outputTable(output, threads, labelId, labelNames)
-
-      const rows: ViewThreadRow[] = threads.map((t) => {
-        const newest = t.messages[t.messages.length - 1]
-        const first = t.messages[0]
-        const timestamp = newest.date ? Instant.fromEpochMilliseconds(Number(newest.date)) : undefined
-        return {
-          threadId: t.apiThreadId,
-          subject: first.subject || '(no subject)',
-          from: newest.from?.name || newest.from?.address || '(unknown)',
-          date: timestamp?.toString({ smallestUnit: 'millisecond' }),
-          snippet: newest.snippet,
-          messages: t.messages.length,
-          saved: t.saved,
-          ...(t.followStatus ? { followStatus: t.followStatus } : {}),
+        if (threads.length === 0) {
+          output.log('  No messages found.\n')
+          accounts.push({ account: client.email, threads: 0, count: 0, totals })
+          read++
+          continue
         }
-      })
 
+        const labelNames = new Map((await listLabels(client)).map((l) => [l.id, l.name]))
+        const count = outputTable(output, threads, labelId, labelNames)
+        savedCount += saved
+        read++
+
+        for (const t of threads) {
+          const newest = t.messages[t.messages.length - 1]
+          const first = t.messages[0]
+          const timestamp = newest.date ? Instant.fromEpochMilliseconds(Number(newest.date)) : undefined
+          rows.push({
+            at: timestamp?.epochMilliseconds ?? 0,
+            row: {
+              threadId: t.apiThreadId,
+              account: client.email,
+              subject: first.subject || '(no subject)',
+              from: newest.from?.name || newest.from?.address || '(unknown)',
+              date: timestamp?.toString({ smallestUnit: 'millisecond' }),
+              snippet: newest.snippet,
+              messages: t.messages.length,
+              saved: t.saved,
+              ...(t.followStatus ? { followStatus: t.followStatus } : {}),
+            },
+          })
+        }
+        accounts.push({ account: client.email, threads: threads.length, count, totals })
+      } catch (err) {
+        // One mailbox must not hide the others: a mailbox without the label holds nothing under it, and one that
+        // cannot be read is reported as missing from the listing.
+        if (err instanceof GmailLabelNotFoundError && clients.length > 1) {
+          output.log(`  No "${label}" label in ${client.email}.\n`)
+          accounts.push({ account: client.email, threads: 0, count: 0, totals: NO_MAIL, labelMissing: true })
+          continue
+        }
+        failure ??= err
+        const reason = err instanceof Error ? err.message : String(err)
+        if (clients.length > 1) output.log(`  Could not read ${client.email}: ${reason}\n`)
+        accounts.push({ account: client.email, threads: 0, count: 0, totals: null, error: reason })
+      }
+    }
+
+    // Nothing could be listed anywhere: that is the failure a single mailbox always reported.
+    if (read === 0) {
+      if (failure) return CommandResult.error(failure as Error, 'Gmail fetch failed')
+      return CommandResult.fail(`Gmail label "${label}" not found in ${clients.map((c) => c.email).join(' or ')}`)
+    }
+
+    // Newest first across mailboxes; a sort that keeps each mailbox's own order for equal times.
+    rows.sort((a, b) => b.at - a.at)
+    const threads = rows.map(({ row }) => row)
+    const count = accounts.reduce((sum, entry) => sum + entry.count, 0)
+    const totals = sumTotals(accounts.map((entry) => entry.totals))
+
+    if (threads.length > 0 || clients.length > 1) {
       const savedStr = savedCount > 0 ? `, ${savedCount} saved` : ''
       const totalStr = totals
         ? ` — label total: ${totals.threadsTotal} thread(s), ${totals.messagesTotal} message(s)`
         : ''
-      output.log(`\n  ${msgCount} message(s) in ${threads.length} thread(s)${savedStr}${totalStr}\n`)
-      return CommandResult.success({ count: msgCount, label, threads: rows, totals })
-    } catch (err) {
-      return CommandResult.error(err as Error, 'Gmail fetch failed')
+      const where = clients.length > 1 ? ` across ${clients.map((c) => c.email).join(', ')}` : ''
+      output.log(`\n  ${count} message(s) in ${threads.length} thread(s)${where}${savedStr}${totalStr}\n`)
     }
+    return CommandResult.success({ count, label, threads, totals, accounts })
   }
 }
 

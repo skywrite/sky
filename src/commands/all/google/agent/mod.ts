@@ -6,6 +6,7 @@ import open from 'open'
 import colors from 'picocolors'
 import { AIChatTool } from '#commands/lib/AIChatTool.ts'
 import { aiEffortFlag } from '#commands/lib/aiParams.ts'
+import type CommandContext from '#commands/lib/core/CommandContext.ts'
 import type { OutputHandler } from '#commands/lib/output/OutputHandler.ts'
 import { ArgOrFlag, Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
@@ -15,7 +16,6 @@ import {
   deleteFile,
   getFile,
   importFileAsDoc,
-  listAccountEmails,
   resolveFileRef,
   slideDesignPromptSection,
   workspaceKind,
@@ -31,9 +31,8 @@ import { readPromptFile } from '#shared/prompts/load.ts'
 import { thrownOutcome, TimingSpan } from '#shared/timing/mod.ts'
 import { timingSummary } from '#shared/timing/summary.ts'
 import { validateEffort } from '#universal/ai/effort.ts'
-import { probeAccountsForFile } from '../lib/probeAccounts.ts'
-import { resolveGoogleClient } from '../lib/resolveClient.ts'
-import { missionApprovalKey, missionNeedsApproval } from './lib/approval.ts'
+import { accountSwitchNote, findOwningGoogleClient, resolveGoogleClientForNew } from '../lib/resolveClient.ts'
+import { missionAccount, missionApprovalKey, missionNeedsApproval } from './lib/approval.ts'
 import { withReadTarget, writeDocArtifact } from './lib/artifact.ts'
 import { IMPORT_EXTENSIONS, MAX_IMPORT_BYTES, resolveImportSource } from './lib/importFile.ts'
 import { formatTiming, type MissionTiming } from './lib/timing.ts'
@@ -82,7 +81,10 @@ const params = {
   ),
   data: Flag.string('Path to a local CSV/text file appended to the mission as data', { short: 'd' }),
   images: Flag.string('Directory of images offered to the mission (backgrounds, logos)', { short: 'i' }),
-  account: Flag.string('Google account (email or unique part of it)', { short: 'a' }),
+  account: Flag.string(
+    'Google account (email or unique part of it); left out, the account that can open --file, or the work account for something new',
+    { short: 'a' },
+  ),
   reasoning: Flag.string('Model profile that runs the mission (e.g. default-opus-5.5-medium, default-sonnet-5.5)', {
     long: 'ai-reasoning',
     short: 'r',
@@ -92,7 +94,17 @@ const params = {
 }
 
 type Params = InferParams<typeof params>
-type Result = { report: string; files: MissionFile[]; steps: number; artifact?: string; timing: MissionTiming }
+type Result = {
+  report: string
+  files: MissionFile[]
+  steps: number
+  artifact?: string
+  timing: MissionTiming
+  /** The account the mission ran as */
+  account: string
+  /** Set when another account was tried first and could not open the target file */
+  accountNote?: string
+}
 
 declare module '#commands/lib/core/CommandTypesRegistry.ts' {
   interface CommandTypesRegistry {
@@ -105,7 +117,7 @@ export default class GoogleAgentTask extends Command {
   static override description: CommandDescription = {
     name: 'google:agent',
     description:
-      'Create or modify Google Docs, Slides and Sheets from a natural-language mission. Include all needed content in the mission itself.',
+      'Create or modify Google Docs, Slides and Sheets from a natural-language mission. Include all needed content in the mission itself. An existing file is worked on as the connected account that can open it; something new is made in the work account unless `account` names another. `account` in the result says which.',
     descriptionLong: [
       'Runs a focused sub-agent that executes one Google Workspace mission end',
       'to end: find/read files, import local documents (PDF, docx) as Docs,',
@@ -130,16 +142,35 @@ export default class GoogleAgentTask extends Command {
     params,
   }
 
-  static formatApproval(input: Record<string, unknown>, output: OutputHandler): void {
+  static async formatApproval(
+    input: Record<string, unknown>,
+    output: OutputHandler,
+    context?: CommandContext,
+  ): Promise<void> {
+    // The card names the account the mission will run as; one that cannot be told here stops the run too.
+    const account = context ? await missionAccount(input, context.secrets).catch(() => undefined) : undefined
     output.log(`  Mission: ${String(input.mission ?? '')}`)
     if (input.file) output.log(`  Target:  ${String(input.file)}`)
     if (input.import) output.log(`  Import:  ${String(input.import)}`)
-    output.log(`  Account: ${input.account ? String(input.account) : '(default)'}`)
+    const unresolved = input.file ? 'the account that can open the file' : 'your work account'
+    output.log(`  Account: ${account ?? (input.account ? String(input.account) : unresolved)}`)
   }
 
-  /** A create-only mission runs without a go; one aimed at an existing file, or importing one, asks. */
-  static needsApprovalFor(input: Record<string, unknown>): boolean {
-    return missionNeedsApproval(input)
+  /**
+   * A create-only mission runs without a go; one aimed at an existing file, or
+   * importing one, asks. A mission whose account cannot be resolved — no
+   * connected account opens the file, or the choice for a new one is open —
+   * needs no go either: the run stops at that before anything is touched.
+   */
+  static async needsApprovalFor(input: Record<string, unknown>, context?: CommandContext): Promise<boolean> {
+    if (!missionNeedsApproval(input)) return false
+    if (!context) return true
+    try {
+      await missionAccount(input, context.secrets)
+      return true
+    } catch (err) {
+      return !(err instanceof AccountResolutionError)
+    }
   }
 
   /** A go for a targeted mission covers its file id for the session. */
@@ -166,13 +197,42 @@ export default class GoogleAgentTask extends Command {
       return CommandResult.fail('Provide a mission, e.g. sky google:agent "Create a doc titled X with ..."')
     }
 
+    if (file && importPath) {
+      return CommandResult.fail('Pass either --file (existing Google file) or --import (local document), not both.')
+    }
+
+    let target: { fileId: string; kind?: string; tabId?: string } | null = null
+    let targetFile: DriveFile | undefined
+    if (file) {
+      target = resolveFileRef(file)
+      if (!target) return CommandResult.fail(`--file is not a Google file URL or id: ${file}`)
+    }
+
     let client
+    let accountNote: string | undefined
     try {
-      client = await resolveGoogleClient({
-        secrets,
-        requested: account,
-        interactive: context.compositionDepth === 0,
-      })
+      if (target) {
+        // Preflight the target before spinning up the agent. Drive answers 404
+        // both for "gone" and "wrong account", so the mission runs as whichever
+        // connected account can open the file.
+        const { fileId } = target
+        const found = await findOwningGoogleClient({
+          secrets,
+          requested: account,
+          what: `The target file ${fileId}`,
+          attempt: (candidate) => getFile(candidate, fileId),
+        })
+        client = found.client
+        targetFile = found.value
+        accountNote = accountSwitchNote(found)
+      } else {
+        // Something new is made in the work account unless one is named.
+        client = await resolveGoogleClientForNew({
+          secrets,
+          requested: account,
+          interactive: context.compositionDepth === 0,
+        })
+      }
     } catch (err) {
       if (err instanceof AccountResolutionError) return CommandResult.fail(err.message)
       throw err
@@ -185,35 +245,6 @@ export default class GoogleAgentTask extends Command {
       if (!url || args.noOpen || openedUrls.has(url) || openedUrls.size >= 3) return
       openedUrls.add(url)
       open(url).catch(() => undefined)
-    }
-
-    if (file && importPath) {
-      return CommandResult.fail('Pass either --file (existing Google file) or --import (local document), not both.')
-    }
-
-    let target: { fileId: string; kind?: string; tabId?: string } | null = null
-    let targetFile: DriveFile | undefined
-    if (file) {
-      target = resolveFileRef(file)
-      if (!target) return CommandResult.fail(`--file is not a Google file URL or id: ${file}`)
-
-      // Preflight the target before spinning up the agent. Drive answers 404
-      // both for "gone" and "wrong account" — on miss, probe the other stored
-      // accounts so the error names the account that can actually see it.
-      try {
-        targetFile = await getFile(client, target.fileId)
-      } catch (err) {
-        if (err instanceof GoogleApiError && err.status === 404) {
-          const others = (await listAccountEmails(secrets)).filter((email) => email !== client.email)
-          const visibleTo = await probeAccountsForFile(secrets, others, target.fileId)
-          return CommandResult.fail(
-            visibleTo.length > 0
-              ? `The target file is not visible to ${client.email}, but ${visibleTo.join(' and ')} can see it. Rerun with -a ${visibleTo[0]}`
-              : `Target file not found for ${client.email}: ${target.fileId}. Check the URL — or connect the account that owns it (sky google:auth).`,
-          )
-        }
-        throw err
-      }
     }
 
     let importedFrom: string | undefined
@@ -313,6 +344,7 @@ export default class GoogleAgentTask extends Command {
       .filter(Boolean)
       .join('\n\n')
 
+    if (accountNote) log(accountNote)
     log(`Mission started (${client.email} · ${args.reasoning})`)
 
     const abort = new AbortController()
@@ -450,7 +482,15 @@ export default class GoogleAgentTask extends Command {
               action: 'read' as const,
             }
           : undefined
-      return CommandResult.success({ report, files: withReadTarget(state.files, readTarget), steps, artifact, timing })
+      return CommandResult.success({
+        report,
+        files: withReadTarget(state.files, readTarget),
+        steps,
+        artifact,
+        timing,
+        account: client.email,
+        ...(accountNote ? { accountNote } : {}),
+      })
     } catch (err) {
       missionSpan.finish(thrownOutcome(err))
       return CommandResult.error(err instanceof Error ? err.message : String(err))

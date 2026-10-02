@@ -1,6 +1,6 @@
 ---
 created: 2026-08-09
-updated: 2026-09-23
+updated: 2026-10-01
 ---
 
 # google:agent — the mission loop and its reliability ladder
@@ -19,8 +19,11 @@ took 4m49s, probed request formats against the live document one request
 per batch, emptied two of three tabs, and ended on a narration that passed
 for a report. A create-only mission runs without a go; a mission on an
 existing file, or an import, asks once per file per chat
-(`lib/approval.ts`). Two properties of
-that loop are non-obvious and load-bearing:
+(`lib/approval.ts`). A mission runs as the account that can open its
+target file, or as the work account when it makes something new; one whose
+account cannot be resolved stops before it asks
+([the account is looked up, not asked](../../docs/2026-10-01-the-account-is-looked-up-not-asked.md)).
+Two properties of that loop are non-obvious and load-bearing:
 
 - **A text-only turn ends the mission.** The loop continues only after tool
   calls; prose with no call is taken as the final report. The agent prompt's

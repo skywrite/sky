@@ -1,12 +1,13 @@
 import open from 'open'
 import colors from 'picocolors'
 import { AIChatTool } from '#commands/lib/AIChatTool.ts'
+import type CommandContext from '#commands/lib/core/CommandContext.ts'
 import type { OutputHandler } from '#commands/lib/output/OutputHandler.ts'
 import { ArgOrFlag, Command, CommandPlatform, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { AccountResolutionError, createDraft, draftUrl, parseRecipients, renderEmailHtml } from '#lib/google/mod.ts'
 import type { GmailAddress, GmailDraft } from '#lib/google/mod.ts'
-import { resolveGmailClient } from '../lib/resolveGmailClient.ts'
+import { resolveGmailClientForNew } from '../lib/resolveGmailClient.ts'
 
 const params = {
   body: ArgOrFlag.string(
@@ -17,17 +18,35 @@ const params = {
   cc: Flag.string('Cc recipient(s), comma-separated'),
   bcc: Flag.string('Bcc recipient(s), comma-separated'),
   subject: Flag.string('Subject line', { short: 's' }),
-  account: Flag.string('Google account (email or unique part of it)', { short: 'a' }),
+  account: Flag.string('Google account to write from (email or unique part of it); left out, the work account', {
+    short: 'a',
+  }),
   noOpen: Flag.bool('Do not open the draft in the browser', { default: false }),
 }
 
 type Params = InferParams<typeof params>
-type Result = { report: string; url: string; draftId: string }
+type Result = {
+  report: string
+  url: string
+  draftId: string
+  /** The mailbox the draft waits in */
+  account: string
+}
 
 declare module '#commands/lib/core/CommandTypesRegistry.ts' {
   interface CommandTypesRegistry {
     'google:email:draft:new': { params: Params; result: Result }
   }
+}
+
+/** The mailbox a call's draft would be written from, resolved as the run resolves it but never asking. */
+async function fromAccount(input: Record<string, unknown>, context: CommandContext): Promise<string> {
+  const client = await resolveGmailClientForNew({
+    secrets: context.secrets,
+    requested: typeof input.account === 'string' ? input.account : undefined,
+    interactive: false,
+  })
+  return client.email
 }
 
 /**
@@ -39,7 +58,7 @@ export default class GoogleEmailDraftNewTask extends Command {
   static override description: CommandDescription = {
     name: 'google:email:draft:new',
     description:
-      'Create a NEW Gmail draft — a fresh message, not a reply. It is never sent: the draft waits in Gmail Drafts for the user to review and send by hand. Body is markdown rendered to HTML (paragraphs flow — never hard-wrap lines); give recipients and a subject when known. Returns draftId for google:email:draft:update.',
+      'Create a NEW Gmail draft — a fresh message, not a reply. It is never sent: the draft waits in Gmail Drafts for the user to review and send by hand. Body is markdown rendered to HTML (paragraphs flow — never hard-wrap lines); give recipients and a subject when known. Written from the work account unless `account` names another; `account` in the result says which. Returns draftId for google:email:draft:update.',
     descriptionLong: [
       'Files a message under Drafts via the Gmail API, using the OAuth grant',
       'from google:auth (requires the Gmail scope), then opens the draft in the',
@@ -48,7 +67,8 @@ export default class GoogleEmailDraftNewTask extends Command {
       'Nothing is sent, ever: sending is a separate Gmail endpoint this command',
       'does not call — finish and send from Gmail. Recipients and subject are',
       'optional; add them in Gmail if omitted. Use google:email:draft:reply',
-      'to reply within an existing thread.',
+      'to reply within an existing thread. With several accounts connected the',
+      'draft is written from the work account unless --account names another.',
     ],
     usage: [
       'sky google:email:draft:new "Hi Jane, can we move the Atlas kickoff to Thursday?" -t jane@example.com -s "Atlas kickoff"',
@@ -58,12 +78,33 @@ export default class GoogleEmailDraftNewTask extends Command {
     params,
   }
 
-  static formatApproval(input: Record<string, unknown>, output: OutputHandler): void {
+  /**
+   * A draft whose mailbox cannot be told needs no go: the run stops at that
+   * question before anything is written, so asking first would spend a go on
+   * a call that then fails. Every draft that can be written still asks.
+   */
+  static async needsApprovalFor(input: Record<string, unknown>, context?: CommandContext): Promise<boolean> {
+    if (!context) return true
+    try {
+      await fromAccount(input, context)
+      return true
+    } catch (err) {
+      // Only a mailbox that cannot be resolved exempts; anything else still asks.
+      return !(err instanceof AccountResolutionError)
+    }
+  }
+
+  static async formatApproval(
+    input: Record<string, unknown>,
+    output: OutputHandler,
+    context?: CommandContext,
+  ): Promise<void> {
     const text = (key: string) => (typeof input[key] === 'string' ? (input[key] as string) : '')
+    const from = (context ? await fromAccount(input, context).catch(() => undefined) : undefined) ?? text('account')
     output.log('')
     output.log(colors.bold('Create this Gmail draft? (saved to Drafts, never sent — you send it from Gmail)'))
     output.log('')
-    output.log(`  Account: ${text('account') || '(default)'}`)
+    output.log(`  From:    ${from || '(your work account)'}`)
     output.log(`  To:      ${text('to') || '(none yet)'}`)
     if (text('cc')) output.log(`  Cc:      ${text('cc')}`)
     if (text('bcc')) output.log(`  Bcc:     ${text('bcc')}`)
@@ -98,9 +139,10 @@ export default class GoogleEmailDraftNewTask extends Command {
 
     let client
     try {
-      client = await resolveGmailClient({
+      client = await resolveGmailClientForNew({
         secrets,
         requested: args.account,
+        // A composed or served call must error on an open choice, not prompt.
         interactive: context.platform === CommandPlatform.Console && context.compositionDepth === 0,
       })
     } catch (err) {
@@ -124,6 +166,6 @@ export default class GoogleEmailDraftNewTask extends Command {
     } — ${url}`
     output.log('')
     output.log(report)
-    return CommandResult.success({ report, url, draftId: draft.id })
+    return CommandResult.success({ report, url, draftId: draft.id, account: client.email })
   }
 }
