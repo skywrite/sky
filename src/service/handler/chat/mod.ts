@@ -58,7 +58,13 @@ import { registerReplyThreads, type ReplyThreadHost } from './replyThreads.ts'
 import { registerSelectionStarts, type SelectionStartOptions } from './selection.ts'
 import type { ChatSourceLinks } from './sourceLinks.ts'
 import { timelineOf } from './timeline.ts'
-import { inspectablePayload, recordToolExecution, restoreToolRuns, toolRunsFromMessages } from './toolRuns.ts'
+import {
+  chipSubject,
+  inspectablePayload,
+  recordToolExecution,
+  restoreToolRuns,
+  toolRunsFromMessages,
+} from './toolRuns.ts'
 import { fixedMessages, registerUnwind } from './unwind.ts'
 import { isSpokenTurns, voiceConversation } from './voiceTranscript.ts'
 
@@ -138,6 +144,8 @@ export interface ToolRun {
   summary?: string
   /** What the call was about — the query, the page, the mission — from the model's record of the call, once its step ends */
   subject?: string
+  /** The Google account the call's result says it used — one address, or "2 accounts" for a listing over several */
+  account?: string
 }
 
 /**
@@ -503,7 +511,8 @@ function recordToolOutput(thread: Thread, event: ToolOutputEvent): WireEvent | n
  * before it when the call waits on a go. What the call was about lands on
  * the run that spoke for it; a tool that ran without a word (a web search)
  * gets a run for the record alone, so the page can name the call and a
- * reload still shows it.
+ * reload still shows it. Returns the subject the run ends up with: a run
+ * that already ended and named its account keeps the subject settled then.
  */
 function recordToolCall(
   thread: Thread,
@@ -511,16 +520,17 @@ function recordToolCall(
   subject: string | undefined,
   input?: unknown,
   callId?: string,
-): void {
+): string | undefined {
   const at = thread.session.turns.length
   const run =
     (callId ? thread.runs.find((r) => r.callId === callId) : undefined) ??
     thread.runs.findLast((r) => !r.callId && r.tool === tool && r.at === at && r.subject === undefined)
   if (run) {
-    if (subject) run.subject = subject
     run.input = inspectablePayload(input)
+    if (run.account) run.subject = chipSubject(run.input, run.account)
+    else if (subject) run.subject = subject
     run.callId = callId ?? run.callId
-    return
+    return run.subject
   }
   thread.runs.push({
     tool,
@@ -532,6 +542,7 @@ function recordToolCall(
     input: inspectablePayload(input),
     callId,
   })
+  return subject
 }
 
 function summarize(id: string, thread: Thread, baseDir: string): ThreadSummary {
@@ -703,8 +714,13 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
               return
             }
             if (event.type === 'tool-call') {
-              const subject = callSubject(inspectablePayload(event.input))
-              recordToolCall(thread, event.toolName, subject, event.input, event.toolCallId)
+              const subject = recordToolCall(
+                thread,
+                event.toolName,
+                callSubject(inspectablePayload(event.input)),
+                event.input,
+                event.toolCallId,
+              )
               thread.updatedAt = ++tick
               thread.sink?.({ ...event, input: inspectablePayload(event.input), subject })
               return

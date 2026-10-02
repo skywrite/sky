@@ -18,6 +18,34 @@ export function inspectablePayload(value: unknown): unknown {
   )
 }
 
+/**
+ * The account a Google tool reports having used, for the label beside the
+ * tool's name: the one account, or how many a listing covered. Only a
+ * successful Google call has one — the result is where the command says
+ * which account it ended up using.
+ */
+export function runAccount(tool: string, output: unknown): string | undefined {
+  if (!tool.startsWith('google_') || !output || typeof output !== 'object') return undefined
+  const fields = output as Record<string, unknown>
+  if (typeof fields.account === 'string' && fields.account.trim()) return fields.account.trim()
+  if (!Array.isArray(fields.accounts)) return undefined
+  const names = fields.accounts
+    .map((entry) => (entry && typeof entry === 'object' ? (entry as { account?: unknown }).account : entry))
+    .filter((name): name is string => typeof name === 'string' && name.trim() !== '')
+  if (names.length === 0) return undefined
+  return names.length === 1 ? names[0] : `${names.length} accounts`
+}
+
+/**
+ * A call's subject once its account is known: the input's subject, unless
+ * that subject only names the account by a part of it ("atlas" for
+ * jane@atlas.example) — the account label already says it in full.
+ */
+export function chipSubject(input: unknown, account: string): string | undefined {
+  const subject = callSubject(input)
+  return subject && account.toLowerCase().includes(subject.toLowerCase()) ? undefined : subject
+}
+
 export function recordToolExecution(runs: ToolRun[], at: number, event: ToolExecutionEvent): ToolRun {
   let run = runs.find((entry) => entry.callId === event.toolCallId)
   if (!run) {
@@ -39,6 +67,8 @@ export function recordToolExecution(runs: ToolRun[], at: number, event: ToolExec
     }
   } else {
     run.output = inspectablePayload(event.output)
+    run.account = runAccount(run.tool, run.output)
+    if (run.account) run.subject = chipSubject(run.input, run.account)
     run.error = event.error
     const failed =
       event.output !== null &&
@@ -62,6 +92,7 @@ const StoredRun = z.object({
   finished: z.number().optional(),
   summary: z.string().optional(),
   subject: z.string().optional(),
+  account: z.string().optional(),
   input: z.unknown().optional(),
   output: z.unknown().optional(),
   error: z.string().optional(),
@@ -110,6 +141,8 @@ export function toolRunsFromMessages(messages: ModelMessage[] = []): ToolRun[] {
         run.status = 'success'
         run.error = undefined
         run.output = inspectablePayload('value' in output ? output.value : output)
+        run.account = runAccount(run.tool, run.output)
+        if (run.account) run.subject = chipSubject(run.input, run.account)
         if (
           output.type === 'error-text' ||
           output.type === 'error-json' ||

@@ -72,6 +72,17 @@
   content: '· ';
 }
 
+/* Which Google account the call used, after the tool's name — never cut short: it is the part that must be read */
+.sky-tool-account {
+  flex: none;
+  white-space: nowrap;
+  opacity: 0.75;
+}
+
+.sky-tool-account::before {
+  content: '· ';
+}
+
 .sky-tool-pulse {
   flex-shrink: 0;
   width: 7px;

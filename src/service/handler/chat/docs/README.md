@@ -1,6 +1,6 @@
 ---
 created: 2026-09-01
-updated: 2026-09-29
+updated: 2026-10-01
 ---
 
 # Chat over HTTP — a thread, its tuning, and the story of its context
@@ -432,7 +432,10 @@ a person can see and touch:
   shows phase, completion status, and elapsed time; every chip expands to
   parameters, result, error, and any command activity. An expanded inspector
   stays open through completion and preserves text selection during polling.
-  `callSubject` provides a short input summary beside the tool name.
+  `callSubject` provides a short input summary beside the tool name. Once a
+  Google tool has run, its `ToolRun` also carries the `account` its result
+  reports (`runAccount`), or how many accounts a listing covered. The chip
+  and the folded row both show it right after the tool's name.
   Calendar preparation calls share one expandable activity row even while a reply
   is running. Its labels come from scheduler results: a ready draft, missing
   details and an unsupported request are distinct from a created event.

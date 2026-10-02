@@ -147,6 +147,8 @@ export interface Run {
   summary?: string
   /** What the call was about — the query, the page, the mission — from the model's record of it */
   subject?: string
+  /** The Google account the call's result says it used: one address, or how many a listing covered */
+  account?: string
 }
 
 /** The message the service was answering when it went down — shown where the exchange would be, with a way to send it again. */
@@ -1477,6 +1479,7 @@ function RunView({ run }: { run: Run }) {
             {open ? '▾' : '▸'}
           </span>
           <span className="sky-tool-fold-name">{toolDisplayName(run.tool)}</span>
+          {run.account && <span className="sky-tool-account">{run.account}</span>}
           {took !== undefined && <span className="sky-tool-fold-time">{elapsedLabel(took)}</span>}
           <span className="sky-tool-fold-summary">{calendarLabel ?? run.summary ?? last}</span>
         </button>
@@ -1494,6 +1497,7 @@ function RunView({ run }: { run: Run }) {
             <span className="sky-tool-pulse" role="progressbar" aria-label={`${toolDisplayName(run.tool)} progress`} />
           )}
           {toolDisplayName(run.tool)}
+          {run.account && <span className="sky-tool-account">{run.account}</span>}
           {run.subject && <span className="sky-tool-subject">{run.subject}</span>}
           <span className="sky-tool-meta">
             {running ? progressLabel : (calendarLabel ?? (run.status === 'success' ? 'Completed' : 'Failed'))}
