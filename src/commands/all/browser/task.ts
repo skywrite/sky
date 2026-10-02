@@ -99,7 +99,7 @@ export default class BrowserTaskCommand extends Command {
     const passwordManagers = await new PasswordManagerSettingsStore(
       path.join(DIR_STATE, 'credentials', 'sources.json'),
     ).read()
-    const privateSignIn = passwordManagers.sources.length > 0
+    const privateSignIn = process.platform === 'darwin' || passwordManagers.sources.length > 0
 
     const task = await createTaskDir(now, objective)
     output.log(colors.dim(`Task folder: ${task.dir}`))

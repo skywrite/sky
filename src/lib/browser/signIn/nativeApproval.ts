@@ -1,6 +1,7 @@
 import process from 'node:process'
 import { runCommand } from '#lib/sys/mod.ts'
 import type { SignInApproval } from './broker.ts'
+import type { NativeAuthenticationApproval } from './nativeAuthentication.ts'
 
 /** Metadata is untrusted too: no terminal/control/bidi tricks inside a native authorization dialog. */
 export const approvalLabel = (value: string): string => value.replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu, ' ').slice(0, 160)
@@ -47,5 +48,48 @@ export function nativeSignInApproval(objective: string, signal?: AbortSignal): S
       ])
       return /^\d+$/.test(answer) ? Number(answer) - 1 : null
     },
+  }
+}
+
+export function nativeAuthenticationApproval(objective: string, signal?: AbortSignal): NativeAuthenticationApproval {
+  const ask = async (message: string, buttons: string[], seconds = 120): Promise<string> => {
+    if (process.platform !== 'darwin' || signal?.aborted) return ''
+    const script = `on run argv
+      display dialog (item 1 of argv) with title "Sky private sign-in" buttons {${buttons.map((button) => JSON.stringify(button)).join(', ')}} default button "Cancel" cancel button "Cancel" giving up after ${seconds}
+      if gave up of result then return ""
+      return button returned of result
+    end run`
+    const result = await runCommand('/usr/bin/osascript', ['-e', script, message], {
+      signal,
+      timeout: (seconds + 5) * 1000,
+      maxBuffer: 4096,
+    })
+    return result.success ? result.stdout.trim() : ''
+  }
+  const task = `\n\nTask: ${approvalLabel(objective)}`
+  return {
+    method: async (origin) => {
+      const result = await ask(
+        `How would you like to sign in at ${origin}?${task}\n\nUse the browser for SSO or other sign-in steps.`,
+        ['Cancel', '1Password login', 'In browser'],
+      )
+      return result === '1Password login' ? 'password' : result === 'In browser' ? 'browser' : null
+    },
+    begin: async (origin) =>
+      (await ask(
+        `Allow this task to use your signed-in session at:\n${origin}${task}\n\nComplete sign-in in the browser, including any SSO or verification steps. Credential entry stays private.`,
+        ['Cancel', 'Continue'],
+      )) === 'Continue',
+    provider: async (origin, destination) =>
+      (await ask(
+        `Allow this sign-in to continue to:\n${destination}\n\nReturn website: ${origin}${task}\n\nOnly continue if you recognize this identity provider.`,
+        ['Cancel', 'Continue'],
+      )) === 'Continue',
+    finish: async (origin) =>
+      (await ask(
+        `Finish signing in in the browser, then return here.\n\nAllow Sky to continue on ${origin}?\n\nUse the browser for passwords and verification codes. Never paste them into chat.`,
+        ['Cancel', 'Continue Sky'],
+        240,
+      )) === 'Continue Sky',
   }
 }

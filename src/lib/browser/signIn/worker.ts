@@ -7,7 +7,7 @@ import { connectOnePassword } from '#lib/credentials/connect.ts'
 import { PasswordManagerSettingsStore } from '#lib/credentials/passwordManagers.ts'
 import { linkedInUrl } from '#lib/linkedin/types.ts'
 import { SignInBroker } from './broker.ts'
-import { nativeSignInApproval } from './nativeApproval.ts'
+import { nativeAuthenticationApproval, nativeSignInApproval } from './nativeApproval.ts'
 import { PrivateBrowserSession } from './session.ts'
 
 // Only the owning process's inherited pipes carry this protocol. There is no listener or approval RPC.
@@ -65,7 +65,18 @@ async function request(method: string, params: unknown, signal: AbortSignal) {
         lifetime.signal,
       ),
     })
-    session = await PrivateBrowserSession.launch({ ...options, broker })
+    const saved = await settings.read()
+    session = await PrivateBrowserSession.launch({
+      ...options,
+      broker,
+      hasSavedLogins: saved.sources.length > 0,
+      ...(process.platform === 'darwin' && !options.headless
+        ? {
+            nativeApproval: nativeAuthenticationApproval(options.objective, lifetime.signal),
+            offerNativeChoice: true,
+          }
+        : {}),
+    })
     if (ended || signal.aborted) {
       await session.close()
       throw new Error('Stopped')

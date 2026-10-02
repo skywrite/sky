@@ -4,13 +4,14 @@ import * as path from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { chromium, type Browser, type BrowserContext, type Locator, type Page } from 'playwright'
 import { z } from 'zod'
-import type { LoginValues } from '#lib/credentials/login.ts'
+import { secureOrigin, type LoginValues } from '#lib/credentials/login.ts'
 import { LinkedInBrowserImport } from '#lib/linkedin/browser.ts'
 import { captureLinkedInSignIn } from '#lib/linkedin/login.ts'
 import { browserBinary } from '../mcp/browserDriver.ts'
 import type { CallOptions, McpToolDefinition, McpToolResult } from '../mcp/client.ts'
 import { SignInBroker, type SignInResult } from './broker.ts'
 import { captureSignInForm } from './form.ts'
+import { NativeAuthentication, type NativeAuthenticationApproval } from './nativeAuthentication.ts'
 import { guardBrowserRequests } from './network.ts'
 import { LoginRedactor } from './redaction.ts'
 import { captureVerificationForm, verificationVisible } from './verification.ts'
@@ -84,7 +85,7 @@ const definitions = {
   },
   sign_in: {
     description:
-      'Ask the person to authorize a matching 1Password login for the current website. Returns only a status. No account, URL, field selector, or credential arguments.',
+      'Request private sign-in using a saved login or SSO. The person approves in native UI; identity-provider pages and credentials stay private. Returns only a status. No arguments.',
     schema: z.object({}).strict(),
   },
 } as const
@@ -100,17 +101,26 @@ export interface PrivateBrowserOptions {
   broker: SignInBroker
   headless?: boolean
   executablePath?: string
+  nativeApproval?: NativeAuthenticationApproval
+  offerNativeChoice?: boolean
+  hasSavedLogins?: boolean
   /** Limits this session to one trusted import, with no general browser tools or downloads. */
   linkedInProfile?: string
   /** Test seam for synthetic sites. The worker's start schema cannot supply it. */
   prepare?: (page: Page) => Promise<void>
 }
 
-/** One disposable browser, one page, no TCP/CDP/MCP listener, no reusable authenticated profile. */
+/** One disposable task browser; authentication popups stay private. No TCP listener or reusable profile. */
 export class PrivateBrowserSession {
   readonly serverInfo = { name: 'Sky private browser', version: '1' }
   private readonly redactor = new LoginRedactor()
+  private readonly authParameters = new LoginRedactor()
+  private readonly nativeSecrets = new LoginRedactor()
+  private readonly nativeAuth: NativeAuthentication | undefined
+  private readonly popups = new Set<Page>()
+  private popupUrl: string | undefined
   private allowedOrigin: string | undefined
+  private requestedOrigin: string | undefined
   private readonly downloads = new Set<Promise<void>>()
   private downloadMessages: string[] = []
   private busy = false
@@ -125,13 +135,14 @@ export class PrivateBrowserSession {
     private readonly temporary: string,
     private readonly options: PrivateBrowserOptions,
   ) {
+    this.nativeAuth = options.nativeApproval ? new NativeAuthentication(options.nativeApproval) : undefined
     if (options.linkedInProfile) {
       this.allowedOrigin = 'https://www.linkedin.com'
       this.linkedIn = new LinkedInBrowserImport(
         options.linkedInProfile,
         page,
         (signal) => this.signIn(signal),
-        (text) => this.redactor.text(text),
+        (text) => this.redact(text),
       )
     }
   }
@@ -161,19 +172,92 @@ export class PrivateBrowserSession {
       const page = await context.newPage()
       await options.prepare?.(page)
       const session = new PrivateBrowserSession(browser, context, page, temporary, options)
-      // A popup may be an identity provider. It belongs to the person until a future supported flow.
+      const binding = `skyPrivateInput${crypto.randomUUID().replaceAll('-', '')}`
+      await context.exposeBinding(binding, (_source, values: unknown, credentialValues: unknown, secrets: unknown) => {
+        const selected = session.nativeAuth?.pending ? values : credentialValues
+        if (!Array.isArray(selected)) return
+        for (const value of selected.slice(0, 100))
+          if (typeof value === 'string' && value.length >= 3 && value.length <= 20000)
+            session.redactor.rememberText(value)
+        if (Array.isArray(secrets))
+          for (const value of secrets.slice(0, 100))
+            if (typeof value === 'string' && value.length >= 3 && value.length <= 20000)
+              session.nativeSecrets.rememberText(value)
+      })
+      await context.addInitScript(
+        ({ binding }) => {
+          const remember = () => {
+            const fields = [...document.querySelectorAll('input')].filter((field) =>
+              ['password', 'email', 'text', 'tel', 'number'].includes(field.type),
+            )
+            const values = fields.map((field) => field.value).filter((value) => value.length >= 3)
+            const credentialValues = fields
+              .filter((field) =>
+                /password|username|one.?time|verification|security.?code|passcode|\botp\b|\bpin\b/i.test(
+                  [field.type, field.name, field.id, field.autocomplete, field.getAttribute('aria-label')].join(' '),
+                ),
+              )
+              .map((field) => field.value)
+            const secrets = fields
+              .filter((field) =>
+                /password|one.?time|verification|security.?code|passcode|\botp\b|\bpin\b|\bcode\b/i.test(
+                  [field.type, field.name, field.id, field.autocomplete, field.getAttribute('aria-label')].join(' '),
+                ),
+              )
+              .map((field) => field.value)
+            const send = (
+              window as unknown as Record<
+                string,
+                (values: string[], credentialValues: string[], secrets: string[]) => Promise<void>
+              >
+            )[binding]
+            if (values.length) void send(values, credentialValues, secrets).catch(() => {})
+          }
+          // Capture before page submit/click handlers run, including OS/extension autofill.
+          for (const event of ['input', 'change', 'submit', 'click', 'keydown'])
+            document.addEventListener(event, remember, true)
+        },
+        { binding },
+      )
+      const attach = await guardBrowserRequests(page, {
+        origin: () => session.allowedOrigin,
+        containsLogin: (text) => session.redactor.contains(text),
+        containsCredential: (text) => session.nativeSecrets.contains(text),
+        nativeActive: () => session.nativeAuth?.active ?? false,
+        authorizeNavigation: (origin) => session.nativeAuth?.permit(origin) ?? Promise.resolve(false),
+        rememberResponseParameters: (url, body) => session.rememberAuthParameters(url, body),
+        unguardedPopup: (url) => {
+          session.popupUrl ??= url
+        },
+      })
       context.on('page', (opened) => {
-        if (opened !== page) void opened.close().catch(() => {})
+        if (opened === page) return
+        void (async () => {
+          if (!session.nativeAuth?.active || session.popups.size >= 1) {
+            await opened.close()
+            return
+          }
+          session.popups.add(opened)
+          opened.on('close', () => session.popups.delete(opened))
+          opened.on('download', (download) => {
+            void download.cancel()
+          })
+          opened.on('dialog', (dialog) => {
+            void dialog.dismiss().catch(() => {})
+          })
+          await attach(opened)
+          const url = session.popupUrl
+          session.popupUrl = undefined
+          if (url && session.nativeAuth.active) await opened.goto(url, { waitUntil: 'domcontentloaded' })
+        })().catch(() => {
+          void opened.close().catch(() => {})
+        })
       })
       page.on('dialog', (dialog) => {
         void dialog.dismiss().catch(() => {})
       })
-      await guardBrowserRequests(page, {
-        origin: () => session.allowedOrigin,
-        containsLogin: (text) => session.redactor.contains(text),
-      })
       page.on('download', (download) => {
-        if (options.linkedInProfile) {
+        if (options.linkedInProfile || session.nativeAuth?.pending) {
           void download.cancel().catch(() => {})
           return
         }
@@ -182,12 +266,15 @@ export class PrivateBrowserSession {
           if (!source || session.closed) return
           const bytes = await readFile(source)
           // Credential echoes must not reach read_file, notebook attachments, or task artifacts.
-          if (session.redactor.contains(bytes.toString('utf8'))) {
+          if (
+            session.redactor.contains(bytes.toString('utf8')) ||
+            session.authParameters.contains(bytes.toString('utf8'))
+          ) {
             session.downloadMessages.push('A download containing login data was withheld.')
             return
           }
           const name = path.basename(download.suggestedFilename()).replace(/[\p{Cc}\p{Cf}]/gu, '_') || 'download'
-          if (session.redactor.contains(name)) {
+          if (session.redactor.contains(name) || session.authParameters.contains(name)) {
             session.downloadMessages.push('A download containing login data was withheld.')
             return
           }
@@ -232,6 +319,7 @@ export class PrivateBrowserSession {
   async close(): Promise<void> {
     if (this.closed) return
     this.closed = true
+    this.nativeAuth?.stop()
     this.options.broker.revoke()
     await this.context.close().catch(() => {})
     await this.browser.close().catch(() => {})
@@ -250,9 +338,63 @@ export class PrivateBrowserSession {
     )
   }
 
+  private redact(text: string): string {
+    return this.authParameters.text(this.redactor.text(text))
+  }
+
+  private rememberAuthParameters(address: string, body: string): void {
+    const url = new URL(address)
+    const remember = (text: string) => {
+      if (text.length >= 4 && text.length < 100000) this.authParameters.rememberText(text)
+    }
+    const auth = /token|code|state|assertion|saml|session|ticket|credential|signature/i
+    for (const [key, value] of url.searchParams) if (auth.test(key)) remember(value)
+    for (const [key, value] of new URLSearchParams(url.hash.slice(1))) if (auth.test(key)) remember(value)
+    for (const value of new URLSearchParams(body).values()) remember(value)
+    try {
+      const visit = (value: unknown, depth = 0) => {
+        if (typeof value === 'string') remember(value)
+        else if (value && typeof value === 'object' && depth < 5)
+          for (const entry of Object.values(value)) visit(entry, depth + 1)
+      }
+      visit(JSON.parse(body))
+    } catch {
+      /* Most forms use URL encoding. */
+    }
+  }
+
+  private async nativeSignIn(): Promise<SignInResult> {
+    if (!this.nativeAuth) return { status: 'needs_user' }
+    const origin = this.allowedOrigin ?? this.requestedOrigin ?? secureOrigin(this.page.url())
+    if (!origin) return { status: 'needs_user' }
+    if (this.attemptedOrigins.has(`native:${origin}`)) return { status: 'needs_user' }
+    this.attemptedOrigins.add(`native:${origin}`)
+    if (this.allowedOrigin && origin !== this.allowedOrigin) return { status: 'needs_user' }
+    this.options.broker.revoke()
+    const completed = await this.nativeAuth
+      .run(
+        this.page,
+        async () => {
+          this.allowedOrigin = origin
+        },
+        origin,
+      )
+      .catch(() => false)
+    this.rememberAuthParameters(this.page.url(), '')
+    for (const popup of this.popups) await popup.close().catch(() => {})
+    this.popupUrl = undefined
+    if (!completed) {
+      // Revoked/expired handoffs may have authenticated; never let a model inherit that session.
+      await this.close()
+      return { status: 'declined' }
+    }
+    return { status: 'submitted' }
+  }
+
   private async verify(signal?: AbortSignal): Promise<SignInResult> {
     const form = await captureVerificationForm(this.page, (code) => {
       this.redactor.rememberValue(code)
+      this.nativeSecrets.rememberValue(code)
     })
     if (form) return this.options.broker.verify(form, signal)
     this.options.broker.revoke()
@@ -267,7 +409,7 @@ export class PrivateBrowserSession {
 
   private async withDownloads(text: string): Promise<McpToolResult> {
     await Promise.allSettled(this.downloads)
-    return result(this.redactor.text([text, ...this.downloadMessages.splice(0)].join('\n')))
+    return result(this.redact([text, ...this.downloadMessages.splice(0)].join('\n')))
   }
 
   private async ordinaryField(locator: Locator): Promise<boolean> {
@@ -286,17 +428,31 @@ export class PrivateBrowserSession {
 
   private async signIn(signal?: AbortSignal): Promise<SignInResult> {
     if (await verificationVisible(this.page)) return this.verify(signal)
+    if (this.nativeAuth && this.requestedOrigin && secureOrigin(this.page.url()) !== this.requestedOrigin)
+      return this.nativeSignIn()
     const protect = (origin: string, login: LoginValues) => {
       this.allowedOrigin = origin
       this.redactor.remember(login)
+      this.nativeSecrets.rememberValue(login.password)
     }
     const form = (await captureSignInForm(this.page, protect)) ?? (await captureLinkedInSignIn(this.page, protect))
+    if (form && this.options.hasSavedLogins === false) {
+      await form.dispose()
+      return this.nativeSignIn()
+    }
     if (form && this.attemptedOrigins.has(form.origin)) {
       await form.dispose()
       return { status: 'needs_user' }
     }
     if (form) this.attemptedOrigins.add(form.origin)
-    return form ? this.options.broker.signIn(form, signal) : { status: 'needs_user' }
+    if (form && this.options.offerNativeChoice && this.options.nativeApproval) {
+      const method = await this.options.nativeApproval.method(form.origin)
+      if (method !== 'password') {
+        await form.dispose()
+        return method === 'browser' ? this.nativeSignIn() : { status: 'declined' }
+      }
+    }
+    return form ? this.options.broker.signIn(form, signal) : this.nativeSignIn()
   }
 
   async callTool(name: string, args: Record<string, unknown>, options: CallOptions = {}): Promise<McpToolResult> {
@@ -332,7 +488,15 @@ export class PrivateBrowserSession {
           }
         } else if (!(await this.privateEntry())) this.options.broker.revoke()
       } else this.options.broker.revoke()
-      if (this.linkedIn) return result(JSON.stringify(await this.linkedIn.step(options.signal)))
+      if (this.linkedIn) {
+        const step = await this.linkedIn.step(options.signal)
+        if (step.status === 'needs_user' && this.nativeAuth && !this.attemptedOrigins.has('native')) {
+          this.attemptedOrigins.add('native')
+          const signed = await this.nativeSignIn()
+          return result(JSON.stringify({ status: signed.status === 'submitted' ? 'waiting' : 'needs_user' }))
+        }
+        return result(JSON.stringify(step))
+      }
       if (name === 'sign_in') {
         return result(JSON.stringify(await this.signIn(options.signal)))
       }
@@ -360,6 +524,7 @@ export class PrivateBrowserSession {
             (this.allowedOrigin && url.origin !== this.allowedOrigin)
           )
             return result('This destination is not permitted for this browser task.', true)
+          this.requestedOrigin = url.origin
           await this.page.goto(url.href, { waitUntil: 'domcontentloaded' })
           break
         }

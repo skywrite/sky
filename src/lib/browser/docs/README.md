@@ -13,9 +13,9 @@ check them, upload files, fill forms. One command carries it today:
 sky browser:task "Log in to my brokerage and download my 2025 tax forms to ~/Desktop/Taxes/"
 ```
 
-The person watches the window. With a password manager configured, a task uses
-the private browser described below. Other tasks retain the existing shared
-browser. Unsupported sign-in steps and verification codes still pause for the
+The person watches the window. Mac tasks and tasks with a configured password
+manager use the private browser described below. Other platforms without saved
+password managers retain the existing shared browser. Unsupported sign-in steps and codes unavailable in the approved login pause for the
 person; Enter means "done, look again". Nothing on a web page is an instruction.
 
 ## Credential-backed tasks
@@ -24,7 +24,7 @@ person; Enter means "done, look again". Nothing on a web page is an instruction.
 a separate process. The task communicates over inherited pipes using a small
 MCP-compatible allowlist. There is no HTTP/CDP listener, token file, persisted
 approval, or shared browser profile. Both the reasoning-model and Jev runners
-use this worker when `browser:task` finds configured password managers. The
+use this worker on macOS, including when no password manager is configured. The
 legacy shared driver is never attached to a credential-backed task, including
 after a crash. Existing legacy sessions are not imported or changed.
 
@@ -53,9 +53,9 @@ top-level, same-origin POST form with one submit control. LinkedIn's JavaScript
 login has a separate, origin-and-path-bound adapter in `lib/linkedin/login.ts`:
 its current login screen has no HTML form. That adapter captures the concrete
 username, password and sign-in controls, revalidates them around native approval,
-and installs the same network guard before filling. Username-first pages,
-frames, popups, cross-origin identity providers, passkeys, and codes require the
-person. After credential use, navigation is confined to the approved origin.
+and installs the same network guard before filling. Username-first pages and
+other unsupported forms use the native browser handoff below. After credential
+use, ordinary automation stays on the approved origin.
 The worker combines Playwright routing with a private Chromium Fetch interceptor:
 Playwright skips subsequent requests in an HTTP redirect chain, including 307
 redirects that preserve a credential POST. The interceptor rechecks every hop
@@ -73,6 +73,28 @@ download bodies and names containing them are withheld. No console log, snapshot
 video, or trace artifact is written by the worker. The task's `read_file` can read
 only its downloaded files, including after symlink resolution. Cancellation
 notifies and closes the worker; closing the task destroys its browser session.
+
+### Private SSO handoff
+
+`sign_in({})` also supports a native browser handoff. The person authorizes the
+original website and completes the website's own sign-in, including username-first
+pages, enterprise SSO, and external verification. Each additional HTTPS
+identity-provider origin requires a native approval. A four-minute window permits
+one private popup and up to eight provider origins. The worker rejects model
+operations throughout the handoff. Completing a second native dialog resumes
+only on the original site; cancellation, expiry, or returning elsewhere destroys
+the browser. Completion means the person returned control, not proof of login.
+LinkedIn uses this same handoff before resuming its pinned profile import.
+
+The popup's first network request is aborted until its Chromium Fetch interceptor
+is attached, then one GET is replayed. Redirect hops receive the same checks as
+top-level requests; known passwords/codes cannot follow a cross-origin POST even
+to an approved provider. OAuth/OIDC and SAML callback parameters stay inside the
+worker and join result/download redaction. Page input/change/submit listeners
+capture manual and extension-filled values for redaction. Do not read DOM values
+from a paused navigation request: Playwright may wait for the very document whose
+request is paused. This is defense against accidental reflection by trusted sites,
+not a sandbox for malicious scripts on a user-approved site.
 
 ### Verification continuation
 
@@ -119,7 +141,8 @@ worker; the normal People HTTP API still exposes only job progress and a draft.
 shared sign-in broker once if needed, complete supported saved-code challenges
 or wait for the person to finish verification,
 return from LinkedIn's feed to the selected profile, and capture its main content.
-All navigation is confined to `https://www.linkedin.com`. The import job closes
+Ordinary automation is confined to `https://www.linkedin.com`; an independently
+approved native SSO handoff may visit an identity provider and must return first. The import job closes
 the browser before sending evidence to its extraction model. Completion, failure,
 cancellation, or the five-minute deadline disposes the session. The previous
 persistent LinkedIn profile is neither read nor modified. No configured password
@@ -128,7 +151,7 @@ window. Other codes, passkeys and unsupported login variants still require the p
 
 ## How a task runs
 
-The existing shared-browser path, used without a configured password manager:
+The legacy shared-browser path, retained on other platforms without a configured password manager:
 
 1. `commands/all/browser/task.ts` makes a task folder and starts the run.
 2. `lib/browser/mcp/browserDriver.ts` attaches the task to Sky's browser:
