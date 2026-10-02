@@ -369,6 +369,7 @@ export function createChatHost(config: typeof ConfigModule, env: Record<string, 
           config: config as Record<string, unknown>,
           clock,
           memoryDir: config.DIR_AI_MEMORY,
+          secrets: context.secrets,
         })
         const files = chatFileContext(restore?.state.conversation ?? [], config.DIR_ATTACHMENTS)
         const parent = restore?.parent ?? restore?.resume?.parent

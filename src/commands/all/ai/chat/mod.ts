@@ -548,6 +548,7 @@ export default class AiChatTask extends Command {
             systemTimezone: context.systemNow.timezone,
           },
           memoryDir: DIR_AI_MEMORY,
+          secrets: context.secrets,
         })
         peopleCount = rendered.peopleCount
         return rendered.prompt
