@@ -53,7 +53,7 @@ async function fixture(
         const request = route.request()
         const url = new URL(request.url())
         reached.push(`${url.origin}${url.pathname}`)
-        let body = '<title>Atlas</title><h1>Sign in with SSO</h1>'
+        let body = '<title>Atlas</title><h1>Sign in with SSO or a passkey</h1>'
         if (url.origin === 'https://id.example')
           body =
             '<title>Private identity provider</title><form method="post" action="/session"><input name="user" autocomplete="username"><input name="password" type="password"><button>Continue</button></form>'
@@ -204,4 +204,70 @@ test('a native SSO popup stays outside the model and closes on return', { timeou
       expected: [true, ['https://id.example'], 1],
     })
   }),
+)
+
+test(
+  'WebAuthn assertions travel from the authenticator to the site without becoming tool results',
+  { timeout: 30000 },
+  async () =>
+    fixture(async (f) => {
+      const cdp = await f.page.context().newCDPSession(f.page)
+      await cdp.send('WebAuthn.enable')
+      await cdp.send('WebAuthn.addVirtualAuthenticator', {
+        options: {
+          protocol: 'ctap2',
+          transport: 'internal',
+          hasResidentKey: true,
+          hasUserVerification: true,
+          isUserVerified: true,
+          automaticPresenceSimulation: true,
+        },
+      })
+      let assertion = ''
+      f.approval.finish = async () => {
+        assertion = await f.page.evaluate(async () => {
+          const challenge = crypto.getRandomValues(new Uint8Array(32))
+          const created = await navigator.credentials.create({
+            publicKey: {
+              challenge,
+              rp: { name: 'Atlas', id: 'atlas.example' },
+              user: { id: new Uint8Array([1, 2, 3]), name: 'jane@example.com', displayName: 'Jane Doe' },
+              pubKeyCredParams: [{ type: 'public-key', alg: -7 }],
+              authenticatorSelection: { residentKey: 'required', userVerification: 'required' },
+            },
+          })
+          if (!created) throw new Error('No credential')
+          const credential = (await navigator.credentials.get({
+            publicKey: {
+              challenge: crypto.getRandomValues(new Uint8Array(32)),
+              rpId: 'atlas.example',
+              userVerification: 'required',
+            },
+          })) as PublicKeyCredential
+          const response = credential.response as AuthenticatorAssertionResponse
+          const signature = btoa(String.fromCharCode(...new Uint8Array(response.signature)))
+          await fetch('/assertion', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ signature }),
+          })
+          return signature
+        })
+        await f.page.goto('https://atlas.example/callback')
+        return true
+      }
+      const outcome = await f.session.callTool('sign_in', {})
+      const snapshot = await f.session.callTool('browser_snapshot', {})
+      assert({
+        given: 'a real browser WebAuthn flow with a test-only authenticator',
+        should: 'complete authentication without exposing the assertion through tools',
+        actual: [
+          assertion.length > 20,
+          text(outcome).includes('submitted'),
+          text(outcome).includes(assertion),
+          text(snapshot).includes(assertion),
+        ],
+        expected: [true, true, false, false],
+      })
+    }),
 )

@@ -195,7 +195,9 @@ function Canvas() {
               ? 'sky · streaks'
               : settingsSection === 'writing-voice'
                 ? 'sky · Writing style'
-                : 'sky'
+                : settingsSection === 'browser-automation'
+                  ? 'sky · Browser automation'
+                  : 'sky'
   }, [
     threadId,
     chatTitle,

@@ -28,7 +28,7 @@ interface ImportDependencies {
 
 const stages = {
   opening: 'Opening the LinkedIn profile in a private browser…',
-  signing_in: 'Approve Sky’s sign-in request. Use your saved login or SSO in the private browser window.',
+  signing_in: 'Approve Sky’s sign-in request. Use your saved login, passkey, or SSO in the private browser window.',
   waiting: 'Finishing LinkedIn sign-in…',
   needs_user:
     'Finish signing in or complete verification in the browser window. Enter any code there from your SMS, email, or authenticator app. Sky will continue automatically.',

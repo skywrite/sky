@@ -9,6 +9,7 @@ import { LinkedInBrowserImport } from '#lib/linkedin/browser.ts'
 import { captureLinkedInSignIn } from '#lib/linkedin/login.ts'
 import { browserBinary } from '../mcp/browserDriver.ts'
 import type { CallOptions, McpToolDefinition, McpToolResult } from '../mcp/client.ts'
+import { unpackAppleExtension } from './applePasswords.ts'
 import { SignInBroker, type SignInResult } from './broker.ts'
 import { captureSignInForm } from './form.ts'
 import { NativeAuthentication, type NativeAuthenticationApproval } from './nativeAuthentication.ts'
@@ -85,7 +86,7 @@ const definitions = {
   },
   sign_in: {
     description:
-      'Request private sign-in using a saved login or SSO. The person approves in native UI; identity-provider pages and credentials stay private. Returns only a status. No arguments.',
+      'Request private sign-in using a saved login, Apple Passwords, a passkey, or SSO. The person approves in native UI; identity-provider pages and credentials stay private. Returns only a status. No arguments.',
     schema: z.object({}).strict(),
   },
 } as const
@@ -101,6 +102,7 @@ export interface PrivateBrowserOptions {
   broker: SignInBroker
   headless?: boolean
   executablePath?: string
+  appleExtensionArchive?: string
   nativeApproval?: NativeAuthenticationApproval
   offerNativeChoice?: boolean
   hasSavedLogins?: boolean
@@ -129,7 +131,7 @@ export class PrivateBrowserSession {
   private readonly linkedIn: LinkedInBrowserImport | undefined
 
   private constructor(
-    private readonly browser: Browser,
+    private readonly browser: Browser | undefined,
     private readonly context: BrowserContext,
     private readonly page: Page,
     private readonly temporary: string,
@@ -150,26 +152,42 @@ export class PrivateBrowserSession {
   static async launch(options: PrivateBrowserOptions): Promise<PrivateBrowserSession> {
     const temporary = await mkdtemp(path.join(os.tmpdir(), 'sky-private-browser-'))
     let browser: Browser | undefined
+    let context: BrowserContext | undefined
     try {
       await mkdir(options.filesDir, { recursive: true, mode: 0o700 })
       const executablePath = options.executablePath ?? (await browserBinary())
       if (!executablePath) throw new Error('Browser unavailable')
-      browser = await chromium.launch({
+      const extension = options.appleExtensionArchive
+        ? await unpackAppleExtension(options.appleExtensionArchive, temporary)
+        : undefined
+      const launchOptions = {
         executablePath,
         headless: options.headless ?? false,
         chromiumSandbox: true,
         downloadsPath: temporary,
-        ignoreDefaultArgs: ['--enable-automation'],
-        args: ['--disable-blink-features=AutomationControlled'],
-      })
-      const context = await browser.newContext({
+        ignoreDefaultArgs: ['--enable-automation', ...(extension ? ['--disable-extensions'] : [])],
+        args: [
+          '--disable-blink-features=AutomationControlled',
+          ...(extension ? [`--disable-extensions-except=${extension}`, `--load-extension=${extension}`] : []),
+        ],
+      }
+      const contextOptions = {
         viewport: null,
-        serviceWorkers: 'block',
+        serviceWorkers: 'block' as const,
         acceptDownloads: !options.linkedInProfile,
-      })
+      }
+      if (extension)
+        context = await chromium.launchPersistentContext(path.join(temporary, 'profile'), {
+          ...launchOptions,
+          ...contextOptions,
+        })
+      else {
+        browser = await chromium.launch(launchOptions)
+        context = await browser.newContext(contextOptions)
+      }
       context.setDefaultTimeout(5000)
       context.setDefaultNavigationTimeout(30000)
-      const page = await context.newPage()
+      const page = context.pages()[0] ?? (await context.newPage())
       await options.prepare?.(page)
       const session = new PrivateBrowserSession(browser, context, page, temporary, options)
       const binding = `skyPrivateInput${crypto.randomUUID().replaceAll('-', '')}`
@@ -300,6 +318,7 @@ export class PrivateBrowserSession {
       })
       return session
     } catch {
+      await context?.close().catch(() => {})
       await browser?.close().catch(() => {})
       await rm(temporary, { recursive: true, force: true })
       throw new Error('The private browser could not start.')
@@ -322,7 +341,7 @@ export class PrivateBrowserSession {
     this.nativeAuth?.stop()
     this.options.broker.revoke()
     await this.context.close().catch(() => {})
-    await this.browser.close().catch(() => {})
+    await this.browser?.close().catch(() => {})
     await Promise.allSettled(this.downloads)
     await rm(this.temporary, { recursive: true, force: true })
   }

@@ -70,14 +70,14 @@ export function nativeAuthenticationApproval(objective: string, signal?: AbortSi
   return {
     method: async (origin) => {
       const result = await ask(
-        `How would you like to sign in at ${origin}?${task}\n\nUse the browser for SSO or other sign-in steps.`,
+        `How would you like to sign in at ${origin}?${task}\n\nUse the browser for Apple Passwords, passkeys, or SSO.`,
         ['Cancel', '1Password login', 'In browser'],
       )
       return result === '1Password login' ? 'password' : result === 'In browser' ? 'browser' : null
     },
     begin: async (origin) =>
       (await ask(
-        `Allow this task to use your signed-in session at:\n${origin}${task}\n\nComplete sign-in in the browser, including any SSO or verification steps. Credential entry stays private.`,
+        `Allow this task to use your signed-in session at:\n${origin}${task}\n\nComplete sign-in in the browser using Apple Passwords, a passkey, or SSO. Credential entry stays private.`,
         ['Cancel', 'Continue'],
       )) === 'Continue',
     provider: async (origin, destination) =>
@@ -87,7 +87,7 @@ export function nativeAuthenticationApproval(objective: string, signal?: AbortSi
       )) === 'Continue',
     finish: async (origin) =>
       (await ask(
-        `Finish signing in in the browser, then return here.\n\nAllow Sky to continue on ${origin}?\n\nUse the browser for passwords and verification codes. Never paste them into chat.`,
+        `Finish signing in in the browser, then return here.\n\nAllow Sky to continue on ${origin}?\n\nUse the browser for passwords, Touch ID, passkeys, and verification codes. Never paste them into chat.`,
         ['Cancel', 'Continue Sky'],
         240,
       )) === 'Continue Sky',

@@ -105,9 +105,16 @@ test(
         await page.keyboard.press('Escape')
         await page.getByRole('dialog').waitFor({ state: 'hidden' })
       }
+      const onePasswordRow = page
+        .locator('.sky-browser-manager-row')
+        .filter({ has: page.getByText('1Password', { exact: true }) })
+      const appleRow = page
+        .locator('.sky-browser-manager-row')
+        .filter({ has: page.getByText('Apple Passwords', { exact: true }) })
       await page.goto(`${base}/settings/credentials`)
       await page.getByRole('heading', { name: 'Browser automation', exact: true }).waitFor()
-      await page.getByRole('button', { name: 'Connect', exact: true }).waitFor()
+      await onePasswordRow.getByRole('button', { name: 'Connect', exact: true }).waitFor()
+      await page.waitForFunction(() => document.title === 'sky · Browser automation')
       assert({
         given: 'first use through the old Credentials link',
         should: 'show Browser automation with honest manual sign-in and no item inventory or setup instructions',
@@ -118,7 +125,7 @@ test(
           await page.getByRole('region', { name: '1Password setup' }).count(),
           fixture.counts.discovered,
           fixture.counts.vaultLists,
-          await page.getByText('Not available yet', { exact: true }).count(),
+          await appleRow.getByRole('button', { name: 'Connect', exact: true }).count(),
           await page.getByText('Manual', { exact: true }).count(),
         ],
         expected: ['Browser automation', 0, 0, 0, 0, 0, 1, 1],
@@ -128,7 +135,7 @@ test(
       fixture.options.discover = async () => {
         throw new CredentialError('integration-required')
       }
-      await page.getByRole('button', { name: 'Connect', exact: true }).click()
+      await onePasswordRow.getByRole('button', { name: 'Connect', exact: true }).click()
       await page.getByRole('dialog').getByRole('alert').waitFor()
       await page.getByRole('dialog').getByRole('button', { name: 'Open 1Password settings' }).click()
       assert({
@@ -179,11 +186,11 @@ test(
       theme = 'dark'
       await page.reload()
       await page.locator('html[data-mantine-color-scheme="dark"]').waitFor()
-      await page.getByRole('button', { name: 'Manage', exact: true }).waitFor()
+      await onePasswordRow.getByRole('button', { name: 'Manage', exact: true }).waitFor()
       await capture('browser-automation-dark')
       theme = 'light'
       await page.reload()
-      await page.getByRole('button', { name: 'Manage', exact: true }).click()
+      await onePasswordRow.getByRole('button', { name: 'Manage', exact: true }).click()
       const account = page
         .locator('.sky-browser-account')
         .filter({ has: page.getByText(SAMPLE_ACCOUNT, { exact: true }) })
@@ -196,7 +203,7 @@ test(
       const inspections = fixture.counts.inspected
       fixture.state.inspectionFailure = true
       await page.reload()
-      await page.getByRole('button', { name: 'Manage', exact: true }).waitFor()
+      await onePasswordRow.getByRole('button', { name: 'Manage', exact: true }).waitFor()
       assert({
         given: 'a later locked provider',
         should: 'load saved settings without reconnecting or losing scope',
@@ -209,10 +216,10 @@ test(
       })
       fixture.state.inspectionFailure = false
       fixture.vaults.push({ id: 'shared', title: 'Shared' })
-      await page.getByRole('button', { name: 'Manage', exact: true }).click()
+      await onePasswordRow.getByRole('button', { name: 'Manage', exact: true }).click()
       await account.getByRole('button', { name: 'Refresh vaults', exact: true }).click()
       await page.getByRole('dialog').waitFor({ state: 'hidden' })
-      await page.getByRole('button', { name: 'Manage', exact: true }).click()
+      await onePasswordRow.getByRole('button', { name: 'Manage', exact: true }).click()
       await account.getByRole('checkbox', { name: 'Shared', exact: true }).waitFor()
       await capture('browser-automation-accounts')
       assert({
@@ -228,6 +235,19 @@ test(
       await closeDialog()
       await page.setViewportSize({ width: 390, height: 844 })
       await capture('browser-automation-mobile')
+      fixture.options.prepareNativeBrowser = async () => {}
+      await appleRow.getByRole('button', { name: 'Connect', exact: true }).click()
+      await page.getByRole('dialog').getByRole('button', { name: 'Use Brave and connect' }).click()
+      await page.getByRole('dialog').waitFor({ state: 'hidden' })
+      await appleRow.getByRole('button', { name: 'Manage', exact: true }).waitFor()
+      await page.getByText('Native Mac passkeys', { exact: true }).waitFor()
+      assert({
+        given: 'explicit Apple Passwords setup',
+        should: 'save only native browser preferences, without reading any credentials',
+        actual: [(await fixture.host.snapshot()).nativeBrowser, fixture.counts.read],
+        expected: [{ browser: 'brave', applePasswords: true }, 0],
+      })
+      await capture('browser-automation-native-mobile')
       assert({
         given: 'the phone layout',
         should: 'fit the viewport',
@@ -262,7 +282,27 @@ test(
         expected: '/settings/connections/typesafe',
       })
       await page.goto(`${base}/settings/browser-automation`)
-      await page.getByRole('button', { name: 'Manage', exact: true }).click()
+      await page.waitForFunction(() => document.title === 'sky · Browser automation')
+      const titles = [await page.title()]
+      const navigation = page.locator('.sky-settings-nav')
+      await navigation.getByRole('button', { name: 'Connections', exact: true }).click()
+      await page.getByRole('heading', { name: 'Connections', exact: true }).waitFor()
+      await navigation.getByRole('button', { name: 'Browser automation', exact: true }).click()
+      await page.waitForFunction(() => document.title === 'sky · Browser automation')
+      titles.push(await page.title())
+      await page.goBack()
+      await page.getByRole('heading', { name: 'Connections', exact: true }).waitFor()
+      await page.goForward()
+      await page.getByRole('heading', { name: 'Browser automation', exact: true }).waitFor()
+      await page.waitForFunction(() => document.title === 'sky · Browser automation')
+      titles.push(await page.title())
+      assert({
+        given: 'a direct load, Settings navigation, and browser back/forward navigation',
+        should: 'keep the browser tab identified as Browser automation',
+        actual: titles,
+        expected: Array(3).fill('sky · Browser automation'),
+      })
+      await onePasswordRow.getByRole('button', { name: 'Manage', exact: true }).click()
       await account.getByRole('button', { name: 'Disconnect', exact: true }).click()
       await account.getByRole('button', { name: 'Disconnect account', exact: true }).click()
       await account.waitFor({ state: 'hidden' })

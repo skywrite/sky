@@ -1,6 +1,15 @@
 export class BrowserSetupError extends Error {}
 
-type SetupOperation = '' | 'connect' | 'refresh' | 'disconnect' | 'vaults' | 'open-settings'
+type SetupOperation =
+  | ''
+  | 'connect'
+  | 'refresh'
+  | 'disconnect'
+  | 'vaults'
+  | 'open-settings'
+  | 'native-browser'
+  | 'bundled-browser'
+  | 'autofill-settings'
 
 export async function browserSetupRequest<T>(operation: SetupOperation = '', body?: unknown): Promise<T> {
   const response = await fetch(`/settings/_api/browser-automation${operation ? `/${operation}` : ''}`, {

@@ -8,6 +8,7 @@ import { PasswordManagerSettingsStore } from '#lib/credentials/passwordManagers.
 import { linkedInUrl } from '#lib/linkedin/types.ts'
 import { SignInBroker } from './broker.ts'
 import { nativeAuthenticationApproval, nativeSignInApproval } from './nativeApproval.ts'
+import { nativeBrowserAvailable, NATIVE_BROWSER } from './nativeBrowser.ts'
 import { PrivateBrowserSession } from './session.ts'
 
 // Only the owning process's inherited pipes carry this protocol. There is no listener or approval RPC.
@@ -66,10 +67,19 @@ async function request(method: string, params: unknown, signal: AbortSignal) {
       ),
     })
     const saved = await settings.read()
+    if (saved.nativeBrowser && !(await nativeBrowserAvailable())) throw new Error('Native browser unavailable')
     session = await PrivateBrowserSession.launch({
       ...options,
       broker,
       hasSavedLogins: saved.sources.length > 0,
+      ...(saved.nativeBrowser
+        ? {
+            executablePath: NATIVE_BROWSER.executablePath,
+            ...(saved.nativeBrowser.applePasswords
+              ? { appleExtensionArchive: path.join(DIR_STATE, 'credentials', 'helpers', 'apple-passwords.crx') }
+              : {}),
+          }
+        : {}),
       ...(process.platform === 'darwin' && !options.headless
         ? {
             nativeApproval: nativeAuthenticationApproval(options.objective, lifetime.signal),

@@ -18,6 +18,48 @@ async function fixture(work: (f: ReturnType<typeof browserAutomationTestHost>, d
 }
 const headers = { 'Content-Type': 'application/json' }
 
+test('native browser setup is explicit, metadata-only, and cannot authorize sign-in', async () =>
+  fixture(async (f) => {
+    const prepared: boolean[] = []
+    f.options.prepareNativeBrowser = async (apple) => {
+      prepared.push(apple)
+    }
+    const app = createBrowserAutomationRoutes(f.host)
+    const send = (body: unknown) =>
+      app.request('http://localhost/native-browser', { method: 'POST', headers, body: JSON.stringify(body) })
+    const bad = await send({ browser: 'brave', applePasswords: true, approved: true })
+    const arbitrary = await send({ browser: '/tmp/arbitrary-executable', applePasswords: true })
+    const saved = await send({ browser: 'brave', applePasswords: true })
+    const snapshot = await f.host.snapshot()
+    const restarted = await new BrowserAutomationHost(f.options).snapshot()
+    await f.host.useBundledBrowser()
+    assert({
+      given: 'explicit native setup and attempts to inject approval or an executable',
+      should:
+        'save the browser preference without reading credentials, preserve it across restarts, and support disconnect',
+      actual: [
+        bad.status,
+        arbitrary.status,
+        saved.status,
+        prepared,
+        snapshot,
+        restarted,
+        await f.host.snapshot(),
+        f.counts.read,
+      ],
+      expected: [
+        400,
+        400,
+        200,
+        [true],
+        { passwordManagers: [], nativeBrowser: { browser: 'brave', applePasswords: true }, signIn: 'approval' },
+        snapshot,
+        { passwordManagers: [], signIn: 'manual' },
+        0,
+      ],
+    })
+  }))
+
 test('browser settings read only saved metadata, including after a restart or failed native access', async () =>
   fixture(async (f, dir) => {
     const initial = await f.host.snapshot()

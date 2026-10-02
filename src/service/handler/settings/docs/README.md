@@ -1,6 +1,6 @@
 ---
 created: 2026-08-30
-updated: 2026-09-29
+updated: 2026-10-02
 ---
 
 # Settings — the web's settings section
@@ -198,7 +198,11 @@ Native SDKs can renew authorization internally, so even a vault listing belongs
 behind an explicit Connect or Refresh action, never a Settings page load.
 
 The setup API supports Connect, Refresh, Disconnect, vault exclusions, and opening
-1Password settings. Responses are not cached and provider errors are sanitized.
+1Password settings. Native browser setup can prepare Apple’s authenticated browser
+extension, save the explicit Brave choice, or open macOS AutoFill preferences.
+These operations cannot read credentials or approve a browser task; the
+[private browser owns their use](../../../../lib/browser/docs/README.md#apple-passwords-passkeys-and-sso).
+Responses are not cached and provider errors are sanitized.
 The entire former `/settings/_api/credentials` API returns 410, including secret
 reads, OTP, inspection and generic mutations. Keeping a reveal endpoint while
 removing its UI would preserve the original exposure.

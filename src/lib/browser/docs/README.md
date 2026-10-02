@@ -74,11 +74,11 @@ video, or trace artifact is written by the worker. The task's `read_file` can re
 only its downloaded files, including after symlink resolution. Cancellation
 notifies and closes the worker; closing the task destroys its browser session.
 
-### Private SSO handoff
+### Apple Passwords, passkeys, and SSO
 
 `sign_in({})` also supports a native browser handoff. The person authorizes the
 original website and completes the website's own sign-in, including username-first
-pages, enterprise SSO, and external verification. Each additional HTTPS
+pages, enterprise SSO, passkeys, and external verification. Each additional HTTPS
 identity-provider origin requires a native approval. A four-minute window permits
 one private popup and up to eight provider origins. The worker rejects model
 operations throughout the handoff. Completing a second native dialog resumes
@@ -95,6 +95,35 @@ capture manual and extension-filled values for redaction. Do not read DOM values
 from a paused navigation request: Playwright may wait for the very document whose
 request is paused. This is defense against accidental reflection by trusted sites,
 not a sandbox for malicious scripts on a user-approved site.
+
+Apple Passwords uses Apple's official iCloud Passwords extension. Explicit setup
+downloads the package and verifies the CRX3 signature against Apple's extension ID;
+every launch rechecks it and extracts it into the task's temporary directory.
+Neither the extension archive nor the preferences contain vault data. The browser
+profile and extension's task authorization are deleted at close, so Apple may ask
+to verify the connection again for a later task. Sky never copies the everyday
+browser's cookies, extension storage, or passwords.
+
+Passkeys use the website's actual WebAuthn request and the browser/macOS picker.
+Sky neither exports private keys nor substitutes an authenticator. Apple Passwords
+and 1Password can be selected through macOS AutoFill; 1Password must be enabled
+there separately from its SDK connection. Registration and assertions remain
+between the authenticator and the website, outside model tools.
+
+The bundled Playwright Chromium on macOS is ad-hoc signed and lacks Apple's
+[arbitrary-domain passkey entitlement](https://developer.apple.com/documentation/bundleresources/entitlements/com.apple.developer.web-browser.public-key-credential).
+An unentitled Swift helper or WKWebView cannot remove that restriction. Native
+setup therefore explicitly selects the installed **Brave (Chromium)** build,
+verifying its publisher signature and passkey entitlement before each launch.
+It uses an isolated profile, never the person's usual profile. The default browser
+is unchanged until this choice is saved. Ordinary code-signature verification
+accepts harmless Finder metadata which `--strict` can reject; it still checks
+signed code and the pinned publisher requirement. No browser is re-signed.
+
+See [Apple's extension setup](https://support.apple.com/120758) and
+[1Password's macOS AutoFill support](https://support.1password.com/macos-autofill/).
+Tests use virtual authenticators only as test fixtures; production never installs
+one. Browser capability checks are not evidence of a successful real-account login.
 
 ### Verification continuation
 

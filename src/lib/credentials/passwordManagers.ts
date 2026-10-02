@@ -16,6 +16,7 @@ export interface PasswordManagerSettings {
   version: 1
   sources: SavedPasswordManager[]
   destination: { connectionId: string; containerId: string } | null
+  nativeBrowser?: { browser: 'brave'; applePasswords: boolean }
 }
 
 export const identifier = z
@@ -39,6 +40,10 @@ const settingsSchema = z
     version: z.literal(1),
     sources: z.array(sourceSchema).max(20),
     destination: destinationSchema.nullable(),
+    nativeBrowser: z
+      .object({ browser: z.literal('brave'), applePasswords: z.boolean() })
+      .strict()
+      .optional(),
   })
   .strict()
   .refine((value) => new Set(value.sources.map((source) => source.id)).size === value.sources.length)

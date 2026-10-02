@@ -12,6 +12,9 @@ const schemas = {
   disconnect: z.object({ id: identifier }).strict(),
   vaults: z.object({ id: identifier, excludedVaultIds: z.array(identifier).max(1000) }).strict(),
   'open-settings': z.object({}).strict(),
+  'native-browser': z.object({ browser: z.literal('brave'), applePasswords: z.boolean() }).strict(),
+  'bundled-browser': z.object({}).strict(),
+  'autofill-settings': z.object({}).strict(),
 }
 
 /** Setup metadata only. Credential use and browser execution must never be routed through this API. */
@@ -66,6 +69,15 @@ export function createBrowserAutomationRoutes(host: BrowserAutomationHost): Hono
         }
         case 'open-settings':
           await host.openSettings()
+          break
+        case 'native-browser':
+          await host.setNativeBrowser(schemas['native-browser'].parse(raw).applePasswords)
+          break
+        case 'bundled-browser':
+          await host.useBundledBrowser()
+          break
+        case 'autofill-settings':
+          await host.openAutofillSettings()
           break
       }
       return c.json({ ok: true })

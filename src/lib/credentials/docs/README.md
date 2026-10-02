@@ -98,7 +98,6 @@ exposed through the application model.
 `readLogin` revalidates a Login item's exact HTTPS origin and obtains the built-in
 username and password from the same native revision. It is consumed only by the
 private browser worker after approval; never expose this through a Settings route.
-
 When the item has exactly one TOTP field, `readLogin` also returns a field/revision
 binding without its code or seed. `readLoginOtp` revalidates that binding and the
 exact origin on a fresh native item read. The browser owns the short-lived,
@@ -168,13 +167,14 @@ const values = await credentials.readFields(item.ref, [{ id: 'password' }])
 Constructors accept fake stores/SDK clients so tests never unlock a vault or read
 real credentials. The public factories are the only connection entry points.
 
-## Passkeys and future sign-in workflows
+## Passkeys and browser sign-in
 
 `PasskeyAuthenticator` is a separate registration/authentication contract, using
 WebAuthn JSON types and a host-supplied origin/session binding. It can report
 completion, required user interaction, cancellation or lack of support.
 Neither storage adapter implements it or claims that a passkey's presence means
-Sky can authenticate with it. Apple Passwords and passkey transport are not
-implemented. The private browser uses a native account choice and can complete
-one saved-code challenge after password submission. Other codes, passkeys and
-unsupported forms stay with the person in the browser.
+Sky can authenticate with it. Production passkeys use the browser’s actual
+WebAuthn and macOS AutoFill flow, including Apple Passwords and 1Password; they do
+not pass through a storage adapter. Apple password filling, native browser setup,
+SSO, and the saved-code continuation are owned by the
+[private browser](../../browser/docs/README.md#apple-passwords-passkeys-and-sso).

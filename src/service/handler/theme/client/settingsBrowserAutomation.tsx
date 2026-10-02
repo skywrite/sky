@@ -1,4 +1,4 @@
-import { Button } from '@mantine/core'
+import { Button, Modal } from '@mantine/core'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { BrowserAutomationData } from '../../settings/browserAutomation/types.ts'
 import { Block, Row } from './settingsBlocks.tsx'
@@ -20,6 +20,9 @@ export function BrowserAutomationMain({
   const [loading, setLoading] = useState(true)
   const [managing, setManaging] = useState(false)
   const [connecting, setConnecting] = useState<string | null>(null)
+  const [nativeSetup, setNativeSetup] = useState<'apple' | 'passkeys' | null>(null)
+  const [nativeError, setNativeError] = useState<string | null>(null)
+  const [nativeBusy, setNativeBusy] = useState(false)
   const sequence = useRef(0)
   const reload = useCallback(async () => {
     const current = ++sequence.current
@@ -72,7 +75,7 @@ export function BrowserAutomationMain({
                   label={data.signIn === 'approval' ? 'Approve each sign-in' : 'Sign in with your help'}
                   sub={
                     data.signIn === 'approval'
-                      ? 'Sky asks you to choose a 1Password login and approve its use for the current website. Each task has its own private browser session.'
+                      ? 'Approve each website in a native dialog. Passwords, passkeys, and verification codes stay in the private browser.'
                       : 'Sky pauses when a website needs a password, passkey, or verification code. Complete the step in the browser, then continue.'
                   }
                   last
@@ -110,14 +113,48 @@ export function BrowserAutomationMain({
                       <div className="sky-browser-manager-title">Apple Passwords</div>
                       <div className="sky-browser-manager-sub">Passwords and passkeys saved in iCloud Keychain.</div>
                     </div>
-                    <span className="sky-set-off">Not available yet</span>
+                    <Button
+                      size="sm"
+                      variant={data.nativeBrowser?.applePasswords ? 'default' : 'primary'}
+                      onClick={() => {
+                        setNativeError(null)
+                        setNativeSetup('apple')
+                      }}
+                    >
+                      {data.nativeBrowser?.applePasswords ? 'Manage' : 'Connect'}
+                    </Button>
                   </div>
                   <p className="sky-browser-help">
-                    Password sign-in requires your approval. For passkeys, verification codes, or an unsupported sign-in
-                    page, Sky asks you to finish in the browser.
+                    Use a saved login, a passkey, or your organization’s sign-in. Sky keeps the sign-in private and asks
+                    you to complete any Touch ID, SMS, or authenticator challenge in the browser.
                   </p>
                 </div>
               </section>
+              <Block head="Passkeys and SSO">
+                <Row
+                  label={data.nativeBrowser ? 'Native Mac passkeys' : 'Enable native Mac passkeys'}
+                  sub={
+                    data.nativeBrowser
+                      ? 'Brave (Chromium) · a separate, temporary profile for each task. Apple Passwords and 1Password use the macOS passkey picker.'
+                      : 'Use Apple Passwords or 1Password through macOS AutoFill. Choose a browser that supports Mac passkeys.'
+                  }
+                  last
+                >
+                  <Button
+                    size="sm"
+                    onClick={() => {
+                      setNativeError(null)
+                      setNativeSetup('passkeys')
+                    }}
+                  >
+                    {data.nativeBrowser ? 'Manage' : 'Set up'}
+                  </Button>
+                </Row>
+                <p className="sky-browser-help">
+                  For Google, Microsoft, Okta, or another SSO provider, complete the private sign-in window. Sky resumes
+                  on the original website after your approval.
+                </p>
+              </Block>
               <p className="sky-set-note">
                 API keys for Sky’s services are managed in{' '}
                 <button
@@ -147,6 +184,84 @@ export function BrowserAutomationMain({
       {connecting !== null && (
         <ConnectPasswordManager id={connecting} close={() => setConnecting(null)} done={reload} />
       )}
+      <Modal
+        opened={nativeSetup !== null}
+        onClose={() => {
+          if (!nativeBusy) setNativeSetup(null)
+        }}
+        title="Apple Passwords and passkeys"
+        centered
+      >
+        <p>
+          Use Brave (Chromium) for native Mac sign-in. Each Sky task gets a temporary profile; your everyday browser
+          stays separate.
+        </p>
+        <p>
+          Apple Passwords fills logins through Apple’s extension. Passkeys use the macOS picker, including 1Password
+          when enabled in AutoFill.
+        </p>
+        {nativeError && (
+          <p role="alert" className="sky-browser-error">
+            {nativeError}
+          </p>
+        )}
+        <Button
+          loading={nativeBusy}
+          onClick={async () => {
+            setNativeBusy(true)
+            setNativeError(null)
+            try {
+              await browserSetupRequest('native-browser', {
+                browser: 'brave',
+                applePasswords: nativeSetup === 'apple' || !!data?.nativeBrowser?.applePasswords,
+              })
+              await reload()
+              setNativeSetup(null)
+            } catch (error) {
+              setNativeError(browserSetupFailure(error))
+            } finally {
+              setNativeBusy(false)
+            }
+          }}
+        >
+          {data?.nativeBrowser
+            ? 'Refresh setup'
+            : nativeSetup === 'apple'
+              ? 'Use Brave and connect'
+              : 'Use Brave for passkeys'}
+        </Button>
+        {data?.nativeBrowser && (
+          <>
+            <Button
+              disabled={nativeBusy}
+              onClick={() =>
+                void browserSetupRequest('autofill-settings', {}).catch((error) =>
+                  setNativeError(browserSetupFailure(error)),
+                )
+              }
+            >
+              Open macOS AutoFill settings
+            </Button>
+            <Button
+              disabled={nativeBusy}
+              onClick={async () => {
+                setNativeBusy(true)
+                try {
+                  await browserSetupRequest('bundled-browser', {})
+                  await reload()
+                  setNativeSetup(null)
+                } catch (error) {
+                  setNativeError(browserSetupFailure(error))
+                } finally {
+                  setNativeBusy(false)
+                }
+              }}
+            >
+              Use bundled Chromium
+            </Button>
+          </>
+        )}
+      </Modal>
     </div>
   )
 }

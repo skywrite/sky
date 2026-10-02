@@ -11,6 +11,8 @@ export interface BrowserAutomationHostOptions {
   inspectAccount: (source: SavedPasswordManager) => Promise<CredentialContainer[]>
   openOnePasswordSettings: () => Promise<void>
   nativeSignInAvailable?: boolean
+  prepareNativeBrowser?: (applePasswords: boolean) => Promise<void>
+  openAutofillSettings?: () => Promise<void>
 }
 
 /** The settings host owns preferences, not permission to sign in or access a browser session. */
@@ -29,8 +31,10 @@ export class BrowserAutomationHost {
     // Reading Settings never contacts a provider, including an SDK that can renew authorization.
     return {
       passwordManagers: settings.sources.map((source) => ({ ...source, provider: '1password' })),
+      ...(settings.nativeBrowser ? { nativeBrowser: settings.nativeBrowser } : {}),
       signIn:
-        settings.sources.length && (this.options.nativeSignInAvailable ?? process.platform === 'darwin')
+        (settings.sources.length || settings.nativeBrowser) &&
+        (this.options.nativeSignInAvailable ?? process.platform === 'darwin')
           ? 'approval'
           : 'manual',
     }
@@ -106,6 +110,25 @@ export class BrowserAutomationHost {
 
   openSettings(): Promise<void> {
     return this.options.openOnePasswordSettings()
+  }
+
+  async setNativeBrowser(applePasswords: boolean): Promise<void> {
+    if (!this.options.prepareNativeBrowser) throw new CredentialError('native-browser-required')
+    await this.options.prepareNativeBrowser(applePasswords)
+    await this.settings.update((settings) => {
+      settings.nativeBrowser = { browser: 'brave', applePasswords }
+    })
+  }
+
+  async useBundledBrowser(): Promise<void> {
+    await this.settings.update((settings) => {
+      delete settings.nativeBrowser
+    })
+  }
+
+  async openAutofillSettings(): Promise<void> {
+    if (!this.options.openAutofillSettings) throw new CredentialError('unsupported')
+    await this.options.openAutofillSettings()
   }
 }
 import process from 'node:process'

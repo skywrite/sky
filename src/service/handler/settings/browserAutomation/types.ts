@@ -9,4 +9,5 @@ export interface BrowserAutomationData {
   passwordManagers: PasswordManagerView[]
   /** Describes availability; it never authorizes a credential read. */
   signIn: 'manual' | 'approval'
+  nativeBrowser?: { browser: 'brave'; applePasswords: boolean }
 }
