@@ -213,6 +213,8 @@ const MAX_TOOL_ERROR_CHARS = 2000
 
 // This trusted envelope is rebuilt for each user turn. A failed analysis cannot become a new minutes-long
 // attempt just because the model rewords focus or splits the same file list. Status and add remain available.
+// A request rejected before analysis (a file the tool cannot find) leaves no entry: the corrected call is the
+// fix, and blocking it left a turn with no review at all.
 const reviewAttempts = new WeakMap<LegalReviewChatContext, { failure?: string }>()
 
 /**
@@ -278,17 +280,28 @@ export async function runToolCommand(
     entry.commandName === 'ai:research' && options.researchContext
       ? researchContext.run(options.researchContext, runCommand)
       : runCommand()
+  // legal:review reports a request it rejected before registering any agreement. Nothing was analyzed, so
+  // that failure leaves the turn open for the corrected call; every other failure ends analysis for the turn.
+  let rejected = false
+  const legalContext = options.legalReviewContext && {
+    ...options.legalReviewContext,
+    rejected: () => {
+      rejected = true
+    },
+  }
+  const reviewFailed = (failure: string) => {
+    if (!reviewTurn) return
+    if (rejected) reviewAttempts.delete(reviewTurn)
+    else reviewAttempts.set(reviewTurn, { failure })
+  }
   let result
   try {
     result =
-      (entry.commandName === 'legal:review' || entry.commandName === 'legal:annotate') && options.legalReviewContext
-        ? await legalReviewChat.run(options.legalReviewContext, run)
+      (entry.commandName === 'legal:review' || entry.commandName === 'legal:annotate') && legalContext
+        ? await legalReviewChat.run(legalContext, run)
         : await run()
   } catch (error) {
-    if (reviewTurn)
-      reviewAttempts.set(reviewTurn, {
-        failure: truncate(error instanceof Error ? error.message : String(error), MAX_TOOL_ERROR_CHARS),
-      })
+    reviewFailed(truncate(error instanceof Error ? error.message : String(error), MAX_TOOL_ERROR_CHARS))
     throw error
   }
   if (result.status !== 'success') {
@@ -302,7 +315,7 @@ export async function runToolCommand(
       .filter((m, i, all) => all.indexOf(m) === i)
       .join(': ')
     const error = truncate(detail || `Failed: ${entry.commandName}`, MAX_TOOL_ERROR_CHARS)
-    if (reviewTurn) reviewAttempts.set(reviewTurn, { failure: error })
+    reviewFailed(error)
     // Calendar failures carry durable receipts and the exact human-edited fields.
     // Dropping them leaves the model with only the older preparation and encourages a replacement invite.
     const receipt =
@@ -317,7 +330,7 @@ export async function runToolCommand(
       // Business-rule 'fail' vs unexpected 'error' — the model reads this.
       status: result.status,
       error,
-      ...(reviewTurn ? { retryable: false } : {}),
+      ...(reviewTurn ? { retryable: rejected } : {}),
     }
   }
 

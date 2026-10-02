@@ -123,3 +123,46 @@ test('chat links survive recovery and filing, and response threads inherit the s
     await rm(root, { recursive: true, force: true })
   }
 })
+
+test('an uploaded agreement is reviewed when the model names it by its saved filename', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'sky-legal-chat-'))
+  try {
+    // The upload reader shows the model the filename of the saved copy; this scripted model passes it back.
+    let named = ''
+    const app = createChatRoutes(
+      legalReviewTestHost(root, [], (hooks) => ({ document: (named = hooks.attachments().at(-1)!.file) })),
+    )
+    await json(app, '/main/settings')
+    const uploaded = 'Atlas Services Agreement.pdf'
+    const form = new FormData()
+    form.set(
+      'message',
+      JSON.stringify({
+        message: 'Review this agreement for Atlas in chat.',
+        profile: 'test-thread-model',
+        contextTokens: 0,
+        saves: true,
+      }),
+    )
+    form.append('files', new File([new Uint8Array(agreementPdf('Cancellation requires 90 days notice.'))], uploaded))
+    const sent = await app.request('/main/messages', { method: 'POST', body: form })
+    const stream = await sent.text()
+    const review = await reviewOf(app, 'main')
+    assert({
+      given: 'an upload whose saved filename differs from the name it was uploaded with',
+      should: 'review it when selected by the saved filename, under the name it was uploaded with',
+      actual: {
+        named,
+        reviewed: stream.includes('1 agreements · 1 reviewed'),
+        documents: (review?.documents ?? []).map((document) => document.name),
+      },
+      expected: {
+        named: '2026-02-04_Chat_Atlas-Services-Agreement.pdf',
+        reviewed: true,
+        documents: [uploaded],
+      },
+    })
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})

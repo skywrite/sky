@@ -10,10 +10,16 @@ import { legalReviewBrief, legalReviewContext } from '#lib/legalReview/chat.ts'
 import { createLegalReviewer } from '#lib/legalReview/runtime.ts'
 import { REVIEW_CONTEXT, scriptedAnalysis } from '#lib/legalReview/testHelpers.ts'
 import type { ReviewContext } from '#lib/legalReview/types.ts'
+import type { ToolHooks } from '#shared/models/Chat/ChatSession/mod.ts'
 import { replyThreadTestHost } from './replyThreadsTestHelpers.ts'
 
 /** Real command, attachment, review and chat persistence; only the two model responses are scripted. */
-export function legalReviewTestHost(root: string, calls: ReviewContext[] = []) {
+export function legalReviewTestHost(
+  root: string,
+  calls: ReviewContext[] = [],
+  /** What the scripted model passes to legal_review beside the action; by default it names no document. */
+  input: (hooks: ToolHooks) => Record<string, unknown> = () => ({ expected: 5 }),
+) {
   const settings = {
     ...config,
     DIR_BASE: root,
@@ -45,7 +51,7 @@ export function legalReviewTestHost(root: string, calls: ReviewContext[] = []) {
         const result = await runToolCommand(
           tasks,
           { commandName: 'legal:review', toolName: 'legal_review' },
-          { action: status ? 'status' : 'review', expected: 5 },
+          { action: status ? 'status' : 'review', ...input(hooks) },
           { legalReviewContext: bridge },
         )
         if (!result.success) throw new Error(String(result.error))

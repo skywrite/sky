@@ -13,6 +13,11 @@ export interface LegalReviewChatContext {
   link: (id: string) => Promise<void>
   sources: () => ReviewSource[]
   context: ReviewContext
+  /**
+   * The command reports a request it rejected before registering any agreement, such as a file it cannot
+   * find. Nothing was analyzed, so the host must not count it as the turn's failed analysis.
+   */
+  rejected?: () => void
 }
 export const legalReviewChat = new AsyncLocalStorage<LegalReviewChatContext>()
 
@@ -71,7 +76,7 @@ export const LEGAL_REVIEW_CHAT_INSTRUCTIONS = `## Related agreement reviews
 Use legal_review for analyzing legal agreements. It reads original attachments and returns findings in this conversation. It automatically receives your profile, relationship and notebook context, and this conversation. Use the side and priorities already established there; ask only about a material ambiguity, never restart a generic intake questionnaire.
 For related agreements, keep one review: add each new file to it, track the expected document count when the user states it, and compare the whole current set. The tool can register files without analysis (action=add) or return saved findings (action=status). For a revision, pass the previous document ID as replaces only when the user identifies it as a replacement; preserve amendments as separate agreements. Use document/documents to select agreements when the chat also contains unrelated attachments.
 After a new agreement or material context arrives, call legal_review again before claiming the set is up to date. Surface glaring issues, material uncertainties, missing documents and consequential interactions, with the source clause/page and practical impact. Avoid exhaustive recitals and cosmetic drafting nits. Read the entire set even when the reply is brief.
-If analysis fails or times out, stop analysis for this turn. Use action=status to report which originals and earlier findings are saved, and explain that this attempt did not finish. Do not automatically restart, reword focus, split the same set into repeated reviews, switch review IDs, or present your own fallback as a completed tool review. A later user request can start another attempt with the saved originals.
+If analysis fails or times out, stop analysis for this turn. Use action=status to report which originals and earlier findings are saved, and explain that this attempt did not finish. Do not automatically restart, reword focus, split the same set into repeated reviews, switch review IDs, or present your own fallback as a completed tool review. A later user request can start another attempt with the saved originals. A request the tool rejects before analysis starts is different: its result has retryable true, for example when it cannot find a file. Nothing was analyzed, so correct the call and run it again.
 The review result separates AI assessments and recommendations from user decisions. Never treat your recommendation, a proposed response, silence, or a hypothetical as a decision the user made. The review summary lets the user record decisions explicitly.
 Keep the review and shared questions in the conversation where they were asked. A reply thread is the user's explicit place to draft and refine the team response; use its inherited review context and the writing voice tool there. Never route a main-chat message to a thread automatically.
 legal_annotate is optional and only for an explicit request to upload to Google Docs, add comments or make suggested edits. Ordinary review does not authorize annotation or a Google upload.`

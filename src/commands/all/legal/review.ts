@@ -81,8 +81,11 @@ export default class LegalReviewTask extends Command {
   async run({ args, context }: CommandArgs<Params>): Promise<CommandResult<Result>> {
     let reviewer: ReturnType<typeof createLegalReviewer> | undefined
     let reviewId = args.review
+    // True once the agreements are registered on the review. A failure before that is a rejected request,
+    // not a failed analysis: nothing was read, and a corrected call may follow in the same chat turn.
+    let accepted = false
+    const chat = legalReviewChat.getStore()
     try {
-      const chat = legalReviewChat.getStore()
       reviewer = this.createReviewer(context.config)
       const id = args.review ?? chat?.id()
       reviewId = id
@@ -91,7 +94,19 @@ export default class LegalReviewTask extends Command {
       let review: LegalReview
       if (action === 'status') {
         const saved = id ? await reviewer.store.read(id) : null
-        if (!saved) return CommandResult.fail('No saved review is linked yet. Attach an agreement to begin.')
+        if (!saved) {
+          // "Attach an agreement" is the wrong advice when one is attached and has not been reviewed yet.
+          const waiting = chat?.sources() ?? []
+          return CommandResult.fail(
+            waiting.length === 0
+              ? 'No saved review is linked yet. Attach an agreement to begin.'
+              : `No review has been saved yet. ${
+                  waiting.length === 1
+                    ? `The attached agreement (${waiting[0].name}) has`
+                    : `The ${waiting.length} attached agreements have`
+                } not been analyzed; run the review to begin.`,
+          )
+        }
         review = saved
         await chat?.link(review.id)
       } else {
@@ -102,7 +117,7 @@ export default class LegalReviewTask extends Command {
             ? [args.document]
             : undefined
         if (raw !== undefined && (!Array.isArray(raw) || raw.some((item) => typeof item !== 'string')))
-          return CommandResult.fail('documents must be a JSON array of paths or attached filenames.')
+          throw new Error('documents must be a JSON array of paths or attached filenames.')
         const sources: ReviewSource[] =
           raw === undefined
             ? attached
@@ -111,8 +126,14 @@ export default class LegalReviewTask extends Command {
                   throw new Error(
                     'Attach or download the original agreement to review it in chat. Google annotation is a separate action.',
                   )
+                // A web upload is listed under the name it was uploaded with, while the model is also shown
+                // the filename of its saved copy. Either one selects it.
                 const matches = attached.filter(
-                  (item) => item.path === file || item.name === file || item.name.endsWith(`_${file}`),
+                  (item) =>
+                    item.path === file ||
+                    item.name === file ||
+                    path.basename(item.path) === file ||
+                    item.name.endsWith(`_${file}`),
                 )
                 if (matches.length > 1)
                   throw new Error(`Several attachments match ${file}; use the complete attached filename.`)
@@ -135,6 +156,7 @@ export default class LegalReviewTask extends Command {
           },
           onCreated: async (id: string) => {
             reviewId = id
+            accepted = true
             await chat?.link(id)
           },
         }
@@ -149,9 +171,13 @@ export default class LegalReviewTask extends Command {
       return CommandResult.success({ report, reviewId: review.id, artifact: reviewer.store.file(review.id), review })
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
+      if (!accepted) chat?.rejected?.()
       const saved = reviewer && reviewId ? await reviewer.store.read(reviewId).catch(() => null) : null
       if (!saved) return CommandResult.fail(message)
-      const retained = `No new analysis was saved. ${activeDocuments(saved).length} original agreements and ${saved.findings.length} earlier findings are retained in review ${saved.id}. Use action=status to inspect saved work. Do not repeat analysis in this turn.`
+      const kept = `${activeDocuments(saved).length} original agreements and ${saved.findings.length} earlier findings are retained in review ${saved.id}.`
+      const retained = accepted
+        ? `No new analysis was saved. ${kept} Use action=status to inspect saved work. Do not repeat analysis in this turn.`
+        : `Nothing was added or analyzed. ${kept}`
       context.output.log(retained)
       return CommandResult.fail(`${message}\n\n${retained}`)
     }

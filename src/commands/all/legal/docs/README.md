@@ -1,6 +1,6 @@
 ---
 created: 2026-08-09
-updated: 2026-09-10
+updated: 2026-10-01
 ---
 
 # Agreement review
@@ -37,6 +37,11 @@ each subsequent chat turn, including explicit decisions made in the summary.
 Review discussion stays where it was requested; drafting can use the existing
 reply-thread UI, with no automatic routing or nested threads.
 
+In chat, `document` and `documents` select among the conversation's
+attachments. A web upload is listed under the name it was uploaded with, and
+the model is also shown the filename of its saved copy (`<day>_Chat_<slug>`).
+An attachment answers to either name and to the path of that copy.
+
 `action=add` registers files without analysis; `action=status` reads the saved
 record. The default action rereads all active originals and compares the set.
 The expected count comes from the user's stated scope and is distinct from
@@ -51,12 +56,18 @@ chat turn. Partial response objects are never published as reviewed findings.
 Only the complete schema- and evidence-validated result updates the record.
 
 The trusted tool context is created once per user turn. The tool boundary uses
-that identity to prevent concurrent analysis and further analysis after a failure,
-even if the model changes the focus or selected documents. `status` and `add`
-remain available, and another user turn can request a fresh attempt against the
-same saved originals. The analysis call itself disables SDK retries. Failures
-report the retained review ID, source count and earlier finding count; loading
-five files is not completion of five reviews.
+that identity to prevent concurrent analysis and further analysis after a failed
+one, even if the model changes the focus or selected documents. Only a failure
+after the agreements are registered ends analysis for the turn. A request the
+command rejects before that, such as a file it cannot find, analyzed nothing:
+the command reports it to the boundary, the result carries `retryable: true`,
+and the corrected call runs in the same turn. Counting such a rejection as the
+failed analysis once blocked the correct retry and left `status` with no review
+to report. `status` and `add` remain available, and another user turn can
+request a fresh attempt against the same saved originals. The analysis call
+itself disables SDK retries. Failures report the retained review ID, source
+count and earlier finding count; loading five files is not completion of five
+reviews.
 
 ## Evidence and decisions
 
