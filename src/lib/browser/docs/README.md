@@ -148,6 +148,12 @@ fields, split boxes, embedded controls and unsupported forms stay with the perso
 in the browser. The worker hides verification controls even for manual entry;
 handoff instructions never ask for a code in chat.
 
+`bun run dev:test:browser:security` runs the worker, sign-in, code-continuation,
+redirect and LinkedIn browser tests. The dedicated GitHub Actions job installs
+the locked Playwright Chromium and runs these against synthetic sites with fake
+provider/native approvals; it needs no account secrets or desktop password manager.
+Chromium's sandbox remains enabled on the CI runner.
+
 The destination website necessarily receives its password. This boundary trusts
 the approved origin and its scripts; string redaction cannot make a malicious
 same-origin application safe or recognize every encoding in arbitrary downloaded

@@ -13,8 +13,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # e2e (browser) tests are excluded in CI, so playwright's browsers are never
-  # needed — skip the ~400MB download in case its postinstall script runs.
+  # Only the dedicated browser job needs Chromium; it installs the pinned browser explicitly.
   PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
 
 jobs:
@@ -71,6 +70,32 @@ jobs:
       - name: Run service tests (HTTP handlers, websocket, GraphQL)
         working-directory: src
         run: bun run dev:test:web
+
+  browser:
+    name: protected browser tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: src
+    steps:
+      - uses: actions/checkout@v5
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: Install pinned Chromium and system dependencies
+        run: bunx --no-install playwright install --with-deps chromium
+      # Keep chromiumSandbox enabled. Ubuntu needs an explicit user-namespace grant for this binary.
+      # https://chromium.googlesource.com/chromium/src/+/main/docs/security/apparmor-userns-restrictions.md
+      - name: Allow the test browser to use its sandbox
+        run: |
+          browser_path="$(bun -e 'import { chromium } from "playwright"; process.stdout.write(chromium.executablePath())')"
+          printf 'abi <abi/4.0>,\ninclude <tunables/global>\nprofile sky-test-chromium "%s" flags=(unconfined) {\n  userns,\n}\n' "$browser_path" | sudo tee /etc/apparmor.d/sky-test-chromium > /dev/null
+          sudo apparmor_parser -r /etc/apparmor.d/sky-test-chromium
+      - name: Run protected browser and LinkedIn import tests
+        run: bun run dev:test:browser:security
 
   vscode:
     name: vscode extension tests

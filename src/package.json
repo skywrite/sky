@@ -14,6 +14,7 @@
     "dev:test:cli": "bun test --bail --timeout 60000 --path-ignore-patterns '**/*e2e*' --path-ignore-patterns '**/service/**'",
     "dev:test:unit": "bun test --bail --timeout 60000 --path-ignore-patterns '**/*e2e*'",
     "dev:test:web": "bun test 'service/' --bail --timeout 60000 --path-ignore-patterns '**/*e2e*'",
+    "dev:test:browser:security": "bun test --bail --timeout 60000 lib/browser/signIn/session-e2e_test.ts lib/browser/signIn/verification-e2e_test.ts lib/browser/signIn/network-e2e_test.ts lib/browser/signIn/native-e2e_test.ts lib/linkedin/browser-e2e_test.ts",
     "dev:test:vscode": "cd ../extensions/vscode && npm test",
     "dev:typecheck": "tsc --noEmit",
     "dev:schema:validate": "bun run commands/all/lint/schema.ts",
