@@ -25,7 +25,7 @@ import { logAIError } from '#shared/ai/errorLog.ts'
 import { getProfile, type ModelProfile, resolveProfile } from '#shared/ai/models.ts'
 import { cachedInstructions, cacheTailStep } from '#shared/ai/promptCache.ts'
 import { readDir, readTextFile } from '#shared/fs/mod.ts'
-import { turnErrorMessage } from '#shared/models/Chat/ChatEngine/turnErrorMessage.ts'
+import { apiErrorMessage } from '#shared/models/Chat/ChatEngine/turnErrorMessage.ts'
 import { actionKindRel } from '#shared/nbfs/mod.ts'
 import { readPromptFile } from '#shared/prompts/load.ts'
 import { thrownOutcome, TimingSpan } from '#shared/timing/mod.ts'
@@ -416,7 +416,7 @@ export default class GoogleAgentTask extends Command {
           lastEvent = part.type
           if (part.type === 'finish-step') finishedSteps++
           if (part.type === 'error') {
-            modelError = turnErrorMessage(part.error)
+            modelError = apiErrorMessage(part.error)
             log(`Model error: ${modelError}`)
             await logAIError({ source: 'google:agent', stage: 'model-error', message: modelError })
           }

@@ -1,6 +1,6 @@
 ---
 created: 2026-08-09
-updated: 2026-10-01
+updated: 2026-10-02
 ---
 
 # google:agent — the mission loop and its reliability ladder
@@ -140,7 +140,7 @@ count, the last **visible** event, and how many raw frames arrived after it
 — the discriminator between a dead transport (raw = 0) and a killed think
 (raw climbing).
 A model request the host refuses logs `google:agent / model-error` with the
-line the chat engine's `turnErrorMessage` builds — the host, the status and
-the host's own reason, read from the body even when the SDK did not — and
+line the chat engine's `apiErrorMessage` builds — the provider, the status
+and the provider's own reason, read from the body even when the SDK did not — and
 the mission fails with that line, so a mission and a chat say the same
 thing about the same refusal.

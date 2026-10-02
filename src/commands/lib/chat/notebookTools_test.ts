@@ -7,7 +7,7 @@
  * tolerance changes.
  */
 
-import { toolModelMessageSchema } from 'ai'
+import { APICallError, RetryError, toolModelMessageSchema } from 'ai'
 import { CommandResult, type CommandService } from '#commands/mod.ts'
 import { assert, test } from '#test'
 import { extractExternalFiles, runToolCommand } from './notebookTools.ts'
@@ -107,6 +107,30 @@ test('runToolCommand failure shaping', async () => {
     should: 'keep its status and message',
     actual: failed,
     expected: { success: false, status: 'fail', error: 'a streak needs a cadence' },
+  })
+})
+
+test('runToolCommand names the provider when a command fails on its model API', async () => {
+  const overloaded = new RetryError({
+    message: 'Failed after 3 attempts. Last error: AI_APICallError: Overloaded',
+    reason: 'maxRetriesExceeded',
+    errors: [
+      new APICallError({
+        message: 'Overloaded',
+        url: 'https://api.anthropic.com/v1/messages',
+        requestBodyValues: {},
+        statusCode: 529,
+        responseBody: '{"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}',
+      }),
+    ],
+  })
+  const unlabeled = await runToolCommand(stubTasks(CommandResult.error(overloaded)), ENTRY, {})
+  const labeled = await runToolCommand(stubTasks(CommandResult.error(overloaded, 'Research failed')), ENTRY, {})
+  assert({
+    given: 'a command whose model call Anthropic refused after the SDK retried, with and without its own label',
+    should: "say it was an Anthropic API error with Anthropic's reason, after the label when there is one",
+    actual: [unlabeled.error, labeled.error],
+    expected: ['Anthropic API error (529): Overloaded', 'Research failed: Anthropic API error (529): Overloaded'],
   })
 })
 

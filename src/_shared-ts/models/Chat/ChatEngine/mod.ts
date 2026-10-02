@@ -40,7 +40,7 @@ import { RepetitionGuard, guardTools } from './repetitionGuard.ts'
 import { requestBudgetMiddleware, type RequestNotebook } from './requestBudget.ts'
 import { stoppedReply, stoppedToolMessages, untilAborted } from './stop.ts'
 import { observeTools, ToolProgress, type ToolExecutionEvent } from './toolExecution.ts'
-import { turnErrorMessage } from './turnErrorMessage.ts'
+import { apiErrorMessage } from './turnErrorMessage.ts'
 
 type Message = ModelMessage
 
@@ -815,7 +815,7 @@ export default class ChatEngine {
       // error can embed the entire message array, and hosts print and log
       // the message. The tool trail rides along for the host's records.
       this.messages.length = historyMark
-      throw new TurnError(truncate(turnErrorMessage(err), MAX_TURN_ERROR_CHARS), turnTools)
+      throw new TurnError(truncate(apiErrorMessage(err), MAX_TURN_ERROR_CHARS), turnTools)
     }
   }
 }

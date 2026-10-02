@@ -471,11 +471,11 @@ test('ChatEngine.runTurn - an API answer with no body is named, not echoed as it
   }
   assert({
     given: 'an invocation rejected with a bodiless 400',
-    should: 'throw a TurnError that names the host and the status and says to send again',
+    should: 'throw a TurnError that names the provider and the status and says to try again',
     actual: { failed: thrown instanceof TurnError, message: (thrown as Error).message },
     expected: {
       failed: true,
-      message: 'api.anthropic.com answered 400 with an empty body. Try sending it again.',
+      message: 'Anthropic API error (400): no reason given. Try again.',
     },
   })
 })

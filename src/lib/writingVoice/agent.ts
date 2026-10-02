@@ -1,5 +1,6 @@
 import * as path from 'node:path'
 import { atomicWrite, readOptional, withLock } from '#lib/outbox/files.ts'
+import { apiErrorMessage } from '#shared/models/Chat/ChatEngine/turnErrorMessage.ts'
 import { createVoiceIntelligence, type VoiceIntelligence } from './intelligence.ts'
 import { WritingVoiceStore } from './store.ts'
 import {
@@ -95,7 +96,10 @@ export class WritingVoice {
         await atomicWrite(
           path.join(this.store.stateDir, 'compaction.json'),
           JSON.stringify({
-            error: error instanceof Error ? error.message : 'Sky could not fold your lessons into the writing rules.',
+            error:
+              error instanceof Error
+                ? apiErrorMessage(error)
+                : 'Sky could not fold your lessons into the writing rules.',
           }),
         )
       })

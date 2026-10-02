@@ -1,3 +1,4 @@
+import { apiErrorMessage } from '#shared/models/Chat/ChatEngine/turnErrorMessage.ts'
 import { reviseDraft } from './draftChanges.ts'
 import { editId, editOf, editsOf, parseEditId, teaches } from './draftEdits.ts'
 import type { WritingDraftStore } from './drafts.ts'
@@ -69,7 +70,7 @@ export class DraftLearning {
       await save({ question, learningError: undefined }, (current) => !current.answer)
     } catch (error) {
       await save({
-        learningError: error instanceof Error ? error.message : 'Sky could not learn from this edit.',
+        learningError: error instanceof Error ? apiErrorMessage(error) : 'Sky could not learn from this edit.',
       })
     }
   }

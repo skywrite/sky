@@ -18,6 +18,7 @@ import { Command, CommandService } from '#commands/mod.ts'
 import { legalReviewChat, type LegalReviewChatContext } from '#lib/legalReview/chat.ts'
 import { logAIError } from '#shared/ai/errorLog.ts'
 import type { ToolApprovalConfig } from '#shared/models/Chat/ChatEngine/mod.ts'
+import { apiErrorMessage } from '#shared/models/Chat/ChatEngine/turnErrorMessage.ts'
 import { researchContext, type ResearchContext } from '#shared/models/Chat/researchContext.ts'
 import truncate from '#shared/strings/truncate.ts'
 import { CalendarSchedulingTurn, type CalendarSchedulingRun } from './calendarScheduling.ts'
@@ -309,8 +310,11 @@ export async function runToolCommand(
     // Error instance. A class instance fails the next step's validation
     // and kills the whole turn (an APICallError even drags the full
     // rejected request body along in requestBodyValues). The command's own
-    // message can be a generic label, so the cause's message rides with it.
-    const detail = [result.message, result.error?.message]
+    // message can be a generic label, so the cause rides with it, naming
+    // the provider when its model API failed. A message that is only the
+    // cause's own is not said twice.
+    const label = result.message === result.error?.message ? undefined : result.message
+    const detail = [label, result.error && apiErrorMessage(result.error)]
       .filter((m): m is string => Boolean(m))
       .filter((m, i, all) => all.indexOf(m) === i)
       .join(': ')
