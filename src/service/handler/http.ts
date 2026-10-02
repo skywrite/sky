@@ -30,6 +30,7 @@ import { createExplorerRoutes, explorerHref } from './explorer/mod.ts'
 import { type ExtensionRoutesOptions, createExtensionRoutes } from './extensions/routes.ts'
 import { searchNotebook } from './home/mod.ts'
 import { createImportRoutes, type ImportRoutesOptions } from './import/mod.ts'
+import { createJournalRoutes, type JournalOptions } from './journal/mod.ts'
 import { createLinks } from './links/mod.ts'
 import { localRequestsOnly } from './localRequest.ts'
 import {
@@ -97,6 +98,7 @@ export interface HttpHandlerOptions {
   clock?: ClockRoutesOptions
   meetings?: CalendarSchedulerHost
   mostImportant?: MostImportantAI
+  journal?: JournalOptions
   /** The automations page's host; absent, /automations/_api is not served */
   automations?: AutomationsRoutesOptions
   outbox?: OutboxRoutesOptions
@@ -159,6 +161,19 @@ export function createHttpApp(options: HttpHandlerOptions): Hono {
 
   // Sky's own pages and programs on this Mac; see localRequest.ts
   app.use('*', localRequestsOnly())
+
+  app.route(
+    '/journal/_api',
+    createJournalRoutes(
+      {
+        notebookDir: markdownBaseDir,
+        timeDir: chat?.timeDir ?? path.join(markdownBaseDir, 'time'),
+        stateDir: path.join(userDataDir, 'state/journal'),
+      },
+      options.journal,
+      options.now,
+    ),
+  )
 
   // GraphQL HTTP queries (WebSocket upgrades handled at server level)
   app.all('/graphql', async (c) => {
@@ -729,6 +744,10 @@ export function createHttpApp(options: HttpHandlerOptions): Hono {
   app.get('/:ymd{\\d{4}-\\d{2}-\\d{2}}', (c) => {
     return c.html(renderAppHtml(`sky · ${c.req.param('ymd')}`))
   })
+
+  for (const route of ['/:ymd{\\d{4}-\\d{2}-\\d{2}}/journal', '/:ymd{\\d{4}-\\d{2}-\\d{2}}/journal/:topic']) {
+    app.get(route, (c) => c.html(renderAppHtml(`sky · Journal · ${c.req.param('ymd')}`)))
+  }
 
   // The day's files as a page — /2026-08-27/files, or a folder inside them. Its data lives under /day/:ymd/files.
   app.get('/:ymd{\\d{4}-\\d{2}-\\d{2}}/files', (c) => {

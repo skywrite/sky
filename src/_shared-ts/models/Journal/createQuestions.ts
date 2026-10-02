@@ -29,32 +29,33 @@ const typeToFilename: Record<string, string> = {
 }
 
 // Cache for loaded questions
-const questionCache = new Map<JournalType, Question[]>()
+const questionCache = new Map<string, Question[]>()
 
 /**
  * Load questions from a markdown file
  */
-async function loadQuestionsFromFile(type: JournalType): Promise<Question[]> {
+async function loadQuestionsFromFile(type: JournalType, dir: string, cache: boolean): Promise<Question[]> {
+  const key = path.join(dir, type)
   // Check cache first
-  if (questionCache.has(type)) {
-    return questionCache.get(type)!
+  if (cache && questionCache.has(key)) {
+    return questionCache.get(key)!
   }
 
   const filename = typeToFilename[type]
   if (!filename) return []
 
-  const filePath = path.join(DIR_QUESTIONS, filename)
+  const filePath = path.join(dir, filename)
 
   try {
     const content = await readTextFile(filePath)
     const questions = parseQuestionsFromMarkdown(content)
-    questionCache.set(type, questions)
+    if (cache) questionCache.set(key, questions)
     return questions
   } catch (err) {
     const error = err as NodeJS.ErrnoException
     if (error?.code === 'ENOENT') {
       // A type without a questions file is an AI-only type (same as an empty file)
-      questionCache.set(type, [])
+      if (cache) questionCache.set(key, [])
       return []
     }
     console.warn(`Failed to load questions from ${filePath}:`, err)
@@ -101,8 +102,9 @@ export default async function createQuestions(
   type: JournalType,
   date: PlainDate,
   randomFunc = Math.random,
+  questionsDir?: string,
 ): Promise<Question[]> {
-  let questions = await loadQuestionsFromFile(type)
+  let questions = structuredClone(await loadQuestionsFromFile(type, questionsDir ?? DIR_QUESTIONS, !questionsDir))
 
   function filterQuestions(qs: Question[]): Question[] {
     // Filter by pattern match AND probability check

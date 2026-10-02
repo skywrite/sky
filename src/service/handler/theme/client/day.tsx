@@ -41,6 +41,8 @@ import {
   type MeetingImport,
   useFileDrop,
 } from './import.tsx'
+import { useJournal } from './journal.tsx'
+import { journalHref } from './journalRoutes.ts'
 import { meetingHref } from './meetingPage.tsx'
 import { useRail } from './rail.ts'
 import { RailToggle } from './railToggle.tsx'
@@ -1192,6 +1194,11 @@ export function DayView({
   const [view, setView] = useState<DayData | null>(day)
   useEffect(() => setView(day), [day])
   const ymd = view?.day.ymd
+  const journal = useJournal(ymd ?? null)
+  const reflectionHref = (file: string) => {
+    const topic = journal.view?.session?.topics.find((t) => t.file === file)
+    return topic && ymd ? journalHref(ymd, topic.id) : fileHref(file)
+  }
   const selectedView = new URLSearchParams(search).get('view')
   const showingSummary = Boolean(view?.summary && selectedView !== 'record')
   const selectView = (mode: string) => {
@@ -1356,6 +1363,9 @@ export function DayView({
       </span>
       {!view?.summary && recordStatus}
       <nav className="sky-tabs">
+        <Button component="a" href={ymd ? `${journalHref(ymd)}?start` : undefined} disabled={!ymd}>
+          Journal
+        </Button>
         {view?.summary && (
           <SegmentedControl
             className="sky-day-view-switch"
@@ -1516,18 +1526,26 @@ export function DayView({
                       </Block>
                     )}
 
-                    {record.journals.length > 0 && (
-                      <Block head="Reflections" mini={String(record.journals.length)}>
-                        {record.journals.map((row) => (
-                          <Fragment key={row.path}>
-                            <DocLine when={row.when}>
-                              <a href={fileHref(row.path)}>{row.title}</a>
-                              {row.summary?.trim() && <span className="sky-day-journal-summary">{row.summary}</span>}
-                            </DocLine>
-                          </Fragment>
-                        ))}
-                      </Block>
-                    )}
+                    <Block head="Reflections" mini={String(record.journals.length)}>
+                      <div className="sky-day-journal-entry">
+                        <Button component="a" href={`${journalHref(view!.day.ymd)}?start`} variant="primary-quiet">
+                          {journal.view?.session ? 'Continue journaling' : 'Start journaling'} →
+                        </Button>
+                        {record.journals.length === 0 && (
+                          <p className="sky-journal-note">
+                            Check in with yourself. Health, Mood, and a few thoughtful questions for the day.
+                          </p>
+                        )}
+                      </div>
+                      {record.journals.map((row) => (
+                        <Fragment key={row.path}>
+                          <DocLine when={row.when}>
+                            <a href={reflectionHref(row.path)}>{row.title}</a>
+                            {row.summary?.trim() && <span className="sky-day-journal-summary">{row.summary}</span>}
+                          </DocLine>
+                        </Fragment>
+                      ))}
+                    </Block>
 
                     {record.notes.length > 0 && (
                       <Block head="Notes" mini={String(record.notes.length)}>

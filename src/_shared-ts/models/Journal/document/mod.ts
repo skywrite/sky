@@ -42,7 +42,7 @@ const H1_REGEX = /^\*\*(.+?):\s+(\d{4}-\d{2}-\d{2})\s+-\s+(\w+)\s+-\s+(\d{2}:\d{
  * ```
  */
 export default class JournalDocument extends SectionDocument {
-  static override yamlKeyOrder = ['summary', 'rel', 'tags']
+  static override yamlKeyOrder = ['summary', 'tags', 'rel']
   private _parsed: ParsedH1 | null | undefined = undefined
 
   private get parsed(): ParsedH1 | null {
@@ -83,7 +83,7 @@ export default class JournalDocument extends SectionDocument {
    * Create a new JournalDocument from scratch.
    */
   static create(input: { type: JournalType; date: PlainDateTime; questions: Question[] }): JournalDocument {
-    const yaml = { rel: null, tags: `Journal/${typeSlugify(input.type)}` }
+    const yaml = { tags: `Journal/${typeSlugify(input.type)}` }
     const markdown = JournalDocument.buildMarkdown(input)
     return new JournalDocument(yaml, markdown)
   }

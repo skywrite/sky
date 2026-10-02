@@ -271,7 +271,7 @@ export async function fileRecordedJournal(
             signal?.throwIfAborted()
             const doc = JournalDocument.fromMarkdown(markdown)
             doc.yaml['summary'] = group.title
-            doc.yaml['rel'] = mergeRel(scoped ?? options.rel, rel) ?? null
+            doc.yaml['rel'] = mergeRel(scoped ?? options.rel, rel)
             doc.yaml['tags'] = String(
               TagSet.fromString(
                 [`Journal/${options.kind}`, `Journal/${type.replaceAll(' ', '-')}`, tags].filter(Boolean).join('; '),

@@ -34,6 +34,8 @@ component owns the tab title so it follows the displayed day and view during
 navigation and file refreshes. Summary mode leaves the rail preference intact
 for the day record.
 
+The header’s Journal action and Reflections entry open the [focused journal](../../journal/docs/README.md), including on days with no saved reflections.
+
 ## The day's items
 
 Most Important creation uses the shared [MI workflow](../../../../lib/mostImportant/docs/README.md): ranked suggestions, a relevant interview, and an editable draft accepted into the day. Its checkbox also updates the linked MI's completion state.

@@ -1,0 +1,304 @@
+.sky-journal {
+  min-width: 0;
+  overflow-y: auto;
+}
+.sky-journal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 22px 28px;
+  border-bottom: 1px solid var(--sky-border-soft);
+  flex-wrap: wrap;
+}
+.sky-journal-count {
+  margin-left: 12px;
+  color: var(--sky-dim);
+  font-size: 13px;
+  font-weight: 400;
+}
+.sky-journal-focus {
+  width: min(100%, 850px);
+  padding: 42px 48px 80px;
+  margin: 0 auto;
+}
+.sky-journal-welcome {
+  padding-top: 40px;
+}
+.sky-journal-welcome h1 {
+  font-size: clamp(26px, 2.2vw, 34px);
+  line-height: 1.4;
+  font-weight: 550;
+  letter-spacing: -0.025em;
+  margin: 18px 0 26px;
+}
+.sky-journal-welcome > p {
+  color: var(--sky-text-2);
+  font-size: 19px;
+  line-height: 1.8;
+  margin: 24px 0;
+}
+.sky-journal-eyebrow,
+.sky-journal-kicker,
+.sky-journal-followup-label {
+  color: var(--sky-dim);
+  font-size: 14px;
+}
+.sky-journal-kicker {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  margin: 12px 0 24px;
+}
+.sky-journal-kicker span:last-child {
+  color: var(--sky-accent);
+}
+.sky-journal-context {
+  border-left: 2px solid var(--sky-border-soft);
+  padding-left: 16px;
+  margin-bottom: 28px;
+  color: var(--sky-text-2);
+}
+.sky-journal-context p {
+  font-size: 16px;
+  line-height: 1.7;
+  margin: 8px 0;
+}
+.sky-journal-source-link {
+  margin-left: -10px;
+}
+.sky-journal-saved {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 20px;
+  color: var(--sky-dim);
+  font-size: 14px;
+}
+.sky-journal-writer {
+  border: 1px solid var(--sky-border-soft);
+  border-radius: 12px;
+  overflow: hidden;
+  margin: 14px 0 28px;
+}
+.sky-journal-editor-tools {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--sky-border-soft);
+}
+.sky-journal-editor-tools > span {
+  font-size: 12px;
+  color: var(--sky-dim);
+  align-self: center;
+}
+.sky-journal-writer .sky-wysiwyg {
+  min-height: 200px;
+  padding: 18px 24px 36px;
+  font-size: var(--sky-content-font-size);
+  line-height: 1.85;
+}
+.sky-journal-writer .sky-wysiwyg:focus {
+  outline: none;
+}
+.sky-journal-writer:focus-within {
+  border-color: color-mix(in srgb, var(--sky-accent) 40%, var(--sky-border-soft));
+}
+.sky-journal-question + .sky-journal-question {
+  margin-top: 42px;
+}
+.sky-journal-question h1,
+.sky-journal-question h2 {
+  font-size: 24px;
+  line-height: 1.5;
+  font-weight: 500;
+  letter-spacing: -0.015em;
+  margin: 14px 0 20px;
+}
+.sky-journal-question-heading {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+.sky-journal-question-heading > :first-child {
+  flex: 1;
+  min-width: 0;
+}
+.sky-journal-question-dismiss {
+  flex-shrink: 0;
+  margin-top: 10px;
+  color: var(--sky-dim);
+  font-size: 26px;
+}
+.sky-journal-dismissed-notice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--sky-text-2);
+  font-size: 15px;
+  margin: 20px 0 12px;
+}
+.sky-journal-dismissed {
+  margin: 16px 0 24px;
+  color: var(--sky-dim);
+  font-size: 15px;
+}
+.sky-journal-dismissed > summary {
+  cursor: pointer;
+}
+.sky-journal-dismissed-row {
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+  margin: 16px 0;
+}
+.sky-journal-dismissed-row > div {
+  flex: 1;
+  min-width: 0;
+}
+.sky-journal-dismissed-row p {
+  margin: 0;
+}
+.sky-journal-dismissed-row small {
+  display: block;
+  margin-top: 4px;
+}
+.sky-journal-think {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-left: -14px;
+}
+.sky-journal-think > span {
+  font-size: 14px;
+  color: var(--sky-dim);
+}
+.sky-journal-footer {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 14px;
+  margin: 36px -12px 0;
+  padding-top: 24px;
+  border-top: 1px solid var(--sky-border-soft);
+}
+.sky-journal-footer > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.sky-journal-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+  color: var(--sky-text-2);
+  margin: 0 0 28px;
+}
+.sky-journal-status > span:last-child:not(:first-child) {
+  color: var(--sky-dim);
+}
+.sky-journal-pulse {
+  width: 7px;
+  height: 7px;
+  background: var(--sky-accent);
+  border-radius: 50%;
+}
+.sky-journal-error {
+  padding: 14px 18px;
+  margin-bottom: 24px;
+  border: 1px solid var(--sky-border-soft);
+  border-left: 3px solid var(--sky-action-danger);
+  border-radius: 6px;
+  font-size: 16px;
+}
+.sky-journal-error p {
+  margin: 0 0 12px;
+}
+.sky-journal-error pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 300px;
+  overflow: auto;
+  font: inherit;
+}
+.sky-journal-aside {
+  background: var(--sky-side);
+  padding: 12px 18px;
+  border-radius: 10px;
+  margin-bottom: 20px;
+}
+.sky-journal-note {
+  color: var(--sky-dim);
+  font-size: 15px;
+  line-height: 1.7;
+}
+.sky-journal-source {
+  margin: 28px 0;
+}
+.sky-journal-source blockquote {
+  border-left: 2px solid var(--sky-border-soft);
+  margin: 16px 0;
+  padding: 0 0 0 18px;
+  line-height: 1.8;
+  white-space: pre-wrap;
+}
+.sky-journal-topics {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.sky-journal-topics button {
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  align-items: baseline;
+  border: 0;
+  background: transparent;
+  color: var(--sky-text);
+  font: inherit;
+  text-align: left;
+  border-radius: 8px;
+  padding: 16px;
+  cursor: pointer;
+}
+.sky-journal-topics button:hover,
+.sky-journal-topics button[aria-current] {
+  background: var(--sky-side);
+}
+.sky-journal-topics small {
+  color: var(--sky-dim);
+  font-size: 13px;
+}
+.sky-journal-custom {
+  margin-top: 28px;
+}
+.sky-journal-custom > button {
+  margin-top: 12px;
+}
+.sky-day-journal-entry {
+  margin: 4px 0 16px;
+}
+@media (max-width: 900px) {
+  .sky-journal-header {
+    padding: 14px 10px;
+  }
+  .sky-journal-focus {
+    padding: 28px 20px 60px;
+  }
+  .sky-journal-writer .sky-wysiwyg {
+    padding: 16px 18px 32px;
+  }
+  .sky-journal-count {
+    display: none;
+  }
+  .sky-journal-footer {
+    margin-left: 0;
+    margin-right: 0;
+  }
+}

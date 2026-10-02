@@ -167,7 +167,7 @@ test('audio and video journals review suggested types, reunite returning topics,
         ],
         expected: [
           ['Health_Feeling-Rested-After-Sleep-And-Walking.md', 'Gratitude_Grateful-For-Help-With-Atlas-Today.md'],
-          [null, ['Jane Doe']],
+          [undefined, ['Jane Doe']],
           [attachment],
           [attachment, attachment],
         ],

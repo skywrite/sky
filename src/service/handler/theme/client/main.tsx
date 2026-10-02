@@ -18,6 +18,8 @@ import { DocView, explorerFileOf, fileHref, Tree } from './explorer.tsx'
 import { ExtensionNavLinks, ExtensionPageMain, extensionRouteOf } from './extensions.tsx'
 import { type Kept, undoKeep } from './files.tsx'
 import { ImportDialog, ImportMain, useFileDrop, useImportQueue, useImports } from './import.tsx'
+import { JournalMain } from './journal.tsx'
+import { journalRouteOf } from './journalRoutes.ts'
 import { MeetingMain, meetingRouteOf } from './meetingPage.tsx'
 import { OutboxMain } from './outbox.tsx'
 import { outboxItemOf, outboxLegacyItemPath } from './outboxRoutes.ts'
@@ -53,7 +55,7 @@ function App() {
 }
 
 /** The path is the state: `/` is today, `/<ymd>` another day, `/thread/<id>` a conversation. */
-function useRoute(): [{ path: string; search: string }, (to: string) => void] {
+function useRoute(): [{ path: string; search: string }, (to: string, replace?: boolean) => void] {
   const readRoute = () => {
     if (window.location.pathname === '/voice') history.replaceState(null, '', `/thread/${crypto.randomUUID()}`)
     const legacyOutboxItem = outboxLegacyItemPath(window.location.pathname, window.location.search)
@@ -66,8 +68,9 @@ function useRoute(): [{ path: string; search: string }, (to: string) => void] {
     window.addEventListener('popstate', onPop)
     return () => window.removeEventListener('popstate', onPop)
   }, [])
-  const navigate = useCallback((to: string) => {
-    history.pushState(null, '', to)
+  const navigate = useCallback((to: string, replace = false) => {
+    if (replace) history.replaceState(null, '', to)
+    else history.pushState(null, '', to)
     setRoute({ path: window.location.pathname, search: window.location.search })
   }, [])
   return [route, navigate]
@@ -84,15 +87,16 @@ function Canvas() {
   usePromptDraftGuard()
   useAboutMeDraftGuard()
   // On a phone the sidebar is a drawer; any navigation closes it.
-  const navigate = (to: string) => {
+  const navigate = (to: string, replace = false) => {
     setMenu(false)
-    go(to)
+    go(to, replace)
   }
   const threadId = path.match(/^\/thread\/([^/]+)/)?.[1] ?? null
   const importId = path.match(/^\/import\/([^/]+)/)?.[1] ?? null
   const dayYmd = path.match(/^\/(\d{4}-\d{2}-\d{2})$/)?.[1] ?? null
   // /<ymd>/files is the day's files, /<ymd>/files/<folder> a folder inside them.
   const filesRoute = filesRouteOf(path)
+  const journalRoute = journalRouteOf(path)
   // /<ymd>/meetings/<slug> is a meeting's page, under its day.
   const meetingRoute = meetingRouteOf(path)
   const isAudition = path === '/voice/audition'
@@ -177,11 +181,21 @@ function Canvas() {
     !isWeek &&
     filesRoute === null &&
     meetingRoute === null &&
+    journalRoute === null &&
     explorerFile === null
   const weekTitle = weekId || thisWeek?.id
   useEffect(() => {
     // These screens set their own titles from the content they display.
-    if (onDayPage || isOutbox || peopleRoute || placesRoute !== null || isTracking || importId || explorerFile !== null)
+    if (
+      journalRoute ||
+      onDayPage ||
+      isOutbox ||
+      peopleRoute ||
+      placesRoute !== null ||
+      isTracking ||
+      importId ||
+      explorerFile !== null
+    )
       return
     document.title = isWeek
       ? `sky · ${weekTitle ? `Week ${weekTitle}` : 'This week'}`
@@ -208,14 +222,17 @@ function Canvas() {
     importId,
     explorerFile,
     onDayPage,
+    journalRoute?.day,
+    journalRoute?.topic,
     isWeek,
     weekTitle,
     settingsSection,
   ])
   const isToday = dayYmd === null
   const others = threads.filter((t) => !t.id.startsWith('day-'))
-  const showDateNav = onDayPage || isWeek || isStreaks || filesRoute !== null || meetingRoute !== null
-  const activeDayYmd = filesRoute?.ymd ?? meetingRoute?.ymd ?? dayYmd
+  const showDateNav =
+    journalRoute !== null || onDayPage || isWeek || isStreaks || filesRoute !== null || meetingRoute !== null
+  const activeDayYmd = journalRoute?.day ?? filesRoute?.ymd ?? meetingRoute?.ymd ?? dayYmd
   const dayImports = importRows.filter((job) =>
     isAttachmentNote(job.readback.source, job.fields?.kind) || job.readback.source === 'imessage-audio'
       ? (job.fields?.when ?? job.suggestedWhen).slice(0, 10) === (activeDayYmd ?? day?.today.ymd)
@@ -286,7 +303,8 @@ function Canvas() {
       !url.pathname.startsWith('/thread/') &&
       !url.pathname.startsWith('/explorer/') &&
       filesRouteOf(url.pathname) === null &&
-      meetingRouteOf(url.pathname) === null
+      meetingRouteOf(url.pathname) === null &&
+      journalRouteOf(url.pathname) === null
     )
       return
     event.preventDefault()
@@ -511,6 +529,10 @@ function Canvas() {
             edit={new URLSearchParams(search).has('edit')}
             onImportConversation={queue.takeConversation}
           />
+        ) : journalRoute ? (
+          <Fragment key={journalRoute.day}>
+            <JournalMain route={journalRoute} search={search} navigate={navigate} />
+          </Fragment>
         ) : meetingRoute ? (
           <MeetingMain ymd={meetingRoute.ymd} slug={meetingRoute.slug} go={navigate} />
         ) : filesRoute ? (

@@ -151,6 +151,7 @@ export async function runWysiwygE2e(
     popupBlocking?: boolean
     now?: ZonedDateTime
     mostImportant?: MostImportantAI
+    journal?: import('./journal/mod.ts').JournalOptions
     /** Script an import's read-back and run when testing the day import flow */
     imports?: Partial<ImportRoutesOptions>
     /** A real chat host with a scripted model, for browser conversation tests. */
@@ -210,6 +211,7 @@ export async function runWysiwygE2e(
             }
           : {}),
         mostImportant: options.mostImportant,
+        journal: options.journal,
         now: options.now ? () => options.now! : undefined,
         ...(options.chat ? { chat: options.chat(notebookBaseDir, userDataDir) } : {}),
         ...(options.week ? { week: options.week(notebookBaseDir) } : {}),

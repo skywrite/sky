@@ -1,5 +1,4 @@
 ---
-rel:
 tags: Journal/Health
 ---
 

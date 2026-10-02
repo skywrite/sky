@@ -42,6 +42,7 @@ export function createTestHttpApp(
     clock?: ClockRoutesOptions
     meetings?: CalendarSchedulerHost
     mostImportant?: MostImportantAI
+    journal?: import('./journal/mod.ts').JournalOptions
     automations?: AutomationsRoutesOptions
     workstreams?: WorkstreamsRoutesOptions
     tracking?: TrackingRoutesOptions
@@ -73,6 +74,7 @@ export function createTestHttpApp(
     clock: options.clock,
     meetings: options.meetings,
     mostImportant: options.mostImportant,
+    journal: options.journal,
     automations: options.automations,
     workstreams: options.workstreams,
     tracking: options.tracking,
