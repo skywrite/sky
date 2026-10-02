@@ -1,4 +1,4 @@
-import type { Tool } from 'ai'
+import { APICallError, RetryError, type Tool } from 'ai'
 import { assert, test } from '#test'
 import { AUTO_COMPACT_LESSONS } from './agent.ts'
 import { parseEditId } from './draftEdits.ts'
@@ -188,6 +188,41 @@ test('The shared chat tool captures and asks without choosing an answer for the 
         pending.answer,
       ],
       expected: [true, 1, 'chat:tool', true, undefined],
+    })
+  } finally {
+    await f.dispose()
+  }
+})
+
+test('The shared chat tool names the provider when its model API fails', async () => {
+  const f = await voiceFixture({
+    draft: async () => {
+      throw new RetryError({
+        message: 'Failed after 3 attempts',
+        reason: 'maxRetriesExceeded',
+        errors: [
+          new APICallError({
+            message: 'Overloaded',
+            url: 'https://api.anthropic.com/v1/messages',
+            requestBodyValues: {},
+            statusCode: 529,
+            responseBody: '{"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}',
+          }),
+        ],
+      })
+    },
+  })
+  try {
+    const tool = createWritingVoiceTools(f.drafts, { source: 'chat:tool' }).me_voice as Tool
+    const result = await tool.execute!(
+      { action: 'draft', meaning: 'The draft is ready.', medium: 'Email', recipient: 'Jane Doe' },
+      { toolCallId: 'sample-call', messages: [], context: undefined },
+    )
+    assert({
+      given: 'a draft whose model call Anthropic still refused after the SDK retried',
+      should: 'tell the chat model it was an Anthropic API error, with the reason Anthropic gave',
+      actual: result,
+      expected: { success: false, error: 'Anthropic API error (529): Overloaded' },
     })
   } finally {
     await f.dispose()

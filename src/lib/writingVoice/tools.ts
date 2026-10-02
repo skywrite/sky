@@ -1,6 +1,7 @@
 import { tool } from 'ai'
 import { z } from 'zod'
 import { runWithUsageSource } from '#shared/ai/usageLog.ts'
+import { apiErrorMessage } from '#shared/models/Chat/ChatEngine/turnErrorMessage.ts'
 import { toolDisplayName } from '#universal/ai/toolDisplay.ts'
 import { WritingDraftId } from './draftId.ts'
 import type { WritingDraftStore } from './drafts.ts'
@@ -104,7 +105,7 @@ export function createWritingVoiceTools(
           } catch (error) {
             return {
               success: false,
-              error: error instanceof Error ? error.message : `${AGENT_NAME} could not complete this step.`,
+              error: error instanceof Error ? apiErrorMessage(error) : `${AGENT_NAME} could not complete this step.`,
             }
           }
         }),

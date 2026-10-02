@@ -1,6 +1,6 @@
 import { APICallError, RetryError } from 'ai'
 import { assert, test } from '#test'
-import { turnErrorMessage } from './turnErrorMessage.ts'
+import { apiErrorMessage, turnErrorMessage } from './turnErrorMessage.ts'
 
 const call = (over: Partial<{ statusCode: number; responseBody: string; url: string; message: string }>) =>
   new APICallError({
@@ -84,6 +84,67 @@ test({ name: 'turnErrorMessage - a reason the SDK did not read is quoted with th
       'api.cerebras.ai answered 400: Please reduce the length of the messages or completion. Current length is 196699 while limit is 131072',
       'api.cerebras.ai answered 429: Rate limit reached for qwen-3.8-27b',
       'Bad Request',
+    ],
+  })
+})
+
+test({ name: 'apiErrorMessage - an answer from a model API names whose API failed' }, async () => {
+  assert({
+    given:
+      'an Anthropic 503 the SDK retried and gave up on, a Cerebras 429 whose reason the SDK did not read, and an Anthropic 529 with an empty body',
+    should: 'lead with the provider and the status, then the reason when there is one',
+    actual: [
+      apiErrorMessage(
+        new RetryError({
+          message: 'Failed after 3 attempts',
+          reason: 'maxRetriesExceeded',
+          errors: [
+            call({
+              statusCode: 503,
+              responseBody:
+                '{"type":"error","error":{"type":"api_error","message":"Grammar compilation is temporarily unavailable. Please try again."}}',
+              message: 'Grammar compilation is temporarily unavailable. Please try again.',
+            }),
+          ],
+        }),
+      ),
+      apiErrorMessage(
+        call({
+          statusCode: 429,
+          responseBody: '{"message":"Rate limit reached for qwen-3.8-27b"}',
+          message: 'Too Many Requests',
+          url: 'https://api.cerebras.ai/v1/chat/completions',
+        }),
+      ),
+      apiErrorMessage(call({ statusCode: 529, responseBody: '', message: '' })),
+    ],
+    expected: [
+      'Anthropic API error (503): Grammar compilation is temporarily unavailable. Please try again.',
+      'Cerebras API error (429): Rate limit reached for qwen-3.8-27b',
+      'Anthropic API error (529)',
+    ],
+  })
+})
+
+test({ name: 'apiErrorMessage - anything that is not a named API answer keeps its own words' }, async () => {
+  assert({
+    given: 'a host Sky has no name for, a call that never reached the API, and a plain error',
+    should: 'name an unknown host as itself and keep every other message as it was',
+    actual: [
+      apiErrorMessage(
+        call({
+          statusCode: 404,
+          responseBody: '{"error":"model not found"}',
+          url: 'http://localhost:11434/v1/chat/completions',
+        }),
+      ),
+      apiErrorMessage(call({ message: 'Cannot connect to API: fetch failed' })),
+      apiErrorMessage(new Error('Choose an available model configuration.')),
+    ],
+    expected: [
+      'localhost:11434 API error (404): model not found',
+      'Cannot connect to API: fetch failed',
+      'Choose an available model configuration.',
     ],
   })
 })

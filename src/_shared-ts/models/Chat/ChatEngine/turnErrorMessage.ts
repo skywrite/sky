@@ -29,6 +29,22 @@ export function turnErrorMessage(err: unknown): string {
 }
 
 /**
+ * The same failure for a reader who passes it on, like a tool's result the
+ * chat model relays to the owner. An answer from a model API names whose
+ * API failed and the status it answered, so an outage at the provider never
+ * reads as a fault in Sky: "Anthropic API error (529): Overloaded". Anything
+ * that is not an API answer keeps its own message.
+ */
+export function apiErrorMessage(err: unknown): string {
+  const cause = RetryError.isInstance(err) ? err.lastError : err
+  if (!APICallError.isInstance(cause) || cause.statusCode === undefined)
+    return cause instanceof Error ? cause.message : String(cause)
+  const reason = reasonIn(cause.responseBody?.trim() ?? '') ?? cause.message.trim()
+  const head = `${providerOf(cause.url)} API error (${cause.statusCode})`
+  return reason ? `${head}: ${reason}` : head
+}
+
+/**
  * The reason a host wrote into its error body, wherever it put it: OpenAI
  * and Anthropic nest it as `error.message`, Cerebras writes `message` at
  * the top. A body that is not JSON, or says nothing, has no reason.
@@ -49,5 +65,21 @@ function hostOf(url: string): string {
     return new URL(url).host
   } catch {
     return 'the model API'
+  }
+}
+
+/** The model APIs Sky's providers call, by the name a person knows them by. Any other host is named as itself. */
+const PROVIDER_NAMES: Record<string, string> = {
+  'api.anthropic.com': 'Anthropic',
+  'api.openai.com': 'OpenAI',
+  'api.cerebras.ai': 'Cerebras',
+}
+
+function providerOf(url: string): string {
+  try {
+    const { host } = new URL(url)
+    return PROVIDER_NAMES[host] ?? host
+  } catch {
+    return 'Model'
   }
 }
