@@ -597,7 +597,7 @@ export function createHttpApp(options: HttpHandlerOptions): Hono {
 
   // The app shell (Mantine on the sky theme; client bundled by Bun at first request).
   app.get('/', (c) => {
-    return c.html(renderAppHtml('sky'))
+    return c.html(renderAppHtml('sky · Today'))
   })
 
   app.get('/thread/*', (c) => {
@@ -727,7 +727,7 @@ export function createHttpApp(options: HttpHandlerOptions): Hono {
 
   // A day's page is its date — /2026-08-27. Its data lives under /day/….
   app.get('/:ymd{\\d{4}-\\d{2}-\\d{2}}', (c) => {
-    return c.html(renderAppHtml('sky'))
+    return c.html(renderAppHtml(`sky · ${c.req.param('ymd')}`))
   })
 
   // The day's files as a page — /2026-08-27/files, or a folder inside them. Its data lives under /day/:ymd/files.

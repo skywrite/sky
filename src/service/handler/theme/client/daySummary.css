@@ -1,0 +1,407 @@
+.sky-day[data-has-summary='true'] .sky-head {
+  max-width: 1096px;
+  padding-bottom: 18px;
+}
+
+.sky-day .sky-tabs:has(.sky-day-view-switch) {
+  align-items: center;
+  align-self: start;
+  gap: 16px;
+}
+
+.sky-day-record-toolbar {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin-top: 10px;
+}
+
+.sky-day-record-toolbar .sky-day-statusline {
+  flex: 1;
+}
+
+.sky-day-record-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.sky-day-view-switch {
+  flex: none;
+  background: var(--sky-side);
+}
+
+.sky-day-summary {
+  max-width: 1096px;
+  margin: 0 auto;
+  padding: 30px 48px 64px;
+  overflow-wrap: anywhere;
+}
+
+.sky-summary-opening {
+  position: relative;
+  isolation: isolate;
+  margin-bottom: 46px;
+}
+
+.sky-summary-opening::before {
+  content: '';
+  position: absolute;
+  inset: -24px 0 0 20%;
+  z-index: -1;
+  pointer-events: none;
+  background: radial-gradient(
+    ellipse at 80% 20%,
+    color-mix(in srgb, var(--sky-workstream-mint-fill) 25%, transparent),
+    transparent 68%
+  );
+}
+
+.sky-summary-kicker {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  margin-bottom: 20px;
+  color: var(--sky-dim);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.sky-summary-kicker-line {
+  width: 26px;
+  height: 1px;
+  background: color-mix(in srgb, var(--sky-accent) 40%, var(--sky-border-soft));
+}
+
+.sky-summary-location {
+  margin-left: auto;
+}
+
+.sky-summary-opening h1 {
+  margin: 0 0 24px;
+  max-width: 24ch;
+  font-size: clamp(34px, 3.3vw, 50px);
+  font-weight: 550;
+  line-height: 1.16;
+  letter-spacing: -0.04em;
+  text-wrap: balance;
+  color: var(--sky-text);
+}
+
+.sky-summary-story {
+  max-width: 78ch;
+  font-size: 21px;
+  line-height: 1.8;
+  letter-spacing: -0.012em;
+  color: var(--sky-text-2);
+  text-wrap: pretty;
+}
+
+.sky-summary-story p,
+.sky-summary-moment-prose p {
+  margin: 0 0 0.7em;
+}
+
+.sky-summary-story > :last-child,
+.sky-summary-moment-prose > :last-child {
+  margin-bottom: 0;
+}
+
+.sky-summary-sources {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px 16px;
+  margin-top: 13px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.sky-summary-sources a {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 30px;
+  color: var(--sky-dim);
+  text-decoration: none;
+  text-transform: capitalize;
+}
+
+.sky-summary-sources a:hover {
+  color: var(--sky-accent);
+  text-decoration: underline;
+}
+
+.sky-day-summary a:focus-visible {
+  outline: 2px solid var(--sky-action-focus);
+  outline-offset: 4px;
+  border-radius: 3px;
+}
+
+.sky-summary-moments > h2 {
+  margin: 0 0 26px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--sky-dim);
+}
+
+.sky-summary-moment-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 40px 44px;
+}
+
+.sky-summary-moment-grid[data-count='3'] {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  column-gap: 34px;
+}
+
+@media (min-width: 1201px) {
+  .sky-summary-moment-grid[data-count='3'] .sky-summary-moment h3 {
+    min-height: 2.7em;
+  }
+}
+
+.sky-summary-moment-grid[data-count='1'] {
+  grid-template-columns: minmax(0, 72ch);
+}
+
+.sky-summary-moment {
+  min-width: 0;
+  --moment-ink: var(--sky-workstream-blue-ink);
+  --moment-fill: var(--sky-workstream-blue-fill);
+}
+
+.sky-summary-moment:nth-child(3n + 2) {
+  --moment-ink: var(--sky-workstream-mint-ink);
+  --moment-fill: var(--sky-workstream-mint-fill);
+}
+
+.sky-summary-moment:nth-child(3n) {
+  --moment-ink: var(--sky-workstream-violet-ink);
+  --moment-fill: var(--sky-workstream-violet-fill);
+}
+
+.sky-summary-moment-top {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.sky-summary-moment-mark {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  flex: none;
+  border-radius: 13px;
+  background: var(--moment-fill);
+  color: var(--moment-ink);
+  font-size: 13px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.sky-summary-moment-time {
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--sky-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.sky-summary-moment-line {
+  height: 1px;
+  flex: 1;
+  background: var(--sky-border-soft);
+}
+
+.sky-summary-moment h3 {
+  margin: 0 0 16px;
+  font-size: 24px;
+  font-weight: 550;
+  line-height: 1.35;
+  letter-spacing: -0.025em;
+  color: var(--sky-text);
+  text-wrap: pretty;
+}
+
+.sky-summary-moment-prose {
+  font-size: 17px;
+  line-height: 1.8;
+  color: var(--sky-text-2);
+  text-wrap: pretty;
+}
+
+.sky-summary-file {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  margin-top: 48px;
+  padding-top: 28px;
+  border-top: 1px solid var(--sky-border-soft);
+  color: var(--sky-dim);
+}
+
+.sky-summary-file > svg {
+  flex: none;
+}
+
+.sky-summary-file-copy {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.sky-summary-file-copy strong {
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--sky-text-2);
+}
+
+.sky-summary-file-copy > span {
+  font-size: 13px;
+}
+
+.sky-summary-read-full {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--sky-action-primary);
+  font-size: 15px;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.sky-summary-read-full > span > span {
+  margin-left: 7px;
+}
+
+.sky-summary-read-full small {
+  font-size: 12px;
+  color: var(--sky-dim);
+}
+
+.sky-summary-read-full:hover > span {
+  text-decoration: underline;
+}
+
+.sky-summary-document,
+.sky-summary-empty {
+  font-size: var(--sky-content-font-size);
+  line-height: 1.8;
+  color: var(--sky-text-2);
+}
+
+.sky-summary-document {
+  overflow-x: auto;
+}
+
+.sky-summary-document pre {
+  white-space: pre-wrap;
+}
+
+.sky-summary-document table {
+  border-collapse: collapse;
+  font-size: 16px;
+}
+
+.sky-summary-document :is(th, td) {
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--sky-border-soft);
+  text-align: left;
+}
+
+.sky-day-summary :is(.sky-summary-story, .sky-summary-moment-prose, .sky-summary-document) a {
+  color: var(--sky-accent);
+}
+
+@media (max-width: 1200px) {
+  .sky-summary-moment-grid[data-count='3'] {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 900px) {
+  .sky-day[data-has-summary='true'] .sky-head {
+    padding: 12px 24px 10px;
+    row-gap: 18px;
+  }
+
+  .sky-day[data-has-summary='true'] .sky-tabs {
+    justify-content: space-between;
+    margin-left: 0;
+  }
+
+  .sky-day-record-toolbar {
+    margin-top: 0;
+  }
+
+  .sky-day-summary {
+    padding: 28px 24px 44px;
+  }
+
+  .sky-summary-opening {
+    margin-bottom: 34px;
+  }
+
+  .sky-summary-opening h1 {
+    font-size: 36px;
+    max-width: none;
+    letter-spacing: -0.035em;
+  }
+
+  .sky-summary-story {
+    font-size: 19px;
+    line-height: 1.8;
+  }
+
+  .sky-summary-location {
+    width: 100%;
+    margin-left: 38px;
+  }
+
+  .sky-summary-moment-grid {
+    grid-template-columns: 1fr;
+    gap: 30px;
+  }
+
+  .sky-summary-moment + .sky-summary-moment {
+    border-top: 1px solid var(--sky-border-soft);
+    padding-top: 28px;
+  }
+
+  .sky-summary-moment h3 {
+    font-size: 23px;
+  }
+
+  .sky-summary-moment-prose {
+    font-size: 17px;
+  }
+
+  .sky-summary-sources a {
+    min-height: 40px;
+  }
+
+  .sky-summary-file {
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: 15px;
+    margin-top: 34px;
+  }
+
+  .sky-summary-file-copy {
+    flex-basis: calc(100% - 40px);
+  }
+
+  .sky-summary-read-full {
+    margin-left: 39px;
+  }
+}

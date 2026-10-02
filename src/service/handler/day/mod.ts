@@ -26,6 +26,7 @@ import type { ItemRoutesOptions } from './itemContext.ts'
 import { createMostImportantRoutes } from './mostImportant.ts'
 import { buildDayRecord, type DayRecord, loadOwnerNames } from './record.ts'
 import { createScheduleRoutes, type ScheduleHost } from './schedule.ts'
+import { readDaySummary, type DaySummary } from './summary.ts'
 
 export interface DayRoutesOptions {
   /** The notebook root that saved-chat paths are shown relative to */
@@ -93,6 +94,8 @@ export interface DayView {
   chats: SavedChatSummary[]
   /** The day's plan, promises, meetings, messages, and what got done */
   record: DayRecord
+  /** The saved summary's opening and meaningful moments, when the file exists. */
+  summary: DaySummary | null
 }
 
 const DAYS_BACK = 6
@@ -133,7 +136,7 @@ export async function buildDayView(options: DayRoutesOptions, ymd?: string): Pro
   const ref = days.find((d) => d.ymd === day.ymd) ?? (await dayRef(day, DAYS_BACK + 1, options))
 
   const dayDirPath = path.join(options.timeDir, dayDir(day))
-  const [saved, record] = await Promise.all([
+  const [saved, record, summary] = await Promise.all([
     listDayChats(path.join(options.timeDir, dayAIChatsDir(day))),
     buildDayRecord({
       day,
@@ -142,6 +145,7 @@ export async function buildDayView(options: DayRoutesOptions, ymd?: string): Pro
       markdownBaseDir: options.markdownBaseDir,
       ownerNames: options.ownerNames ?? (await loadOwnerNames(options.aboutMePath)),
     }),
+    readDaySummary(dayDirPath, options.markdownBaseDir),
   ])
   const chats = saved
     .filter((c) => c.parent?.kind !== 'thread')
@@ -172,6 +176,7 @@ export async function buildDayView(options: DayRoutesOptions, ymd?: string): Pro
     section: null,
     chats,
     record,
+    summary,
   }
 }
 
@@ -196,6 +201,13 @@ export function createDayRoutes(options: DayRoutesOptions): Hono {
     const ymd = c.req.param('ymd')
     if (!isDay(ymd)) return c.json({ error: `not a day: ${ymd}` }, 404)
     return c.json(await buildDayView(options, ymd))
+  })
+  // Poll just the saved file while reading; the rest of the day's record need not be rebuilt.
+  app.get('/:ymd/summary', async (c) => {
+    const ymd = c.req.param('ymd')
+    if (!isDay(ymd)) return c.json({ error: `not a day: ${ymd}` }, 404)
+    const dir = path.join(options.timeDir, dayDir(new PlainDate(ymd)))
+    return c.json({ summary: await readDaySummary(dir, options.markdownBaseDir) })
   })
   // Ending the day: what the End dialog shows, then day:end the moment End is pressed.
   app.get('/:ymd/end', async (c) => {

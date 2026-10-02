@@ -1,6 +1,6 @@
 ---
 created: 2026-09-03
-updated: 2026-10-01
+updated: 2026-10-02
 ---
 
 # The day's items, the day's rail, and the day's files
@@ -10,9 +10,29 @@ Stable activity references and two-way updates with ongoing work are implemented
 Design notes for `src/service/handler/day/` and the page that drives it,
 `theme/client/day.tsx` with `dayRail.tsx`.
 
-The day view shows the plan and record. Conversations open on their own chat
+The day view opens on the saved summary when `summary.md` exists, with a
+Summary / Day record switch back to the plan and record. Without a summary,
+the plan and record open directly. Conversations open on their own chat
 pages; the day has no embedded chat composer. Add a file in the header
 opens the import picker on desktop and mobile.
+
+## Revisiting a summarized day
+
+`summary.ts` reads the saved Day at a Glance and Meaningful Moments sections;
+it never generates another summary. The [summary generator](../../../../commands/all/summary/docs/README.md)
+owns the prose and section contract. Citation links move beneath their passage
+and resolve relative to `summary.md`, while ordinary inline links stay in the
+prose. The complete file opens in Explorer. Older one-sentence openings remain
+readable; custom formats render their document body, and empty files offer a
+link to edit them. The file is sufficient even when `day.md` is absent.
+
+`theme/client/daySummary.tsx` renders this content with `RenderedHtml` and polls
+only `GET /day/:ymd/summary`, keeping unchanged text nodes and selections intact.
+The `view=summary|record` URL query preserves an explicit choice across reloads
+and browser history; a day without the query opens its default view. The day
+component owns the tab title so it follows the displayed day and view during
+navigation and file refreshes. Summary mode leaves the rail preference intact
+for the day record.
 
 ## The day's items
 

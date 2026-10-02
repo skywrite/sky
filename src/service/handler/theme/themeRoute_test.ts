@@ -29,12 +29,20 @@ test({ name: 'app shell - serves the client at /' }, async () => {
 
     assert({
       given: 'the app shell',
-      should: 'mount the client app, load its assets, and carry the app title',
+      should: 'mount the client app, load its assets, and identify Today while loading',
       actual:
         html.includes('id="root"') &&
         html.includes('/_assets/main.js') &&
         html.includes('/_assets/main.css') &&
-        html.includes('<title>sky</title>'),
+        html.includes('<title>sky · Today</title>'),
+      expected: true,
+    })
+
+    const dated = await app.request('http://localhost/2025-04-07?view=record')
+    assert({
+      given: 'a direct request for a dated day',
+      should: 'identify the requested day before the client loads',
+      actual: (await dated.text()).includes('<title>sky · 2025-04-07</title>'),
       expected: true,
     })
 

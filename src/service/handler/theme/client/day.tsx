@@ -1,9 +1,10 @@
-import { ActionIcon, Button, Tooltip } from '@mantine/core'
-import { Fragment, type ReactNode, useEffect, useRef, useState } from 'react'
+import { ActionIcon, Button, SegmentedControl, Tooltip } from '@mantine/core'
+import { Fragment, type ReactNode, useCallback, useEffect, useRef, useState } from 'react'
 import { documentWorkWhen, workDurationLabel } from '#commands/all/notes/lib/documentInput.ts'
 import { PlainDate, PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import { dayItemKey, type CommitmentOrder } from '../../day/organizingTypes.ts'
 import { comparePlanItems } from '../../day/planningTypes.ts'
+import type { DaySummary } from '../../day/summary.ts'
 import { type ChatCloseNotice, DayChatClose } from './dayChatClose.tsx'
 import { DayChatResume } from './dayChatResume.tsx'
 import { chatState, chatTurnCount, type DayChatRow, dayChatRows } from './dayChats.ts'
@@ -27,6 +28,7 @@ import {
 } from './dayOrganizing.tsx'
 import { useDayPlanning } from './dayPlanning.tsx'
 import { DayRail } from './dayRail.tsx'
+import { DaySummaryView, useSummaryRefresh } from './daySummary.tsx'
 import { DayTracking } from './dayTracking.tsx'
 import { DocumentImportNotice } from './documentImport.tsx'
 import { fileHref, resolvePath } from './explorer.tsx'
@@ -81,6 +83,7 @@ export interface DayData {
     parent: { chat: string; turn: number } | null
   }>
   record: DayRecord
+  summary?: DaySummary | null
 }
 
 /** One bullet from the day file: a plan, a promise, or a thing done. */
@@ -1131,6 +1134,7 @@ function FiledCard({
 
 export function DayView({
   trackingDate = null,
+  search = '',
   navigate = (path: string) => window.location.assign(path),
   day,
   threads,
@@ -1154,6 +1158,7 @@ export function DayView({
   onDismissKept = () => {},
 }: {
   trackingDate?: string | null
+  search?: string
   navigate?: (path: string) => void
   day: DayData | null
   threads: ThreadSummary[]
@@ -1186,6 +1191,32 @@ export function DayView({
   // Checking a box answers with the fresh view; it lands here, over the prop.
   const [view, setView] = useState<DayData | null>(day)
   useEffect(() => setView(day), [day])
+  const ymd = view?.day.ymd
+  const selectedView = new URLSearchParams(search).get('view')
+  const showingSummary = Boolean(view?.summary && selectedView !== 'record')
+  const selectView = (mode: string) => {
+    const query = new URLSearchParams(search)
+    query.set('view', mode)
+    navigate(`${trackingDate ? `/${trackingDate}` : '/'}?${query}`)
+  }
+  const currentDay = view && view.day.ymd === (trackingDate ?? view.today.ymd)
+  const dateTitle = currentDay ? view.day.dateLabel : (trackingDate ?? 'Today')
+  const modeTitle = currentDay
+    ? showingSummary
+      ? 'Summary'
+      : 'Day record'
+    : selectedView === 'summary'
+      ? 'Summary'
+      : selectedView === 'record'
+        ? 'Day record'
+        : null
+  useEffect(() => {
+    document.title = `sky · ${dateTitle}${modeTitle ? ` · ${modeTitle}` : ''}`
+  }, [dateTitle, modeTitle])
+  const readSummary = useCallback((summary: DaySummary | null) => {
+    setView((current) => (current && current.summary?.version !== summary?.version ? { ...current, summary } : current))
+  }, [])
+  useSummaryRefresh(ymd, readSummary)
   const endedClock = view?.record.endedClock ?? null
   const ended = view?.record.ended ?? false
   // A started day can end once the calendar has moved past it — never the day still under way.
@@ -1225,244 +1256,300 @@ export function DayView({
   const completedTasks = doneToday.length + tasks.filter((item) => itemDone(item, checkOff.phases)).length
   const totalTasks = doneToday.length + tasks.length
 
+  const recordStatus = (ended || totalTasks > 0 || canEnd) && (
+    <div className="sky-day-statusline">
+      {canEnd && !isToday && (
+        <>
+          <span className="sky-day-open">Not ended</span>
+          {totalTasks > 0 && <span aria-hidden="true">·</span>}
+        </>
+      )}
+      {(ended || totalTasks > 0) && (
+        <span className="sky-day-progress" role="status" aria-atomic="true">
+          {ended && <EndedBadge at={endedClock} />}
+          {ended && totalTasks > 0 && <span aria-hidden="true">·</span>}
+          {totalTasks > 0 && (
+            <span>
+              {completedTasks} of {count(totalTasks, 'task')} complete
+            </span>
+          )}
+          {ended && view?.record.perfect && (
+            <>
+              <span aria-hidden="true">·</span>
+              <span className="sky-day-perfect">Perfect day</span>
+            </>
+          )}
+        </span>
+      )}
+      {canEnd && view && (
+        <>
+          {totalTasks > 0 && <span aria-hidden="true">·</span>}
+          <Button size="compact-sm" leftSection={<LockIcon />} onClick={() => setEnding(true)}>
+            End {new PlainDate(view.day.ymd).dayLong}
+          </Button>
+        </>
+      )}
+    </div>
+  )
+
+  const recordActions = (
+    <>
+      {onImportFiles && (
+        <>
+          <input
+            ref={fileRef}
+            type="file"
+            hidden
+            multiple
+            accept={acceptsImports()}
+            onChange={(event) => {
+              const list = event.currentTarget.files
+              const files: File[] = list ? Array.from(list) : []
+              event.currentTarget.value = ''
+              if (files.length > 0) onImportFiles(files)
+            }}
+          />
+          <Button
+            aria-label="Add a file"
+            title="Import a file"
+            onClick={() => fileRef.current?.click()}
+            leftSection={
+              <svg
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.6"
+                aria-hidden="true"
+              >
+                <path d="m8 13 7-7a3 3 0 0 1 4 4l-9 9a5 5 0 0 1-7-7l9-9a7 7 0 0 1 10 10l-9 9" />
+              </svg>
+            }
+          >
+            Add file
+          </Button>
+        </>
+      )}
+      {!rail.open && <RailToggle open={false} onClick={rail.toggle} disabled={!view} />}
+      <DayOrganizeButton disabled={planning.editing || Object.keys(checkOff.phases).length > 0} />
+    </>
+  )
+
+  const header = (
+    <header className="sky-head">
+      <span className="sky-title">
+        {view?.day.dateLabel ?? 'Today'}
+        {!showingSummary && view?.day.dayRelativePath && (
+          <ActionIcon
+            component="a"
+            href={fileHref(view.day.dayRelativePath)}
+            size="sm"
+            radius="sm"
+            className="sky-day-file"
+            aria-label="Day file"
+            title="Day file"
+          >
+            <DayFileIcon />
+          </ActionIcon>
+        )}
+      </span>
+      {!view?.summary && recordStatus}
+      <nav className="sky-tabs">
+        {view?.summary && (
+          <SegmentedControl
+            className="sky-day-view-switch"
+            aria-label="Day view"
+            size="xs"
+            radius="md"
+            value={showingSummary ? 'summary' : 'record'}
+            onChange={selectView}
+            data={[
+              { value: 'summary', label: 'Summary' },
+              { value: 'record', label: 'Day record' },
+            ]}
+          />
+        )}
+        {view?.summary && (
+          <ActionIcon
+            component="a"
+            href={fileHref(view.summary.path)}
+            aria-label="Summary file"
+            title="Summary file"
+            size="sm"
+          >
+            <DayFileIcon />
+          </ActionIcon>
+        )}
+        {!view?.summary && recordActions}
+      </nav>
+      {view?.summary && !showingSummary && (
+        <div className="sky-day-record-toolbar">
+          {recordStatus}
+          <nav className="sky-day-record-actions" aria-label="Day record tools">
+            {recordActions}
+          </nav>
+        </div>
+      )}
+    </header>
+  )
+
   const content = (
-    <div className="sky-main sky-day">
+    <div
+      className="sky-main sky-day"
+      data-view={showingSummary ? 'summary' : 'record'}
+      data-has-summary={Boolean(view?.summary)}
+    >
+      {view?.summary && header}
       <div className="sky-split">
         <div className="sky-split-main">
-          <header className="sky-head">
-            <span className="sky-title">
-              {view?.day.dateLabel ?? 'Today'}
-              {view?.day.dayRelativePath && (
-                <ActionIcon
-                  component="a"
-                  href={fileHref(view.day.dayRelativePath)}
-                  size="sm"
-                  radius="sm"
-                  className="sky-day-file"
-                  aria-label="Day file"
-                  title="Day file"
-                >
-                  <DayFileIcon />
-                </ActionIcon>
-              )}
-            </span>
-            {(ended || totalTasks > 0 || canEnd) && (
-              <div className="sky-day-statusline">
-                {canEnd && !isToday && (
+          {!view?.summary && header}
+          {!showingSummary && <DayOrganizingHint />}
+
+          <div className="sky-scroll">
+            {showingSummary && view?.summary ? (
+              <DaySummaryView summary={view.summary} weekday={new PlainDate(view.day.ymd).dayLong} />
+            ) : (
+              <div className="sky-col">
+                {record && (
                   <>
-                    <span className="sky-day-open">Not ended</span>
-                    {totalTasks > 0 && <span aria-hidden="true">·</span>}
-                  </>
-                )}
-                {(ended || totalTasks > 0) && (
-                  <span className="sky-day-progress" role="status" aria-atomic="true">
-                    {ended && <EndedBadge at={endedClock} />}
-                    {ended && totalTasks > 0 && <span aria-hidden="true">·</span>}
-                    {totalTasks > 0 && (
-                      <span>
-                        {completedTasks} of {count(totalTasks, 'task')} complete
-                      </span>
+                    <DayMostImportant key={view!.day.ymd} day={view!} onSaved={setView}>
+                      {(entry) => (
+                        <PlanCard
+                          head="Most important"
+                          className={record.mostImportant.length ? 'sky-day-priority' : undefined}
+                          items={record.mostImportant}
+                          today={isToday}
+                          checkOff={checkOff}
+                          at={at}
+                          action={Boolean(record.mostImportant.length) && !organize.active && entry}
+                        >
+                          {!record.mostImportant.length && !organize.active && entry}
+                        </PlanCard>
+                      )}
+                    </DayMostImportant>
+                    <PlanCard head="Commitments" items={record.commitments} today={isToday} checkOff={checkOff} at={at}>
+                      {!organize.active && planning.composer('commitments')}
+                    </PlanCard>
+                    <TodoCard
+                      items={record.todos}
+                      checkOff={checkOff}
+                      at={at}
+                      action={!organize.active && planning.nextButton}
+                    >
+                      {!organize.active && planning.composer('todos')}
+                    </TodoCard>
+                    <ReminderCard items={record.reminders} checkOff={checkOff} at={at}>
+                      {!organize.active && planning.composer('reminders')}
+                    </ReminderCard>
+
+                    <DayStreaks ymd={view!.day.ymd} onNavigate={navigate} ended={ended} />
+
+                    <DayTracking date={trackingDate} readOnly={trackingDate !== null && ended} navigate={navigate} />
+
+                    {record.meetings.length > 0 && (
+                      <Block head="Meetings" mini={String(record.meetings.length)}>
+                        {record.meetings.map((m) => (
+                          <Fragment key={m.path}>
+                            <DocLine when={m.when}>
+                              <a href={meetingHref(m.path) ?? fileHref(m.path)}>{m.title}</a>
+                              {m.who && <span className="sky-rec-sub">{m.who}</span>}
+                            </DocLine>
+                          </Fragment>
+                        ))}
+                      </Block>
                     )}
-                    {ended && view?.record.perfect && (
-                      <>
-                        <span aria-hidden="true">·</span>
-                        <span className="sky-day-perfect">Perfect day</span>
-                      </>
+
+                    {record.messages.involved.length > 0 && (
+                      <Block head="Messages" mini={count(record.messages.involved.length, 'conversation')}>
+                        <Fold
+                          rows={record.messages.involved}
+                          render={(m: DayRecord['messages']['involved'][number]) => (
+                            <MessageLine message={m} onImport={onImportConversation} />
+                          )}
+                        />
+                      </Block>
                     )}
-                  </span>
-                )}
-                {canEnd && view && (
-                  <>
-                    {totalTasks > 0 && <span aria-hidden="true">·</span>}
-                    <Button size="compact-sm" leftSection={<LockIcon />} onClick={() => setEnding(true)}>
-                      End {new PlainDate(view.day.ymd).dayLong}
-                    </Button>
+
+                    {videos.length > 0 && (
+                      <Block head="Videos" mini={String(videos.length)}>
+                        <Fold
+                          rows={videos}
+                          render={(video: DayRecord['videos'][number]) => (
+                            <DocLine when={video.when} tag={mediumLabel(video.medium)}>
+                              <a href={fileHref(video.path)}>{video.title}</a>
+                              {(video.from || video.to) && (
+                                <span className="sky-rec-sub">
+                                  {[video.from, video.to].filter(Boolean).join(' → ')}
+                                </span>
+                              )}
+                            </DocLine>
+                          )}
+                        />
+                      </Block>
+                    )}
+
+                    <ChatsCard rows={chats} onOpenThread={onOpen} onOpenSaved={onOpenSaved} />
+
+                    {(doneToday.length > 0 || entryComposer) && (
+                      <Block head="Done today" mini={String(doneToday.length)}>
+                        {doneToday.length === 0 && <p className="sky-plan-note">Record something from your day.</p>}
+                        <Fold
+                          rows={doneToday}
+                          render={(item: DayItem) => (
+                            <div className="sky-prow">
+                              <span className="sky-done-tick">
+                                <Tick />
+                              </span>
+                              <span className="sky-when">{item.time ? clock(item.time) : ''}</span>
+                              <span className="sky-ptext sky-done-text">
+                                <ItemText item={item} href={itemDocLinked(item) ? itemHref(item, at) : null} />
+                                {item.minutes ? (
+                                  <span className="sky-entry-length">{workDurationLabel(item.minutes)}</span>
+                                ) : null}
+                              </span>
+                              {item.category === 'Personal' && <span className="sky-pchip">Personal</span>}
+                            </div>
+                          )}
+                        />
+                        {entryComposer}
+                      </Block>
+                    )}
+
+                    {record.journals.length > 0 && (
+                      <Block head="Reflections" mini={String(record.journals.length)}>
+                        {record.journals.map((row) => (
+                          <Fragment key={row.path}>
+                            <DocLine when={row.when}>
+                              <a href={fileHref(row.path)}>{row.title}</a>
+                              {row.summary?.trim() && <span className="sky-day-journal-summary">{row.summary}</span>}
+                            </DocLine>
+                          </Fragment>
+                        ))}
+                      </Block>
+                    )}
+
+                    {record.notes.length > 0 && (
+                      <Block head="Notes" mini={String(record.notes.length)}>
+                        {record.notes.map((row) => (
+                          <Fragment key={row.path}>
+                            <DocLine when={row.when} tag={noteDuration(view!.day.ymd, row.when)}>
+                              <a href={fileHref(row.path)}>{row.title}</a>
+                            </DocLine>
+                          </Fragment>
+                        ))}
+                      </Block>
+                    )}
+
+                    <FiledCard archive={record.messages.archive} onImport={onImportConversation} />
                   </>
                 )}
               </div>
             )}
-            <nav className="sky-tabs">
-              {onImportFiles && (
-                <>
-                  <input
-                    ref={fileRef}
-                    type="file"
-                    hidden
-                    multiple
-                    accept={acceptsImports()}
-                    onChange={(event) => {
-                      const list = event.currentTarget.files
-                      const files: File[] = list ? Array.from(list) : []
-                      event.currentTarget.value = ''
-                      if (files.length > 0) onImportFiles(files)
-                    }}
-                  />
-                  <Button
-                    aria-label="Add a file"
-                    title="Import a file"
-                    onClick={() => fileRef.current?.click()}
-                    leftSection={
-                      <svg
-                        width="18"
-                        height="18"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="1.6"
-                        aria-hidden="true"
-                      >
-                        <path d="m8 13 7-7a3 3 0 0 1 4 4l-9 9a5 5 0 0 1-7-7l9-9a7 7 0 0 1 10 10l-9 9" />
-                      </svg>
-                    }
-                  >
-                    Add file
-                  </Button>
-                </>
-              )}
-              {!rail.open && <RailToggle open={false} onClick={rail.toggle} disabled={!view} />}
-              <DayOrganizeButton disabled={planning.editing || Object.keys(checkOff.phases).length > 0} />
-            </nav>
-          </header>
-          <DayOrganizingHint />
-
-          <div className="sky-scroll">
-            <div className="sky-col">
-              {record && (
-                <>
-                  <DayMostImportant key={view!.day.ymd} day={view!} onSaved={setView}>
-                    {(entry) => (
-                      <PlanCard
-                        head="Most important"
-                        className={record.mostImportant.length ? 'sky-day-priority' : undefined}
-                        items={record.mostImportant}
-                        today={isToday}
-                        checkOff={checkOff}
-                        at={at}
-                        action={Boolean(record.mostImportant.length) && !organize.active && entry}
-                      >
-                        {!record.mostImportant.length && !organize.active && entry}
-                      </PlanCard>
-                    )}
-                  </DayMostImportant>
-                  <PlanCard head="Commitments" items={record.commitments} today={isToday} checkOff={checkOff} at={at}>
-                    {!organize.active && planning.composer('commitments')}
-                  </PlanCard>
-                  <TodoCard
-                    items={record.todos}
-                    checkOff={checkOff}
-                    at={at}
-                    action={!organize.active && planning.nextButton}
-                  >
-                    {!organize.active && planning.composer('todos')}
-                  </TodoCard>
-                  <ReminderCard items={record.reminders} checkOff={checkOff} at={at}>
-                    {!organize.active && planning.composer('reminders')}
-                  </ReminderCard>
-
-                  <DayStreaks ymd={view!.day.ymd} onNavigate={navigate} ended={ended} />
-
-                  <DayTracking date={trackingDate} readOnly={trackingDate !== null && ended} navigate={navigate} />
-
-                  {record.meetings.length > 0 && (
-                    <Block head="Meetings" mini={String(record.meetings.length)}>
-                      {record.meetings.map((m) => (
-                        <Fragment key={m.path}>
-                          <DocLine when={m.when}>
-                            <a href={meetingHref(m.path) ?? fileHref(m.path)}>{m.title}</a>
-                            {m.who && <span className="sky-rec-sub">{m.who}</span>}
-                          </DocLine>
-                        </Fragment>
-                      ))}
-                    </Block>
-                  )}
-
-                  {record.messages.involved.length > 0 && (
-                    <Block head="Messages" mini={count(record.messages.involved.length, 'conversation')}>
-                      <Fold
-                        rows={record.messages.involved}
-                        render={(m: DayRecord['messages']['involved'][number]) => (
-                          <MessageLine message={m} onImport={onImportConversation} />
-                        )}
-                      />
-                    </Block>
-                  )}
-
-                  {videos.length > 0 && (
-                    <Block head="Videos" mini={String(videos.length)}>
-                      <Fold
-                        rows={videos}
-                        render={(video: DayRecord['videos'][number]) => (
-                          <DocLine when={video.when} tag={mediumLabel(video.medium)}>
-                            <a href={fileHref(video.path)}>{video.title}</a>
-                            {(video.from || video.to) && (
-                              <span className="sky-rec-sub">{[video.from, video.to].filter(Boolean).join(' → ')}</span>
-                            )}
-                          </DocLine>
-                        )}
-                      />
-                    </Block>
-                  )}
-
-                  <ChatsCard rows={chats} onOpenThread={onOpen} onOpenSaved={onOpenSaved} />
-
-                  {(doneToday.length > 0 || entryComposer) && (
-                    <Block head="Done today" mini={String(doneToday.length)}>
-                      {doneToday.length === 0 && <p className="sky-plan-note">Record something from your day.</p>}
-                      <Fold
-                        rows={doneToday}
-                        render={(item: DayItem) => (
-                          <div className="sky-prow">
-                            <span className="sky-done-tick">
-                              <Tick />
-                            </span>
-                            <span className="sky-when">{item.time ? clock(item.time) : ''}</span>
-                            <span className="sky-ptext sky-done-text">
-                              <ItemText item={item} href={itemDocLinked(item) ? itemHref(item, at) : null} />
-                              {item.minutes ? (
-                                <span className="sky-entry-length">{workDurationLabel(item.minutes)}</span>
-                              ) : null}
-                            </span>
-                            {item.category === 'Personal' && <span className="sky-pchip">Personal</span>}
-                          </div>
-                        )}
-                      />
-                      {entryComposer}
-                    </Block>
-                  )}
-
-                  {record.journals.length > 0 && (
-                    <Block head="Reflections" mini={String(record.journals.length)}>
-                      {record.journals.map((row) => (
-                        <Fragment key={row.path}>
-                          <DocLine when={row.when}>
-                            <a href={fileHref(row.path)}>{row.title}</a>
-                            {row.summary?.trim() && <span className="sky-day-journal-summary">{row.summary}</span>}
-                          </DocLine>
-                        </Fragment>
-                      ))}
-                    </Block>
-                  )}
-
-                  {record.notes.length > 0 && (
-                    <Block head="Notes" mini={String(record.notes.length)}>
-                      {record.notes.map((row) => (
-                        <Fragment key={row.path}>
-                          <DocLine when={row.when} tag={noteDuration(view!.day.ymd, row.when)}>
-                            <a href={fileHref(row.path)}>{row.title}</a>
-                          </DocLine>
-                        </Fragment>
-                      ))}
-                    </Block>
-                  )}
-
-                  <FiledCard archive={record.messages.archive} onImport={onImportConversation} />
-                </>
-              )}
-            </div>
           </div>
-          <DayOrganizingBar />
+          {!showingSummary && <DayOrganizingBar />}
         </div>
-        {rail.open && view && (
+        {!showingSummary && rail.open && view && (
           <DayRail
             ymd={view.day.ymd}
             chats={view.chats}

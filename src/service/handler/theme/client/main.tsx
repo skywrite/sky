@@ -178,26 +178,24 @@ function Canvas() {
     filesRoute === null &&
     meetingRoute === null &&
     explorerFile === null
-  const dayTitle = day?.day.ymd === (dayYmd ?? day?.today.ymd) ? day?.day.dateLabel : (dayYmd ?? 'Today')
   const weekTitle = weekId || thisWeek?.id
   useEffect(() => {
     // These screens set their own titles from the content they display.
-    if (isOutbox || peopleRoute || placesRoute !== null || isTracking || importId || explorerFile !== null) return
-    document.title = onDayPage
-      ? `sky · ${dayTitle ?? 'Today'}`
-      : isWeek
-        ? `sky · ${weekTitle ? `Week ${weekTitle}` : 'This week'}`
-        : threadId
-          ? `sky:chat - ${chatTitle}`
-          : isAudition
-            ? 'sky · audition'
-            : isStreaks
-              ? 'sky · streaks'
-              : settingsSection === 'writing-voice'
-                ? 'sky · Writing style'
-                : settingsSection === 'browser-automation'
-                  ? 'sky · Browser automation'
-                  : 'sky'
+    if (onDayPage || isOutbox || peopleRoute || placesRoute !== null || isTracking || importId || explorerFile !== null)
+      return
+    document.title = isWeek
+      ? `sky · ${weekTitle ? `Week ${weekTitle}` : 'This week'}`
+      : threadId
+        ? `sky:chat - ${chatTitle}`
+        : isAudition
+          ? 'sky · audition'
+          : isStreaks
+            ? 'sky · streaks'
+            : settingsSection === 'writing-voice'
+              ? 'sky · Writing style'
+              : settingsSection === 'browser-automation'
+                ? 'sky · Browser automation'
+                : 'sky'
   }, [
     threadId,
     chatTitle,
@@ -210,7 +208,6 @@ function Canvas() {
     importId,
     explorerFile,
     onDayPage,
-    dayTitle,
     isWeek,
     weekTitle,
     settingsSection,
@@ -604,6 +601,7 @@ function Canvas() {
         ) : (
           <DayView
             trackingDate={dayYmd}
+            search={search}
             navigate={navigate}
             day={day}
             threads={others}
