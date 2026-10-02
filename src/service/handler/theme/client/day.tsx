@@ -10,7 +10,9 @@ import { chatState, chatTurnCount, type DayChatRow, dayChatRows } from './dayCha
 import { EndDayDialog, LockIcon } from './dayEnd.tsx'
 import { DayItemEditing, InlineItemEditor, ItemDetailsIcon, useItemEditing } from './dayItemEditing.tsx'
 import { DayItemHelp, ItemHelpButton } from './dayItemHelp.tsx'
+import { itemDocLinked } from './dayItemLinks.ts'
 import { DayItemNotes, itemNotes } from './dayItemNotes.tsx'
+import { ItemText } from './dayItemText.tsx'
 import { DayMostImportant } from './dayMostImportant.tsx'
 import {
   DayCommitmentOrder,
@@ -583,6 +585,8 @@ function PlanRow({
   const editable = !readOnly && !phase && !item.workstream && !organizing && !organize.busy
   const late = tone === 'late' && !struck
   const personal = chip && item.category === 'Personal'
+  // A notebook link takes the whole text; web addresses sit beside the words as chips, which stay editable.
+  const docLinked = itemDocLinked(item)
   const pointer = useRef<{ x: number; y: number; at: number } | null>(null)
   const swipe = useSwipeToDelete(() => onDelete(item))
   // While a row of this card is lifted: how far this row stands aside, or, for the row itself, where its slot waits.
@@ -707,8 +711,9 @@ function PlanRow({
                 role={editable && !item.link ? 'button' : undefined}
                 tabIndex={editable && !item.link ? 0 : undefined}
                 aria-label={editable && !item.link ? `Edit text: ${item.text}` : undefined}
-                onDoubleClick={() => {
-                  if (editable && !item.link) editor.begin(item, 'inline', window.getSelection()?.toString())
+                onDoubleClick={(event) => {
+                  if (editable && !docLinked && !(event.target as HTMLElement).closest('a'))
+                    editor.begin(item, 'inline', window.getSelection()?.toString())
                 }}
                 onKeyDown={(event) => {
                   if (editable && !item.link && (event.key === 'Enter' || event.key === 'F2')) {
@@ -728,7 +733,8 @@ function PlanRow({
                   pointer.current = null
                   if (
                     editable &&
-                    !item.link &&
+                    !docLinked &&
+                    !(event.target as HTMLElement).closest('a') &&
                     start &&
                     performance.now() - start.at < 450 &&
                     Math.hypot(event.clientX - start.x, event.clientY - start.y) < 8 &&
@@ -737,7 +743,7 @@ function PlanRow({
                     editor.begin(item, 'inline')
                 }}
               >
-                {item.link && !organizing ? <a href={itemHref(item, at)}>{item.text}</a> : item.text}
+                <ItemText item={item} href={docLinked ? itemHref(item, at) : null} inert={organizing} />
                 {item.workstream?.error && <span className="sky-pchip">{item.workstream.error}</span>}
               </span>
             )}
@@ -1410,7 +1416,7 @@ export function DayView({
                             </span>
                             <span className="sky-when">{item.time ? clock(item.time) : ''}</span>
                             <span className="sky-ptext sky-done-text">
-                              {item.link ? <a href={itemHref(item, at)}>{item.text}</a> : item.text}
+                              <ItemText item={item} href={itemDocLinked(item) ? itemHref(item, at) : null} />
                             </span>
                             {item.category === 'Personal' && <span className="sky-pchip">Personal</span>}
                           </div>

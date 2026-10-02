@@ -11,6 +11,7 @@ import {
   type NextDestination,
 } from '../../day/planningTypes.ts'
 import type { DayData } from './day.tsx'
+import { LinkedText } from './dayItemText.tsx'
 import { fileHref } from './explorer.tsx'
 
 const LABELS: Record<DayAddKind, string> = {
@@ -301,7 +302,7 @@ function NextPicker({
                   <Checkbox
                     label={
                       <span>
-                        {item.text}
+                        <LinkedText text={item.text} inert />
                         {(item.already || item.unavailable) && (
                           <small>{item.already ? 'Already on this day' : item.unavailable}</small>
                         )}

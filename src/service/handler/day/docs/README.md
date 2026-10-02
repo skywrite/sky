@@ -45,6 +45,13 @@ or a mobile bottom sheet for text, type, category, time and date. Moving from in
 editing into Details does not save. Save commits; Cancel discards. Refreshes
 preserve drafts, including when a changed or ended day prevents saving.
 
+A web address in an item shows as a chip in place of the address
+(`theme/client/dayItemLinks.ts`, drawn by `dayItemText.tsx`). The chip is named
+from the address alone, such as "Slack message" or the site's host; nothing is
+fetched. The file keeps the full address, and the inline editor shows it. Such
+a row still edits in place. A notebook or workstream link keeps the whole text
+as its link, so that row edits through Details.
+
 `editing.ts` addresses the exact task heading, first line and occurrence, refusing
 stale matches. Repeated text is allowed, including identical blocks; occurrences
 distinguish individual copies without adding IDs to Markdown. A duplicate's revision

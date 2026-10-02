@@ -464,6 +464,93 @@
   color: var(--sky-text-2);
 }
 
+/* A web address in an item: a chip naming where it goes, in place of the address. */
+.sky-item-link,
+.sky-ptext a.sky-item-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  max-width: 100%;
+  padding: 2px 11px 2px 9px;
+  border-radius: 999px;
+  background: var(--sky-s2);
+  color: var(--sky-text-2);
+  font-size: 14.5px;
+  line-height: 1.5;
+  vertical-align: 0.1em;
+  white-space: nowrap;
+  text-decoration: none;
+}
+
+.sky-item-link > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+a.sky-item-link:hover,
+.sky-ptext a.sky-item-link:hover {
+  background: var(--sky-hover);
+  color: var(--sky-text);
+  text-decoration: none;
+}
+
+a.sky-item-link:focus-visible {
+  outline: 2px solid var(--sky-action-focus);
+  outline-offset: 1px;
+}
+
+/* A finger gets more of the chip than its outline shows. */
+@media (hover: none) {
+  a.sky-item-link {
+    position: relative;
+  }
+
+  a.sky-item-link::after {
+    content: '';
+    position: absolute;
+    inset: -9px 0;
+  }
+}
+
+.sky-item-link-mark {
+  width: 14px;
+  height: 14px;
+  flex: none;
+}
+
+.sky-item-link-mark[data-site='web'] {
+  color: var(--sky-dim);
+}
+
+.sky-item-link-mark[data-site='doc'] {
+  color: var(--mantine-color-blue-6);
+}
+
+.sky-item-link-mark[data-site='sheet'] {
+  color: var(--mantine-color-green-7);
+}
+
+.sky-item-link-mark[data-site='slides'] {
+  color: var(--mantine-color-yellow-7);
+}
+
+/* A done item strikes its words, not the chip or the space beside it. */
+.sky-ptext[data-done='true']:has(.sky-item-link),
+.sky-end-row[data-done] .sky-ptext:has(.sky-item-link) {
+  text-decoration: none;
+}
+
+.sky-ptext[data-done='true'] .sky-ptext-words,
+.sky-end-row[data-done] .sky-ptext-words {
+  text-decoration: line-through;
+}
+
+.sky-ptext[data-done='true'] .sky-item-link,
+.sky-end-row[data-done] .sky-item-link {
+  opacity: 0.7;
+}
+
 .sky-alldone {
   padding: 8px 0;
   font-size: 16px;
@@ -600,6 +687,8 @@
 
 .sky-irow-front {
   min-height: 0;
+  /* A long chip shortens inside the row instead of widening it past the page. */
+  min-width: 0;
   overflow: hidden;
   position: relative;
   display: flex;

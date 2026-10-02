@@ -5,6 +5,7 @@ import { Fragment, useEffect, useRef, useState } from 'react'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import { dayItemKey } from '../../day/organizingTypes.ts'
 import { clock, type DayData, type DayItem, Tick } from './day.tsx'
+import { ItemText } from './dayItemText.tsx'
 import { useSchedule } from './dayRail.tsx'
 import { fileHref } from './explorer.tsx'
 
@@ -87,7 +88,9 @@ function OpenRow({ item, done, onTick }: { item: DayItem; done: boolean; onTick:
         </span>
       )}
       {item.time && <span className="sky-when">{clock(item.time)}</span>}
-      <span className="sky-ptext">{item.text}</span>
+      <span className="sky-ptext">
+        <ItemText item={item} href={null} />
+      </span>
       {item.category === 'Personal' && <span className="sky-pchip">Personal</span>}
     </div>
   )
