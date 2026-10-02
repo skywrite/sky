@@ -22,6 +22,7 @@ import { createNumberedFile } from '#lib/nbfs/createNumberedFile.ts'
 import { atomicWrite, hash } from '#lib/outbox/files.ts'
 import type Document from '#shared/models/Markdown/Document/mod.ts'
 import type MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
+import addDatedNote from '#shared/models/Markdown/util/addDatedNote.ts'
 import splitYamlMarkdown from '#shared/models/Markdown/util/splitYamlMarkdown.ts'
 import OrganizationDocument from '#shared/models/Organization/mod.ts'
 import PersonDocument from '#shared/models/Person/mod.ts'
@@ -60,7 +61,7 @@ const strings = (value: unknown): string[] =>
 const unique = (values: string[]) => [...new Map(values.map((value) => [plain(value), value])).values()]
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b)
 
-/** Opening lines go under the name heading. */
+/** An organization's About text goes under the name heading; a person's notes are dated notes instead. */
 const withNotes = (body: string, notes?: string) =>
   notes?.trim() ? body.replace(/^(# .*)$/m, `$1\n\n${notes.trim()}`) : body
 
@@ -637,7 +638,7 @@ export function createPeopleStore(store: MarkdownStore, baseDir: string, dirs: s
         throw new ProfileError('This profile changed. Reload it before adding your note.', 409)
       const date = today()
       current.yaml.set('updated', date)
-      const contents = `---\n${current.yaml.toString()}---${current.gap}${current.body.trimEnd()}\n\n## ${date}\n\n${text.trim()}\n`
+      const contents = `---\n${current.yaml.toString()}---${current.gap}${addDatedNote(current.body, date, text)}`
       await atomicWrite(current.file, contents)
       store.set(current.file, contents)
       return detail(type, id)

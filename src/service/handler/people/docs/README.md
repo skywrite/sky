@@ -1,6 +1,6 @@
 ---
 created: 2026-09-23
-updated: 2026-09-29
+updated: 2026-10-01
 ---
 
 # People & Orgs
@@ -37,7 +37,10 @@ Empty Markdown sections and historical heading echoes are hidden at rendering;
 the source file stays intact, including its template headings.
 
 Metadata edits patch the YAML document, retaining unknown keys and YAML comments.
-Existing Markdown is preserved verbatim. Notes append a dated section. Writes
+Existing Markdown is preserved verbatim. A note goes under one `## Notes` section,
+below a `### YYYY-MM-DD` heading for its day, newest day first, so a profile's `##`
+headings stay its topics. A person's notes from the create form are their first
+note; an organization's About text goes under its name. Writes
 require the reviewed content hash, run under a local process lock, and publish
 atomically. This lock coordinates these UI writes; external notebook editors do
 not participate, so writes also recheck the file before replacement. An edit keeps

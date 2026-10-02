@@ -221,6 +221,12 @@
   font-size: 19px;
   margin-top: 28px;
 }
+/* A day under Notes reads below its section, not above it */
+.sky-people-prose h3 {
+  font-size: 17px;
+  font-weight: 600;
+  margin-top: 24px;
+}
 .sky-people-prose pre {
   overflow-x: auto;
 }

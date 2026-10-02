@@ -392,6 +392,36 @@ test('Profile HTTP routes serve real URLs, validate writes, append notes, and ke
   }
 })
 
+test('Notes are filed under one Notes section, a heading per day, newest day first', async () => {
+  const f = await fixture()
+  try {
+    const body = async (id: string) => (await readFile(path.join(f.root, id), 'utf8')).split('---\n').at(-1)
+    const jane = await f.profiles.save({ ...blankProfile('person'), name: 'Jane Doe', notes: 'Met at the workshop.' })
+    await f.seed(
+      'people/Sam-Rivera.md',
+      '---\nname: Sam Rivera\n---\n\n# Sam Rivera\n\n## Notes\n\n### 2026-01-05\n\nIntroduced by Jane.\n\n## Info\n\n- sam@example.com\n',
+    )
+    const sam = await f.profiles.detail('person', 'people/Sam-Rivera.md')
+    const noted = await f.profiles.addNote('person', sam.id, sam.revision, 'Joined Atlas.')
+    await f.profiles.addNote('person', sam.id, noted.revision, 'Sent the deck.')
+    const atlas = await f.profiles.save({ ...blankProfile('org'), name: 'Atlas', notes: 'A small research studio.' })
+    await f.profiles.addNote('org', atlas.id, atlas.revision, 'Renewed the contract.')
+    assert({
+      given: 'a note from the create form, two notes in one day on a profile with an older day, and an organization',
+      should:
+        "date each note under ## Notes with the newest day first, keep a day's notes in order, and leave the About text and other sections where they were",
+      actual: [await body(jane.id), await body(sam.id), await body(atlas.id)],
+      expected: [
+        '\n# Jane Doe\n\n## Background\n\n## Notes\n\n### 2026-02-12\n\nMet at the workshop.\n',
+        '\n# Sam Rivera\n\n## Notes\n\n### 2026-02-12\n\nJoined Atlas.\n\nSent the deck.\n\n### 2026-01-05\n\nIntroduced by Jane.\n\n## Info\n\n- sam@example.com\n',
+        '\n# Atlas\n\nA small research studio.\n\n## Overview\n\nAtlas is an example organization.\n\n\n## Misc\n\n## Notes\n\n### 2026-02-12\n\nRenewed the contract.\n',
+      ],
+    })
+  } finally {
+    await f.close()
+  }
+})
+
 test('Unlinking activity removes every resolved alias for only the selected profile', async () => {
   const f = await fixture()
   try {

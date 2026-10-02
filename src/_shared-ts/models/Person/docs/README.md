@@ -1,6 +1,6 @@
 ---
 created: 2026-08-29
-updated: 2026-09-06
+updated: 2026-10-01
 ---
 
 # Person profiles — what the AI may write, and how it must read
@@ -56,6 +56,7 @@ Frontmatter, then `# Name`, then `##` sections.
 | `## Background` | hand + AI | Append a bullet. Replace one quoted line. |
 | `## Family` | hand + AI | Same. |
 | `## Info` | hand + AI | Same. |
+| `## Notes` | hand | Nothing. The People page files notes here under a `### YYYY-MM-DD` heading per day, newest day first. |
 | Lead prose under `# Name`, `###` sub-sections, dated or one-off sections | hand | Nothing. Passes through verbatim. |
 | `location`, `title`, `org` | hand + AI | Fill when empty. Never overwrite. |
 | `sites:` | hand + AI | Add a URL, deduped. |

@@ -184,7 +184,7 @@ function ProfilePage({
         <div className="sky-people-profile-content">
           {profile.html && (
             <section>
-              {!/^<h[1-6]\b/.test(profile.html) && <h2>{profile.type === 'person' ? 'Notes' : 'Overview'}</h2>}
+              {!/^<h[1-6]\b/.test(profile.html) && <h2>{profile.type === 'person' ? 'About' : 'Overview'}</h2>}
               <RenderedHtml html={profile.html} className="sky-people-prose" />
             </section>
           )}

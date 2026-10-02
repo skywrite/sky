@@ -1,6 +1,7 @@
 import * as path from 'node:path'
 import latinize from '#lib/string/latinize.ts'
 import { slugify } from '#lib/string/mod.ts'
+import addDatedNote from '#shared/models/Markdown/util/addDatedNote.ts'
 import PersonDocument from '#shared/models/Person/mod.ts'
 
 /**
@@ -55,7 +56,7 @@ export interface NewPerson {
   orgs?: OrgLists<string>
   email?: { personal?: string[]; business?: string[] }
   sites?: string[]
-  /** Opening lines under the name heading */
+  /** A first note, filed under `## Notes` with the created date */
   notes?: string
 }
 
@@ -68,6 +69,7 @@ function lists<T>(value: OrgLists<T> | undefined): OrgLists<T> | undefined {
 /**
  * A new person file as person:new writes it: every field in this order, blank until known, then
  * the name heading and an empty Background section. A list with nothing in it is left blank or out.
+ * A first note goes under `## Notes`, dated the day the person was added.
  */
 export function newPersonMarkdown(person: NewPerson): string {
   const list = (values?: string[]) => (values?.length ? values : null)
@@ -83,6 +85,5 @@ export function newPersonMarkdown(person: NewPerson): string {
   yaml.tags = null
   // The heading shows the preferred name, even when the name field lists several
   const template = PersonDocument.createTemplate({ name: Array.isArray(person.name) ? person.name[0] : person.name })
-  const notes = person.notes?.trim()
-  return new PersonDocument(yaml, notes ? template.replace(/^(# .*)$/m, `$1\n\n${notes}`) : template).toMarkdown()
+  return new PersonDocument(yaml, addDatedNote(template, person.created, person.notes ?? '')).toMarkdown()
 }
