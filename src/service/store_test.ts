@@ -63,9 +63,25 @@ const recencyFixtures = [
     description: '366 days (first day of older tier)',
   },
   {
-    daysSince: 1000,
+    daysSince: 730,
     expected: RECENCY_MULTIPLIERS.older,
+    description: 'exactly two years (boundary)',
+  },
+  // Past two years, half again each further year
+  {
+    daysSince: 731,
+    expected: RECENCY_MULTIPLIERS.older / 2,
+    description: '731 days (first day of the third year)',
+  },
+  {
+    daysSince: 1000,
+    expected: RECENCY_MULTIPLIERS.older / 2,
     description: '1000 days ago',
+  },
+  {
+    daysSince: 1096,
+    expected: RECENCY_MULTIPLIERS.older / 4,
+    description: '1096 days (first day of the fourth year)',
   },
 ]
 
@@ -119,6 +135,12 @@ const scoringFixtures = [
     interactions: [{ daysAgo: 400, weight: INTERACTION_WEIGHTS.meeting }],
     expectedScore: INTERACTION_WEIGHTS.meeting * RECENCY_MULTIPLIERS.older,
     expectedCount: 1,
+  },
+  {
+    description: 'contact more than two years old keeps fading',
+    interactions: Array.from({ length: 15 }, () => ({ daysAgo: 900, weight: INTERACTION_WEIGHTS.meeting })),
+    expectedScore: 15 * INTERACTION_WEIGHTS.meeting * (RECENCY_MULTIPLIERS.older / 2),
+    expectedCount: 15,
   },
 ]
 

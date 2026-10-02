@@ -199,7 +199,7 @@ export class Store extends EventEmitter {
    *
    * Direct contact: score += weight × recencyMultiplier
    * - weight: determined by interaction type (meeting=10, email=5, slack=3, day=2)
-   * - recencyMultiplier: decays over time (1.0 → 0.05)
+   * - recencyMultiplier: decays over time (1.0 → 0.05 at two years, then halving yearly)
    *
    * Mentions earn discounted relevance and no familiarity. Scores are cumulative.
    *
@@ -257,7 +257,7 @@ export class Store extends EventEmitter {
    *
    * Scoring formula: score += weight × recencyMultiplier
    * - weight: determined by interaction type (meeting=10, email=5, slack=3, day=2)
-   * - recencyMultiplier: decays over time (1.0 → 0.05)
+   * - recencyMultiplier: decays over time (1.0 → 0.05 at two years, then halving yearly)
    *
    * Scores are cumulative - frequent interactions compound.
    *

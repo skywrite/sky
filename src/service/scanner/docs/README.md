@@ -1,6 +1,6 @@
 ---
 created: 2026-08-30
-updated: 2026-09-26
+updated: 2026-10-01
 ---
 
 # Scanner
@@ -39,7 +39,8 @@ count as meetings. `gdoc`, `gslides`, `video`, and `x` are deliberately
 unweighted — shared artifacts and posts, not direct interactions.
 
 `ScoringStore` applies recency decay on top: 1.0 through seven days, 0.5
-through thirty, 0.25 through ninety, 0.1 through a year, and 0.05 beyond.
+through thirty, 0.25 through ninety, 0.1 through a year, 0.05 through two
+years, then half again for each further year. There is no permanent floor.
 
 For people, participation in `who`, `to`, `from`, `cc`, or `bcc` earns the
 full weighted amount. A name occurring only in `rel` earns one tenth of
@@ -106,6 +107,9 @@ another contact's familiarity for a short calendar label.
 
 ## History
 
+- `2026-10-01-old-contact-keeps-fading.md` — contact older than a year kept
+  5% of its weight forever, so a long-dormant namesake could outrank one
+  met yesterday; past two years the weight now halves every year.
 - `2026-09-26-one-entry-per-person.md` — every name a profile listed was
   reported as a person of its own with the whole score, so the model saw one
   person twice and could write the old spelling; reported once now, under the

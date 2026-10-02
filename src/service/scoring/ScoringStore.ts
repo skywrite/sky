@@ -5,7 +5,7 @@
  *
  * Direct-contact score: weight × recencyMultiplier
  * - weight: determined by interaction type (meeting=10, email=5, slack=3, day=2)
- * - recencyMultiplier: decays over time (1.0 → 0.05)
+ * - recencyMultiplier: decays over time (1.0 → 0.05 at two years, then halving yearly)
  * Person mentions earn discounted relevance and no familiarity.
  * Profile bonuses are applied once when the person's aliases are combined.
  *
@@ -39,7 +39,7 @@ export const RECENCY_MULTIPLIERS = {
   month: 0.5, // 8-30 days: half weight
   quarter: 0.25, // 31-90 days: quarter weight
   year: 0.1, // 91-365 days: 10% weight
-  older: 0.05, // >365 days: 5% weight
+  older: 0.05, // 1-2 years: 5% weight, halving with each further year
 } as const
 
 /**
@@ -349,7 +349,8 @@ export class ScoringStore extends EventEmitter {
     if (daysSince <= RECENCY_THRESHOLDS.month) return RECENCY_MULTIPLIERS.month
     if (daysSince <= RECENCY_THRESHOLDS.quarter) return RECENCY_MULTIPLIERS.quarter
     if (daysSince <= RECENCY_THRESHOLDS.year) return RECENCY_MULTIPLIERS.year
-    return RECENCY_MULTIPLIERS.older
+    // No permanent floor: past two years, old contact halves again every year.
+    return RECENCY_MULTIPLIERS.older * 0.5 ** (Math.ceil(daysSince / RECENCY_THRESHOLDS.year) - 2)
   }
 
   /**
