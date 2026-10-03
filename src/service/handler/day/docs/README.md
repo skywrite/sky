@@ -1,6 +1,6 @@
 ---
 created: 2026-09-03
-updated: 2026-10-02
+updated: 2026-10-03
 ---
 
 # The day's items, the day's rail, and the day's files
@@ -222,6 +222,44 @@ Reminder completion: [2026-09-06 — completing a reminder deletes it](2026-09-0
 
 Rows grow to fit wrapped text and collapse through a grid track, with no fixed
 height cap. See [2026-09-05 — larger type without clipped tasks](2026-09-05-larger-type-without-clipped-tasks.md).
+
+## Starting and ending a day from the page
+
+A day runs from its start to the next day's start, and the notebook clock
+counts past 24:00 until then. The pages carry the two commands where the
+person already is. Each button runs the terminal's command at the moment it
+is pressed, with no other arguments; `createWeekHost` runs them in-process.
+
+- **Start** shows once the clock has moved past the open day, in two places
+  (`theme/client/dayStart.tsx`). The open day's page, the one Today opens,
+  whispers it in a second status line until 04:00 ("Past midnight. Still
+  Thursday until you start Friday · Start Friday"), then carries a block at
+  the top of its column: the calendar's date, one sentence saying what is
+  added still files under the open day, and the page's one primary button.
+  The waiting day's own page says "Not started" beside its count, with
+  Start. The week page keeps its Start too, as a quiet button. 04:00 is the
+  boundary a day with no start is assumed to begin at (recap's day window),
+  so a late night and a morning differ only in how loudly the page speaks;
+  nothing starts without a press. After `day:start` finishes, the shell
+  re-reads today, the week list and the clock, and opens Today, which is the
+  started day now.
+- **End** shows on a started day once the calendar has moved past it: in
+  the status line beside the count, and in the week's Days rows. It asks
+  first (`theme/client/dayEnd.tsx`) — the plan's open items with live
+  checkboxes, the records with no end time, the calendar meetings with no
+  notes — and runs `day:end` when pressed; a late end reads with the date it
+  was pressed. Starting the next day does not end the previous one: its
+  meeting notes and imports usually come after, so it stays open, marked
+  "Not ended", until End is pressed.
+
+| Route | Does |
+| --- | --- |
+| `GET /day`, `GET /day/:ymd` | The view; `due` names the day waiting to be started, `night` while it is before 04:00 |
+| `POST /day/:ymd/start` | `day:start` for a day not started and not ahead of the calendar; 409 otherwise, 422 when the command fails, each with the view |
+| `GET /day/:ymd/end` | What the End dialog shows: the records missing an end time |
+| `POST /day/:ymd/end` | `day:end` for a started day not yet ended; 409 otherwise, 422 when the command fails, each with the view |
+
+Narrative: [2026-10-03 — Start moves onto the day](2026-10-03-start-moves-onto-the-day.md).
 
 ## Reflections and notes in the day's record
 

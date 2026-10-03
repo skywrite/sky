@@ -28,6 +28,7 @@ import {
 } from './dayOrganizing.tsx'
 import { useDayPlanning } from './dayPlanning.tsx'
 import { DayRail } from './dayRail.tsx'
+import { NextDayBlock, NightStartLine, StartButton, useStartDay } from './dayStart.tsx'
 import { DaySummaryView, useSummaryRefresh } from './daySummary.tsx'
 import { DayTracking } from './dayTracking.tsx'
 import { DocumentImportNotice } from './documentImport.tsx'
@@ -69,9 +70,22 @@ export interface DayRef {
   dayRelativePath: string | null
 }
 
+/** The day waiting to be started, once the clock has moved past the notebook's day. */
+export interface DayDue {
+  ymd: string
+  /** Monday … Sunday */
+  weekday: string
+  /** `Friday, September 27, 2030` */
+  dateLabel: string
+  /** Before 04:00 on the new date: a late night, so the page only whispers */
+  night: boolean
+}
+
 export interface DayData {
   today: DayRef
   planningToday?: string
+  /** The day waiting to be started; null while the clock and the calendar agree */
+  due: DayDue | null
   /** The day on the page — today unless a past day was asked for */
   day: DayRef & { dateLabel: string }
   days: DayRef[]
@@ -1158,6 +1172,7 @@ export function DayView({
   onKept = () => {},
   onUndoKept = () => {},
   onDismissKept = () => {},
+  onStarted = () => {},
 }: {
   trackingDate?: string | null
   search?: string
@@ -1187,6 +1202,8 @@ export function DayView({
   onKept?: (kept: Kept[]) => void
   onUndoKept?: () => void
   onDismissKept?: () => void
+  /** Start was pressed and day:start finished: the shell re-reads the day and the week */
+  onStarted?: () => void
 }) {
   const fileRef = useRef<HTMLInputElement>(null)
 
@@ -1232,6 +1249,16 @@ export function DayView({
     view?.day.dayRelativePath && view.record.started && !ended && view.day.ymd < (view.planningToday ?? view.today.ymd),
   )
   const [ending, setEnding] = useState(false)
+  // The day waiting to be started shows on two pages: the open day's (a whisper at night, a block
+  // from 4 am) and its own, beside the count. Pressing Start runs day:start as the week page does.
+  const due = view?.due ?? null
+  const starting = useStartDay(() => onStarted())
+  const waitingOnOpenDay = Boolean(view && due && view.day.ymd === view.today.ymd && !view.summary)
+  const waitingOwnPage = Boolean(view && due && view.day.ymd === due.ymd && !view.record.started)
+  const todayWeekday = view ? new PlainDate(view.today.ymd).dayLong : ''
+  const startDue = () => {
+    if (due) void starting.run(due.ymd)
+  }
   const checkOff = useCheckOff(view?.day.ymd ?? '', setView, ended)
   const planning = useDayPlanning(view, setView, checkOff.dismissUndo, checkOff.undo)
   const organize = useDayOrganizing(
@@ -1263,8 +1290,14 @@ export function DayView({
   const completedTasks = doneToday.length + tasks.filter((item) => itemDone(item, checkOff.phases)).length
   const totalTasks = doneToday.length + tasks.length
 
-  const recordStatus = (ended || totalTasks > 0 || canEnd) && (
+  const recordStatus = (ended || totalTasks > 0 || canEnd || waitingOwnPage) && (
     <div className="sky-day-statusline">
+      {waitingOwnPage && (
+        <>
+          <span>Not started</span>
+          {totalTasks > 0 && <span aria-hidden="true">·</span>}
+        </>
+      )}
       {canEnd && !isToday && (
         <>
           <span className="sky-day-open">Not ended</span>
@@ -1294,6 +1327,17 @@ export function DayView({
           <Button size="compact-sm" leftSection={<LockIcon />} onClick={() => setEnding(true)}>
             End {new PlainDate(view.day.ymd).dayLong}
           </Button>
+        </>
+      )}
+      {waitingOwnPage && due && (
+        <>
+          <span aria-hidden="true">·</span>
+          <StartButton due={due} busy={starting.busy} onStart={startDue} />
+          {starting.error && (
+            <span className="sky-day-start-error" role="alert">
+              {starting.error}
+            </span>
+          )}
         </>
       )}
     </div>
@@ -1362,6 +1406,9 @@ export function DayView({
         )}
       </span>
       {!view?.summary && recordStatus}
+      {waitingOnOpenDay && due?.night && (
+        <NightStartLine today={todayWeekday} due={due} busy={starting.busy} error={starting.error} onStart={startDue} />
+      )}
       <nav className="sky-tabs">
         <Button component="a" href={ymd ? `${journalHref(ymd)}?start` : undefined} disabled={!ymd}>
           Journal
@@ -1421,6 +1468,15 @@ export function DayView({
               <DaySummaryView summary={view.summary} weekday={new PlainDate(view.day.ymd).dayLong} />
             ) : (
               <div className="sky-col">
+                {waitingOnOpenDay && due && !due.night && (
+                  <NextDayBlock
+                    today={todayWeekday}
+                    due={due}
+                    busy={starting.busy}
+                    error={starting.error}
+                    onStart={startDue}
+                  />
+                )}
                 {record && (
                   <>
                     <DayMostImportant key={view!.day.ymd} day={view!} onSaved={setView}>

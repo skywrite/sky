@@ -1,6 +1,6 @@
 ---
 created: 2026-09-06
-updated: 2026-10-01
+updated: 2026-10-03
 ---
 
 # Open work
@@ -10,6 +10,9 @@ what it trades. Written when the item is named, not when it is built.
 When an item ships, its file goes, and the subsystem's own docs carry the
 story from there.
 
+- [Days start and close by themselves](days-start-and-close-themselves.md) —
+  the first act after hours away starts the day, a tidied day closes
+  itself; agreed as the direction, parked after the buttons moved.
 - [Chat context improvements](chat-context-improvements.md) — better
   retrieval decisions, clearer activity, and smaller context where useful.
 - [Machine-bound commands move to sky-extras](commands-to-sky-extras.md) —

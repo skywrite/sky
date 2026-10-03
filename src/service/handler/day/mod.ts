@@ -16,7 +16,7 @@ import { WorkstreamError } from '#lib/workstreams/types.ts'
 import { exists } from '#shared/fs/mod.ts'
 import { listDayChats } from '#shared/models/Chat/ChatStore/mod.ts'
 import { dayAIChatsDir, dayDir, dayFile, fetchNowSync } from '#shared/nbfs/mod.ts'
-import { PlainDate } from '#universal/dates/nbdt/mod.ts'
+import { PlainDate, type ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
 import { formatDateLabel } from '../home/today.ts'
 import { buildDayEnding, type DayEnding } from './ending.ts'
 import { createDayFilesRoutes, type DayFilesOptions } from './files.ts'
@@ -38,7 +38,9 @@ export interface DayRoutesOptions {
   /** Test seam — production reads the notebook clock */
   today?: () => PlainDate
   planningToday?: () => PlainDate
-  /** Runs day:end for the End dialog; without it the end route stays off */
+  /** The notebook clock itself, for the hour past midnight; production reads it, tests script it */
+  now?: () => ZonedDateTime
+  /** Runs day:start and day:end for the page's buttons; without it the two routes stay off */
   commands?: DayCommands
   /** Test seam — production reads about-me.md */
   ownerNames?: string[]
@@ -52,11 +54,31 @@ export interface DayRoutesOptions {
   mostImportant?: MostImportantAI
 }
 
-/** The day commands the page runs in-process. */
+/** The day commands the pages run in-process — each exactly as the terminal runs it. */
 export interface DayCommands {
-  /** day:end, run the moment End is pressed — exactly as the terminal runs it */
+  /** day:start for the day waiting to begin, run the moment Start is pressed */
+  startDay: (day: PlainDate) => Promise<void>
+  /** day:end, run the moment End is pressed */
   endDay: (day: PlainDate) => Promise<void>
 }
+
+/**
+ * The day waiting to be started: the calendar's date, once the notebook clock
+ * has run past 24:00 on the day still open. Until the next start, the open day
+ * keeps everything that files — so the pages say so, and offer the start.
+ */
+export interface DayDue {
+  ymd: string
+  /** Monday … Sunday */
+  weekday: string
+  /** `Friday, September 27, 2030` */
+  dateLabel: string
+  /** Before 04:00 on the new date: a late night, not a morning, so the page only whispers */
+  night: boolean
+}
+
+/** The hour the night ends — the same boundary a day with no start is assumed to begin at. */
+const NIGHT_ENDS = 4
 
 /** A day in the sidebar: what to call it, and the short stamp beside it. */
 export interface DayRef {
@@ -84,6 +106,8 @@ export interface DayView {
   today: DayRef
   /** Calendar date used by task date pickers and the scheduling boundary. */
   planningToday?: string
+  /** The day waiting to be started; null while the clock and the calendar agree */
+  due: DayDue | null
   /** The day on the page — today unless a past day was asked for */
   day: DayRef & { dateLabel: string }
   /** Today and the six days before it, newest first */
@@ -107,28 +131,38 @@ async function dayRef(day: PlainDate, offset: number, options: DayRoutesOptions)
   return { ymd: day.ymd, label, meta: `${day.dayShort} ${day.ymd.slice(5)}`, dayRelativePath }
 }
 
+/** The notebook clock: the last started day, with hours past 24 until the next start. Null when no day was ever started. */
+function readClock(options: DayRoutesOptions): ZonedDateTime | null {
+  try {
+    return (options.now ?? (() => fetchNowSync({ timeDir: options.timeDir })))()
+  } catch {
+    return null
+  }
+}
+
+function notebookToday(options: DayRoutesOptions): PlainDate {
+  if (options.today) return options.today()
+  return readClock(options)?.plainDateTime.plainDate ?? PlainDate.today()
+}
+
 function planningToday(options: DayRoutesOptions): PlainDate {
   if (options.planningToday) return options.planningToday()
-  if (options.today) return options.today()
-  try {
-    return planningDate(fetchNowSync({ timeDir: options.timeDir }))
-  } catch {
-    return PlainDate.today()
-  }
+  if (options.today && !options.now) return options.today()
+  const now = readClock(options)
+  return now ? planningDate(now) : PlainDate.today()
+}
+
+/** The calendar day waiting to be started, when the clock has moved past the notebook's day. */
+function dueDay(options: DayRoutesOptions, today: PlainDate): DayDue | null {
+  const due = planningToday(options)
+  if (PlainDate.compare(due, today) <= 0) return null
+  const hour = Number(readClock(options)?.time.split(':')[0] ?? NIGHT_ENDS)
+  return { ymd: due.ymd, weekday: due.dayLong, dateLabel: formatDateLabel(due), night: hour % 24 < NIGHT_ENDS }
 }
 
 /** The view of one day: today by default, or the day named by `ymd`. */
 export async function buildDayView(options: DayRoutesOptions, ymd?: string): Promise<DayView> {
-  const today = (
-    options.today ??
-    (() => {
-      try {
-        return fetchNowSync({ timeDir: options.timeDir }).plainDateTime.plainDate
-      } catch {
-        return PlainDate.today()
-      }
-    })
-  )()
+  const today = notebookToday(options)
   const day = ymd ? new PlainDate(ymd) : today
   const days = await Promise.all(
     Array.from({ length: DAYS_BACK + 1 }, (_, offset) => dayRef(today.addDays(-offset), offset, options)),
@@ -171,6 +205,7 @@ export async function buildDayView(options: DayRoutesOptions, ymd?: string): Pro
   return {
     today: days[0],
     planningToday: planningToday(options).ymd,
+    due: dueDay(options, today),
     day: { ...ref, dateLabel: formatDateLabel(day) },
     days,
     section: null,
@@ -217,6 +252,21 @@ export function createDayRoutes(options: DayRoutesOptions): Hono {
   })
   const commands = options.commands
   if (commands) {
+    // Starting the day that is waiting: day:start the moment Start is pressed, as the week page runs it.
+    app.post('/:ymd/start', async (c) => {
+      const ymd = c.req.param('ymd')
+      if (!isDay(ymd)) return c.json({ error: `not a day: ${ymd}` }, 404)
+      const view = await buildDayView(options, ymd)
+      if (view.record.started) return c.json({ error: 'This day has already started.', view }, 409)
+      if (ymd > planningToday(options).ymd)
+        return c.json({ error: `${new PlainDate(ymd).dayLong} has not come yet.`, view }, 409)
+      try {
+        await commands.startDay(new PlainDate(ymd))
+      } catch (error) {
+        return c.json({ error: (error as Error).message, view: await buildDayView(options, ymd) }, 422)
+      }
+      return c.json(await buildDayView(options, ymd))
+    })
     app.post('/:ymd/end', async (c) => {
       const ymd = c.req.param('ymd')
       if (!isDay(ymd)) return c.json({ error: `not a day: ${ymd}` }, 404)

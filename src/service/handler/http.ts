@@ -192,7 +192,8 @@ export function createHttpApp(options: HttpHandlerOptions): Hono {
         aboutMePath: chat.aboutMePath,
         today: options.now ? () => options.now!().plainDateTime.plainDate : undefined,
         planningToday: options.now ? () => planningDate(options.now!()) : undefined,
-        // End on the day runs the same in-process day:end the week page's buttons did
+        now: options.now,
+        // Start and End on the day pages run the same in-process day:start and day:end the week page's buttons do
         commands: week,
         files: { userDataDir, timeDir: chat.timeDir, markdownBaseDir, trashDir },
         schedule: createDayScheduleHost({

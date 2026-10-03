@@ -8,7 +8,7 @@ import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import { AuditionMain } from './audition.tsx'
 import { AutomationDetail, AutomationsMain, AutomationsSideNav, NewAutomation } from './automations.tsx'
 import { ChatMain, threadTitle, useChat } from './chat.tsx'
-import { ClockAmbient, ClockMain, useClockNow } from './clock.tsx'
+import { ClockAmbient, ClockMain, clockChanged, useClockNow } from './clock.tsx'
 import { DayView, useDay, useThreads } from './day.tsx'
 import type { ChatCloseNotice } from './dayChatClose.tsx'
 import { DayFilesMain, filesRouteOf, shortLabel } from './dayFiles.tsx'
@@ -129,9 +129,12 @@ function Canvas() {
   const threads = useThreads()
   const { imports, started: importStarted } = useImports()
   const documentNotices = useDocumentNotices(imports)
+  // A day started from its page moves today: the day is read again even on the same path.
+  const [dayStarts, setDayStarts] = useState(0)
   // A saved/ended chat or a finished import changes the files behind the day's record.
   const dayRefreshKey = [
     path,
+    String(dayStarts),
     ...threads.map((thread) => `${thread.id}:${thread.saved ?? ''}`).sort(),
     ...imports
       .map(
@@ -144,6 +147,12 @@ function Canvas() {
   const clock = useClockNow()
   // This week, for the sidebar: the day waiting to start, and whether next week has a plan.
   const { view: thisWeek, reload: reloadWeek } = useWeek('')
+  // A day started or ended from a page: the week's dot, the clock, and today all follow.
+  const dayChanged = () => {
+    setDayStarts((count) => count + 1)
+    reloadWeek()
+    clockChanged()
+  }
   const [chatNotices, setChatNotices] = useState<ChatCloseNotice[]>([])
   const dismissChatNotice = useCallback((id: string) => setChatNotices((prev) => prev.filter((n) => n.id !== id)), [])
   const importRows = imports.filter((j) => j.state !== 'cancelled')
@@ -551,7 +560,7 @@ function Canvas() {
             id={weekId}
             onOpenDay={(ymd, today) => navigate(today ? '/' : `/${ymd}`)}
             onOpenWeek={(id) => navigate(weekHref(id))}
-            onChanged={reloadWeek}
+            onChanged={dayChanged}
           />
         ) : isClock ? (
           <ClockMain back={{ label: 'Today', onClick: () => navigate('/') }} snap={clock} />
@@ -645,6 +654,10 @@ function Canvas() {
             onKept={setKept}
             onUndoKept={undoKept}
             onDismissKept={dismissKept}
+            onStarted={() => {
+              dayChanged()
+              navigate('/')
+            }}
           />
         )}
       </SearchWorkspace>

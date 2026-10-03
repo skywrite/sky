@@ -27,7 +27,14 @@ export type { ClockReading, ClockSnapshot, ConvertAnswer } from '../../clock/mod
 // What the service knows about the clocks
 // -----------------------------------------------------------------------------
 
-/** The snapshot, refreshed on focus and every few minutes. */
+/** Fired on the window when a page starts or ends a day: the notebook clock has moved. */
+const CLOCK_CHANGED = 'sky-clock-changed'
+
+export function clockChanged(): void {
+  window.dispatchEvent(new Event(CLOCK_CHANGED))
+}
+
+/** The snapshot, refreshed on focus, every few minutes, and when a page moves the clock. */
 export function useClockNow(): ClockSnapshot | null {
   const [snap, setSnap] = useState<ClockSnapshot | null>(null)
   useEffect(() => {
@@ -39,11 +46,13 @@ export function useClockNow(): ClockSnapshot | null {
         .catch(() => {})
     void read()
     window.addEventListener('focus', read)
+    window.addEventListener(CLOCK_CHANGED, read)
     const timer = setInterval(read, 5 * 60_000)
     return () => {
       alive = false
       clearInterval(timer)
       window.removeEventListener('focus', read)
+      window.removeEventListener(CLOCK_CHANGED, read)
     }
   }, [])
   return snap

@@ -43,10 +43,7 @@ import {
 } from './queue.ts'
 
 /** The commands the pages can run; production runs them in-process, tests script them. */
-export interface WeekCommands extends DayCommands {
-  /** day:start for the day waiting to begin */
-  startDay: (day: PlainDate) => Promise<void>
-}
+export type WeekCommands = DayCommands
 
 export interface WeekRoutesOptions {
   /** The notebook root that file paths are shown relative to */

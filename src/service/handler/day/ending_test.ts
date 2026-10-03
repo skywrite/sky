@@ -98,6 +98,7 @@ test('end route - runs day:end when End is pressed and answers with the ended da
   const app = createDayRoutes({
     ...options,
     commands: {
+      startDay: async () => {},
       endDay: async (day: PlainDate) => {
         calls.push(day.ymd)
         if (fail) throw new Error('day:end did not finish')

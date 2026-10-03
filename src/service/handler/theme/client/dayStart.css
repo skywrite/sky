@@ -1,0 +1,61 @@
+/* Starting the day that is waiting: the morning block, the late-night line, and Start beside a count. */
+
+/* The block at the top of the open day's page: the calendar's date, and the page's one primary button. */
+.sky-day-start {
+  display: flex;
+  align-items: center;
+  gap: var(--sky-space-6);
+  padding: 22px var(--sky-space-7);
+  border-radius: var(--sky-card-radius);
+  background: var(--sky-side);
+}
+
+[data-mantine-color-scheme='dark'] .sky-day-start {
+  background: var(--mantine-color-dark-6);
+}
+
+.sky-day-start-words {
+  flex: 1;
+  min-width: 0;
+}
+
+.sky-day-start-lead {
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.35;
+  color: var(--sky-text);
+}
+
+.sky-day-start-sub {
+  margin-top: 3px;
+  font-size: 16px;
+  line-height: 1.5;
+  color: var(--sky-text-2);
+  text-wrap: balance;
+}
+
+.sky-day-start .sky-button {
+  flex: none;
+}
+
+/* The reason a start did not land, under the words or at the end of the line. */
+.sky-day-start-error {
+  margin-top: 6px;
+  font-size: 15px;
+  color: var(--sky-amber);
+}
+
+.sky-day-statusline .sky-day-start-error {
+  margin-top: 0;
+  font-size: inherit;
+}
+
+@media (max-width: 900px) {
+  .sky-day-start {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--sky-space-4);
+    padding: 18px var(--sky-space-5);
+  }
+}

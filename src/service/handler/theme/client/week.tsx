@@ -2,6 +2,7 @@ import { Button } from '@mantine/core'
 import { Fragment, type KeyboardEvent, useCallback, useEffect, useState } from 'react'
 import { Block, clock, Cross } from './day.tsx'
 import { EndDayDialog, LockIcon } from './dayEnd.tsx'
+import { SunIcon } from './dayStart.tsx'
 import { fileHref } from './explorer.tsx'
 
 /**
@@ -272,7 +273,12 @@ function DaysBlock({
           {d.state === 'due' && (
             <>
               <span className="sky-wstate">not started yet</span>
-              <Button size="sm" variant="primary" loading={busy === `start:${d.ymd}`} onClick={() => onStart(d)}>
+              <Button
+                size="sm"
+                leftSection={<SunIcon />}
+                loading={busy === `start:${d.ymd}`}
+                onClick={() => onStart(d)}
+              >
                 Start {d.weekday}
               </Button>
             </>
