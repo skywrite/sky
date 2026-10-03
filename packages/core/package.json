@@ -14,6 +14,7 @@
     "./prompts": "./src/prompts.ts",
     "./config": "./src/config.ts",
     "./secrets": "./src/secrets.ts",
+    "./credentials": "./src/credentials.ts",
     "./nbfs": "./src/nbfs.ts",
     "./shell": "./src/shell.ts",
     "./browser": "./src/browser.ts",

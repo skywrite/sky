@@ -167,6 +167,15 @@ const values = await credentials.readFields(item.ref, [{ id: 'password' }])
 Constructors accept fake stores/SDK clients so tests never unlock a vault or read
 real credentials. The public factories are the only connection entry points.
 
+A batch integration with a persistent browser profile of its own signs back in
+with the login the person keeps for it, found by `batchLogin.ts`: the pick
+remembered in the bindings file, then the Login item in a connected 1Password
+account whose website names the integration's origin (its host, else a parent
+domain), then a `login` entry from the legacy Keychain store under the
+integration's category. See
+[stored logins](../../browser/docs/README.md#stored-logins). Settings routes and
+the private worker are unchanged by it.
+
 ## Passkeys and browser sign-in
 
 `PasskeyAuthenticator` is a separate registration/authentication contract, using

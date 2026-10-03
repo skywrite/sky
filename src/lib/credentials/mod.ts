@@ -1,6 +1,8 @@
 export { CredentialService, matchesWebsite } from './CredentialService.ts'
 export type { CredentialSearch } from './CredentialService.ts'
 export { CredentialBindings } from './bindings.ts'
+export { bindBatchLogin, findBatchLogin, pickBatchLogin, unbindBatchLogin } from './batchLogin.ts'
+export type { BatchLogin, BatchLoginChoice, BatchLoginDeps, BatchLoginRequest } from './batchLogin.ts'
 export { connectKeychain, connectOnePassword } from './connect.ts'
 export { CredentialError } from './errors.ts'
 export type { CredentialErrorCode } from './errors.ts'

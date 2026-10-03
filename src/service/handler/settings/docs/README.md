@@ -207,7 +207,10 @@ The entire former `/settings/_api/credentials` API returns 410, including secret
 reads, OTP, inspection and generic mutations. Keeping a reveal endpoint while
 removing its UI would preserve the original exposure.
 
-Saved setup is **not authorization to use a credential or an authenticated browser**.
+Saved setup is **not authorization to use a credential or an authenticated browser**,
+with one exception: a batch integration with a dedicated browser profile may read,
+without a dialog, the Login item whose saved website names its own origin (see
+[stored logins](../../../../lib/browser/docs/README.md#stored-logins)).
 The page reports native approval availability for configured accounts on macOS;
 there is no API or setting that approves a task or drives the browser. The
 [private browser worker](../../../../lib/browser/docs/README.md#credential-backed-tasks)

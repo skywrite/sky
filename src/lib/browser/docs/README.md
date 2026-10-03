@@ -324,11 +324,67 @@ to type; the prompt says so and `wait_for_person` is how Sky asks.
 ## The batch helper beside it
 
 `persistentContext.ts` is the older, batch-oriented helper: launch a
-signed-in profile, run a callback, close. The MyFitnessPal fetch uses it.
-LinkedIn import uses the private worker above.
+signed-in profile, run a callback, close. External batch commands that
+sync from a site with no open API use it. LinkedIn import uses the private
+worker above.
+
+### Stored logins
+
+`storedLogin.ts` signs such a profile back in when its session has lapsed,
+with a login the person keeps for that one integration.
+`lib/credentials/batchLogin.ts` finds it wherever they keep it, in this
+order: the pick remembered for the purpose; the Login item in a connected
+password manager whose saved website names the integration's origin; the
+`login` entry under the integration's own category in Sky's keychain
+(`sky secrets:set atlas main`), read through the same background
+path as every API token Sky holds. A website names the origin when it is
+the same host, or failing that a parent domain of it, with or without a
+scheme: people save `atlas.example`, and the origin is fixed in the
+integration's code, so the looser match only chooses among the person's
+own items. Never-fill entries, excluded vaults, sibling subdomains and
+lookalike suffixes stay out. A lone match is used and remembered; several
+are the person's to pick once, in the terminal. A manager that is locked
+or waiting for approval is reported, and the keychain entry stands in when
+there is one.
+
+Connecting the account under Settings → Browser automation, or saving the
+keychain entry, is the grant, so a 07:00 automation can use the login
+with no one at the machine. This is the owner's ruling of 2026-09-30 for
+a batch integration's own origin; the private worker's per-use native
+approval and exact-origin rule stay where they are, for tasks a model
+drives. The rest of the worker's boundary comes along. The site, its login
+page and its controls are named in the integration's code, never by a
+model. The values travel as sensitive values from the manager or the
+keychain to Playwright element handles and nowhere else. The same network
+guard keeps them on the login's origin and blocks any address that would
+carry them, such as a GET form the page's script failed to take over. The
+same redactor covers every line said about the attempt. A bot wall's
+invisible check is waited for through the hidden token it fills; a check
+that wants a person, a verification code, or a form other than the one
+expected ends the attempt as `needs_person`, and the integration's own
+command opens the window for the person. The session counts only once the
+caller's own check says so, a token read rather than a submitted form.
+Only a batch feature with a dedicated profile may use it: never Sky's
+shared browser, never the private task worker.
 
 ## Verified
 
+- 2026-10-02, the login lookup with fake providers and temp state: a lone
+  matching item used and remembered; a website saved as the root domain
+  taken, with a sibling subdomain, a lookalike, a suffix trick and a
+  never-fill entry refused; exact-host items preferred over the root
+  domain; a remembered pick read without a search; two matches offered to
+  the person; no match falling back to the keychain; a locked manager
+  falling back or reported; a manager that never answers given up on; a
+  vanished pick forgotten and replaced.
+- 2026-09-29, a stored login on a synthetic login page, an email and a
+  password in a GET form the page's script submits behind an invisible bot
+  check, headless: signed in once and proved the session by a token
+  read; a check that never passes stopped before anything was sent, the
+  login left in the fields for the person; a wrong password reported as
+  refused after one try; a code step handed to the person; a GET form
+  without its script blocked at the address, no request leaving with the
+  login and no line of the log carrying it.
 - 2026-09-27, Playwright's Chromium as Sky's browser: browserscan.net
   Normal, `navigator.webdriver` false, real pixel ratio; downloads and the
   self-closing-popup download land on the HTTP driver.
@@ -364,6 +420,10 @@ LinkedIn import uses the private worker above.
 
 ## Notes
 
+- 2026-09-30: a batch profile's login comes from a connected password
+  manager first, the keychain second.
+- 2026-09-29: stored logins for batch profiles. The first integration's own
+  story lives with its commands, outside this repo.
 - 2026-09-25: the Jev driver behind the Experimental switch. See
   [2026-09-25-jev-picks-the-moves](2026-09-25-jev-picks-the-moves.md).
 - 2026-09-25: first version — the command, the client, the runner. See
