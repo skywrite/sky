@@ -198,15 +198,11 @@ export async function withPersistentBrowser<T>(
     // Strip the automation fingerprint. The point of this helper is to look
     // like a real browser to the site, and bot walls (Cloudflare Turnstile on
     // a login form) reject the tells Playwright adds by default: the
-    // `--enable-automation` switch and `navigator.webdriver`.
+    // `--enable-automation` switch and `navigator.webdriver`. Nothing is
+    // masked on top: a redefined `navigator.webdriver` is itself a tell (see
+    // docs/README.md, "Looking like a normal browser").
     ignoreDefaultArgs: ['--enable-automation'],
     args: ['--disable-blink-features=AutomationControlled'],
-  })
-
-  // Belt-and-suspenders: mask webdriver before any page script runs, for tells
-  // the launch flags don't fully cover.
-  await context.addInitScript(() => {
-    Object.defineProperty(navigator, 'webdriver', { get: () => undefined })
   })
 
   try {
