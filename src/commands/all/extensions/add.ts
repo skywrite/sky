@@ -25,7 +25,7 @@ export default class ExtensionsAddTask extends Command {
       'dependencies, and rebuilds the command manifest. The extension’s',
       'commands answer at once, each under its own name as prefix.',
     ],
-    usage: ['sky extensions:add ~/code/sky-extensions/hubspot'],
+    usage: ['sky extensions:add ~/code/sky-extensions/extensions/skywrite/hubspot'],
     params,
   }
 
