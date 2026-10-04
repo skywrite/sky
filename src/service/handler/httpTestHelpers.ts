@@ -34,6 +34,7 @@ export function createTestHttpApp(
   markdownDirs: string[],
   options: {
     store?: Store
+    yoga?: YogaServerInstance<object, object>
     markdownStore?: MarkdownStore | null
     now?: () => ZonedDateTime
     chat?: ChatRoutesOptions
@@ -63,7 +64,7 @@ export function createTestHttpApp(
   const markdownBaseDir = path.join(markdownDirs[0]!, '..')
   return createHttpApp({
     store: options.store ?? new Store(),
-    yoga: createTestYoga(),
+    yoga: options.yoga ?? createTestYoga(),
     markdownStore: options.markdownStore ?? null,
     markdownBaseDir,
     markdownDirs,
