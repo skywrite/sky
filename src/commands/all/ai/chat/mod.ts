@@ -15,6 +15,7 @@ import {
   sessionKeyToolNames,
 } from '#commands/lib/chat/notebookTools.ts'
 import { contextProducers } from '#commands/lib/chat/producers.ts'
+import { CHAT_READING } from '#commands/lib/chat/readingDefaults.ts'
 import { renderChatSystemPrompt } from '#commands/lib/chat/systemPrompt.ts'
 import { createWebTools } from '#commands/lib/chat/webTools.ts'
 import { Command, CommandResult, Flag, whenNBTime } from '#commands/mod.ts'
@@ -70,13 +71,13 @@ const params = {
   days: Flag.number('Number of days to look back for context', {
     long: 'ai-context-days',
     short: 'd',
-    default: () => 7,
+    default: () => CHAT_READING.days,
   }),
   maxContext: Flag.number(
     'Token ceiling for the assembled document context — commas allowed (e.g. 150,000); 0 keeps the notebook closed',
     {
       long: 'ai-max-context',
-      default: () => 300_000,
+      default: () => CHAT_READING.contextTokens,
       parse: (raw) => {
         const n = Number(String(raw).replace(/,/g, ''))
         if (!Number.isInteger(n) || n < 0) {
@@ -92,7 +93,7 @@ const params = {
   ),
   summaryBaseline: Flag.bool(
     'Lean baseline: days before yesterday seed from summary.md (else day.md alone); message bodies stay out of today+yesterday',
-    { long: 'ai-summary-baseline', default: true },
+    { long: 'ai-summary-baseline', default: CHAT_READING.summaryBaseline },
   ),
   inspectInitialContext: Flag.bool('List initial context file paths and exit', {
     long: 'ai-inspect-context',

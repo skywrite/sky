@@ -1,5 +1,5 @@
 import { assert, test } from '#test'
-import { toolOutputSink } from './createSession.ts'
+import { toolOutputSink, webReading } from './createSession.ts'
 import type { ToolOutputEvent } from './mod.ts'
 
 const MISSION = 'google:agent'
@@ -84,5 +84,23 @@ test({ name: 'toolOutputSink - without a summarizer the events are the three as 
     should: 'report start, lines, end, nothing more',
     actual: events.map((e) => e.type),
     expected: ['tool-started', 'tool-line', 'tool-line', 'tool-finished'],
+  })
+})
+
+test({ name: 'webReading - a new web thread reads with the shared defaults, lean baseline included' }, () => {
+  assert({
+    given: 'no stored budget and a model with no declared window',
+    should: 'sweep seven days under the 300k budget with the lean baseline on',
+    actual: webReading(undefined, undefined),
+    expected: { days: 7, contextTokens: 300_000, summaryBaseline: true },
+  })
+})
+
+test({ name: 'webReading - a stored budget past the model window drops to the stop that fits' }, () => {
+  assert({
+    given: 'a 300k preference on a model that serves 131,072 tokens a request',
+    should: 'fit the budget to the window and keep the lean baseline',
+    actual: webReading(300_000, 131_072),
+    expected: { days: 7, contextTokens: 50_000, summaryBaseline: true },
   })
 })

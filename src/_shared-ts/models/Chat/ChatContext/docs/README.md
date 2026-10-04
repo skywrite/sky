@@ -1,6 +1,6 @@
 ---
 created: 2026-08-15
-updated: 2026-09-22
+updated: 2026-10-04
 ---
 
 # ChatContext admission — one scorer, question-conditioned policy
@@ -39,7 +39,8 @@ the question's shape:
   in mod.ts.
 
 The candidate pool is policy too. Under the lean baseline
-(`summaryBaseline`, the CLI default) days before yesterday seed from their
+(`summaryBaseline`, every host's default — shared in
+`commands/lib/chat/readingDefaults.ts`) days before yesterday seed from their
 summary.md — or the day.md ledger alone — and today and yesterday seed
 whole **minus message-capture bodies**: day.md ledgers every capture at a
 line each, and retrieval fetches any body a conversation asks about. See

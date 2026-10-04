@@ -22,6 +22,7 @@ import {
   withoutBlankStrings,
 } from '#commands/lib/chat/notebookTools.ts'
 import { contextProducers } from '#commands/lib/chat/producers.ts'
+import { CHAT_READING } from '#commands/lib/chat/readingDefaults.ts'
 import { renderChatSystemPrompt } from '#commands/lib/chat/systemPrompt.ts'
 import { createWebTools } from '#commands/lib/chat/webTools.ts'
 import CommandContext from '#commands/lib/core/CommandContext.ts'
@@ -81,8 +82,21 @@ import { readSession } from './readSession.ts'
 import { chatSourceLinks, sourceChatHref } from './sourceLinks.ts'
 import { restoreToolRuns } from './toolRuns.ts'
 
-/** ai:chat's defaults — one filing convention across hosts. */
-const WEB_CHAT = { days: 7, contextTokens: 300_000 }
+/**
+ * What a new web thread reads: the defaults every host shares, with the
+ * budget fitted to the window of the model it rides. The stored preference,
+ * when there is one, is the person's budget choice.
+ */
+export function webReading(
+  storedBudget: number | undefined,
+  contextWindow: number | undefined,
+): { days: number; contextTokens: number; summaryBaseline: boolean } {
+  return {
+    days: CHAT_READING.days,
+    contextTokens: fitBudget(storedBudget ?? CHAT_READING.contextTokens, contextWindow),
+    summaryBaseline: CHAT_READING.summaryBaseline,
+  }
+}
 
 /**
  * The experimental preflight, when the switch is on: Jev judges whether a
@@ -272,7 +286,7 @@ export function createChatSettingsHost(): ChatSettingsHost {
     get defaultModel() {
       return roleProfile('reasoning')
     },
-    defaultContextTokens: WEB_CHAT.contextTokens,
+    defaultContextTokens: CHAT_READING.contextTokens,
     choices: modelChoices,
     // A logged model id back to a profile name: the thread's own when it is that model, else the first that is.
     profileFor: (model, current) => {
@@ -343,10 +357,9 @@ export function createChatHost(config: typeof ConfigModule, env: Record<string, 
     return new ChatSession({
       today,
       startTime,
-      days: WEB_CHAT.days,
+      ...webReading(prefs.contextTokens, profile.contextWindow),
       baseDir: config.DIR_BASE,
       timeDir: config.DIR_TIME,
-      contextTokens: fitBudget(prefs.contextTokens ?? WEB_CHAT.contextTokens, profile.contextWindow),
       preflight: contextPreflightFor(context.secrets),
       resume: restore?.resume ?? null,
       // A continued chat seeds from its resume; a snapshot or a branch from the state it was given.
@@ -360,7 +373,7 @@ export function createChatHost(config: typeof ConfigModule, env: Record<string, 
         effort: prefs.effort && prefs.effort !== 'default' ? prefs.effort : (effectiveEffort(profile) ?? undefined),
       },
       producers: contextProducers(tasks),
-      ambient: await gatherContext(today, config.DIR_TIME, config.DIR_DATA, WEB_CHAT.days, {
+      ambient: await gatherContext(today, config.DIR_TIME, config.DIR_DATA, CHAT_READING.days, {
         secrets: context.secrets,
         now: { date: clock.notebookDate, time: clock.notebookTime },
       }),
