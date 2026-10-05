@@ -47,6 +47,7 @@ import {
   resolveProfile,
   roleProfile,
 } from '#shared/ai/models.ts'
+import { ratioFor } from '#shared/ai/tokenRatio.ts'
 import { createTypeSafeClient } from '#shared/ai/typesafe/client.ts'
 import type * as ConfigModule from '#shared/config.ts'
 import { readSkyConfigFile } from '#shared/config/loader.ts'
@@ -90,10 +91,11 @@ import { restoreToolRuns } from './toolRuns.ts'
 export function webReading(
   storedBudget: number | undefined,
   contextWindow: number | undefined,
+  tokenRatio?: number,
 ): { days: number; contextTokens: number; summaryBaseline: boolean } {
   return {
     days: CHAT_READING.days,
-    contextTokens: fitBudget(storedBudget ?? CHAT_READING.contextTokens, contextWindow),
+    contextTokens: fitBudget(storedBudget ?? CHAT_READING.contextTokens, contextWindow, tokenRatio),
     summaryBaseline: CHAT_READING.summaryBaseline,
   }
 }
@@ -264,6 +266,7 @@ export function modelChoices(): ModelChoice[] {
     provider: PROVIDER_LABEL[profile.provider] ?? profile.provider,
     roles: rolesBy.get(name) ?? [],
     contextWindow: profile.contextWindow,
+    tokenRatio: ratioFor(profile.model),
     effort: { default: effectiveEffort(profile), levels: effortLevels(profile) },
     builtin: name in PROFILES,
     group: JSON.stringify([
@@ -304,6 +307,7 @@ export function createChatSettingsHost(): ChatSettingsHost {
           effort: effort === 'default' ? (effectiveEffort(profile) ?? undefined) : effort,
         },
         contextWindow: profile.contextWindow,
+        tokenRatio: ratioFor(profile.model),
       }
     },
   }
@@ -359,7 +363,7 @@ export function createChatHost(config: typeof ConfigModule, env: Record<string, 
       startTime,
       // The thread id keys OpenAI's prompt cache for the conversation's life, restarts included.
       cacheKey: id,
-      ...webReading(prefs.contextTokens, profile.contextWindow),
+      ...webReading(prefs.contextTokens, profile.contextWindow, ratioFor(profile.model)),
       baseDir: config.DIR_BASE,
       timeDir: config.DIR_TIME,
       preflight: contextPreflightFor(context.secrets),

@@ -19,6 +19,7 @@ import { Arg, Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { logAIError } from '#shared/ai/errorLog.ts'
 import { getProfile, resolveProfile, roleProfile } from '#shared/ai/models.ts'
+import { ratioFor } from '#shared/ai/tokenRatio.ts'
 import { readTextFile } from '#shared/fs/mod.ts'
 import ChatEngine from '#shared/models/Chat/ChatEngine/mod.ts'
 import { researchContext } from '#shared/models/Chat/researchContext.ts'
@@ -102,7 +103,7 @@ export default class AiResearchTask extends Command {
     const { question, purpose } = args
     const parent = researchContext.getStore()
     const profile = getProfile(roleProfile('balanced'))
-    const budget = researchBudget(parent?.contextTokens, profile.contextWindow)
+    const budget = researchBudget(parent?.contextTokens, profile.contextWindow, ratioFor(profile.model))
     if (budget.readingTokens === 0) return CommandResult.fail('Notebook research is disabled by the reading budget.')
 
     const [template, schema] = await Promise.all([readPromptFile(PROMPT_FILE), readTextFile(SCHEMA_FILE)])

@@ -283,7 +283,10 @@ a person can see and touch:
   before the object were rewritten into it. The file's YAML header names
   no provider or model any more; the per-turn record is the only place
   the model lives ([2026-09-16](2026-09-16-every-turn-keeps-its-settings.md)).
-  Context stops are Off, 25k, 50k, 100k, 300k, 500k, 750k. A model whose host
+  Context stops are Off, 25k, 50k, 100k, 300k, 500k, 750k. The stop a window
+  reaches is figured with the model's learned real-per-estimated token
+  ratio (about 1.78 on Claude, so a 1M window ends at 500k; see the model
+  registry's notes). A model whose host
   serves less than the stops ask (Cerebras serves Qwen at 131,072 tokens a
   request) ends the slider at the last stop that fits, 50k there; the
   stops past it stay drawn, grayed, and a budget above them drops to that

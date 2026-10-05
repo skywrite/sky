@@ -44,6 +44,22 @@ within the session. `RebuildReport` carries `activityMarkdown` (the segment)
 and `additionsMarkdown`; the log records `added`. A request refit shrinks
 the segment only.
 
+## Real tokens
+
+Every number above is an estimate at four characters a token. The
+providers count differently: 1.78 real tokens per estimated one on Claude
+Opus 5, Opus 5.5 and Fable 5.1 (measured over the 30 days), about 1.25 on
+Haiku 4.5, 1.12 on GPT-6 Astra. A "300k" budget was 535k on the wire and a
+500k one sat at the 1M window. Neither tokenizer is published, so the ratio
+is learned: a meter on every resolved model compares each request's
+serialized size with the input the provider reported
+(`_shared-ts/ai/tokenRatio.ts`, seeds and the moving average in
+`universal/ai/tokenRatio.ts`, the record in the state folder). The window
+fit and the slider's reach use the model's ratio, so a 1M Claude window
+ends the slider at 500k. Each turn records its first request as the
+provider counted it (`requestTokens`), and the Context panel shows it
+beside the estimate.
+
 ## Rejected
 
 - **Raising the relative floor.** Any fraction of the top score still moves

@@ -222,6 +222,8 @@ export interface ModelChoice {
   roles: string[]
   /** Tokens the host serves in one request; absent when the model takes any budget */
   contextWindow?: number
+  /** Real tokens per estimated one for this model, learned from its calls — the window fit and the slider's reach use it */
+  tokenRatio?: number
   effort?: { default: Effort | null; levels: readonly Effort[] }
   /** Same model and non-effort options: built-in effort variants share one picker entry. */
   group?: string
@@ -255,6 +257,8 @@ export interface ChatSettingsHost {
     model: ResolvedModel
     profile: ModelProfile
     contextWindow?: number
+    /** Real tokens per estimated one for the model, learned from its calls */
+    tokenRatio?: number
   }
   /**
    * The profile a model id answers to, for a turn read back from a log —
@@ -901,6 +905,9 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
   // The window the host serves for a profile, as the picker lists it; undefined takes any budget.
   const windowOf = (host: ChatSettingsHost, profile: string) =>
     host.choices().find((choice) => choice.name === profile)?.contextWindow
+  /** The model's learned real-per-estimated token ratio, for the budget fit; undefined uses the fixed slack. */
+  const ratioOf = (host: ChatSettingsHost, profile: string) =>
+    host.choices().find((choice) => choice.name === profile)?.tokenRatio
 
   // A thread's tuning: the live thread's own, else what was chosen for it, else the host's defaults.
   const settingsOf = (id: string): ThreadSettings | null => {
@@ -918,7 +925,7 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
       effort: thread?.effort ?? prefs?.effort ?? 'default',
       contextTokens:
         thread?.session.contextTokens ??
-        fitBudget(prefs?.contextTokens ?? host.defaultContextTokens, windowOf(host, current)),
+        fitBudget(prefs?.contextTokens ?? host.defaultContextTokens, windowOf(host, current), ratioOf(host, current)),
       kept: thread ? keptOf(thread) : null,
       documents: thread?.context?.collectionSize ?? null,
       saves: thread?.saves ?? prefs?.saves ?? true,
@@ -1010,7 +1017,7 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
     } catch (error) {
       return c.json({ message: (error as Error).message }, 400)
     }
-    if (fitBudget(body.contextTokens, chosen.contextWindow) !== body.contextTokens) {
+    if (fitBudget(body.contextTokens, chosen.contextWindow, chosen.tokenRatio) !== body.contextTokens) {
       return c.json({ message: 'The reading budget exceeds this model’s limit. Choose a smaller budget.' }, 400)
     }
     const prefs = { profile: body.profile, effort, contextTokens: body.contextTokens, saves: body.saves }
@@ -1195,7 +1202,7 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
     const effort = isEffortOverride(body.effort) ? body.effort : 'default'
     try {
       const chosen = host.resolve(body.profile, effort)
-      if (fitBudget(body.contextTokens, chosen.contextWindow) !== body.contextTokens) {
+      if (fitBudget(body.contextTokens, chosen.contextWindow, chosen.tokenRatio) !== body.contextTokens) {
         return c.json({ message: 'The reading budget exceeds this model’s limit.' }, 400)
       }
     } catch (error) {
@@ -1622,8 +1629,9 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
     // now, else the thread's. A model with a smaller window lowers a budget
     // that no longer fits, whether or not this change names one.
     const window = chosen ? chosen.contextWindow : windowOf(host, ridingWith)
+    const ratio = chosen ? chosen.tokenRatio : ratioOf(host, ridingWith)
     const standing = thread?.session.contextTokens ?? held?.contextTokens ?? host.defaultContextTokens
-    const budget = fitBudget(typeof tokens === 'number' ? tokens : standing, window)
+    const budget = fitBudget(typeof tokens === 'number' ? tokens : standing, window, ratio)
     const budgetChanges = typeof tokens === 'number' || budget !== standing
     if (thread) {
       if (thread.busy) return c.json({ message: 'a turn is still running on this thread' }, 409)

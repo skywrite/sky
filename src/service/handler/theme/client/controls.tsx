@@ -63,7 +63,7 @@ export function ChatControls({
   const current = settings.model.choices.find((choice) => choice.name === settings.model.current)
   const effort = settings.effort && settings.effort !== 'default' ? settings.effort : (current?.effort?.default ?? null)
   const busy = chat.state.phase !== 'idle' || chat.tuning
-  const reach = reachIndex(current?.contextWindow)
+  const reach = reachIndex(current?.contextWindow, current?.tokenRatio)
   const at = Math.min(budget ?? stopIndex(settings.contextTokens), reach)
   const tokens = budget === null ? settings.contextTokens : STOPS[at]
   const choices = pickerChoices(settings)

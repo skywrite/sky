@@ -10,6 +10,7 @@ import { ollama } from 'ollama-ai-provider-v2'
 import { anthropic } from '#shared/ai/llm/anthropicProvider.ts'
 import { cerebras } from '#shared/ai/llm/cerebrasProvider.ts'
 import { singleSystemMessageMiddleware } from '#shared/ai/llm/singleSystemMessage.ts'
+import { tokenRatioMeter } from '#shared/ai/tokenRatio.ts'
 import { usageMeter } from '#shared/ai/usageLog.ts'
 import { wellFormedPromptMiddleware } from '#shared/ai/wellFormedPrompt.ts'
 import { readSkyConfigFile } from '#shared/config/loader.ts'
@@ -204,7 +205,10 @@ export function resolveProfile(profile: ModelProfile, overrides?: ModelOverrides
   // Every call the model makes lands in the usage log, whoever made it.
   const base = languageModelFor(profile)
   const resolved: ResolvedModel = {
-    model: typeof base === 'string' ? base : wrapLanguageModel({ model: base, middleware: usageMeter(profile) }),
+    model:
+      typeof base === 'string'
+        ? base
+        : wrapLanguageModel({ model: base, middleware: [usageMeter(profile), tokenRatioMeter(profile)] }),
     ...(profile.contextWindow === undefined ? {} : { contextWindow: profile.contextWindow }),
   }
   const common = resolved as unknown as Record<string, unknown>

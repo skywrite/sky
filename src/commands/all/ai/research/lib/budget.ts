@@ -8,11 +8,15 @@ const DEFAULT_CONTEXT_TOKENS = 300_000
 const COMPACTED =
   '\n[Research result shortened to fit the context budget. This is partial evidence; use notebook_read with a path and offset or find to recover omitted passages.]'
 
-export function researchBudget(contextTokens = DEFAULT_CONTEXT_TOKENS, contextWindow?: number) {
-  const readingTokens = fitBudget(Math.max(0, contextTokens), contextWindow)
+export function researchBudget(
+  contextTokens = DEFAULT_CONTEXT_TOKENS,
+  contextWindow?: number,
+  tokenRatio: number = ESTIMATE_SLACK,
+) {
+  const readingTokens = fitBudget(Math.max(0, contextTokens), contextWindow, tokenRatio)
   const inputTokens = Math.min(
     readingTokens + PROMPT_AND_TOOLS_TOKENS,
-    contextWindow === undefined ? Infinity : Math.max(0, Math.floor((contextWindow - REPLY_TOKENS) / ESTIMATE_SLACK)),
+    contextWindow === undefined ? Infinity : Math.max(0, Math.floor((contextWindow - REPLY_TOKENS) / tokenRatio)),
   )
   return { readingTokens, inputTokens }
 }

@@ -26,6 +26,7 @@ import { createWritingLessons } from '#lib/writingVoice/runtime.ts'
 import { createWritingVoiceTools } from '#lib/writingVoice/tools.ts'
 import { AI_ERROR_LOG_DISPLAY } from '#shared/ai/errorLog.ts'
 import { getProfile, resolveProfile, roleProfile } from '#shared/ai/models.ts'
+import { ratioFor } from '#shared/ai/tokenRatio.ts'
 import { usageLine } from '#shared/ai/usage.ts'
 import { DIR_AI_MEMORY, DIR_ATTACHMENTS, DIR_STATE_AI_CHATS, PORT_SERVER } from '#shared/config.ts'
 import { fetchWithConnectRetry } from '#shared/models/Chat/ChatContext/fetchContext.ts'
@@ -298,7 +299,7 @@ export default class AiChatTask extends Command {
     // read nor queried; the ambient day (summaries, health, prices, calendar)
     // still frames the conversation, as it does on the web page.
     const asked = noContext ? 0 : maxContext
-    const contextBudget = fitBudget(asked, reasoningProfile.contextWindow)
+    const contextBudget = fitBudget(asked, reasoningProfile.contextWindow, ratioFor(reasoningProfile.model))
     const closed = contextBudget === 0
     if (contextBudget !== asked) {
       output.log(

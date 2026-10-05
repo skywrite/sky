@@ -788,6 +788,13 @@ export default class ChatContext {
     else this.contextLog.push({ turn: this.turnNumber, queries: [...this.queries], usage })
   }
 
+  /** The real size of the turn's first request, on its log entry. */
+  recordTurnRequest(tokens: number): void {
+    const entry = this.contextLog.findLast((e) => e.turn === this.turnNumber)
+    if (entry) entry.requestTokens = tokens
+    else this.contextLog.push({ turn: this.turnNumber, queries: [...this.queries], requestTokens: tokens })
+  }
+
   recordTurnAdjustment(adjustment: ContextAdjustment): void {
     const entry = this.contextLog.findLast((e) => e.turn === this.turnNumber)
     if (entry) entry.adjustment = adjustment

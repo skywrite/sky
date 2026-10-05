@@ -59,6 +59,8 @@ export interface TimelineEntry {
   found?: number
   added: ContextDoc[]
   pushedOut: ContextDoc[]
+  /** The turn's first request as the provider counted it, when known */
+  requestTokens?: number
   tools: ToolCall[]
   errors: string[]
   /** The preflight's verdict on the message, when one ran */
@@ -180,6 +182,11 @@ function budgetLine(stats: TurnStats): string {
   return stats.budget ? `${tokens(stats.docTokens)} of ${tokens(stats.budget)}` : tokens(stats.docTokens)
 }
 
+/** The real size of the turn's first request, beside the estimate it was built from. */
+function requestLine(requestTokens: number | undefined): string {
+  return requestTokens === undefined ? '' : ` · request ${tokens(requestTokens)}`
+}
+
 function Entry({ entry, last }: { entry: TimelineEntry; last: boolean }) {
   const stats = entry.stats
   let title: string
@@ -188,7 +195,8 @@ function Entry({ entry, last }: { entry: TimelineEntry; last: boolean }) {
   switch (entry.kind) {
     case 'seed':
       title = 'Read your notebook'
-      if (stats) line = `${entry.found ?? 0} files found · ${stats.kept} fit · ${budgetLine(stats)}`
+      if (stats)
+        line = `${entry.found ?? 0} files found · ${stats.kept} fit · ${budgetLine(stats)}${requestLine(entry.requestTokens)}`
       break
     case 'grew':
       title = entry.added.length > 0 ? 'Looked for more' : 'Looked again'
@@ -279,6 +287,7 @@ function Entry({ entry, last }: { entry: TimelineEntry; last: boolean }) {
         {entry.kind === 'grew' && stats && (
           <div className="sky-tl-sub" style={{ marginTop: 6 }}>
             {stats.kept} in · {budgetLine(stats)}
+            {requestLine(entry.requestTokens)}
           </div>
         )}
       </div>

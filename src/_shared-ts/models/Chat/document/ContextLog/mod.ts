@@ -200,6 +200,12 @@ export interface ContextTurnLog {
   errors?: string[]
   /** The turn's token counts, every model step summed (also in ai-usage.jsonl per call) */
   usage?: TokenUsage
+  /**
+   * The turn's first model request as the provider counted it, every input
+   * class summed — the real size of prompt, context and history together,
+   * against which `stats.docTokens` is the estimate.
+   */
+  requestTokens?: number
   /** Prompt-to-result elapsed time and individual calls; independent of transcript minute stamps. */
   timing?: TimingDetail
   /** The model, preset, effort, and reading budget this turn ran under */
@@ -233,6 +239,7 @@ export function serializeContextLog(entries: ContextTurnLog[], details?: Context
     if (entry.people && entry.people.length > 0) fields.push(recordArrayField('people', entry.people))
     if (entry.errors && entry.errors.length > 0) fields.push(stringArrayField('errors', entry.errors))
     if (entry.usage) fields.push(`      "usage": ${JSON.stringify(entry.usage)}`)
+    if (entry.requestTokens !== undefined) fields.push(`      "requestTokens": ${entry.requestTokens}`)
     if (entry.timing) fields.push(`      "timing": ${JSON.stringify(entry.timing)}`)
     if (entry.settings) fields.push(`      "settings": ${JSON.stringify(entry.settings)}`)
     if (entry.preflight) fields.push(`      "preflight": ${JSON.stringify(entry.preflight)}`)

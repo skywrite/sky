@@ -55,3 +55,18 @@ test({ name: 'readingBudget - a budget the window cannot take drops to the highe
     },
   })
 })
+
+test({ name: 'readingBudget - the learned ratio ends the slider where the window really does' }, () => {
+  assert({
+    given: 'a 1M window at the Claude ratio of 1.78, at the GPT-6 ratio of 1.12, and with no ratio known',
+    should: 'reach 500k on Claude (750k would be 1.3M on the wire), 750k on GPT-6, and 750k under the fixed slack',
+    actual: [
+      STOPS[reachIndex(1_000_000, 1.78)],
+      STOPS[reachIndex(1_050_000, 1.12)],
+      STOPS[reachIndex(1_000_000)],
+      fitBudget(750_000, 1_000_000, 1.78),
+      fitBudget(500_000, 1_000_000, 1.78),
+    ],
+    expected: [500_000, 750_000, 750_000, 500_000, 500_000],
+  })
+})

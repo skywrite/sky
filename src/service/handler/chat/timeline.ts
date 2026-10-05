@@ -49,6 +49,8 @@ export interface TimelineEntry {
   errors: string[]
   /** The preflight's verdict on the message, when one ran */
   preflight?: PreflightVerdict
+  /** The turn's first request as the provider counted it — the real size behind the estimate */
+  requestTokens?: number
 }
 
 /**
@@ -120,6 +122,7 @@ export function timelineOf(log: ContextTurnLog[], turns: ConversationMessage[]):
     }
     if (entry.stats) item.stats = entry.stats
     if (entry.preflight) item.preflight = entry.preflight
+    if (entry.requestTokens !== undefined) item.requestTokens = entry.requestTokens
     if (entry.adjustment) item.adjustment = entry.adjustment
     if (kind === 'seed') item.found = entry.universe?.length ?? 0
     out.push(item)

@@ -810,9 +810,10 @@ export default class ChatSession {
         tools,
         toolApproval,
       })
-      // Tool records and usage join the turn's entry, beside its settings.
+      // Tool records, usage and the real request size join the turn's entry, beside its settings.
       this.context.recordTurnTools(result.toolRecords)
       this.context.recordTurnUsage(result.usage)
+      if (result.requestTokens !== undefined) this.context.recordTurnRequest(result.requestTokens)
 
       const sourceUrls = [...new Set(result.sourceUrls)]
       const text = withChatImages(result.text, replyImages)

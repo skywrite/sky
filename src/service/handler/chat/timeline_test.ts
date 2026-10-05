@@ -184,3 +184,27 @@ test({ name: 'timeline - a skipped turn carries its verdict and changes nothing'
     ],
   })
 })
+
+test('timeline - the real request size rides on the turn beside the estimate', () => {
+  const log: ContextTurnLog[] = [
+    {
+      turn: 1,
+      queries: [],
+      universe: [{ path: 'time/2026/W05/01-27/day.md', score: 9, tokens: 500 }],
+      stats: { kept: 1, pruned: 0, excluded: 0, docTokens: 500, budget: 300_000 },
+      requestTokens: 18_204,
+    },
+    { turn: 2, queries: [], stats: { kept: 1, pruned: 0, excluded: 0, docTokens: 500, budget: 300_000, reused: true } },
+  ]
+  const turns: ConversationMessage[] = [
+    { role: 'user', content: 'a', when: '2026-01-27 09:00' },
+    { role: 'assistant', content: 'b' },
+    { role: 'user', content: 'c', when: '2026-01-27 09:05' },
+  ]
+  assert({
+    given: 'a seed turn whose first request the provider counted, and a quiet turn without a count',
+    should: 'carry the count on the first and leave the second without one',
+    actual: timelineOf(log, turns).map((entry) => entry.requestTokens),
+    expected: [18_204, undefined],
+  })
+})

@@ -43,9 +43,19 @@ A profile may declare `contextWindow` — the tokens its host serves in one
 request, when that is less than a chat may ask to read. A chat's reading
 budget is fitted to it (`universal/ai/readingBudget.ts`): the budget stays
 when it fits, else drops to the highest stop that leaves room for the
-prompt, the tools, the reply and the estimate's slack. Cerebras serves
-Qwen 3.8 at 131,072 tokens on the paid tier, so a chat there reads 50k at
-most; a profile with no window declared is not capped.
+prompt, the tools, the reply, and the gap between the estimate (four
+characters a token) and what the model really counts. That gap is a ratio
+learned per model (`tokenRatio.ts`): every resolved model carries a meter
+that compares a request's serialized size with the input the provider
+reported — requests without tool results only, since tool JSON counts
+leaner than the prose the budget estimates — seeded per family (1.75 on the Opus 4.7 tokenizer line, 1.25 on
+Haiku, 1.15 on GPT-6) and kept in `<userData>/state/ai/token-ratios.json`.
+On Claude the ratio is about 1.78, so a 1M window reaches the 500k stop,
+not 750k. Cerebras serves Qwen 3.8 at 131,072 tokens on the paid tier, so
+a chat there reads 50k at most; a profile with no window declared is not
+capped. Each chat turn also records the real size of its first request
+(`requestTokens` on the turn log), shown in the Context panel beside the
+estimate.
 
 ## Prompt caching
 

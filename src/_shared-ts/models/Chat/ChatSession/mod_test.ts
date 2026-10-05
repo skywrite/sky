@@ -1173,3 +1173,24 @@ test('the conversation key reaches OpenAI as its prompt cache key, and no one el
     await rm(tmpB, { recursive: true, force: true })
   }
 })
+
+test('the real size of the first request is recorded on the turn, beside the estimate', async () => {
+  const recorded = recordingModel('anthropic.messages')
+  const { session, tmp } = await makeSession({
+    invokeModel: undefined,
+    model: { model: recorded.model } as unknown as ResolvedModel,
+  })
+  try {
+    await session.start()
+    await session.send('What is on the Atlas roadmap?')
+    const entry = session.contextLog.at(-1)!
+    assert({
+      given: 'a turn answered by a model whose finish part counted one input token',
+      should: 'record that count as the request size next to the estimated context size',
+      actual: { requestTokens: entry.requestTokens, estimated: typeof entry.stats?.docTokens },
+      expected: { requestTokens: 1, estimated: 'number' },
+    })
+  } finally {
+    await rm(tmp, { recursive: true, force: true })
+  }
+})

@@ -102,6 +102,12 @@ export interface TurnResult {
   sourceUrls: string[]
   /** Executed and denied tool calls, ready for ChatContext.recordTurnTools. */
   toolRecords: ToolCallRecord[]
+  /**
+   * The turn's first model request as the provider counted it, every input
+   * class summed: the real size of prompt, context and history together.
+   * Absent when the invoker reported no step usage.
+   */
+  requestTokens?: number
   /** True when the approval-round cap cut the loop short. */
   approvalRoundsExhausted: boolean
   /**
@@ -248,6 +254,11 @@ export interface ChatEngineOptions {
  * (24:00 and beyond) the wall-clock equivalent is appended so the model
  * never has to de-extend late-night dates itself.
  */
+/** Every input class summed: what the provider counted for one request. */
+function realInputOf(usage: TokenUsage): number {
+  return usage.input + usage.cacheRead + usage.cacheWrite
+}
+
 export function timeStampLine(when: string): string {
   const stamped = withWeekday(when)
   const hours = Number(when.split(' ')[1]?.split(':')[0])
@@ -688,6 +699,10 @@ export default class ChatEngine {
 
     try {
       let result = await runRound()
+      // The first step of the first round is the request the context was
+      // assembled for; its count is what the window saw.
+      const firstStep = result.steps?.[0]?.usage
+      const requestTokens = firstStep ? realInputOf(tokenUsageOf(firstStep)) : undefined
 
       // Handle tool approval requests (e.g., slack_cli_post-self with needsApproval).
       // A policy function that answered 'approved' leaves a request+response PAIR
@@ -825,6 +840,7 @@ export default class ChatEngine {
         toolRecords: turnTools,
         approvalRoundsExhausted,
         usage,
+        ...(requestTokens !== undefined ? { requestTokens } : {}),
         ...(cutShort ? { cutShort } : {}),
       }
     } catch (err) {
