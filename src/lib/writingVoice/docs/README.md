@@ -1,17 +1,22 @@
 ---
 created: 2026-09-08
-updated: 2026-09-20
+updated: 2026-10-04
 ---
 
 # Writing voice
 
-`WritingVoice` is the shared writer for prose in the notebook owner's name.
+`WritingVoice` is the shared writer for the notebook owner's personal
+communications in their own voice: emails, messages, letters, personal posts,
+and scripts they will deliver. UI and product copy, mockups, specifications,
+documentation, sample dialogue, and other general writing stay in ordinary
+chat, outside personal draft storage and voice learning. This scope also
+applies when a previous turn mistakenly put that material in a draft frame.
 The caller supplies grounded meaning, recipient, medium, context, and direction.
 The writer owns expression and preserves facts, uncertainty, links, and intended
 commitments. Its model has no tools or delivery authority. Chat exposes it as
 `me_voice`; Outbox triage, composition, follow-ups, and Sky-authored workstream
-communications call the same writer. Chat's shared system prompt routes drafting
-and accepted revisions to this tool, including when a built-in prompt is customized.
+communications call the same writer. Chat's shared system prompt routes personal
+drafting and accepted revisions to this tool, including when a built-in prompt is customized.
 
 Settings > Writing Voice selects `ai.writingVoiceProfile` in the app configuration.
 It defaults to `default-fable-5.1-high` and applies to drafting, question generation,

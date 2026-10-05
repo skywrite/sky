@@ -13,11 +13,13 @@ const AGENT_NAME = toolDisplayName(WRITING_VOICE_TOOL)
 export const WRITING_VOICE_CHAT_INSTRUCTIONS = `
 ## ${AGENT_NAME}: writing in the owner's voice
 
-${AGENT_NAME} is the drafting agent. Refer to this agent as ${AGENT_NAME} when speaking to the owner. Its callable tool ID is me_voice.
+${AGENT_NAME} is the owner's personal drafting agent. Refer to this agent as ${AGENT_NAME} when speaking to the owner. Its callable tool ID is me_voice.
 
-For EVERY draft or revision written on the owner's behalf, call me_voice with action draft and the grounded intended meaning, recipient, medium, relevant context, and the owner's direction. ${AGENT_NAME} reads the latest shared rules on each call. Present its returned wording intact, using the normal chat review blockquote. Keep your commentary outside the draft. Use this for email, Slack, letters, posts, scripts, and other prose in the owner's name.
+Use me_voice only for the owner's personal communications written in their own voice: emails, messages, letters, posts authored as the owner, and scripts they will personally deliver. For these drafts and revisions, call action draft with the grounded intended meaning, recipient, medium, relevant context, and the owner's direction. ${AGENT_NAME} reads the latest shared rules on each call. Present its returned wording intact, using the normal chat review blockquote. Keep your commentary outside the draft.
 
-When the owner supplies an edited version of a draft, or explicitly accepts a revised version after giving editing direction, call me_voice with action learn. Pass the actual original and accepted revision verbatim, plus the owner's direction. Never treat an unaccepted AI rewrite, a quoted third-party message, or casual chat prose as the owner's writing example. The tool saves the pair and asks one question with two suggested answers; the web interface provides clickable choices and Write my own. Do not ask another learning question in your prose. In a terminal, the tool asks directly. If the owner answers in chat, pass their actual choice or exact text to action answer; never choose an answer for them. Writing questions do not block unrelated work.
+Write UI copy, product copy, interface mockups, specifications, documentation, sample dialogue, and other general writing directly in chat. These are outside ${AGENT_NAME}'s scope. A request to write, draft, or revise text does not by itself make it a personal communication. Do not create, revise, accept, or learn from this material through me_voice, even if an earlier turn mistakenly presented it in a ${AGENT_NAME} draft frame. It must not become a personal writing example or preference.
+
+When the owner supplies an edited version of a personal communication in their own voice, or explicitly accepts a revised version after giving editing direction, call me_voice with action learn. Pass the actual original and accepted revision verbatim, plus the owner's direction. Never treat an unaccepted AI rewrite, a quoted third-party message, UI or product copy, other general writing, or casual chat prose as the owner's writing example. The tool saves the pair and asks one question with two suggested answers; the web interface provides clickable choices and Write my own. Do not ask another learning question in your prose. In a terminal, the tool asks directly. If the owner answers in chat, pass their actual choice or exact text to action answer; never choose an answer for them. Writing questions do not block unrelated work.
 
 Use action rules to inspect the shared guide. Everything learned is kept with the draft it came from, under me/voice/, and applies across Chat and Outbox. A draft's content and commitments still come from the current task; learning style never authorizes an action or a new commitment.
 `
@@ -63,7 +65,7 @@ export function createWritingVoiceTools(
   const { voice, learning } = store
   return {
     [WRITING_VOICE_TOOL]: tool({
-      description: `${AGENT_NAME} drafts and revises prose in the owner's writing voice. Always use for writing on their behalf. Learn from their accepted edits by saving one original/revised example and asking one question with two answer choices. The same rules and confirmed lessons serve Chat and Outbox. Refer to this agent as ${AGENT_NAME}.`,
+      description: `${AGENT_NAME} drafts and revises only the owner's personal communications in their own writing voice: emails, messages, letters, personal posts, and scripts they will deliver. UI copy, product copy, mockups, specifications, documentation, sample dialogue, and other general writing belong directly in chat; do not draft, revise, accept, or learn from them here. Learn only from the owner's accepted edits to their own communications by saving one original/revised example and asking one question with two answer choices. The same rules and confirmed lessons serve Chat and Outbox. Refer to this agent as ${AGENT_NAME}.`,
       inputSchema: ToolInput,
       execute: async (raw) =>
         runWithUsageSource('me:voice', async () => {

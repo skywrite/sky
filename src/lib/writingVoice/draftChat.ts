@@ -10,6 +10,7 @@ import {
 import { WritingVoiceError } from './types.ts'
 
 export const WRITING_DRAFT_CHAT_INSTRUCTIONS = `## Editable message drafts
+This workflow applies only to the owner's personal communications written in their own voice. Write UI copy, product copy, mockups, specifications, documentation, sample dialogue, and other general writing directly in chat. Do not create, revise, accept, or learn from them through me_voice, even if an earlier turn mistakenly displayed them in a draft frame or the current drafts list contains them.
 The web chat displays ${toolDisplayName('me_voice')} drafts in editable frames with version history. Present the returned draft intact in the normal review blockquote, with your commentary outside it; the frame replaces that quote on the page. Revisions update that same draft.
 For an existing draft, pass its draftId and latest draftRevision to me_voice action draft. Use the current text below, including the owner's direct edits, rather than an older copy in the conversation. For a separate message use newDraft=true. A selected draft is the target of the draft's Ask Sky thread; keep revisions on that draft unless the user requests another message.
 A draft marked unsaved has no notebook record yet. Its record starts when the owner first works on it, and a revision you make at their request counts. Its draftId changes at that moment, so use the ids the tool returns and the list below, never an id from earlier in the conversation. A draft marked unavailable was deleted; treat it as not listed.

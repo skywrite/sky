@@ -168,7 +168,7 @@ test('The shared chat tool captures and asks without choosing an answer for the 
       should: 'introduce Ghostwriter consistently to the chat model',
       actual: [
         typeof tool.description === 'string' && tool.description.startsWith('Ghostwriter drafts'),
-        WRITING_VOICE_CHAT_INSTRUCTIONS.includes('Ghostwriter is the drafting agent.'),
+        WRITING_VOICE_CHAT_INSTRUCTIONS.includes("Ghostwriter is the owner's personal drafting agent."),
       ],
       expected: [true, true],
     })
