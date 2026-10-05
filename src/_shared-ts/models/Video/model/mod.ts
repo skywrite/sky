@@ -15,10 +15,13 @@ import type VideoDocument from '../document/mod.ts'
  * point yet. Before building on it or deleting it, read ../../README.md.
  */
 export default class Video {
-  constructor(
-    readonly doc: VideoDocument,
-    private store: MarkdownStore,
-  ) {}
+  readonly doc: VideoDocument
+  private store: MarkdownStore
+
+  constructor(doc: VideoDocument, store: MarkdownStore) {
+    this.doc = doc
+    this.store = store
+  }
 
   static from(doc: VideoDocument, store: MarkdownStore): Video {
     return new Video(doc, store)

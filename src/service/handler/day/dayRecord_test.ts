@@ -287,6 +287,7 @@ test({ name: 'day record - a day with no file yet has an empty plan, not an erro
         record.done.length,
       filed:
         record.meetings.length +
+        record.events.length +
         record.messages.involved.length +
         record.messages.archive.length +
         record.journals.length,
@@ -332,5 +333,74 @@ The recording walks through the launch checklist and next steps.
         medium: 'Loom',
       },
     ],
+  })
+})
+
+test('day record includes saved events once, in time order, with participants and locations', async () => {
+  const { base, timeDir, dayDirPath } = await notebook()
+  const events = path.join(dayDirPath, 'actions', 'events')
+  await mkdir(events)
+  await writeFile(
+    path.join(events, 'Z_Pottery-workshop.md'),
+    `---
+what: Pottery workshop
+when: 2026-01-27 18:30 - 20:00
+who:
+  - Jane Doe
+  - Sam Lee
+where: Atlas Studio
+summary: Made a bowl together.
+---
+
+# Pottery workshop
+
+We learned to shape a bowl and chose a blue glaze.
+`,
+  )
+  await writeFile(
+    path.join(events, 'A_Late-night-walk.md'),
+    `---
+what: Late night walk
+when: 2026-01-27 25:30
+who: Jane Doe
+---
+
+A quiet walk around the neighborhood after the workshop.
+`,
+  )
+  await writeFile(
+    path.join(timeDir, dayFile(TODAY)),
+    DAY_MD.replace(
+      '## Personal Complete\n\n-\n',
+      '## Personal Complete\n\n- 18:30 > Event -> [Pottery workshop](actions/events/Z_Pottery-workshop.md)\n',
+    ),
+  )
+  const record = await buildDayRecord({ day: TODAY, timeDir, dayDirPath, markdownBaseDir: base, ownerNames: OWNER })
+
+  assert({
+    given: 'two event files with a linked capture log, array or string participants, and an extended-hour time',
+    should: 'retain each event once with a document link and metadata, without repeating its capture log in Done',
+    actual: { events: record.events, done: record.done.map((item) => item.text) },
+    expected: {
+      events: [
+        {
+          title: 'Pottery workshop',
+          path: path.join('time', dayDir(TODAY), 'actions/events/Z_Pottery-workshop.md'),
+          when: '18:30 - 20:00',
+          who: 'Jane Doe, Sam Lee',
+          where: 'Atlas Studio',
+          summary: 'Made a bowl together.',
+        },
+        {
+          title: 'Late night walk',
+          path: path.join('time', dayDir(TODAY), 'actions/events/A_Late-night-walk.md'),
+          when: '25:30',
+          who: 'Jane Doe',
+          where: null,
+          summary: null,
+        },
+      ],
+      done: ['Submit the expense report'],
+    },
   })
 })

@@ -58,6 +58,11 @@ export interface MeetingRow extends DayDocRow {
   inline?: boolean
 }
 
+export interface EventRow extends DayDocRow {
+  who: string | null
+  where: string | null
+}
+
 export interface MessageRow extends DayDocRow {
   from: string | null
   to: string | null
@@ -88,6 +93,7 @@ export interface DayRecord {
   reminders: DayItem[]
   done: DayItem[]
   meetings: MeetingRow[]
+  events: EventRow[]
   videos: VideoRow[]
   messages: {
     /** Threads the owner took part in */
@@ -176,8 +182,9 @@ const H1 = /^#\s+(.+?)\s*$/m
 export function titleOf(doc: Document, filePath: string): string {
   const heading = doc.markdown.match(H1)?.[1]
   if (heading) return heading.replace(/\*\*/g, '').trim()
-  const title = doc.yaml['title']
-  if (typeof title === 'string' && title.trim()) return title.trim()
+  for (const title of [doc.yaml['title'], doc.yaml['what']]) {
+    if (typeof title === 'string' && title.trim()) return title.trim()
+  }
   return path.basename(filePath, '.md')
 }
 
@@ -227,6 +234,7 @@ export async function buildDayRecord(input: DayRecordInput): Promise<DayRecord> 
     reminders: [],
     done: [],
     meetings: [],
+    events: [],
     videos: [],
     messages: { involved: [], archive: [] },
     notes: [],
@@ -298,6 +306,8 @@ export async function buildDayRecord(input: DayRecordInput): Promise<DayRecord> 
       if (existing >= 0)
         record.meetings[existing] = { ...meeting, when: meeting.when ?? record.meetings[existing].when }
       else record.meetings.push(meeting)
+    } else if (isActionPath('event', entry.path)) {
+      record.events.push({ ...row, who: text(entry.doc.yaml['who']), where: text(entry.doc.yaml['where']) })
     } else if (isActionPath('message', entry.path)) {
       const message: MessageRow = {
         ...row,

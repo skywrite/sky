@@ -143,6 +143,7 @@ export interface DayRecord {
   reminders: DayItem[]
   done: DayItem[]
   meetings: Array<DayDocRow & { who: string | null }>
+  events: Array<DayDocRow & { who: string | null; where: string | null }>
   videos: Array<DayDocRow & { from: string | null; to: string | null; medium: string | null }>
   messages: {
     involved: Array<DayDocRow & { from: string | null; to: string | null; medium: string | null }>
@@ -1276,6 +1277,7 @@ export function DayView({
   const rail = useRail(view?.day.ymd ?? null)
   const record = view?.record ?? null
   const chats = view ? dayChatRows(view.day.ymd, view.chats, threads) : []
+  const events = record?.events ?? []
   const videos = record?.videos ?? []
   const isToday = view ? view.day.ymd === view.today.ymd : false
   // The day file's directory: the items in it link to files from there.
@@ -1520,6 +1522,23 @@ export function DayView({
                             <DocLine when={m.when}>
                               <a href={meetingHref(m.path) ?? fileHref(m.path)}>{m.title}</a>
                               {m.who && <span className="sky-rec-sub">{m.who}</span>}
+                            </DocLine>
+                          </Fragment>
+                        ))}
+                      </Block>
+                    )}
+
+                    {events.length > 0 && (
+                      <Block head="Events" mini={String(events.length)}>
+                        {events.map((event) => (
+                          <Fragment key={event.path}>
+                            <DocLine when={event.when}>
+                              <a href={fileHref(event.path)}>{event.title}</a>
+                              {(event.who || event.where) && (
+                                <span className="sky-rec-sub">
+                                  {[event.who, event.where].filter(Boolean).join(' · ')}
+                                </span>
+                              )}
                             </DocLine>
                           </Fragment>
                         ))}
