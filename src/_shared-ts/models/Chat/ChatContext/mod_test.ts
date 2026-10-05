@@ -302,8 +302,8 @@ test('ChatContext.firstTurn', async () => {
       queries: entry.queries,
       universePaths: entry.universe?.map((r) => r.path),
       goalPinned: entry.universe?.find((r) => r.path === 'goals/2026.md')?.pinned,
-      // The boosted, name-matched person raises the turn's floor above the
-      // ambient day file — kept is the goal and the person.
+      // Admission by evidence: the pinned goal, the query-returned person,
+      // and today's ledger (ambient core) all ship; nothing here is refused.
       kept: entry.stats?.kept,
       dayCut: entry.universe?.find((r) => r.path.endsWith('/day.md'))?.cut,
       merged: context.paths.includes(FIX.person),
@@ -315,8 +315,8 @@ test('ChatContext.firstTurn', async () => {
       queries: ['{ people { path } }'],
       universePaths: ['goals/2026.md', 'people/Jane-Doe.md', 'time/2026/W05/01-27/day.md'],
       goalPinned: true,
-      kept: 2,
-      dayCut: 'floor',
+      kept: 3,
+      dayCut: undefined,
       merged: true,
       collectionSize: 3,
       errors: [],
@@ -427,7 +427,7 @@ test('ChatContext.firstTurn - score parts recorded', async () => {
   })
 })
 
-test('ChatContext.firstTurn - relevance floor sizes context to the question', async () => {
+test('ChatContext.firstTurn - admission by evidence sizes context to the question', async () => {
   const { context } = makeContext({
     fetchContext: fetchFake({
       today: [FIX.day],
@@ -445,27 +445,35 @@ test('ChatContext.firstTurn - relevance floor sizes context to the question', as
 
   const entry = context.log[0]
   const summary = entry.universe?.find((r) => r.path.endsWith('/summary.md'))
+  const journal = entry.universe?.find((r) => r.path.includes('/journal/'))
+  const day = entry.universe?.find((r) => r.path.endsWith('/day.md'))
   const person = entry.universe?.find((r) => r.path === 'people/Jane-Doe.md')
   assert({
     given: 'a targeted person question against an ambient baseline',
-    should: 'floor the off-topic baseline docs and record the floor parameters in stats',
+    should:
+      'ship the query hit, the pinned goal and the day ledger; refuse the rest for want of evidence; record the bar',
     actual: {
-      summaryCut: summary?.cut,
       personKept: person?.cut === undefined,
+      dayKept: day?.cut === undefined,
+      journalCut: journal?.cut,
+      summaryCut: summary?.cut,
       kept: entry.stats?.kept,
       floored: entry.stats?.floored,
-      floorApplied: (entry.stats?.floor ?? 0) > 0,
+      bar: entry.stats?.floor,
       budget: entry.stats?.budget,
       scoring: entry.stats?.scoring,
     },
     expected: {
-      summaryCut: 'floor',
       personKept: true,
-      kept: 2,
-      floored: 3,
-      floorApplied: true,
+      dayKept: true,
+      // The old week's summary and journal sit outside the seven-day window and name nothing asked.
+      journalCut: 'floor',
+      summaryCut: 'floor',
+      kept: 3,
+      floored: 2,
+      bar: 4,
       budget: 300_000,
-      scoring: 's4',
+      scoring: 's5',
     },
   })
 })
@@ -560,14 +568,14 @@ test('ChatContext.restore - distinct recorded executions accumulate the multi-hi
   const { context } = makeContext()
   const report = await context.restore(state)
 
-  // The floor is 0.35 × the top score, so it reads the top score back
-  // out: two recorded executions → 6 + 10 + 1 = 17 → floor 5.95. A
-  // single hit would floor at 5.6.
+  // The restored record carries the score the evidence earns: two recorded
+  // executions → prior 6 + targeted 10 + multi-hit 1 = 17. A single hit
+  // would score 16.
   assert({
     given: "a resume log where two different turns' diffs returned the same doc",
-    should: 'restore two hits and surface the multi-hit bonus in the floor',
-    actual: report.rebuild.stats?.floor,
-    expected: 5.95,
+    should: 'restore two hits and surface the multi-hit bonus in the score',
+    actual: report.rebuild.kept.find((r) => r.path === 'people/Jane-Doe.md')?.score,
+    expected: 17,
   })
 })
 
@@ -653,9 +661,9 @@ test('ChatContext.evolveTurn', async () => {
   })
 })
 
-test('ChatContext.evolveTurn - a floored doc rejoins when the topic shifts onto it', async () => {
+test('ChatContext.evolveTurn - a refused doc is admitted when the topic shifts onto it', async () => {
   const { context } = makeContext({
-    fetchContext: fetchFake({ today: [FIX.day], goals: [FIX.goal] }),
+    fetchContext: fetchFake({ today: [FIX.day], prev: [FIX.journal], goals: [FIX.goal] }),
     producers: {
       produceInitialQuery: () => Promise.resolve(ok({ paths: [FIX.person], query: 'q1' })),
       evolveQueries: () => Promise.resolve(ok({ queries: ['q1', 'q2'], changed: true })),
@@ -664,21 +672,19 @@ test('ChatContext.evolveTurn - a floored doc rejoins when the topic shifts onto 
   })
   await context.seedBaseline()
   await context.firstTurn('who is Jane Doe?')
-  const dayAtTurn1 = context.log[0].universe?.find((r) => r.path.endsWith('/day.md'))
-  // Observed live on Aug 7: floored counts fall across turns as the term
-  // set grows to match more docs. Rejoining is intentional — the floor is
-  // per-rebuild, not a permanent verdict.
-  const turn2 = await context.evolveTurn('what is the status of the atlas rollout checklist?', [])
+  const journalAtTurn1 = context.log[0].universe?.find((r) => r.path.includes('/journal/'))
+  // Admission is per rebuild, not a permanent verdict: evidence that
+  // appears as the conversation moves admits a document it earlier refused.
+  const turn2 = await context.evolveTurn('what did my morning reflection say about the Atlas rollout?', [])
 
   assert({
-    given: 'a day file floored by a person question, then a question about its content',
-    should: 'floor it at turn 1 and ship it again at turn 2',
+    given: 'a journal refused by a person question, then a question about its content',
+    should: 'refuse it at turn 1 and ship it at turn 2',
     actual: {
-      turn1Cut: dayAtTurn1?.cut,
-      turn2Floored: turn2.rebuilt?.stats?.floored,
-      dayShipsAgain: turn2.rebuilt?.activityMarkdown?.includes('rollout checklist'),
+      turn1Cut: journalAtTurn1?.cut,
+      journalShips: turn2.rebuilt?.kept.some((r) => r.path.includes('/journal/')),
     },
-    expected: { turn1Cut: 'floor', turn2Floored: 0, dayShipsAgain: true },
+    expected: { turn1Cut: 'floor', journalShips: true },
   })
 })
 

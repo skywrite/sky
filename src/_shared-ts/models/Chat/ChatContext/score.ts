@@ -70,11 +70,19 @@ export const CHAT_SCORE = {
   /** Terms beyond this are dropped — bounds the per-rebuild scan cost. */
   maxTerms: 64,
   /**
-   * Relevance floor: scored docs below this fraction of the turn's top
-   * score are cut regardless of budget room — context sizes to the
-   * question instead of filling to the cap. Adapts by construction: a
-   * strong-evidence turn floors high and sheds ambient chatter, a
-   * no-evidence turn (top ~8) floors low and keeps the baseline.
+   * Admission by evidence: a document without query provenance needs this
+   * much lexical evidence (of lexicalMax) for a place in context — a near-
+   * unique header or name match, or a few good matches combined. Below it,
+   * a recent message that merely grazes the question's words stays out,
+   * however fresh. Measured 2026-10-04 over 30 days of chats: 53% of the
+   * tokens admitted by the old relative floor sat under this bar.
+   */
+  admissionLex: 4,
+  /**
+   * The relative floor the admission rule replaced (35% of the turn's top
+   * score). Kept for tooling that still reasons about it; chat admission
+   * no longer applies it — a recent message plus one grazing match cleared
+   * it, which is how the budget filled on 79% of turns.
    */
   floorFraction: 0.35,
   /**
@@ -91,9 +99,10 @@ export const CHAT_SCORE = {
  * Scoring-semantics tag recorded in each turn's stats. Bump when the
  * score composition or weights change materially — logged scores are only
  * interpretable against the semantics that produced them ('s4' = composed
- * scorer + relevance floor + per-turn provenance decay).
+ * scorer + relevance floor + per-turn provenance decay; 's5' = the same
+ * scorer with admission by evidence in place of the relative floor).
  */
-export const SCORING = 's4'
+export const SCORING = 's5'
 
 // -----------------------------------------------------------------------------
 // Provenance — retrieval evidence accumulated by ChatContext

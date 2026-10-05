@@ -3,7 +3,7 @@ created: 2026-08-15
 updated: 2026-10-04
 ---
 
-# ChatContext admission — one scorer, question-conditioned policy
+# ChatContext admission — evidence in, budget as a cap
 
 Per-turn timing is stored with the context log by the session; see
 [shared timing](../../../../timing/docs/README.md) for measurement and persistence semantics.
@@ -21,12 +21,32 @@ including the reply directories of the current conversation and its ancestors.
 
 ChatContext decides the candidate pool; `ContextAssembler` decides what
 fits the budget. Between them sits the **admission policy** — how scored
-docs become the kept set — and it is the one piece that is conditioned on
-the question's shape:
+docs become the kept set.
 
-- **`rank`** (default): relevance floor, then a global score-rank walk to
-  the budget. Right for now-shaped questions, where the s3 recency prior
-  encodes a true belief.
+A document is admitted by **evidence**, never by budget room (scoring
+`s5`, 2026-10-04). It ships when one of these holds:
+
+- a query returned it, at any tier, on any turn of the conversation
+  (`prov` on its record);
+- its lexical match clears the admission bar, `CHAT_SCORE.admissionLex`
+  (4 of 8): a near-unique header or name match, or a few good matches
+  combined — never one grazing word in a long message;
+- it is **ambient core**: a day's ledger (`day.md`) or summary inside the
+  baseline window, one line per capture and the digest of each day, so the
+  model knows what the week held even when the question names none of it;
+- it is pinned (goals, pending decisions, the week plan, the person's pins).
+
+Everything else is refused (`cut: 'floor'`, counted in `stats.floored`;
+`stats.floor` records the bar). The budget then caps the admitted set; it is
+no longer a target. The relative floor this replaced (35% of the turn's top
+score) let a same-day message with recency 5 + type 2 + one grazing match
+clear ~8, so the budget filled on 79% of turns and half of what shipped had
+no query behind it (measured over 30 days, 2026-10-04). The scorer itself is
+unchanged: it still orders the admitted set for the budget walk.
+
+The policy is otherwise conditioned on the question's shape:
+
+- **`rank`** (default): the admitted set, score-rank walked to the cap.
 - **`sweep-stratified`**: armed when the user *stated* a window ("since
   Feb", "from X through Y") — the same explicit signal that widens
   `recent:` and uncaps `limit` upstream. Every month of the stated window
@@ -60,8 +80,8 @@ guesses):
 - **Floors, never ceilings.** The policy only ever adds representation;
   no stated date or window ever shrinks what rank would keep. Planning
   questions and casual chats carry no signal and are byte-identical rank.
-- **The reserve bypasses the relevance floor.** Inside an asked-for
-  window, a weak thin capture is the era's only witness, not padding.
+- **The reserve bypasses admission.** Inside an asked-for window, a weak
+  thin capture is the era's only witness, not padding.
 - **Representation, not equal share.** Proportional per-slice token
   shares were rejected: they starve the recent months that genuinely
   carry more signal. The reserve is a small guarantee (~5 docs / ~5k
@@ -76,6 +96,9 @@ guesses):
 
 ## Dials (in tuning order)
 
+0. `CHAT_SCORE.admissionLex` — the evidence a document without provenance
+   needs. Lower admits more ambient material; raise it if topical noise
+   still rides in on common words.
 1. `CHAT_SCORE.sweepReserveDocs` / `sweepReserveTokens` — per-month
    guarantee size.
 2. Slice granularity — month, matching the corpus layout and the observed

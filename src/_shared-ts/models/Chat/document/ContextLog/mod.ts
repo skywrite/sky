@@ -107,9 +107,13 @@ export interface TurnStats {
   sweep?: string
   /** Exact first day of the stated range, when the window resolved one */
   sweepFrom?: string
-  /** Relevance floor applied this turn (floorFraction × top score) */
+  /**
+   * The admission bar this turn: the lexical evidence a document without
+   * query provenance needed for a place (scoring 's5'). Under 's4' it was
+   * the relative floor, floorFraction × top score.
+   */
   floor?: number
-  /** Docs cut by the floor this turn (their records carry cut: 'floor') */
+  /** Docs refused this turn for want of evidence (their records carry cut: 'floor') */
   floored?: number
   /**
    * Query root fields whose results hit a cap this turn — the documents the

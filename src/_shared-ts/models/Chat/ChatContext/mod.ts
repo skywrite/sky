@@ -9,6 +9,14 @@
  * (score.ts), goal/decision pinning, own-transcript exclusion, and the
  * per-turn context log that makes a session resumable.
  *
+ * Admission is by evidence, never by budget: a document ships when a query
+ * returned it, when it matches the question outright (score.ts
+ * `admissionLex`), when it is a day's ledger or summary inside the baseline
+ * window, or when it is pinned. The budget is a cap over the admitted, not a
+ * target the rank walk fills — the old relative floor let any recent
+ * message with one grazing word match in, and the budget filled on 79% of
+ * turns (measured 2026-10-04 over 30 days).
+ *
  * The class is host-neutral: it never prints and never talks to a terminal.
  * A host (the CLI command today, a web session later) injects the query
  * producers, calls one method per turn, and renders the returned report
@@ -491,9 +499,16 @@ export default class ChatContext {
     // so they re-seed the retrieval evidence. Result-set sizes weren't
     // recorded; each diff's own length stands in for selectivity —
     // understating evidence rather than inventing it. Turn-1 query hits
-    // are mixed into the universe with the baseline and stay unboosted —
-    // a best-effort restore, not an exact one.
+    // sit in the universe beside the baseline; their records carry the
+    // tier they were retrieved at, which re-seeds them too — admission
+    // is by evidence, and a resumed chat must not lose what its first
+    // question found.
     for (const entry of state.contextLog) {
+      for (const r of entry.universe ?? []) {
+        if (!r.prov) continue
+        const abs = path.join(this.baseDir, r.path)
+        if (!this.provenance.has(abs)) this.provenance.set(abs, { tier: r.prov, hits: 1, lastHitTurn: entry.turn })
+      }
       if (!entry.diff || entry.diff.length === 0) continue
       const diffPaths = entry.diff.map((r) => path.join(this.baseDir, r.path))
       this.recordRetrieval(diffPaths, entry.diff.length, entry.turn)
@@ -877,6 +892,34 @@ export default class ChatContext {
     return out
   }
 
+  /**
+   * The ambient core: a day's ledger or summary inside the baseline window
+   * is in context without further evidence — one line per capture, the
+   * digest of each day — so the model knows what the week held even when
+   * the question names none of it. Everything else earns its place.
+   */
+  private isAmbientCore(file: string): boolean {
+    const base = path.basename(file)
+    if (base !== 'day.md' && base !== 'summary.md') return false
+    const info = parseTimePath(file)
+    if (info?.kind !== 'day') return false
+    const start = this.today.addDays(-(this.days - 1))
+    return PlainDate.compare(info.date, start) >= 0 && PlainDate.compare(info.date, this.today) <= 0
+  }
+
+  /**
+   * Admission by evidence. A scored document ships when a query returned
+   * it (any tier, any turn), when its lexical match clears the admission
+   * bar, or when it is ambient core. Pinned documents never reach this
+   * predicate; a stated window's reserve may still draw from the refused.
+   */
+  private admits(lexicalByPath: ReadonlyMap<string, number>): (s: ScoredItem) => boolean {
+    return (s) =>
+      this.provenance.has(s.item.path) ||
+      (lexicalByPath.get(s.item.path) ?? 0) >= CHAT_SCORE.admissionLex ||
+      this.isAmbientCore(s.item.path)
+  }
+
   /** Absolute path of the current week's plan — pinned whenever the universe has it. */
   private weekPlanPath(): string {
     return path.join(this.baseDir, 'time', weekDir(this.today), 'week.md')
@@ -996,7 +1039,7 @@ export default class ChatContext {
           'excluded by you',
         ),
         maxTokens: requestBudget,
-        floorFraction: CHAT_SCORE.floorFraction,
+        eligible: this.admits(lexicalByPath),
         reserve: this.sweepReserve(),
       })
       activityMarkdown = assembler.toMarkdown({ relativeTo: this.baseDir, delimited: true, label: this.dayLabel })
@@ -1043,10 +1086,10 @@ export default class ChatContext {
         if (this.sweep.start) turnStats.sweepFrom = this.sweep.start
       }
       if (this.summaryBaseline) turnStats.baseline = 'summary'
-      if (assembler.floorValue !== null) {
-        turnStats.floor = Math.round(assembler.floorValue * 100) / 100
-        turnStats.floored = assembler.floored.length
-      }
+      // The bar a document without provenance had to clear, and how many
+      // did not — the admission rule's parameters, beside the cuts it made.
+      turnStats.floor = CHAT_SCORE.admissionLex
+      turnStats.floored = assembler.floored.length
       if (this.turnTruncations.length > 0) {
         turnStats.truncated = [...this.turnTruncations]
       }

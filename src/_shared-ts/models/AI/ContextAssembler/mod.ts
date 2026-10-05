@@ -138,6 +138,16 @@ export function estimateTokens(text: string): number {
  * all. Pinned items are exempt. Without `floorFraction` (the default)
  * nothing changes — `floored` stays empty.
  *
+ * ## Admission by evidence
+ *
+ * With `eligible` set, a scored item the predicate rejects is floored too,
+ * whatever its score: the caller names what counts as evidence for a place
+ * in context (a query returned it, it matches the question outright, it is
+ * the day's ledger), and the budget walk only ever ranks the admitted. The
+ * budget is then a cap, not a target — a universe of weak matches ships
+ * nothing but the admitted few. A reserve still draws from the floored, so
+ * a stated window keeps its coverage guarantee.
+ *
  * ## Immutability
  *
  * Every instance is immutable. The `with*()` methods return NEW instances
@@ -188,6 +198,7 @@ export default class ContextAssembler {
   private readonly _maxTokens: number
   private readonly _floorFraction: number | undefined
   private readonly _reserve: ReserveOptions | undefined
+  private readonly _eligible: ((item: ScoredItem) => boolean) | undefined
   private readonly _collection: DomainCollection
 
   private constructor(
@@ -197,6 +208,7 @@ export default class ContextAssembler {
     floorFraction: number | undefined,
     reserve: ReserveOptions | undefined,
     collection: DomainCollection,
+    eligible?: (item: ScoredItem) => boolean,
   ) {
     this._kept = parts.kept
     this._pruned = parts.pruned
@@ -209,6 +221,7 @@ export default class ContextAssembler {
     this._maxTokens = maxTokens
     this._floorFraction = floorFraction
     this._reserve = reserve
+    this._eligible = eligible
     this._collection = collection
   }
 
@@ -225,20 +238,30 @@ export default class ContextAssembler {
    * @param maxTokens - Token budget. Defaults to Infinity (keep everything eligible).
    * @param floorFraction - Relevance floor as a fraction of the top scored
    *   item's score. Defaults to none (no floor).
+   * @param eligible - Admission by evidence: a scored item the predicate
+   *   rejects is floored whatever its score. Defaults to none (every scored
+   *   item competes).
    */
   static from(
     collection: DomainCollection,
-    opts: { scorer: Scorer; maxTokens?: number; floorFraction?: number; reserve?: ReserveOptions },
+    opts: {
+      scorer: Scorer
+      maxTokens?: number
+      floorFraction?: number
+      reserve?: ReserveOptions
+      eligible?: (item: ScoredItem) => boolean
+    },
   ): ContextAssembler {
-    const { scorer, maxTokens = Infinity, floorFraction, reserve } = opts
+    const { scorer, maxTokens = Infinity, floorFraction, reserve, eligible } = opts
     const items = scoreItems(collection, scorer)
     return new ContextAssembler(
-      partition(items, maxTokens, floorFraction, reserve),
+      partition(items, maxTokens, floorFraction, reserve, eligible),
       scorer,
       maxTokens,
       floorFraction,
       reserve,
       collection,
+      eligible,
     )
   }
 
@@ -318,12 +341,13 @@ export default class ContextAssembler {
   withBudget(maxTokens: number): ContextAssembler {
     const all = [...this._kept, ...this._pruned, ...this._floored, ...this._excluded]
     return new ContextAssembler(
-      partition(all, maxTokens, this._floorFraction, this._reserve),
+      partition(all, maxTokens, this._floorFraction, this._reserve, this._eligible),
       this._scorer,
       maxTokens,
       this._floorFraction,
       this._reserve,
       this._collection,
+      this._eligible,
     )
   }
 
@@ -337,6 +361,7 @@ export default class ContextAssembler {
       maxTokens: this._maxTokens,
       floorFraction: this._floorFraction,
       reserve: this._reserve,
+      eligible: this._eligible,
     })
   }
 
@@ -350,6 +375,7 @@ export default class ContextAssembler {
       maxTokens: this._maxTokens,
       floorFraction: this._floorFraction,
       reserve: this._reserve,
+      eligible: this._eligible,
     })
   }
 
@@ -420,8 +446,9 @@ function byScoreDescThenSizeAsc(a: ScoredItem, b: ScoredItem): number {
  * so construction and re-budgeting cannot disagree about verdict semantics:
  * - `always` → kept unconditionally, first, counted against the budget
  * - `never`  → excluded unconditionally, regardless of available room
- * - `scored` → floored below floorFraction × top score, the rest sorted by
- *   score desc and kept while the budget allows
+ * - `scored` → floored below floorFraction × top score, or when `eligible`
+ *   rejects them; the rest sorted by score desc and kept while the budget
+ *   allows
  *
  * Among scored items, at least one is kept even if it alone exceeds the
  * budget (never produce empty output when eligible items exist). The floor
@@ -433,6 +460,7 @@ function partition(
   maxTokens: number,
   floorFraction?: number,
   reserve?: ReserveOptions,
+  eligibleFn?: (item: ScoredItem) => boolean,
 ): Partitioned {
   const always: ScoredItem[] = []
   let eligible: ScoredItem[] = []
@@ -463,6 +491,11 @@ function partition(
     const floor = floorValue
     floored = eligible.filter((s) => s.score < floor)
     eligible = eligible.filter((s) => s.score >= floor)
+  }
+  if (eligibleFn !== undefined) {
+    const admit = eligibleFn
+    floored = [...floored, ...eligible.filter((s) => !admit(s))].sort(byScoreDescThenSizeAsc)
+    eligible = eligible.filter((s) => admit(s))
   }
 
   // Coverage reserve: per-slice admission before the rank walk. Draws from

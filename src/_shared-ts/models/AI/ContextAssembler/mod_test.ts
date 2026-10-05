@@ -421,6 +421,33 @@ test('from — floor: scored docs below fractionOfTop are floored', () => {
   })
 })
 
+test('from — eligible: admission by evidence floors what the predicate refuses, whatever the score', () => {
+  const asm = ContextAssembler.from(floorDomain(), {
+    scorer: FLOOR_SCORER,
+    maxTokens: 10000,
+    eligible: (s) => s.item.path !== '/notes/top.md',
+  })
+
+  assert({
+    given: 'scores 10/4/2, ample budget, and a predicate that refuses the top-scoring doc',
+    should: 'keep the admitted docs in score order, floor the refused one, and report no relative floor',
+    actual: {
+      kept: asm.kept.map((s) => s.item.path),
+      floored: asm.floored.map((s) => s.item.path),
+      pruned: asm.pruned.length,
+      floorValue: asm.floorValue,
+      sameAfterRebudget: asm.withBudget(5000).floored.map((s) => s.item.path),
+    },
+    expected: {
+      kept: ['/notes/mid.md', '/notes/low.md'],
+      floored: ['/notes/top.md'],
+      pruned: 0,
+      floorValue: null,
+      sameAfterRebudget: ['/notes/top.md'],
+    },
+  })
+})
+
 test('from — floor: the top doc always clears its own floor', () => {
   const domain = makeDomain([{ doc: makeDoc('only'), path: '/notes/solo.md' }])
   const asm = ContextAssembler.from(domain, { scorer: () => scored(1), maxTokens: 10000, floorFraction: 0.9 })
