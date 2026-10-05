@@ -1019,3 +1019,75 @@ test('ChatContext.firstTurn - no stated window keeps plain rank admission', asyn
     expected: { policy: undefined, sweep: undefined, reserved: 0 },
   })
 })
+
+test('ChatContext - a shipped document stays when the conversation moves on; the newcomer is an addition', async () => {
+  let turn = 0
+  const { context } = makeContext({
+    fetchContext: fetchFake({ today: [FIX.day], prev: [FIX.journal], goals: [FIX.goal] }),
+    producers: {
+      // Turn one finds nothing; the journal earns its place on evidence alone.
+      produceInitialQuery: () => Promise.resolve(ok({ paths: [] as string[], query: 'q1' })),
+      evolveQueries: () => Promise.resolve(ok({ queries: ['q1', `q${++turn + 1}`], changed: true })),
+      executeQuery: () => Promise.resolve(ok({ paths: [FIX.person] })),
+    },
+  })
+  await context.seedBaseline()
+  const first = await context.firstTurn('Thinking through the Atlas launch week priorities — what did I write?')
+  const second = await context.evolveTurn('Who is Jane Doe?', [])
+  const segment = first.rebuilt!.activityMarkdown!
+  assert({
+    given: 'a journal admitted on evidence at turn one, then a question about a person the query returns',
+    should:
+      'keep the journal shipped with no evidence left, render the same segment, deliver only the person as an addition, and log her as added',
+    actual: {
+      journalKeptAtOne: first.rebuilt!.kept.some((r) => r.path.includes('/journal/')),
+      firstAdditions: first.rebuilt!.additionsMarkdown,
+      journalKeptAtTwo: second.rebuilt!.kept.some((r) => r.path.includes('/journal/') && r.cut === undefined),
+      sameSegment: second.rebuilt!.activityMarkdown === segment,
+      additionNamesJane: second.rebuilt!.additionsMarkdown?.includes('Jane-Doe.md'),
+      additionRepeatsJournal: second.rebuilt!.additionsMarkdown?.includes('Morning Reflection'),
+      joined: second.rebuilt!.joined.map((r) => r.path),
+      logged: context.log[1].added?.map((r) => r.path),
+    },
+    expected: {
+      journalKeptAtOne: true,
+      firstAdditions: null,
+      journalKeptAtTwo: true,
+      sameSegment: true,
+      additionNamesJane: true,
+      additionRepeatsJournal: false,
+      joined: ['people/Jane-Doe.md'],
+      logged: ['people/Jane-Doe.md'],
+    },
+  })
+})
+
+test('ChatContext.fitForRequest - a refit shrinks the segment and leaves additions alone', async () => {
+  const { context } = makeContext({
+    maxTokens: 25_000,
+    fetchContext: fetchFake({ today: [FIX.day, FIX.journal], goals: [FIX.goal] }),
+    producers: {
+      produceInitialQuery: () => Promise.resolve(ok({ paths: [] as string[], query: 'q1' })),
+      evolveQueries: () => Promise.resolve(ok({ queries: ['q1', 'q2'], changed: true })),
+      executeQuery: () => Promise.resolve(ok({ paths: [FIX.person] })),
+    },
+  })
+  await context.seedBaseline()
+  await context.firstTurn('What is the Atlas rollout checklist?')
+  const second = await context.evolveTurn('Who is Jane Doe?', [])
+  const fitted = context.fitForRequest(0)
+  assert({
+    given: 'a segment, an addition delivered on turn two, and a request with room for pins only',
+    should: 'drop segment documents, keep the pinned goal, and keep the delivered addition',
+    actual: {
+      additionDelivered: second.rebuilt!.joined.map((r) => r.path),
+      fittedKept: fitted.kept.map((r) => r.path).sort(),
+      segmentShrank: (fitted.activityMarkdown ?? '').length < (second.rebuilt!.activityMarkdown ?? '').length,
+    },
+    expected: {
+      additionDelivered: ['people/Jane-Doe.md'],
+      fittedKept: ['goals/2026.md', 'people/Jane-Doe.md'],
+      segmentShrank: true,
+    },
+  })
+})

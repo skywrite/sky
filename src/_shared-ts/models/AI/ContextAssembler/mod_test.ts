@@ -448,6 +448,27 @@ test('from — eligible: admission by evidence floors what the predicate refuses
   })
 })
 
+test('toMarkdown — only: a named subset renders in path order, whatever the scores did', () => {
+  const domain = floorDomain()
+  const byScore = ContextAssembler.from(domain, { scorer: FLOOR_SCORER, maxTokens: 10000 })
+  const reversed = ContextAssembler.from(domain, {
+    scorer: (item) => scored(item.path === '/notes/low.md' ? 10 : item.path === '/notes/mid.md' ? 4 : 2),
+    maxTokens: 10000,
+  })
+  const subset = new Set(['/notes/top.md', '/notes/low.md'])
+  const opts = { relativeTo: '/', delimited: true }
+  assert({
+    given: 'the same two documents kept under two scorers that rank them in opposite orders',
+    should: 'render identical markdown for the named subset, and keep score order for the whole',
+    actual: {
+      sameSubset: byScore.toMarkdown({ ...opts, only: subset }) === reversed.toMarkdown({ ...opts, only: subset }),
+      wholeDiffers: byScore.toMarkdown(opts) !== reversed.toMarkdown(opts),
+      subsetHasMid: byScore.toMarkdown({ ...opts, only: subset }).includes('mid.md'),
+    },
+    expected: { sameSubset: true, wholeDiffers: true, subsetHasMid: false },
+  })
+})
+
 test('from — floor: the top doc always clears its own floor', () => {
   const domain = makeDomain([{ doc: makeDoc('only'), path: '/notes/solo.md' }])
   const asm = ContextAssembler.from(domain, { scorer: () => scored(1), maxTokens: 10000, floorFraction: 0.9 })

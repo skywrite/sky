@@ -35,6 +35,7 @@ const FIX = {
   day: abs('time/2026/W05/01-27/day.md'),
   goal: abs('goals/2026.md'),
   roadmap: abs('projects/Atlas/Roadmap.md'),
+  person: abs('people/Jane-Doe.md'),
 }
 
 const AMBIENT = { today: { date: '2026-01-27', dayOfWeek: 'Tuesday' }, health: [], prices: [] }
@@ -1029,4 +1030,146 @@ test('ChatSession - closing a recovered saved chat files replies made before the
       recovery: undefined,
     },
   })
+})
+
+/** Scripts one reply per call and keeps what each call received: the segment and the message roles. */
+function deliveryModel() {
+  const calls: Array<{ segment: string; roles: string[]; last: string }> = []
+  const invokeModel: ModelInvoker = (args) => {
+    const last = args.messages.at(-1)
+    calls.push({
+      segment: String(args.instructions[1]?.content ?? ''),
+      roles: args.messages.map((m) => m.role),
+      last: typeof last?.content === 'string' ? last.content : JSON.stringify(last?.content ?? ''),
+    })
+    args.sink.write('Noted.')
+    return Promise.resolve({
+      text: 'Noted.',
+      content: [],
+      steps: [],
+      responseMessages: [{ role: 'assistant', content: 'Noted.' }],
+    })
+  }
+  return { invokeModel, calls }
+}
+
+/** Turn one retrieves the roadmap; turn two moves onto Jane and retrieves her profile. */
+function movingProducers() {
+  return {
+    produceInitialQuery: () => Promise.resolve(ok({ paths: [FIX.roadmap], query: 'q1' })),
+    evolveQueries: () => Promise.resolve(ok({ queries: ['q1', 'q2'], changed: true })),
+    executeQuery: () => Promise.resolve(ok({ paths: [FIX.person] })),
+  }
+}
+
+test('later-turn documents arrive at the head of the user message, and the segment never changes', async () => {
+  const model = deliveryModel()
+  const { session, tmp } = await makeSession({
+    invokeModel: model.invokeModel,
+    model: { model: { provider: 'anthropic.messages', modelId: 'claude-opus-5-5' } } as unknown as ResolvedModel,
+    producers: movingProducers(),
+  })
+  try {
+    await session.start()
+    await session.send('What is on the Atlas roadmap?')
+    await session.send('And who is Jane Doe?')
+    const second = session.contextLog[1]
+    const last = model.calls[1].last
+    assert({
+      given: 'a second turn whose query brings a new document into the context',
+      should:
+        'keep the context segment byte-identical, carry the newcomer as a labeled block ahead of the question in the same user message, and log it as added',
+      actual: {
+        sameSegment: model.calls[1].segment === model.calls[0].segment,
+        segmentHasRoadmap: model.calls[0].segment.includes('Roadmap'),
+        roles: model.calls[1].roles,
+        labeled: last.startsWith('[Notebook documents the assistant retrieved'),
+        order: last.indexOf('Jane-Doe.md') < last.indexOf('And who is Jane Doe?'),
+        repeatsRoadmap: last.includes('Roadmap.md'),
+        added: second.added?.map((r) => r.path),
+        history: session.stateAt(undefined, true).modelMessages?.map((m) => m.role),
+      },
+      expected: {
+        sameSegment: true,
+        segmentHasRoadmap: true,
+        roles: ['user', 'assistant', 'user'],
+        labeled: true,
+        order: true,
+        repeatsRoadmap: false,
+        added: ['people/Jane-Doe.md'],
+        history: ['user', 'assistant', 'user', 'assistant'],
+      },
+    })
+  } finally {
+    await rm(tmp, { recursive: true, force: true })
+  }
+})
+
+/** A model that records the provider options each call carried and answers with one word. */
+function recordingModel(provider: string) {
+  const seen: Array<Record<string, unknown> | undefined> = []
+  const model = new MockLanguageModelV3({
+    provider,
+    doStream: async ({ providerOptions }) => {
+      seen.push(providerOptions as Record<string, unknown> | undefined)
+      return {
+        stream: simulateReadableStream<any>({
+          chunks: [
+            { type: 'stream-start', warnings: [] },
+            { type: 'text-start', id: 't' },
+            { type: 'text-delta', id: 't', delta: 'Noted.' },
+            { type: 'text-end', id: 't' },
+            {
+              type: 'finish',
+              finishReason: { unified: 'stop', raw: undefined },
+              usage: {
+                inputTokens: { total: 1, noCache: 1, cacheRead: 0, cacheWrite: 0 },
+                outputTokens: { total: 1, text: 1, reasoning: 0 },
+              },
+            },
+          ],
+        }),
+      }
+    },
+  })
+  return { model, seen }
+}
+
+test('the conversation key reaches OpenAI as its prompt cache key, and no one else', async () => {
+  const openai = recordingModel('openai.responses')
+  const anthropic = recordingModel('anthropic.messages')
+  const { session: a, tmp: tmpA } = await makeSession({
+    invokeModel: undefined,
+    cacheKey: 'thread-7',
+    model: {
+      model: openai.model,
+      providerOptions: { openai: { reasoningEffort: 'high' } },
+    } as unknown as ResolvedModel,
+  })
+  const { session: b, tmp: tmpB } = await makeSession({
+    invokeModel: undefined,
+    cacheKey: 'thread-7',
+    model: { model: anthropic.model } as unknown as ResolvedModel,
+  })
+  try {
+    await a.start()
+    await a.send('What is on the Atlas roadmap?')
+    await b.start()
+    await b.send('What is on the Atlas roadmap?')
+    assert({
+      given: 'the same conversation key on an OpenAI model and on an Anthropic model',
+      should: 'send it as the OpenAI prompt cache key beside the profile options, and send nothing of it to Anthropic',
+      actual: {
+        openai: openai.seen[0]?.['openai'],
+        anthropic: anthropic.seen[0]?.['openai'] ?? null,
+      },
+      expected: {
+        openai: { reasoningEffort: 'high', promptCacheKey: 'thread-7' },
+        anthropic: null,
+      },
+    })
+  } finally {
+    await rm(tmpA, { recursive: true, force: true })
+    await rm(tmpB, { recursive: true, force: true })
+  }
 })

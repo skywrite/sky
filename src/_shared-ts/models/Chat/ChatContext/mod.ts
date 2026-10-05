@@ -17,6 +17,14 @@
  * message with one grazing word match in, and the budget filled on 79% of
  * turns (measured 2026-10-04 over 30 days).
  *
+ * Delivery is append-only. The first assembly is rendered once, as the
+ * context segment of the system prompt; a document admitted on a later turn
+ * is rendered as an addition the host delivers with the person's message,
+ * and a shipped document is never taken back within the session. The
+ * request therefore only grows at its end, which is what both providers'
+ * prompt caches reward: before this, two of every three turns rewrote the
+ * whole segment, 81% of it the same documents as the turn before.
+ *
  * The class is host-neutral: it never prints and never talks to a terminal.
  * A host (the CLI command today, a web session later) injects the query
  * producers, calls one method per turn, and renders the returned report
@@ -27,7 +35,12 @@ import * as path from 'node:path'
 import { type AIErrorEntry, logAIError } from '#shared/ai/errorLog.ts'
 import type { TokenUsage } from '#shared/ai/usage.ts'
 import { readTextFile } from '#shared/fs/mod.ts'
-import ContextAssembler, { type ReserveOptions, type ScoredItem } from '#shared/models/AI/ContextAssembler/mod.ts'
+import ContextAssembler, {
+  keepAlways,
+  type ReserveOptions,
+  type ScoredItem,
+  type Scorer,
+} from '#shared/models/AI/ContextAssembler/mod.ts'
 import { withExcludedPaths, withPinnedPaths } from '#shared/models/AI/ContextAssembler/scorers.ts'
 import DomainCollection from '#shared/models/DomainCollection/mod.ts'
 import { parseDuration } from '#shared/models/DomainCollection/query/filters/mod.ts'
@@ -110,8 +123,20 @@ export interface ContextProducers {
 
 /** One reassembly of the context: what shipped, what changed, what was cut. */
 export interface RebuildReport {
-  /** Rendered kept-documents markdown, null when the universe is empty. */
+  /**
+   * The context segment: the first assembly's documents rendered as markdown,
+   * byte-identical from turn to turn unless a request refit or a change by
+   * hand re-renders it. Null when nothing has ever shipped.
+   */
   activityMarkdown: string | null
+  /**
+   * The documents that joined the context this rebuild, rendered for
+   * delivery after the person's message; null when none joined or when this
+   * rebuild is the first assembly, which the segment carries whole.
+   */
+  additionsMarkdown: string | null
+  /** The documents that joined the context this rebuild — shipped now, not before. */
+  joined: ContextDocRecord[]
   stats?: TurnStats
   /** Docs new to the universe this turn (turn 1 records them in the log's universe instead). */
   added: ContextDocRecord[]
@@ -290,6 +315,10 @@ export default class ChatContext {
   private turnTruncations: QueryTruncation[] = []
   /** Stats of the last computed rebuild — quiet turns log them as reused. */
   private lastStats: TurnStats | undefined
+  /** Every document the model has seen this session — admitted once, kept for the session. */
+  private shipped = new Set<string>()
+  /** The documents the context segment renders; everything else shipped rides the history as additions. */
+  private segment = new Set<string>()
 
   constructor(opts: ChatContextOptions) {
     this.today = opts.today
@@ -804,10 +833,12 @@ export default class ChatContext {
     }
   }
 
-  /** Drop the whole universe (the /no-context escape hatch). */
+  /** Drop the whole universe (the /no-context escape hatch). The next assembly starts a new segment. */
   clear(): void {
     this.collection = null
     this.contextPaths = []
+    this.shipped.clear()
+    this.segment.clear()
   }
 
   // ---------------------------------------------------------------------------
@@ -841,14 +872,24 @@ export default class ChatContext {
     this.userExcludes.delete(abs)
   }
 
-  /** Reassemble now, between turns, after a change by hand. Not a turn: nothing is logged. */
+  /**
+   * Reassemble now, between turns, after a change by hand — a pin, an
+   * exclusion, a new budget. Not a turn: nothing is logged. The person asked,
+   * so the segment's own documents compete under the cap again (a smaller
+   * budget takes effect at once); additions are history and stay.
+   */
   reassemble(): RebuildReport {
-    return this.rebuild(undefined, false)
+    return this.rebuild(undefined, false, this.maxTokens, true)
   }
 
-  /** Refit retrieval for this request, preserving the preference and this turn's provenance. */
+  /**
+   * Refit retrieval for this request, preserving the preference and this
+   * turn's provenance. Only the segment can give: additions already in the
+   * history cannot be taken back, so they stay and the segment's documents
+   * compete for what room the request leaves.
+   */
   fitForRequest(tokens: number): RebuildReport {
-    const report = this.rebuild(undefined, false, Math.min(this.maxTokens, tokens))
+    const report = this.rebuild(undefined, false, Math.min(this.maxTokens, tokens), true)
     const entry = this.contextLog.findLast((e) => e.turn === this.turnNumber)
     if (entry) {
       entry.stats = report.stats
@@ -1011,12 +1052,25 @@ export default class ChatContext {
     }
   }
 
-  /** Reassemble the context from the current universe and record the turn log. */
-  private rebuild(newPaths: string[] | undefined, record: boolean, requestBudget = this.maxTokens): RebuildReport {
+  /**
+   * Reassemble the context from the current universe and record the turn
+   * log. Shipped documents are kept unconditionally (`fit` lets the segment's
+   * own give way to the request); newly admitted ones compete for the room
+   * the cap leaves, and join either the segment — on the first assembly —
+   * or the additions the host delivers.
+   */
+  private rebuild(
+    newPaths: string[] | undefined,
+    record: boolean,
+    requestBudget = this.maxTokens,
+    fit = false,
+  ): RebuildReport {
     const prevPaths = new Set(this.contextPaths)
     this.contextPaths = this.collection?.paths ?? []
 
     let activityMarkdown: string | null = null
+    let additionsMarkdown: string | null = null
+    const joined: ContextDocRecord[] = []
     let turnStats: TurnStats | undefined
     // Typed record for every universe path — shipped docs carry a score
     // (or pinned), cut docs additionally say why. One map serves the
@@ -1032,9 +1086,14 @@ export default class ChatContext {
         provenance: this.provenance,
         turn: this.turnNumber,
       })
+      // What the model has seen stays: a shipped document is never taken
+      // back within the session. A request refit is the one exception, and
+      // only for the segment — additions are history and cannot be edited.
+      const held = fit ? new Set([...this.shipped].filter((p) => !this.segment.has(p))) : this.shipped
+      const shippedAware: Scorer = (item) => (held.has(item.path) ? keepAlways('shipped') : scorer(item))
       const assembler = ContextAssembler.from(this.collection, {
         scorer: withExcludedPaths(
-          withPinnedPaths(scorer, new Set([...this.pinnedPaths, ...this.userPins])),
+          withPinnedPaths(shippedAware, new Set([...this.pinnedPaths, ...this.userPins])),
           this.userExcludes,
           'excluded by you',
         ),
@@ -1042,15 +1101,38 @@ export default class ChatContext {
         eligible: this.admits(lexicalByPath),
         reserve: this.sweepReserve(),
       })
-      activityMarkdown = assembler.toMarkdown({ relativeTo: this.baseDir, delimited: true, label: this.dayLabel })
+      const render = (paths: ReadonlySet<string>) =>
+        assembler.toMarkdown({ relativeTo: this.baseDir, delimited: true, label: this.dayLabel, only: paths })
+      const keptPaths = new Set(assembler.kept.map((s) => s.item.path))
+      const joinedPaths = new Set([...keptPaths].filter((p) => !this.shipped.has(p)))
+      if (this.segment.size === 0) {
+        // The first assembly: the segment carries everything kept.
+        this.segment = new Set(keptPaths)
+        activityMarkdown = render(this.segment)
+      } else {
+        // A refit may drop segment documents from this request; a plain
+        // rebuild keeps the segment as it was and renders the newcomers apart.
+        if (fit) this.segment = new Set([...this.segment].filter((p) => keptPaths.has(p)))
+        activityMarkdown = render(this.segment)
+        if (joinedPaths.size > 0) additionsMarkdown = render(joinedPaths)
+      }
+      if (fit) for (const p of this.shipped) if (!keptPaths.has(p)) this.shipped.delete(p)
+      for (const p of keptPaths) this.shipped.add(p)
       const reservedPaths = new Set(assembler.reserved.map((s) => s.item.path))
       for (const s of assembler.kept) {
-        const rec: ContextDocRecord =
-          s.verdict.keep === 'always'
-            ? { path: this.relPath(s.item.path), tokens: s.tokens, pinned: true }
-            : this.scoredRecord(s, lexicalByPath)
+        let rec: ContextDocRecord
+        if (s.verdict.keep === 'always' && s.verdict.reason === 'shipped') {
+          // Held for having shipped; the record still carries the score the evidence earns today.
+          const inner = scorer(s.item)
+          rec = this.scoredRecord({ ...s, score: inner.keep === 'scored' ? inner.score : 0 }, lexicalByPath)
+        } else if (s.verdict.keep === 'always') {
+          rec = { path: this.relPath(s.item.path), tokens: s.tokens, pinned: true }
+        } else {
+          rec = this.scoredRecord(s, lexicalByPath)
+        }
         if (reservedPaths.has(s.item.path)) rec.via = 'reserve'
         docRecords.set(s.item.path, rec)
+        if (joinedPaths.has(s.item.path)) joined.push(rec)
       }
       for (const s of assembler.pruned) {
         const rec: ContextDocRecord = { ...this.scoredRecord(s, lexicalByPath), cut: 'budget' }
@@ -1122,6 +1204,7 @@ export default class ChatContext {
           .sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))
       } else {
         if (turnDiff.length > 0) entry.diff = turnDiff
+        if (joined.length > 0) entry.added = joined
         if (cutRecords.length > 0) entry.pruned = cutRecords
       }
       if (this.turnErrors.length > 0) entry.errors = [...this.turnErrors]
@@ -1130,6 +1213,8 @@ export default class ChatContext {
 
     return {
       activityMarkdown,
+      additionsMarkdown,
+      joined,
       stats: turnStats,
       added: turnDiff,
       kept: [...docRecords.values()].filter((r) => r.cut === undefined),

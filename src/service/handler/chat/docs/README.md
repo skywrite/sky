@@ -614,6 +614,7 @@ failed check reads as usual. See
 
 ## Verified
 
+- 2026-10-04 — the Context story lists documents that joined the context from the baseline beside the query diff (`added` on the turn log); what is admitted and how later documents are delivered is ruled in [ChatContext](../../../../_shared-ts/models/Chat/ChatContext/docs/README.md).
 - 2026-09-23 — a chat returns to its day. Route test: a saved chat opened
   to continue reports its day on the thread. Browser test on the real day
   page: a chat continued from an earlier day names that day on its back

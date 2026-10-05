@@ -44,6 +44,45 @@ clear ~8, so the budget filled on 79% of turns and half of what shipped had
 no query behind it (measured over 30 days, 2026-10-04). The scorer itself is
 unchanged: it still orders the admitted set for the budget walk.
 
+## Delivery is append-only
+
+The first assembly is rendered once, as the context segment of the system
+prompt, and that segment is byte-identical from turn to turn. A document
+admitted on a later turn — a query hit, a baseline document the conversation
+moved onto, a pin — is rendered as an **addition** that the session places
+at the head of the person's next user message, as a labeled block followed
+by their words. (The AI SDK takes system messages only through
+`instructions`, at the front of the request; a system message inside
+`messages` is refused whatever the provider supports — seen live on Opus
+5.5, 2026-10-04.) A shipped document is never taken back within the
+session: the rank walk only ever places newcomers in the room the cap
+leaves.
+
+The request therefore only grows at its end, which is what both providers'
+prompt caches reward. Before this, two of every three turns rewrote the
+whole segment, 81% of it the same documents as the turn before, and cache
+writes were 95% of the chat bill (30 days to 2026-10-04).
+
+OpenAI needs one more thing to read that prefix back: a stable
+`prompt_cache_key` per conversation, which routes the request to the cache
+that holds it. Without one, six of eight unchanged GPT-6 turns in the 30 days
+read nothing. The session sends its conversation key (the web thread id, the
+terminal's process id) through `ChatEngineOptions.cacheKey`; Anthropic keys
+its cache by the prefix alone and never sees it.
+
+Two consequences to know:
+
+- A request the model's window cannot take is refit from the **segment**
+  only (`fitForRequest`); additions are history and stay. A document the
+  refit drops leaves the shipped set and may be admitted again later.
+- Keeping a document out by hand (`exclude`) stops its future admission and
+  re-renders the segment without it, but an addition already delivered
+  cannot be unsaid; the log and the story say it is excluded from here on.
+
+`RebuildReport.activityMarkdown` is the segment, `additionsMarkdown` the
+newcomers; the turn log records them as `added`, which the Context story
+lists beside the query diff.
+
 The policy is otherwise conditioned on the question's shape:
 
 - **`rank`** (default): the admitted set, score-rank walked to the cap.
@@ -107,3 +146,15 @@ guesses):
    stratification proves insufficient; one parameter, not a second scorer.
 4. Sweep budget boost — parked; see the incident file for why it does not
    fix coverage.
+
+## Notes
+
+- [2026-10-04 — admission by evidence, and context that only grows](2026-10-04-admission-by-evidence-and-append-only-delivery.md): why the budget stopped being a target and why later documents arrive as additions.
+- [2026-09-01 — the lean baseline drops message bodies](2026-09-01-lean-baseline-drops-message-bodies.md)
+- [2026-08-15 — sweep pruning starved the stated window](2026-08-15-sweep-pruning-starved-stated-window.md)
+
+## Verified
+
+- 2026-10-04 — live on the web path, throwaway threads never kept: Opus 5.5 wrote 195,140 tokens on turn one and read 193,942 while writing 13,603 on turn two; Haiku read 145,603 and wrote 10,887. GPT-6 Astra read nothing on turn two until the conversation key went out as its prompt cache key, then read 124,055 and wrote 7,189 — the same on the direct run (66,563 read, 5,680 written).
+- 2026-10-04 — live, the real session class against the running notebook with a real model, nothing saved: Haiku 4.5 seeded 104 documents, admitted 19 (62k estimated tokens) on turn one and refused 85; turn two admitted ten more and read 76,785 tokens from cache while writing 6,436 — the addition and the new message. Before the render order was fixed by path, the same turn re-wrote all 83k: a segment rendered in score order changes bytes as the scores move. Opus 5.5, same first turn: 104k tokens written for the same 62k estimated — the 1.7× estimate drift.
+- 2026-10-04 — unit: the assembler's `eligible` predicate and path-ordered subset render; ChatContext admission (query hit, ledger, and pinned goal ship; an off-topic journal and summary are refused), a refused journal admitted when the topic moves onto it, a shipped journal held after its evidence fades with the newcomer delivered apart, a refit shrinking the segment only; ChatSession delivery as a labeled block at the head of the user message, the segment byte-identical across turns.

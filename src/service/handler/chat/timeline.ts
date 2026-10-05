@@ -41,7 +41,7 @@ export interface TimelineEntry {
   stats?: TurnStats
   /** Turn 1: how many documents the baseline gathered, shipped and cut alike */
   found?: number
-  /** Documents queries brought into the universe this turn, cut ones included */
+  /** Documents that came in this turn: what queries brought into the universe, cut ones included, and what joined the context from the baseline */
   added: ContextDocRecord[]
   /** Documents the model saw before that the budget cut this turn */
   pushedOut: ContextDocRecord[]
@@ -49,6 +49,19 @@ export interface TimelineEntry {
   errors: string[]
   /** The preflight's verdict on the message, when one ran */
   preflight?: PreflightVerdict
+}
+
+/**
+ * What a turn brought in: the documents queries added to the universe (cut
+ * ones included, so the story can say they did not fit) and the documents
+ * that joined the context from the baseline as the conversation moved onto
+ * them — each path once, the universe record first.
+ */
+function cameIn(entry: ContextTurnLog): ContextDocRecord[] {
+  const out = [...(entry.diff ?? [])]
+  const seen = new Set(out.map((r) => r.path))
+  for (const r of entry.added ?? []) if (!seen.has(r.path)) out.push(r)
+  return out
 }
 
 /** A cut the budget made — not the person's own exclusion, not a scorer verdict. */
@@ -78,7 +91,7 @@ export function timelineOf(log: ContextTurnLog[], turns: ConversationMessage[]):
 
   for (const entry of log) {
     const kind = kindOf(entry)
-    const added = kind === 'seed' ? [] : (entry.diff ?? [])
+    const added = kind === 'seed' ? [] : cameIn(entry)
     const snapshot = kind === 'seed' ? entry.universe : kind === 'grew' ? (entry.pruned ?? []) : null
 
     let pushedOut: ContextDocRecord[] = []

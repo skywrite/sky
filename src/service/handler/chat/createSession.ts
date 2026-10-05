@@ -357,6 +357,8 @@ export function createChatHost(config: typeof ConfigModule, env: Record<string, 
     return new ChatSession({
       today,
       startTime,
+      // The thread id keys OpenAI's prompt cache for the conversation's life, restarts included.
+      cacheKey: id,
       ...webReading(prefs.contextTokens, profile.contextWindow),
       baseDir: config.DIR_BASE,
       timeDir: config.DIR_TIME,

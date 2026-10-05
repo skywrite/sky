@@ -1,6 +1,6 @@
 ---
 created: 2026-09-01
-updated: 2026-09-23
+updated: 2026-10-04
 ---
 
 # Chat model — the pieces under every chat host
@@ -116,6 +116,8 @@ item, as `slack:unread` does per conversation. Read the
 [2026-09-23 note](2026-09-23-stop-reaches-the-command.md).
 
 ## Notes
+
+- [2026-10-04 — admission by evidence, and context that only grows](../ChatContext/docs/2026-10-04-admission-by-evidence-and-append-only-delivery.md): a document ships on evidence, not budget room; the first assembly is a byte-stable segment and later documents arrive as additions with the person's message; a shipped document is held for the session; OpenAI reads the prefix back only with the conversation's prompt cache key.
 
 - [2026-09-23 — Stop reaches the command](2026-09-23-stop-reaches-the-command.md): the turn's abort signal rides into the command's context; a long loop checks it per item; the page names the tool a Stop waits on.
 

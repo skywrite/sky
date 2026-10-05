@@ -522,6 +522,7 @@ export default class AiChatTask extends Command {
     const session = new ChatSession({
       today,
       startTime,
+      cacheKey: `ai-chat-${process.pid}`,
       days,
       baseDir,
       timeDir,

@@ -227,6 +227,14 @@ export interface ChatEngineOptions {
   maxSteps?: number
   /** Test seam — production streams via streamText. */
   invokeModel?: ModelInvoker
+  /**
+   * A stable key for the conversation, sent to OpenAI as its prompt cache
+   * key. OpenAI routes a request to a cache by this key; without one, a
+   * turn whose prefix is byte-identical to the last still read nothing from
+   * cache on six of eight unchanged turns (30 days to 2026-10-04). Anthropic
+   * keys its cache by the prefix alone and ignores this.
+   */
+  cacheKey?: string
 }
 
 // -----------------------------------------------------------------------------
@@ -281,6 +289,7 @@ export default class ChatEngine {
   private readonly maxApprovalRounds: number
   private readonly maxSteps: number
   private readonly invokeModel?: ModelInvoker
+  private readonly cacheKey?: string
 
   /** The model-facing conversation history, tool exchanges included. */
   private messages: Message[] = []
@@ -292,6 +301,23 @@ export default class ChatEngine {
     this.maxApprovalRounds = opts.maxApprovalRounds ?? 3
     this.maxSteps = opts.maxSteps ?? 40
     this.invokeModel = opts.invokeModel
+    this.cacheKey = opts.cacheKey
+  }
+
+  /**
+   * The model options for a call: the resolved profile, plus the
+   * conversation's prompt cache key for an OpenAI model. Only OpenAI's own
+   * endpoints take the field — an OpenAI-compatible host (Cerebras) files its
+   * options under the same key and would refuse it.
+   */
+  private modelOptions(): ResolvedModel {
+    const model = this.model.model
+    if (!this.cacheKey || typeof model === 'string' || !model.provider.startsWith('openai')) return this.model
+    const openai = this.model.providerOptions?.['openai'] ?? {}
+    return {
+      ...this.model,
+      providerOptions: { ...this.model.providerOptions, openai: { ...openai, promptCacheKey: this.cacheKey } },
+    }
   }
 
   /** Think with another model from the next invocation on — a host's per-thread choice. */
@@ -321,6 +347,17 @@ export default class ChatEngine {
   /** A detached copy of the full history for restart recovery. */
   snapshotMessages(): ModelMessage[] {
     return structuredClone(this.messages) as unknown as ModelMessage[]
+  }
+
+  /**
+   * Add documents the context admitted this turn, so the request grows at
+   * its end instead of rewriting the first assembly. A user message, placed
+   * before the person's: appendUserMessage then merges their words into it,
+   * a labeled block of documents followed by what they said. (System
+   * messages reach the model only through `instructions`, at the front.)
+   */
+  appendContextMessage(content: string): void {
+    this.messages.push({ role: 'user', content })
   }
 
   /**
@@ -509,7 +546,7 @@ export default class ChatEngine {
         }
         const closingDone: StopCondition<ToolSet> = ({ steps }) => closingAt !== undefined && steps.length > closingAt
         const stream = streamText({
-          ...this.model,
+          ...this.modelOptions(),
           model: guardedModel,
           abortSignal,
           instructions,

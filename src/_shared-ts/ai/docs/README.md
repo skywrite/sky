@@ -1,6 +1,6 @@
 ---
 created: 2026-09-01
-updated: 2026-09-28
+updated: 2026-10-04
 ---
 
 # Model registry — roles, profiles, providers
@@ -46,6 +46,22 @@ when it fits, else drops to the highest stop that leaves room for the
 prompt, the tools, the reply and the estimate's slack. Cerebras serves
 Qwen 3.8 at 131,072 tokens on the paid tier, so a chat there reads 50k at
 most; a profile with no window declared is not capped.
+
+## Prompt caching
+
+`promptCache.ts` is the plumbing: a breakpoint on each instruction segment
+(`cachedInstructions`) and a breakpoint that moves to the last message on
+every step (`withCacheTail`, `cacheTailStep` — the
+[2026-09-03](2026-09-03-cache-tail-every-step.md) note). Anthropic keys its
+cache by the byte prefix up to a breakpoint; OpenAI caches a prefix
+automatically but routes by `prompt_cache_key`, which `ChatEngine` sends
+from `ChatEngineOptions.cacheKey` on OpenAI's own endpoints only (an
+OpenAI-compatible host files its options under the same key and would
+refuse the field). What a chat keeps byte-stable, how later documents are
+delivered so the request only grows at its end, and the measured effect on
+both providers are ruled in
+[ChatContext](../../models/Chat/ChatContext/docs/README.md#delivery-is-append-only)
+and its [2026-10-04](../../models/Chat/ChatContext/docs/2026-10-04-admission-by-evidence-and-append-only-delivery.md) note.
 
 ## Providers and their keys
 

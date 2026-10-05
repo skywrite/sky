@@ -29,7 +29,9 @@
  * sweep-stratified admission added `policy`/`sweep` on stats plus `via` on
  * doc records — recorded because they are tunable and a logged score is
  * only interpretable against the parameters that produced it, and the
- * memory distiller added `memory` on entries (the session's ai/memory ops)
+ * append-only delivery added `added` on entries (the docs that joined the
+ * context after the first assembly), the memory distiller added `memory`
+ * on entries (the session's ai/memory ops)
  * and the person-facts distiller added `people` (the session's profile ops),
  * and every entry carries `settings` — the model, preset, effort, and
  * reading budget the turn ran under, one object stamped before the model
@@ -170,6 +172,14 @@ export interface ContextTurnLog {
   universe?: ContextDocRecord[]
   /** Turns 2+: docs queries added to the universe this turn */
   diff?: ContextDocRecord[]
+  /**
+   * Turns 2+: docs that joined the model's context this turn — delivered as
+   * an addition with the person's message, never by rewriting the first
+   * assembly. A superset of the kept part of `diff`: a baseline doc the
+   * conversation moved onto appears here and not there. Resume takes the
+   * universe from `universe` and `diff`; this field is the story's.
+   */
+  added?: ContextDocRecord[]
   /** Turns 2+: snapshot of docs currently cut by budget or verdict */
   pruned?: ContextDocRecord[]
   /** Tool calls the model made this turn */
@@ -216,6 +226,7 @@ export function serializeContextLog(entries: ContextTurnLog[], details?: Context
     if (entry.stats) fields.push(`      "stats": ${JSON.stringify(entry.stats)}`)
     if (entry.universe && entry.universe.length > 0) fields.push(recordArrayField('universe', entry.universe))
     if (entry.diff && entry.diff.length > 0) fields.push(recordArrayField('diff', entry.diff))
+    if (entry.added && entry.added.length > 0) fields.push(recordArrayField('added', entry.added))
     if (entry.pruned && entry.pruned.length > 0) fields.push(recordArrayField('pruned', entry.pruned))
     if (entry.tools && entry.tools.length > 0) fields.push(recordArrayField('tools', entry.tools))
     if (entry.memory && entry.memory.length > 0) fields.push(recordArrayField('memory', entry.memory))

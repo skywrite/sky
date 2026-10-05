@@ -75,6 +75,18 @@ const CLOSED_ACTIVITY =
 const SKIPPED_ACTIVITY =
   '(Not read for this message: a quick check judged it needs nothing from the notebook. The notebook is open, and a later message can read it. Answer from the conversation and your tools, never describe the notebook as empty or missing, and say so if the answer would need the notebook after all.)'
 
+/**
+ * Documents a later turn admits are delivered with the person's message,
+ * never by rewriting the first assembly — so the request only grows at its
+ * end and the providers' prompt caches read everything before it. They ride
+ * as a labeled block at the head of the user message (the SDK takes system
+ * messages only through `instructions`, at the front), so the model never
+ * mistakes the notebook for the person.
+ */
+function additionsMessage(markdown: string): string {
+  return `[Notebook documents the assistant retrieved for the message that follows — not written by the person. They join the Activity section of the instructions.]\n\n${markdown}`
+}
+
 export interface ChatMessageFiles {
   content: Exclude<UserContent, string>
   attachments: Attachment[]
@@ -175,6 +187,8 @@ export interface ChatSessionOptions {
   parent?: ChatParent | null
   /** Spread into every model invocation */
   model: ResolvedModel
+  /** A stable key for this conversation — OpenAI's prompt cache key; see ChatEngineOptions.cacheKey. */
+  cacheKey?: string
   /** What the transcript records as provider and model */
   profile: ModelProfile
   producers: ContextProducers
@@ -258,6 +272,8 @@ export default class ChatSession {
   private readonly attachments = new Map<string, Attachment>()
   private systemPrompt = ''
   private contextPrompt = ''
+  /** Documents admitted between turns (a pin, a wider budget), delivered with the next message. */
+  private pendingAdditions: string | null = null
   /** What the transcript records — the model answering from now on, which a host may change between turns. */
   private profile: ModelProfile
   /** The file being written back to — the resume the host gave, or the file this session filed mid-life. */
@@ -341,6 +357,7 @@ export default class ChatSession {
     })
     this.engine = new ChatEngine({
       model: opts.model,
+      cacheKey: opts.cacheKey,
       approvalHandler: opts.approvalHandler,
       onEvent: (event) => {
         if (event.type === 'context-adjusted') this.context.recordTurnAdjustment(event.adjustment)
@@ -595,8 +612,15 @@ export default class ChatSession {
       this.opts.ambient,
       this.context.budget === 0 ? CLOSED_ACTIVITY : report.activityMarkdown,
     )
+    this.queueAdditions(report)
     this.emit({ type: 'context-rebuilt', report })
     return report
+  }
+
+  /** Documents a rebuild admitted beyond the segment wait for the next message, which delivers them. */
+  private queueAdditions(report: RebuildReport): void {
+    if (!report.additionsMarkdown) return
+    this.pendingAdditions = [this.pendingAdditions, report.additionsMarkdown].filter(Boolean).join('\n\n')
   }
 
   /**
@@ -695,9 +719,14 @@ export default class ChatSession {
       context = await this.context.evolveTurn(userMessage, this.turns.slice(-6))
     }
     if (context.rebuilt) {
+      // The segment is byte-identical from turn to turn unless a refit or a
+      // change by hand re-rendered it; the turn's newcomers ride below.
       this.contextPrompt = buildContextPrompt(this.opts.ambient, context.rebuilt.activityMarkdown)
+      this.queueAdditions(context.rebuilt)
       this.emit({ type: 'context-rebuilt', report: context.rebuilt })
     }
+    const additions = this.pendingAdditions
+    this.pendingAdditions = null
     if (context.errors.length > 0) this.emit({ type: 'context-errors', errors: context.errors })
     // The turn's settings go on its log entry now, before the reply: a turn
     // that fails, or a snapshot taken while the answer is running, still
@@ -717,6 +746,9 @@ export default class ChatSession {
       if (turnWhen) turn.when = turnWhen
       this.turns.push(turn)
     }
+    // The admitted documents arrive ahead of the person's words in the same
+    // user message: appendUserMessage merges into the block below.
+    if (additions) this.engine.appendContextMessage(additionsMessage(additions))
     this.engine.appendUserMessage(userMessage, turnWhen, files?.content)
     for (const file of files?.attachments ?? []) this.attachments.set(file.file, file)
     // The turn has begun: for a host that keeps the thread, the snapshot holds

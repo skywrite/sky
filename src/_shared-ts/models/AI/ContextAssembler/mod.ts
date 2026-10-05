@@ -387,12 +387,20 @@ export default class ContextAssembler {
    * Render kept documents as markdown, suitable for injecting into an AI prompt.
    * Delegates to Collection.toMarkdown() so the output format (delimiters,
    * path comments, type-based ordering) stays consistent with the rest of the
-   * system.
+   * system. `only` renders the named subset of the kept set in path order
+   * within each type — the same set renders the same bytes whatever the
+   * scores did since, which is what keeps a prompt-cached segment cached.
    */
-  toMarkdown(opts?: MarkdownOutputOptions): string {
-    if (this._kept.length === 0) return ''
-    const docs = this._kept.map((s) => ({ doc: s.item.doc, path: s.item.path, depth: s.item.depth }))
-    return Collection.from(docs).toMarkdown(opts)
+  toMarkdown(opts?: MarkdownOutputOptions & { only?: ReadonlySet<string> }): string {
+    const { only, ...rest } = opts ?? {}
+    const kept = only
+      ? this._kept
+          .filter((s) => only.has(s.item.path))
+          .sort((a, b) => (a.item.path < b.item.path ? -1 : a.item.path > b.item.path ? 1 : 0))
+      : this._kept
+    if (kept.length === 0) return ''
+    const docs = kept.map((s) => ({ doc: s.item.doc, path: s.item.path, depth: s.item.depth }))
+    return Collection.from(docs).toMarkdown(rest)
   }
 }
 
