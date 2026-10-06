@@ -32,6 +32,7 @@ import {
   matchesUpdatedRecently,
   type NameResolver,
 } from '../filters/mod.ts'
+import { type OrderBy, sortByRelevance } from './relevance.ts'
 
 export type { NameResolver }
 
@@ -379,15 +380,20 @@ interface TruncationSink {
 export function listResolver<F, R>(spec: EntitySpec<F, R>, ctx: ResolverContext) {
   const map = spec.mapper(ctx)
 
-  return (args: { where?: F; limit?: number }, gqlCtx?: unknown, info?: unknown): R[] => {
+  return (args: { where?: F; limit?: number; orderBy?: OrderBy }, gqlCtx?: unknown, info?: unknown): R[] => {
     let results = ctx.domain.entriesByType(spec.type)
     const selects = spec.selects
     if (selects) results = results.filter(({ doc, path }) => selects(doc, path))
+    const total = results.length
     if (args.where) {
       const where = args.where
       results = results.filter(({ doc, path }) => spec.matches(doc, where, path, ctx))
     }
-    if (spec.sortByDate) results = sortByDateDesc(results)
+    // RELEVANCE orders a text search by recency with a lift for strong hits
+    // before the cap, so the limit keeps the best matches rather than the
+    // newest (relevance.ts). Everything else keeps newest-first.
+    if (args.orderBy === 'RELEVANCE') results = sortByRelevance(results, args.where, total)
+    else if (spec.sortByDate) results = sortByDateDesc(results)
     const cap = args.limit ?? (hasDateBounds(args.where) ? Infinity : DEFAULT_QUERY_LIMIT)
     if (results.length > cap) {
       const sink = gqlCtx as TruncationSink | undefined

@@ -166,7 +166,10 @@ function mergeSplitOperations(query: string): string {
 }
 
 /** The only arguments root query fields accept (see dev/schema/generate.ts). */
-const ROOT_FIELD_ARGS = new Set(['where', 'limit'])
+const ROOT_FIELD_ARGS = new Set(['where', 'limit', 'orderBy'])
+
+/** Root arguments a model also writes inside `where`; they move back out (2026-10-05: `orderBy` inside the filter voided every text search). */
+const ROOT_ONLY_ARGS = new Set(['orderBy'])
 
 /**
  * Move filter keys the model left in field-argument position into `where`.
@@ -194,30 +197,40 @@ function hoistMisplacedFilterArgs(query: string): string {
       if (sel.kind !== Kind.FIELD) return sel
       const args = sel.arguments ?? []
       const strays = args.filter((a) => !ROOT_FIELD_ARGS.has(a.name.value))
-      if (strays.length === 0) return sel
-
       const where = args.find((a) => a.name.value === 'where')
       if (where && where.value.kind !== Kind.OBJECT) return sel
+      // Root-only arguments written inside the filter come back out.
+      const sunk =
+        where?.value.kind === Kind.OBJECT ? where.value.fields.filter((f) => ROOT_ONLY_ARGS.has(f.name.value)) : []
+      if (strays.length === 0 && sunk.length === 0) return sel
 
       const merged = new Map<string, ObjectFieldNode>()
       if (where?.value.kind === Kind.OBJECT) {
-        for (const field of where.value.fields) merged.set(field.name.value, field)
+        for (const field of where.value.fields)
+          if (!ROOT_ONLY_ARGS.has(field.name.value)) merged.set(field.name.value, field)
       }
       for (const stray of strays) {
         if (!merged.has(stray.name.value)) {
           merged.set(stray.name.value, { kind: Kind.OBJECT_FIELD, name: stray.name, value: stray.value })
         }
       }
+      const lifted: ArgumentNode[] = sunk
+        .filter((f) => !args.some((a) => a.name.value === f.name.value))
+        .map((f) => ({ kind: Kind.ARGUMENT, name: f.name, value: f.value }))
 
-      const whereArg: ArgumentNode = {
-        kind: Kind.ARGUMENT,
-        name: { kind: Kind.NAME, value: 'where' },
-        value: { kind: Kind.OBJECT, fields: [...merged.values()] },
-      }
+      const rest = args.filter((a) => a !== where && !strays.includes(a))
+      const whereArg: ArgumentNode | null =
+        merged.size > 0
+          ? {
+              kind: Kind.ARGUMENT,
+              name: { kind: Kind.NAME, value: 'where' },
+              value: { kind: Kind.OBJECT, fields: [...merged.values()] },
+            }
+          : null
       changed = true
       return {
         ...sel,
-        arguments: [whereArg, ...args.filter((a) => a !== where && !strays.includes(a))],
+        arguments: [...(whereArg ? [whereArg] : []), ...rest, ...lifted],
       } as FieldNode
     })
     return { ...def, selectionSet: { ...def.selectionSet, selections } } as OperationDefinitionNode

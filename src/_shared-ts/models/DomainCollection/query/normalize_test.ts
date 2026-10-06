@@ -608,3 +608,35 @@ test('dropInvalidSelections', async (t) => {
     })
   })
 })
+
+test('normalizeGraphQLQuery - orderBy is a root argument: kept where it belongs, lifted out of where when sunk', () => {
+  const placed = '{ hits: messages(where: {bodyContains: "atlas"}, orderBy: RELEVANCE, limit: 10) { path } }'
+  assert({
+    given: 'orderBy written as a root argument beside limit',
+    should: 'leave the query untouched rather than hoisting it into where',
+    actual: normalizeGraphQLQuery(placed),
+    expected: placed,
+  })
+  assert({
+    given: 'orderBy written inside the where object (the 2026-10-05 shape that voided every text search)',
+    should: 'move it out to the root arguments and keep the filter',
+    actual: normalizeGraphQLQuery(
+      '{ hits: messages(where: {bodyContains: "atlas", orderBy: RELEVANCE}, limit: 10) { path } }',
+    ),
+    expected: `{
+  hits: messages(where: {bodyContains: "atlas"}, limit: 10, orderBy: RELEVANCE) {
+    path
+  }
+}`,
+  })
+  assert({
+    given: 'a where holding nothing but a sunk orderBy',
+    should: 'drop the empty where and keep the ordering',
+    actual: normalizeGraphQLQuery('{ chats(where: {orderBy: RELEVANCE}, limit: 5) { path } }'),
+    expected: `{
+  chats(limit: 5, orderBy: RELEVANCE) {
+    path
+  }
+}`,
+  })
+})

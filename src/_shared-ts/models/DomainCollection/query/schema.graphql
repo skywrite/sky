@@ -7,31 +7,42 @@
 #
 # To modify the schema, edit generate.ts and re-run the generator.
 #
-# Generated at: 2026-10-01T22:00:41.350Z
+# Generated at: 2026-10-06T01:24:02.329Z
 # =============================================================================
 
 type Query {
   # Document queries
-  meetings(where: MeetingFilter, limit: Int): [Meeting!]!
-  videos(where: VideoFilter, limit: Int): [Video!]!
-  recaps(where: RecapFilter, limit: Int): [Recap!]!
-  messages(where: MessageFilter, limit: Int): [Message!]!
-  people(where: PersonFilter, limit: Int): [Person!]!
-  orgs(where: OrgFilter, limit: Int): [Org!]!
-  projects(where: ProjectFilter, limit: Int): [Project!]!
-  decisions(where: DecisionFilter, limit: Int): [Decision!]!
-  goals(where: GoalFilter, limit: Int): [Goal!]!
-  places(where: PlaceFilter, limit: Int): [Place!]!
-  ideas(where: IdeaFilter, limit: Int): [Idea!]!
-  streaks(where: StreakFilter, limit: Int): [Streak!]!
-  tracking(where: TrackingFilter, limit: Int): [Tracking!]!
-  days(where: DayFilter, limit: Int): [Day!]!
-  journals(where: JournalFilter, limit: Int): [Journal!]!
-  chats(where: ChatFilter, limit: Int): [Chat!]!
-  notes(where: NoteFilter, limit: Int): [Note!]!
+  meetings(where: MeetingFilter, limit: Int, orderBy: OrderBy): [Meeting!]!
+  videos(where: VideoFilter, limit: Int, orderBy: OrderBy): [Video!]!
+  recaps(where: RecapFilter, limit: Int, orderBy: OrderBy): [Recap!]!
+  messages(where: MessageFilter, limit: Int, orderBy: OrderBy): [Message!]!
+  people(where: PersonFilter, limit: Int, orderBy: OrderBy): [Person!]!
+  orgs(where: OrgFilter, limit: Int, orderBy: OrderBy): [Org!]!
+  projects(where: ProjectFilter, limit: Int, orderBy: OrderBy): [Project!]!
+  decisions(where: DecisionFilter, limit: Int, orderBy: OrderBy): [Decision!]!
+  goals(where: GoalFilter, limit: Int, orderBy: OrderBy): [Goal!]!
+  places(where: PlaceFilter, limit: Int, orderBy: OrderBy): [Place!]!
+  ideas(where: IdeaFilter, limit: Int, orderBy: OrderBy): [Idea!]!
+  streaks(where: StreakFilter, limit: Int, orderBy: OrderBy): [Streak!]!
+  tracking(where: TrackingFilter, limit: Int, orderBy: OrderBy): [Tracking!]!
+  days(where: DayFilter, limit: Int, orderBy: OrderBy): [Day!]!
+  journals(where: JournalFilter, limit: Int, orderBy: OrderBy): [Journal!]!
+  chats(where: ChatFilter, limit: Int, orderBy: OrderBy): [Chat!]!
+  notes(where: NoteFilter, limit: Int, orderBy: OrderBy): [Note!]!
 
   # Generic query across all document types
-  documents(where: DocumentFilter, limit: Int): [Document!]!
+  documents(where: DocumentFilter, limit: Int, orderBy: OrderBy): [Document!]!
+}
+
+"""
+How a root field orders its matches before `limit` applies. DATE is newest first.
+RELEVANCE orders a text search (bodyContains, summaryContains, nameContains, titleContains)
+by recency with a lift for matches in the title, summary, tags or links, so the limit
+keeps the best matches rather than the newest; without a text filter it is DATE.
+"""
+enum OrderBy {
+  DATE
+  RELEVANCE
 }
 
 # =============================================================================

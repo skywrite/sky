@@ -5,6 +5,7 @@
 import { Document } from '#shared/models/Markdown/mod.ts'
 import MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
 import { assert, test } from '#test'
+import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import { executeQuery, isGraphQL } from './execute.ts'
 
 // =============================================================================
@@ -535,5 +536,60 @@ test('executeQuery - a capped root field surfaces its truncation', async () => {
     should: 'carry no truncations key at all',
     actual: 'truncations' in uncapped,
     expected: false,
+  })
+})
+
+test('executeQuery - orderBy: RELEVANCE keeps the titled match inside the limit', async () => {
+  const today = PlainDate.today()
+  const at = (daysAgo: number, name: string) => {
+    const d = today.addDays(-daysAgo)
+    return `/test/time/${d.toString().slice(0, 4)}/W40/${d.toString().slice(5)}/actions/messages/${name}`
+  }
+  const msg = (summary: string, body: string) =>
+    Document.fromMarkdown(`---\nfrom: Alice Smith\nto: Bob Jones\nmedium: Slack\nsummary: ${summary}\n---\n${body}`)
+  const items = [
+    {
+      doc: msg('Weekly sync', 'A passing word about widget among other things.'),
+      path: at(1, 'slack_Alice-to-Bob_Weekly-sync.md'),
+    },
+    { doc: msg('Standup', 'widget came up once.'), path: at(2, 'slack_Alice-to-Bob_Standup.md') },
+    {
+      doc: msg('Widget launch plan', 'The widget plan, step by step.'),
+      path: at(10, 'slack_Alice-to-Bob_Widget-launch-plan.md'),
+    },
+    // Unrelated traffic: the term's rarity is measured against the whole type.
+    ...Array.from({ length: 20 }, (_, i) => ({
+      doc: msg(`Thread ${i}`, 'Nothing about the launch here.'),
+      path: at(3 + i, `slack_Alice-to-Bob_Thread-${i}.md`),
+    })),
+  ]
+  const store = {
+    people: { ...createMockCollection([]), names: [], find: () => undefined },
+    orgs: createMockCollection([]),
+    projects: { ...createMockCollection([]), getDocuments: () => ({ toArray: () => [] }) },
+    decisions: createMockCollection([]),
+    goals: createMockCollection([]),
+    streaks: createMockCollection([]),
+    tracking: createMockCollection([]),
+    ideas: createMockCollection([]),
+    places: createMockCollection([]),
+    time: createMockCollection(items),
+    library: createMockCollection([]),
+    ai: createMockCollection([]),
+  } as unknown as MarkdownStore
+  const newest = await executeQuery<{ messages: { path: string }[] }>(
+    '{ messages(where: { bodyContains: "widget" }, limit: 2) { path } }',
+    store,
+  )
+  const relevant = await executeQuery<{ messages: { path: string }[] }>(
+    '{ messages(where: { bodyContains: "widget" }, orderBy: RELEVANCE, limit: 2) { path } }',
+    store,
+  )
+  const names = (r: typeof newest) => r.data?.messages.map((m) => m.path.split('_').pop()) ?? r.errors
+  assert({
+    given: 'three matches among twenty-three messages, the only titled one ten days old, and a limit of two',
+    should: 'drop the titled one under DATE and keep it first under RELEVANCE',
+    actual: { newest: names(newest), relevant: names(relevant) },
+    expected: { newest: ['Weekly-sync.md', 'Standup.md'], relevant: ['Widget-launch-plan.md', 'Weekly-sync.md'] },
   })
 })

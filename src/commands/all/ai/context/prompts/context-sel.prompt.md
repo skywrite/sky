@@ -2,7 +2,7 @@
 name: context-sel
 schema: 0.2.0
 created: 2026-02-01
-updated: 2026-08-24
+updated: 2026-10-05
 description: System prompt for AI context selector - generates GraphQL queries
 ---
 
@@ -78,6 +78,7 @@ Use the correct filter for each entity type. Do NOT guess — only use filters t
 **Text search** → `bodyContains: "<text>"` (last resort)
 - Only use when no structured filter applies
 - Works on: meetings, messages, journals, chats, documents
+- Add `orderBy: RELEVANCE` on every text search. It is a ROOT-FIELD ARGUMENT like `limit`, written outside the `where` braces: `messages(where: { bodyContains: "<text>" }, orderBy: RELEVANCE, limit: 10) { ... }`. Never put it inside `where` — `where: { bodyContains: "<text>", orderBy: RELEVANCE }` is invalid and fails the whole query. Matches are then ordered by recency with a lift for the text appearing in a title, summary or tag, so the limit keeps the best matches instead of the newest mentions. Keep the usual limit; do not raise it. Only text searches take it — person, tag, link and date filters stay as they are.
 
 **Time** → `recent: "<period>"` (e.g., "7d", "30d", "90d", "1y")
 - Works on every document type, always inside `where: { ... }` — never as a top-level argument

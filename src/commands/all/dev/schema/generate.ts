@@ -751,11 +751,22 @@ function generateSchema(): string {
   for (const typeName of Object.keys(DOCUMENT_TYPES)) {
     const pluralName = pluralize(typeName)
     const filterName = `${typeName}Filter`
-    lines.push(`  ${pluralName}(where: ${filterName}, limit: Int): [${typeName}!]!`)
+    lines.push(`  ${pluralName}(where: ${filterName}, limit: Int, orderBy: OrderBy): [${typeName}!]!`)
   }
   lines.push('')
   lines.push('  # Generic query across all document types')
-  lines.push('  documents(where: DocumentFilter, limit: Int): [Document!]!')
+  lines.push('  documents(where: DocumentFilter, limit: Int, orderBy: OrderBy): [Document!]!')
+  lines.push('}')
+  lines.push('')
+  lines.push('"""')
+  lines.push('How a root field orders its matches before `limit` applies. DATE is newest first.')
+  lines.push('RELEVANCE orders a text search (bodyContains, summaryContains, nameContains, titleContains)')
+  lines.push('by recency with a lift for matches in the title, summary, tags or links, so the limit')
+  lines.push('keeps the best matches rather than the newest; without a text filter it is DATE.')
+  lines.push('"""')
+  lines.push('enum OrderBy {')
+  lines.push('  DATE')
+  lines.push('  RELEVANCE')
   lines.push('}')
   lines.push('')
 

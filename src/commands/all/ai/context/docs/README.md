@@ -1,6 +1,6 @@
 ---
 created: 2026-08-15
-updated: 2026-08-15
+updated: 2026-10-05
 ---
 
 # ai:context — how a question becomes a bounded notebook query
@@ -63,6 +63,22 @@ have a corpus of real failure shapes to draw from.
 - Every guard intervention is visible in the gather transcript
   (`widened: 1y → 533d (covers stated 2025-03-01)`), and an explicit
   `--since` on `ai:context:files` bypasses extraction and guard entirely.
+
+## Text searches order by relevance
+
+A `bodyContains` root answered newest-first and cut at `limit` returned the
+ten most recent mentions whatever they said; over the 30 days to 2026-10-04
+that dropped 229k matched documents before the chat's scorer saw them. Both
+prompts now add `orderBy: RELEVANCE` to every text search, keeping the usual
+limit. The resolver (`query/resolvers/relevance.ts`) orders the matches by
+recency with a lift for the phrase appearing in the title, summary, tags or
+links: `2^(−age/30) + 0.65 × evidence`, a dense body match worth about a
+quarter of a header hit, ties to the newer document. Replayed on a month of
+the notebook's own questions at equal size, about one match in ten changes,
+nearly always to an older document titled with the term; raising the limit
+instead only filled the extra slots with the next-newest mentions, so the
+limits stay. Recency is the backbone on purpose — a passing mention from
+this week still beats a dense one from last month.
 
 ## Absolute date bounds
 

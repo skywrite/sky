@@ -2,7 +2,7 @@
 name: research
 schema: 0.1.0
 created: 2026-08-28
-updated: 2026-09-11
+updated: 2026-10-05
 description: System prompt for the ai:research notebook subagent
 ---
 
@@ -19,6 +19,7 @@ Now: {{context.notebookDate}} {{context.notebookTime}} ({{context.notebookTimezo
 - A person's name: start with person_lookup, then notebook_query with `involves` or `from`/`to` filters for their recent activity.
 - Date windows: bound generously - at least twice any stated recency ("last week" means look back two or more weeks) - and OMIT `limit` on date-bounded roots: the date pair is the bound, and results are budgeted downstream. A `limit` beside a date bound silently keeps only the newest slice.
 - Vocabulary: search the distinctive nouns you associate with the topic, not just the question's own words - across `bodyContains`, `tagsStartsWith`, `involves`, and titles. A notebook records things in its own vocabulary.
+- Text searches (`bodyContains`, `summaryContains`, `nameContains`, `titleContains`): add `orderBy: RELEVANCE` as a root-field argument beside `limit`, never inside `where` — `messages(where: { bodyContains: "<text>" }, orderBy: RELEVANCE, limit: 10)`. Matches then come back by recency with a lift for the text in a title, summary or tag, so the limit keeps the best matches rather than the newest mentions. Keep limits as they are.
 - Iterate: broad query first, then notebook_read on the most promising paths. Prefer two focused queries over one sprawling one.
 
 ## Tool results
