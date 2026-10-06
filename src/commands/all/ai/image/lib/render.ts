@@ -1,5 +1,6 @@
 import OpenAI, { toFile } from 'openai'
 import sharp from 'sharp'
+import { runImageStage } from './failure.ts'
 import { finishImageEdit } from './finish.ts'
 import type { ImageReviewSummary } from './finish.ts'
 import { focusImageEdit } from './focus.ts'
@@ -104,28 +105,30 @@ export async function renderImages(
     output_format: 'png' as const,
   }
   const options = { signal: request.signal }
-  const response = refs.length
-    ? await client.images.edit(
-        {
-          ...params,
-          // The AI SDK image adapter converts inputs to unnamed Blobs.
-          // Bun serializes those with filename="", which OpenAI rejects.
-          image: await Promise.all(refs.map((ref) => toFile(ref.data, ref.name, { type: ref.mediaType }))),
-          ...(request.edit
-            ? {
-                mask: await toFile(
-                  (focused?.mask ?? request.edit.generationMask ?? request.edit.mask).data,
-                  'generation-mask.png',
-                  {
-                    type: 'image/png',
-                  },
-                ),
-              }
-            : {}),
-        },
-        options,
-      )
-    : await client.images.generate(params, options)
+  const response = await runImageStage(refs.length ? 'image:edit' : 'image:generate', async () =>
+    refs.length
+      ? await client.images.edit(
+          {
+            ...params,
+            // The AI SDK image adapter converts inputs to unnamed Blobs.
+            // Bun serializes those with filename="", which OpenAI rejects.
+            image: await Promise.all(refs.map((ref) => toFile(ref.data, ref.name, { type: ref.mediaType }))),
+            ...(request.edit
+              ? {
+                  mask: await toFile(
+                    (focused?.mask ?? request.edit.generationMask ?? request.edit.mask).data,
+                    'generation-mask.png',
+                    {
+                      type: 'image/png',
+                    },
+                  ),
+                }
+              : {}),
+          },
+          options,
+        )
+      : await client.images.generate(params, options),
+  )
   const images: RenderedImage[] = []
   for (const image of response.data ?? []) {
     request.signal?.throwIfAborted()

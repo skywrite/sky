@@ -10,7 +10,6 @@ const png = new Uint8Array(
 )
 const request: ImageSelectionRequest = { prompt: 'A watercolor lighthouse at dawn.', refs: [], count: 1 }
 const ordinary: ImageDecision = {
-  method: 'image',
   layout: 'square',
   intent: 'create',
   complexity: 'simple',
@@ -220,6 +219,8 @@ test('Astra preflight sends constraints and reference images through the Respons
       body.model,
       (body.reasoning as { effort: string }).effort,
       (body.text as { format: { type: string } }).format.type,
+      (body.text as { format: { schema: { properties: Record<string, unknown> } } }).format.schema.properties.method,
+      brief.method,
       brief.brief,
       brief.explicitQuality,
       brief.size,
@@ -235,6 +236,8 @@ test('Astra preflight sends constraints and reference images through the Respons
       'gpt-6-astra',
       'low',
       'json_schema',
+      undefined,
+      'image',
       'A quick concept; the previous composition was too crowded.',
       'medium',
       '1536x1024',

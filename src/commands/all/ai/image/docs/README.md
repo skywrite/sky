@@ -1,6 +1,6 @@
 ---
 created: 2026-09-10
-updated: 2026-09-10
+updated: 2026-10-06
 ---
 
 # Image creation: production methods, geometry and preservation
@@ -8,13 +8,15 @@ updated: 2026-09-10
 The command owns image generation for both CLI and web chat. The web host owns
 retaining output files and displaying them; it does not select image settings.
 
-Astra at low reasoning effort selects a production method, intent and geometric
-complexity from the brief and references. Photographs and textured artwork use
-image generation. Precise flat shapes, diagrams and lettering use a structured
-drawing scene rendered to SVG and PNG. Mixed designs generate artwork, then add
-precise graphic layers. The method is separate from the image model and quality.
-An explicit method wins; an explicit image model implies image generation unless
-the method is also explicitly chosen. Fidelity intent applies across photos,
+OpenAI image generation is the default for all image requests, including precise
+diagrams, icons and lettering. Omitted method, `image` and legacy `auto` all use
+it. Astra at low reasoning effort selects image settings, intent and geometric
+complexity from the brief and references; it cannot change the production method.
+SVG drawing requires an explicit user request for vector/editable output and
+`--method drawing`. Mixed artwork with precise SVG layers requires an explicit
+`--method mixed`. A failed image request never authorizes a fallback to drawing
+or a reduction in the requested style or finish. The method is separate from
+image model and quality. Fidelity intent applies across photos,
 illustrations, logos, icons, diagrams and other raster graphics.
 Photographic preservation defaults to Sunburst/max and an approximately 8 MP
 canvas. Graphic preservation selects quality by requirements and keeps supported

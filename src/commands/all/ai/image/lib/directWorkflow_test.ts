@@ -4,6 +4,7 @@ import { assert, test } from '#test'
 import { prepareImageEdit } from './edit.ts'
 import { passedReview } from './imageEditTestHelpers.ts'
 import type { ImageSelection } from './preflight.ts'
+import { selectImageSettings } from './preflight.ts'
 import { prepareReferenceImage } from './references.ts'
 import { renderImages } from './render.ts'
 import { runImageWorkflow } from './workflow.ts'
@@ -40,6 +41,63 @@ async function pixels(color: string, width = 48, height = 64): Promise<Buffer> {
     .png()
     .toBuffer()
 }
+
+test('A polished diagram request reaches OpenAI image generation with its complete brief and no SVG stages', async () => {
+  const prompt =
+    'Create a beautiful Atlas hub-and-spoke strategy image with eight illustrated product nodes, exact labels, a luminous violet hub and a premium navy background.'
+  const generated = await pixels('#5544aa')
+  const requests: Request[] = []
+  const additionalModels: string[] = []
+  const selected = await selectImageSettings({ prompt, refs: [], count: 1 }, async () => ({
+    layout: 'landscape',
+    intent: 'create',
+    complexity: 'complex',
+    model: 'sunburst',
+    quality: 'xhigh',
+    reason: 'A polished composition with precise labels.',
+    method: 'drawing',
+  }))
+  const client = new OpenAI({
+    apiKey: 'mock-api-key',
+    baseURL: 'https://example.com/v1',
+    maxRetries: 0,
+    fetch: async (url, init) => {
+      requests.push(new Request(url, init))
+      return Response.json({ data: [{ b64_json: generated.toString('base64') }] })
+    },
+  })
+  const [result] = await runImageWorkflow(
+    { prompt, selection: selected, refs: [], count: 1 },
+    { ...noAdditionalModels(additionalModels), renderImages: (request) => renderImages(request, client) },
+  )
+  const body = await requests[0]!.json()
+  assert({
+    given: 'a detailed creative diagram and a stale vector recommendation from the settings selector',
+    should: 'send the full requested design to the OpenAI Images endpoint and return its image directly',
+    actual: {
+      method: result!.method,
+      endpoint: new URL(requests[0]!.url).pathname,
+      requestCount: requests.length,
+      prompt: body.prompt,
+      settings: [body.model, body.quality, body.output_format],
+      additionalModels,
+      imageUnchanged: generated.equals(Buffer.from(result!.data)),
+      svg: result!.svg,
+      review: result!.review,
+    },
+    expected: {
+      method: 'image',
+      endpoint: '/v1/images/generations',
+      requestCount: 1,
+      prompt,
+      settings: ['gpt-image-2.5-sunburst', 'xhigh', 'png'],
+      additionalModels: [],
+      imageUnchanged: true,
+      svg: undefined,
+      review: undefined,
+    },
+  })
+})
 
 test('Default photographic editing sends the complete normalized reference and returns the provider image unchanged', async () => {
   const prompt = 'Repaint the blue test vase green.'

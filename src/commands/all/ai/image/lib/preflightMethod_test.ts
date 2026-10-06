@@ -3,13 +3,12 @@ import { selectImageSettings } from './preflight.ts'
 import type { ImageDecision, ImageSelectionRequest } from './preflight.ts'
 
 const graphic: ImageDecision = {
-  method: 'drawing',
   layout: 'landscape',
   intent: 'preserve_image',
   complexity: 'complex',
   model: 'flare',
   quality: 'medium',
-  reason: 'The exact diagram can be drawn as vector geometry.',
+  reason: 'The diagram needs precise labels and geometry.',
 }
 const request: ImageSelectionRequest = {
   prompt: 'Replace the middle diagram label with READY.',
@@ -17,25 +16,23 @@ const request: ImageSelectionRequest = {
   count: 1,
 }
 
-test('Automatic selection routes precise graphics and mixed artwork independently of raster quality', async () => {
-  const drawing = await selectImageSettings(request, async () => graphic)
-  const mixed = await selectImageSettings(request, async () => ({
-    ...graphic,
-    method: 'mixed',
-    quality: 'high',
-    layout: 'portrait',
-  }))
+test('Default and legacy auto requests use image generation even when a stale selector recommends SVG', async () => {
+  const observed: Array<[string, string, string, string]> = []
+  for (const method of [undefined, 'auto', 'image'] as const) {
+    for (const staleMethod of ['drawing', 'mixed'] as const) {
+      let suppliedMethod = ''
+      const selected = await selectImageSettings({ ...request, method }, async (input) => {
+        suppliedMethod = input.method ?? ''
+        return { ...graphic, method: staleMethod }
+      })
+      observed.push([selected.method, suppliedMethod, selected.layout, selected.quality])
+    }
+  }
   assert({
-    given: 'an exact diagram and an illustrated poster',
-    should: 'retain their different methods, canvas layouts and selected rendering quality',
-    actual: [
-      [drawing.method, drawing.layout, drawing.quality],
-      [mixed.method, mixed.layout, mixed.quality],
-    ],
-    expected: [
-      ['drawing', 'landscape', 'medium'],
-      ['mixed', 'portrait', 'high'],
-    ],
+    given: 'precise graphics whose caller has not requested vector drawing or overlays',
+    should: 'enforce OpenAI image generation while retaining automatic layout and quality settings',
+    actual: observed,
+    expected: Array.from({ length: 6 }, () => ['image', 'image', 'landscape', 'medium']),
   })
 })
 
@@ -83,11 +80,10 @@ test('Explicit drawing or mixed production still runs layout selection when mode
 test('Photographic preservation retains its quality rule while graphic drawing stays inexpensive', async () => {
   const photo = await selectImageSettings(request, async () => ({
     ...graphic,
-    method: 'image',
     intent: 'preserve_photo',
   }))
-  const vector = await selectImageSettings(request, async () => graphic)
-  const restyle = await selectImageSettings(request, async () => ({ ...graphic, method: 'image', intent: 'transform' }))
+  const vector = await selectImageSettings({ ...request, method: 'drawing' }, async () => graphic)
+  const restyle = await selectImageSettings(request, async () => ({ ...graphic, intent: 'transform' }))
   assert({
     given: 'a fidelity-preserving photo edit, a vector graphic edit and a creative transformation',
     should: 'promote only the photographic preservation request to Sunburst/max',
@@ -105,9 +101,12 @@ test('Photographic preservation retains its quality rule while graphic drawing s
 })
 
 test('Explicit raster settings without references have a deterministic square fallback and skip paid selection', async () => {
-  const selected = await selectImageSettings({ ...request, refs: [], model: 'flare', quality: 'low' }, async () => {
-    throw new Error('No selector call expected')
-  })
+  const selected = await selectImageSettings(
+    { ...request, refs: [], method: 'auto', model: 'flare', quality: 'low' },
+    async () => {
+      throw new Error('No selector call expected')
+    },
+  )
   assert({
     given: 'an explicit raster creation without layout classification',
     should: 'use the documented fallback without inventing a preservation intent',

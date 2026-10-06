@@ -358,7 +358,8 @@ export function createChatHost(config: typeof ConfigModule, env: Record<string, 
 
   const createSession: ChatSessionFactory = async (id, onEvent, prefs, ask, restore, runs = () => [], plan) => {
     const context = CommandContext.server(config, env)
-    const webTools = env.PERPLEXITY_API_KEY ? createWebTools() : {}
+    const { web_search, ...publicWebTools } = createWebTools()
+    const webTools = { ...publicWebTools, ...(env.PERPLEXITY_API_KEY ? { web_search } : {}) }
     const blessed = blessingsFor(id)
     if (restore?.approvals) blessed.restoreDurable(restore.approvals)
     const tasks = new CommandService(context)

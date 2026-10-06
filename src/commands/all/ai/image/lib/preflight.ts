@@ -11,9 +11,6 @@ const PROMPT_FILE = new URL('../prompts/preflight.prompt.md', import.meta.url).p
 const PREFLIGHT_TIMEOUT_MS = 45_000
 
 const decisionSchema = z.object({
-  method: z
-    .enum(['image', 'drawing', 'mixed'])
-    .describe('Image synthesis, precise vector drawing, or generated artwork with precise graphic overlays.'),
   layout: z
     .enum(['square', 'landscape', 'portrait'])
     .describe('Preferred canvas proportions when no explicit size or preserved source determines them.'),
@@ -31,7 +28,7 @@ const decisionSchema = z.object({
 })
 
 export type ImageDecision = z.infer<typeof decisionSchema>
-export type ImageMethod = ImageDecision['method']
+export type ImageMethod = 'image' | 'drawing' | 'mixed'
 
 export interface ImageSelectionRequest {
   prompt: string
@@ -43,7 +40,7 @@ export interface ImageSelectionRequest {
   size?: string
   background?: string
   count: number
-  method?: ImageMethod
+  method?: ImageMethod | 'auto'
   signal?: AbortSignal
 }
 
@@ -82,7 +79,7 @@ export async function preflightImage(
               referenceCount: request.refs.length,
               explicitModel: request.model,
               explicitQuality: request.quality,
-              explicitMethod: request.method,
+              method: request.method === 'auto' ? 'image' : (request.method ?? 'image'),
               size: request.size,
               background: request.background,
               count: request.count,
@@ -110,7 +107,9 @@ export async function selectImageSettings(
   preflight: (request: ImageSelectionRequest) => Promise<ImageDecision> = preflightImage,
 ): Promise<ImageSelection> {
   request.signal?.throwIfAborted()
-  if (request.model && request.quality && !request.refs.length && (!request.method || request.method === 'image')) {
+  // Method is the caller's choice. A diagram or exact label must not silently replace image generation with SVG.
+  const method = request.method === 'auto' ? 'image' : (request.method ?? 'image')
+  if (request.model && request.quality && !request.refs.length && method === 'image') {
     return {
       method: 'image',
       layout: 'square',
@@ -122,7 +121,7 @@ export async function selectImageSettings(
     }
   }
 
-  const decision = await preflight(request)
+  const decision = await preflight({ ...request, method })
   request.signal?.throwIfAborted()
   // References alone do not imply fidelity preservation: a photograph turned
   // into an illustration is a transformation. Enforce the photograph policy
@@ -138,7 +137,7 @@ export async function selectImageSettings(
     ? "Preserving the original photograph's fidelity calls for Sunburst/max."
     : decision.reason
   return {
-    method: request.method ?? (request.model ? 'image' : decision.method),
+    method,
     layout: decision.layout,
     intent: request.refs.length ? decision.intent : 'create',
     complexity: decision.complexity,

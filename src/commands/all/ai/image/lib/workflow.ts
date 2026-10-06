@@ -5,6 +5,7 @@ import type { AttemptSummary } from './attempts.ts'
 import { planDrawing, renderDrawing } from './drawing/mod.ts'
 import type { DrawingScene } from './drawing/mod.ts'
 import { preserveDrawing } from './drawingPreservation.ts'
+import { runImageStage } from './failure.ts'
 import { finishImageEdit } from './finish.ts'
 import type { ImageReviewSummary } from './finish.ts'
 import { compositeImageEdit } from './mask.ts'
@@ -272,18 +273,20 @@ async function produceImage(
   let artworkMask: ImageReference | undefined
   if (method === 'mixed') {
     request.onProgress?.('Planning artwork and precise graphic layers…')
-    mixedPlan = await deps.planMixedImage({
-      prompt: request.prompt,
-      brief: request.brief,
-      width,
-      height,
-      feedback,
-      previousPlan: previous?.mixedPlan,
-      refs: previous?.artwork
-        ? [{ name: 'current-artwork.png', mediaType: 'image/png', data: previous.artwork }, ...request.refs]
-        : request.refs,
-      signal: request.signal,
-    })
+    mixedPlan = await runImageStage('mixed:plan', () =>
+      deps.planMixedImage({
+        prompt: request.prompt,
+        brief: request.brief,
+        width,
+        height,
+        feedback,
+        previousPlan: previous?.mixedPlan,
+        refs: previous?.artwork
+          ? [{ name: 'current-artwork.png', mediaType: 'image/png', data: previous.artwork }, ...request.refs]
+          : request.refs,
+        signal: request.signal,
+      }),
+    )
     if (previous?.artwork && !mixedPlan.regenerateArtwork) {
       request.onProgress?.('Keeping the artwork and revising the graphic layers…')
       base = previous.artwork
@@ -342,36 +345,40 @@ async function produceImage(
         .toBuffer()
   }
   request.onProgress?.('Drawing precise shapes and text…')
-  const scene = await deps.planDrawing({
-    prompt: drawingPrompt,
-    brief: request.brief,
-    width,
-    height,
-    refs: base
-      ? [
-          { name: method === 'mixed' ? 'artwork-base.png' : 'drawing-base.png', mediaType: 'image/png', data: base },
-          ...(method === 'mixed' ? [] : request.refs.slice(1)),
-        ]
-      : [...request.refs],
-    mode: method === 'mixed' ? 'overlay' : base ? 'edit' : 'create',
-    complexity: request.selection.complexity,
-    feedback,
-    previousScene: previous?.drawingScene,
-    constraints: [
-      request.edit
-        ? `Preserve the base outside the allowed regions. ${request.edit.description} ${JSON.stringify(request.edit.plan ?? {})}`
-        : '',
-      request.background === 'transparent'
-        ? 'Keep the canvas background transparent.'
-        : request.background === 'opaque'
-          ? 'Use an opaque background.'
+  const scene = await runImageStage('drawing:plan', () =>
+    deps.planDrawing({
+      prompt: drawingPrompt,
+      brief: request.brief,
+      width,
+      height,
+      refs: base
+        ? [
+            { name: method === 'mixed' ? 'artwork-base.png' : 'drawing-base.png', mediaType: 'image/png', data: base },
+            ...(method === 'mixed' ? [] : request.refs.slice(1)),
+          ]
+        : [...request.refs],
+      mode: method === 'mixed' ? 'overlay' : base ? 'edit' : 'create',
+      complexity: request.selection.complexity,
+      feedback,
+      previousScene: previous?.drawingScene,
+      constraints: [
+        request.edit
+          ? `Preserve the base outside the allowed regions. ${request.edit.description} ${JSON.stringify(request.edit.plan ?? {})}`
           : '',
-    ]
-      .filter(Boolean)
-      .join('\n'),
-    signal: request.signal,
-  })
-  const drawing = await deps.renderDrawing(scene, { base, signal: request.signal })
+        request.background === 'transparent'
+          ? 'Keep the canvas background transparent.'
+          : request.background === 'opaque'
+            ? 'Use an opaque background.'
+            : '',
+      ]
+        .filter(Boolean)
+        .join('\n'),
+      signal: request.signal,
+    }),
+  )
+  const drawing = await runImageStage('drawing:render', () =>
+    deps.renderDrawing(scene, { base, signal: request.signal }),
+  )
   let result = { data: drawing.data, svg: drawing.svg, mask: undefined as ImageReference | undefined }
   if (request.edit) {
     // Include observed artwork boundaries as well as the exact overlay coverage.

@@ -19,6 +19,7 @@ import { validateDrawingSize } from './lib/drawingSize.ts'
 import { prepareImageEdit } from './lib/edit.ts'
 import type { PreparedImageEdit } from './lib/edit.ts'
 import { writeImageEvidence } from './lib/evidence.ts'
+import { imageFailureMessage, ImageStageError } from './lib/failure.ts'
 import type { ImageReviewSummary } from './lib/finish.ts'
 import {
   imageModelName,
@@ -52,8 +53,8 @@ const params = {
     'Selection context: original request, intended use, speed/budget priorities, what must stay faithful to references, and relevant prior edits or failures',
   ),
   method: Flag.string(
-    'Production method: auto, image, drawing (precise SVG shapes and text), or mixed (generated artwork with precise overlays). Leave auto unless explicitly chosen.',
-    { default: 'auto' },
+    'Production method: image (OpenAI image generation, the default), drawing (editable SVG), or mixed (generated artwork with SVG overlays). Use drawing/mixed only when the user explicitly requests that method; never as an automatic fallback. Legacy auto also uses image.',
+    { default: 'image' },
   ),
   model: Flag.string('Image model: auto (Astra selects), flare, or sunburst; set only for an explicit user choice', {
     long: 'ai-model',
@@ -123,9 +124,11 @@ export default class AiImageTask extends Command {
   static override description: CommandDescription = {
     name: 'ai:image',
     description:
-      'Create or edit photos, illustrations and graphics. Astra chooses GPT Image 2.5, precise SVG drawing, or mixed artwork with exact graphic overlays. Pass local references for edits (base first). For photo edits, use the user’s concise requested change without adding unrequested restrictions on anatomy, outlines or geometry. The default image workflow sends the full reference and returns the full generated image directly. Photo preservation uses Sunburst/max and about 8 MP. Leave method/model/quality/size automatic; omit mask and attempts unless the user explicitly requests masking or automatic review/corrections. Drawing/mixed retain their review workflow and also save editable SVG. Include requested priorities in brief. Report any review caveats, incomplete requests and attempt errors accurately.',
+      'Create or edit images with OpenAI GPT Image 2.5, including illustrations, diagrams, charts, icons and designs with text. OpenAI image generation is the default; Astra selects image settings, never the production method. Preserve the user’s requested visual style, detail and finish. Use drawing only for an explicit request for SVG/vector drawing, or mixed only for an explicit request for generated artwork with SVG overlays. Never substitute either method after a failure without the user requesting the change. Pass local references for edits (base first). For photo edits, keep the requested change concise and faithful. The default sends full references and returns the full generated image directly. Photo preservation uses Sunburst/max and about 8 MP. Leave model/quality/size automatic; omit mask and attempts unless explicitly requested. Drawing/mixed retain their review workflow and save editable SVG. Include the original request and priorities in brief. Report the actual method and any failures or review caveats accurately.',
     descriptionLong: [
-      'Creates a PNG using image generation, precise SVG drawing, or both. Saves to the Desktop',
+      'Creates a PNG with OpenAI image generation by default, including diagrams and text.',
+      'SVG drawing and mixed artwork with SVG overlays require an explicit method choice.',
+      'Saves to the Desktop',
       '(or --out), opens it in Preview, and records prompt + settings in the',
       `notebook under ${actionKindRel('image')}/.`,
       'Use --refs to edit an earlier result (pass its saved path), combine images,',
@@ -142,7 +145,7 @@ export default class AiImageTask extends Command {
       'A supplied mask is never expanded. Drawing/mixed and masked edits receive',
       'up to 3 reviewed attempts for simple requests or 5 for complex ones.',
       'Graphics keep native dimensions when supported.',
-      'Precise shapes and text use a bounded SVG renderer. Mixed designs generate',
+      'Explicit drawing uses a bounded SVG renderer for precise shapes and text. Mixed designs generate',
       'artwork first and add exact graphic layers; text-only corrections reuse artwork.',
       'All candidates, raw output, masks, source, SVG and review evidence are retained.',
       'Global edits (such as changing all lighting) use the whole image.',
@@ -151,7 +154,8 @@ export default class AiImageTask extends Command {
       '--quality choices win; reference edits still classify intent for preservation.',
       'Use --size to override resolution; --mask none disables optional masking.',
       'Use --attempts to opt into or bound reviewed corrections, and --budgetMinutes',
-      'to set the time budget. --method overrides routing.',
+      'to set the time budget. --method drawing or mixed opts into those methods;',
+      'omitted --method, image, and legacy auto all use OpenAI image generation.',
       'Run sky ai:image:evaluate --list to see repeatable synthetic visual evaluations.',
     ],
     usage: [
@@ -182,7 +186,7 @@ export default class AiImageTask extends Command {
     const requestedModel = args.model ?? 'auto'
     const requestedQuality = args.quality ?? 'auto'
     const count = args.count ?? 1
-    const requestedMethod = args.method ?? 'auto'
+    const requestedMethod = args.method ?? 'image'
     const budgetMinutes = args.budgetMinutes ?? 15
     for (const problem of [
       validateModel(requestedModel),
@@ -253,7 +257,7 @@ export default class AiImageTask extends Command {
     }
 
     if (needsPreflight) {
-      log('Choosing how to create the image with Astra…')
+      log('Choosing image settings with Astra…')
     }
     let selection
     try {
@@ -263,7 +267,7 @@ export default class AiImageTask extends Command {
         refs: previews,
         model: imageModelName(requestedModel),
         quality: requestedQuality === 'auto' ? undefined : (requestedQuality as ImageQuality),
-        method: requestedMethod === 'auto' ? undefined : (requestedMethod as ImageMethod),
+        method: requestedMethod === 'auto' ? 'image' : (requestedMethod as ImageMethod),
         size: args.size,
         background: args.background,
         count,
@@ -340,18 +344,13 @@ export default class AiImageTask extends Command {
       })
     } catch (err) {
       if (context.signal?.aborted) return CommandResult.error('Image creation cancelled.')
-      const message = err instanceof Error ? err.message : String(err)
-      const timedOut = timeout.aborted || (err instanceof Error && err.name === 'APIConnectionTimeoutError')
+      const message = imageFailureMessage(err, method, budgetMinutes, timeout.aborted)
       await logAIError({
         source: 'ai:image',
-        stage: 'generate',
+        stage: err instanceof ImageStageError ? err.stage : 'generate',
         message,
       })
-      return CommandResult.error(
-        timedOut
-          ? `Image creation timed out after ${budgetMinutes} minutes before a result was available.`
-          : `Image generation failed: ${message}`,
-      )
+      return CommandResult.error(message)
     }
     if (generated.length === 0) {
       return CommandResult.error('OpenAI returned no images — try rephrasing the prompt.')

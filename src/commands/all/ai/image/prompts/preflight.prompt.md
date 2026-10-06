@@ -1,19 +1,16 @@
 ---
 created: 2026-09-08
-updated: 2026-09-10
+updated: 2026-10-06
 description: Choose GPT Image 2.5 model and quality from the creative brief and references.
 ---
 
-Choose the production method as well as image settings. Use drawing for precise
-flat geometry, icons, diagrams, charts, exact labels and typography that can be
-expressed as shapes, paths and text. Use image for photographs, painted or textured
-illustrations and naturalistic edits. Use mixed when a result needs generated
-artwork plus exact text, labels or graphic overlays (for example an illustrated
-poster). Do not route photographic clothing edits through vector drawing.
-Simple vector changes to a raster graphic can preserve its existing pixels.
-An explicit method wins. An explicitly selected image model implies image unless
-the user also explicitly chooses another method. Select square, landscape or
-portrait layout for creation; explicit size and preserved source dimensions win.
+Select image settings for the supplied production method; do not choose or
+change that method. The default image method uses OpenAI's image generator for
+photographs, illustrations, icons, diagrams, charts, posters and typography.
+Exact labels or geometric layouts are requirements for the generated image,
+not permission to substitute SVG drawing. Drawing and mixed methods are used
+only when explicitly requested by the user. Select square, landscape or portrait
+layout for creation; explicit size and preserved source dimensions win.
 
 For the image method, the default is the full reference plus a concise requested
 edit and the full provider output. Do not infer permission for masks, focused
@@ -85,5 +82,6 @@ The original prompt still matters when the short brief omits a constraint.
 
 Respect explicitModel and explicitQuality independently. Select only the remaining
 automatic settings; do not reinterpret a concrete explicit choice. Explain the
-selection in one short, user-facing sentence about the actual requirements, not
-your internal reasoning. Do not claim that any model guarantees exact fidelity.
+settings in one short, user-facing sentence about the actual requirements, not
+your internal reasoning or a recommendation to change production methods. Do not
+claim that any model guarantees exact fidelity.

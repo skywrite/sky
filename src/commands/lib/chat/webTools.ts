@@ -1,10 +1,11 @@
 /**
  * Web search and fetch tools for a chat session (Perplexity Search API).
- * Config-gated: a host offers them only when PERPLEXITY_API_KEY is set.
+ * Public page/color reads require no search key; hosts gate only web_search.
  */
 
 import { jsonSchema } from 'ai'
 import { downloadWebPage, type PageFetch } from '../web/downloadPage.ts'
+import { readWebColors } from '../web/pageColors.ts'
 import { WebPageError } from '../web/pageContent.ts'
 import { createWebPageReader, type WebPageRequest } from '../web/pageReader.ts'
 
@@ -17,6 +18,27 @@ interface SearchResult {
 export function createWebTools(options: { pageFetcher?: PageFetch } = {}) {
   const readPage = createWebPageReader((url, signal) => downloadWebPage(url, signal, options.pageFetcher))
   return {
+    web_colors: {
+      description:
+        'Read exact color declarations, gradients and their source selectors from a public website and its linked CSS. Use this when an image request references a website’s colors or palette. Returns source evidence; these are static CSS declarations, not computed browser colors or inferred official brand values. Prefer this direct lookup before browser_task for public website color references.',
+      inputSchema: jsonSchema<{ url: string }>({
+        type: 'object',
+        properties: { url: { type: 'string', description: 'The public website whose colors should guide the image' } },
+        required: ['url'],
+      }),
+      execute: async ({ url }: { url: string }, execution?: { abortSignal?: AbortSignal }) => {
+        const signal = AbortSignal.any([
+          AbortSignal.timeout(15_000),
+          ...(execution?.abortSignal ? [execution.abortSignal] : []),
+        ])
+        try {
+          return await readWebColors(url, signal, options.pageFetcher)
+        } catch (error) {
+          execution?.abortSignal?.throwIfAborted()
+          return { ok: false as const, error: error instanceof Error ? error.message : String(error) }
+        }
+      },
+    },
     web_search: {
       description:
         'Search the web for current information. Use this when the user asks about recent events, news, facts you are unsure about, or anything that requires up-to-date information beyond the notebook context.',

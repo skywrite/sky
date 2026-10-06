@@ -1,6 +1,6 @@
 ---
 created: 2026-09-22
-updated: 2026-09-22
+updated: 2026-10-06
 ---
 
 # Reading web pages
@@ -31,3 +31,12 @@ voice retains its research context budget. Network failures and cancellation
 fail the read rather than cache a partial response. HTML is converted deterministically to Markdown with headings,
 paragraphs, lists, tables, code, and absolute links; no model summarizes away
 source material during extraction. JavaScript is not executed.
+
+`pageColors.ts` supplies chat's `web_colors` for website references in image
+requests. Markdown omits styles, so this reader retains exact declarations from
+inline styles and linked CSS instead. Selectors matching static HTML take
+priority over unused shared styles; this is source evidence, not a computed
+browser palette or an assertion of official brand colors. Failed stylesheet
+reads, uninspected imports and source limits are explicit. Reads use the same
+public URL, redirect, cancellation and socket checks; no browser or search key
+is required.

@@ -520,7 +520,8 @@ export default class AiChatTask extends Command {
       }
     }
 
-    const webTools = env.PERPLEXITY_API_KEY ? createWebTools() : {}
+    const { web_search, ...publicWebTools } = createWebTools()
+    const webTools = { ...publicWebTools, ...(env.PERPLEXITY_API_KEY ? { web_search } : {}) }
     const session = new ChatSession({
       today,
       startTime,
