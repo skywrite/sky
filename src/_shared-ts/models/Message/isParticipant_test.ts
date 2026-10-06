@@ -196,3 +196,57 @@ test('isParticipant() ignores Slack author headings inside quoted and fenced exa
     expected: false,
   })
 })
+
+test(`isParticipant() with owner only on cc`, () => {
+  const given = 'an email the owner was copied on'
+  const should = 'return true'
+
+  const d = doc(`---
+from: John Smith
+to: Wendy Adams
+cc: Jane Doe
+medium: Email
+---
+
+# Topic
+`)
+  assert({ given, should, actual: isParticipant(d, OWNER), expected: true })
+})
+
+test(`isParticipant() with owner addressed by email address`, () => {
+  const d = doc(`---
+from: John Smith
+to: jane@example.com, Wendy Adams
+medium: Email
+---
+
+# Topic
+`)
+  assert({
+    given: 'an email whose sender gave only the owner’s address, no name',
+    should: 'recognize the owner by one of their addresses, whatever its case',
+    actual: isParticipant(d, OWNER, ['Jane@Example.com']),
+    expected: true,
+  })
+  assert({
+    given: 'the same email with none of the owner’s addresses known',
+    should: 'not recognize the owner',
+    actual: isParticipant(d, OWNER),
+    expected: false,
+  })
+})
+
+test(`isParticipant() with owner addresses but no names`, () => {
+  const given = 'owner addresses with no names (addresses alone are not an identity)'
+  const should = 'return true - nothing can be classified as archival'
+
+  const d = doc(`---
+from: John Smith
+to: "#atlas"
+medium: Slack
+---
+
+# Topic
+`)
+  assert({ given, should, actual: isParticipant(d, [], ['jane@example.com']), expected: true })
+})

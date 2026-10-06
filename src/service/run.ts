@@ -4,6 +4,7 @@ import { sweepTotals, syncGmailFollowAccounts } from '#commands/all/google/email
 import CommandContext from '#commands/lib/core/CommandContext.ts'
 import CommandService from '#commands/lib/core/CommandService.ts'
 import { automationPassInput, createAutomationProcess } from '#lib/automations/process.ts'
+import { listOwnAddresses } from '#lib/google/ownAddresses.ts'
 import { createLinkedInHost } from '#lib/linkedin/mod.ts'
 import { KeychainSecretsProvider } from '#lib/secrets/KeychainSecretsProvider.ts'
 import { getDarwinIdleMs, openFdCount, readSystemTimezone } from '#lib/sys/mod.ts'
@@ -17,6 +18,7 @@ import { hold } from './activity.ts'
 import { createAutomationsHost } from './handler/automations/createAutomationsHost.ts'
 import { createChatHost } from './handler/chat/createSession.ts'
 import { createClockHost } from './handler/clock/createClockHost.ts'
+import { keptOwnerAddresses } from './handler/day/ownerAddresses.ts'
 import { createExtensionsHost } from './handler/extensions/createExtensionsHost.ts'
 import { createImportHost } from './handler/import/createImportHost.ts'
 import { createMeetingsHost } from './handler/meetings/createMeetingsHost.ts'
@@ -189,6 +191,8 @@ const server = createServer({
   streaks: createStreaksHost(config),
   week: createWeekHost(config, env.toObject()),
   imports: createImportHost(config, env.toObject()),
+  // The day page knows the owner's mail by every address it uses, Gmail aliases included
+  ownerAddresses: keptOwnerAddresses(() => listOwnAddresses(new KeychainSecretsProvider())),
   userDataDir: config.DIR_USER_DATA,
   // undefined → uses MarkdownStore.buildFromAll(); tests pass explicit config for fixture dirs
   markdownStoreConfig: undefined,

@@ -9,19 +9,23 @@ const AUTHOR_HEADER = /^##(?!#).*?-\s*\*\*(.+?)\*\*\s*$/gm
 const DM_THREAD = /^dm with /
 
 /**
- * Whether any of `names` appears among a message document's participants:
- * the `from:`/`to:` frontmatter (strings, comma-separated lists, or arrays)
- * or the body's dialogue headers.
+ * Whether the owner appears among a message document's participants: the
+ * `from:`/`to:`/`cc:` frontmatter (strings, comma-separated lists, or arrays)
+ * or the body's dialogue headers. `names` are the owner's names. `addresses`
+ * are their email addresses, which an email capture writes in place of a
+ * name when the sender's mail gave none.
  *
  * A message where the notebook owner appears nowhere is an archival capture —
  * a thread saved for reference, not activity. Empty `names` returns true:
  * with no owner identity available, nothing can be classified as archival.
+ * Addresses alone are not an identity; a Slack thread never carries one.
  */
-export default function isParticipant(doc: Document, names: string[]): boolean {
+export default function isParticipant(doc: Document, names: string[], addresses: string[] = []): boolean {
   const targets = new Set(names.map(normalize).filter(Boolean))
   if (targets.size === 0) return true
+  for (const address of addresses) targets.add(normalize(address))
 
-  for (const entry of fromToEntries(doc)) {
+  for (const entry of addressedEntries(doc)) {
     if (DM_THREAD.test(normalize(entry))) return true
     for (const name of entry.split(',')) {
       if (targets.has(normalize(name))) return true
@@ -39,8 +43,8 @@ export default function isParticipant(doc: Document, names: string[]): boolean {
   return false
 }
 
-function* fromToEntries(doc: Document): Generator<string> {
-  for (const field of ['from', 'to']) {
+function* addressedEntries(doc: Document): Generator<string> {
+  for (const field of ['from', 'to', 'cc']) {
     const value = doc.yaml[field]
     const entries = Array.isArray(value) ? value : [value]
     for (const entry of entries) {

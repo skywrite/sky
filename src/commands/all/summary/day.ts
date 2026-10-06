@@ -4,6 +4,7 @@ import { aiEffortFlag } from '#commands/lib/aiParams.ts'
 import { Command, CommandResult, dayNoFutureArg, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { DIR_OUTPUT } from '#config'
+import { listOwnAddresses } from '#lib/google/ownAddresses.ts'
 import openEditor from '#lib/shell/openEditor.ts'
 import { logAIError } from '#shared/ai/errorLog.ts'
 import { aiModelByProfile, getProfile } from '#shared/ai/models.ts'
@@ -85,7 +86,7 @@ export default class SummaryDayTask extends Command {
   }
 
   async run({ args, context, tasks }: CommandArgs<Params>): Promise<CommandResult<Result>> {
-    const { config, output } = context
+    const { config, output, secrets } = context
     const { day, model, force, dryRun, stdout, open } = args
     const exportPdf = args.export
 
@@ -164,11 +165,15 @@ export default class SummaryDayTask extends Command {
 
     // Archival captures: message files the owner appears nowhere in — threads
     // saved for reference, not activity. Identity comes from about-me.md, the
-    // same source as the prompt's {{me.*}} variables; without it, nothing is
-    // marked and the summary reads as before.
+    // same source as the prompt's {{me.*}} variables, plus every address the
+    // owner's mail uses (connected Google accounts and their Gmail aliases);
+    // without a name, nothing is marked and the summary reads as before.
     const ownerNames = await this.loadOwnerNames(<string>config.FILE_ABOUT_ME)
+    const ownerAddresses = ownerNames.some(Boolean) ? await listOwnAddresses(secrets) : []
     const archivalPaths = new Set(
-      docs.filter((d) => isActionPath('message', d.path) && !isParticipant(d.doc, ownerNames)).map((d) => d.path),
+      docs
+        .filter((d) => isActionPath('message', d.path) && !isParticipant(d.doc, ownerNames, ownerAddresses))
+        .map((d) => d.path),
     )
 
     // Location metadata from the already-gathered day.md

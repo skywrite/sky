@@ -113,6 +113,8 @@ export interface HttpHandlerOptions {
   week?: WeekCommands
   /** The file-import host — a transcript or recording dropped on the day; absent, /import is not served */
   imports?: ImportRoutesOptions
+  /** The owner's email addresses, for the day page's messages; absent, only the owner's names count */
+  ownerAddresses?: () => Promise<string[]>
   /** The user-data directory: day attachments and the media mirror of the notebook's directories (CLP-16) */
   userDataDir: string
   /** Where a file's original is looked for before its bytes are copied in: the Desktop and Downloads, then Spotlight, unless said */
@@ -190,6 +192,7 @@ export function createHttpApp(options: HttpHandlerOptions): Hono {
         markdownBaseDir,
         timeDir: chat.timeDir,
         aboutMePath: chat.aboutMePath,
+        ownerAddresses: options.ownerAddresses,
         today: options.now ? () => options.now!().plainDateTime.plainDate : undefined,
         planningToday: options.now ? () => planningDate(options.now!()) : undefined,
         now: options.now,

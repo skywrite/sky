@@ -341,6 +341,74 @@ test({ name: 'day record - a Complete entry may say how long it took' }, async (
   })
 })
 
+test({ name: 'day record - an email address in a row is not the row’s link' }, async () => {
+  const base = await makeTempDir({ prefix: 'sky-day-record-addresses-' })
+  const timeDir = path.join(base, 'time')
+  const dayDirPath = path.join(timeDir, dayDir(TODAY))
+  const messages = path.join(dayDirPath, 'actions', 'messages')
+  await mkdir(messages, { recursive: true })
+  await writeFile(
+    path.join(timeDir, dayFile(TODAY)),
+    `# **2026-01-27 - Tue**
+
+## Professional Todos
+
+- Send jane@example.com the Atlas deck
+
+## Professional Complete
+
+- 09:15 > Jane Doe to alex@example.com, Sam Torres Email -> [Atlas kickoff](actions/messages/09-15_email_Jane-Doe-to-alexexamplecom_Atlas-kickoff.md)
+- 10:40 > Sam Torres to Jane Doe Email -> [Atlas budget](actions/messages/10-40_email_Sam-Torres-to-Jane-Doe_Atlas-budget.md)
+- Wrote the Atlas brief
+`,
+  )
+  const email = (headers: string, summary: string) =>
+    `---\n${headers}\nmedium: Email\nsummary: ${summary}\n---\n\n# ${summary}\n\nThe numbers are in the sheet; we can walk through them on Thursday if that suits everyone.\n`
+  await writeFile(
+    path.join(messages, '09-15_email_Jane-Doe-to-alexexamplecom_Atlas-kickoff.md'),
+    email('from: Jane Doe\nto: alex@example.com, Sam Torres', 'Atlas kickoff'),
+  )
+  await writeFile(
+    path.join(messages, '10-40_email_Sam-Torres-to-Jane-Doe_Atlas-budget.md'),
+    email('from: Sam Torres\nto: Jane Doe\ncc: Alex Atlas', 'Atlas budget'),
+  )
+  await writeFile(
+    path.join(messages, '11-05_email_Sam-Torres-to-Jane-Doe_Vendor-list.md'),
+    email('from: Sam Torres\nto: Jane Doe', 'Vendor list'),
+  )
+  const record = await buildDayRecord({
+    day: TODAY,
+    timeDir,
+    dayDirPath,
+    markdownBaseDir: base,
+    ownerNames: OWNER,
+    ownerAddresses: ['alex@example.com'],
+  })
+
+  assert({
+    given: 'an email capture line naming a recipient by bare address, and a to-do that mentions an address',
+    should: 'still read the line as a capture log, not Done, and give the to-do no link',
+    actual: {
+      done: record.done.map((i) => i.text),
+      todo: { text: record.todos[0].text, link: record.todos[0].link },
+    },
+    expected: {
+      done: ['Wrote the Atlas brief'],
+      todo: { text: 'Send jane@example.com the Atlas deck', link: null },
+    },
+  })
+
+  assert({
+    given: 'emails addressed to one of the owner’s addresses, copying the owner, and leaving the owner out',
+    should: 'list the first two as the owner’s messages and file the third',
+    actual: {
+      involved: record.messages.involved.map((m) => m.title),
+      archive: record.messages.archive.map((m) => m.title),
+    },
+    expected: { involved: ['Atlas kickoff', 'Atlas budget'], archive: ['Vendor list'] },
+  })
+})
+
 test({ name: 'day record - a day with no file yet has an empty plan, not an error' }, async () => {
   const base = await makeTempDir({ prefix: 'sky-day-record-empty-' })
   const timeDir = path.join(base, 'time')

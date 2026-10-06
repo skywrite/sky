@@ -154,6 +154,18 @@ interface AttachmentWire {
   data?: string
 }
 
+interface SendAsListWire {
+  sendAs?: Array<{ sendAsEmail?: string; isPrimary?: boolean; verificationStatus?: string }>
+}
+
+/** The addresses a mailbox sends as: its own, and every alias its owner verified. */
+export async function listSendAs(client: GoogleClient): Promise<string[]> {
+  const wire = await client.getJson<SendAsListWire>(`${GMAIL_API_URL}/settings/sendAs`)
+  return (wire.sendAs ?? []).flatMap((s) =>
+    s.sendAsEmail && (s.isPrimary || s.verificationStatus === 'accepted') ? [s.sendAsEmail] : [],
+  )
+}
+
 export async function listLabels(client: GoogleClient): Promise<GmailLabel[]> {
   const wire = await client.getJson<LabelsPageWire>(`${GMAIL_API_URL}/labels`)
   return (wire.labels ?? []).flatMap((l) =>

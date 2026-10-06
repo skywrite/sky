@@ -44,6 +44,8 @@ export interface DayRoutesOptions {
   commands?: DayCommands
   /** Test seam — production reads about-me.md */
   ownerNames?: string[]
+  /** The owner's email addresses: each connected Google account and its Gmail aliases */
+  ownerAddresses?: () => Promise<string[]>
   /** The day's files live under the user-data directory; without it the files routes stay off */
   files?: DayFilesOptions
   /** The day's calendar schedule for the rail; without it the schedule route stays off */
@@ -178,6 +180,7 @@ export async function buildDayView(options: DayRoutesOptions, ymd?: string): Pro
       dayDirPath,
       markdownBaseDir: options.markdownBaseDir,
       ownerNames: options.ownerNames ?? (await loadOwnerNames(options.aboutMePath)),
+      ownerAddresses: await options.ownerAddresses?.(),
     }),
     readDaySummary(dayDirPath, options.markdownBaseDir),
   ])

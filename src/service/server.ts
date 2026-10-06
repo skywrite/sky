@@ -106,6 +106,8 @@ export interface ServerOptions {
   week?: WeekCommands
   /** The file-import host; absent, /import is not served */
   imports?: ImportRoutesOptions
+  /** The owner's email addresses, for the day page's messages; absent, only the owner's names count */
+  ownerAddresses?: () => Promise<string[]>
   /** The user-data directory: day attachments and the media mirror of the notebook's directories */
   userDataDir?: string
   /** Reference date for recency calculations (for deterministic testing) */
@@ -280,6 +282,7 @@ export function createServer(options: ServerOptions): Server {
       streaks: options.streaks,
       week,
       imports: options.imports,
+      ownerAddresses: options.ownerAddresses,
       userDataDir: options.userDataDir ?? DIR_USER_DATA,
     })
   }

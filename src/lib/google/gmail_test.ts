@@ -10,6 +10,7 @@ import {
   getLabelCounts,
   getThread,
   hasGmailScope,
+  listSendAs,
   listThreads,
   modifyThread,
   parseRecipients,
@@ -255,6 +256,29 @@ test('getLabelCounts', async () => {
       empty: { threadsTotal: 0, messagesTotal: 0, threadsUnread: 0, messagesUnread: 0 },
     },
     actual: { paths: calls.map((call) => new URL(call.url).pathname), totals, empty },
+  })
+})
+
+test('listSendAs', async () => {
+  const calls: RecordedCall[] = []
+  const client = await clientWith(
+    [
+      {
+        sendAs: [
+          { sendAsEmail: 'jane@example.com', isPrimary: true },
+          { sendAsEmail: 'jane@example.org', verificationStatus: 'accepted' },
+          { sendAsEmail: 'jd@example.net', verificationStatus: 'pending' },
+        ],
+      },
+    ],
+    calls,
+  )
+  const addresses = await listSendAs(client)
+  assert({
+    given: 'a mailbox with its own address, a verified alias, and an alias still awaiting verification',
+    should: 'read the send-as settings and keep the mailbox and the verified alias',
+    expected: { paths: ['/gmail/v1/users/me/settings/sendAs'], addresses: ['jane@example.com', 'jane@example.org'] },
+    actual: { paths: calls.map((call) => new URL(call.url).pathname), addresses },
   })
 })
 

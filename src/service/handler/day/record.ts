@@ -116,6 +116,8 @@ export interface DayRecordInput {
   markdownBaseDir: string
   /** The owner's names, for the archival predicate; empty means nothing is archival */
   ownerNames: string[]
+  /** The owner's email addresses, which count only beside their names */
+  ownerAddresses?: string[]
 }
 
 /** The owner as about-me.md names them — the same identity summary:day uses. */
@@ -135,8 +137,11 @@ const STRUCK = /^~~(.*)~~$/
 
 function firstItemLink(tokens: Token[]): Tokens.Link | null {
   for (const token of tokens) {
-    if (token.type === 'link') return token as Tokens.Link
-    if ('tokens' in token && Array.isArray(token.tokens)) {
+    // An email address is someone to write to, not what the item points at:
+    // an email capture line can name bare recipient addresses before its link.
+    if (token.type === 'link') {
+      if (!/^mailto:/i.test((token as Tokens.Link).href)) return token as Tokens.Link
+    } else if ('tokens' in token && Array.isArray(token.tokens)) {
       const link = firstItemLink(token.tokens)
       if (link) return link
     }
@@ -338,7 +343,7 @@ export async function buildDayRecord(input: DayRecordInput): Promise<DayRecord> 
       record.events.push({ ...row, who: text(entry.doc.yaml['who']), where: text(entry.doc.yaml['where']) })
     } else if (isActionPath('message', entry.path)) {
       const message = messageRow(row, entry.doc, entry.path)
-      if (isParticipant(entry.doc, input.ownerNames)) record.messages.involved.push(message)
+      if (isParticipant(entry.doc, input.ownerNames, input.ownerAddresses)) record.messages.involved.push(message)
       else record.messages.archive.push(message)
     } else if (isActionPath('video', entry.path)) {
       record.videos.push({

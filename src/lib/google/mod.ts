@@ -76,6 +76,8 @@ export {
 
 export { accountCategory } from './accountCategory.ts'
 
+export { listOwnAddresses } from './ownAddresses.ts'
+
 export { GoogleApiError, GoogleClient } from './client.ts'
 export type { GoogleClientOptions } from './client.ts'
 
@@ -211,6 +213,7 @@ export {
   hasGmailScope,
   isInlineSignatureAttachment,
   listLabels,
+  listSendAs,
   listThreads,
   modifyThread,
   parseRecipients,
