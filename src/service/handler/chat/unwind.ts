@@ -118,6 +118,8 @@ export function registerUnwind(app: Hono, host: UnwindHost): void {
 
       const seed = session.threadSeedAt(turn)
       const prefs: ThreadPrefs = {
+        modelSettingsLocked: thread.modelSettingsLocked,
+        modelConfig: thread.modelConfig,
         profile: thread.profile,
         effort: thread.effort,
         contextTokens: session.contextTokens,

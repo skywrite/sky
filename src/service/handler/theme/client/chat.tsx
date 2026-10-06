@@ -400,6 +400,10 @@ function reduce(state: ThreadState, action: Action): ThreadState {
     case 'refresh':
       return {
         ...state,
+        settings:
+          state.settings && (action.turns.length > 0 || action.interrupted)
+            ? { ...state.settings, modelSettingsLocked: true }
+            : state.settings,
         turns: action.turns,
         documents: action.documents,
         approvals: action.approvals,
@@ -902,7 +906,10 @@ export function useChat(id: string) {
             body: JSON.stringify(change),
           }).catch(() => null)
           if (!response?.ok) {
-            const body = (await response?.json().catch(() => ({}))) as { message?: string } | undefined
+            const body = (await response?.json().catch(() => ({}))) as
+              | { message?: string; settings?: ThreadSettings }
+              | undefined
+            if (body?.settings) dispatch({ type: 'settings', id, settings: body.settings })
             throw new Error(body?.message ?? 'Could not apply chat settings. Try again.')
           }
           dispatch({ type: 'settings', id, settings: (await response.json()) as ThreadSettings })
@@ -986,11 +993,13 @@ export function useChat(id: string) {
       }
       if (!response.ok) {
         attached.current = false
-        const body = (await response.json().catch(() => ({}))) as { message?: string }
+        const body = (await response.json().catch(() => ({}))) as { message?: string; settings?: ThreadSettings }
+        if (body.settings) dispatch({ type: 'settings', id, settings: body.settings })
         const error = body.message ?? `The service answered ${response.status}.`
         dispatch(files.length ? { id, type: 'rejected' } : { id, type: 'failed', message: error })
         return { ok: false, error }
       }
+      dispatch({ type: 'settings', id, settings: { ...state.settings, modelSettingsLocked: true } })
       onAccepted?.()
 
       let finished = false

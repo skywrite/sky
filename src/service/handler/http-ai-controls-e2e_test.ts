@@ -14,7 +14,7 @@ import { prettyModel, ROLE_LABEL, type SettingsHost } from './settings/mod.ts'
 
 test(
   {
-    name: 'Chat tuning and preset settings work directly, persist, and fit narrow screens',
+    name: 'Chat model settings lock after sending, including branches, and fit narrow screens',
     timeout: 60000,
     ignore: env.get('SKY_BROWSER_TESTS') !== '1',
   },
@@ -95,11 +95,12 @@ test(
           group: profile.model,
           effort: { default: effectiveEffort(profile), levels: effortLevels(profile) },
         })),
-      resolve: (name, effort = 'default') => {
-        const profile = getAllProfiles(config.ai)[name]
+      resolve: (name, effort = 'default', fixed) => {
+        const profile = fixed ?? getAllProfiles(config.ai)[name]
         if (!profile) throw new Error('Unknown preset')
         validateEffort(profile, effort)
         return {
+          config: structuredClone(profile),
           model: {} as ResolvedModel,
           profile: {
             provider: profile.provider,
@@ -151,6 +152,17 @@ test(
         expected: [true, true, true, true],
       })
       const effort = page.getByRole('radiogroup', { name: 'Effort', exact: true })
+      assert({
+        given: 'an empty draft',
+        should: 'allow model selection and explain when settings become fixed',
+        actual: [
+          await page.getByRole('combobox', { name: 'Model', exact: true }).isEnabled(),
+          await page
+            .getByText('These settings become fixed after your first message, including in branches.')
+            .isVisible(),
+        ],
+        expected: [true, true],
+      })
       const from = await effort.getByRole('radio', { name: 'X-high', exact: true }).boundingBox()
       const to = await effort.getByRole('radio', { name: 'Medium', exact: true }).boundingBox()
       await page.mouse.move(from!.x + from!.width / 2, from!.y + from!.height / 2)
@@ -197,6 +209,25 @@ test(
       await temporary.click()
       await page.waitForFunction(() => document.querySelector('.sky-main')?.getAttribute('data-temporary') === 'true')
       await toggle.click()
+      const checkLocked = async (given: string) => {
+        assert({
+          given,
+          should: 'keep model, effort and context visible but fixed, with a clear explanation',
+          actual: [
+            await page.getByRole('combobox', { name: 'Model', exact: true }).isDisabled(),
+            await effort.getByRole('radio', { name: 'Medium', exact: true }).isDisabled(),
+            await page.getByRole('slider', { name: 'Notebook context', exact: true, includeHidden: true }).isDisabled(),
+            await page
+              .getByText(
+                'Model, effort, and context size are fixed for this chat and its branches. Start a new chat to change them.',
+              )
+              .isVisible(),
+            (await toggle.textContent())?.includes('Medium effort'),
+          ],
+          expected: [true, true, true, true, true],
+        })
+      }
+      await checkLocked('a chat after its first reply')
       await capture('chat-expanded')
       await toggle.click()
       await capture('chat-collapsed')
@@ -208,6 +239,23 @@ test(
         actual: [(await toggle.textContent())?.includes('Medium effort'), await temporary.getAttribute('aria-checked')],
         expected: [true, 'true'],
       })
+      await toggle.click()
+      await checkLocked('the same chat after reloading')
+      assert({
+        given: 'the chat settings opened after reloading',
+        should: 'preserve the conversation title in the browser tab',
+        actual: (await page.title()).includes('Review the sample proposal'),
+        expected: true,
+      })
+      const source = await (await page.request.get(`${origin}/chat/tuning`)).json()
+      const branch = await (
+        await page.request.post(`${origin}/chat/tuning/branch`, { data: source.branchPoints[1] })
+      ).json()
+      await page.goto(`${origin}/thread/${branch.id}`)
+      await toggle.click()
+      await checkLocked('a branch before its first new message')
+      // Unsent drafts still support the complete model and effort picker.
+      await page.goto(`${origin}/thread/draft-tuning`)
       await toggle.click()
       for (const [model, defaultEffort] of [
         ['GPT 6.1 Sol', 'High'],
@@ -225,7 +273,7 @@ test(
           actual: [
             await effort.getByRole('radio', { name: defaultEffort, exact: true }).getAttribute('aria-checked'),
             (await toggle.textContent())?.includes(`${defaultEffort} effort`),
-            (await (await page.request.get(`${origin}/chat/tuning/settings`)).json()).effort,
+            (await (await page.request.get(`${origin}/chat/draft-tuning/settings`)).json()).effort,
           ],
           expected: ['true', true, 'default'],
         })
@@ -344,6 +392,7 @@ test(
       })
       await page.goto(`${origin}/thread/tuning`)
       await toggle.click()
+      await checkLocked('the existing chat on a phone')
       const mobileTemporary = await temporary.boundingBox()
       const mobileClose = await page.getByRole('button', { name: 'Discard', exact: true }).boundingBox()
       await capture('chat-mobile')
@@ -363,16 +412,16 @@ test(
       config.ai.profiles!['default-opus-5.5'] = { provider: 'anthropic', model: 'claude-haiku-4-5' }
       await page.reload()
       await toggle.click()
-      await page.getByRole('button', { name: 'Use preset default', exact: true }).click()
-      await page.waitForFunction(() =>
-        document.querySelector('[aria-label="Chat settings"]')?.textContent?.includes('Default effort'),
-      )
+      await checkLocked('a chat after its global preset was changed to another model')
       assert({
-        given: 'a preset changed to a model without adjustable effort',
-        should: 'let an existing chat clear its older effort override',
-        actual: (await (await page.request.get(`${origin}/chat/tuning/settings`)).json()).effort,
-        expected: 'default',
+        given: 'a global preset edit',
+        should: 'keep the existing chat’s actual model in its summary',
+        actual: (await toggle.textContent())?.includes('Claude Opus 5.5'),
+        expected: true,
       })
+      await page.goto(`${origin}/thread/${branch.id}`)
+      await toggle.click()
+      await checkLocked('an inherited branch on a phone')
     } finally {
       await browser?.close()
       await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())))

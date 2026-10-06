@@ -79,6 +79,7 @@ import type {
   ThreadRestore,
   ToolOutputEvent,
 } from './mod.ts'
+import { storedModelConfig } from './modelSettings.ts'
 import { readSession } from './readSession.ts'
 import { chatSourceLinks, sourceChatHref } from './sourceLinks.ts'
 import { restoreToolRuns } from './toolRuns.ts'
@@ -297,9 +298,10 @@ export function createChatSettingsHost(): ChatSettingsHost {
       if (all[current]?.model === model) return current
       return Object.entries(all).find(([, profile]) => profile.model === model)?.[0]
     },
-    resolve: (name, effort = 'default') => {
-      const profile = getProfile(name)
+    resolve: (name, effort = 'default', config) => {
+      const profile = config ?? getProfile(name)
       return {
+        config: structuredClone(profile),
         model: resolveProfile(profile, { effort }),
         profile: {
           model: profile.model,
@@ -348,7 +350,7 @@ export function createChatHost(config: typeof ConfigModule, env: Record<string, 
     // Drafts nobody has worked on have no record; the writer's tools see them as the page does.
     const unsavedDrafts = unsavedDraftsOf(id, writingDrafts, runs, startTime.toString())
     const profileName = prefs.profile ?? roleProfile('reasoning')
-    const profile = getProfile(profileName)
+    const profile = prefs.modelConfig ?? getProfile(profileName)
     const clock = {
       notebookDate: context.notebookNow.date,
       notebookTime: context.notebookNow.time,
@@ -505,7 +507,9 @@ export function createChatHost(config: typeof ConfigModule, env: Record<string, 
               ? host.profile
               : Object.entries(getAllProfiles()).find(([, candidate]) => candidate.model === priorModel)?.[0]
           const prefs: ThreadPrefs = {
-            effort: isEffortOverride(host?.effort) ? host.effort : 'default',
+            modelSettingsLocked: true,
+            modelConfig: storedModelConfig(host?.modelConfig),
+            effort: isEffortOverride(host?.effort) ? host.effort : undefined,
             saves: typeof host?.saves === 'boolean' ? host.saves : true,
             ...(profile ? { profile } : {}),
             ...(budget !== undefined ? { contextTokens: budget } : {}),

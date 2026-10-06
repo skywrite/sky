@@ -1,6 +1,6 @@
 ---
 created: 2026-09-01
-updated: 2026-10-01
+updated: 2026-10-06
 ---
 
 # Chat over HTTP — a thread, its tuning, and the story of its context
@@ -281,8 +281,15 @@ a person can see and touch:
   keep it; editing a preset cannot rewrite reply provenance, and a chat
   whose settings changed along the way reads turn by turn. Logs written
   before the object were rewritten into it. The file's YAML header names
-  no provider or model any more; the per-turn record is the only place
-  the model lives ([2026-09-16](2026-09-16-every-turn-keeps-its-settings.md)).
+  no provider or model any more; the per-turn record owns reply provenance
+  ([2026-09-16](2026-09-16-every-turn-keeps-its-settings.md)).
+  Model, effort, and the selected context allowance become fixed when the first
+  message is accepted. The panel remains viewable with disabled controls and an
+  explanation; unsent drafts remain adjustable. Branches and reply threads inherit
+  the lock before their first own message. Snapshots also retain the actual model
+  configuration so changing or removing a global preset cannot switch the provider
+  beneath an existing conversation's file references and model history. Older chats
+  recover their last recorded settings; filing preferences remain adjustable.
   Context stops are Off, 25k, 50k, 100k, 300k, 500k, 750k. The stop a window
   reaches is figured with the model's learned real-per-estimated token
   ratio (about 1.78 on Claude, so a 1M window ends at 500k; see the model
@@ -302,16 +309,18 @@ a person can see and touch:
   the original choices must reload, and an unknown
   profile or incompatible budget is refused before context or model work.
   The routes reserve the turn before restoration or construction, build a
-  new thread with its request's choices, and apply them to an existing or
-  restored thread before it starts. Server defaults cannot override the
-  message. Send waits while the composer loads or applies settings.
+  new thread with its request's choices, and require subsequent messages to match
+  its fixed model settings. A mismatch returns 409 with the current settings before
+  storing uploads or invoking tools. The same rule covers queued instructions and
+  voice transcripts. Server defaults cannot override the first message. Send waits
+  while the composer loads or applies settings.
   `GET /chat/:id/settings` answers the
   tuning — the thread's own, else what was chosen before its first
   message, else the host's defaults (the Thinking role, ai:chat's 300k).
-  `POST /chat/:id/settings` with `{ profile?, effort?, contextTokens?, saves? }` changes it:
-  a live thread swaps the model for its next turn and reassembles its
-  context under a new budget at once; a thread not yet built keeps the
-  choice for when its first message builds it. The first stop is
+  `POST /chat/:id/settings` with `{ profile?, effort?, contextTokens?, saves? }`
+  changes unsent drafts; after the first message it accepts identical model
+  settings and filing changes only. `modelSettingsLocked` in the response tells
+  the composer which controls are available. The first stop is
   **Nothing** (`contextTokens: 0`): the notebook stays closed. No baseline
   is gathered, no question is turned into queries, the model answers
   from the conversation and the tools it calls, and the context prompt
@@ -585,10 +594,11 @@ failed check reads as usual. See
 
 ## The rules it lives by
 
-- A change mid-turn is refused (409): the model is read when a turn
-  starts, the budget when the context is rebuilt. The page keeps both
-  controls out with the composer while a turn runs.
-- The transcript records one model — the one answering when it is saved.
+- Model settings are fixed after the first accepted message, including after a
+  failure, restart, or branch. A new independent chat is required to change them.
+  The settings and message routes both enforce this; disabling controls alone
+  cannot prevent a stale tab from changing the provider.
+- Each turn records the actual model, effort and selected allowance it used.
 - A held call waits as long as it takes; there is no timeout. Closing the
   page does not answer it — the thread stays busy until someone does, or
   the service restarts.

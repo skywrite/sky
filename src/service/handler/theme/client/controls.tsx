@@ -12,6 +12,7 @@ export interface ModelChoice {
   provider: string
   roles: string[]
   contextWindow?: number
+  tokenRatio?: number
   effort?: { default: Effort | null; levels: readonly Effort[] }
   group?: string
   builtin?: boolean
@@ -20,6 +21,7 @@ export interface ModelChoice {
 export interface ThreadSettings {
   model: { current: string; default: string; choices: ModelChoice[] }
   effort?: EffortOverride
+  modelSettingsLocked: boolean
   contextTokens: number
   kept: number | null
   documents: number | null
@@ -62,8 +64,12 @@ export function ChatControls({
   if (!settings) return null
   const current = settings.model.choices.find((choice) => choice.name === settings.model.current)
   const effort = settings.effort && settings.effort !== 'default' ? settings.effort : (current?.effort?.default ?? null)
-  const busy = chat.state.phase !== 'idle' || chat.tuning
-  const reach = reachIndex(current?.contextWindow, current?.tokenRatio)
+  const locked = settings.modelSettingsLocked || chat.state.inherited > 0
+  const disabled = locked || chat.state.phase !== 'idle' || !!chat.tuning
+  const reach = Math.max(
+    reachIndex(current?.contextWindow, current?.tokenRatio),
+    locked ? stopIndex(settings.contextTokens) : 0,
+  )
   const at = Math.min(budget ?? stopIndex(settings.contextTokens), reach)
   const tokens = budget === null ? settings.contextTokens : STOPS[at]
   const choices = pickerChoices(settings)
@@ -122,7 +128,7 @@ export function ChatControls({
                 domain={[0, STOPS.length - 1]}
                 step={1}
                 value={at}
-                disabled={busy}
+                disabled={disabled}
                 onChange={setBudget}
                 onChangeEnd={(index) => {
                   if (STOPS[index] !== settings.contextTokens)
@@ -143,7 +149,7 @@ export function ChatControls({
               <Select
                 aria-label="Model"
                 value={settings.model.current}
-                disabled={busy}
+                disabled={disabled}
                 data={providers.map((provider) => ({
                   group: provider,
                   items: choices
@@ -166,13 +172,18 @@ export function ChatControls({
                 key={settings.model.current}
                 value={effort}
                 levels={current?.effort?.levels ?? []}
-                disabled={busy}
+                disabled={disabled}
                 inherited={!settings.effort || settings.effort === 'default'}
                 resetLabel="Use preset default"
                 onChange={(value) => chat.setEffort(value ?? 'default')}
               />
             </div>
           </div>
+          <p className="sky-chat-controls-note sky-chat-controls-lock">
+            {locked
+              ? 'Model, effort, and context size are fixed for this chat and its branches. Start a new chat to change them.'
+              : 'These settings become fixed after your first message, including in branches.'}
+          </p>
           {reach < STOPS.length - 1 && (
             <p className="sky-chat-controls-note">
               This model supports up to {thousands(STOPS[reach])} of notebook context.

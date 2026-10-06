@@ -126,6 +126,9 @@
   font-size: 13px;
   color: var(--sky-dim);
 }
+.sky-chat-controls-lock {
+  color: var(--sky-text-2);
+}
 .sky-chat-controls-error {
   font-size: 14px;
   color: var(--mantine-color-red-7);

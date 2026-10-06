@@ -5,7 +5,7 @@ import { generateText, jsonSchema, type ModelMessage } from 'ai'
 import { MockLanguageModelV3 } from 'ai/test'
 import { withCommandRun } from '#commands/lib/core/commandLog.ts'
 import * as config from '#config'
-import type { ResolvedModel } from '#shared/ai/models.ts'
+import type { ModelProfile as ModelConfig, ResolvedModel } from '#shared/ai/models.ts'
 import { exists, makeTempDir, readTextFile, writeTextFile } from '#shared/fs/mod.ts'
 import type { ProducerResult } from '#shared/models/Chat/ChatContext/mod.ts'
 import type { ModelInvoker } from '#shared/models/Chat/ChatEngine/mod.ts'
@@ -288,7 +288,7 @@ interface Frame {
   data: Record<string, unknown> | null
 }
 
-test('chat effort overrides apply to one thread, reset on model changes, and keep reply provenance', async () => {
+test('chat effort can change before the first message, then stays fixed with reply provenance', async () => {
   const catalog: ChatSettingsHost = {
     ...settingsHost,
     resolve: (name, effort = 'default') => {
@@ -316,26 +316,29 @@ test('chat effort overrides apply to one thread, reset on model changes, and kee
   try {
     const app = appWith(host)
     await post(app, '/chat/effort/settings', { effort: 'medium', contextTokens: 0 })
-    const frames = parseSSE(await (await send(app, '/chat/effort/messages', { message: 'Review the sample.' })).text())
     const rejected = await post(app, '/chat/effort/settings', { effort: 'max' })
     const unchanged = await getJson(app, '/chat/effort/settings')
     const reset = (await (await post(app, '/chat/effort/settings', { profile: 'test-quick' })).json()) as {
       effort: string
     }
+    await post(app, '/chat/effort/settings', { profile: 'test-thinking', effort: 'medium' })
+    const frames = parseSSE(await (await send(app, '/chat/effort/messages', { message: 'Review the sample.' })).text())
+    const locked = await post(app, '/chat/effort/settings', { effort: 'low' })
     const restored = await getJson(app, '/chat/effort')
     assert({
-      given: 'an effort override followed by an unsupported adjustment and a model change',
-      should: 'reject unsupported effort, reset to the new preset default, and preserve the earlier reply metadata',
+      given: 'draft settings changed before sending, then another effort requested after the reply',
+      should: 'validate and reset draft effort, then lock it and preserve reply metadata',
       actual: [
         frames.find((frame) => frame.event === 'turn')?.data?.effort,
         rejected.status,
         unchanged.effort,
         reset.effort,
+        locked.status,
         restored.usage[0].modelLabel,
         restored.usage[0].effort,
         (await getJson(app, '/chat/other/settings')).effort,
       ],
-      expected: ['medium', 400, 'medium', 'default', 'Test Thinking', 'medium', 'default'],
+      expected: ['medium', 400, 'medium', 'default', 409, 'Test Thinking', 'medium', 'default'],
     })
   } finally {
     await rm(host.tmp, { recursive: true, force: true })
@@ -1231,7 +1234,7 @@ test({ name: 'chat route - settings refuse what the host cannot take' }, async (
   })
 })
 
-test('chat route - every message applies its own settings before the model runs', async () => {
+test('chat route - the first message fixes model settings and later requests cannot change them', async () => {
   let session: ChatSession
   const seen: Array<{ model: string; budget: number; snapshot: boolean }> = []
   const host = await testHost({
@@ -1264,35 +1267,70 @@ test('chat route - every message applies its own settings before the model runs'
       })
     ).text(),
   )
+  const refusals: number[] = []
+  for (const change of [{ profile: 'test-thinking' }, { effort: 'medium' }, { contextTokens: 0 }]) {
+    refusals.push((await post(app, '/chat/request/settings', change)).status)
+    refusals.push(
+      (await post(app, '/chat/request/messages', { message: 'Continue.', ...firstPrefs, ...change })).status,
+    )
+    refusals.push(
+      (
+        await post(app, '/chat/request/messages', {
+          message: 'Queued instruction.',
+          ...firstPrefs,
+          ...change,
+          queue: true,
+          instructionId: 'queued-change',
+        })
+      ).status,
+    )
+    refusals.push(
+      (
+        await post(app, '/chat/request/voice', {
+          after: 2,
+          turns: [
+            { who: 'you', text: 'Continue.' },
+            { who: 'sky', text: 'Done.' },
+          ],
+          ...firstPrefs,
+          ...change,
+        })
+      ).status,
+    )
+  }
+  const same = await post(app, '/chat/request/settings', firstPrefs)
   const second = parseSSE(
     await (
-      await post(app, 'http://localhost/chat/request/messages', {
-        message: 'Now close the notebook.',
-        profile: 'test-thinking',
-        contextTokens: 0,
+      await post(app, '/chat/request/messages', {
+        message: 'Continue.',
+        ...firstPrefs,
         saves: false,
       })
     ).text(),
   )
   const settings = await getJson(app, 'http://localhost/chat/request/settings')
   assert({
-    given: 'explicit choices on a new thread, then different choices on the live thread',
-    should: 'construct and invoke with those choices, keeping recovery before invoking under either filing setting',
+    given: 'a first message followed by settings, text, queue and voice attempts to change each model setting',
+    should: 'reject every change before invoking, accept identical settings, and still allow temporary mode',
     actual: {
+      refusals,
+      same: same.status,
       createdWith,
       seen,
       models: [first, second].map((frames) => frames.find((f) => f.event === 'turn')?.data?.model),
-      final: [settings.model.current, settings.contextTokens, settings.saves],
+      final: [settings.model.current, settings.contextTokens, settings.saves, settings.modelSettingsLocked],
       snapshot: existsSync(path.join(host.tmp, 'request.autosave.md')),
     },
     expected: {
+      refusals: Array(12).fill(409),
+      same: 200,
       createdWith: [firstPrefs],
       seen: [
         { model: 'test-quick', budget: 5000, snapshot: true },
-        { model: 'test-thinking', budget: 0, snapshot: true },
+        { model: 'test-quick', budget: 5000, snapshot: true },
       ],
-      models: ['test-quick', 'test-thinking'],
-      final: ['test-thinking', 0, false],
+      models: ['test-quick', 'test-quick'],
+      final: ['test-quick', 5000, false, true],
       snapshot: true,
     },
   })
@@ -1332,6 +1370,131 @@ test('chat route - missing or invalid message settings never invoke a model or c
     actual: { statuses, created },
     expected: { statuses: invalid.map(() => 400), created: 0 },
   })
+})
+
+test('fixed model configuration survives preset edits, deletion, branching, saved reopen and restart', async () => {
+  const original: ModelConfig = { provider: 'openai', model: 'sample-reader', contextWindow: 1_000_000 }
+  let preset = original
+  let removed = false
+  const catalog: ChatSettingsHost = {
+    ...settingsHost,
+    choices: () => (removed ? CHOICES.filter((choice) => choice.name !== 'test-thinking') : CHOICES),
+    resolve: (name, effort = 'default', fixed) => {
+      if (removed && !fixed) throw new Error('This preset was removed.')
+      const config = fixed ?? preset
+      return {
+        model: {} as ResolvedModel,
+        config: structuredClone(config),
+        profile: { model: config.model, preset: name, effort: effort === 'default' ? 'high' : effort },
+        contextWindow: config.contextWindow,
+      }
+    },
+  }
+  const host = await testHost({ settings: catalog, canonicalSnapshots: true })
+  const production = createChatHost(
+    { ...config, DIR_STATE_AI_CHATS: host.tmp, DIR_BASE: BASE_DIR, DIR_TIME: path.join(BASE_DIR, 'time') },
+    {},
+  )
+  host.snapshots = production.snapshots
+  const prefs = { profile: 'test-thinking', effort: 'medium', contextTokens: 5000, saves: true }
+  try {
+    const app = appWith(host)
+    await (await post(app, '/chat/fixed/messages', { message: 'Review the sample.', ...prefs })).text()
+    // The preset now points at another provider, then is removed entirely.
+    preset = { provider: 'lm-studio', model: 'sample-replacement', contextWindow: 8192 }
+    removed = true
+    const continued = parseSSE(
+      await (
+        await post(app, '/chat/fixed/messages', {
+          message: 'Continue reviewing.',
+          ...prefs,
+        })
+      ).text(),
+    )
+    const source = await getJson(app, '/chat/fixed')
+    const point = source.branchPoints[1]
+    const children: string[] = []
+    for (const route of ['branch', 'replies']) {
+      const made = await post(app, `/chat/fixed/${route}`, point)
+      const { id } = (await made.json()) as { id: string }
+      children.push(id)
+      const settings = await getJson(app, `/chat/${id}/settings`)
+      const refused = await post(app, `/chat/${id}/settings`, { profile: 'test-quick' })
+      const first = parseSSE(
+        await (
+          await post(app, `/chat/${id}/messages`, {
+            message: 'Explore this detail.',
+            ...prefs,
+          })
+        ).text(),
+      )
+      assert({
+        given: `a new ${route} inheriting a conversation whose preset was changed and deleted`,
+        should: 'already be locked and answer with the original model',
+        actual: [
+          settings.modelSettingsLocked,
+          refused.status,
+          settings.contextTokens,
+          first.find((frame) => frame.event === 'turn')?.data?.modelLabel,
+        ],
+        expected: [true, 409, 5000, 'Sample Reader'],
+      })
+    }
+    const recovered = appWith(host)
+    for (const id of ['fixed', ...children]) {
+      const settings = await getJson(recovered, `/chat/${id}/settings`)
+      const refused = await post(recovered, `/chat/${id}/messages`, {
+        message: 'Switch the model.',
+        ...prefs,
+        profile: 'test-quick',
+      })
+      const frames = parseSSE(
+        await (
+          await post(recovered, `/chat/${id}/messages`, {
+            message: 'Continue after recovery.',
+            ...prefs,
+          })
+        ).text(),
+      )
+      assert({
+        given: 'a fresh route instance restored from disk with no matching preset in the catalog',
+        should: 'restore the fixed provider configuration and refuse a stale tab trying to switch',
+        actual: [
+          settings.modelSettingsLocked,
+          settings.model.choices[0].label,
+          refused.status,
+          frames.find((frame) => frame.event === 'turn')?.data?.modelLabel,
+        ],
+        expected: [true, 'Sample Reader', 409, 'Sample Reader'],
+      })
+    }
+    const ended = (await (await post(recovered, '/chat/fixed/end', { save: true })).json()) as {
+      saved: { path: string }
+    }
+    const saved = await loadResumeSession(ended.saved.path, { baseDir: path.dirname(host.tmp) })
+    const reopened = appWith({
+      ...host,
+      snapshots: undefined,
+      openSaved: async () => ({ resume: saved, startTime: START }),
+    })
+    const result = await post(reopened, '/chat/open', { chat: 'sample-conversation.md' })
+    const { id } = (await result.json()) as { id: string }
+    const settings = await getJson(reopened, `/chat/${id}/settings`)
+    assert({
+      given: 'an existing saved conversation reopened after its model preset was deleted',
+      should: 'keep the recorded model configuration, effort, budget and lock',
+      actual: [
+        continued.find((frame) => frame.event === 'turn')?.data?.modelLabel,
+        saved.recovery?.host?.modelConfig,
+        settings.modelSettingsLocked,
+        settings.effort,
+        settings.contextTokens,
+      ],
+      expected: ['Sample Reader', original, true, 'medium', 5000],
+    })
+  } finally {
+    await rm(host.tmp, { recursive: true, force: true })
+  }
 })
 
 test('chat route - a browser carries its choices through a server restart', async () => {
@@ -1398,6 +1561,7 @@ test('chat route - a thread the service went down answering says so, and answers
     startTime: START,
     state: { conversation: [], universePaths: [], queries: [], lastTurn: 0, contextLog: [] },
     interrupted: { message: 'Plan the demo.', when: '2026-01-27 09:31' },
+    prefs: { profile: 'test-quick', contextTokens: 0, saves: true },
   }
   const app = appWith({ ...host, snapshots: async () => [cut] })
   const list = await getJson(app, 'http://localhost/chat')
@@ -1465,41 +1629,43 @@ test('chat route - construction reserves the turn against competing messages and
   })
 })
 
-test({ name: 'chat route - a smaller budget on a live thread reassembles its context at once' }, async () => {
+test({ name: 'chat route - a locked reading budget cannot change the assembled context' }, async () => {
   const app = appWith(await testHost())
   await (await send(app, 'http://localhost/chat/s3/messages', { message: 'What should I focus on?' })).text()
   const before = await getJson(app, 'http://localhost/chat/s3/context')
   const changed = await post(app, 'http://localhost/chat/s3/settings', { contextTokens: 1 })
-  const body = (await changed.json()) as { kept: number | null }
+  const body = (await changed.json()) as { message: string; settings: { kept: number | null } }
   const after = await getJson(app, 'http://localhost/chat/s3/context')
   const thread = await getJson(app, 'http://localhost/chat/s3')
   assert({
-    given: 'a budget too small for the documents in context',
-    should: 'cut what no longer fits at once, and say so wherever the count shows',
+    given: 'a smaller budget requested after the first message',
+    should: 'explain the lock and leave the context intact',
     actual: {
       status: changed.status,
       keptBefore: before.stats.kept,
       fewer: after.stats.kept < before.stats.kept,
       budget: after.stats.budget,
       cut: after.cut.length > 0,
-      settingsKept: body.kept,
+      settingsKept: body.settings.kept,
+      explanation: body.message.includes('Start a new chat'),
       threadKept: thread.kept,
       story: after.log.map((e: { kind: string }) => e.kind),
     },
     expected: {
-      status: 200,
+      status: 409,
       keptBefore: 3,
-      fewer: true,
-      budget: 1,
-      cut: true,
+      fewer: false,
+      budget: before.stats.budget,
+      cut: false,
       settingsKept: after.stats.kept,
+      explanation: true,
       threadKept: after.stats.kept,
       story: ['seed'],
     },
   })
 })
 
-test({ name: 'chat route - Reads nothing keeps the notebook closed, and a budget opens it again' }, async () => {
+test({ name: 'chat route - choosing no notebook context stays fixed after sending' }, async () => {
   const app = appWith(await testHost())
   const closed = await post(app, 'http://localhost/chat/s4/settings', { contextTokens: 0 })
   const first = parseSSE(
@@ -1543,33 +1709,19 @@ test({ name: 'chat route - Reads nothing keeps the notebook closed, and a budget
   const second = parseSSE(
     await (await send(app, 'http://localhost/chat/s4/messages', { message: 'And with my notebook?' })).text(),
   )
-  const context = await getJson(app, 'http://localhost/chat/s4/context')
+  const context = await app.request('http://localhost/chat/s4/context')
   assert({
-    given: 'a budget after the closed turn',
-    should: 'gather at the next message, and tell the story as a closed turn then the seed',
+    given: 'an attempt to open notebook context after a closed first turn',
+    should: 'refuse the change and continue without gathering notebook context',
     actual: {
       status: opened.status,
       events: second.map((f) => f.event),
-      story: context.log.map((e: { kind: string; turn: number }) => [e.turn, e.kind]),
-      documents: context.documents,
+      contextStatus: context.status,
     },
     expected: {
-      status: 200,
-      events: [
-        'turn-started',
-        'context-gathering',
-        'context-rebuilt',
-        'model-start',
-        'text-delta',
-        'text-delta',
-        'turn-complete',
-        'turn',
-      ],
-      story: [
-        [1, 'closed'],
-        [2, 'seed'],
-      ],
-      documents: 3,
+      status: 409,
+      events: ['turn-started', 'model-start', 'text-delta', 'text-delta', 'turn-complete', 'turn'],
+      contextStatus: 404,
     },
   })
 })
@@ -2550,50 +2702,48 @@ test({ name: 'chat route - a saved chat opens as a thread to continue, once' }, 
   })
 })
 
-test(
-  { name: "chat route - a model's window caps the budget, before the first message and on a live thread" },
-  async () => {
-    const app = appWith(await testHost({ settings: smallWindowHost }))
-    const listed = await getJson(app, 'http://localhost/chat/s7/settings')
-    const small = await post(app, 'http://localhost/chat/s7/settings', {
-      profile: 'test-small',
-      contextTokens: 300_000,
-    })
-    const smallBody = (await small.json()) as { model: { current: string }; contextTokens: number }
-    const fits = await post(app, 'http://localhost/chat/s7/settings', { contextTokens: 25_000 })
-    const fitsBody = (await fits.json()) as { contextTokens: number }
-    const back = await post(app, 'http://localhost/chat/s7/settings', { profile: 'test-quick', contextTokens: 300_000 })
-    const backBody = (await back.json()) as { model: { current: string }; contextTokens: number }
-    assert({
-      given:
-        'the catalog, then the small-window model chosen with 300k, a 25k budget on it, and the wide model back with 300k',
-      should:
-        'list the window on the choice, drop 300k to 50k — the highest stop that fits — keep 25k, and take 300k on the wide model',
-      actual: {
-        window: listed.model.choices.find((c: { name: string }) => c.name === 'test-small')?.contextWindow,
-        small: [smallBody.model.current, smallBody.contextTokens],
-        fits: fitsBody.contextTokens,
-        back: [backBody.model.current, backBody.contextTokens],
-      },
-      expected: { window: SMALL_WINDOW, small: ['test-small', 50_000], fits: 25_000, back: ['test-quick', 300_000] },
-    })
+test({ name: "chat route - a model's window caps the draft budget and sending fixes both choices" }, async () => {
+  const app = appWith(await testHost({ settings: smallWindowHost }))
+  const listed = await getJson(app, 'http://localhost/chat/s7/settings')
+  const small = await post(app, 'http://localhost/chat/s7/settings', {
+    profile: 'test-small',
+    contextTokens: 300_000,
+  })
+  const smallBody = (await small.json()) as { model: { current: string }; contextTokens: number }
+  const fits = await post(app, 'http://localhost/chat/s7/settings', { contextTokens: 25_000 })
+  const fitsBody = (await fits.json()) as { contextTokens: number }
+  const back = await post(app, 'http://localhost/chat/s7/settings', { profile: 'test-quick', contextTokens: 300_000 })
+  const backBody = (await back.json()) as { model: { current: string }; contextTokens: number }
+  assert({
+    given:
+      'the catalog, then the small-window model chosen with 300k, a 25k budget on it, and the wide model back with 300k',
+    should:
+      'list the window on the choice, drop 300k to 50k — the highest stop that fits — keep 25k, and take 300k on the wide model',
+    actual: {
+      window: listed.model.choices.find((c: { name: string }) => c.name === 'test-small')?.contextWindow,
+      small: [smallBody.model.current, smallBody.contextTokens],
+      fits: fitsBody.contextTokens,
+      back: [backBody.model.current, backBody.contextTokens],
+    },
+    expected: { window: SMALL_WINDOW, small: ['test-small', 50_000], fits: 25_000, back: ['test-quick', 300_000] },
+  })
 
-    await (await send(app, 'http://localhost/chat/s7/messages', { message: 'What should I focus on?' })).text()
-    const lowered = await post(app, 'http://localhost/chat/s7/settings', { profile: 'test-small' })
-    const loweredBody = (await lowered.json()) as { model: { current: string }; contextTokens: number }
-    const context = await getJson(app, 'http://localhost/chat/s7/context')
-    assert({
-      given: 'a live thread reading 300k, switched to the small-window model with no budget named',
-      should: 'lower its budget to 50k and reassemble the context within it',
-      actual: {
-        current: loweredBody.model.current,
-        contextTokens: loweredBody.contextTokens,
-        budget: context.stats.budget,
-      },
-      expected: { current: 'test-small', contextTokens: 50_000, budget: 50_000 },
-    })
-  },
-)
+  await (await send(app, 'http://localhost/chat/s7/messages', { message: 'What should I focus on?' })).text()
+  const lowered = await post(app, 'http://localhost/chat/s7/settings', { profile: 'test-small' })
+  const unchanged = await getJson(app, 'http://localhost/chat/s7/settings')
+  const context = await getJson(app, 'http://localhost/chat/s7/context')
+  assert({
+    given: 'a request to switch a live thread reading 300k to a smaller model',
+    should: 'keep its chosen model and budget',
+    actual: {
+      status: lowered.status,
+      current: unchanged.model.current,
+      contextTokens: unchanged.contextTokens,
+      budget: context.stats.budget,
+    },
+    expected: { status: 409, current: 'test-quick', contextTokens: 300_000, budget: 300_000 },
+  })
+})
 
 for (const saves of [false, true]) {
   test(`chat route - disk recovery preserves full model history and settings with saves=${saves}`, async () => {
@@ -2668,8 +2818,9 @@ for (const saves of [false, true]) {
     })
     const cold = appWith(host)
     await getJson(cold, url)
-    // Changing settings before start() must not erase the restored history/log.
-    await post(cold, `${url}/settings`, { contextTokens: 0, saves: false })
+    const refused = await post(cold, `${url}/settings`, { contextTokens: 0, saves: false })
+    // Filing can still change without erasing the restored history or changing model settings.
+    await post(cold, `${url}/settings`, { saves: false })
     const again = appWith(host)
     const latest = await getJson(again, `${url}/settings`)
     const all = await getJson(again, url)
@@ -2680,6 +2831,8 @@ for (const saves of [false, true]) {
       given: 'another restart after changing a restored thread’s settings, followed by Discard',
       should: 'keep every turn through the setting change, then remove recovery without filing anything',
       actual: {
+        refused: refused.status,
+        locked: latest.modelSettingsLocked,
         settings: [latest.model.current, latest.contextTokens, latest.saves],
         turns: all.turns.length,
         toolResult: JSON.stringify(seen[2]).includes('The Atlas launch budget is 42 credits.'),
@@ -2688,7 +2841,9 @@ for (const saves of [false, true]) {
         files: await readdir(host.tmp),
       },
       expected: {
-        settings: ['test-quick', 0, false],
+        refused: 409,
+        locked: true,
+        settings: ['test-quick', 5000, false],
         turns: 4,
         toolResult: true,
         exists: false,

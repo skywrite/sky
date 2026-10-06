@@ -135,11 +135,6 @@ export function registerReplyThreads(app: Hono, host: ReplyThreadHost): (id: str
           const childId = crypto.randomUUID()
           const recovery = found.resume.recovery
           const savedProfile = recovery?.host?.profile
-          const profile =
-            typeof savedProfile === 'string' &&
-            host.options.settings?.choices().some((choice) => choice.name === savedProfile)
-              ? savedProfile
-              : source.profile
           await host.open(childId, {
             id: childId,
             startTime: found.startTime,
@@ -150,9 +145,9 @@ export function registerReplyThreads(app: Hono, host: ReplyThreadHost): (id: str
             approvals: found.resume.approvals,
             attachments: found.resume.attachments,
             prefs: {
-              profile,
-              effort: isEffortOverride(recovery?.host?.effort) ? recovery.host.effort : (source.effort ?? 'default'),
-              contextTokens: recovery?.contextTokens ?? source.session.contextTokens,
+              profile: typeof savedProfile === 'string' ? savedProfile : undefined,
+              effort: isEffortOverride(recovery?.host?.effort) ? recovery.host.effort : undefined,
+              contextTokens: recovery?.contextTokens,
               saves: source.saves,
             },
           })
@@ -173,6 +168,7 @@ export function registerReplyThreads(app: Hono, host: ReplyThreadHost): (id: str
           parent: { chat: path.relative(host.baseDir, parentPath), ...point, kind: 'thread' },
           parentId: id,
           prefs: {
+            modelConfig: source.modelConfig,
             profile: source.profile,
             effort: source.effort,
             contextTokens: source.session.contextTokens,
