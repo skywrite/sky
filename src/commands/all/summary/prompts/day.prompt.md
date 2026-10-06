@@ -1,6 +1,6 @@
 ---
 created: 2026-01-03
-updated: 2026-09-30
+updated: 2026-10-06
 description: Daily Summary generator - facts-first mirror of the day
 ---
 
@@ -42,7 +42,7 @@ The day's evidence stream, in time order:
 - `ai-chats/` - AI working sessions (reading rules below)
 - `notes/`, `docs/`, `videos/` - notes taken, documents drafted, recordings made
 - `events/` - calendar-sourced records (earnings calls, conferences, personal events): `what:`/`who:`/`when:` frontmatter. A session can appear both here and in `meetings/` - treat title/time twins as ONE session, preferring the meeting's actual `when:` range over the event's scheduled one
-- `recaps/` - generated daily digests of {{me.firstName}}'s activity in connected apps (GitHub, Claude Code): itemized commits, PRs, reviews, coding sessions. `app:` frontmatter names the app; `when:` spans first→last event and is never hours worked (rules below)
+- `recaps/` - generated daily digests of {{me.firstName}}'s activity in connected apps (GitHub, Claude Code, MyFitnessPal): itemized commits, PRs, reviews, coding sessions, logged meals and exercise. `app:` frontmatter names the app; `when:` spans first→last event and is never hours worked (rules below)
 
 Some `messages/` files carry an `ARCHIVAL` marker in their path comment, after the date stamp (`<!-- <date> | ARCHIVAL | ... -->`): threads {{me.firstName}} saved for reference but did not participate in - he appears nowhere in them. They are filed material, not his activity (rules below).
 
@@ -159,13 +159,14 @@ Transcripts of {{me.firstName}} working with an AI tool. Speaker headings may ca
 
 ## Health
 
-[Rows with recorded data only - the header's Health Data block first (its Streaks row copied verbatim: the day's completion, never a count), journal statements second. When a journal records mood or energy, the Mood/Energy rows are REQUIRED: compress the journal's own words into a short phrase, don't flatten to High/Medium/Low. Omit rows nothing was recorded for; omit the whole section if nothing was. Never infer mood or energy on days without journals.]
+[Rows with recorded data only - the header's Health Data block first (its Streaks row copied verbatim: the day's completion, never a count), journal statements and nutrition recaps next. When a journal records mood or energy, the Mood/Energy rows are REQUIRED: compress the journal's own words into a short phrase, don't flatten to High/Medium/Low. Omit rows nothing was recorded for; omit the whole section if nothing was. Never infer mood or energy on days without journals.]
 
 | Metric | Value |
 |--------|-------|
 | Sleep | [range and/or hours] |
 | Weight | [if recorded] |
 | Exercise | [what was done] |
+| Nutrition | [logged calories/macros from the recap; preserve any missing-meal or incomplete-logging caveat, with a recap source tag] |
 | Streaks | [the header's Streaks row, verbatim] |
 | Energy | [journal's words, when journaled] |
 | Mood | [journal's words, when journaled] |
@@ -306,6 +307,7 @@ A recap (`actions/recaps/`) is generated evidence of {{me.firstName}}'s activity
 - A span is engagement evidence, never a work-hours figure: "a 09:02-11:28 session (18 prompts)" is honest; "coded 2.4 h" is invented. The no-total-hours rule applies unchanged.
 - A recap's `rel:` names its Allocation theme.
 - A coding session that shipped nothing still counts - its outcome is whatever it produced: a decision, a spec, an Insight.
+- Nutrition recaps report logged food. Include their calories/macros in Health as **logged** totals, with a `[recap]` source tag. Preserve every missing-meal or incomplete-logging caveat alongside the numbers (for example, "Dinner not logged, likely incomplete"). A missing meal entry does not prove a skipped meal or fasting; incomplete totals do not establish full-day intake or a calorie deficit. Never estimate the missing food.
 
 ### What counts as Done
 

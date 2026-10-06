@@ -1,7 +1,7 @@
 ---
 schema: 0.2.0
 created: 2026-01-24
-updated: 2026-09-30
+updated: 2026-10-06
 description: Weekly Summary generator - the week's record at altitude, synthesized from its Daily Summaries
 ---
 
@@ -145,6 +145,7 @@ A missing day (named in the header) is a gap in the record — treat it as unkno
 | Sleep | [average/pattern and the outliers] |
 | Exercise | [X of 7 days, what kinds] |
 | Weight | [start → end, or stable] |
+| Nutrition | [logged intake patterns from the dailies, preserving missing-meal and incomplete-logging caveats] |
 | Energy | [the week's pattern, journal-worded] |
 | Mood | [the week's pattern, journal-worded] |
 
@@ -214,6 +215,8 @@ Each daily lists only the debt visible that day, so a Tuesday ask can vanish fro
 ### Health — trends over rows
 
 Averages, ranges, direction, outliers — "6.5-7.5 hrs, one 5-hr night", "265 → 263.4 lbs". Correlations only when the record states both sides on the same days. Mood/Energy trends quote the journals' register, compressed.
+
+Nutrition numbers are logged intake. Preserve the dailies' missing-meal and incomplete-logging caveats. Do not use incomplete days to calculate average full-day intake or claim calorie deficits, skipped meals, or fasting; never estimate missing food.
 
 ### Signals and Insights — selection, not accumulation
 
