@@ -1,9 +1,14 @@
 ---
 created: 2026-09-11
-updated: 2026-09-11
+updated: 2026-10-05
 ---
 
 # Research context limits
+
+Research searches by the chat's own query rules: the shared
+[`query-rules` prompt](../../context/prompts/query-rules.prompt.md) renders
+into its system prompt with the entity block and the learned vocabulary (see
+[ai:context](../../context/docs/README.md#one-set-of-query-rules)).
 
 Research starts a fresh mission with the balanced model. ChatSession supplies
 its standing system instructions and current reading budget through ToolHooks;

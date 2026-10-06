@@ -1,5 +1,6 @@
 import { wrapLanguageModel } from 'ai'
 import colors from 'picocolors'
+import { formatEntityContext, gatherEntityContext } from '#commands/all/ai/context/_entityContext.ts'
 /**
  * ai:research — a fresh-context research subagent over the notebook.
  *
@@ -20,9 +21,11 @@ import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod
 import { logAIError } from '#shared/ai/errorLog.ts'
 import { getProfile, resolveProfile, roleProfile } from '#shared/ai/models.ts'
 import { ratioFor } from '#shared/ai/tokenRatio.ts'
+import { DIR_AI_MEMORY } from '#shared/config.ts'
 import { readTextFile } from '#shared/fs/mod.ts'
 import ChatEngine from '#shared/models/Chat/ChatEngine/mod.ts'
 import { researchContext } from '#shared/models/Chat/researchContext.ts'
+import { loadMemories, renderVocabularyBlock } from '#shared/models/Memory/mod.ts'
 import { readPromptFile } from '#shared/prompts/load.ts'
 import { renderPromptFile } from '#shared/prompts/mod.ts'
 import truncate from '#shared/strings/truncate.ts'
@@ -106,7 +109,14 @@ export default class AiResearchTask extends Command {
     const budget = researchBudget(parent?.contextTokens, profile.contextWindow, ratioFor(profile.model))
     if (budget.readingTokens === 0) return CommandResult.fail('Notebook research is disabled by the reading budget.')
 
-    const [template, schema] = await Promise.all([readPromptFile(PROMPT_FILE), readTextFile(SCHEMA_FILE)])
+    // The query rules the chat's writer follows — entity names, tags, the
+    // learned vocabulary — render here too, so research searches the same way.
+    const [template, schema, entityCtx, memories] = await Promise.all([
+      readPromptFile(PROMPT_FILE),
+      readTextFile(SCHEMA_FILE),
+      gatherEntityContext(config as Record<string, unknown>),
+      loadMemories(DIR_AI_MEMORY),
+    ])
     const { output: systemPrompt } = renderPromptFile(template, 'research.prompt.md', {
       context: {
         notebookDate: context.notebookNow.date,
@@ -114,6 +124,8 @@ export default class AiResearchTask extends Command {
         notebookTimezone: context.notebookNow.timezone,
       },
       user: { schema },
+      entities: { block: formatEntityContext(entityCtx) },
+      memory: { vocabulary: renderVocabularyBlock(memories) },
     })
 
     const trace: ResearchTrace = { sources: new Set() }

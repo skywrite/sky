@@ -64,6 +64,18 @@ have a corpus of real failure shapes to draw from.
   (`widened: 1y → 533d (covers stated 2025-03-01)`), and an explicit
   `--since` on `ai:context:files` bypasses extraction and guard entirely.
 
+## One set of query rules
+
+The filter rules — people by canonical name, projects by link, Slack
+channels, the tag vocabulary, past chats, text search and its ordering, time
+bounds — live once, in `prompts/query-rules.prompt.md`, and render into the
+first-turn writer, the evolve step, and the research agent through a prompt
+reference (`{{> query-rules}}`). Before 2026-10-05 each prompt carried its
+own copy and research had none: it searched from the bare schema, so it
+reached for `bodyContains` first and never saw the canonical names or tags
+the chat is told to use. The entity block and the learned vocabulary render
+into research as well. A rule changes in one file.
+
 ## Text searches order by relevance
 
 A `bodyContains` root answered newest-first and cut at `limit` returned the
