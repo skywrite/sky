@@ -1,5 +1,21 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
+import { Buffer } from 'node:buffer'
 import { REPLY_TOKENS } from '#universal/ai/readingBudget.ts'
+
+// Messages and count_tokens both have a 32 MB HTTP body limit, independently of tokens.
+export const ANTHROPIC_REQUEST_BYTES = 32_000_000
+
+export class RequestBodyLimitError extends Error {
+  readonly bytes: number
+  readonly limit: number
+
+  constructor(bytes: number, limit: number) {
+    super(`The request body needs ${bytes} bytes; the provider accepts ${limit}.`)
+    this.bytes = bytes
+    this.limit = limit
+    this.name = 'RequestBodyLimitError'
+  }
+}
 
 /** A rejected model request, before any reply or tool execution has started. */
 export class InputTokenLimitError extends Error {
@@ -35,9 +51,15 @@ export function withAnthropicTokenCount(fetcher: typeof fetch): typeof fetch {
   return (async (input: RequestInfo | URL, init?: RequestInit) => {
     const window = windows.getStore()
     const url = new URL(input instanceof Request ? input.url : String(input))
-    if (window === undefined || !url.pathname.endsWith('/messages') || typeof init?.body !== 'string') {
+    if (!url.pathname.endsWith('/messages') || typeof init?.body !== 'string') {
       return fetcher(input, init)
     }
+    init.signal?.throwIfAborted()
+    // Measure the actual UTF-8 body, including base64, tools and JSON escaping,
+    // before either endpoint. This guard also covers callers without a token window.
+    const bytes = Buffer.byteLength(init.body, 'utf8')
+    if (bytes > ANTHROPIC_REQUEST_BYTES) throw new RequestBodyLimitError(bytes, ANTHROPIC_REQUEST_BYTES)
+    if (window === undefined) return fetcher(input, init)
     const body = JSON.parse(init.body) as Record<string, unknown>
     const countBody = Object.fromEntries(
       ['model', 'messages', 'system', 'tools', 'tool_choice', 'thinking'].flatMap((key) =>

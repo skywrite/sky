@@ -41,6 +41,7 @@ import { requestBudgetMiddleware, type RequestNotebook } from './requestBudget.t
 import { stoppedReply, stoppedToolMessages, untilAborted } from './stop.ts'
 import { observeTools, ToolProgress, type ToolExecutionEvent } from './toolExecution.ts'
 import { apiErrorMessage } from './turnErrorMessage.ts'
+import { WorkingContext } from './workingContext.ts'
 
 type Message = ModelMessage
 
@@ -128,15 +129,17 @@ export interface TurnResult {
 const MAX_TURN_ERROR_CHARS = 2000
 
 /**
- * A turn that died mid-stream. The engine has already rolled its history
- * back to the turn's start; toolRecords carries what executed or was denied
- * before the failure so the host can still record the tool trail — a
- * side-effectful call (a sent post, a created doc) must not vanish from the
- * transcript because the turn later died.
+ * A turn that died mid-stream. Completed tool exchanges remain in history;
+ * unfinished calls are removed. The host receives the partial reply and the
+ * tool trail so an action cannot vanish because its explanation failed.
  */
 export class TurnError extends Error {
   readonly toolRecords: ToolCallRecord[]
-  constructor(message: string, toolRecords: ToolCallRecord[]) {
+  constructor(
+    message: string,
+    toolRecords: ToolCallRecord[],
+    readonly partialText = '',
+  ) {
     super(message)
     this.name = 'TurnError'
     this.toolRecords = toolRecords
@@ -296,6 +299,7 @@ function toolInputDigest(input: unknown): string | undefined {
 // -----------------------------------------------------------------------------
 
 export default class ChatEngine {
+  workingContext = new WorkingContext()
   private model: ResolvedModel
   private readonly approvalHandler: ApprovalHandler
   private readonly onEvent?: (event: ChatEngineEvent) => void
@@ -353,6 +357,7 @@ export default class ChatEngine {
       ...conversation.map((m) => ({
         role: m.role,
         content: m.role === 'user' && m.when ? `${timeStampLine(m.when)}\n${m.content}` : m.content,
+        ...(m.error ? { providerOptions: { sky: { hostNotice: true } } } : {}),
       })),
     )
   }
@@ -369,7 +374,8 @@ export default class ChatEngine {
    * a labeled block of documents followed by what they said. (System
    * messages reach the model only through `instructions`, at the front.)
    */
-  appendContextMessage(content: string): void {
+  appendContextMessage(content: string, paths: string[] = []): void {
+    this.workingContext.register(content, paths, this.messages.filter((message) => message.role === 'user').length)
     this.messages.push({ role: 'user', content })
   }
 
@@ -523,6 +529,7 @@ export default class ChatEngine {
             middleware: requestBudgetMiddleware({
               contextWindow: this.model.contextWindow,
               notebook: opts.notebook,
+              workingContext: this.workingContext,
               onAdjustment: (adjustment) => emit({ type: 'context-adjusted', adjustment }),
             }),
           })
@@ -708,11 +715,9 @@ export default class ChatEngine {
       }
     }
 
-    // The rollback point: a failed turn must leave the model-facing history
-    // exactly as it stood after the user's message. The approval loop pushes
-    // mid-turn (assistant tool_use + approval responses); leaving that tail
-    // without the continuation's tool results would fail every later call —
-    // a permanently dead session.
+    // Rebuild a failed turn from completed exchanges only. The approval loop
+    // pushes unfinished calls mid-turn; retaining those without matching
+    // results would invalidate the next request.
     const historyMark = this.messages.length
 
     try {
@@ -862,9 +867,10 @@ export default class ChatEngine {
         ...(cutShort ? { cutShort } : {}),
       }
     } catch (err) {
+      // An action may still be writing when its provider stream fails or is
+      // stopped. Wait for its result before persisting the failed turn.
+      await Promise.allSettled(executions)
       if (abortSignal?.aborted) {
-        // A tool that cannot abort may already be writing. Keep the turn reserved until it settles.
-        await Promise.allSettled(executions)
         progress.finishIncomplete('The response was stopped before this tool reported completion.')
         this.messages.length = historyMark
         const text = stoppedReply(reply)
@@ -877,16 +883,29 @@ export default class ChatEngine {
           ),
         )
         for (const [id, messages] of completedExecutions) if (!recorded.has(id)) completed.push(...messages)
-        this.messages.push(...completed, { role: 'assistant', content: text })
+        this.messages.push(...completed, {
+          role: 'assistant',
+          content: text,
+          providerOptions: { sky: { hostNotice: true } },
+        })
         emit({ type: 'turn-complete', toolRecords: turnTools })
         return { text, sourceUrls, toolRecords: turnTools, usage, approvalRoundsExhausted: false, stopped: true }
       }
       progress.finishIncomplete('The turn failed before this tool reported completion.')
-      // Roll back to the turn's start and rethrow clamped — the raw SDK
-      // error can embed the entire message array, and hosts print and log
-      // the message. The tool trail rides along for the host's records.
+      // Keep completed results and rethrow clamped — raw SDK errors can
+      // embed the entire message array, and hosts print and log the message.
       this.messages.length = historyMark
-      throw new TurnError(truncate(apiErrorMessage(err), MAX_TURN_ERROR_CHARS), turnTools)
+      const completed = stoppedToolMessages(turnMessages)
+      const recorded = new Set(
+        completed.flatMap((message) =>
+          typeof message.content === 'string'
+            ? []
+            : message.content.flatMap((part) => (part.type === 'tool-result' ? [part.toolCallId] : [])),
+        ),
+      )
+      for (const [id, messages] of completedExecutions) if (!recorded.has(id)) completed.push(...messages)
+      this.messages.push(...completed)
+      throw new TurnError(truncate(apiErrorMessage(err), MAX_TURN_ERROR_CHARS), turnTools, reply)
     }
   }
 }

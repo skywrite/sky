@@ -2499,7 +2499,7 @@ test(
   },
 )
 
-test('chat route - branching after an interrupted exchange uses the recovered server turn', async () => {
+test('chat route - a failed exchange survives recovery and later branching uses the correct server turn', async () => {
   let calls = 0
   const host = await testHost({
     invokeModel: async ({ sink }) => {
@@ -2540,6 +2540,8 @@ test('chat route - branching after an interrupted exchange uses the recovered se
         firstSurvived: first.key === restored.branchPoints[1]?.key,
         failedHasReference: failed.branchPoint !== undefined,
         interrupted: restored.interrupted?.message,
+        error: restored.turns[3]?.error,
+        failedBranch: restored.branchPoints[3],
         turn: second.turn,
         statuses: [made.status, earlier.status],
         inherited: branch.inherited,
@@ -2549,10 +2551,12 @@ test('chat route - branching after an interrupted exchange uses the recovered se
       expected: {
         firstSurvived: true,
         failedHasReference: false,
-        interrupted: 'What comes next?',
-        turn: 2,
+        interrupted: undefined,
+        error: 'The connection stopped while replying.',
+        failedBranch: null,
+        turn: 3,
         statuses: [201, 201],
-        inherited: 4,
+        inherited: 6,
         last: 'Assign an owner.',
         branchReference: second,
       },

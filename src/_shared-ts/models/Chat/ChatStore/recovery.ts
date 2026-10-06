@@ -1,5 +1,7 @@
 import type { ModelMessage } from 'ai'
 import { WRITING_DRAFT_ID } from '#lib/writingVoice/draftId.ts'
+import { readWorkingContext, type WorkingContextState } from '../ChatEngine/workingContext.ts'
+import type { ConversationMessage } from '../type.d.ts'
 
 /** Runtime continuation kept in recovery snapshots and the saved transcript's JSON metadata. */
 export interface ChatRecovery {
@@ -8,6 +10,8 @@ export interface ChatRecovery {
   historyKey?: string
   /** Provider history, including tool calls, results, and reasoning metadata. */
   modelMessages?: ModelMessage[]
+  workingContext?: WorkingContextState
+  turnErrors?: { at: number; message: string }[]
   contextTokens?: number
   legalReview?: { id: string; turn: number }
   writingDrafts?: { id: string; turn: number }[]
@@ -20,6 +24,16 @@ export function readChatRecovery(value: unknown): ChatRecovery | undefined {
   if (!value || typeof value !== 'object' || !('version' in value) || value.version !== 1) return undefined
   const raw = value as Record<string, unknown>
   const recovery: ChatRecovery = { version: 1 }
+  const workingContext = readWorkingContext(raw.workingContext)
+  if (workingContext) recovery.workingContext = workingContext
+  if (Array.isArray(raw.turnErrors))
+    recovery.turnErrors = raw.turnErrors.flatMap((entry) => {
+      if (!entry || typeof entry !== 'object') return []
+      const value = entry as Record<string, unknown>
+      return Number.isSafeInteger(value.at) && (value.at as number) >= 0 && typeof value.message === 'string'
+        ? [{ at: value.at as number, message: value.message.slice(0, 2000) }]
+        : []
+    })
   if (Array.isArray(raw.writingDrafts)) {
     recovery.writingDrafts = raw.writingDrafts.flatMap((entry: unknown) => {
       if (!entry || typeof entry !== 'object') return []
@@ -55,4 +69,8 @@ export function readChatRecovery(value: unknown): ChatRecovery | undefined {
   if (raw.host && typeof raw.host === 'object' && !Array.isArray(raw.host))
     recovery.host = raw.host as Record<string, unknown>
   return recovery
+}
+
+export function turnErrors(conversation: readonly ConversationMessage[]) {
+  return conversation.flatMap((turn, at) => (turn.error ? [{ at, message: turn.error }] : []))
 }

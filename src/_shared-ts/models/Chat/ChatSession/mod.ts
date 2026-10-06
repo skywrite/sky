@@ -49,11 +49,14 @@ import ChatEngine, {
   type ChatEngineEvent,
   type ModelInvoker,
   type ToolApprovalConfig,
+  timeStampLine,
   TurnError,
   type TurnCut,
 } from '../ChatEngine/mod.ts'
+import { NOTEBOOK_ADDITION, WorkingContext } from '../ChatEngine/workingContext.ts'
 import { clearChatAutosave, writeChatAutosave } from '../ChatStore/autosave.ts'
 import { loadResumeSession, type ResumeSession } from '../ChatStore/mod.ts'
+import { turnErrors } from '../ChatStore/recovery.ts'
 import { chatFilePath, type SaveChatReport, type SaveEnricher, type SaveProgress, saveChat } from '../ChatStore/save.ts'
 import { conversationKey, hasCompleteModelHistory, modelHistoryThrough } from '../document/history.ts'
 import { inheritedMessages, prefixOf } from '../document/lineage.ts'
@@ -84,7 +87,7 @@ const SKIPPED_ACTIVITY =
  * mistakes the notebook for the person.
  */
 function additionsMessage(markdown: string): string {
-  return `[Notebook documents the assistant retrieved for the message that follows — not written by the person. They join the Activity section of the instructions.]\n\n${markdown}`
+  return `${NOTEBOOK_ADDITION}\n\n${markdown}`
 }
 
 export interface ChatMessageFiles {
@@ -224,7 +227,7 @@ export interface TurnReport {
   stopped?: boolean
   timing?: TimingDetail
   context: TurnContextReport
-  /** The reply; absent when the turn failed */
+  /** The reply, including any partial text delivered before a failure. */
   text?: string
   /** Deduplicated web-search sources; the saved turn ends in one Sources list holding these and any the reply named itself */
   sourceUrls: string[]
@@ -233,7 +236,7 @@ export interface TurnReport {
   cutShort?: TurnCut
   /** The turn's token counts, every model step summed; absent when the turn failed */
   usage?: TokenUsage
-  /** The turn died — already logged; the conversation continues without a reply */
+  /** The turn failed; its error and any partial reply are persisted in the conversation. */
   error?: string
 }
 
@@ -274,6 +277,7 @@ export default class ChatSession {
   private contextPrompt = ''
   /** Documents admitted between turns (a pin, a wider budget), delivered with the next message. */
   private pendingAdditions: string | null = null
+  private pendingSourcePaths = new Set<string>()
   /** What the transcript records — the model answering from now on, which a host may change between turns. */
   private profile: ModelProfile
   /** The file being written back to — the resume the host gave, or the file this session filed mid-life. */
@@ -289,6 +293,8 @@ export default class ChatSession {
   private snapshotWrite: Promise<void> = Promise.resolve()
   /** The host's settings and identity, recorded with every recovery snapshot. */
   snapshotHostState?: () => Record<string, unknown>
+  /** A host may queue user instructions while a tool is running. */
+  shouldYield?: () => boolean
 
   private legalReview: ResumeState['legalReview']
   private writingDrafts: NonNullable<ResumeState['writingDrafts']> = []
@@ -365,7 +371,17 @@ export default class ChatSession {
       },
       invokeModel: opts.invokeModel,
     })
-    if (seed) this.engine.seedConversation(seed.conversation, seed.modelMessages)
+    if (seed) {
+      this.engine.seedConversation(seed.conversation, seed.modelMessages)
+      this.engine.workingContext = new WorkingContext(seed.workingContext)
+      this.engine.workingContext.adoptLegacy(
+        this.engine.snapshotMessages(),
+        seed.conversation,
+        seed.contextLog,
+        (source) => path.resolve(opts.baseDir, source),
+        timeStampLine,
+      )
+    }
   }
 
   /** Absolute paths of the documents in the context universe. */
@@ -465,7 +481,10 @@ export default class ChatSession {
     const state = prefixOf(whole, through)
     if (includeTools) {
       const history = modelHistoryThrough(this.engine.snapshotMessages(), through)
-      if (hasCompleteModelHistory(history, state.conversation)) state.modelMessages = history
+      if (hasCompleteModelHistory(history, state.conversation)) {
+        state.modelMessages = history
+        state.workingContext = this.engine.workingContext.snapshot(history)
+      }
     }
     return state
   }
@@ -621,6 +640,7 @@ export default class ChatSession {
   private queueAdditions(report: RebuildReport): void {
     if (!report.additionsMarkdown) return
     this.pendingAdditions = [this.pendingAdditions, report.additionsMarkdown].filter(Boolean).join('\n\n')
+    for (const source of report.joined) this.pendingSourcePaths.add(path.resolve(this.opts.baseDir, source.path))
   }
 
   /**
@@ -647,8 +667,45 @@ export default class ChatSession {
       return { ...report, timing }
     } catch (error) {
       span.finish(thrownOutcome(error))
-      throw error
+      const report = await this.recordTurnFailure(userMessage, error)
+      const timing = timingDetail(span)
+      this.context.recordTurnTiming(timing)
+      await this.snapshot()
+      return { ...report, timing }
     }
+  }
+
+  /** Also used when the host's initial gather fails before send can begin. */
+  async recordTurnFailure(userMessage: string, error: unknown, partial = ''): Promise<TurnReport> {
+    const message = truncate(error instanceof Error ? error.message : String(error), MAX_ERROR_CHARS)
+    const when = await this.stamp().catch(() => undefined)
+    const prior = this.turns.at(-1)
+    if (prior?.role !== 'user' || !prior.content.endsWith(userMessage)) {
+      this.turns.push({ role: 'user', content: userMessage, ...(when ? { when } : {}) })
+      this.engine.appendUserMessage(userMessage, when)
+    }
+    this.failedReply(message, partial, when)
+    this.newMessages = true
+    await this.logError({ source: 'ai:chat', stage: 'turn', message, question: userMessage })
+    await this.snapshot()
+    return {
+      context: { errors: [] },
+      sourceUrls: [],
+      approvalRoundsExhausted: false,
+      error: message,
+      ...(partial ? { text: partial } : {}),
+    }
+  }
+
+  private failedReply(message: string, text: string, when?: string): void {
+    this.turns.push({ role: 'assistant', content: text, error: message, ...(when ? { when } : {}) })
+    this.engine.seedConversation([
+      {
+        role: 'assistant',
+        content: `${text}\n\n[The response failed: ${message}. Completed tool results above remain valid; check them before retrying any action.]`,
+        error: message,
+      },
+    ])
   }
 
   /** An assembly the model has seen: a rebuild this session, or a restored one. Closed and skipped turns are not. */
@@ -748,7 +805,8 @@ export default class ChatSession {
     }
     // The admitted documents arrive ahead of the person's words in the same
     // user message: appendUserMessage merges into the block below.
-    if (additions) this.engine.appendContextMessage(additionsMessage(additions))
+    if (additions) this.engine.appendContextMessage(additionsMessage(additions), [...this.pendingSourcePaths])
+    this.pendingSourcePaths.clear()
     this.engine.appendUserMessage(userMessage, turnWhen, files?.content)
     for (const file of files?.attachments ?? []) this.attachments.set(file.file, file)
     // The turn has begun: for a host that keeps the thread, the snapshot holds
@@ -795,6 +853,7 @@ export default class ChatSession {
 
       const result = await this.engine.runTurn({
         abortSignal,
+        shouldYield: this.shouldYield,
         instructions: [this.systemPrompt, this.contextPrompt, ...(instructions ? [instructions] : [])],
         notebook: {
           instructions: this.contextPrompt,
@@ -837,16 +896,13 @@ export default class ChatSession {
       // a validation failure embeds the whole message array in .message.
       const message = truncate((err as Error).message ?? String(err), MAX_ERROR_CHARS)
       report.error = message
-      if (replyImages.length > 0) {
-        // A completed image must survive filing even if the model's final
-        // reply fails after the paid generation has finished.
-        const text = withChatImages('The images were created, but the reply was interrupted.', replyImages)
-        const assistant: ConversationMessage = { role: 'assistant', content: text }
-        if (turnWhen) assistant.when = turnWhen
-        this.turns.push(assistant)
-        this.engine.seedConversation([assistant])
-        report.text = text
-      }
+      const partial = err instanceof TurnError ? err.partialText : ''
+      const text = withChatImages(
+        partial || (replyImages.length ? 'The images were created, but the reply was interrupted.' : ''),
+        replyImages,
+      )
+      this.failedReply(message, text, turnWhen)
+      if (text) report.text = text
       await this.logError({ source: 'ai:chat', stage: 'turn', message, question: userMessage })
     }
 
@@ -910,6 +966,8 @@ export default class ChatSession {
         writingDrafts: this.writingDrafts,
         writingDraftFocus: this.writingDraftFocus,
         modelMessages: hasCompleteModelHistory(history, this.turns) ? history : undefined,
+        workingContext: this.engine.workingContext.state,
+        turnErrors: turnErrors(this.turns),
         contextTokens: this.contextTokens,
         host: this.snapshotHostState?.(),
       },
@@ -970,6 +1028,8 @@ export default class ChatSession {
           writingDrafts: this.writingDrafts,
           writingDraftFocus: this.writingDraftFocus,
           modelMessages: this.engine.snapshotMessages(),
+          workingContext: this.engine.workingContext.state,
+          turnErrors: turnErrors(this.turns),
           contextTokens: this.contextTokens,
           host: this.snapshotHostState?.(),
         },

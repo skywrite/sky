@@ -1,6 +1,6 @@
 ---
 created: 2026-09-01
-updated: 2026-10-04
+updated: 2026-10-06
 ---
 
 # Chat model — the pieces under every chat host
@@ -54,30 +54,62 @@ tool definitions and results must fit together with room for output. Declared
 profile windows travel with the resolved model; an undeclared window can also
 be learned from a provider's context-length rejection.
 
-Claude requests are counted after the SDK has serialized their actual payload,
+Claude requests are [counted](https://platform.claude.com/docs/en/build-with-claude/token-counting)
+after the SDK has serialized their actual payload,
 through `ai/inputTokenLimit.ts` and the provider's fetch adapter. This avoids
 maintaining a second serializer for tools, thinking and native attachments.
+The same boundary checks the complete UTF-8 body against Anthropic's separate
+[32 MB request limit](https://platform.claude.com/docs/en/api/errors), before
+either counting or generation. A token allowance cannot bound base64 bytes.
 The guard is scoped to one provider call so it cannot affect other chats or
 tools' nested agents. The actual output allowance and a small margin are
-reserved. Other providers use a conservative estimate. If Claude's separate
-[counting endpoint](https://platform.claude.com/docs/en/build-with-claude/token-counting)
-is unavailable or cannot count a supported generation input, a context-length
-rejection still triggers the same bounded retry.
+reserved. The working target is 85% of the model window, leaving room for
+further tool steps. Irreducible input that fits the hard limit can still run.
+Other hosts use a conservative estimate and the same rejection retry.
 
 Capacity reductions reassemble notebook retrieval by relevance first, keeping
-the person's allowance and document pins. If more room is needed, older textual
-tool results become explicitly labelled excerpts. User messages, instructions,
-native attachments, and tool call/result pairs are preserved. The SDK's and
-engine's original history is never shortened: excerpts exist only in the
-outgoing request. A retry repeats only a rejected model request, never a tool
-that already executed. Irreducible oversize input receives a useful capacity
-error rather than silent message deletion.
+the person's allowance and document pins. Next, identified retrieval prefixes
+in earlier user messages become source references; older textual tool results
+then become explicitly labelled excerpts. User prose, instructions, native
+attachment originals, and tool call/result pairs are preserved. `workingContext.ts`
+records source boundaries by user turn, length, and hash, alongside their paths.
+Legacy snapshots require both the exact original user suffix and the retrieval
+log before adopting a source boundary. A quoted marker alone is never enough.
+
+`attachmentContext.ts` replaces earlier binary input parts with reopenable file
+references after a later assistant step exists; the source headers, recorded
+findings, tool receipts and original history remain. A reference never asserts
+inspection. New reads carry the archived copy's path so a subsequent file move
+does not break rereading. Legacy source headers are supported; bytes without a
+reopenable source are retained. A fresh batch that exceeds the body limit defers
+older members explicitly and keeps the newest file for inspection. Deferred
+members remain pending through recovery and branches until an individual read
+of the same source and contents has a subsequent model step. Prompts require
+recording relevant findings and inspecting deferred files separately. Both
+local byte-limit errors and provider 413s retry only the rejected model request;
+irreducible input reports the file/request limit rather than suggesting a larger
+token window. No attachment is uploaded to separate provider file storage.
+
+The SDK's and engine's original history is never shortened: reductions exist
+only in the outgoing request. Their checkpoint survives recovery and filing;
+branches inherit only the state relevant to their history. Omitted text must
+be reread before relying on its details. A retry repeats only a rejected model
+request, never a tool that already executed. Irreducible oversize input receives
+a useful capacity error rather than silent message deletion.
 
 The final kept set replaces the current turn's context statistics and cut
 records. `stats.requestBudget` distinguishes the effective retrieval cap from
 the selected `budget`; `adjustment` records the reduction for the reply and
 Context timeline, including after recovery. This is distinct from `usage`,
 which sums billed tokens over every model step and is not a window measurement.
+
+A failed turn is also durable. `ChatSession` records an assistant entry with
+its partial text and error, including when no text was produced. Recovery
+metadata restores the error on that entry. The engine waits for running tools
+to settle and retains completed call/result pairs before dropping unfinished
+calls. Retrying can therefore inspect completed effects. Host polling and
+reloads read the same failure as the live stream; a failed reply is not a
+successful branch point.
 
 ## When the engine ends a turn
 
@@ -116,6 +148,8 @@ item, as `slack:unread` does per conversation. Read the
 [2026-09-23 note](2026-09-23-stop-reaches-the-command.md).
 
 ## Notes
+
+- [2026-10-05 — working context and durable failures](2026-10-05-working-context-and-durable-failures.md): retrieved source prefixes must be compactable independently of user prose, and failures must survive the same recovery path as replies.
 
 - [2026-10-04 — admission by evidence, and context that only grows](../ChatContext/docs/2026-10-04-admission-by-evidence-and-append-only-delivery.md): a document ships on evidence, not budget room; the first assembly is a byte-stable segment and later documents arrive as additions with the person's message; a shipped document is held for the session; OpenAI reads the prefix back only with the conversation's prompt cache key.
 

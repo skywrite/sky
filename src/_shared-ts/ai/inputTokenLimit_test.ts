@@ -1,5 +1,11 @@
 import { assert, test } from '#test'
-import { InputTokenLimitError, withAnthropicTokenCount, withContextWindow } from './inputTokenLimit.ts'
+import {
+  ANTHROPIC_REQUEST_BYTES,
+  InputTokenLimitError,
+  RequestBodyLimitError,
+  withAnthropicTokenCount,
+  withContextWindow,
+} from './inputTokenLimit.ts'
 
 const URL = 'https://api.anthropic.com/v1/messages'
 const BODY = {
@@ -11,6 +17,39 @@ const BODY = {
   stream: true,
   max_tokens: 200,
 }
+
+test('oversized UTF-8 bodies are refused before counting or generation, with or without a token window', async () => {
+  let networkCalls = 0
+  const fetcher = withAnthropicTokenCount((async (_url) => {
+    networkCalls++
+    return Response.json({ input_tokens: 1 })
+  }) as typeof fetch)
+  // Character count fits, but the actual UTF-8 bytes exceed the transport cap.
+  const body = JSON.stringify({ ...BODY, system: '界'.repeat(Math.ceil(ANTHROPIC_REQUEST_BYTES / 3)) })
+  const send = () => fetcher(URL, { method: 'POST', body })
+  const outcomes = await Promise.allSettled([send(), withContextWindow(1_000_000, send)])
+  assert({
+    given: 'a payload that exceeds bytes even though it is below the character and token allowances',
+    should: 'catch the entire serialized size locally for every caller without exposing the payload in errors',
+    actual: {
+      characterCountFits: body.length < ANTHROPIC_REQUEST_BYTES,
+      networkCalls,
+      failures: outcomes.map((outcome) =>
+        outcome.status === 'rejected' && outcome.reason instanceof RequestBodyLimitError
+          ? [outcome.reason.bytes > outcome.reason.limit, outcome.reason.message.includes('界')]
+          : null,
+      ),
+    },
+    expected: {
+      characterCountFits: true,
+      networkCalls: 0,
+      failures: [
+        [true, false],
+        [true, false],
+      ],
+    },
+  })
+})
 
 test('Claude counts the serialized request and reserves its actual output allowance', async () => {
   const calls: Array<{ url: string; body: Record<string, unknown> }> = []

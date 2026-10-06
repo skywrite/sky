@@ -1,9 +1,18 @@
 import { createAnthropic } from '@ai-sdk/anthropic'
-import { APICallError, jsonSchema, simulateReadableStream } from 'ai'
+import {
+  APICallError,
+  generateText,
+  jsonSchema,
+  type ModelMessage,
+  simulateReadableStream,
+  wrapLanguageModel,
+} from 'ai'
 import { MockLanguageModelV3 } from 'ai/test'
 import { InputTokenLimitError, withAnthropicTokenCount } from '#shared/ai/inputTokenLimit.ts'
 import { assert, test } from '#test'
 import ChatEngine, { type ChatEngineEvent } from './mod.ts'
+import { requestBudgetMiddleware } from './requestBudget.ts'
+import { NOTEBOOK_ADDITION, WorkingContext } from './workingContext.ts'
 
 function step(parts: unknown[], unified: 'tool-calls' | 'stop') {
   return {
@@ -33,6 +42,110 @@ const reply = () =>
     ],
     'stop',
   )
+
+test('a long chat compacts retrieved sources across tool steps and restart without repeating an action', async () => {
+  let executions = 0
+  const requests: string[] = []
+  const model = new MockLanguageModelV3({
+    doStream: async ({ prompt }) => {
+      requests.push(JSON.stringify(prompt))
+      const completed = prompt.some(
+        (message) =>
+          message.role === 'tool' &&
+          message.content.some((part) => part.type === 'tool-result' && part.toolCallId === 'store-one'),
+      )
+      return completed
+        ? reply()
+        : step([{ type: 'tool-call', toolCallId: 'store-one', toolName: 'store', input: '{}' }], 'tool-calls')
+    },
+  })
+  const options = {
+    model: { model, contextWindow: 10000, maxOutputTokens: 500 },
+    approvalHandler: async () => ({ approved: false, reason: '' }),
+  }
+  const engine = new ChatEngine(options)
+  const sources: string[] = []
+  for (let i = 0; i < 8; i++) {
+    const source = `${NOTEBOOK_ADDITION}\n\n${`Background source ${i}. `.repeat(500)}`
+    sources.push(source)
+    engine.appendContextMessage(source, [`/mock/Source-${i}.md`])
+    engine.appendUserMessage(`Instruction ${i}: keep the originals.`)
+    engine.seedConversation([{ role: 'assistant', content: `Step ${i} recorded.` }])
+  }
+  engine.appendUserMessage('Does the accountant have the wage statement?', undefined, [
+    { type: 'file', data: new Uint8Array([1, 2, 3]), mediaType: 'application/pdf' },
+  ])
+  const tools = {
+    store: {
+      inputSchema: jsonSchema<Record<string, never>>({ type: 'object', properties: {} }),
+      execute: async () => {
+        executions++
+        return {
+          success: true,
+          receipt: 'example-receipt-123',
+          path: '/mock/Done/statement.pdf',
+          text: 'Old tool details. '.repeat(2000),
+        }
+      },
+    },
+  }
+  const instructions = ['The task is paused. Downloaded and uploaded are separate facts. Keep all original documents.']
+  const result = await engine.runTurn({ instructions, tools, toolApproval: {} })
+  const raw = engine.snapshotMessages()
+  const restored = new ChatEngine(options)
+  restored.seedConversation([], raw)
+  restored.workingContext = new WorkingContext(JSON.parse(JSON.stringify(engine.workingContext.state)))
+  restored.appendUserMessage('Which receipt confirmed it?')
+  const again = await restored.runTurn({ instructions, tools, toolApproval: {} })
+  assert({
+    given: 'a large multi-turn source history, a successful action, an oversized result and a restart',
+    should:
+      'answer twice with one action, preserve all user instructions and raw evidence, and reuse compacted requests',
+    actual: [
+      result.text,
+      again.text,
+      executions,
+      engine.workingContext.compactedSources > 0,
+      requests.every((request) =>
+        Array.from({ length: 8 }, (_, i) => `Instruction ${i}: keep the originals.`).every((instruction) =>
+          request.includes(instruction),
+        ),
+      ),
+      requests.every((request) => request.includes('The task is paused.')),
+      requests.at(-1)?.includes('example-receipt-123'),
+      requests.at(-1)?.includes('application/pdf'),
+      sources.every((source) => JSON.stringify(raw).includes(JSON.stringify(source).slice(1, -1))),
+      JSON.stringify(raw).includes('Old tool details. '.repeat(2000)),
+      requests.at(-1)!.length < JSON.stringify(raw).length,
+    ],
+    expected: ['The sources agree.', 'The sources agree.', 1, true, true, true, true, true, true, true, true],
+  })
+})
+
+test('headroom does not reject irreducible user input that fits the actual window', async () => {
+  let calls = 0
+  const engine = new ChatEngine({
+    model: {
+      model: new MockLanguageModelV3({
+        doStream: async () => {
+          calls++
+          return reply()
+        },
+      }),
+      contextWindow: 3000,
+      maxOutputTokens: 200,
+    },
+    approvalHandler: async () => ({ approved: false, reason: '' }),
+  })
+  engine.appendUserMessage('x'.repeat(4800))
+  const result = await engine.runTurn({ instructions: [], tools: {}, toolApproval: {} })
+  assert({
+    given: 'user text over the working target but under the hard limit',
+    should: 'preserve it and answer without extra generations',
+    actual: [calls, result.text],
+    expected: [1, 'The sources agree.'],
+  })
+})
 
 test('the real Claude adapter counts and refits before its first generation request', async () => {
   let counts = 0

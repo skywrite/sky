@@ -665,7 +665,7 @@ export function threadTitle(turns: Turn[], inherited = 0): string | null {
 
 /** A thread as the service reads it back. */
 interface ThreadBody {
-  turns: Array<{ role: 'user' | 'assistant'; content: string; when?: string }>
+  turns: Array<{ role: 'user' | 'assistant'; content: string; when?: string; error?: string }>
   branchPoints?: Array<BranchPoint | null>
   documents: number
   kept: number | null
@@ -701,6 +701,7 @@ function turnsOf(body: ThreadBody): Turn[] {
     return {
       role: t.role,
       content: text,
+      error: t.error,
       sources: sources.length > 0 ? sources : undefined,
       time: t.when?.slice(11),
       html: t.role === 'assistant' ? (renderMarkdown(text, true) ?? undefined) : undefined,
@@ -2033,6 +2034,11 @@ export function ThreadColumn({
               runs={turn.role === 'assistant' ? state.runs.filter((run) => run.at === i) : undefined}
               labelOf={(profile) => state.settings?.model.choices.find((c) => c.name === profile)?.label ?? profile}
               shared={!replyMode && i < state.inherited}
+              onRetry={
+                turn.error && !busy && i === state.turns.length - 1 && state.turns[i - 1]?.role === 'user'
+                  ? () => void chat.send(state.turns[i - 1]!.content)
+                  : undefined
+              }
               onReplyThread={
                 !replyMode && turn.branchPoint && onReplyThread ? () => onReplyThread(turn.branchPoint!) : undefined
               }
@@ -2682,6 +2688,7 @@ export function TurnView({
   unwindNote,
   onUnwindConfirm,
   onUnwindCancel,
+  onRetry,
 }: {
   turn: Turn
   messageId?: string
@@ -2712,6 +2719,7 @@ export function TurnView({
   unwindNote?: UnwindNoteState | null
   onUnwindConfirm?: () => void
   onUnwindCancel?: () => void
+  onRetry?: () => void
 }) {
   const userMessage = useMemo(() => {
     if (turn.role !== 'user') return null
@@ -2810,7 +2818,16 @@ export function TurnView({
         {turn.adjustment && !streaming && <p className="sky-fate">{contextAdjustmentText(turn.adjustment)}</p>}
         {turn.sources && turn.sources.length > 0 && !streaming && <SourcesFold sources={turn.sources} />}
         {runs && runs.length > 0 && <RunList runs={runs} folded={!streaming} />}
-        {turn.error && <span className="sky-fate">turn failed — {turn.error}</span>}
+        {turn.error && (
+          <div role="alert" className="sky-fate">
+            turn failed — {turn.error}
+            {onRetry && (
+              <button type="button" className="sky-act" onClick={onRetry}>
+                Retry reply
+              </button>
+            )}
+          </div>
+        )}
         {!streaming && (turn.usage || turn.timing || branch || onReplyThread) && (
           <div className="sky-reply-foot">
             <ReplyDetails

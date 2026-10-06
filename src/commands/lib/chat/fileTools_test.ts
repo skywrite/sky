@@ -120,6 +120,7 @@ test('readFile - a text file: content inline, copy in the day attachments, hook 
           type: 'text',
           text: [
             `File: ${path.join(cwd, 'Atlas MSA.md')}`,
+            `Saved copy: ${output.attachmentPath}`,
             `Attachment: 2026-01-27_Chat_Atlas-MSA.md (copied into the day's notebook attachments and recorded on this chat)`,
             `Type: text, ${text.length} characters`,
             '',
@@ -164,6 +165,7 @@ test('readFile - a PDF: header text plus a base64 application/pdf file part the 
           type: 'text',
           text: [
             `File: ${source}`,
+            `Saved copy: ${output.attachmentPath}`,
             `Attachment: 2026-01-27_Chat_atlas-msa.pdf (copied into the day's notebook attachments and recorded on this chat)`,
             'Type: PDF, 14 B — attached below',
           ].join('\n'),
@@ -173,6 +175,7 @@ test('readFile - a PDF: header text plus a base64 application/pdf file part the 
           mediaType: 'application/pdf',
           filename: '2026-01-27_Chat_atlas-msa.pdf',
           data: { type: 'data', data: Buffer.from(bytes).toString('base64') },
+          providerOptions: { sky: { sourcePath: output.path, attachmentPath: output.attachmentPath } },
         },
       ],
     },
@@ -234,7 +237,9 @@ test('readFile - text past the budget is cut and the cut is reported', async () 
       totalChars: output.totalChars,
       length: document.text.length,
       typeLine:
-        header.type === 'content' && header.value[0].type === 'text' ? header.value[0].text.split('\n')[2] : header,
+        header.type === 'content' && header.value[0].type === 'text'
+          ? header.value[0].text.split('\n').find((line) => line.startsWith('Type:'))
+          : header,
     },
     expected: {
       chars: MAX_TEXT_CHARS,

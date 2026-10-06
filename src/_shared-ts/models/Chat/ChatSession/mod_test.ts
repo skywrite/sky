@@ -1,6 +1,6 @@
 import { rm } from 'node:fs/promises'
 import * as path from 'node:path'
-import { simulateReadableStream } from 'ai'
+import { jsonSchema, simulateReadableStream } from 'ai'
 import { MockLanguageModelV3 } from 'ai/test'
 import type { AIErrorEntry } from '#shared/ai/errorLog.ts'
 import { InputTokenLimitError } from '#shared/ai/inputTokenLimit.ts'
@@ -604,7 +604,7 @@ test('ChatSession.send - a failed model turn is reported, logged, and survived',
 
   assert({
     given: 'a model call that failed',
-    should: 'report the error instead of throwing, keep the user message, add no reply, and log it',
+    should: 'report the error instead of throwing, keep a failed reply entry, and log it',
     actual: {
       error: turn.error,
       text: turn.text,
@@ -615,7 +615,7 @@ test('ChatSession.send - a failed model turn is reported, logged, and survived',
     expected: {
       error: 'overloaded',
       text: undefined,
-      roles: ['user'],
+      roles: ['user', 'assistant'],
       logged: [{ source: 'ai:chat', stage: 'turn', question: 'hello?' }],
       completed: 0,
     },
@@ -627,7 +627,17 @@ test('ChatSession.send - a failed model turn is reported, logged, and survived',
     actual: await exists(path.join(tmp, 'autosave.md')),
     expected: true,
   })
-  const failed = await loadResumeSession(path.join(tmp, 'autosave.md'))
+  const failed = await loadResumeSession(path.join(tmp, 'autosave.md'), { snapshot: true })
+  assert({
+    given: 'a failed turn restored from its recovery snapshot',
+    should: 'retain the failure at the same assistant entry',
+    actual: [
+      failed.state.conversation.length,
+      failed.state.conversation.at(-1)?.error,
+      failed.state.conversation.at(-1)?.content,
+    ],
+    expected: [2, 'overloaded', ''],
+  })
   assert({
     given: 'the same failed turn read back from its snapshot',
     should: 'retain error timing without treating it as a successful latency sample',
@@ -640,6 +650,96 @@ test('ChatSession.send - a failed model turn is reported, logged, and survived',
     actual: [failed.state.contextLog.at(-1)?.settings?.model, failed.state.contextLog.at(-1)?.settings?.contextTokens],
     expected: ['claude-opus-4-6', 300_000],
   })
+})
+
+test('a failed explanation preserves the completed action and partial reply through recovery', async () => {
+  let writes = 0
+  let interrupted = false
+  const step = (chunks: unknown[], unified: 'tool-calls' | 'stop' | 'error') => ({
+    stream: simulateReadableStream<any>({
+      chunks: [
+        { type: 'stream-start', warnings: [] },
+        ...chunks,
+        {
+          type: 'finish',
+          finishReason: { unified, raw: undefined },
+          usage: {
+            inputTokens: { total: 1, noCache: 1, cacheRead: 0, cacheWrite: 0 },
+            outputTokens: { total: 1, text: 1, reasoning: 0 },
+          },
+        },
+      ],
+    }),
+  })
+  const model = new MockLanguageModelV3({
+    doStream: async ({ prompt }) => {
+      const receipt = JSON.stringify(prompt).includes('example-receipt')
+      if (!receipt)
+        return step([{ type: 'tool-call', toolCallId: 'write-once', toolName: 'store', input: '{}' }], 'tool-calls')
+      const fail = !interrupted
+      interrupted = true
+      return step(
+        [
+          { type: 'text-start', id: 'reply' },
+          { type: 'text-delta', id: 'reply', delta: fail ? 'The file is saved.' : 'The recorded save succeeded.' },
+          { type: 'text-end', id: 'reply' },
+          ...(fail ? [{ type: 'error', error: new Error('Example connection lost') }] : []),
+        ],
+        fail ? 'error' : 'stop',
+      )
+    },
+  })
+  const options: Partial<ChatSessionOptions> = {
+    model: { model },
+    invokeModel: undefined,
+    contextTokens: 0,
+    tools: async () => ({
+      tools: {
+        store: {
+          inputSchema: jsonSchema({ type: 'object', properties: {} }),
+          execute: async () => {
+            writes++
+            return { saved: true, receipt: 'example-receipt' }
+          },
+        },
+      },
+      toolApproval: {},
+    }),
+  }
+  const first = await makeSession(options)
+  await first.session.start()
+  const failed = await first.session.send('Save the example file.')
+  const recovered = await loadResumeSession(path.join(first.tmp, 'autosave.md'), { snapshot: true })
+  const second = await makeSession({ ...options, restore: recovered.state })
+  try {
+    await second.session.start()
+    const retried = await second.session.send('Save the example file.')
+    assert({
+      given: 'a completed action followed by a provider failure, then restart and retry',
+      should: 'keep its result and partial explanation so the retry answers without executing it again',
+      actual: [
+        failed.text,
+        failed.error,
+        recovered.state.conversation.at(-1)?.error,
+        recovered.state.conversation.at(-1)?.content,
+        JSON.stringify(recovered.state.modelMessages).includes('example-receipt'),
+        writes,
+        retried.text,
+      ],
+      expected: [
+        'The file is saved.',
+        'Example connection lost',
+        'Example connection lost',
+        'The file is saved.',
+        true,
+        1,
+        'The recorded save succeeded.',
+      ],
+    })
+  } finally {
+    await rm(first.tmp, { recursive: true, force: true })
+    await rm(second.tmp, { recursive: true, force: true })
+  }
 })
 
 test('ChatSession keeps generated images through recovery, filing, branching, and later replies', async () => {

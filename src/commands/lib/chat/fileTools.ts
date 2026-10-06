@@ -6,7 +6,8 @@
  * into the day's notebook attachments, reports the copy to the host so the
  * transcript's `attachments:` records it, and hands the content to the model
  * as the tool result: PDFs and images as native file parts, text inline. From
- * then on the document is simply in context — summarize, quote, compare.
+ * then on its recorded findings and source reference remain available;
+ * native payloads are reopened when a later question needs more detail.
  *
  * Built in like the web tools rather than a @AIChatTool command: its output
  * is the document itself, which has no meaning outside a model turn.
@@ -31,7 +32,7 @@ export const READ_FILE_TOOL = 'read_file'
 /**
  * PDFs and images travel base64-encoded inside the request, which also
  * carries the whole conversation and context — Anthropic caps a request at
- * 32 MB, and a PDF further at 100 pages.
+ * 32 MB. The provider adapter separately checks the whole serialized request.
  */
 export const MAX_FILE_BYTES = 20 * 1024 * 1024
 
@@ -124,6 +125,7 @@ function fitText(document: LoadedDocument): { document: LoadedDocument; totalCha
 function describe(output: ReadFileSuccess): string {
   const lines = [
     `File: ${output.path}`,
+    `Saved copy: ${output.attachmentPath}`,
     `Attachment: ${output.attachment} (copied into the day's notebook attachments and recorded on this chat)`,
   ]
   if (output.kind === 'text') {
@@ -154,6 +156,7 @@ export function toModelContent(output: ReadFileSuccess, document: LoadedDocument
         mediaType: document.mediaType,
         filename: output.attachment,
         data: { type: 'data', data: Buffer.from(document.data).toString('base64') },
+        providerOptions: { sky: { sourcePath: output.path, attachmentPath: output.attachmentPath } },
       },
     ],
   }
@@ -164,11 +167,12 @@ export function toUserContent(output: ReadFileSuccess, document: LoadedDocument)
   const header = describe(output)
   if (document.kind === 'text') return [{ type: 'text', text: `${header}\n\n${document.text}` }]
   const data = Buffer.from(document.data).toString('base64')
+  const providerOptions = { sky: { sourcePath: output.path, attachmentPath: output.attachmentPath } }
   return [
     { type: 'text', text: header },
     document.kind === 'image'
-      ? { type: 'image', image: data, mediaType: document.mediaType }
-      : { type: 'file', data, mediaType: document.mediaType, filename: output.attachment },
+      ? { type: 'image', image: data, mediaType: document.mediaType, providerOptions }
+      : { type: 'file', data, mediaType: document.mediaType, filename: output.attachment, providerOptions },
   ]
 }
 
@@ -248,7 +252,7 @@ export function createFileTools(options: FileToolsOptions): Record<string, unkno
   return {
     [READ_FILE_TOOL]: tool({
       description:
-        "Read a local file into this conversation by path: PDF, image (png, jpg, gif, webp), Word/Pages, PowerPoint/Keynote, Excel/Numbers, CSV, markdown, or plain text. Returns the document itself (PDFs and images attached, the rest as text), copies it into today's notebook attachments, and records it on this chat. Call it whenever the user points at a file on disk to read, summarize, review, or discuss.",
+        "Read a local file into this conversation by path: PDF, image (png, jpg, gif, webp), Word/Pages, PowerPoint/Keynote, Excel/Numbers, CSV, markdown, or plain text. Returns the document itself (PDFs and images attached, the rest as text), copies it into today's notebook attachments, and records it on this chat. Record task-relevant findings before reading the next document. Earlier binary contents become file references; reopen the saved copy when details are needed. Inspect large files one at a time. Call it whenever the user points at a file on disk to read, summarize, review, or discuss.",
       inputSchema: jsonSchema<ReadFileInput>({
         type: 'object',
         properties: {

@@ -20,7 +20,7 @@ export function branchPoints(turns: readonly ConversationMessage[]): Array<Branc
       .trim()
       .replace(/\s+/g, ' ')
     history.update(JSON.stringify([message.role, message.when ?? null, content]))
-    if (message.role !== 'assistant' || i % 2 !== 1) return null
+    if (message.role !== 'assistant' || message.error || i % 2 !== 1) return null
     return { turn: (i + 1) / 2, key: history.copy().digest('hex') }
   })
 }

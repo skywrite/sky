@@ -800,8 +800,8 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
             saves: prefs.saves ?? true,
             // A restored thread's last turn is complete — unless the service went
             // down answering it, which the thread says until the person sends again.
-            state: restore?.interrupted ? 'failed' : restore ? 'done' : 'new',
-            partial: restore?.interrupted ? INTERRUPTED_LINE : '',
+            state: restore?.interrupted || session.turns.at(-1)?.error ? 'failed' : restore ? 'done' : 'new',
+            partial: restore?.interrupted ? INTERRUPTED_LINE : (session.turns.at(-1)?.error ?? ''),
             updatedAt: ++tick,
             context: null,
             profile: prefs.profile ?? options.settings?.defaultModel ?? '',
@@ -1178,6 +1178,7 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
         // a timer keeps the page told the connection lives; silence past it
         // is a lost connection, however the socket looks from the browser.
         const beat = setInterval(() => frame('heartbeat', { type: 'heartbeat' }), options.heartbeatMs ?? HEARTBEAT_MS)
+        let receivedTurn = false
         try {
           frame('turn-started', {})
           if (files) frame('user-message', { content: message })
@@ -1194,6 +1195,7 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
             // The first reply includes the initial context gathering in its timing.
             return runWithUsageSource('ai:chat', () => thread.session.send(message, files, active.signal))
           })
+          receivedTurn = true
           if (turn.usage)
             thread.usage.set(thread.session.turns.length - 1, {
               ...turn.usage,
@@ -1223,6 +1225,11 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
           if (!turn.error) name(id, thread)
         } catch (error) {
           timing.finish(thrownOutcome(error))
+          if (!receivedTurn) {
+            const failed = await thread.session.recordTurnFailure(message, error, thread.partial)
+            thread.state = 'failed'
+            thread.partial = failed.error ?? ''
+          }
           throw error
         } finally {
           timing.finish('incomplete')

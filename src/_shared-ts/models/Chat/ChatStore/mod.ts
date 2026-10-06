@@ -162,6 +162,13 @@ async function loadLineage(filePath: string, options: LoadResumeOptions, seen: S
   if (!options.snapshot && recovery?.modelMessages && recovery.historyKey === conversationKey(state.conversation)) {
     state.modelMessages = recovery.modelMessages
   }
+  if (options.snapshot || recovery?.historyKey === conversationKey(state.conversation)) {
+    if (recovery?.workingContext) state.workingContext = recovery.workingContext
+    for (const failure of recovery?.turnErrors ?? []) {
+      const turn = state.conversation[failure.at]
+      if (turn?.role === 'assistant') turn.error = failure.message
+    }
+  }
 
   return {
     ...(recovery ? { recovery } : {}),

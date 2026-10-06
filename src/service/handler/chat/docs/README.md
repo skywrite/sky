@@ -496,6 +496,10 @@ a person can see and touch:
   the query as graphql-js prints it); a tool that narrates its own calls
   prints the arrow, the name, and the input whole. See
   [2026-09-03-tool-lines-on-the-page.md](2026-09-03-tool-lines-on-the-page.md).
+- **Failed replies survive refresh.** Error and partial reply persistence is
+  owned by [ChatSession](../../../../_shared-ts/models/Chat/docs/README.md#fitting-a-conversation-to-its-model).
+  Polling and recovery show that same assistant entry, with Retry reply on the
+  latest failed exchange. A failed assistant entry cannot be a branch point.
 - **The message a restart took.** Every active thread's snapshot is written
   as each turn begins as well as when it ends (the session's
   `snapshotOnSend`, always enabled by the web host), so a service that

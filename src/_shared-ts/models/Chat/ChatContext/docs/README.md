@@ -1,6 +1,6 @@
 ---
 created: 2026-08-15
-updated: 2026-10-04
+updated: 2026-10-05
 ---
 
 # ChatContext admission — evidence in, budget as a cap
@@ -54,11 +54,12 @@ at the head of the person's next user message, as a labeled block followed
 by their words. (The AI SDK takes system messages only through
 `instructions`, at the front of the request; a system message inside
 `messages` is refused whatever the provider supports — seen live on Opus
-5.5, 2026-10-04.) A shipped document is never taken back within the
-session: the rank walk only ever places newcomers in the room the cap
-leaves.
+5.5, 2026-10-04.) The admission rank walk holds shipped documents and only
+places newcomers in the room the cap leaves. This governs normal delivery;
+the outgoing working context may compact previously retrieved text when the
+whole request approaches the model's limit. Saved history retains the original.
 
-The request therefore only grows at its end, which is what both providers'
+Without a capacity reduction, the request grows only at its end, which is what both providers'
 prompt caches reward. Before this, two of every three turns rewrote the
 whole segment, 81% of it the same documents as the turn before, and cache
 writes were 95% of the chat bill (30 days to 2026-10-04).
@@ -72,9 +73,12 @@ its cache by the prefix alone and never sees it.
 
 Two consequences to know:
 
-- A request the model's window cannot take is refit from the **segment**
-  only (`fitForRequest`); additions are history and stay. A document the
-  refit drops leaves the shipped set and may be admitted again later.
+- `fitForRequest` refits the **segment**. If that is insufficient, the
+  engine compacts identified addition blocks into rereadable source references
+  in its outgoing request, preserving the person's words and full saved history.
+  See [conversation capacity](../../docs/README.md#fitting-a-conversation-to-its-model)
+  for the boundary and recovery contract. A document the segment refit drops
+  leaves the shipped set and may be admitted again later.
 - Keeping a document out by hand (`exclude`) stops its future admission and
   re-renders the segment without it, but an addition already delivered
   cannot be unsaid; the log and the story say it is excluded from here on.
