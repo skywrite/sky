@@ -1,4 +1,6 @@
+import { Buffer } from 'node:buffer'
 import { createAnthropic } from '@ai-sdk/anthropic'
+import { createOpenAI } from '@ai-sdk/openai'
 import {
   APICallError,
   generateText,
@@ -8,7 +10,7 @@ import {
   wrapLanguageModel,
 } from 'ai'
 import { MockLanguageModelV3 } from 'ai/test'
-import { InputTokenLimitError, withAnthropicTokenCount } from '#shared/ai/inputTokenLimit.ts'
+import { InputTokenLimitError, withAnthropicTokenCount, withOpenAITokenCount } from '#shared/ai/inputTokenLimit.ts'
 import { assert, test } from '#test'
 import ChatEngine, { type ChatEngineEvent } from './mod.ts'
 import { requestBudgetMiddleware } from './requestBudget.ts'
@@ -42,6 +44,88 @@ const reply = () =>
     ],
     'stop',
   )
+
+test('OpenAI can inspect a large native image tool result without counting base64 as prose', async () => {
+  const image = Buffer.alloc(1_800_000, 1).toString('base64')
+  const messages: ModelMessage[] = [
+    { role: 'user', content: 'Make the center of the Atlas diagram green, preserving the layout.' },
+    {
+      role: 'assistant',
+      content: [
+        { type: 'tool-call', toolCallId: 'read-image', toolName: 'read_file', input: { path: '/mock/Atlas.png' } },
+      ],
+    },
+    {
+      role: 'tool',
+      content: [
+        {
+          type: 'tool-result',
+          toolCallId: 'read-image',
+          toolName: 'read_file',
+          output: {
+            type: 'content',
+            value: [
+              { type: 'text', text: 'File: /mock/Atlas.png\nSaved copy: /mock/Archive/Atlas.png' },
+              { type: 'file', mediaType: 'image/png', data: { type: 'data', data: image } },
+            ],
+          },
+        },
+      ],
+    },
+  ]
+  const original = JSON.stringify(messages)
+  const calls: Array<{ count: boolean; image: boolean; question: boolean }> = []
+  const adjustments: unknown[] = []
+  const provider = createOpenAI({
+    apiKey: 'test-key',
+    fetch: withOpenAITokenCount((async (url, init) => {
+      const body = init!.body as string
+      const count = String(url).endsWith('/input_tokens')
+      calls.push({
+        count,
+        image: body.includes(`data:image/png;base64,${image}`),
+        question: body.includes('preserving the layout'),
+      })
+      return count
+        ? Response.json({ input_tokens: 2000 })
+        : Response.json({
+            id: 'response-example',
+            model: 'test-model',
+            output: [
+              {
+                type: 'message',
+                id: 'message-example',
+                role: 'assistant',
+                content: [{ type: 'output_text', text: 'The image is ready for editing.', annotations: [] }],
+              },
+            ],
+            usage: { input_tokens: 2000, output_tokens: 8 },
+          })
+    }) as typeof fetch),
+  })
+  const result = await generateText({
+    model: wrapLanguageModel({
+      model: provider('test-model'),
+      middleware: requestBudgetMiddleware({ contextWindow: 10000, onAdjustment: (value) => adjustments.push(value) }),
+    }),
+    messages,
+    maxOutputTokens: 200,
+  })
+  assert({
+    given: 'a freshly read diagram whose encoding exceeds a million characters but native input fits',
+    should: 'send the full image to counting and generation, preserve history, and avoid unnecessary compaction',
+    actual: [result.text, calls, adjustments.length, JSON.stringify(messages) === original],
+    expected: [
+      'The image is ready for editing.',
+      [
+        { count: true, image: true, question: true },
+        { count: false, image: true, question: true },
+      ],
+      0,
+      true,
+    ],
+  })
+})
 
 test('a long chat compacts retrieved sources across tool steps and restart without repeating an action', async () => {
   let executions = 0

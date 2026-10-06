@@ -1,14 +1,10 @@
 import type { AnthropicProviderOptions } from '@ai-sdk/anthropic'
-import {
-  createOpenAI,
-  openai,
-  type OpenAILanguageModelChatOptions,
-  type OpenAIResponsesProviderOptions,
-} from '@ai-sdk/openai'
+import { createOpenAI, type OpenAILanguageModelChatOptions, type OpenAIResponsesProviderOptions } from '@ai-sdk/openai'
 import { type JSONValue, type LanguageModel, wrapLanguageModel } from 'ai'
 import { ollama } from 'ollama-ai-provider-v2'
 import { anthropic } from '#shared/ai/llm/anthropicProvider.ts'
 import { cerebras } from '#shared/ai/llm/cerebrasProvider.ts'
+import { openai } from '#shared/ai/llm/openaiProvider.ts'
 import { singleSystemMessageMiddleware } from '#shared/ai/llm/singleSystemMessage.ts'
 import { tokenRatioMeter } from '#shared/ai/tokenRatio.ts'
 import { usageMeter } from '#shared/ai/usageLog.ts'
@@ -139,7 +135,10 @@ function getLmStudioProvider(): ReturnType<typeof createOpenAI> {
 
 function getLmStudioProviderWith(baseUrl: string): ReturnType<typeof createOpenAI> {
   if (!_lmStudioProvider || _lmStudioProvider.baseUrl !== baseUrl) {
-    _lmStudioProvider = { baseUrl, provider: createOpenAI({ baseURL: baseUrl, apiKey: 'lm-studio' }) }
+    _lmStudioProvider = {
+      baseUrl,
+      provider: createOpenAI({ name: 'lm-studio', baseURL: baseUrl, apiKey: 'lm-studio' }),
+    }
   }
   return _lmStudioProvider.provider
 }

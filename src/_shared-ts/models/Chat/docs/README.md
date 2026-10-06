@@ -65,7 +65,16 @@ The guard is scoped to one provider call so it cannot affect other chats or
 tools' nested agents. The actual output allowance and a small margin are
 reserved. The working target is 85% of the model window, leaving room for
 further tool steps. Irreducible input that fits the hard limit can still run.
-Other hosts use a conservative estimate and the same rejection retry.
+OpenAI Responses uses its
+[input token counting endpoint](https://developers.openai.com/api/docs/guides/token-counting)
+at the same SDK serialization boundary. Native image and PDF encodings are
+transport bytes, not prose tokens: estimating the base64 string can reject
+a small image edit as a million-token conversation. The count receives the
+original native inputs and tool schemas with the model's options; generation
+keeps the original payload. Compatible local providers retain a separate
+identity and use a conservative estimate. If either counting endpoint is
+unavailable or cannot count a supported generation input, a context-length
+rejection still triggers the same bounded retry.
 
 Capacity reductions reassemble notebook retrieval by relevance first, keeping
 the person's allowance and document pins. Next, identified retrieval prefixes

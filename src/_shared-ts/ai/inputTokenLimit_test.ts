@@ -5,7 +5,130 @@ import {
   RequestBodyLimitError,
   withAnthropicTokenCount,
   withContextWindow,
+  withOpenAITokenCount,
 } from './inputTokenLimit.ts'
+
+const RESPONSES_URL = 'https://api.openai.com/v1/responses'
+const RESPONSES_BODY = {
+  model: 'test-model',
+  input: [
+    {
+      role: 'user',
+      content: [
+        { type: 'input_text', text: 'Make the center green.' },
+        { type: 'input_image', image_url: 'data:image/png;base64,YWFh', detail: 'auto' },
+      ],
+    },
+  ],
+  tools: [{ type: 'function', name: 'edit_image', parameters: { type: 'object' } }],
+  reasoning: { effort: 'high' },
+  text: { format: { type: 'text' } },
+  store: false,
+  stream: true,
+  max_output_tokens: 200,
+}
+
+test('OpenAI counts native inputs and tool schemas with the actual output allowance', async () => {
+  const calls: Array<{ url: string; body: Record<string, unknown>; auth: string | null }> = []
+  const fetcher = withOpenAITokenCount((async (url, init) => {
+    calls.push({
+      url: String(url),
+      body: JSON.parse(init!.body as string),
+      auth: new Headers(init?.headers).get('Authorization'),
+    })
+    return Response.json({ input_tokens: 810 })
+  }) as typeof fetch)
+  let failure: unknown
+  try {
+    await withContextWindow(1000, () =>
+      fetcher(RESPONSES_URL, {
+        method: 'POST',
+        headers: { Authorization: 'Bearer test-key' },
+        body: JSON.stringify(RESPONSES_BODY),
+      }),
+    )
+  } catch (error) {
+    failure = error
+  }
+  assert({
+    given: 'native image input and tools that fit alone but leave too little room for output',
+    should: 'count the original native content before generation, using the same authentication',
+    actual: {
+      calls,
+      failure: failure instanceof InputTokenLimitError ? [failure.tokens, failure.limit] : null,
+    },
+    expected: {
+      calls: [
+        {
+          url: `${RESPONSES_URL}/input_tokens`,
+          body: {
+            model: RESPONSES_BODY.model,
+            input: RESPONSES_BODY.input,
+            tools: RESPONSES_BODY.tools,
+            reasoning: RESPONSES_BODY.reasoning,
+            text: RESPONSES_BODY.text,
+          },
+          auth: 'Bearer test-key',
+        },
+      ],
+      failure: [810, 790],
+    },
+  })
+})
+
+test('OpenAI counting is scoped to each chat and bypasses unrelated endpoints', async () => {
+  const requests: string[] = []
+  const bodies: string[] = []
+  const fetcher = withOpenAITokenCount((async (url, init) => {
+    requests.push(String(url))
+    if (String(url).endsWith('/input_tokens')) return Response.json({ input_tokens: 810 })
+    bodies.push(init!.body as string)
+    return new Response('ok')
+  }) as typeof fetch)
+  const body = JSON.stringify(RESPONSES_BODY)
+  const send = () => fetcher(RESPONSES_URL, { method: 'POST', body })
+  const outcomes = await Promise.allSettled([
+    withContextWindow(1000, send),
+    withContextWindow(2000, send),
+    send(),
+    withContextWindow(1000, () => fetcher('https://example.com/chat/completions', { method: 'POST', body })),
+  ])
+  assert({
+    given: 'concurrent chat windows, an unguarded caller and a compatible chat endpoint',
+    should: 'reject only the small chat and pass each original generation body untouched',
+    actual: [
+      outcomes.map((outcome) => outcome.status),
+      requests.filter((url) => url.endsWith('/input_tokens')).length,
+      bodies,
+    ],
+    expected: [['rejected', 'fulfilled', 'fulfilled', 'fulfilled'], 2, [body, body, body]],
+  })
+})
+
+test('OpenAI counter failures do not reject valid generation or swallow cancellation', async () => {
+  let generations = 0
+  const controller = new AbortController()
+  const fetcher = withOpenAITokenCount((async (url) => {
+    if (String(url).endsWith('/input_tokens')) return new Response('Unavailable', { status: 503 })
+    generations++
+    return new Response('ok')
+  }) as typeof fetch)
+  const init = { method: 'POST', body: JSON.stringify(RESPONSES_BODY) }
+  await withContextWindow(1000, () => fetcher(RESPONSES_URL, init))
+  controller.abort(new Error('Stopped'))
+  let stopped = false
+  try {
+    await withContextWindow(1000, () => fetcher(RESPONSES_URL, { ...init, signal: controller.signal }))
+  } catch (error) {
+    stopped = (error as Error).message === 'Stopped'
+  }
+  assert({
+    given: 'an unavailable counting endpoint followed by a cancelled request',
+    should: 'let generation enforce context capacity but never run a cancelled request',
+    actual: [generations, stopped],
+    expected: [1, true],
+  })
+})
 
 const URL = 'https://api.anthropic.com/v1/messages'
 const BODY = {

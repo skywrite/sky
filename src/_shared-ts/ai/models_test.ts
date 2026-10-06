@@ -34,6 +34,18 @@ import {
   type ResolvedModel,
 } from './models.ts'
 
+test('local compatible models keep a provider identity separate from OpenAI token counting', () => {
+  const resolved = resolveProfile(
+    defineProfile({ provider: 'lm-studio', model: 'synthetic-model', contextWindow: 8000 }),
+  )
+  assert({
+    given: 'a local Responses-compatible model without OpenAI’s counting endpoint',
+    should: 'retain the local capacity estimate and avoid OpenAI-only options',
+    actual: typeof resolved.model === 'string' ? resolved.model : resolved.model.provider,
+    expected: 'lm-studio.responses',
+  })
+})
+
 test('preset effort is inherited, overridden for one call, and never mutated', () => {
   const profile = defineProfile({
     provider: 'openai',

@@ -1,6 +1,6 @@
 ---
 created: 2026-09-01
-updated: 2026-10-04
+updated: 2026-10-06
 ---
 
 # Model registry — roles, profiles, providers
@@ -86,6 +86,11 @@ and its [2026-10-04](../../models/Chat/ChatContext/docs/2026-10-04-admission-by-
   `llm/singleSystemMessage.ts`: the host takes one system message, first,
   and the cache helpers split instructions into several.
 - `lm-studio` and `ollama` are local and need no key.
+
+Chat request capacity uses the serialized provider input, including native
+images and files. OpenAI's registry provider (`llm/openaiProvider.ts`) supplies
+the scoped counting fetch; the contract and fallback behavior live in
+[Chat request fitting](../../models/Chat/docs/README.md#fitting-a-conversation-to-its-model).
 
 ## Decisions: TypeSafe's Jev
 
