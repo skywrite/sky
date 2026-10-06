@@ -10,6 +10,7 @@ import { Lexer, type Token, type Tokens } from 'marked'
 import gatherDayDocs from '#commands/all/summary/lib/gatherDayDocs.ts'
 import { readTextFile } from '#shared/fs/mod.ts'
 import AboutMeDocument from '#shared/models/AboutMe/document/mod.ts'
+import { parseMeetingEntry } from '#shared/models/Day/document/meetings.ts'
 import DayDocument from '#shared/models/Day/document/mod.ts'
 import type Document from '#shared/models/Markdown/Document/mod.ts'
 import { isParticipant } from '#shared/models/Message/mod.ts'
@@ -30,7 +31,7 @@ export interface DayItem {
   category: string | null
   /** `HH:MM` when the item carries one (done items usually do) */
   time: string | null
-  /** How long a Complete entry took, from `08:30 4h > …` — absent when it does not say */
+  /** How long a Complete entry took, from `08:30(4h) > …` — absent when it does not say */
   minutes?: number
   /** The document the item points at, when it is a link */
   link: { title: string; path: string } | null
@@ -55,6 +56,7 @@ export interface DayDocRow {
 
 export interface MeetingRow extends DayDocRow {
   who: string | null
+  minutes?: number
   inline?: boolean
 }
 
@@ -162,11 +164,15 @@ function parseItem(raw: string, category: string | null, list: string): DayItem 
  * or a routine's own record like `HH:MM > Notebook -> 2026-01-26 End` — is
  * the day file noting that something was filed or ran. The file itself is
  * listed as a meeting, a message, or a chat; the log line is not a thing
- * done. The arrow is the tell — but only inside Complete lists, where this
- * filter runs: a commitment may promise `… Slack -> weekly update`.
+ * done. Recognize meetings, action links, and known routine labels; a prose
+ * arrow on its own must not hide a manually completed activity.
  */
 function isCaptureLog(item: DayItem): boolean {
-  return /\s->\s/.test(item.text) || (item.link?.path.startsWith(`${ACTIONS_DIR}/`) ?? false)
+  return (
+    parseMeetingEntry(item.raw) !== null ||
+    (item.link?.path.startsWith(`${ACTIONS_DIR}/`) ?? false) ||
+    /^(?:Notebook|(?:projects|streaks|ideas|decisions)\/.+?)\s+->\s/.test(item.text)
+  )
 }
 
 function categoryOf(heading: string): string | null {
@@ -278,6 +284,7 @@ export async function buildDayRecord(input: DayRecordInput): Promise<DayRecord> 
           meeting.path ? path.resolve(input.dayDirPath, meeting.path) : path.join(input.timeDir, dayFile(input.day)),
         ),
         when: meeting.time,
+        ...(meeting.minutes ? { minutes: meeting.minutes } : {}),
         who: meeting.who,
         summary: meeting.notes,
         inline: !meeting.path,

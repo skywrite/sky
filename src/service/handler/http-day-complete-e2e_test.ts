@@ -129,7 +129,7 @@ for (const width of [1500, 390])
           const time = form.getByRole('textbox', { name: 'Entry time' })
           await page.waitForFunction(() => document.querySelector<HTMLInputElement>('[aria-label="Entry time"]')?.value)
           const started = await time.inputValue()
-          await form.getByRole('textbox', { name: 'Item text', exact: true }).fill('Garden: Planted the beds')
+          await form.getByRole('textbox', { name: 'Item text', exact: true }).fill('Garden -> Planted the beds')
           await time.fill('9:30')
           const length = form.getByRole('textbox', { name: 'Duration' })
           await length.fill('90')
@@ -140,7 +140,7 @@ for (const width of [1500, 390])
           if (screenshot)
             await page.screenshot({ path: `${screenshot}-entry-length-form-${width}.png`, fullPage: true })
           await add.click()
-          const row = block.locator('.sky-prow').filter({ hasText: 'Garden: Planted the beds' })
+          const row = block.locator('.sky-prow').filter({ hasText: 'Garden -> Planted the beds' })
           await row.waitFor()
           await page.locator('.sky-plan-undo').getByRole('button', { name: 'Dismiss notification' }).click()
           if (screenshot) await page.screenshot({ path: `${screenshot}-entry-length-row-${width}.png`, fullPage: true })
@@ -159,9 +159,9 @@ for (const width of [1500, 390])
             },
             expected: {
               started: '25:10',
-              entries: ['09:30 90m > Garden: Planted the beds'],
+              entries: ['09:30(90m) > Garden -> Planted the beds'],
               time: '9:30',
-              words: 'Garden: Planted the beds',
+              words: 'Garden -> Planted the beds',
               length: '1 hour 30 min',
               overflow: false,
             },
@@ -176,6 +176,70 @@ for (const width of [1500, 390])
             should: 'leave this day’s entry time for the person to fill',
             actual: { started: await time.inputValue(), errors },
             expected: { started: '', errors: [] },
+          })
+
+          const beforeMeeting = await readFile(file, 'utf8')
+          await form
+            .getByRole('textbox', { name: 'Item text', exact: true })
+            .fill('Jane Doe In Person -> Reviewed the launch plan')
+          await time.fill('10:15')
+          await length.fill('45m')
+          await add.click()
+          const meetings = page
+            .locator('.sky-block')
+            .filter({ has: page.locator('.sky-bhead', { hasText: 'Meetings' }) })
+          const meeting = meetings.getByRole('link', { name: 'Jane Doe In Person', exact: true })
+          await meeting.waitFor()
+          assert({
+            given: 'a manual In Person meeting with a duration added from Done today',
+            should: 'show its notes and duration in Meetings without duplicating it in Done today',
+            actual: {
+              saved: (await readFile(file, 'utf8')).includes(
+                '- 10:15(45m) > Jane Doe In Person -> Reviewed the launch plan',
+              ),
+              notes: await meetings.getByText('Reviewed the launch plan', { exact: true }).isVisible(),
+              duration: await meetings.getByText('45 min', { exact: true }).isVisible(),
+              done: await block.getByText('Jane Doe In Person -> Reviewed the launch plan', { exact: true }).count(),
+              overflow: await page.evaluate(() => document.documentElement.scrollWidth > innerWidth),
+              errors,
+            },
+            expected: { saved: true, notes: true, duration: true, done: 0, overflow: false, errors: [] },
+          })
+          await page.locator('.sky-plan-undo').getByRole('button', { name: 'Undo', exact: true }).click()
+          await meeting.waitFor({ state: 'detached' })
+          assert({
+            given: 'Undo after the completed entry was classified as a meeting',
+            should: 'remove that entry and preserve the earlier ordinary activity',
+            actual: await readFile(file, 'utf8'),
+            expected: beforeMeeting,
+          })
+
+          await add.click()
+          await form
+            .getByRole('textbox', { name: 'Item text', exact: true })
+            .fill('Jane Doe In Person -> Reviewed the launch plan')
+          await time.fill('10:15')
+          await length.fill('45m')
+          await add.click()
+          await meeting.waitFor()
+          await page.reload()
+          await meeting.waitFor()
+          await page.waitForFunction(() => document.title.includes('January 27, 2026'))
+          const meetingPageTitle = await page.title()
+          await page.goto(`${origin}/${DAY.addDays(1).ymd}`)
+          await page.waitForFunction(() => document.title.includes('January 28, 2026'))
+          await page.goBack()
+          await meeting.waitFor()
+          assert({
+            given: 'a saved manual meeting after reload and browser back navigation',
+            should: 'retain the meeting details and the viewed day’s browser title',
+            actual: {
+              title: await page.title(),
+              notes: await meetings.getByText('Reviewed the launch plan', { exact: true }).isVisible(),
+              duration: await meetings.getByText('45 min', { exact: true }).isVisible(),
+              errors,
+            },
+            expected: { title: meetingPageTitle, notes: true, duration: true, errors: [] },
           })
         },
       )

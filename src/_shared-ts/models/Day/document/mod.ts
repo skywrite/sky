@@ -21,7 +21,7 @@ export interface AddDayItemOptions extends ModificationOptions {
 
 export interface AddCompleteItemOptions extends AddDayItemOptions {
   time: string // prepends "HH:MM > " to the item
-  length?: string // how long it took, after the time: "HH:MM 4h > "
+  length?: string // how long it took, attached to the time: "HH:MM(4h) > "
 }
 
 /** A reference to a document linked from a Complete item */
@@ -387,7 +387,7 @@ export default class DayDocument extends ListDocument {
   public addCompleteItem(item: string, opts: AddCompleteItemOptions): this {
     const category = opts.category ?? 'Professional'
     const listName = `${category} Complete`
-    const finalItem = `${opts.length ? `${opts.time} ${opts.length}` : opts.time} > ${item}`
+    const finalItem = `${opts.time}${opts.length ? `(${opts.length})` : ''} > ${item}`
 
     if (this.lists.find((l) => l.title === listName)) {
       return this.addItem(listName, finalItem, opts)

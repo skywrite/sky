@@ -26,16 +26,16 @@ test('DayDocument.addCompleteItem() adds item to existing Complete list', () => 
   })
 })
 
-test('DayDocument.addCompleteItem() writes a length after the time', () => {
+test('DayDocument.addCompleteItem() writes a parenthesized length attached to the time', () => {
   const day = DayDocument.fromMarkdown(loadFixture('day-full-structure.md'))
   const result = day.addCompleteItem('Planted the beds', { time: '08:30', length: '90m' })
 
   assert({
     given: 'an entry with a length',
-    should: 'write the time, the length, then the arrow',
+    should: 'attach the parenthesized length to the time before the arrow',
     actual: result.lists
       .find((l) => l.title === 'Professional Complete')
-      ?.items.includes('08:30 90m > Planted the beds'),
+      ?.items.includes('08:30(90m) > Planted the beds'),
     expected: true,
   })
 })

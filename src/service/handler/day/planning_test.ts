@@ -232,7 +232,7 @@ test('a completed entry can say how long it took, and Undo removes it whole', as
     ])
     assert({
       given: 'an entry with a typed length, then lengths that are not one and a length on a to-do',
-      should: 'write the length after the time, show it as minutes, and refuse the rest',
+      should: 'attach the parenthesized length to the time, show it as minutes, and refuse the rest',
       actual: {
         entries: DayDocument.fromMarkdown(content).lists.find((list) => list.title === 'Personal Complete')?.items,
         done: added.view.record.done.map(({ time, minutes, text }) => ({ time, minutes, text })),
@@ -241,7 +241,7 @@ test('a completed entry can say how long it took, and Undo removes it whole', as
         unchanged: (await readFile(file, 'utf8')) === content,
       },
       expected: {
-        entries: ['09:30 90m > Garden: Planted the beds'],
+        entries: ['09:30(90m) > Garden: Planted the beds'],
         done: [{ time: '09:30', minutes: 90, text: 'Garden: Planted the beds' }],
         message: 'Entry added at 09:30',
         rejected: [400, 400, 400],

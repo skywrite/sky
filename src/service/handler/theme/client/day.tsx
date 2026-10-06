@@ -142,7 +142,7 @@ export interface DayRecord {
   todos: DayItem[]
   reminders: DayItem[]
   done: DayItem[]
-  meetings: Array<DayDocRow & { who: string | null }>
+  meetings: Array<DayDocRow & { who: string | null; inline?: boolean; minutes?: number }>
   events: Array<DayDocRow & { who: string | null; where: string | null }>
   videos: Array<DayDocRow & { from: string | null; to: string | null; medium: string | null }>
   messages: {
@@ -1522,10 +1522,15 @@ export function DayView({
                     {record.meetings.length > 0 && (
                       <Block head="Meetings" mini={String(record.meetings.length)}>
                         {record.meetings.map((m) => (
-                          <Fragment key={m.path}>
+                          <Fragment key={`${m.path}:${m.when}:${m.title}`}>
                             <DocLine when={m.when}>
                               <a href={meetingHref(m.path) ?? fileHref(m.path)}>{m.title}</a>
-                              {m.who && <span className="sky-rec-sub">{m.who}</span>}
+                              {m.minutes ? (
+                                <span className="sky-entry-length">{workDurationLabel(m.minutes)}</span>
+                              ) : null}
+                              {(m.inline ? m.summary : m.who) && (
+                                <span className="sky-rec-sub">{m.inline ? m.summary : m.who}</span>
+                              )}
                             </DocLine>
                           </Fragment>
                         ))}

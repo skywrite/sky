@@ -71,7 +71,7 @@ export function addPlanItem(content: string, input: DayPlanInput): { content: st
     return {
       content: result.toMarkdown(),
       list: `${category} Complete`,
-      raw: `${length ? `${time} ${length}` : time} > ${text}`,
+      raw: `${time}${length ? `(${length})` : ''} > ${text}`,
     }
   }
   const raw = input.kind === 'commitments' ? `${input.time} > ${input.text}` : input.text

@@ -1,6 +1,6 @@
 ---
 created: 2026-09-03
-updated: 2026-10-03
+updated: 2026-10-06
 ---
 
 # The day's items, the day's rail, and the day's files
@@ -148,10 +148,13 @@ them. Request IDs make retries of a successful save idempotent.
 **Add entry** in Done today writes `HH:MM > text` to the category's Complete list.
 On the day under way its time starts at the notebook clock's now
 (`/clock/_api/now`, past 24:00 after midnight); on other days it starts empty.
-An optional length follows the time: `09:30 90m > text`, the `when:` spelling
-without the date — whole hours as `4h`, anything else in minutes. Only Complete
-entries are read with a length (`splitItemTime`), hand-typed `09:30(4h) >`
-included; a plan row keeps such words as written.
+An optional length is attached to the time in parentheses: `09:30(90m) > text`
+— whole hours as `4h`, anything else in minutes. Only Complete entries are read
+with a length (`splitItemTime`); older `09:30 90m > text` entries remain readable.
+A plan row keeps such words as written.
+Entries with a meeting medium such as `Jane Doe In Person -> reviewed the plan`
+appear under Meetings, with their notes and duration. An ordinary `->` in a
+completed activity does not hide it from Done today.
 
 The day file's nonempty `ended` marker makes its task lists read-only, including Done today,
 deletion and Undo. A padlock with **Ended** appears beside the task count. Item
