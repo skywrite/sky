@@ -33,6 +33,16 @@
   color: var(--sky-dim);
 }
 
+.sky-message-title,
+.sky-message-participants {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.sky-message-participants {
+  margin: 2px 0 0;
+}
+
 .sky-day-journal-summary {
   display: block;
   margin-top: 4px;

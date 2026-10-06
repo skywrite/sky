@@ -209,6 +209,27 @@ function rowOf(doc: Document, filePath: string, base: string): DayDocRow {
   }
 }
 
+function messageRow(row: DayDocRow, doc: Document, filePath: string): MessageRow {
+  const medium = text(doc.yaml['medium'])
+  const filename = path.basename(filePath, '.md')
+  let title = row.summary ?? text(doc.yaml['subject']) ?? row.title
+  if (title === filename || title.toLowerCase() === medium?.toLowerCase()) {
+    // Older captures may have only a stamped medium_participants_summary filename.
+    const parts = filename.replace(/^(?:\d{4}-\d{2}-\d{2}_\d{6}|\d{2}-\d{2})_/, '').split('_')
+    const normalizeMedium = (value: string) => value.replace(/[-\s]+/g, '').toLowerCase()
+    const name =
+      medium && normalizeMedium(parts[0]) === normalizeMedium(medium) ? parts.slice(2).join(' ') : parts.join(' ')
+    title = name.replace(/[-_]+/g, ' ').trim() || 'Conversation'
+  }
+  return {
+    ...row,
+    title,
+    from: text(doc.yaml['from']),
+    to: text(doc.yaml['to']),
+    medium,
+  }
+}
+
 /** `Focus: 2026-01-27 - Tue - 13:30` — a journal named by its file stamp, not by a person. */
 const JOURNAL_STAMP = /^(.+?):\s*\d{4}-\d{2}-\d{2}(?:\s*-\s*[A-Za-z]+)?(?:\s*-\s*(\d{1,2}:\d{2}))?\s*$/
 
@@ -309,12 +330,7 @@ export async function buildDayRecord(input: DayRecordInput): Promise<DayRecord> 
     } else if (isActionPath('event', entry.path)) {
       record.events.push({ ...row, who: text(entry.doc.yaml['who']), where: text(entry.doc.yaml['where']) })
     } else if (isActionPath('message', entry.path)) {
-      const message: MessageRow = {
-        ...row,
-        from: text(entry.doc.yaml['from']),
-        to: text(entry.doc.yaml['to']),
-        medium: text(entry.doc.yaml['medium']),
-      }
+      const message = messageRow(row, entry.doc, entry.path)
       if (isParticipant(entry.doc, input.ownerNames)) record.messages.involved.push(message)
       else record.messages.archive.push(message)
     } else if (isActionPath('video', entry.path)) {

@@ -218,10 +218,87 @@ test({ name: 'day record - meetings, messages, and journals come from what was f
       archive: record.messages.archive.map((m) => ({ title: m.title, from: m.from, to: m.to })),
     },
     expected: {
-      involved: [{ title: 'Pricing', from: 'Jane Doe', to: 'Alex Atlas' }],
+      involved: [{ title: 'The invoicing question, again', from: 'Jane Doe', to: 'Alex Atlas' }],
       archive: [{ title: 'Standup Notes', from: 'Ops', to: 'atlas-general' }],
     },
   })
+})
+
+test('day record gives messages readable labels and preserves their document links', async () => {
+  const { base, timeDir, dayDirPath } = await notebook()
+  const captures = [
+    {
+      file: '08-15_email_Jane-Doe-to-Alex-Atlas_Atlas-release.md',
+      metadata: 'medium: Email\nsummary: Atlas release approved',
+      body: 'The release is approved.',
+      title: 'Atlas release approved',
+    },
+    {
+      file: '08-30_signal_Jane_Catch-up.md',
+      metadata: 'medium: Signal\nsummary: Want to catch up?',
+      body: 'Want to catch up after lunch?',
+      title: 'Want to catch up?',
+    },
+    {
+      file: '09-00_email_Jane-to-Alex_Atlas-pilot.md',
+      metadata: 'medium: Email\nsubject: Atlas pilot feedback',
+      body: '# Email\n\nThe pilot feedback is ready.',
+      title: 'Atlas pilot feedback',
+    },
+    {
+      file: '09-30_slack_Jane-to-Alex_Pricing.md',
+      metadata: 'medium: Slack\nsummary: " "',
+      body: '# Monthly pricing\n\nCan we invoice monthly?',
+      title: 'Monthly pricing',
+    },
+    {
+      file: '10-00_email_Jane-to-Alex_Event-sponsorship.md',
+      metadata: 'medium: Email',
+      body: 'Can we sponsor the event?',
+      title: 'Event sponsorship',
+    },
+    {
+      file: 'iMessage-Audio_Jane_Voice-note.md',
+      metadata: 'medium: iMessage Audio',
+      body: '# iMessage Audio\n\nThe transcript is ready.',
+      title: 'Voice note',
+    },
+    {
+      file: '2026-01-27_110000_signal_Jane_Lunch-plans.md',
+      metadata: 'medium: Signal',
+      body: 'Lunch at noon?',
+      title: 'Lunch plans',
+    },
+    {
+      file: '11-30_signal_Jane.md',
+      metadata: 'medium: Signal',
+      body: 'Hello!',
+      title: 'Conversation',
+    },
+    {
+      file: 'Atlas-pilot-update.md',
+      metadata: '',
+      body: 'The pilot is ready to begin.',
+      title: 'Atlas pilot update',
+    },
+  ]
+  for (const capture of captures) {
+    await writeFile(
+      path.join(dayDirPath, 'actions', 'messages', capture.file),
+      `---\nfrom: Jane Doe\nto: Alex Atlas\n${capture.metadata}\n---\n\n${capture.body}\n`,
+    )
+  }
+  const record = await buildDayRecord({ day: TODAY, timeDir, dayDirPath, markdownBaseDir: base, ownerNames: OWNER })
+  for (const capture of captures) {
+    const relativePath = path.join('time', dayDir(TODAY), 'actions', 'messages', capture.file)
+    const row = record.messages.involved.find((message) => message.path === relativePath)
+    assert({
+      given: `a message saved as ${capture.file}`,
+      should: 'show its summary, subject, heading or readable filename label while linking to the original document',
+      actual: { title: row?.title, path: row?.path },
+      expected: { title: capture.title, path: relativePath },
+    })
+  }
 })
 
 test({ name: 'day record - a Complete entry may say how long it took' }, async () => {

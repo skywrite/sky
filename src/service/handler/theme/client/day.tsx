@@ -1032,9 +1032,13 @@ function MessageLine({
       {...drop.handlers}
     >
       <DocLine when={message.when} tag={mediumLabel(message.medium)}>
-        <a href={fileHref(message.path)}>{message.title}</a>
+        <a className="sky-message-title" href={fileHref(message.path)}>
+          {message.title}
+        </a>
         {(message.from || message.to) && (
-          <span className="sky-rec-sub">{[message.from, message.to].filter(Boolean).join(' → ')}</span>
+          <span className="sky-rec-sub sky-message-participants">
+            {[message.from, message.to].filter(Boolean).join(' → ')}
+          </span>
         )}
         {drop.dragging && <span className="sky-audio-drop-hint">Add to this conversation</span>}
       </DocLine>
