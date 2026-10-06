@@ -6,7 +6,8 @@ import { generateText } from 'ai'
 import openEditor from 'open-editor'
 import colors from 'picocolors'
 import { aiEffortFlag } from '#commands/lib/aiParams.ts'
-import { createFileTools, READ_FILE_TOOL } from '#commands/lib/chat/fileTools.ts'
+import { READ_FILE_TOOL } from '#commands/lib/chat/fileTools.ts'
+import { createChatFileTools } from '#commands/lib/chat/localFileTools.ts'
 import {
   createNotebookTools,
   createToolApprovalConfig,
@@ -560,7 +561,7 @@ export default class AiChatTask extends Command {
         const { onExternalFiles, onAttachments } = hooks
         // A file the user points at: read into the conversation, copied
         // into the chat's day attachments, recorded on the transcript.
-        const fileTools = createFileTools({
+        const fileTools = createChatFileTools({
           today,
           attachmentsRoot: DIR_ATTACHMENTS,
           cwd: env.SKY_USER_CWD || process.cwd(),

@@ -64,7 +64,12 @@ same credential redaction checks. The extension forbids browser-level download
 commands, including `Page.setDownloadBehavior`; changing global preferences is
 not a workaround. Unknown save locations, ambiguous files and incomplete downloads
 remain explicit collection failures, with the checked folders and access failures.
-
+The parent chat's `find_downloads` uses the same preference discovery, adds requested
+destination folders, and lists candidates from earlier attempts with timestamps
+and incomplete-download markers. It does not connect to the browser, read secrets,
+or expand the browser worker's file tools. Chat must open candidates to verify their
+contents before organizing them; an empty task folder proves nothing about the rest
+of the disk.
 
 Changing the pinned Playwright version requires the opt-in
 `existing/connection-e2e_test.ts` against an unpacked official extension. It uses

@@ -145,6 +145,11 @@ export default class BrowserTaskCommand extends Command {
     // The streamed reply leaves the line open between deltas; a tool line
     // or a question closes it first.
     let midLine = false
+    const savedFiles = new Map<string, string>()
+    const savingSources = new Map<string, string>()
+    const finalFiles = (files: string[]) => [
+      ...new Set([...files.map((file) => savedFiles.get(path.resolve(file)) ?? file), ...savedFiles.values()]),
+    ]
     const closeLine = () => {
       if (!midLine) return
       output.write('\n')
@@ -152,6 +157,12 @@ export default class BrowserTaskCommand extends Command {
     }
     const onEvent = (event: ChatEngineEvent) => {
       switch (event.type) {
+        case 'tool-execution-start': {
+          const input = event.input as { path?: string } | undefined
+          if (event.toolName === SAVE_FILE_TOOL && typeof input?.path === 'string')
+            savingSources.set(event.toolCallId, input.path)
+          return
+        }
         case 'text-delta': {
           const text = midLine ? event.text : event.text.replace(/^\n+/, '')
           if (!text) return
@@ -167,6 +178,13 @@ export default class BrowserTaskCommand extends Command {
           return
         }
         case 'tool-execution-end':
+          if (event.toolName === SAVE_FILE_TOOL && !event.error) {
+            const result = event.output as { success?: boolean; savedTo?: string }
+            const source = savingSources.get(event.toolCallId)
+            if (result?.success && result.savedTo && source)
+              savedFiles.set(path.resolve(task.filesDir, source), result.savedTo)
+          }
+          savingSources.delete(event.toolCallId)
           if (!event.error) return
           closeLine()
           output.log(colors.yellow(`  ${event.toolName}: ${event.error}`))
@@ -282,14 +300,15 @@ export default class BrowserTaskCommand extends Command {
         output.log('')
         output.log(jevResult.report)
       }
-      await writeReport(report, jevResult.files, jevResult.server)
+      const files = finalFiles(jevResult.files)
+      await writeReport(report, files, jevResult.server)
       return CommandResult.success({
         id: task.id,
         dir: task.dir,
         driver: 'jev',
         outcome: jevResult.outcome,
         report,
-        files: jevResult.files,
+        files,
         attachments: attachments.map((a) => a.file),
         steps: jevResult.steps.length,
       })
@@ -333,14 +352,15 @@ export default class BrowserTaskCommand extends Command {
       for (const file of result.files) output.log(colors.dim(`  ${file}`))
     }
 
-    await writeReport(result.report, result.files, result.server)
+    const files = finalFiles(result.files)
+    await writeReport(result.report, files, result.server)
 
     return CommandResult.success({
       id: task.id,
       dir: task.dir,
       report: result.report,
       ...(result.signInFailure ? { signInFailure: result.signInFailure } : {}),
-      files: result.files,
+      files,
       attachments: attachments.map((a) => a.file),
       ...(result.cutShort ? { cutShort: result.cutShort } : {}),
       ...(result.stopped ? { stopped: true } : {}),

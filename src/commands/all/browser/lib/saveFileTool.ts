@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto'
-import { copyFile, mkdir, readFile, rename, stat, unlink } from 'node:fs/promises'
+import { constants } from 'node:fs'
+import { copyFile, link, mkdir, readFile, stat, unlink } from 'node:fs/promises'
 import * as path from 'node:path'
 import { jsonSchema, tool } from 'ai'
 import { resolveFilePath } from '#commands/lib/chat/fileTools.ts'
@@ -64,12 +65,13 @@ async function sameFile(from: string, to: string): Promise<boolean> {
 
 async function move(from: string, to: string): Promise<void> {
   try {
-    await rename(from, to)
+    // Reserve the destination atomically: rename would overwrite a file created after freeName checked.
+    await link(from, to)
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'EXDEV') throw error
-    await copyFile(from, to)
-    await unlink(from)
+    await copyFile(from, to, constants.COPYFILE_EXCL)
   }
+  await unlink(from)
 }
 
 export async function saveFile(input: SaveFileInput, options: SaveFileOptions): Promise<SaveFileOutput> {
@@ -94,9 +96,15 @@ export async function saveFile(input: SaveFileInput, options: SaveFileOptions): 
     await unlink(from)
     return { success: true, savedTo: to, alreadyThere: true }
   }
-  const savedTo = await freeName(to)
-  await move(from, savedTo)
-  return { success: true, savedTo }
+  for (;;) {
+    const savedTo = await freeName(to)
+    try {
+      await move(from, savedTo)
+      return { success: true, savedTo }
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
+    }
+  }
 }
 
 export function createSaveFileTool(options: SaveFileOptions): Record<string, unknown> {

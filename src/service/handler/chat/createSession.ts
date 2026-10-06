@@ -12,7 +12,7 @@ import * as path from 'node:path'
 import { generateText } from 'ai'
 import { gatherContext } from '#commands/all/ai/_lib/gatherContext.ts'
 import { harvestFileRefs, SessionBlessings } from '#commands/all/ai/chat/lib/approvals.ts'
-import { createFileTools } from '#commands/lib/chat/fileTools.ts'
+import { createChatFileTools } from '#commands/lib/chat/localFileTools.ts'
 import {
   createNotebookTools,
   createToolApprovalConfig,
@@ -419,7 +419,12 @@ export function createChatHost(config: typeof ConfigModule, env: Record<string, 
             }),
             ...webTools,
             // A browser has no shell directory, so a relative path resolves from home.
-            ...createFileTools({ today, attachmentsRoot: config.DIR_ATTACHMENTS, cwd: config.DIR_HOME, onAttachments }),
+            ...createChatFileTools({
+              today,
+              attachmentsRoot: config.DIR_ATTACHMENTS,
+              cwd: config.DIR_HOME,
+              onAttachments,
+            }),
             ...(await createNotebookTools(toolTasks, {
               sourceChat: sourceChatHref(id),
               calendarHistory: runs,

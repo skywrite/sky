@@ -78,3 +78,26 @@ test('save_file refuses files outside the task folder', async () => {
     await cleanup()
   }
 })
+
+test('concurrent saves to the same filename preserve both documents', async () => {
+  const { root, filesDir, cleanup } = await fixture()
+  try {
+    await writeFile(path.join(filesDir, 'second.pdf'), 'second document')
+    const to = path.join(root, 'collected', 'statement.pdf')
+    const results = await Promise.all([
+      saveFile({ path: 'Atlas-2025.pdf', to }, { filesDir, cwd: root }),
+      saveFile({ path: 'second.pdf', to }, { filesDir, cwd: root }),
+    ])
+    const contents = await Promise.all(
+      results.map((result) => (result.success ? readFile(result.savedTo, 'utf8') : 'failed')),
+    )
+    assert({
+      given: 'two different documents saved to the same name concurrently',
+      should: 'reserve distinct filenames without overwriting either document',
+      actual: contents.sort(),
+      expected: ['pdf bytes', 'second document'],
+    })
+  } finally {
+    await cleanup()
+  }
+})
