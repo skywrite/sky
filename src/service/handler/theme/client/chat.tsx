@@ -1326,22 +1326,37 @@ export type Chat = ReturnType<typeof useChat>
  */
 export function useFollow(ref: RefObject<HTMLDivElement | null>, deps: unknown[], active = true) {
   const lastHeight = useRef(0)
+  const lastScrollTop = useRef(0)
   const reading = useRef(false)
-  useEffect(() => {
+  const trackReading = useCallback(() => {
     const el = ref.current
     if (!el) return
-    const resumeAtEnd = () => {
-      if (el.scrollHeight - el.scrollTop - el.clientHeight <= 2) reading.current = false
-    }
-    el.addEventListener('scroll', resumeAtEnd, { passive: true })
-    return () => el.removeEventListener('scroll', resumeAtEnd)
+    if (el.scrollHeight - el.scrollTop - el.clientHeight <= 2) reading.current = false
+    else if (el.scrollTop < lastScrollTop.current) reading.current = true
+    lastScrollTop.current = el.scrollTop
   }, [ref])
   useEffect(() => {
     const el = ref.current
     if (!el) return
+    const pauseOnWheel = (event: WheelEvent) => {
+      if (event.deltaY < 0 && el.scrollTop > 0) reading.current = true
+    }
+    el.addEventListener('scroll', trackReading, { passive: true })
+    el.addEventListener('wheel', pauseOnWheel, { passive: true })
+    return () => {
+      el.removeEventListener('scroll', trackReading)
+      el.removeEventListener('wheel', pauseOnWheel)
+    }
+  }, [ref, trackReading])
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
     const follow = () => {
+      // Native scrolling can land before its scroll event or this streaming update.
+      trackReading()
       const wasNearBottom = lastHeight.current - el.scrollTop - el.clientHeight < 160
       if (active && !reading.current && wasNearBottom) el.scrollTop = el.scrollHeight
+      lastScrollTop.current = el.scrollTop
       lastHeight.current = el.scrollHeight
     }
     follow()

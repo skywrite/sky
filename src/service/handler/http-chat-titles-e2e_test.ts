@@ -142,7 +142,8 @@ test(
           await page.getByRole('button', { name: 'Send', exact: true }).click()
           await page.waitForFunction((question) => document.title === `sky:chat - ${question}`, CHILD_QUESTION)
           await page.getByRole('button', { name: '‹ Today', exact: true }).click()
-          await page.waitForFunction(() => document.title === 'sky')
+          await page.waitForFunction(() => document.title.startsWith('sky · '))
+          const destinationTitle = await page.title()
           childReply.resolve()
           await childFinished.promise
           // Wait for the delivered stream to be consumed after navigation.
@@ -151,7 +152,7 @@ test(
             given: 'a branch subject arrives after leaving the chat',
             should: 'leave the destination tab title intact',
             actual: await page.title(),
-            expected: 'sky',
+            expected: destinationTitle,
           })
           await page.goBack()
           await page.waitForFunction((subject) => document.title === `sky:chat - ${subject}`, CHILD_SUBJECT)
