@@ -135,6 +135,7 @@ export default class AiResearchTask extends Command {
       today: context.notebookNow.plainDateTime.plainDate,
       trace,
       contextTokens: budget.readingTokens,
+      question,
     })
 
     const model = resolveProfile(profile, { maxOutputTokens: REPLY_TOKENS })

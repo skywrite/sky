@@ -18,7 +18,12 @@ import type CommandService from '#commands/lib/core/CommandService.ts'
 import { DIR_PEOPLE, DIR_PEOPLE_OLD } from '#shared/config.ts'
 import { exists, readTextFile, walkToArray } from '#shared/fs/mod.ts'
 import ContextAssembler from '#shared/models/AI/ContextAssembler/mod.ts'
-import { createRecencyTypeScorer } from '#shared/models/AI/ContextAssembler/scorers.ts'
+import {
+  createChatScorer,
+  type DocProvenance,
+  extractTopicTerms,
+  tierForResultSize,
+} from '#shared/models/Chat/ChatContext/score.ts'
 import DomainCollection from '#shared/models/DomainCollection/mod.ts'
 import {
   expandMissingSubfields,
@@ -49,6 +54,8 @@ export interface ResearchToolsOptions {
   today: PlainDate
   trace: ResearchTrace
   contextTokens: number
+  /** The research question — its words rank a capped result the way the chat ranks its context. */
+  question?: string
   /** Injected store for an isolated notebook; production builds it lazily. */
   loadStore?: () => Promise<MarkdownStore>
 }
@@ -92,7 +99,7 @@ export async function prepareQuery(graphql: string): Promise<{ query: string; er
 }
 
 export function createResearchTools(opts: ResearchToolsOptions) {
-  const { tasks, baseDir, today, trace, contextTokens } = opts
+  const { tasks, baseDir, today, trace, contextTokens, question } = opts
   const maxChars = Math.floor(Math.min(QUERY_RESULT_MAX_TOKENS, contextTokens) * 4)
   const closed = { success: false, error: 'The parent chat has disabled notebook reading.' }
 
@@ -160,8 +167,20 @@ export function createResearchTools(opts: ResearchToolsOptions) {
           }
         }
         const collection = DomainCollection.fromDocuments(docs, await getStore(), { depth: 1 })
+        // A capped result keeps what matches the question, not what is newest:
+        // the chat's scorer, with the query's own selectivity as provenance.
+        const provenance = new Map<string, DocProvenance>(
+          docs.map((d) => [d.path, { tier: tierForResultSize(paths.length), hits: 1, lastHitTurn: 1 }]),
+        )
+        const { scorer } = createChatScorer({
+          today,
+          collection,
+          terms: extractTopicTerms(question, [query]),
+          provenance,
+          turn: 1,
+        })
         const assembler = ContextAssembler.from(collection, {
-          scorer: createRecencyTypeScorer(today),
+          scorer,
           maxTokens: Math.min(QUERY_RESULT_MAX_TOKENS, contextTokens),
         })
         const metadata = {

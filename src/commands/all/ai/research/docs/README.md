@@ -8,7 +8,9 @@ updated: 2026-10-05
 Research searches by the chat's own query rules: the shared
 [`query-rules` prompt](../../context/prompts/query-rules.prompt.md) renders
 into its system prompt with the entity block and the learned vocabulary (see
-[ai:context](../../context/docs/README.md#one-set-of-query-rules)).
+[ai:context](../../context/docs/README.md#one-set-of-query-rules)), and a
+capped `notebook_query` result is ranked by the chat's scorer — the question's
+words and the query's selectivity — rather than by date alone.
 
 Research starts a fresh mission with the balanced model. ChatSession supplies
 its standing system instructions and current reading budget through ToolHooks;
