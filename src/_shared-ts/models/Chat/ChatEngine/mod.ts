@@ -209,6 +209,8 @@ export type ToolApprovalConfig = Record<string, ToolApprovalPolicy>
 
 export interface RunTurnOptions {
   abortSignal?: AbortSignal
+  /** Finish the current tool, then return to the host without starting another action. */
+  shouldYield?: () => boolean
   /** Prompt-cache segments — each gets its own breakpoint (base system prompt, context prompt). */
   instructions: string[]
   notebook?: RequestNotebook
@@ -548,6 +550,22 @@ export default class ChatEngine {
         const prepareStep: PrepareStepFunction<ToolSet> = (step) => {
           const base = cacheTailStep(step)
           if (closingAt !== undefined) return base
+          if (opts.shouldYield?.()) {
+            closingAt = step.stepNumber
+            piecesAtClosing = roundPieces
+            return {
+              ...base,
+              toolChoice: 'none',
+              messages: [
+                ...base.messages,
+                {
+                  role: 'user' as const,
+                  content:
+                    'A new user instruction arrived while this response was running. Briefly report the last confirmed result, then finish so the host can deliver that instruction next. Do not make further tool calls in this response. The queued instruction will be delivered automatically; do not ask the user to repeat it.',
+                },
+              ],
+            }
+          }
           const reason = guard.exhausted ? 'repetition' : step.stepNumber >= this.maxSteps ? 'steps' : undefined
           if (!reason) return base
           closingAt = step.stepNumber

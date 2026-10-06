@@ -1,6 +1,8 @@
 import { rename, stat } from 'node:fs/promises'
 import * as path from 'node:path'
 import { jsonSchema, type Tool, tool } from 'ai'
+import { readSignInResult, signInFailed, signInProblem } from '../signIn/outcome.ts'
+import { withNativeSignIn } from '../task/host.ts'
 import type { CallOptions, McpContent, McpImageContent, McpToolDefinition, McpToolResult } from './client.ts'
 
 // The browser server's tools, as the model sees them. Each becomes an AI
@@ -55,6 +57,7 @@ export interface BrowserToolOutput {
 export interface BrowserToolsOptions {
   allow?: readonly string[]
   timeoutMs?: number
+  onSignInFailure?: (message: string) => void
   /** A task's own folder for downloads, when the driver puts them somewhere shared */
   downloads?: DownloadClaim
 }
@@ -176,22 +179,39 @@ export function browserToolsFrom(
 ): Record<string, unknown> {
   const allow = new Set(options.allow ?? BROWSER_TOOL_NAMES)
   const tools: Record<string, unknown> = {}
+  let signInFailure: string | undefined
   for (const definition of definitions) {
     if (!allow.has(definition.name)) continue
     tools[definition.name] = tool<Record<string, unknown>, BrowserToolOutput, Record<string, unknown>>({
       description: definition.description ?? definition.name,
       inputSchema: jsonSchema<Record<string, unknown>>(definition.inputSchema as Parameters<typeof jsonSchema>[0]),
       execute: async (input: Record<string, unknown>, { toolCallId, abortSignal }): Promise<BrowserToolOutput> => {
+        if (signInFailure) return { ok: false, text: signInFailure, images: 0 }
         try {
-          const result = await client.callTool(definition.name, input, {
-            timeoutMs: options.timeoutMs,
-            signal: abortSignal,
-          })
+          const call = () =>
+            client.callTool(definition.name, input, {
+              timeoutMs: options.timeoutMs,
+              signal: abortSignal,
+            })
+          const result = await (definition.name === 'sign_in' ? withNativeSignIn(call) : call())
           const split = splitResult(result)
+          if (definition.name === 'sign_in' && options.onSignInFailure) {
+            const signed = split.output.ok ? readSignInResult(split.output.text) : null
+            if (signInFailed(signed)) {
+              signInFailure = signInProblem(signed, signed?.origin ?? '')
+              options.onSignInFailure(signInFailure)
+              return { ok: false, text: signInFailure, images: 0 }
+            }
+          }
           remember(toolCallId, split.images)
           if (options.downloads) split.output.text = (await claimDownloads(split.output.text, options.downloads)).text
           return split.output
         } catch (error) {
+          if (definition.name === 'sign_in' && options.onSignInFailure) {
+            signInFailure = signInProblem(null, '')
+            options.onSignInFailure(signInFailure)
+            return { ok: false, text: signInFailure, images: 0 }
+          }
           return { ok: false, text: error instanceof Error ? error.message : String(error), images: 0 }
         }
       },

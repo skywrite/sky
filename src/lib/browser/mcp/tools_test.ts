@@ -2,6 +2,7 @@ import { mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import * as path from 'node:path'
 import { assert, test } from '#test'
+import { browserTaskHost } from '../task/host.ts'
 import type { McpToolDefinition, McpToolResult } from './client.ts'
 import { BROWSER_TOOL_NAMES, browserToolsFrom, claimDownloads, splitResult, toModelContent } from './tools.ts'
 
@@ -30,6 +31,71 @@ test('only the allowed server tools reach the model', () => {
       ['browser_run_code_unsafe', 'browser_evaluate', 'browser_close'].includes(n),
     ),
     expected: [],
+  })
+})
+
+test('a failed private sign-in reports to the chat host and stops subsequent browser moves', async () => {
+  const messages: string[] = []
+  const calls: string[] = []
+  let paused = false
+  const tools = browserToolsFrom(
+    {
+      callTool: async (name) => {
+        calls.push(name)
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify({
+                status: 'unavailable',
+                reason: 'provider_unavailable',
+                origin: 'https://atlas.example',
+                message: 'mock-secret-provider-error',
+              }),
+            },
+          ],
+          isError: false,
+        }
+      },
+    },
+    [{ name: 'sign_in', inputSchema: { type: 'object', properties: {} } }, ...definitions],
+    {
+      allow: ['sign_in', 'browser_snapshot'],
+      onSignInFailure: (message) => messages.push(message),
+    },
+  )
+  const execute = (name: string) =>
+    (tools[name] as { execute: (input: unknown, options: unknown) => Promise<unknown> }).execute(
+      {},
+      { toolCallId: name, messages: [] },
+    )
+  await browserTaskHost.run(
+    {
+      needsYou: async () => {
+        throw new Error('A failed sign-in must not wait for the person')
+      },
+      nativeSignIn: async (run) => run(),
+      signInFailed: async (message) => {
+        messages.push(message)
+        paused = true
+      },
+    },
+    async () => {
+      await execute('sign_in')
+      await execute('browser_snapshot')
+    },
+  )
+  assert({
+    given: '1Password failed and returned an untrusted native message',
+    should: 'pause the host, end further moves, and show only the fixed explanation and site',
+    actual: [
+      paused,
+      calls,
+      messages.length,
+      messages.every((m) => m.includes('https://atlas.example')),
+      JSON.stringify(messages).includes('mock-secret'),
+    ],
+    expected: [true, ['sign_in'], 2, true, false],
   })
 })
 

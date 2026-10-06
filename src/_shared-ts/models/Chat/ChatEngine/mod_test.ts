@@ -785,6 +785,89 @@ function mockStep(parts: unknown[], unified: 'tool-calls' | 'stop' | 'error') {
   }
 }
 
+test('queued instructions yield after the current tool and preserve its result', async () => {
+  let queued = false
+  let writes = 0
+  const model = new MockLanguageModelV3({
+    doStream: [
+      mockStep([{ type: 'tool-call', toolCallId: 'one-write', toolName: 'save_example', input: '{}' }], 'tool-calls'),
+      mockStep(
+        [
+          { type: 'text-start', id: 'closing' },
+          { type: 'text-delta', id: 'closing', delta: 'Saved the example. Reading your instruction next.' },
+          { type: 'text-end', id: 'closing' },
+        ],
+        'stop',
+      ),
+      mockStep([{ type: 'tool-call', toolCallId: 'next-write', toolName: 'save_example', input: '{}' }], 'tool-calls'),
+      mockStep(
+        [
+          { type: 'text-start', id: 'finished' },
+          { type: 'text-delta', id: 'finished', delta: 'The next request is saved.' },
+          { type: 'text-end', id: 'finished' },
+        ],
+        'stop',
+      ),
+    ],
+  })
+  const engine = new ChatEngine({
+    model: { model },
+    approvalHandler: async () => ({ approved: true, reason: 'Synthetic task.' }),
+  })
+  engine.appendUserMessage('Save the example files.')
+  const result = await engine.runTurn({
+    ...TURN_OPTS,
+    shouldYield: () => queued,
+    tools: {
+      save_example: {
+        inputSchema: jsonSchema({ type: 'object', properties: {} }),
+        execute: async () => {
+          writes++
+          queued = true
+          return { saved: true }
+        },
+      },
+    },
+  })
+  assert({
+    given: 'an instruction queued during a tool',
+    should: 'complete the tool once, disable further calls, and keep its evidence',
+    actual: [
+      writes,
+      model.doStreamCalls[1]?.toolChoice,
+      JSON.stringify(model.doStreamCalls[1]?.prompt).includes('Do not make further tool calls'),
+      JSON.stringify(engine.snapshotMessages()).includes('one-write'),
+      result.stopped ?? false,
+    ],
+    expected: [1, { type: 'none' }, true, true, false],
+  })
+  queued = false
+  engine.appendUserMessage('Save the next example.')
+  await engine.runTurn({
+    ...TURN_OPTS,
+    shouldYield: () => queued,
+    tools: {
+      save_example: {
+        inputSchema: jsonSchema({ type: 'object', properties: {} }),
+        execute: async () => {
+          writes++
+          return { saved: true }
+        },
+      },
+    },
+  })
+  assert({
+    given: 'the next user request after a yielded response',
+    should: 'execute tools again without carrying the previous response’s closing instruction',
+    actual: [
+      writes,
+      model.doStreamCalls[2]?.toolChoice?.type === 'none',
+      JSON.stringify(model.doStreamCalls[2]?.prompt).includes('Do not make further tool calls'),
+    ],
+    expected: [2, false, false],
+  })
+})
+
 test('the SDK executes the exact host-reviewed input after an edited approval', async () => {
   const executed: unknown[] = []
   const model = new MockLanguageModelV3({

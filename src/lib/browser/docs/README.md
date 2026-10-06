@@ -1,6 +1,6 @@
 ---
 created: 2026-09-25
-updated: 2026-10-02
+updated: 2026-10-05
 ---
 
 # Sky's browser
@@ -13,66 +13,229 @@ check them, upload files, fill forms. One command carries it today:
 sky browser:task "Log in to my brokerage and download my 2025 tax forms to ~/Desktop/Taxes/"
 ```
 
-The person watches the window. Mac tasks and tasks with a configured password
-manager use the private browser described below. Other platforms without saved
+The person watches the window. A saved existing-Brave connection takes precedence
+for ordinary browser tasks. Mac tasks and tasks with a configured password
+manager otherwise use the persistent Sky browser described below. Other platforms without saved
 password managers retain the existing shared browser. Unsupported sign-in steps and codes unavailable in the approved login pause for the
 person; Enter means "done, look again". Nothing on a web page is an instruction.
 
+## Existing Brave
+
+Settings → Browser automation can select the person's everyday Brave profile.
+The person installs Microsoft's Playwright extension in that profile and supplies
+its connection token. `existing/settings.ts` stores the token in the OS Keychain
+as `browser/playwright-extension`; `~/.sky/browser/connection.json` holds only
+machine-local browser/profile preferences. Reading Settings never reads the token
+or connects a browser. Saving the connection is an explicit grant to use existing
+website sessions for requested browser tasks, including across task restarts.
+
+The same task worker connects through Playwright's official extension relay.
+Each connection gets a tab group, and Sky creates its own page rather than
+navigating a pre-existing tab. Cleanup closes only its task pages and disconnects
+the relay; it never quits Brave, copies cookies, acquires the personal profile's
+lock, or edits that profile's preferences. A failed connection reports how to
+reconnect; it must not silently open a new, signed-out browser. Dedicated batch
+imports and explicit test profiles keep their separate browser lifecycle.
+
+Existing sessions require no credential lookup or per-site native approval. When
+a site needs fresh authentication, `sign_in` uses the same 1Password broker and
+run authorization described below. Unsupported forms, passkeys, and verification
+without a saved code still need the person in Brave. The model still
+cannot read credential fields, execute page scripts, export browser storage, or
+choose unrelated tabs. Uploads retain the exact staged-file and destination checks.
+
+The official extension allows a tab debugger, but rejects the browser-level
+attachment used by `newCDPSession`. `existing/connection.ts` contains the narrow
+adapter to Sky's pinned Playwright MCP factory and its already-connected tab
+protocol. Sky owns Fetch interception on that tab, including every redirect;
+Playwright routing must not also consume those interception events. Downloads
+are captured from response streams or generated download links into the task's
+folder. Never change the everyday profile's global download directory to make
+this work. Download capture is bounded at 100 MiB and failures are reported.
+Native downloads that bypass those hooks are tracked through the owned tab's
+`Page.downloadWillBegin` and completion events. `existing/nativeDownloads.ts`
+uses `downloadLocations.ts` to read the selected profile's download preference
+and include Desktop, Downloads, and the task folder. With no selected profile,
+all available profile download preferences are included. Locations are deduplicated
+after resolving aliases; an unavailable folder does not prevent checking the others.
+The tracker records each folder's initial files and copies only an unambiguous new completed file matching the announced
+name and byte count. It preserves browser originals and passes bytes through the
+same credential redaction checks. The extension forbids browser-level download
+commands, including `Page.setDownloadBehavior`; changing global preferences is
+not a workaround. Unknown save locations, ambiguous files and incomplete downloads
+remain explicit collection failures, with the checked folders and access failures.
+
+
+Changing the pinned Playwright version requires the opt-in
+`existing/connection-e2e_test.ts` against an unpacked official extension. It uses
+only temporary profiles and synthetic sessions/documents, verifying reconnect,
+PDF collection, upload restrictions, redirect blocking, and cancellation without
+quitting the original browser. The installed extension and Brave must remain
+compatible; this adapter deliberately fails instead of falling back to a new profile.
+
+Before sending input, the worker activates its own task tab. With the official
+extension, a background tab can time out on a click and then leave Chromium's
+wheel-event acknowledgment pending indefinitely; Playwright's wheel API has no
+action timeout. A browser-action deadline retires an unresponsive page, and
+`signIn/recovery.ts` reconnects inside the same credential worker. It preserves
+the run's native grant and downloaded files, reopens the last observed HTTPS
+origin/path, and requires a fresh inspection before any uncertain input is
+repeated. Only a read-only snapshot is retried automatically. Recovery is bounded
+to two connections per task; native authentication keeps its own approval deadline.
+The Jev runner rechecks the page after model reasoning and before sending input.
+A delayed SPA navigation or replacement of the controls invalidates the old
+decision before the input is sent.
+
 ## Credential-backed tasks
 
-`signIn/worker.ts` owns a disposable Playwright browser and the 1Password SDK in
-a separate process. The task communicates over inherited pipes using a small
-MCP-compatible allowlist. There is no HTTP/CDP listener, token file, persisted
-approval, or shared browser profile. Both the reasoning-model and Jev runners
+`signIn/worker.ts` owns the 1Password SDK in a separate process and connects
+either to existing Brave or to a Playwright browser it owns. **Sky's browser profile and website sign-ins persist across tasks,
+pauses, retries, and service restarts.** Task cleanup closes the browser and
+releases access; it must never delete the profile or treat cancellation as sign-out.
+This is a product requirement, also recorded in the root `AGENTS.md`.
+
+The task communicates over inherited pipes using a small MCP-compatible
+allowlist. There is no HTTP/CDP listener or persisted credential-use approval.
+Both the reasoning-model and Jev runners
 use this worker on macOS, including when no password manager is configured. The
 legacy shared driver is never attached to a credential-backed task, including
 after a crash. Existing legacy sessions are not imported or changed.
 
+`signIn/profile.ts` leases the stable, owner-only `~/.sky/browser/private-profile/`
+directory on this Mac, outside the notebook and its data directory. Concurrent workers wait for its current owner;
+they never fall back to a fresh profile or terminate an active task's browser.
+A dead worker's lease and orphaned Chromium process can be recovered while
+keeping the profile. The profile retains cookies, local storage, IndexedDB, and
+extension state. Chromium drops session-only cookies on exit even with a
+persistent profile, so the worker also checkpoints those cookies atomically in
+an owner-only file inside that profile after actions and before closing. They
+are restored inside the next worker, never returned through tools or placed in
+task downloads. An explicit website sign-out replaces the checkpoint with the
+remaining cookies; it must not resurrect the old session. Website expiry still
+applies. Keeping a signed-in session and authorizing credential use have separate
+lifecycles; a model cannot use a saved profile as permission to read a password.
+
 The only model-facing authentication operation is `sign_in({})`. It accepts no
 URL, account, field selector, credential reference, or approval flag. Trusted
-code captures the current top-level document and a single unambiguous login
-form. Two native macOS interactions authorize lookup for its exact HTTPS origin
-and selection/use of a matching login, including one saved verification code if
-needed. The native prompt is outside the Sky HTTP
-API and model tools; the caller cannot answer it through a request. Cancellation
-does not become a remembered grant. A second sign-in request on that origin in
-the same task hands off to the person rather than repeating prompts.
+code captures the current document and a single unambiguous login, including
+supported JavaScript controls in a visible same-website child frame. Ordinary tasks ask once, in a native macOS dialog, to use matching logins
+throughout the current run. `CredentialRun` retains that approval and the SDK
+clients inside the worker. A unique match permitted by the saved autofill scope is used automatically;
+multiple matches or incomplete lookup still require the native login chooser.
+Passwords are read freshly at each use, never cached for reuse. Dedicated imports
+retain their independent, per-use authorization.
 
-Lookup considers saved accounts and vault exclusions. Filling is deliberately
-stricter than provider discovery: an exact HTTPS origin including the port must
-appear on the saved Login item, and never-fill entries are excluded. After
+A live chat plan owns `PrivateBrowserRun`, an in-memory worker lease shared across
+its browser subtasks and queued turns. Subtasks run in order and each gets a fresh
+task tab, origin guard, OTP continuation, upload manifest, and download folder.
+Finishing a subtask closes its tab but retains the worker and its SDK clients.
+Finishing or pausing the plan, cancelling the turn, ending the chat, or losing the
+host process ends the worker and revokes the grant. A verification handoff keeps
+the run alive. Plan recovery contains neither the worker nor the approval; a
+resumed or separate chat must obtain its own grant. Host lifecycle messages are
+excluded from the tools exposed to the model.
+
+[1Password authorization](https://www.1password.dev/sdks/desktop-app-integrations)
+is per process and per account. Each connected account may need an initial desktop
+approval. Locking 1Password or ten minutes of SDK inactivity expires its grant;
+Sky does not keep it alive with background vault reads. Reusing the worker avoids
+creating a new per-process authorization request for every site.
+
+The native prompt is outside the Sky HTTP API and model tools; the caller cannot
+answer it through a request. Cancellation does not become a remembered grant.
+The service's `osascript` process must become an active AppKit accessory before
+showing a dialog; a bare AppleScript `activate` can leave the prompt behind Brave
+until it expires. A stopped sign-in retains its paused error and Resume control,
+rather than creating a browser handoff after the task tab has closed.
+After approval, the captured document and form must remain unchanged. A second
+sign-in request on that origin ends the attempt rather than repeatedly submitting
+a rejected login within the same browser subtask.
+
+Lookup considers saved accounts and vault exclusions. Filling honors the saved
+Login item's autofill scope: exact-host entries require that HTTPS host and port,
+website-wide entries permit the same registrable domain and port, and never-fill
+entries are excluded. `credentials/login.ts` uses the Public Suffix List including
+private suffixes so unrelated hosted tenants cannot match. It does not infer
+1Password's additional organization-to-organization aliases. After
 selection, code rechecks account/vault preferences, the concrete document and
 form action, then reads the login and revalidates its website from one native
 item revision. Values stay inside the worker and go directly to Playwright
-element handles. The model receives only `submitted`, `needs_user`, `declined`,
-or `unavailable`. Submission is not proof of authentication; the next snapshot
-must show progress. Another task cannot reuse the approval or browser context.
+element handles. Public landing pages with one visible HTTPS sign-in destination
+open that link before asking the person. If it changes the page without presenting
+a supported form, `navigated` tells the driver to inspect the new page, not to claim
+a password was submitted. The model otherwise receives `submitted`, `needs_user`, `declined`, or
+`unavailable`, with a fixed reason and public website origin for a failed attempt.
+Provider exceptions, account metadata, and credential values never enter that
+explanation. A cancelled request, failed lookup, missing permitted website match, or
+changed form ends the attempt and pauses a live chat plan with the reason. These
+failures must not turn into a generic manual handoff: there may be no usable
+sign-in left to complete. Both drivers stop and preserve the failure; pausing the run revokes its
+credential approval. `needs_user` without a failure reason
+still allows the person to complete a verification step in the browser.
+Submission is not proof of authentication; the next snapshot
+must show progress. Another task can reuse a saved website session. Credential approval carries only
+across subtasks of the same active run, while OTP continuations remain single-use
+and local to the current sign-in.
+
+Credential delivery and page navigation have separate boundaries. Ordinary tasks
+allow HTTPS GET/HEAD redirects with no request body or known login values, so an
+inline sign-in can reach an account on another origin. Every redirect hop still
+blocks credential-bearing URLs and cross-origin password/code bodies, including
+307 POST replays. Scripted password logins have one narrow exception: a direct
+XHR/fetch POST from the captured login origin to an HTTPS API on the same website
+and port, permitted by the freshly read Login item's autofill scope. Exact-host
+items do not grant other subdomains. This permission expires after two minutes
+and is revoked when either captured document navigates; it never permits a
+redirected credential body. Callback parameters join private redaction. This does not grant
+permission to fill on the destination: each new form requires its own permitted saved
+website match. Dedicated imports retain their pinned navigation policy, and file
+uploads retain their exact-origin restriction. A blocked top-level navigation is
+reported as a Sky restriction with its destination, not a password-manager outage
+or a generic request to finish sign-in on the browser's error page.
 
 This flow supports a visible username and current-password field in one
-top-level, same-origin POST form with one submit control. LinkedIn's JavaScript
+top-level, same-origin POST form with one submit control. `signIn/scriptedLogin.ts`
+also captures one clearly labelled username, password and sign-in button without
+an HTML form, or in a JavaScript form that omits action, method and target,
+in the main document or a visible direct child frame on the same
+HTTPS website. Both documents and the concrete controls remain bound across
+approval and filling; a captured HTML form cannot be replaced or acquire submission
+overrides. Its implicit native GET is suppressed before clicking so a broken
+JavaScript handler cannot put credentials into the URL. Explicit GET forms,
+hidden, ambiguous, registration and unrelated-frame controls remain
+unsupported. LinkedIn's JavaScript
 login has a separate, origin-and-path-bound adapter in `lib/linkedin/login.ts`:
 its current login screen has no HTML form. That adapter captures the concrete
 username, password and sign-in controls, revalidates them around native approval,
 and installs the same network guard before filling. Username-first pages and
-other unsupported forms use the native browser handoff below. After credential
-use, ordinary automation stays on the approved origin.
+other unsupported forms use the native browser handoff below. Credential
+delivery retains the captured origin even when ordinary navigation continues.
 The worker combines Playwright routing with a private Chromium Fetch interceptor:
 Playwright skips subsequent requests in an HTTP redirect chain, including 307
 redirects that preserve a credential POST. The interceptor rechecks every hop
-before sending it. It uses the existing browser pipe, never a CDP listener.
+and tracks Network request IDs because Fetch can omit its redirect marker
+when another Playwright interceptor is attached. It uses the existing browser pipe,
+never a CDP listener.
 Native approval currently requires macOS. Future workflows must extend the
 authorization boundary, not inject a login into the shared localhost driver.
 
 The worker offers ordinary navigation, accessible snapshots, control actions,
-and downloads. It offers no arbitrary JavaScript, console/network inspection,
-storage/cookie export, screenshots, file upload, tab switching, or approval RPC.
+and downloads. Upload tasks additionally receive an exact staged file manifest
+and HTTPS destination origin from the chat host. Only those files can enter a
+file input or chooser on that origin; after selection, the network guard keeps
+all requests and redirect hops on that origin. Sites requiring a separate upload
+origin are consequently blocked and must be reported as incomplete. Selecting
+files is not proof of upload: the driver must inspect the destination receipt.
+Uploads use the reasoning driver because Jev's action table has no file chooser
+operation. It offers no arbitrary JavaScript, console/network inspection,
+storage/cookie export, screenshots, tab switching, or approval RPC.
 Authentication pages stay hidden while password, username or one-time-code
 entry is visible, including manual entry. URL query/fragment parameters are
 omitted from page headers. Known login values and common encodings are redacted from text results;
 download bodies and names containing them are withheld. No console log, snapshot,
 video, or trace artifact is written by the worker. The task's `read_file` can read
 only its downloaded files, including after symlink resolution. Cancellation
-notifies and closes the worker; closing the task destroys its browser session.
+notifies and closes the worker; closing the task preserves its saved sign-ins.
 
 ### Apple Passwords, passkeys, and SSO
 
@@ -82,8 +245,8 @@ pages, enterprise SSO, passkeys, and external verification. Each additional HTTP
 identity-provider origin requires a native approval. A four-minute window permits
 one private popup and up to eight provider origins. The worker rejects model
 operations throughout the handoff. Completing a second native dialog resumes
-only on the original site; cancellation, expiry, or returning elsewhere destroys
-the browser. Completion means the person returned control, not proof of login.
+only on the original site; cancellation, expiry, or returning elsewhere closes
+that task's browser while retaining the profile. Completion means the person returned control, not proof of login.
 LinkedIn uses this same handoff before resuming its pinned profile import.
 
 The popup's first network request is aborted until its Chromium Fetch interceptor
@@ -98,10 +261,10 @@ not a sandbox for malicious scripts on a user-approved site.
 
 Apple Passwords uses Apple's official iCloud Passwords extension. Explicit setup
 downloads the package and verifies the CRX3 signature against Apple's extension ID;
-every launch rechecks it and extracts it into the task's temporary directory.
+every launch rechecks it and extracts it at a stable path in Sky's own profile.
 Neither the extension archive nor the preferences contain vault data. The browser
-profile and extension's task authorization are deleted at close, so Apple may ask
-to verify the connection again for a later task. Sky never copies the everyday
+profile and extension state survive task cleanup; Apple can still require fresh
+verification. Sky never copies the everyday
 browser's cookies, extension storage, or passwords.
 
 Passkeys use the website's actual WebAuthn request and the browser/macOS picker.
@@ -115,7 +278,7 @@ The bundled Playwright Chromium on macOS is ad-hoc signed and lacks Apple's
 An unentitled Swift helper or WKWebView cannot remove that restriction. Native
 setup therefore explicitly selects the installed **Brave (Chromium)** build,
 verifying its publisher signature and passkey entitlement before each launch.
-It uses an isolated profile, never the person's usual profile. The default browser
+It uses Sky's persistent profile, never the person's usual profile. The default browser
 is unchanged until this choice is saved. Ordinary code-signature verification
 accepts harmless Finder metadata which `--strict` can reject; it still checks
 signed code and the pinned publisher requirement. No browser is re-signed.
@@ -179,7 +342,8 @@ return from LinkedIn's feed to the selected profile, and capture its main conten
 Ordinary automation is confined to `https://www.linkedin.com`; an independently
 approved native SSO handoff may visit an identity provider and must return first. The import job closes
 the browser before sending evidence to its extraction model. Completion, failure,
-cancellation, or the five-minute deadline disposes the session. The previous
+cancellation, or the five-minute deadline closes that job's browser while retaining
+its saved sign-in for later jobs. The previous
 persistent LinkedIn profile is neither read nor modified. No configured password
 manager or a declined approval leaves manual sign-in available in the private
 window. Other codes, passkeys and unsupported login variants still require the person.
@@ -214,6 +378,7 @@ The legacy shared-browser path, retained on other platforms without a configured
 
 | Path | What |
 | --- | --- |
+| `~/.sky/browser/private-profile/` | The private worker's persistent browser profile, session-cookie checkpoint, and exclusive lease. Outside task files and the notebook; never deleted during task cleanup. |
 | `~/.sky/browser/` | Sky's browser: `profile/` (every sign-in persists here), `driver.json` (the running driver's pid and port), `driver.log`, `downloads/` (the driver's landing place; each task moves its own out at once). Local to the Mac, like the Google profiles. |
 | `~/.sky/browser/tasks/<date>_<HHMM>_<summary>/` | One folder per task |
 | `…/files/` | Downloads and screenshots; the only place `save_file` moves from |
@@ -230,7 +395,9 @@ accessibility snapshot instead of a page script:
 
 1. `table.ts` turns a snapshot with bounding boxes into a numbered table of
    the controls in view: role, label, value, the text beside it, a
-   dropdown's options. Frames come along; disabled and off-screen controls
+   dropdown's options. Private-worker snapshots include the actual viewport;
+   an existing browser window must not inherit the driver's default dimensions,
+   which can silently discard visible document controls. Frames come along; disabled and off-screen controls
    do not. A field that reads like a password or a code is marked secret.
 2. `questions.ts` asks Jev everything in one request: which operation
    (click, type, select, scroll, wait, back, ask the person, done, blocked),
@@ -240,8 +407,8 @@ accessibility snapshot instead of a page script:
 3. `decide.ts` checks the answers before anything runs: an option that was
    offered, probabilities that sum to one, a choice that is the most likely.
 4. `runJevTask.ts` makes the move through the same browser server, looks
-   again, and applies the gates in code: done at 0.85 (refused once while a
-   goal that asks for a download has no file), the person at 0.85 or when
+   again, and applies the gates in code: done at 0.85 (a download goal requires
+   a saved file; a repeated completion claim without one ends as blocked), the person at 0.85 or when
    Jev says so, a risky move asked first at 0.5, blocked after three unchanged
    pages, sixty steps at most. The person is asked once per page: after they
    continue, the loop looks again, waits three seconds and looks once more
@@ -318,8 +485,8 @@ objects.
 The server offers more tools than the model sees. Code execution in the
 page or the server, request bodies with their headers, and closing the
 browser stay out (`BROWSER_TOOL_NAMES` in `mcp/tools.ts`). `save_file`
-moves only files from the task folder. Passwords and codes are the person's
-to type; the prompt says so and `wait_for_person` is how Sky asks.
+moves only files from the task folder. Passwords and saved codes are filled only by the private sign-in broker; other
+authentication steps use `wait_for_person` for the person to complete in the browser.
 
 ## The batch helper beside it
 
@@ -350,8 +517,8 @@ there is one.
 Connecting the account under Settings → Browser automation, or saving the
 keychain entry, is the grant, so a 07:00 automation can use the login
 with no one at the machine. This is the owner's ruling of 2026-09-30 for
-a batch integration's own origin; the private worker's per-use native
-approval and exact-origin rule stay where they are, for tasks a model
+a batch integration's own origin; the private worker's run-scoped native
+approval and saved autofill scope remain separate, for tasks a model
 drives. The rest of the worker's boundary comes along. The site, its login
 page and its controls are named in the integration's code, never by a
 model. The values travel as sensitive values from the manager or the

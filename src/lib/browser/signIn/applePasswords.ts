@@ -104,7 +104,7 @@ export async function prepareAppleExtension(directory: string): Promise<string> 
   return archive
 }
 
-/** Reverify at every launch and unpack into this task's disposable directory. */
+/** Reverify at every launch. A stable extension path lets its authorization survive in Sky's browser profile. */
 export async function unpackAppleExtension(archive: string, directory: string): Promise<string> {
   const zip = verifyAppleExtension(await readFile(archive))
   const file = path.join(directory, 'apple-passwords.zip')

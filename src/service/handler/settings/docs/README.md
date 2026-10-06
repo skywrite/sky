@@ -1,6 +1,6 @@
 ---
 created: 2026-08-30
-updated: 2026-10-02
+updated: 2026-10-04
 ---
 
 # Settings — the web's settings section
@@ -207,15 +207,17 @@ The entire former `/settings/_api/credentials` API returns 410, including secret
 reads, OTP, inspection and generic mutations. Keeping a reveal endpoint while
 removing its UI would preserve the original exposure.
 
-Saved setup is **not authorization to use a credential or an authenticated browser**,
-with one exception: a batch integration with a dedicated browser profile may read,
+Password-manager setup is **not authorization to retrieve a credential**. An explicit
+existing-Brave connection grants use of that browser’s sessions for requested tasks;
+its token stays in Keychain, and Settings only returns connection preferences. See
+[existing Brave](../../../../lib/browser/docs/README.md#existing-brave). For password
+manager retrieval there is one exception: a batch integration with a dedicated browser profile may read,
 without a dialog, the Login item whose saved website names its own origin (see
 [stored logins](../../../../lib/browser/docs/README.md#stored-logins)).
 The page reports native approval availability for configured accounts on macOS;
 there is no API or setting that approves a task or drives the browser. The
 [private browser worker](../../../../lib/browser/docs/README.md#credential-backed-tasks)
-enforces independent native approval for each site's login and owns an isolated
-task session. Local-request checks alone are not that boundary. Provider access
+enforces independent native approval for each site's login and owns the task session. Local-request checks alone are not that boundary. Provider access
 during setup does not establish it either.
 
 `state/credentials/sources.json` remains at its existing path to preserve account

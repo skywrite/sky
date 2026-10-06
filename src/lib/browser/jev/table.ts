@@ -140,7 +140,9 @@ function inView(
 }
 
 /** The table for one snapshot: the server's text result, boxes included. */
-export function buildActionTable(snapshot: string, viewport: Viewport = DEFAULT_VIEWPORT): ActionTable {
+export function buildActionTable(snapshot: string, viewport?: Viewport): ActionTable {
+  const dimensions = snapshot.match(/^- Viewport: ([1-9]\d*)x([1-9]\d*)$/m)
+  viewport ??= dimensions ? { width: Number(dimensions[1]), height: Number(dimensions[2]) } : DEFAULT_VIEWPORT
   const url = snapshot.match(/^- Page URL: (\S+)/m)?.[1] ?? ''
   const title = snapshot.match(/^- Page Title: (.*)$/m)?.[1]?.trim() ?? ''
   const yaml = snapshot.match(/```yaml\n([\s\S]*?)\n```/)?.[1] ?? snapshot

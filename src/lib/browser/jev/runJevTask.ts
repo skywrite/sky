@@ -2,10 +2,13 @@ import { appendFile } from 'node:fs/promises'
 import { readdir } from 'node:fs/promises'
 import * as path from 'node:path'
 import type { ResolvedModel } from '#shared/ai/models.ts'
+import { instantNow } from '#universal/dates/nbdt/mod.ts'
 import { attachBrowserDriver, closeTab, firstUrl } from '../mcp/browserDriver.ts'
 import { type McpClient, McpError } from '../mcp/client.ts'
 import { claimDownloads, type DownloadClaim, splitResult, type ToolCaller } from '../mcp/tools.ts'
 import { launchPrivateBrowser } from '../signIn/launch.ts'
+import { readSignInResult, signInProblem } from '../signIn/outcome.ts'
+import { withNativeSignIn } from '../task/host.ts'
 import { type Advice, type AdviceTrigger, advise, type AdviseOptions, type AdviseResult } from './advisor.ts'
 import { type AskJev, decide, type Decision, JevAnswerError, nextBest } from './decide.ts'
 import type { Operation } from './questions.ts'
@@ -128,7 +131,7 @@ function stepLine(decision: Decision, text?: string): string {
 
 /** Plain words for the person when the page needs them. */
 function needsYouMessage(table: ActionTable, decision: Decision): string {
-  const page = table.title ? `"${table.title}"` : table.url
+  const page = table.title && table.title !== 'Sign-in needs you' ? `"${table.title}" (${table.url})` : table.url
   if (decision.risky >= RISKY_GATE && decision.target)
     return `Sky is about to use ${describeRow(decision.target)} on ${page}. That may move money, sign, send, or commit you. Continue to allow it, or stop.`
   return `The page ${page} needs you: sign in, enter any code, pass any check, or make the choice it asks for. Then continue.`
@@ -158,11 +161,14 @@ export async function runJevTask(options: JevTaskOptions): Promise<JevTaskResult
   const launch = async (): Promise<BrowserSession> => {
     if (options.launch) return options.launch()
     if (options.privateSignIn)
-      return launchPrivateBrowser({
-        objective: options.objective,
-        filesDir: options.filesDir,
-        headless: options.headless,
-      })
+      return launchPrivateBrowser(
+        {
+          objective: options.objective,
+          filesDir: options.filesDir,
+          headless: options.headless,
+        },
+        options.abortSignal,
+      )
     const { client, driver } = await attachBrowserDriver({ headless: options.headless, root: options.browserRoot })
     claim = { from: driver.downloadsDir, to: options.filesDir }
     return client
@@ -176,6 +182,7 @@ export async function runJevTask(options: JevTaskOptions): Promise<JevTaskResult
   const steps: JevStep[] = []
   const history: string[] = []
   const downloads: string[] = []
+  let downloadIssue: string | undefined
   const usage: JevUsage = {
     jevRequests: 0,
     jevInputTokens: 0,
@@ -203,7 +210,7 @@ export async function runJevTask(options: JevTaskOptions): Promise<JevTaskResult
 
   // The trace survives a killed run: one line per thing that happened.
   const trace = (record: Record<string, unknown>) =>
-    appendFile(traceFile, `${JSON.stringify({ at: new Date().toISOString(), ...record })}\n`).catch(() => undefined)
+    appendFile(traceFile, `${JSON.stringify({ at: instantNow(), ...record })}\n`).catch(() => undefined)
   const remember = (line: string) => {
     history.push(line)
     void trace({ kind: 'history', line })
@@ -244,9 +251,26 @@ export async function runJevTask(options: JevTaskOptions): Promise<JevTaskResult
       downloads.push(match[1])
       remember(`Downloaded file ${match[1]}`)
     }
+    for (const line of result.output.text.split('\n')) {
+      if (!line.startsWith('Browser download notice: ')) continue
+      const notice = line.slice('Browser download notice: '.length)
+      downloadIssue = notice
+      remember(notice)
+      say(notice)
+    }
     return result.output
   }
   const say = (line: string) => options.onStep?.(line)
+
+  // A model may think while a SPA replaces its controls or completes a delayed
+  // navigation. Never send an input using references from that older page.
+  const current = async (table: ActionTable): Promise<boolean> => {
+    const fresh = await call('browser_snapshot', { boxes: true })
+    if (fresh.ok && fingerprint(buildActionTable(fresh.text)) === fingerprint(table)) return true
+    remember('The page changed while choosing an action. Taking a fresh look before acting.')
+    say('The page changed — checking it again before acting')
+    return false
+  }
 
   const isBlank = (table: ActionTable): boolean =>
     table.url === 'about:blank' || table.url === '' || (table.rows.length === 0 && table.text.trim() === '')
@@ -338,6 +362,7 @@ export async function runJevTask(options: JevTaskOptions): Promise<JevTaskResult
     switch (action.kind) {
       case 'click': {
         const row = table.rows[action.index]
+        if (!(await current(table))) return { ok: false, text: 'The page changed before the click. No input was sent.' }
         operation = 'click'
         const before = downloads.length
         result = await call('browser_click', { element: row.name || row.role, target: row.ref })
@@ -393,6 +418,11 @@ export async function runJevTask(options: JevTaskOptions): Promise<JevTaskResult
         break
       }
       let snapshot = await call('browser_snapshot', { boxes: true })
+      if (downloadIssue) {
+        outcome = 'blocked'
+        reason = downloadIssue
+        break
+      }
       let table = buildActionTable(snapshot.text)
       // A blank view after a move means the task's tab is gone or another
       // tab is in front: a download popup that closed, most often. Find the
@@ -538,16 +568,18 @@ export async function runJevTask(options: JevTaskOptions): Promise<JevTaskResult
 
       // The gates, in code, before any move.
       if (decision.operation === 'done' || decision.done >= DONE_GATE) {
-        if (
-          expectsDownload &&
-          downloads.length === 0 &&
-          (await filesIn(options.filesDir)).length === 0 &&
-          doneRefused < 1
-        ) {
+        if (expectsDownload && (await filesIn(options.filesDir)).length === 0) {
+          if (doneRefused >= 1) {
+            outcome = 'blocked'
+            reason =
+              'No downloaded file was collected into the task folder. Check the browser’s actual download location before retrying.'
+            say(reason)
+            break
+          }
           doneRefused++
-          entry.note = 'Done refused: the goal asks for a download and none has arrived.'
-          remember('Not done yet: the goal asks for a download and no file has arrived.')
-          say('Jev: done — but nothing was downloaded yet, so looking again')
+          entry.note = 'Done refused: the goal asks for a download and no file is in the task folder.'
+          remember('Not done yet: no downloaded file is in the task folder; the browser may have saved it elsewhere.')
+          say('Jev: done — but no file is in the task folder yet, so looking again')
           continue
         }
         outcome = 'done'
@@ -564,14 +596,37 @@ export async function runJevTask(options: JevTaskOptions): Promise<JevTaskResult
       if (asks || risky) {
         if (asks && !risky && options.privateSignIn && !attemptedSignIn.has(table.url)) {
           attemptedSignIn.add(table.url)
-          say('Requesting permission to sign in with 1Password')
+          say(`Signing in at ${table.url}; approve this run or unlock 1Password if prompted`)
           const login = splitResult(
-            await browser.callTool('sign_in', {}, { signal: options.abortSignal, timeoutMs: 300000 }),
+            await withNativeSignIn(() =>
+              browser.callTool('sign_in', {}, { signal: options.abortSignal, timeoutMs: 300000 }),
+            ),
           )
-          if (login.output.ok && login.output.text === '{"status":"submitted"}') {
-            remember('The private browser submitted the approved login. Checking whether sign-in completed.')
+          const signed = login.output.ok ? readSignInResult(login.output.text) : null
+          void trace({
+            kind: 'sign_in',
+            status: signed?.status ?? 'invalid_result',
+            operation: signed?.operation,
+            reason: signed?.reason,
+          })
+          if (signed?.status === 'submitted' || signed?.status === 'navigated') {
+            remember(
+              signed.status === 'submitted'
+                ? 'The private browser submitted the approved login. Checking whether sign-in completed.'
+                : 'Opened the website’s sign-in link without using credentials. Check the new page and continue.',
+            )
             lastPrint = undefined
             continue
+          }
+          // A failed lookup is not a manual sign-in handoff. Return its fixed,
+          // non-secret reason to the parent instead of waiting forever for a page that cannot advance.
+          if (!signed || signed.status !== 'needs_user' || signed.reason) {
+            outcome = signed?.status === 'declined' ? 'stopped' : 'blocked'
+            reason = signInProblem(signed, table.url)
+            entry.note = reason
+            remember(reason)
+            say(reason)
+            break
           }
         }
         const message = needsYouMessage(table, decision)
@@ -618,6 +673,7 @@ export async function runJevTask(options: JevTaskOptions): Promise<JevTaskResult
       switch (decision.operation) {
         case 'click': {
           if (!target) break
+          if (!(await current(table))) continue
           const before = downloads.length
           result = await call('browser_click', { element: target.name || target.role, target: target.ref })
           if (downloads.length > before) downloadedFrom = rowKey(target)
@@ -664,6 +720,7 @@ export async function runJevTask(options: JevTaskOptions): Promise<JevTaskResult
           }
           text = written.text
           entry.text = text
+          if (!(await current(table))) continue
           result = await call('browser_type', {
             element: target.name || target.role,
             target: target.ref,
@@ -674,6 +731,7 @@ export async function runJevTask(options: JevTaskOptions): Promise<JevTaskResult
         }
         case 'select':
           if (!target || !decision.option) break
+          if (!(await current(table))) continue
           result = await call('browser_select_option', {
             element: target.name || target.role,
             target: target.ref,
@@ -719,7 +777,7 @@ export async function runJevTask(options: JevTaskOptions): Promise<JevTaskResult
     }
     if (outcome === 'out_of_steps') reason = `The task used all ${maxSteps} steps.`
   } finally {
-    // The private worker always destroys its context. Shared-driver tabs retain their earlier lifecycle.
+    // The private worker releases the browser while retaining its profile and sign-ins.
     if (outcome === 'done' && !options.browser && !options.privateSignIn) await closeTab(browser as McpClient)
     await browser.close()
   }
@@ -773,7 +831,11 @@ function report(input: {
       'Not checked: the Jev driver does not read files. Open them to confirm they are what you asked for.',
       '',
     )
-  } else if (/\bdownload/i.test(reason) || input.downloads.length > 0) lines.push('No files arrived.', '')
+  } else if (/\bdownload/i.test(reason) || input.downloads.length > 0)
+    lines.push(
+      'No files were collected into the task folder. This does not establish whether the browser saved them elsewhere.',
+      '',
+    )
   lines.push('What happened:', ...history.map((line) => `- ${line}`))
   return lines.join('\n')
 }

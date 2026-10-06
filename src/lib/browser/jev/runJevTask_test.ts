@@ -66,8 +66,8 @@ async function fixture() {
   return { root, filesDir, cleanup: () => rm(root, { recursive: true, force: true }) }
 }
 
-test('Jev requests private sign-in once and falls back to the person after refusal', async () => {
-  for (const status of ['submitted', 'declined'] as const) {
+test('Jev checks submitted logins and ends declined attempts instead of waiting on them', async () => {
+  for (const status of ['submitted', 'navigated', 'declined', 'needs_user'] as const) {
     const { root, filesDir, cleanup } = await fixture()
     const calls: string[] = []
     let signedIn = false
@@ -77,7 +77,7 @@ test('Jev requests private sign-in once and falls back to the person after refus
         calls.push(name)
         if (name === 'browser_snapshot') return text(signedIn ? DOCUMENTS : SIGN_IN)
         if (name === 'sign_in') {
-          signedIn = status === 'submitted'
+          signedIn = status === 'submitted' || status === 'navigated'
           return text(JSON.stringify({ status }))
         }
         return text('ok')
@@ -104,9 +104,60 @@ test('Jev requests private sign-in once and falls back to the person after refus
       })
       assert({
         given: `private sign-in ${status}`,
-        should: 'request only intent, check the next page after submission, and preserve manual fallback',
+        should: 'check the next page after submission and hand off only an available verification step',
         actual: [calls.filter((name) => name === 'sign_in').length, asks, result.outcome, calls.at(-1)],
-        expected: [1, status === 'submitted' ? 0 : 1, status === 'submitted' ? 'done' : 'stopped', 'close'],
+        expected: [1, status === 'needs_user' ? 1 : 0, signedIn ? 'done' : 'stopped', 'close'],
+      })
+    } finally {
+      await cleanup()
+    }
+  }
+})
+
+test('a failed sign-in returns its reason, closes the browser, and never waits for manual sign-in', async () => {
+  for (const reason of ['no_matching_login', 'page_changed', 'provider_unavailable', 'approval_unavailable']) {
+    const { root, filesDir, cleanup } = await fixture()
+    let asks = 0
+    let closed = false
+    const secret = 'mock-provider-error-password'
+    try {
+      const result = await runJevTask({
+        objective: 'Open https://atlas.example and view my account.',
+        taskDir: root,
+        filesDir,
+        privateSignIn: true,
+        browser: {
+          callTool: async (name) =>
+            text(
+              name === 'sign_in'
+                ? JSON.stringify({
+                    status: reason.endsWith('_unavailable') ? 'unavailable' : 'needs_user',
+                    reason,
+                    message: secret,
+                  })
+                : SIGN_IN,
+            ),
+          close: async () => {
+            closed = true
+          },
+        },
+        onNeedsYou: async () => {
+          asks++
+          return false
+        },
+        ask: async () => reply({ operation: pick('ask_person'), ...quiet, needs_person: { noul: 0.98 } }),
+      })
+      assert({
+        given: reason,
+        should: 'finish with a safe site-specific failure, not another handoff or a raw provider error',
+        actual: [
+          result.outcome,
+          asks,
+          closed,
+          result.reason?.includes('http://atlas.test'),
+          JSON.stringify(result).includes(secret),
+        ],
+        expected: ['blocked', 0, true, true, false],
       })
     } finally {
       await cleanup()
@@ -243,9 +294,84 @@ test('a page that stops changing ends the loop as blocked, and done is refused u
       actual: { outcome: result.outcome, refused: result.steps[0]?.note, reason: result.reason },
       expected: {
         outcome: 'blocked',
-        refused: 'Done refused: the goal asks for a download and none has arrived.',
+        refused: 'Done refused: the goal asks for a download and no file is in the task folder.',
         reason: `The page did not change after ${UNCHANGED_LIMIT} moves in a row.`,
       },
+    })
+  } finally {
+    await cleanup()
+  }
+})
+
+test('repeated completion claims cannot finish a download task without a saved file', async () => {
+  for (const reported of [false, true]) {
+    const { root, filesDir, cleanup } = await fixture()
+    try {
+      const result = await runJevTask({
+        objective: 'Download the tax document from https://atlas.example/documents',
+        taskDir: root,
+        filesDir,
+        onNeedsYou: async () => false,
+        browser: {
+          callTool: async (name) =>
+            text(
+              name === 'browser_snapshot'
+                ? DOCUMENTS
+                : reported
+                  ? 'Downloaded file Atlas-2025.pdf to "./Atlas-2025.pdf"'
+                  : 'ok',
+            ),
+          close: async () => {},
+        },
+        ask: async () => reply({ operation: pick('done'), ...quiet, done: { noul: 0.99 } }),
+      })
+      assert({
+        given: reported ? 'a download event without a saved file' : 'repeated model completion claims',
+        should: 'report the missing file instead of successful collection',
+        actual: [result.outcome, result.reason, result.files],
+        expected: [
+          'blocked',
+          'No downloaded file was collected into the task folder. Check the browser’s actual download location before retrying.',
+          [],
+        ],
+      })
+    } finally {
+      await cleanup()
+    }
+  }
+})
+
+test('a browser download collection failure preserves the real save location without repeating the download', async () => {
+  const { root, filesDir, cleanup } = await fixture()
+  const notice =
+    'Brave completed "Atlas.pdf", but Sky could not collect the file from "/mock/Desktop". Check Brave’s Downloads list.'
+  let decisions = 0
+  try {
+    const result = await runJevTask({
+      objective: 'Download the document from https://atlas.example/documents',
+      taskDir: root,
+      filesDir,
+      onNeedsYou: async () => false,
+      browser: {
+        callTool: async () => text(`${DOCUMENTS}\nBrowser download notice: ${notice}`),
+        close: async () => {},
+      },
+      ask: async () => {
+        decisions++
+        return reply({ operation: pick('done'), ...quiet, done: { noul: 0.99 } })
+      },
+    })
+    assert({
+      given: 'a completed native download whose file could not be collected',
+      should: 'carry its known location to the parent chat and stop before another download attempt',
+      actual: [
+        result.outcome,
+        result.reason,
+        result.report.includes(notice),
+        result.history.includes(notice),
+        decisions,
+      ],
+      expected: ['blocked', notice, true, true, 0],
     })
   } finally {
     await cleanup()
@@ -558,6 +684,66 @@ test('a browser server that dies mid-move is started again on the same page, onc
         secondClicked: 1,
         closedLast: 'second:close',
       },
+    })
+  } finally {
+    await cleanup()
+  }
+})
+
+test('a page that changes during adviser reasoning is inspected again before any click', async () => {
+  const { root, filesDir, cleanup } = await fixture()
+  const home = DOCUMENTS.replace('Documents', 'Home').replaceAll('e10', 'e99')
+  let page = home
+  let staleClicks = 0
+  let downloaded = false
+  const browser: BrowserSession = {
+    callTool: async (name, args) => {
+      if (name === 'browser_snapshot') return text(page)
+      if (name === 'browser_click') {
+        if (args.target === 'e99') staleClicks++
+        else {
+          downloaded = true
+          await writeFile(path.join(filesDir, 'Atlas-2025.pdf'), '%PDF')
+          return text('Downloaded file Atlas-2025.pdf to "./Atlas-2025.pdf"')
+        }
+      }
+      return text('ok')
+    },
+    close: async () => {},
+  }
+  try {
+    const result = await runJevTask({
+      objective: 'Download the tax document from https://atlas.example/documents',
+      taskDir: root,
+      filesDir,
+      browser,
+      onNeedsYou: async () => false,
+      advise: async () => {
+        const changed = page === home
+        page = DOCUMENTS
+        return {
+          ms: 0,
+          usage: { input: 0, output: 0 },
+          advice: {
+            subgoal: 'Download the tax form',
+            needsPerson: false,
+            reason: 'Documents are available',
+            ...(changed ? { action: { kind: 'click' as const, index: 1 } } : {}),
+          },
+        }
+      },
+      ask: async () =>
+        reply(
+          downloaded
+            ? { operation: pick('done', ['click']), click_target: pick('none'), ...quiet, done: { noul: 0.95 } }
+            : { operation: pick('click', ['done']), click_target: pick('t1', ['t0']), ...quiet },
+        ),
+    })
+    assert({
+      given: 'the site replaces its controls while the adviser is choosing a move',
+      should: 'discard the stale move and finish from a fresh page without asking the person',
+      actual: [staleClicks, downloaded, result.outcome],
+      expected: [0, true, 'done'],
     })
   } finally {
     await cleanup()

@@ -10,6 +10,8 @@ type SetupOperation =
   | 'native-browser'
   | 'bundled-browser'
   | 'autofill-settings'
+  | 'existing-browser'
+  | 'disconnect-browser'
 
 export async function browserSetupRequest<T>(operation: SetupOperation = '', body?: unknown): Promise<T> {
   const response = await fetch(`/settings/_api/browser-automation${operation ? `/${operation}` : ''}`, {

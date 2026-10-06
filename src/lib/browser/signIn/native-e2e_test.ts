@@ -4,6 +4,7 @@ import * as path from 'node:path'
 import type { Page } from 'playwright'
 import { assert, test } from '#test'
 import { SignInBroker } from './broker.ts'
+import { NativeApprovalError } from './nativeApproval.ts'
 import type { NativeAuthenticationApproval } from './nativeAuthentication.ts'
 import { PrivateBrowserSession } from './session.ts'
 
@@ -21,7 +22,8 @@ async function fixture(
     reached: string[]
   }) => Promise<void>,
 ) {
-  const dir = await mkdtemp(path.join(tmpdir(), 'sky-native-auth-test-'))
+  const root = await mkdtemp(path.join(tmpdir(), 'sky-native-auth-test-'))
+  const dir = path.join(root, 'files')
   let page!: Page
   const providers: string[] = []
   const reached: string[] = []
@@ -43,6 +45,7 @@ async function fixture(
   })
   const session = await PrivateBrowserSession.launch({
     filesDir: dir,
+    profileDir: path.join(root, 'profile'),
     broker,
     headless: true,
     nativeApproval: approval,
@@ -70,7 +73,7 @@ async function fixture(
     await work({ page, session, approval, dir, providers, reached })
   } finally {
     await session.close()
-    await rm(dir, { recursive: true, force: true })
+    await rm(root, { recursive: true, force: true })
   }
 }
 
@@ -129,14 +132,32 @@ test(
         actual: [
           injection.isError,
           text(signIn).includes('declined'),
+          text(signIn).includes('browser_not_approved'),
           f.reached.some((url) => url.includes('unapproved')),
           f.page.isClosed(),
           after.isError,
         ],
-        expected: [true, true, false, true, true],
+        expected: [true, true, true, false, true, true],
       })
     }),
 )
+
+test('native browser dialog failures close the session with an explicit error', { timeout: 30000 }, async () => {
+  for (const stage of ['begin', 'finish'] as const)
+    await fixture(async (f) => {
+      f.approval[stage] = async () => {
+        throw new NativeApprovalError()
+      }
+      const reply = await f.session.callTool('sign_in', {})
+      const signed = JSON.parse((reply.content[0] as { text: string }).text)
+      assert({
+        given: `a failed ${stage} dialog`,
+        should: 'report the dialog failure and prevent the model from inheriting the browser session',
+        actual: [signed.status, signed.reason, f.page.isClosed()],
+        expected: ['unavailable', 'approval_unavailable', true],
+      })
+    })
+})
 
 test('SSO can return to the original site after an automatic redirect before sign_in', { timeout: 30000 }, async () =>
   fixture(async (f) => {

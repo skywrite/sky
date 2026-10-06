@@ -329,3 +329,43 @@ test('failed native setup is sanitized and preserves saved configuration', async
       expected: ['unavailable', 'not valid JSON'],
     })
   }))
+
+test('existing browser setup saves an explicit connection grant without revealing it', async () =>
+  fixture(async (f, dir) => {
+    const app = createBrowserAutomationRoutes(f.host)
+    const token = 'mock_Atlas_browser_connection_token_12345678'
+    const invalid = await app.request('http://localhost/existing-browser', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ token, executablePath: '/tmp/arbitrary' }),
+    })
+    const saved = await app.request('http://localhost/existing-browser', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ token }),
+    })
+    const response = await saved.text()
+    const snapshot = await f.host.snapshot()
+    const disk = await readFile(path.join(dir, 'browser-connection.json'), 'utf8')
+    const disconnected = await app.request('http://localhost/disconnect-browser', {
+      method: 'POST',
+      headers,
+      body: '{}',
+    })
+    assert({
+      given: 'explicit Brave connection setup, metadata reads and disconnect',
+      should: 'pin browser selection, keep the token out of responses and preferences, and allow disconnect',
+      actual: [
+        invalid.status,
+        saved.status,
+        snapshot.existingBrowser,
+        response.includes(token),
+        JSON.stringify(snapshot).includes(token),
+        disk.includes(token),
+        disconnected.status,
+        (await f.host.snapshot()).existingBrowser,
+        f.counts.read,
+      ],
+      expected: [400, 200, { browser: 'brave' }, false, false, false, 200, undefined, 0],
+    })
+  }))

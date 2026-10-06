@@ -1,6 +1,7 @@
 import { Hono } from 'hono'
 import { bodyLimit } from 'hono/body-limit'
 import { z } from 'zod'
+import { ExistingBrowserError } from '#lib/browser/existing/settings.ts'
 import { credentialError, CredentialError } from '#lib/credentials/errors.ts'
 import { localRequestsOnly } from '../../localRequest.ts'
 import type { BrowserAutomationHost } from './host.ts'
@@ -15,6 +16,16 @@ const schemas = {
   'native-browser': z.object({ browser: z.literal('brave'), applePasswords: z.boolean() }).strict(),
   'bundled-browser': z.object({}).strict(),
   'autofill-settings': z.object({}).strict(),
+  'existing-browser': z
+    .object({
+      token: z.string().min(1).max(300),
+      profileDirName: z
+        .string()
+        .regex(/^(Default|Profile \d+)$/)
+        .optional(),
+    })
+    .strict(),
+  'disconnect-browser': z.object({}).strict(),
 }
 
 /** Setup metadata only. Credential use and browser execution must never be routed through this API. */
@@ -36,6 +47,7 @@ export function createBrowserAutomationRoutes(host: BrowserAutomationHost): Hono
     await next()
   })
   app.onError((error, c) => {
+    if (error instanceof ExistingBrowserError) return c.json({ message: error.message }, 400)
     const failure = credentialError(error)
     const status =
       failure.code === 'invalid-input'
@@ -53,6 +65,14 @@ export function createBrowserAutomationRoutes(host: BrowserAutomationHost): Hono
       const raw: unknown = await c.req.json().catch(() => null)
       if (!schema.safeParse(raw).success) throw new CredentialError('invalid-input')
       switch (name) {
+        case 'existing-browser': {
+          const input = schemas['existing-browser'].parse(raw)
+          await host.connectExistingBrowser(input.token, input.profileDirName)
+          break
+        }
+        case 'disconnect-browser':
+          await host.disconnectExistingBrowser()
+          break
         case 'connect':
           await host.connect()
           break

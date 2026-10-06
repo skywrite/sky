@@ -4,6 +4,7 @@ import type { BrowserAutomationData } from '../../settings/browserAutomation/typ
 import { Block, Row } from './settingsBlocks.tsx'
 import { browserSetupFailure, browserSetupRequest } from './settingsBrowserAutomationApi.ts'
 import { CredentialProviderIcon } from './settingsCredentialIcons.tsx'
+import { ExistingBrowserSettings } from './settingsExistingBrowser.tsx'
 import { ConnectPasswordManager, PasswordManagers } from './settingsPasswordManagers.tsx'
 import { settingsHref } from './settingsRoutes.ts'
 import './settingsBrowserAutomation.css'
@@ -70,19 +71,40 @@ export function BrowserAutomationMain({
           {!data && loading && <p role="status">Loading browser settings…</p>}
           {data && (
             <>
+              <ExistingBrowserSettings data={data} reload={reload} />
               <Block head="Sign-in">
                 <Row
-                  label={data.signIn === 'approval' ? 'Approve each sign-in' : 'Sign in with your help'}
+                  label={
+                    data.existingBrowser
+                      ? 'Reuse your Brave sign-ins'
+                      : data.signIn === 'approval'
+                        ? 'Approve each sign-in'
+                        : 'Sign in with your help'
+                  }
                   sub={
-                    data.signIn === 'approval'
-                      ? 'Approve each website in a native dialog. Passwords, passkeys, and verification codes stay in the private browser.'
-                      : 'Sky pauses when a website needs a password, passkey, or verification code. Complete the step in the browser, then continue.'
+                    data.existingBrowser
+                      ? 'Already signed-in websites stay available. If a site needs a fresh login or verification, complete it in Brave and continue the task.'
+                      : data.signIn === 'approval'
+                        ? 'Approve each website in a native dialog. Passwords, passkeys, and verification codes stay in the private browser.'
+                        : 'Sky pauses when a website needs a password, passkey, or verification code. Complete the step in the browser, then continue.'
                   }
                   last
                 >
-                  <span className="sky-set-off">{data.signIn === 'approval' ? 'Approval required' : 'Manual'}</span>
+                  <span className="sky-set-off">
+                    {data.existingBrowser
+                      ? 'Existing sessions'
+                      : data.signIn === 'approval'
+                        ? 'Approval required'
+                        : 'Manual'}
+                  </span>
                 </Row>
               </Block>
+              {data.existingBrowser && (
+                <p className="sky-set-note">
+                  The password-manager and passkey setup below applies to Sky’s separate browser. Your connected Brave
+                  uses its existing extensions and sign-ins.
+                </p>
+              )}
               <section className="sky-block sky-browser-managers" aria-label="Password managers">
                 <div className="sky-block-head">Password managers</div>
                 <div className="sky-block-pad">
@@ -135,7 +157,7 @@ export function BrowserAutomationMain({
                   label={data.nativeBrowser ? 'Native Mac passkeys' : 'Enable native Mac passkeys'}
                   sub={
                     data.nativeBrowser
-                      ? 'Brave (Chromium) · a separate, temporary profile for each task. Apple Passwords and 1Password use the macOS passkey picker.'
+                      ? 'Brave (Chromium) · Sky remembers your website sign-ins between tasks. Apple Passwords and 1Password use the macOS passkey picker.'
                       : 'Use Apple Passwords or 1Password through macOS AutoFill. Choose a browser that supports Mac passkeys.'
                   }
                   last
@@ -193,8 +215,8 @@ export function BrowserAutomationMain({
         centered
       >
         <p>
-          Use Brave (Chromium) for native Mac sign-in. Each Sky task gets a temporary profile; your everyday browser
-          stays separate.
+          Use Brave (Chromium) for native Mac sign-in. Sky keeps its own browser profile and remembers website sign-ins
+          across tasks and restarts. Your everyday browser stays separate.
         </p>
         <p>
           Apple Passwords fills logins through Apple’s extension. Passkeys use the macOS picker, including 1Password

@@ -7,6 +7,7 @@ import { attachBrowserDriver, closeTab } from '../mcp/browserDriver.ts'
 import { BROWSER_TOOL_NAMES, browserToolsFrom } from '../mcp/tools.ts'
 import { launchPrivateBrowser } from '../signIn/launch.ts'
 import { browserTaskInstructions } from './prompt.ts'
+import type { BrowserUploads } from './uploads.ts'
 
 // One browser task: Sky's chat engine drives the browser server's tools
 // toward a plain-language objective. The host — a terminal today — supplies
@@ -19,6 +20,7 @@ const DEFAULT_MAX_STEPS = 80
 
 export interface BrowserTaskOptions {
   objective: string
+  uploads?: BrowserUploads
   model: ResolvedModel
   /** The task's folder; the browser server logs here and files land in files/ */
   taskDir: string
@@ -38,11 +40,12 @@ export interface BrowserTaskOptions {
   headless?: boolean
   /** Where Sky's browser lives; the default is ~/.sky/browser */
   browserRoot?: string
-  /** Configured password managers use a separate, disposable browser with native per-use approval. */
+  /** Configured password managers use a private worker with a persistent Sky browser profile. */
   privateSignIn?: boolean
 }
 
 export interface BrowserTaskResult {
+  signInFailure?: string
   /** The model's closing words: what it did, what it saved, what is missing */
   report: string
   cutShort?: TurnCut
@@ -57,24 +60,33 @@ export interface BrowserTaskResult {
 }
 
 export async function runBrowserTask(options: BrowserTaskOptions): Promise<BrowserTaskResult> {
-  const connection = options.privateSignIn
+  const privateBrowser = !!(options.privateSignIn || options.uploads)
+  const connection = privateBrowser
     ? {
-        client: await launchPrivateBrowser({
-          objective: options.objective,
-          filesDir: options.filesDir,
-          headless: options.headless,
-        }),
+        client: await launchPrivateBrowser(
+          {
+            objective: options.objective,
+            filesDir: options.filesDir,
+            headless: options.headless,
+            uploads: options.uploads,
+          },
+          options.abortSignal,
+        ),
         driver: undefined,
       }
     : await attachBrowserDriver({ headless: options.headless, root: options.browserRoot })
   const { client, driver } = connection
   let finished = false
+  let signInFailure: string | undefined
   try {
     const definitions = await client.listTools()
     const browserTools = browserToolsFrom(client, definitions, {
       downloads: driver ? { from: driver.downloadsDir, to: options.filesDir } : undefined,
-      allow: options.privateSignIn ? [...BROWSER_TOOL_NAMES, 'sign_in'] : BROWSER_TOOL_NAMES,
-      timeoutMs: options.privateSignIn ? 300000 : undefined,
+      allow: privateBrowser ? [...BROWSER_TOOL_NAMES, 'sign_in'] : BROWSER_TOOL_NAMES,
+      timeoutMs: privateBrowser ? 300000 : undefined,
+      onSignInFailure: (message) => {
+        signInFailure = message
+      },
     })
     const waitForPerson = tool({
       description:
@@ -85,6 +97,7 @@ export async function runBrowserTask(options: BrowserTaskOptions): Promise<Brows
         required: ['message'],
       }),
       execute: async ({ message }) => {
+        if (signInFailure) return { continued: false, note: signInFailure }
         const continued = await options.onNeedsYou(message)
         return continued
           ? { continued: true, note: 'The person says they are done. Take a fresh snapshot before acting.' }
@@ -102,11 +115,13 @@ export async function runBrowserTask(options: BrowserTaskOptions): Promise<Brows
     engine.appendUserMessage(options.objective, options.when)
     const result = await engine.runTurn({
       abortSignal: options.abortSignal,
+      shouldYield: () => !!signInFailure,
       instructions: [
         browserTaskInstructions({
           objective: options.objective,
           filesDir: options.filesDir,
-          privateSignIn: options.privateSignIn,
+          privateSignIn: privateBrowser,
+          uploads: options.uploads,
         }),
       ],
       tools,
@@ -117,9 +132,10 @@ export async function runBrowserTask(options: BrowserTaskOptions): Promise<Brows
       .filter((name) => !/^console-.*\.log$/.test(name))
       .sort()
       .map((name) => path.join(options.filesDir, name))
-    finished = !result.stopped && !result.cutShort
+    finished = !result.stopped && !result.cutShort && !signInFailure
     return {
-      report: result.text,
+      report: signInFailure ?? result.text,
+      signInFailure,
       cutShort: result.cutShort,
       stopped: result.stopped,
       toolRecords: result.toolRecords,
@@ -129,8 +145,8 @@ export async function runBrowserTask(options: BrowserTaskOptions): Promise<Brows
       toolNames: Object.keys(tools),
     }
   } finally {
-    // The private worker always destroys its context. Shared-driver tabs retain their earlier lifecycle.
-    if (finished && !options.privateSignIn) await closeTab(client)
+    // The private worker releases the browser while retaining its profile and sign-ins.
+    if (finished && !privateBrowser) await closeTab(client)
     await client.close()
   }
 }

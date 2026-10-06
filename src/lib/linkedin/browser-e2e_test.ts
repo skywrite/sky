@@ -90,6 +90,7 @@ async function fixture(
   let page!: Page
   const browser = await PrivateBrowserSession.launch({
     filesDir: path.join(dir, 'files'),
+    profileDir: path.join(dir, 'profile'),
     linkedInProfile: PROFILE,
     headless: true,
     broker: new SignInBroker(options),
@@ -348,7 +349,8 @@ test('the real private worker exposes only the pinned LinkedIn import operation'
   const browser = await launchPrivateBrowser({
     objective: 'Import an example profile',
     linkedInProfile: PROFILE,
-    filesDir: dir,
+    filesDir: path.join(dir, 'files'),
+    profileDir: path.join(dir, 'profile'),
     headless: true,
   })
   try {

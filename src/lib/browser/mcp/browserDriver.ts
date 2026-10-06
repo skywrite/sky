@@ -55,11 +55,11 @@ interface DriverRecord {
   startedAt: string
 }
 
-const URL_IN_TEXT = /https?:\/\/[^\s"'<>)\]]+/
+const URL_IN_TEXT = /https?:\/\/[^\s"'`<>)\]]+/
 
 /** The first web address in a task, if it names one. */
 export function firstUrl(text: string): string | undefined {
-  return text.match(URL_IN_TEXT)?.[0]
+  return text.match(URL_IN_TEXT)?.[0].replace(/[.,;:!?]+$/, '')
 }
 
 const freePort = (): Promise<number> =>
@@ -230,6 +230,6 @@ export async function attachBrowserDriver(
 }
 
 /** The task's tab, closed; the window stays. */
-export async function closeTab(client: McpClient): Promise<void> {
+export async function closeTab(client: Pick<McpClient, 'callTool'>): Promise<void> {
   await client.callTool('browser_tabs', { action: 'close' }).catch(() => undefined)
 }

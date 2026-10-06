@@ -158,6 +158,7 @@ When a change meets the threshold above, use its existing topic home and the sma
 - Sky's strongest "aha" moment is still being discovered. Treat potential paths, such as connecting email or following Slack channels, as hypotheses to learn from.
 - For the universal inbox, the intended outcome is for Sky to respond on the user's behalf to most inbound messages and requests, preserving the user's decision capacity for their highest-value work as a CEO. Design around delegated resolution and meaningful human decisions.
 - Preserve clear descriptions of each situation and access to prior/source messages. This context should make the decisions that reach the user easier to understand and resolve.
+- **Browser sign-ins must persist.** Respect the person's selected browser connection: when their existing Brave is connected, use its live sessions through the Playwright extension and disconnect without quitting Brave. Otherwise use Sky's persistent browser profile across tasks, pauses, retries, and service restarts. Do not create a disposable profile for each run or delete login state during task cleanup. Task authorization and saved browser sessions have separate lifecycles. Temporary profiles belong in isolated tests or an explicitly requested temporary session. See [browser session ownership](src/lib/browser/docs/README.md#credential-backed-tasks).
 
 ### Browser Page Titles
 

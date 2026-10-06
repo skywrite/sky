@@ -307,6 +307,32 @@ test(
       await account.getByRole('button', { name: 'Disconnect account', exact: true }).click()
       await account.waitFor({ state: 'hidden' })
       await closeDialog()
+      const browserToken = 'mock_Atlas_extension_connection_token_12345'
+      await page.getByRole('button', { name: 'Connect Brave', exact: true }).click()
+      await page.getByLabel('Connection token', { exact: true }).fill(browserToken)
+      await page.getByRole('dialog').getByRole('button', { name: 'Use my Brave browser', exact: true }).click()
+      await page.getByRole('dialog').waitFor({ state: 'hidden' })
+      await page.getByText('Existing sessions', { exact: true }).waitFor()
+      await page.reload()
+      await page.getByRole('button', { name: 'Manage browser', exact: true }).waitFor()
+      await page.setViewportSize({ width: 390, height: 844 })
+      await page.getByRole('button', { name: 'Manage browser', exact: true }).click()
+      assert({
+        given: 'an explicitly connected everyday browser after reload on mobile',
+        should: 'show the saved choice without returning the token, keep the screen title, and fit the viewport',
+        actual: [
+          (await fixture.host.snapshot()).existingBrowser,
+          await page.getByLabel('New connection token', { exact: true }).inputValue(),
+          apiBodies.some((body) => body.includes(browserToken)),
+          await page.title(),
+          await page.evaluate(() => document.documentElement.scrollWidth > innerWidth),
+        ],
+        expected: [{ browser: 'brave' }, '', false, 'sky · Browser automation', false],
+      })
+      await capture('browser-automation-existing-brave-mobile')
+      await page.getByRole('button', { name: 'Use Sky’s separate browser', exact: true }).click()
+      await page.getByRole('dialog').waitFor({ state: 'hidden' })
+      await page.getByRole('button', { name: 'Connect Brave', exact: true }).waitFor()
       const retired = await page.request.post(`${base}/settings/_api/credentials/read`, {
         data: { ref: { connectionId: SAMPLE_ID, containerId: 'work', itemId: 'atlas' }, fields: [{ id: 'password' }] },
       })

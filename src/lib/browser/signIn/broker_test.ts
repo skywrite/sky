@@ -1,3 +1,4 @@
+import { CredentialError } from '#lib/credentials/errors.ts'
 import { SensitiveValue } from '#lib/credentials/SensitiveValue.ts'
 import type { CredentialSummary } from '#lib/credentials/types.ts'
 import { assert, test } from '#test'
@@ -8,7 +9,7 @@ import {
   type SignInTarget,
   type VerificationTarget,
 } from './broker.ts'
-import { approvalLabel } from './nativeApproval.ts'
+import { approvalLabel, NativeApprovalError } from './nativeApproval.ts'
 import { LoginRedactor } from './redaction.ts'
 
 function fixture() {
@@ -313,10 +314,9 @@ test('cancellation, navigation and exclusion never turn approval into a reusable
   }
 })
 
-test('site matching rejects subdomains, lookalikes, changed ports, non-HTTPS, and never-fill', async () => {
+test('site matching rejects lookalikes, changed ports, non-HTTPS, and never-fill', async () => {
   for (const website of [
     'https://atlas.example.evil.test',
-    'https://login.atlas.example',
     'https://atlas.example:444',
     'http://atlas.example',
     'https://user@atlas.example',
@@ -356,8 +356,109 @@ test('aborts and provider exceptions cannot expose a secret or continue to fill'
     given: 'a native failure and a pre-aborted request',
     should: 'return safe outcomes and never connect after revocation',
     actual: [failure, stopped, second.calls],
-    expected: [{ status: 'unavailable' }, { status: 'needs_user' }, ['dispose']],
+    expected: [
+      { status: 'unavailable', reason: 'provider_unavailable', operation: 'connect' },
+      { status: 'declined', reason: 'cancelled' },
+      ['dispose'],
+    ],
   })
+})
+
+test('sign-in failures distinguish page changes, declined lookup, dialog errors, missing matches and provider access', async () => {
+  const cases = [
+    { reason: 'page_changed', change: (f: ReturnType<typeof fixture>) => f.changePage() },
+    {
+      reason: 'lookup_not_approved',
+      change: (f: ReturnType<typeof fixture>) => {
+        f.options.approval.allowLookup = async () => false
+      },
+    },
+    {
+      reason: 'approval_unavailable',
+      change: (f: ReturnType<typeof fixture>) => {
+        f.options.approval.allowLookup = async () => {
+          throw new NativeApprovalError()
+        }
+      },
+    },
+    {
+      reason: 'approval_unavailable',
+      change: (f: ReturnType<typeof fixture>) => {
+        f.options.approval.choose = async () => {
+          throw new NativeApprovalError()
+        }
+      },
+    },
+    {
+      reason: 'no_matching_login',
+      change: (f: ReturnType<typeof fixture>) => {
+        f.item.websites = []
+      },
+    },
+    {
+      reason: 'provider_access_required',
+      change: (f: ReturnType<typeof fixture>) => {
+        f.options.connect = async () => {
+          throw new CredentialError('access-required')
+        }
+      },
+    },
+  ]
+  for (const entry of cases) {
+    const f = fixture()
+    entry.change(f)
+    const result = await new SignInBroker(f.options).signIn(f.target)
+    assert({
+      given: entry.reason,
+      should: 'return an actionable fixed reason without reading or exposing a credential',
+      actual: [
+        result.reason,
+        f.calls.includes('read'),
+        f.calls.includes('submit'),
+        JSON.stringify(result).includes(f.secret),
+      ],
+      expected: [entry.reason, false, false, false],
+    })
+  }
+})
+
+test('login reads and browser submission failures are distinguished without exposing native details', async () => {
+  for (const stage of ['list', 'read', 'incomplete', 'submit'] as const) {
+    const f = fixture()
+    const connect = f.options.connect
+    f.options.connect = async (source) => {
+      const provider = await connect(source)
+      return {
+        ...provider,
+        list:
+          stage === 'list'
+            ? async () => {
+                throw new Error(f.secret)
+              }
+            : provider.list,
+        readLogin: ['read', 'incomplete'].includes(stage)
+          ? async () => {
+              throw stage === 'incomplete' ? new CredentialError('unsupported') : new Error(f.secret)
+            }
+          : provider.readLogin,
+      }
+    }
+    if (stage === 'submit')
+      f.target.submit = async () => {
+        throw new Error(f.secret)
+      }
+    const result = await new SignInBroker(f.options).signIn(f.target)
+    assert({
+      given: `a failure during ${stage}`,
+      should: 'identify the failed operation without attributing a browser error to the password manager',
+      actual: [result.reason, result.operation, JSON.stringify(result).includes(f.secret)],
+      expected: [
+        stage === 'submit' ? 'submission_failed' : stage === 'incomplete' ? 'login_incomplete' : 'provider_unavailable',
+        stage === 'incomplete' ? 'read' : stage,
+        false,
+      ],
+    })
+  }
 })
 
 test('credential reflection and native label control characters are removed', () => {

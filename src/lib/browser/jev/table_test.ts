@@ -105,6 +105,22 @@ test('the table lists the controls in view with their kind, value, and nearby te
   })
 })
 
+test('viewport metadata keeps wide-window controls and excludes controls below a small window', () => {
+  const wide = '- Viewport: 1920x1200\n- button "Documents" [ref=e1] [box=1550,1000,140,40]'
+  const small = SNAPSHOT.replace('### Page', '### Page\n- Viewport: 390x160')
+  assert({
+    given: 'snapshots from windows with different dimensions',
+    should: 'use the measured viewport while retaining an explicit caller override',
+    actual: [
+      buildActionTable(wide).rows.map((row) => row.name),
+      buildActionTable(wide, { width: 1280, height: 900 }).rows.length,
+      buildActionTable(small).rows.map((row) => row.name),
+      buildActionTable(small).below,
+    ],
+    expected: [['Documents'], 0, ['Search', 'Username', 'Inside frame'], 2],
+  })
+})
+
 test('rows describe themselves for Jev and pages fingerprint by their content', () => {
   const table = buildActionTable(SNAPSHOT)
   assert({

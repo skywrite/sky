@@ -3,14 +3,17 @@ import * as path from 'node:path'
 import process from 'node:process'
 import colors from 'picocolors'
 import { createFileTools, READ_FILE_TOOL } from '#commands/lib/chat/fileTools.ts'
-import { Arg, Command, CommandResult } from '#commands/mod.ts'
+import { Arg, Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { DIR_ATTACHMENTS, DIR_STATE } from '#config'
+import { ExistingBrowserSettingsStore } from '#lib/browser/existing/settings.ts'
 import { askWith } from '#lib/browser/jev/decide.ts'
 import { runEpilogue } from '#lib/browser/jev/epilogue.ts'
 import { runJevTask } from '#lib/browser/jev/runJevTask.ts'
+import { browserTaskHost } from '#lib/browser/task/host.ts'
 import { runBrowserTask, WAIT_FOR_PERSON_TOOL } from '#lib/browser/task/runTask.ts'
 import { createTaskDir } from '#lib/browser/task/taskDir.ts'
+import { prepareBrowserUploads } from '#lib/browser/task/uploads.ts'
 import { PasswordManagerSettingsStore } from '#lib/credentials/passwordManagers.ts'
 import { aiModel, getProfile, resolveProfile, roleProfile } from '#shared/ai/models.ts'
 import { createTypeSafeClient } from '#shared/ai/typesafe/client.ts'
@@ -37,6 +40,8 @@ const jevLanguageModel = () => resolveProfile(getProfile(roleProfile('reasoning'
 
 const params = {
   objective: Arg.string('What to do in the browser, in plain words'),
+  uploadFile: Flag.stringArray('Exact files to upload; repeat for multiple files', { optional: true }),
+  uploadOrigin: Flag.string('Exact HTTPS destination origin for these uploads', { optional: true }),
 }
 
 type Params = InferParams<typeof params>
@@ -96,23 +101,39 @@ export default class BrowserTaskCommand extends Command {
     const now = context.notebookNow
     const objective = args.objective.trim()
     if (!objective) return CommandResult.fail('Say what to do in the browser, in plain words.')
+    const uploadRequest =
+      browserTaskHost.getStore()?.uploads ??
+      (args.uploadFile?.length && args.uploadOrigin ? { paths: args.uploadFile, origin: args.uploadOrigin } : undefined)
+    if ((args.uploadFile || args.uploadOrigin) && !uploadRequest)
+      return CommandResult.fail('Uploads need both --upload-file and --upload-origin.')
     const passwordManagers = await new PasswordManagerSettingsStore(
       path.join(DIR_STATE, 'credentials', 'sources.json'),
     ).read()
+    const existingBrowser = await new ExistingBrowserSettingsStore().read()
     const privateSignIn =
-      process.platform === 'darwin' || passwordManagers.sources.length > 0 || !!passwordManagers.nativeBrowser
+      !!existingBrowser ||
+      process.platform === 'darwin' ||
+      !!uploadRequest ||
+      passwordManagers.sources.length > 0 ||
+      !!passwordManagers.nativeBrowser
 
     const task = await createTaskDir(now, objective)
+    const uploads = uploadRequest
+      ? await prepareBrowserUploads(uploadRequest.paths, uploadRequest.origin, task.dir)
+      : undefined
     output.log(colors.dim(`Task folder: ${task.dir}`))
     output.log(
       colors.dim(
-        privateSignIn
-          ? 'Sky opens a private browser for this task. Approve sign-in in the native dialog; the session closes when the task ends.'
-          : 'Sky’s browser opens a tab of its own for this task; the window stays open after.',
+        existingBrowser
+          ? 'Sky uses your existing Brave sign-ins in its own task tab. Brave stays open when the task ends.'
+          : privateSignIn
+            ? 'Sky opens a private browser for this task. Approve sign-in in the native dialog; the session closes when the task ends.'
+            : 'Sky’s browser opens a tab of its own for this task; the window stays open after.',
       ),
     )
     // Jev drives unless the Experimental switch is set off; then the reasoning model does.
-    const jev = readSkyConfigFile()?.parsed.experimental?.jevBrowser !== false
+    // File selection is a reasoning-driver operation; Jev's page-action table has no file chooser move.
+    const jev = !uploads && readSkyConfigFile()?.parsed.experimental?.jevBrowser !== false
     output.log(
       colors.dim(
         jev
@@ -163,6 +184,8 @@ export default class BrowserTaskCommand extends Command {
       output.log('')
       output.log(colors.bold('Sky needs you in the browser window:'))
       output.log(message)
+      const host = browserTaskHost.getStore()
+      if (host) return host.needsYou(message)
       if (!prompt.interactive) {
         output.log(colors.yellow('No one is at the keyboard to help, so the task stops here.'))
         return false
@@ -265,6 +288,7 @@ export default class BrowserTaskCommand extends Command {
         dir: task.dir,
         driver: 'jev',
         outcome: jevResult.outcome,
+        report,
         files: jevResult.files,
         attachments: attachments.map((a) => a.file),
         steps: jevResult.steps.length,
@@ -275,6 +299,7 @@ export default class BrowserTaskCommand extends Command {
     try {
       result = await runBrowserTask({
         objective,
+        uploads,
         model: aiModel('reasoning'),
         taskDir: task.dir,
         filesDir: task.filesDir,
@@ -313,6 +338,8 @@ export default class BrowserTaskCommand extends Command {
     return CommandResult.success({
       id: task.id,
       dir: task.dir,
+      report: result.report,
+      ...(result.signInFailure ? { signInFailure: result.signInFailure } : {}),
       files: result.files,
       attachments: attachments.map((a) => a.file),
       ...(result.cutShort ? { cutShort: result.cutShort } : {}),

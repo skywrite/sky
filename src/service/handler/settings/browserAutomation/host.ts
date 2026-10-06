@@ -1,3 +1,4 @@
+import type { ExistingBrowserSettingsStore } from '#lib/browser/existing/settings.ts'
 import { CredentialError } from '#lib/credentials/errors.ts'
 import type { OnePasswordAccount } from '#lib/credentials/onePasswordDesktop.ts'
 import type { CredentialContainer } from '#lib/credentials/types.ts'
@@ -13,6 +14,7 @@ export interface BrowserAutomationHostOptions {
   nativeSignInAvailable?: boolean
   prepareNativeBrowser?: (applePasswords: boolean) => Promise<void>
   openAutofillSettings?: () => Promise<void>
+  existingBrowser?: ExistingBrowserSettingsStore
 }
 
 /** The settings host owns preferences, not permission to sign in or access a browser session. */
@@ -28,10 +30,12 @@ export class BrowserAutomationHost {
 
   async snapshot(): Promise<BrowserAutomationData> {
     const settings = await this.settings.read()
+    const existingBrowser = await this.options.existingBrowser?.read()
     // Reading Settings never contacts a provider, including an SDK that can renew authorization.
     return {
       passwordManagers: settings.sources.map((source) => ({ ...source, provider: '1password' })),
       ...(settings.nativeBrowser ? { nativeBrowser: settings.nativeBrowser } : {}),
+      ...(existingBrowser ? { existingBrowser } : {}),
       signIn:
         (settings.sources.length || settings.nativeBrowser) &&
         (this.options.nativeSignInAvailable ?? process.platform === 'darwin')
@@ -53,6 +57,19 @@ export class BrowserAutomationHost {
       this.discovering = undefined
     })
     return this.discovering
+  }
+
+  async connectExistingBrowser(token: string, profileDirName?: string): Promise<void> {
+    if (!this.options.existingBrowser) throw new CredentialError('unsupported')
+    await this.options.existingBrowser.connect(token, {
+      browser: 'brave',
+      ...(profileDirName ? { profileDirName } : {}),
+    })
+  }
+
+  async disconnectExistingBrowser(): Promise<void> {
+    if (!this.options.existingBrowser) throw new CredentialError('unsupported')
+    await this.options.existingBrowser.disconnect()
   }
 
   async refresh(id: string): Promise<void> {

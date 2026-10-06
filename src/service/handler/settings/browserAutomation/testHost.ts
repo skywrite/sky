@@ -1,10 +1,12 @@
 import * as path from 'node:path'
 import type { VaultOverview } from '@1password/sdk'
+import { ExistingBrowserSettingsStore } from '#lib/browser/existing/settings.ts'
 import { CredentialError } from '#lib/credentials/errors.ts'
 import {
   OnePasswordCredentialProvider,
   type OnePasswordClient,
 } from '#lib/credentials/providers/OnePasswordCredentialProvider.ts'
+import { TestSecretsProvider } from '#lib/secrets/mod.ts'
 import { BrowserAutomationHost, type BrowserAutomationHostOptions } from './host.ts'
 
 export const SAMPLE_ACCOUNT = 'Example account'
@@ -39,6 +41,10 @@ export function browserAutomationTestHost(dir: string) {
     },
   }
   const options: BrowserAutomationHostOptions = {
+    existingBrowser: new ExistingBrowserSettingsStore(
+      path.join(dir, 'browser-connection.json'),
+      new TestSecretsProvider(),
+    ),
     nativeSignInAvailable: true,
     settingsFile: path.join(dir, 'sources.json'),
     discover: async () => {

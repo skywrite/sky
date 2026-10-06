@@ -27,7 +27,7 @@ const messages: Record<CredentialErrorCode, string> = {
   'helper-unavailable': 'Sky could not prepare the 1Password connection helper. Try connecting again.',
   'no-accounts': 'Sign in to an account in the 1Password desktop app, then try connecting again.',
   'native-browser-required':
-    'Native Mac passkeys need a signed browser with Apple’s permission. Install Brave in Applications, then try again. Sky uses a separate, temporary profile.',
+    'Native Mac passkeys need a signed browser with Apple’s permission. Install Brave in Applications, then try again. Sky uses its own persistent browser profile.',
   'apple-passwords-unavailable':
     'Sky could not prepare Apple Passwords. Update macOS and try again. Apple may ask you to verify the connection in the browser.',
 }

@@ -33,7 +33,8 @@ async function fixture(
     signIn(): Promise<unknown>
   }) => Promise<void>,
 ) {
-  const dir = await mkdtemp(path.join(os.tmpdir(), 'sky-verification-test-'))
+  const root = await mkdtemp(path.join(os.tmpdir(), 'sky-verification-test-'))
+  const dir = path.join(root, 'files')
   const counts = { approval: 0, reads: 0, passwords: 0, codes: 0 }
   const controls: { challenge: string; reject: boolean; onCodeRead?: () => Promise<void> } = {
     challenge: CHALLENGE,
@@ -88,6 +89,7 @@ async function fixture(
   let page!: Page
   const browser = await PrivateBrowserSession.launch({
     filesDir: dir,
+    profileDir: path.join(root, 'profile'),
     headless: true,
     broker: new SignInBroker(options),
     prepare: async (created) => {
@@ -132,7 +134,7 @@ async function fixture(
     })
   } finally {
     await browser.close()
-    await rm(dir, { recursive: true, force: true })
+    await rm(root, { recursive: true, force: true })
   }
 }
 
