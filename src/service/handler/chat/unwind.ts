@@ -115,6 +115,7 @@ export function registerUnwind(app: Hono, host: UnwindHost): void {
     try {
       // A write still in flight lands before the snapshot is replaced.
       await session.snapshot()
+      await thread.plan.browserRun.close()
 
       const seed = session.threadSeedAt(turn)
       const prefs: ThreadPrefs = {
@@ -139,6 +140,9 @@ export function registerUnwind(app: Hono, host: UnwindHost): void {
       const restore: ThreadRestore = {
         id,
         startTime: session.startTime,
+        // Later progress cannot survive deletion of the messages and evidence that established it.
+        plan: thread.plan.plan && thread.plan.plan.at <= kept ? thread.plan.plan : null,
+        queued: [],
         // Pinned again only if it was: a pinned title names the file at save.
         title: session.title,
         state: seed.state,

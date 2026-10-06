@@ -89,7 +89,7 @@ test('after a reading, the preflight asks whether the message needs anything mor
   const questionOf = (body: Record<string, unknown> | undefined) => {
     const questions = (body?.questions ?? {}) as Record<string, { instructions: string }>
     const [name] = Object.keys(questions)
-    return [name, questions[name]?.instructions.includes('anything more from the notebook')]
+    return [name, questions[name]?.instructions.includes('additional notebook records beyond')]
   }
   assert({
     given: 'a first turn with nothing assembled, then a follow-up after the notebook was read',
@@ -101,5 +101,25 @@ test('after a reading, the preflight asks whether the message needs anything mor
       ['needs_more', true],
       { needsNotebook: 0.07, skipped: true, question: 'needs_more', model: 'jev-1.13.0', ms: 45 },
     ],
+  })
+})
+
+test('the preflight includes task resources without treating clipped conversation as the full history', async () => {
+  const check = judge(0.05)
+  const task = {
+    title: 'Collect example documents',
+    outcome: 'Checked files and an updated checklist.',
+    status: 'paused',
+    note: 'Continue after the receipt is available.',
+    nextSteps: ['Inspect the receipt', 'Update the checklist'],
+    resources: [{ label: 'Collected files', location: '/mock/Desktop/Atlas/Downloaded' }],
+  }
+  await check.preflight('Continue; the receipt is in the folder.', RECENT, { assembled: true, task })
+  const state = check.bodies[0]?.state as Record<string, unknown>
+  assert({
+    given: 'an active task whose known folder and pending actions are absent from the recent excerpts',
+    should: 'provide that task separately to the retrieval judge',
+    actual: state.task_context,
+    expected: task,
   })
 })

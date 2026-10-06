@@ -130,6 +130,10 @@
 }
 
 @media (max-width: 900px) {
+  .sky-composer-shell:has(.sky-chat-attachments) .sky-input-field {
+    max-height: 4em;
+  }
+
   /* keyboard hints mean nothing on a phone */
   .sky-hint {
     display: none;

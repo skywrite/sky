@@ -18,6 +18,7 @@ import type { CalendarPreparedDraft } from '#lib/calendarScheduler/types.ts'
 import type { WritingDraftView } from '#lib/writingVoice/draftTypes.ts'
 import { splitChatFiles } from '#universal/ai/chatFiles.ts'
 import { splitChatImages } from '#universal/ai/chatImages.ts'
+import type { ChatPlan, QueuedChatInstruction } from '#universal/ai/chatPlan.ts'
 import { contextAdjustmentText, type ContextAdjustment } from '#universal/ai/contextAdjustment.ts'
 import { effortLabel, type Effort, type EffortOverride } from '#universal/ai/effort.ts'
 import { splitSources, withSources } from '#universal/ai/sources.ts'
@@ -34,6 +35,7 @@ import { FileClips, Paperclip, type PendingChatFile, useChatFiles } from './chat
 import { ChatImages, replyImages } from './chatImages.tsx'
 import { renderChatMarkdown, renderStreamingChatMarkdown } from './chatMarkdown.ts'
 import { chatMessageId, ChatTurnNavigation } from './chatNavigation.tsx'
+import { ChatPlanBar, ChatPlanPanel } from './chatPlan.tsx'
 import { ChatSelectionMenu } from './chatSelection.tsx'
 import { QuestionMenu, UnwindNote, type UnwindNoteState, useUnwind } from './chatUnwind.tsx'
 import { useChatVoice } from './chatVoice.ts'
@@ -192,6 +194,8 @@ export interface SavedBranch {
 }
 
 export interface ThreadState {
+  plan: ChatPlan | null
+  queued: QueuedChatInstruction[]
   id: string
   /** The subject received on this thread's stream, ahead of the next list refresh. */
   title: string | null
@@ -239,9 +243,12 @@ export interface ThreadState {
  */
 type Action =
   | { type: 'reset'; id: string }
+  | { type: 'plan'; id: string; plan: ChatPlan | null; queued: QueuedChatInstruction[] }
   | { type: 'title'; id: string; title: string }
   | {
       type: 'loaded'
+      plan?: ChatPlan | null
+      queued?: QueuedChatInstruction[]
       id: string
       turns: Turn[]
       documents: number | null
@@ -261,6 +268,8 @@ type Action =
   /** The thread as the service holds it, read back while a turn runs without a stream on this page */
   | {
       type: 'refresh'
+      plan?: ChatPlan | null
+      queued?: QueuedChatInstruction[]
       id: string
       turns: Turn[]
       documents: number | null
@@ -348,6 +357,8 @@ function initial(id: string): ThreadState {
     runs: [],
     queries: [],
     interrupted: null,
+    plan: null,
+    queued: [],
   }
 }
 
@@ -366,6 +377,9 @@ function reduce(state: ThreadState, action: Action): ThreadState {
   switch (action.type) {
     case 'reset':
       return initial(action.id)
+    case 'plan':
+      if (state.plan && action.plan && action.plan.revision < state.plan.revision) return state
+      return { ...state, plan: action.plan, queued: action.queued }
     case 'title':
       return { ...state, title: action.title }
     case 'loaded': {
@@ -393,6 +407,8 @@ function reduce(state: ThreadState, action: Action): ThreadState {
         runs: action.runs ?? [],
         queries: action.queries ?? [],
         interrupted: action.interrupted ?? null,
+        plan: action.plan === undefined ? state.plan : action.plan,
+        queued: action.queued ?? state.queued,
         phase: busy ? 'busy' : state.phase,
         gather: busy ? (approvals.length > 0 ? WAITING : 'still working') : state.gather,
       }
@@ -411,6 +427,8 @@ function reduce(state: ThreadState, action: Action): ThreadState {
         runs: action.runs,
         queries: action.queries ?? state.queries,
         interrupted: action.interrupted ?? null,
+        plan: action.plan === undefined ? state.plan : action.plan,
+        queued: action.queued ?? state.queued,
         fixed: action.fixed ?? state.fixed,
         phase: action.busy ? 'busy' : 'idle',
         gather: action.busy ? (action.approvals.length > 0 ? WAITING : 'still working') : null,
@@ -665,6 +683,8 @@ export function threadTitle(turns: Turn[], inherited = 0): string | null {
 
 /** A thread as the service reads it back. */
 interface ThreadBody {
+  plan?: ChatPlan | null
+  queued?: QueuedChatInstruction[]
   turns: Array<{ role: 'user' | 'assistant'; content: string; when?: string; error?: string }>
   branchPoints?: Array<BranchPoint | null>
   documents: number
@@ -738,12 +758,12 @@ export function useChat(id: string) {
       stoppingRef.current = null
     }
   }, [state.phase, id])
-  // True while this page reads a turn's stream — then the stream, not a poll, keeps the thread current.
-  const attached = useRef(false)
+  // Streams belong to thread ids: work can continue while the person opens another chat.
+  const attached = useRef(new Set<string>())
 
   const reload = useCallback(async () => {
     const response = await fetch(`/chat/${id}`)
-    if (!response.ok) throw new Error('The voice transcript was kept, but the chat could not be refreshed. Try again.')
+    if (!response.ok) throw new Error('The chat could not be refreshed. Try again.')
     const body = (await response.json()) as ThreadBody
     dispatch({
       type: 'refresh',
@@ -756,6 +776,8 @@ export function useChat(id: string) {
       runs: body.runs ?? [],
       queries: body.queries ?? [],
       interrupted: interruptedOf(body),
+      plan: body.plan ?? null,
+      queued: body.queued ?? [],
       fixed: body.fixed,
     })
   }, [id])
@@ -773,7 +795,7 @@ export function useChat(id: string) {
         const body = (await response.json().catch(() => ({}))) as { message?: string }
         throw new Error(body.message ?? 'Could not stop the response. Try again.')
       }
-      if (!attached.current && currentId.current === id) await reload()
+      if (!attached.current.has(id) && currentId.current === id) await reload()
     } catch {
       if (currentId.current === id) {
         setStopError('Could not stop the response. Try again.')
@@ -813,6 +835,8 @@ export function useChat(id: string) {
           day: body.day ?? null,
           branches: body.branches ?? [],
           interrupted: interruptedOf(body),
+          plan: body.plan ?? null,
+          queued: body.queued ?? [],
         })
       })
       .catch(() => {
@@ -827,12 +851,15 @@ export function useChat(id: string) {
   // reloaded mid-turn, or answered a held call from a fresh load — is
   // followed by re-reading the thread until it settles.
   useEffect(() => {
-    if (state.phase !== 'busy' || attached.current || !id) return
+    if ((state.phase !== 'busy' && !state.plan) || !id) return
     let alive = true
+    let reading = false
     const timer = setInterval(() => {
+      if (attached.current.has(id) || reading) return
+      reading = true
       fetch(`/chat/${id}`)
         .then(async (response) => {
-          if (!alive || !response.ok) return
+          if (!alive || attached.current.has(id) || !response.ok) return
           const body = (await response.json()) as ThreadBody
           dispatch({
             type: 'refresh',
@@ -845,15 +872,20 @@ export function useChat(id: string) {
             runs: body.runs ?? [],
             queries: body.queries ?? [],
             interrupted: interruptedOf(body),
+            plan: body.plan ?? null,
+            queued: body.queued ?? [],
           })
         })
         .catch(() => {})
+        .finally(() => {
+          reading = false
+        })
     }, 2000)
     return () => {
       alive = false
       clearInterval(timer)
     }
-  }, [state.phase, id])
+  }, [state.phase, id, Boolean(state.plan)])
 
   // The person's answer to a held call. The stream carries the same news
   // back; either arrival clears the card.
@@ -932,16 +964,82 @@ export function useChat(id: string) {
   const setContextTokens = useCallback((contextTokens: number) => tune({ contextTokens }), [tune])
   const setSaves = useCallback((saves: boolean) => tune({ saves }), [tune])
 
+  const queuePosting = useRef(false)
+  const queuedRequest = useRef<{ id: string; thread: string; content: string; files: File[] } | null>(null)
+  const queueInstruction = async (
+    content: string,
+    files: File[],
+    onAccepted?: () => void,
+  ): Promise<{ ok: boolean; error?: string }> => {
+    if (queuePosting.current || !state.settings) return { ok: false }
+    queuePosting.current = true
+    if (
+      !queuedRequest.current ||
+      queuedRequest.current.thread !== state.id ||
+      queuedRequest.current.content !== content ||
+      files.length !== queuedRequest.current.files.length ||
+      files.some((file, index) => file !== queuedRequest.current!.files[index])
+    ) {
+      queuedRequest.current = { id: crypto.randomUUID(), thread: state.id, content, files: [...files] }
+    }
+    const body = JSON.stringify({
+      message: content,
+      queue: true,
+      instructionId: queuedRequest.current.id,
+      profile: state.settings.model.current,
+      effort: state.settings.effort ?? 'default',
+      contextTokens: state.settings.contextTokens,
+      saves: state.settings.saves,
+      continuing: true,
+    })
+    const form = files.length ? new FormData() : null
+    if (form) {
+      form.set('message', body)
+      for (const file of files) form.append('files', file)
+    }
+    try {
+      const response = await fetch(`/chat/${state.id}/messages`, {
+        method: 'POST',
+        headers: form ? undefined : { 'Content-Type': 'application/json' },
+        body: form ?? body,
+      })
+      const result = await response.json()
+      if (!response.ok) throw new Error(result.message ?? 'Could not queue the instruction.')
+      dispatch({ type: 'plan', id: state.id, plan: result.plan, queued: result.queued })
+      onAccepted?.()
+      queuedRequest.current = null
+      return { ok: true }
+    } catch (error) {
+      return { ok: false, error: (error as Error).message }
+    } finally {
+      queuePosting.current = false
+    }
+  }
+
+  const planAction = async (action: string, key?: string) => {
+    const response = await fetch(`/chat/${state.id}/plan`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action, id: key }),
+    })
+    const body = await response.json()
+    if (!response.ok) throw new Error(body.message ?? 'Could not update the plan. Try again.')
+    dispatch({ type: 'plan', id: state.id, plan: body.plan, queued: body.queued })
+    if (!attached.current.has(state.id)) await reload()
+  }
+
   const send = useCallback(
     async (content: string, files: File[] = [], onAccepted?: () => void): Promise<{ ok: boolean; error?: string }> => {
       const message = content.trim()
+      if (state.phase === 'busy' && state.plan && (message || files.length))
+        return queueInstruction(message, files, onAccepted)
       if (
         (!message && files.length === 0) ||
         !state.id ||
         state.phase !== 'idle' ||
         !state.settings ||
         tuningCount.current > 0 ||
-        attached.current
+        attached.current.has(state.id)
       )
         return { ok: false }
       const id = state.id
@@ -961,7 +1059,7 @@ export function useChat(id: string) {
       }
       // Attached before the phase turns busy, or the follow-by-poll would
       // start and overwrite the streaming reply with the service's read-back.
-      attached.current = true
+      attached.current.add(id)
       setStopError(null)
       dispatch({ id, type: 'sent', content: message, files })
       const replyIndex = state.turns.length + 1
@@ -984,7 +1082,7 @@ export function useChat(id: string) {
         dispatch({ id, type: 'lost' })
         const back = await awaitReturn(post)
         if (back.kind !== 'answered') {
-          attached.current = false
+          attached.current.delete(id)
           dispatch({ id, type: 'failed', message: AWAY })
           return { ok: false, error: AWAY }
         }
@@ -993,7 +1091,7 @@ export function useChat(id: string) {
         if (posting.current?.id === id) posting.current = null
       }
       if (!response.ok) {
-        attached.current = false
+        attached.current.delete(id)
         const body = (await response.json().catch(() => ({}))) as { message?: string; settings?: ThreadSettings }
         if (body.settings) dispatch({ type: 'settings', id, settings: body.settings })
         const error = body.message ?? `The service answered ${response.status}.`
@@ -1008,6 +1106,14 @@ export function useChat(id: string) {
         for await (const frame of frames(response, SILENCE_MS)) {
           const d = frame.data
           switch (frame.event) {
+            case 'plan':
+              dispatch({
+                id,
+                type: 'plan',
+                plan: d.plan as ChatPlan | null,
+                queued: (d.queued as QueuedChatInstruction[]) ?? [],
+              })
+              break
             case 'title':
               if (typeof d.title === 'string') dispatch({ id, type: 'title', title: d.title })
               break
@@ -1136,19 +1242,19 @@ export function useChat(id: string) {
         // Silence past the deadline, or the socket failing: the connection is lost, not the turn decided.
       } finally {
         // Still attached through the wait below, or the poller would read the thread back over the message just sent.
-        if (finished) attached.current = false
+        if (finished) attached.current.delete(id)
       }
       if (!finished) {
         try {
           await reattach(id, replyIndex, dispatch)
         } finally {
-          attached.current = false
+          attached.current.delete(id)
         }
       }
       followSummaries(id, dispatch)
       return { ok: true }
     },
-    [state.id, state.phase, state.turns.length, state.settings],
+    [state.id, state.phase, state.turns.length, state.settings, state.plan],
   )
 
   // A new chat from here: the service makes a thread that keeps this one's
@@ -1309,6 +1415,7 @@ export function useChat(id: string) {
     stopping: stoppingId === id && state.phase === 'busy',
     stopError,
     stop,
+    planAction,
     send,
     end,
     setModel,
@@ -1410,6 +1517,8 @@ async function reattach(id: string, replyIndex: number, dispatch: (action: Actio
     runs: body.runs ?? [],
     queries: body.queries ?? [],
     interrupted: interruptedOf(body),
+    plan: body.plan ?? null,
+    queued: body.queued ?? [],
   })
 }
 
@@ -1738,7 +1847,7 @@ function InterruptedTurn({ interrupted, onResend }: { interrupted: Interrupted; 
  * as it will land — a Slack message in Slack's own marks rendered, any
  * other as markdown — with the raw text a click away.
  */
-function ApprovalCard({
+export function ApprovalCard({
   approval,
   answered,
   onAnswer,
@@ -2227,6 +2336,8 @@ export function Composer({
   const [sendError, setSendError] = useState<string | null>(null)
   useEffect(() => setSendError(null), [state.id, attach?.files])
   const busy = state.phase !== 'idle'
+  const canSteer = state.phase === 'busy' && !!state.plan
+  const inputBusy = busy && !canSteer
   const positionedDraft = useRef<string | null>(null)
   useEffect(() => {
     if (!autoFocus || hidden || draft.loading || busy || positionedDraft.current === state.id) return
@@ -2238,7 +2349,7 @@ export function Composer({
     input.scrollTop = input.scrollHeight
   }, [state.id, autoFocus, hidden, draft.loading, busy])
   const canSend =
-    !busy && !chat.tuning && state.settings !== null && !sendDisabled && !draft.loading && !draft.missingFiles
+    !inputBusy && !chat.tuning && state.settings !== null && !sendDisabled && !draft.loading && !draft.missingFiles
 
   const submit = () => {
     if (!canSend) return
@@ -2273,6 +2384,12 @@ export function Composer({
       <ChatControls key={state.id} chat={chat} open={settingsOpen} onOpenChange={setSettingsOpen} />
       <div className="sky-composer">
         {status}
+        {state.queued.length > 0 && (
+          <p className="sky-plan-queue-note" role="status">
+            {state.queued.length} instruction{state.queued.length === 1 ? '' : 's'} waiting
+            {state.queued.some((entry) => entry.held) ? ' · review in View plan' : ' · after the current tool'}
+          </p>
+        )}
         {(draft.loading || draft.saving) && (
           <p className="sky-chat-draft-status" role="status">
             {draft.loading ? 'Restoring draft…' : 'Saving attachments…'}
@@ -2297,7 +2414,12 @@ export function Composer({
           </p>
         )}
         <div className="sky-composer-shell">
-          <FileClips files={attach?.files ?? []} onRemove={attach?.onRemove} disabled={busy || sendDisabled} pending />
+          <FileClips
+            files={attach?.files ?? []}
+            onRemove={attach?.onRemove}
+            disabled={inputBusy || sendDisabled}
+            pending
+          />
           <div className="sky-composer-row">
             {attach && (
               <>
@@ -2306,7 +2428,7 @@ export function Composer({
                   type="file"
                   hidden
                   multiple
-                  disabled={busy || sendDisabled || draft.loading}
+                  disabled={inputBusy || sendDisabled || draft.loading}
                   accept={attach.accept}
                   onChange={(event) => {
                     const list = event.target.files
@@ -2318,7 +2440,7 @@ export function Composer({
                 <ActionIcon
                   aria-label="Add a file"
                   title="Add a file"
-                  disabled={busy || sendDisabled || draft.loading}
+                  disabled={inputBusy || sendDisabled || draft.loading}
                   onClick={() => fileRef.current?.click()}
                 >
                   <Paperclip />
@@ -2346,10 +2468,20 @@ export function Composer({
                   event.preventDefault()
                   attach.onFiles(files)
                 }}
-                disabled={busy || draft.loading}
+                disabled={inputBusy || draft.loading}
                 autoFocus={autoFocus}
               />
             </div>
+            {canSteer && (
+              <ActionIcon
+                variant="primary"
+                aria-label="Send instruction"
+                disabled={!canSend || (!draft.text.trim() && !attach?.files?.length)}
+                onClick={submit}
+              >
+                ↑
+              </ActionIcon>
+            )}
             <Tooltip
               label={
                 state.phase === 'busy' ? (
@@ -2428,7 +2560,11 @@ export function ChatMain({
   )
   const busy = state.phase !== 'idle'
   const draft = useChatDraft(state.id)
-  const attachments = useChatFiles(state.id, busy || voiceMode || call.preparing || call.syncing || call.unsaved, draft)
+  const attachments = useChatFiles(
+    state.id,
+    (busy && !state.plan) || voiceMode || call.preparing || call.syncing || call.unsaved,
+    draft,
+  )
   const empty = state.turns.length === 0 && !state.interrupted && !state.gather && !call.visible
   // The end button needs something to end: a turn, a message a restart
   // interrupted, or a draft in the composer. With no turn there is nothing
@@ -2436,6 +2572,34 @@ export function ChatMain({
   const started = state.turns.length > 0 || call.voice.state.turns.some((turn) => turn.who === 'you')
   const endable = started || state.interrupted !== null || draft.present
   const [panel, setPanel] = useState(false)
+  const [planOpen, setPlanOpen] = useState(false)
+  const seenPlan = useRef<string | null>(null)
+  useEffect(() => {
+    setPlanOpen(false)
+    seenPlan.current = null
+  }, [state.id])
+  useEffect(() => {
+    if (!state.plan || seenPlan.current === state.id) return
+    seenPlan.current = state.id
+    let preference: string | null = null
+    try {
+      preference = sessionStorage.getItem(`sky-plan:${state.id}`)
+    } catch {
+      /* Private storage may be unavailable. */
+    }
+    if (window.matchMedia('(min-width: 1180px)').matches && preference !== 'closed') {
+      setPanel(false)
+      setPlanOpen(true)
+    }
+  }, [state.id, Boolean(state.plan)])
+  const closePlan = () => {
+    setPlanOpen(false)
+    try {
+      sessionStorage.setItem(`sky-plan:${state.id}`, 'closed')
+    } catch {
+      /* Keep the in-memory choice. */
+    }
+  }
   const replyMode = state.parent?.kind === 'thread'
   const [replyVersion, setReplyVersion] = useState(0)
   const replies = useReplyThreads(state.id, !replyMode, replyVersion)
@@ -2453,6 +2617,7 @@ export function ChatMain({
     if (openingReply || replyMode) return
     const request = ++replyRequest.current
     setPanel(false)
+    closePlan()
     setActiveReply(null)
     setOpeningReply(point)
     setReplyError(null)
@@ -2508,6 +2673,7 @@ export function ChatMain({
                 size="sm"
                 onClick={() => {
                   closeReply()
+                  closePlan()
                   setPanel((open) => !open)
                 }}
                 data-active={panel}
@@ -2543,6 +2709,19 @@ export function ChatMain({
         )}
       </header>
 
+      {state.plan && !voiceMode && (
+        <ChatPlanBar
+          plan={state.plan}
+          busy={busy}
+          needsApproval={state.approvals.length > 0}
+          opened={planOpen}
+          onOpen={() => {
+            closeReply()
+            setPanel(false)
+            setPlanOpen(true)
+          }}
+        />
+      )}
       <div
         className="sky-split"
         data-reply-open={(!voiceMode && (activeReply !== null || openingReply !== null)) || undefined}
@@ -2559,7 +2738,11 @@ export function ChatMain({
             <div className="sky-scroll" ref={scrollRef}>
               {empty ? (
                 <div className="sky-blank">
-                  <p>Ask about your notebook. Answers come from your files.</p>
+                  <p>
+                    Ask a question, or hand Sky a task.
+                    <br />
+                    For work with several steps, a live plan will track progress here.
+                  </p>
                 </div>
               ) : (
                 <div className="sky-col">
@@ -2606,7 +2789,9 @@ export function ChatMain({
             chat={chat}
             draft={draft}
             hidden={voiceMode}
-            placeholder={state.saved ? 'Continue this chat…' : 'Message sky…'}
+            placeholder={
+              busy && state.plan ? 'Add an instruction…' : state.saved ? 'Continue this chat…' : 'Message sky…'
+            }
             attach={attachments.attach}
             status={
               attachments.error && (
@@ -2631,6 +2816,31 @@ export function ChatMain({
             }
           />
         </div>
+        {planOpen && state.plan && !voiceMode && (
+          <ChatPlanPanel
+            id={state.id}
+            plan={state.plan}
+            queued={state.queued}
+            busy={busy}
+            needsApproval={state.approvals.length > 0}
+            approvals={state.approvals.map((approval) => (
+              <Fragment key={approval.id}>
+                <ApprovalCard
+                  approval={approval}
+                  chatId={state.id}
+                  onChange={chat.updateApproval}
+                  onAnswer={(approved, always, revision) => chat.answer(approval.id, approved, always, revision)}
+                />
+              </Fragment>
+            ))}
+            onAction={chat.planAction}
+            onClose={closePlan}
+            onAdjust={() => {
+              closePlan()
+              setTimeout(() => window.dispatchEvent(new CustomEvent('sky-draft-focus', { detail: state.id })), 250)
+            }}
+          />
+        )}
         {panel && !voiceMode && (
           <ContextPanel
             id={state.id}

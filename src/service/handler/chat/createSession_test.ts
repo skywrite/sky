@@ -1,8 +1,49 @@
 import { assert, test } from '#test'
-import { toolOutputSink, webReading } from './createSession.ts'
+import type { ChatPlan } from '#universal/ai/chatPlan.ts'
+import { preflightTaskContext, toolOutputSink, webReading } from './createSession.ts'
 import type { ToolOutputEvent } from './mod.ts'
+import { samplePlan } from './planTestHelpers.ts'
 
 const MISSION = 'google:agent'
+
+test('preflight task context keeps pending work and bounded resource references', () => {
+  const plan: ChatPlan = { ...samplePlan(), version: 1, at: 0, attention: null }
+  plan.steps[1]!.items = [
+    { ...plan.steps[1]!, id: 'receipt', title: 'Inspect the receipt' },
+    { ...plan.steps[0]!, id: 'already-checked', title: 'Already checked' },
+  ]
+  plan.artifacts = Array.from({ length: 12 }, (_, index) => ({
+    label: `Example ${index}`,
+    location: `/mock/Atlas/document-${index}.pdf`,
+    evidence: 'tool-receipt-not-needed-by-the-judge',
+  }))
+  const task = preflightTaskContext(plan)!
+  plan.note = 'x'.repeat(5000)
+  plan.steps = Array.from({ length: 20 }, (_, index) => ({
+    ...plan.steps[2]!,
+    id: `next-${index}`,
+    title: 'x'.repeat(1000),
+  }))
+  const bounded = preflightTaskContext(plan)!
+  assert({
+    given: 'a plan with completed work, unfinished child items, and many artifacts',
+    should: 'send pending actions and recent locations without tool evidence, and bound large plans',
+    actual: {
+      empty: preflightTaskContext(null),
+      next: task.nextSteps,
+      resources: task.resources.map((resource) => resource.label),
+      hasEvidence: JSON.stringify(task).includes('tool-receipt'),
+      bounded: [bounded.note.length <= 600, bounded.nextSteps.length, bounded.nextSteps.every((s) => s.length <= 200)],
+    },
+    expected: {
+      empty: undefined,
+      next: ['Inspect the receipt', 'Check the final set'],
+      resources: Array.from({ length: 8 }, (_, index) => `Example ${index + 4}`),
+      hasEvidence: false,
+      bounded: [true, 8, true],
+    },
+  })
+})
 
 /** Let a summarizer's promise land before looking at what was reported. */
 const settled = () => new Promise<void>((resolve) => setTimeout(resolve, 0))

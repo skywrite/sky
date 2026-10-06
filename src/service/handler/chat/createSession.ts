@@ -9,7 +9,8 @@
  */
 
 import * as path from 'node:path'
-import { generateText } from 'ai'
+import { generateText, tool } from 'ai'
+import { z } from 'zod'
 import { gatherContext } from '#commands/all/ai/_lib/gatherContext.ts'
 import { harvestFileRefs, SessionBlessings } from '#commands/all/ai/chat/lib/approvals.ts'
 import { createChatFileTools } from '#commands/lib/chat/localFileTools.ts'
@@ -53,13 +54,14 @@ import type * as ConfigModule from '#shared/config.ts'
 import { readSkyConfigFile } from '#shared/config/loader.ts'
 import { exists } from '#shared/fs/mod.ts'
 import { logger } from '#shared/log.ts'
-import { contextPreflight, type Preflight } from '#shared/models/Chat/ChatContext/preflight.ts'
+import { contextPreflight, type Preflight, type PreflightState } from '#shared/models/Chat/ChatContext/preflight.ts'
 import ChatSession from '#shared/models/Chat/ChatSession/mod.ts'
 import { chatAutosaveFilename, isThreadSnapshot, listChatAutosaves } from '#shared/models/Chat/ChatStore/autosave.ts'
 import type { ResumeSession } from '#shared/models/Chat/ChatStore/mod.ts'
 import { buildChatTranscript, CHAT_ENRICH } from '#shared/models/Chat/enrich.ts'
 import { isAIChatPath, parseTimePath } from '#shared/nbfs/mod.ts'
 import truncate from '#shared/strings/truncate.ts'
+import type { ChatPlan } from '#universal/ai/chatPlan.ts'
 import { effectiveEffort, effortLevels, isEffortOverride } from '#universal/ai/effort.ts'
 import { fitBudget } from '#universal/ai/readingBudget.ts'
 import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
@@ -80,8 +82,11 @@ import type {
   ToolOutputEvent,
 } from './mod.ts'
 import { storedModelConfig } from './modelSettings.ts'
+import { PLAN_INSTRUCTIONS } from './plan.ts'
 import { readSession } from './readSession.ts'
 import { chatSourceLinks, sourceChatHref } from './sourceLinks.ts'
+import { taskAdmission } from './taskAdmission.ts'
+import { createTaskTools } from './taskTools.ts'
 import { restoreToolRuns } from './toolRuns.ts'
 
 /**
@@ -108,12 +113,31 @@ export function webReading(
  * the next one; the client is built once per thread, keyed from the
  * keychain on its first request.
  */
-function contextPreflightFor(secrets: SecretsProvider): Preflight {
+function contextPreflightFor(secrets: SecretsProvider, currentPlan: () => ChatPlan | null | undefined): Preflight {
   let judge: Preflight | undefined
   return (message, recent, state) => {
     if (readSkyConfigFile()?.parsed.experimental?.contextPreflight !== true) return Promise.resolve(null)
     judge ??= contextPreflight(createTypeSafeClient({ secrets }))
-    return judge(message, recent, state)
+    return judge(message, recent, { ...state, task: preflightTaskContext(currentPlan()) })
+  }
+}
+
+/** The routing check needs known resources and pending work, not the plan's full evidence history. */
+export function preflightTaskContext(plan: ChatPlan | null | undefined): PreflightState['task'] {
+  if (!plan) return undefined
+  const unfinished = plan.steps
+    .flatMap((step) => (step.items.length ? step.items : [step]))
+    .filter((step) => step.status !== 'done' && step.status !== 'skipped')
+  return {
+    title: truncate(plan.title, 200),
+    outcome: truncate(plan.outcome, 600),
+    status: plan.status,
+    note: truncate(plan.note, 600),
+    nextSteps: unfinished.slice(0, 8).map((step) => truncate(step.title, 200)),
+    resources: plan.artifacts.slice(-8).map((artifact) => ({
+      label: truncate(artifact.label, 160),
+      location: truncate(artifact.location, 400),
+    })),
   }
 }
 const logRecovery = logger('chat.recovery')
@@ -332,7 +356,7 @@ export function createChatHost(config: typeof ConfigModule, env: Record<string, 
     return held
   }
 
-  const createSession: ChatSessionFactory = async (id, onEvent, prefs, ask, restore, runs = () => []) => {
+  const createSession: ChatSessionFactory = async (id, onEvent, prefs, ask, restore, runs = () => [], plan) => {
     const context = CommandContext.server(config, env)
     const webTools = env.PERPLEXITY_API_KEY ? createWebTools() : {}
     const blessed = blessingsFor(id)
@@ -368,7 +392,7 @@ export function createChatHost(config: typeof ConfigModule, env: Record<string, 
       ...webReading(prefs.contextTokens, profile.contextWindow, ratioFor(profile.model)),
       baseDir: config.DIR_BASE,
       timeDir: config.DIR_TIME,
-      preflight: contextPreflightFor(context.secrets),
+      preflight: contextPreflightFor(context.secrets, () => plan?.plan),
       resume: restore?.resume ?? null,
       // A continued chat seeds from its resume; a snapshot or a branch from the state it was given.
       restore: restore?.resume ? undefined : restore?.state,
@@ -407,12 +431,28 @@ export function createChatHost(config: typeof ConfigModule, env: Record<string, 
         const unsaved = () => unsavedDrafts(hooks.writingDrafts?.list() ?? [])
         return {
           instructions: [
+            PLAN_INSTRUCTIONS,
+            plan?.plan
+              ? `Current live plan (read_plan has the latest revision and tool evidence):\n${JSON.stringify(plan.plan)}`
+              : '',
             await legalReviewBrief(hooks, config),
             await writingDraftBrief(hooks, writingDrafts, await unsaved()),
           ]
             .filter(Boolean)
             .join('\n\n'),
           tools: {
+            ...(plan
+              ? createTaskTools({
+                  plan,
+                  admit: taskAdmission(
+                    createTypeSafeClient({ secrets: context.secrets }),
+                    hooks.context.conversation,
+                    plan.plan,
+                  ),
+                  runBrowser: (objective, signal) =>
+                    (signal ? toolTasks.withSignal(signal) : toolTasks).run('browser:task', { objective }),
+                })
+              : {}),
             ...createWritingVoiceTools(writingDrafts, {
               source: `chat:${id}`,
               drafts: writingDraftTools(hooks, writingDrafts, unsaved),
@@ -522,6 +562,9 @@ export function createChatHost(config: typeof ConfigModule, env: Record<string, 
           const saved = typeof host?.saved === 'string' ? await openSaved(host.saved) : null
           restores.push({
             id: ref.session,
+            plan: host?.plan,
+            queued: host?.queued,
+            deliveredInstructions: host?.deliveredInstructions,
             runs: restoreToolRuns(host?.runs),
             answered: restoreAnsweredApprovals(host?.answered),
             startTime: ref.startTime,

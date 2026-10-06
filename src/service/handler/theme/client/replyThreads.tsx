@@ -1,12 +1,13 @@
 import { ActionIcon, Button } from '@mantine/core'
-import { useEffect, useRef, useState } from 'react'
+import { Fragment, useEffect, useRef, useState } from 'react'
 import { formatTokens, totalInput } from '#universal/ai/tokenUsage.ts'
 import type { BranchPoint } from '../../chat/branchPoint.ts'
 import type { ReplyThreadSummary } from '../../chat/replyThreads.ts'
-import { Composer, ThreadColumn, useChat, useFollow } from './chat.tsx'
+import { ApprovalCard, Composer, ThreadColumn, useChat, useFollow } from './chat.tsx'
 import { useChatDraft } from './chatDraft.ts'
 import { Paperclip, useChatFiles } from './chatFiles.tsx'
 import { ChatTurnNavigation } from './chatNavigation.tsx'
+import { ChatPlanBar, ChatPlanPanel } from './chatPlan.tsx'
 
 export type { ReplyThreadSummary }
 
@@ -85,7 +86,8 @@ export function ReplyThreadPanel({
   const panel = useRef<HTMLElement>(null)
   const busy = state.phase !== 'idle'
   const draft = useChatDraft(state.id)
-  const files = useChatFiles(state.id, busy, draft)
+  const files = useChatFiles(state.id, busy && !state.plan, draft)
+  const [planOpen, setPlanOpen] = useState(false)
   const replies = state.turns.slice(state.inherited).filter((turn) => turn.role === 'assistant').length
   const pauseFollow = useFollow(scroll, [state.turns, state.runs, state.gather], visible)
   useEffect(() => {
@@ -131,6 +133,41 @@ export function ReplyThreadPanel({
           </svg>
         </ActionIcon>
       </header>
+      {state.plan && (
+        <ChatPlanBar
+          plan={state.plan}
+          busy={busy}
+          needsApproval={state.approvals.length > 0}
+          opened={planOpen}
+          onOpen={() => setPlanOpen(true)}
+        />
+      )}
+      {visible && planOpen && state.plan && (
+        <ChatPlanPanel
+          overlay
+          id={state.id}
+          plan={state.plan}
+          queued={state.queued}
+          busy={busy}
+          needsApproval={state.approvals.length > 0}
+          approvals={state.approvals.map((approval) => (
+            <Fragment key={approval.id}>
+              <ApprovalCard
+                approval={approval}
+                chatId={state.id}
+                onChange={chat.updateApproval}
+                onAnswer={(approved, always, revision) => chat.answer(approval.id, approved, always, revision)}
+              />
+            </Fragment>
+          ))}
+          onAction={chat.planAction}
+          onClose={() => setPlanOpen(false)}
+          onAdjust={() => {
+            setPlanOpen(false)
+            setTimeout(() => window.dispatchEvent(new CustomEvent('sky-draft-focus', { detail: state.id })), 250)
+          }}
+        />
+      )}
       <div className="sky-reply-panel-content sky-chat-drop-target" {...files.drop}>
         {files.dragging && (
           <div className="sky-chat-drop" role="status">

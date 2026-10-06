@@ -5,17 +5,10 @@ import type { PreflightVerdict } from '#shared/models/Chat/document/ContextLog/m
 import type { ConversationMessage } from '../type.d.ts'
 
 /**
- * The preflight: Jev reads the message before Sky does and says how likely
- * it is that answering needs the notebook. Two questions, by where the
- * thread is. Before anything has been read: does this need the notebook
- * at all? A message any assistant could answer — general knowledge, code,
- * small talk — reads nothing. After a reading, the model still holds what
- * it read, and a skipped turn keeps that assembly, so the question is
- * whether the message needs anything MORE: a person, record, or message
- * the conversation has not brought in, or a look at the notebook to check
- * something. "Draft it", "send it", "spell that out", "make it shorter"
- * need nothing more. Skip below 20% before a reading, or 30% once an
- * assembly exists: a follow-up can reuse the notebook evidence it has.
+ * Jev judges missing notebook information, not whether a request is personal
+ * or needs tools. Local files and connected services have their own tools.
+ * A skipped turn keeps the existing assembly and still runs the assistant.
+ * Skip below 20% before a reading, or 30% once an assembly exists.
  */
 const SKIP_BELOW = { needs_notebook: 0.2, needs_more: 0.3 }
 /** How much of each recent turn the judge sees — enough to tell what the conversation is about. */
@@ -26,6 +19,15 @@ const RECENT_TURNS = 4
 export interface PreflightState {
   /** The model already holds an assembly read from the notebook, so a follow-up is judged on whether it needs more. */
   assembled: boolean
+  /** A bounded summary supplied by the host, without another model call or notebook read. */
+  task?: {
+    title: string
+    outcome: string
+    status: string
+    note: string
+    nextSteps: string[]
+    resources: { label: string; location: string }[]
+  }
 }
 
 /** A verdict for a message, or null when no preflight ran. */
@@ -35,24 +37,36 @@ export type Preflight = (
   state: PreflightState,
 ) => Promise<PreflightVerdict | null>
 
-/** Before any reading: does the message need the notebook at all? */
+const RETRIEVAL_SCOPE =
+  'Decide whether handling the latest `message` requires retrieving missing information from Sky’s indexed notebook. ' +
+  'The notebook contains saved notes, journals, meeting records, people, projects, and captured messages. ' +
+  'Local folders and PDFs, attachments, websites, live email, and connected spreadsheets have separate tools; needing those tools does not itself require notebook retrieval. ' +
+  '`recent_turns` contains short excerpts, newest last, not the complete conversation. `task_context`, when present, summarizes the current task and known resources. ' +
+  'Absence from these excerpts is not evidence that information is missing. A new name, file, path, date, or fact supplied by the user is input to use, not by itself a reason to search. ' +
+  'Skipping retrieval preserves existing conversation context and access to tools, including later notebook lookups. This decision does not authorize or resume actions.'
+
+const RETRIEVAL_ANSWERS = {
+  true:
+    'Handling the request depends on missing information that notebook retrieval can supply: prior decisions, commitments, preferences, project history, or saved records. ' +
+    'Examples: what did we decide in the Atlas meeting; what commitments did I record last week; continue, but first find the requirements in my project notes. ' +
+    'A continuation or file task still qualifies when it also needs missing notebook information.',
+  false:
+    'The conversation, task context, user-provided information, or direct file/service tools suffice without additional notebook records. ' +
+    'Examples: continue, the receipt is in Jane/Downloaded; I uploaded it, update the checklist we are using; read this PDF against the checklist already in this chat; open this spreadsheet URL; send the draft; make that shorter; general knowledge. ' +
+    'A status update or an instruction to use a known resource does not require searching the notebook just because it concerns the person’s life or a new file.',
+}
+
+/** Before any reading: is missing notebook information needed? */
 const NEEDS_NOTEBOOK = noul(
-  'Does answering `message` need the person’s own notebook — their notes, journal, meetings, saved messages and emails, people, projects, plans, files, or any fact about their own life and work? `recent_turns` is the conversation so far, newest last; a follow-up that continues work on something taken from the notebook still needs it.',
-  {
-    true: 'The answer depends on what the person has recorded or done: their notes, records, history, people, schedule, or files. Asking about “my” anything, naming a person or project of theirs, asking what happened or what is coming up.',
-    false:
-      'Any assistant could answer without knowing the person: general knowledge, explanations, writing or editing text that is already in the conversation, code, math, translation, small talk.',
-  },
+  RETRIEVAL_SCOPE + ' No notebook context has been assembled yet. Does this request need notebook retrieval?',
+  RETRIEVAL_ANSWERS,
 )
 
 /** After a reading: does the message need anything the conversation does not already have? */
 const NEEDS_MORE = noul(
-  'The conversation in `recent_turns` (newest last) has already read from the person’s notebook, and the assistant still holds everything it read. Does answering `message` need anything more from the notebook: a person, message, meeting, record, date, or file the conversation has not brought in yet, or a look at the notebook to check, find, or confirm something?',
-  {
-    true: 'It asks about someone or something the conversation has not covered; asks whether a message, reply, or record exists or has arrived; or asks to look something up, check again, or find more.',
-    false:
-      'It goes on with what the conversation already has: it confirms or approves a proposal, asks to draft, send, or post what was discussed, edits or shortens a reply, asks for an earlier answer to be explained or spelled out, picks between options already laid out, or is small talk.',
-  },
+  RETRIEVAL_SCOPE +
+    ' The conversation has already retrieved notebook context. Does this request need additional notebook records beyond the information already available?',
+  RETRIEVAL_ANSWERS,
 )
 
 /** A preflight over a TypeSafe client. Test seams: `now` for the timing, `sink` for where the usage record goes. */
@@ -70,6 +84,7 @@ export function contextPreflight(
         who: turn.role === 'user' ? 'person' : 'sky',
         said: turn.content.slice(0, TURN_CHARS),
       })),
+      ...(state.task ? { task_context: state.task } : {}),
     }
     const question = state.assembled ? 'needs_more' : 'needs_notebook'
     const result = state.assembled

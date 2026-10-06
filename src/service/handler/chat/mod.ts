@@ -10,6 +10,7 @@
  * session does, and this host renders nothing.
  */
 
+import { readFile, stat } from 'node:fs/promises'
 import * as path from 'node:path'
 import { Hono } from 'hono'
 import { bodyLimit } from 'hono/body-limit'
@@ -41,6 +42,7 @@ import type { Attachment } from '#shared/models/Markdown/Document/attachment.ts'
 import { thrownOutcome, TimingSpan } from '#shared/timing/mod.ts'
 import { timingLine } from '#shared/timing/summary.ts'
 import { chatFileError, MAX_CHAT_FILE_BYTES, MAX_CHAT_FILES, splitChatFiles } from '#universal/ai/chatFiles.ts'
+import type { ChatPlan, QueuedChatInstruction } from '#universal/ai/chatPlan.ts'
 import {
   effectiveEffort,
   effortLevels,
@@ -61,6 +63,7 @@ import { createChatFileRoutes, readChatFiles } from './files.ts'
 import type { InterruptedTurn } from './interrupted.ts'
 import { registerLegalReviewRoutes } from './legalReview.ts'
 import { restoredModelPrefs } from './modelSettings.ts'
+import { ChatPlanController } from './plan.ts'
 import { registerReplyThreads, type ReplyThreadHost } from './replyThreads.ts'
 import { registerSelectionStarts, type SelectionStartOptions } from './selection.ts'
 import type { ChatSourceLinks } from './sourceLinks.ts'
@@ -165,6 +168,9 @@ export interface ToolRun {
  */
 export interface ThreadRestore {
   id: string
+  plan?: unknown
+  queued?: unknown
+  deliveredInstructions?: unknown
   runs?: ToolRun[]
   answered?: AnsweredApproval[]
   prefs?: ThreadPrefs
@@ -218,6 +224,7 @@ export type ChatSessionFactory = (
   restore?: ThreadRestore,
   /** The thread's recorded tool runs, read when a turn builds its tools: drafts nobody has saved yet live there. */
   runs?: () => readonly ToolRun[],
+  plan?: ChatPlanController,
 ) => Promise<ChatSession>
 
 /** One model a thread may think with, as the picker lists it. */
@@ -366,6 +373,7 @@ export interface ThreadSummary {
 /** What travels the turn's stream: the session's events, and what the routes add around them — approvals and tool runs. */
 type WireEvent =
   | ChatSessionEvent
+  | { type: 'plan'; plan: ChatPlan | null; queued: QueuedChatInstruction[] }
   | { type: 'tool-updated'; run: ToolRun }
   | { type: 'approval-request'; approval: PendingApproval }
   | { type: 'approval-answered'; id: string; approved: boolean; at: number }
@@ -378,6 +386,7 @@ type WireEvent =
 
 export interface Thread {
   session: ChatSession
+  plan: ChatPlanController
   /** The generated subject; null until the thread has been named */
   title: string | null
   /** Prevent overlapping title requests while the reply or another message finishes. */
@@ -385,7 +394,7 @@ export interface Thread {
   /** The chat this thread branched from, with the live thread it left when there is one */
   parent: ThreadParent | null
   started: boolean
-  /** One turn at a time: a second message while one runs is refused, not queued */
+  /** One turn at a time; instructions for a live plan can wait for the next turn. */
   busy: boolean
   /** Where the running turn's events go; null between turns */
   sink: ((event: WireEvent) => void) | null
@@ -659,6 +668,7 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
   const opening = new Map<string, Promise<Thread>>()
   // Reserve a turn before awaiting restoration or construction, including its settings.
   const accepting = new Set<string>()
+  const draining = new Set<string>()
   const activeTurns = new Map<string, AbortController>()
   // Tuning chosen before a thread's first message — applied when it is built.
   const pending = new Map<string, ThreadPrefs>()
@@ -679,6 +689,23 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
     let building = opening.get(id)
     if (!building) {
       const prefs = restoredModelPrefs(pending.get(id) ?? restore?.prefs ?? {}, restore, options.settings)
+      const plan = new ChatPlanController({
+        // Fresh branches have a seed, not a resume. A saved reply thread resumes its own host record.
+        plan: restore?.plan !== undefined ? restore.plan : restore?.resume?.recovery?.host?.plan,
+        queue: restore?.queued ?? restore?.resume?.recovery?.host?.queued,
+        delivered: restore?.deliveredInstructions ?? restore?.resume?.recovery?.host?.deliveredInstructions,
+        runs: () => threads.get(id)?.runs ?? [],
+        at: () => threads.get(id)?.session.turns.length ?? 0,
+        changed: async () => {
+          const thread = threads.get(id)
+          if (!thread) return
+          if (plan.plan?.attention) thread.state = 'waiting'
+          else if (thread.busy && !thread.pending.size && thread.state === 'waiting') thread.state = 'thinking'
+          thread.updatedAt = ++tick
+          await thread.session.snapshot()
+          thread.sink?.({ type: 'plan', plan: plan.plan, queued: plan.queue })
+        },
+      })
       // A tool call held for the person: the card goes down the stream (and
       // waits on the thread for a page that opens later); the answer route
       // resolves it. The turn waits meanwhile.
@@ -759,6 +786,7 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
           ask,
           restore,
           () => threads.get(id)?.runs ?? [],
+          plan,
         )
         .then((session) => {
           const chosen = options.settings?.resolve(
@@ -773,6 +801,7 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
           if (restore?.title) session.pinTitle(restore.title)
           const thread: Thread = {
             session,
+            plan,
             // A continued chat goes by its saved title from the start.
             title: restore?.title ?? (restore?.resume?.summary || null),
             naming: false,
@@ -854,6 +883,9 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
             saved: savedOf(thread, baseDir),
             runs: thread.runs,
             answered: thread.answered,
+            plan: plan.plan,
+            queued: plan.queue,
+            deliveredInstructions: plan.delivered,
           })
           pending.delete(id)
           return thread
@@ -997,22 +1029,118 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
   // entry, so the latest assembly answers before the log does.
   const keptOf = (thread: Thread): number | null => thread.context?.stats?.kept ?? thread.session.kept
 
-  app.post('/:id/stop', (c) => {
+  const drain = (id: string) => {
+    const thread = threads.get(id)
+    const next = thread?.plan.nextInstruction
+    if (!thread || !next || thread.busy || accepting.has(id) || draining.has(id)) return
+    draining.add(id)
+    // Same acceptance and execution path as a posted message, with its stream consumed by the host.
+    // Closing the web page has no bearing on delivering an accepted instruction.
+    void Promise.resolve(
+      app.request(`/${encodeURIComponent(id)}/messages`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: next.message,
+          queuedId: next.id,
+          profile: thread.profile,
+          effort: thread.effort,
+          contextTokens: thread.session.contextTokens,
+          saves: thread.saves,
+          continuing: true,
+        }),
+      }),
+    )
+      .then(async (response) => {
+        if (!response.ok) throw new Error('The queued instruction could not start. Resume to try again.')
+        await response.text()
+      })
+      .catch(async (error) => {
+        await thread.plan.holdInstructions()
+        await thread.plan.pause((error as Error).message)
+      })
+      .finally(() => {
+        draining.delete(id)
+        drain(id)
+      })
+  }
+
+  const stopThread = async (id: string) => {
+    const thread = threads.get(id)
+    // Mark pending messages before aborting: the finishing turn may immediately drain.
+    const held = thread?.plan.holdInstructions()
+    activeTurns.get(id)?.abort()
+    if (!thread) return
+    await held
+    for (const approval of thread.pending.values())
+      approval.resolve({ approved: false, reason: 'The response was stopped.' })
+    thread.pending.clear()
+    await thread.plan.pause()
+    thread.updatedAt = ++tick
+  }
+
+  app.post('/:id/plan', async (c) => {
+    await restored
+    const id = c.req.param('id')
+    const thread = threads.get(id)
+    if (!thread?.plan.plan) return c.json({ message: 'This chat has no plan yet.' }, 404)
+    const body = await c.req.json().catch(() => null)
+    try {
+      if (body?.action === 'pause') await stopThread(id)
+      else if (body?.action === 'continue' && typeof body.id === 'string') thread.plan.answer(body.id)
+      else if (body?.action === 'resume') {
+        if (thread.busy || accepting.has(id))
+          return c.json({ message: 'The current action is still stopping. Try again when it finishes.' }, 409)
+        if (thread.plan.plan.status === 'complete') return c.json({ message: 'This plan is already complete.' }, 409)
+        await thread.plan.begin(true)
+        await thread.plan.releaseInstructions()
+        if (!thread.plan.queue.length)
+          await thread.plan.enqueue({
+            id: crypto.randomUUID(),
+            message:
+              'Continue the live plan within my earlier instructions. First check the last action and any destination receipts so completed work is not repeated. Finish the remaining work and final verification.',
+          })
+        drain(id)
+      } else if (body?.action === 'send-instruction' && typeof body.id === 'string') {
+        await thread.plan.releaseInstructions(body.id)
+        drain(id)
+      } else if (body?.action === 'remove-instruction' && typeof body.id === 'string') {
+        await thread.plan.removeInstruction(body.id)
+      } else return c.json({ message: 'Choose pause, resume, continue, send-instruction, or remove-instruction.' }, 400)
+      return c.json({ plan: thread.plan.plan, queued: thread.plan.queue })
+    } catch (error) {
+      return c.json({ message: (error as Error).message }, 409)
+    }
+  })
+
+  app.get('/:id/plan/files/:index', async (c) => {
+    await restored
+    const artifact = threads.get(c.req.param('id'))?.plan.plan?.artifacts[Number(c.req.param('index'))]
+    if (!artifact || !path.isAbsolute(artifact.location)) return c.text('This plan file is no longer available.', 404)
+    try {
+      const info = await stat(artifact.location)
+      if (!info.isFile()) return c.text(`This result is a folder on the computer running Sky:\n${artifact.location}`)
+      if (info.size > 100 * 1024 * 1024)
+        return c.text('This file is too large to download here. Open it on the computer running Sky.', 413)
+      return c.body(new Uint8Array(await readFile(artifact.location)), 200, {
+        'content-type': 'application/octet-stream',
+        'content-disposition': `attachment; filename*=UTF-8''${encodeURIComponent(path.basename(artifact.location))}`,
+        'x-content-type-options': 'nosniff',
+        'cache-control': 'no-store',
+      })
+    } catch {
+      return c.text('This file has moved or is no longer readable. Ask Sky to locate it in chat.', 404)
+    }
+  })
+
+  app.post('/:id/stop', async (c) => {
     const id = c.req.param('id')
     const active = activeTurns.get(id)
     if (!active) {
       if (!threads.has(id)) return c.json({ message: 'no such thread' }, 404)
       return c.json({ stopping: false })
     }
-    active.abort()
-    const thread = threads.get(id)
-    if (thread) {
-      for (const approval of thread.pending.values()) {
-        approval.resolve({ approved: false, reason: 'The response was stopped.' })
-      }
-      thread.pending.clear()
-      thread.updatedAt = ++tick
-    }
+    await stopThread(id)
     return c.json({ stopping: true })
   })
 
@@ -1038,6 +1166,9 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
       contextTokens?: unknown
       saves?: unknown
       continuing?: unknown
+      queue?: unknown
+      queuedId?: unknown
+      instructionId?: unknown
     } | null
     let message = typeof body?.message === 'string' ? body.message.trim() : ''
     const linked = splitChatFiles(message)
@@ -1087,6 +1218,46 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
         return c.json({ message: 'The reading budget exceeds this model’s limit. Choose a smaller budget.' }, 400)
       }
     }
+    if (body.queue === true) {
+      await restored
+      const target = threads.get(id)
+      if (!target?.plan.plan)
+        return c.json({ message: 'Wait for the current response before sending another message.' }, 409)
+      if (typeof body.instructionId !== 'string' || !/^[a-zA-Z0-9-]{1,100}$/.test(body.instructionId))
+        return c.json({ message: 'The instruction needs a request id.' }, 400)
+      const existing = target.plan.queue.find((entry) => entry.id === body.instructionId)
+      if (existing || target.plan.delivered.includes(body.instructionId)) {
+        if (existing && splitChatFiles(existing.message).text !== (linked.text || 'Read the attached files.'))
+          return c.json({ message: 'This request id already belongs to another instruction.' }, 409)
+        return c.json({ queued: target.plan.queue, plan: target.plan.plan }, 202)
+      }
+      if (hasFiles) {
+        try {
+          message = (
+            await readChatFiles(
+              linked.text,
+              uploads as File[],
+              linked.files,
+              target.session.startTime.plainDate,
+              options.attachmentsRoot!,
+            )
+          ).message
+        } catch (error) {
+          return c.json({ message: (error as Error).message }, 400)
+        }
+      }
+      try {
+        await target.plan.enqueue({
+          id: body.instructionId,
+          message,
+          ...(activeTurns.get(id)?.signal.aborted ? { held: true } : {}),
+        })
+      } catch (error) {
+        return c.json({ message: (error as Error).message }, 409)
+      }
+      drain(id)
+      return c.json({ queued: target.plan.queue, plan: target.plan.plan }, 202)
+    }
     if (accepting.has(id) || threads.get(id)?.busy) {
       return c.json({ message: 'a turn is already running on this thread' }, 409)
     }
@@ -1117,6 +1288,10 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
         )
       }
       thread.busy = true
+      thread.session.shouldYield = thread.plan.yieldToNewInstructions()
+      if (body.queuedId !== undefined && (!draining.has(id) || thread.plan.nextInstruction?.id !== body.queuedId)) {
+        throw new Error('The queued instruction is no longer waiting.')
+      }
       if (hasFiles) {
         try {
           const read = await readChatFiles(
@@ -1181,6 +1356,7 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
         let receivedTurn = false
         try {
           frame('turn-started', {})
+          if (thread.plan.plan) frame('plan', { plan: thread.plan.plan, queued: thread.plan.queue })
           if (files) frame('user-message', { content: message })
           name(id, thread, message)
           const turn = await timing.run(async () => {
@@ -1193,6 +1369,11 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
               })
             }
             // The first reply includes the initial context gathering in its timing.
+            if (body.queuedId !== undefined) {
+              if (!thread.plan.take(body.queuedId as string))
+                throw new Error('The queued instruction is no longer waiting.')
+              frame('plan', { plan: thread.plan.plan, queued: thread.plan.queue })
+            }
             return runWithUsageSource('ai:chat', () => thread.session.send(message, files, active.signal))
           })
           receivedTurn = true
@@ -1214,6 +1395,8 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
           thread.state = turn.error ? 'failed' : 'done'
           if (turn.error) thread.partial = turn.error
           thread.updatedAt = ++tick
+          if (turn.error || turn.stopped) await thread.plan.holdInstructions()
+          if (!thread.plan.nextInstruction || turn.error || turn.stopped) await thread.plan.settle()
           frame('turn', {
             ...(wireTurn(turn) as object),
             model: thread.profile,
@@ -1230,6 +1413,8 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
             thread.state = 'failed'
             thread.partial = failed.error ?? ''
           }
+          await thread.plan.holdInstructions()
+          await thread.plan.pause('The response failed. Resume to check the last action before continuing.')
           throw error
         } finally {
           timing.finish('incomplete')
@@ -1238,6 +1423,7 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
           thread.busy = false
           activeTurns.delete(id)
           release()
+          drain(id)
         }
       },
       async (err, stream) => {
@@ -1392,6 +1578,8 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
       documents: thread.session.paths.length,
       kept: keptOf(thread),
       busy: thread.busy,
+      plan: thread.plan.plan,
+      queued: thread.plan.queue,
       pending: [...thread.pending.values()].map(
         ({ id: approvalId, toolName, lines, sessionKey, calendar, revision }) => ({
           id: approvalId,
@@ -1865,9 +2053,11 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
       for (const [childId, child] of children) {
         const childSaved = await child.session.end({ ...options.endDefaults, save, logToDay: null })
         if (childSaved?.aborted) return c.json({ saved: childSaved })
+        await child.plan.browserRun.close()
         threads.delete(childId)
       }
       const saved = (await thread.session.end({ ...options.endDefaults, save })) ?? checkpoint
+      await thread.plan.browserRun.close()
       threads.delete(id)
       return c.json({ saved, ended: [...children.map(([childId]) => childId), id] })
     } finally {

@@ -1,0 +1,290 @@
+.sky-plan-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 28px;
+  border-bottom: 1px solid var(--sky-border-soft);
+  flex: 0 0 auto;
+  background: var(--sky-bg);
+}
+.sky-plan-bar-copy {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+.sky-plan-status {
+  font-size: 14px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.sky-plan-count,
+.sky-plan-hint,
+.sky-plan-note {
+  color: var(--sky-dim);
+  font-size: 14px;
+}
+.sky-plan-current {
+  font-size: 15px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sky-plan-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--sky-dim);
+  flex: none;
+}
+.sky-plan-dot[data-working='true'] {
+  background: var(--sky-action-primary);
+}
+.sky-plan-bar[data-attention='true'] .sky-plan-dot {
+  background: var(--mantine-color-orange-6);
+}
+.sky-plan-panel {
+  width: 390px;
+  flex: 0 0 390px;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--sky-border-soft);
+  background: var(--sky-bg);
+}
+.sky-plan-panel > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 24px;
+  border-bottom: 1px solid var(--sky-border-soft);
+}
+.sky-plan-panel > header h2 {
+  font-size: 16px;
+  margin: 0;
+  font-weight: 600;
+}
+.sky-plan-scroll {
+  overflow-y: auto;
+  min-height: 0;
+  flex: 1;
+  padding: 26px 24px;
+  overscroll-behavior: contain;
+}
+.sky-plan-intro h2 {
+  margin: 8px 0 10px;
+  font-size: 25px;
+  line-height: 1.25;
+  font-weight: 600;
+  letter-spacing: -0.4px;
+}
+.sky-plan-scroll p {
+  line-height: 1.55;
+  margin: 8px 0;
+  overflow-wrap: anywhere;
+}
+.sky-plan-intro > p {
+  font-size: 15px;
+  color: var(--sky-dim);
+}
+.sky-plan-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.sky-plan-eyebrow {
+  color: var(--sky-action-primary);
+  font-size: 13px;
+  font-weight: 600;
+}
+.sky-plan-progress {
+  height: 4px;
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--sky-border-soft);
+  margin-top: 20px;
+}
+.sky-plan-progress > span {
+  display: block;
+  height: 100%;
+  background: var(--sky-action-primary);
+  transition: width 0.2s ease;
+}
+.sky-plan-steps,
+.sky-plan-steps ul,
+.sky-plan-files ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.sky-plan-steps {
+  margin: 26px 0;
+}
+.sky-plan-steps > li {
+  display: flex;
+  align-items: flex-start;
+  gap: 13px;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--sky-border-soft);
+}
+.sky-plan-steps > li:first-child {
+  padding-top: 0;
+}
+.sky-plan-step-body {
+  min-width: 0;
+  flex: 1;
+}
+.sky-plan-scroll h3 {
+  font-size: 16px;
+  font-weight: 600;
+  margin: 0;
+  line-height: 1.45;
+}
+.sky-plan-mark {
+  width: 20px;
+  height: 20px;
+  border: 1px solid var(--sky-border-soft);
+  border-radius: 50%;
+  flex: 0 0 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  margin-top: 2px;
+}
+.sky-plan-mark[data-status='done'],
+.sky-plan-mark[data-status='working'] {
+  background: color-mix(in srgb, var(--sky-action-primary) 9%, var(--sky-bg));
+  color: var(--sky-action-primary);
+  border-color: color-mix(in srgb, var(--sky-action-primary) 40%, var(--sky-bg));
+}
+.sky-plan-mark[data-status='blocked'] {
+  color: var(--mantine-color-orange-7);
+  border-color: currentColor;
+}
+.sky-plan-step-status {
+  font-size: 12px;
+  color: var(--sky-dim);
+}
+.sky-plan-step-body p {
+  font-size: 14px;
+  color: var(--sky-dim);
+}
+.sky-plan-step-body summary {
+  cursor: pointer;
+  margin-top: 10px;
+  font-size: 14px;
+  color: var(--sky-action-primary);
+}
+.sky-plan-step-body ul li {
+  display: flex;
+  gap: 10px;
+  margin-top: 12px;
+  font-size: 14px;
+}
+.sky-plan-step-body ul strong {
+  font-weight: 600;
+}
+.sky-plan-attention {
+  padding: 18px;
+  margin-top: 22px;
+  border: 1px solid color-mix(in srgb, var(--sky-amber) 25%, var(--sky-bg));
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--sky-amber) 6%, var(--sky-bg));
+  font-size: 15px;
+}
+.sky-plan-attention button {
+  white-space: normal;
+}
+.sky-plan-files li {
+  margin: 14px 0;
+}
+.sky-plan-files a {
+  font-size: 15px;
+  color: var(--sky-action-primary);
+  text-decoration: none;
+}
+.sky-plan-files li > span {
+  display: block;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+  color: var(--sky-dim);
+  margin-top: 3px;
+}
+.sky-plan-check,
+.sky-plan-queued {
+  border-top: 1px solid var(--sky-border-soft);
+  padding-top: 20px;
+  margin-top: 24px;
+  font-size: 14px;
+}
+.sky-plan-queued > div {
+  padding: 12px 0;
+}
+.sky-plan-footer {
+  border-top: 1px solid var(--sky-border-soft);
+  padding: 16px 24px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.sky-plan-footer > p {
+  flex-basis: 100%;
+  color: var(--mantine-color-red-7);
+  font-size: 14px;
+  margin: 0;
+}
+.sky-plan-drawer {
+  border-radius: 18px 18px 0 0;
+  background: var(--sky-bg);
+  display: flex;
+  flex-direction: column;
+}
+.sky-plan-drawer-head {
+  border-bottom: 1px solid var(--sky-border-soft);
+  background: var(--sky-bg);
+}
+.sky-plan-drawer-body {
+  padding: 0;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+.sky-plan-content {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.sky-plan-queue-note {
+  padding: 4px 0;
+  color: var(--sky-dim);
+  font-size: 13px;
+}
+
+.sky-main:has(> .sky-plan-bar) .sky-composer-shell .sky-chat-files,
+.sky-reply-panel:has(> .sky-plan-bar) .sky-composer-shell .sky-chat-files {
+  max-height: min(300px, 30dvh);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+@media (max-width: 1179px) {
+  .sky-plan-bar {
+    padding: 10px 16px;
+    gap: 8px;
+  }
+  .sky-plan-bar > button {
+    flex-shrink: 0;
+  }
+  .sky-plan-scroll {
+    padding: 20px;
+  }
+  .sky-plan-footer {
+    padding: 14px 20px max(14px, env(safe-area-inset-bottom));
+  }
+}

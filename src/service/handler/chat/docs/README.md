@@ -16,6 +16,55 @@ The shared agreement summary, reviewer context, sources and user decisions follo
 
 ## What is built
 
+### Live plans
+
+Short delegated work stays in its chat. `plan.ts` owns the versioned checklist,
+result links, browser handoff, and queued instructions; these live in the existing
+session recovery host record, including temporary chats. `update_plan` checks
+action evidence against recorded successful tool calls and checks artifact paths
+against their results. Completion requires a final check and no unfinished steps
+or queued instructions. These checks establish provenance, not semantic proof:
+the reasoning model still has to inspect documents and destination receipts.
+Plans track delegated outcomes, not the searches and reads needed to answer a
+question. `taskAdmission.ts` checks the latest user request lazily before a plan
+or browser tool runs, independently of notebook context preflight. A confident
+answer-only or small-action verdict refuses plan creation; connected-tool reads
+refuse browser escalation. Jev supplies routing evidence, never authorization.
+An unavailable or uncertain adviser leaves the main model's scoped instructions
+in force. `taskTools.ts` lets small browser tasks run without manufacturing a
+checklist and returns any needed handoff in chat. A question about paused work
+does not resume it; an admitted continuation or the explicit Resume control does.
+Admission evaluates continuation separately from the size of the next action:
+retrying one source still belongs to the existing plan and its browser run.
+The classifier receives step/source titles for this relationship; a question or
+unrelated action still leaves paused work alone.
+Requested edits to existing results, including a file's new location, can keep
+`status: paused`; recording those results does not resume browser work. Local
+file operations use the [shared chat tools](../../../../commands/lib/chat/docs/README.md#local-file-organization).
+
+An instruction sent during work is durably queued. The engine finishes the
+current tool, then yields only to instructions arriving during that turn;
+instructions already waiting cannot suppress the next reply's tools. The HTTP
+host delivers ready instructions through the ordinary message path even after
+the page closes and while the checklist stays paused. A paused checklist must
+not freeze the conversation queue. Stop and recovery hold individual queued
+instructions instead; new messages can still run. **Send now** releases one
+held instruction without resuming the checklist. Resume releases the held
+queue and instructs the model to check the last action before retrying.
+Recovery converts active handoffs to paused state and never replays external
+actions automatically. Branches start without the parent's live plan;
+deleting the messages behind later progress clears those claims. A plan also owns
+an ephemeral [browser run](../../../../lib/browser/docs/README.md#credential-backed-tasks)
+so 1Password authorization survives bounded browser subtasks; pause and completion
+release it, and session snapshots never store its authorization.
+
+The desktop plan shares the right panel with Context and reply threads. The
+status strip remains under the chat header; **View plan** opens the mobile drawer
+and remains available after dismissal. Polling preserves text selection and does
+not reopen a dismissed panel. Native sign-in remains outside HTTP approval:
+the plan tells the person to use the computer running Sky. A browser acknowledgment
+requests a fresh check, never a credential or permission grant.
+
 ### Tasks from chat
 
 `day:items:add` receives a self-contained action and context notes. The web host
@@ -588,8 +637,12 @@ With the Experimental switch "Jev preflight for notebook context" on, a
 web chat turn asks TypeSafe's Jev before reading the notebook
 (`_shared-ts/models/Chat/ChatContext/preflight.ts`): before anything has
 been read, whether the message needs the notebook at all; after a
-reading, whether it needs anything more than the conversation already
-has. A skipped turn reads nothing new: the first turn tells the model
+reading, whether it needs additional notebook records beyond the information
+already available. Both questions distinguish missing notebook information from
+user-provided facts and work handled by file or connected-service tools. The
+host adds a bounded summary of the current plan, pending actions, and known
+resource locations; recent message excerpts are explicitly incomplete.
+A skipped turn reads nothing new: the first turn tells the model
 nothing was read for this message, a later one keeps the last assembly
 and runs no query. The verdict, and which question it answered, is
 logged on every turn it ran. The check is a saving, never a gate: a
