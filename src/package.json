@@ -79,6 +79,7 @@
     "string-similarity": "4.0.2",
     "strip-ansi": "7.0.1",
     "three": "0.185.1",
+    "tldts": "7.4.16",
     "twitter-api-v2": "1.14.2",
     "ws": "8.21.1",
     "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz",

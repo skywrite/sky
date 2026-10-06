@@ -1,6 +1,7 @@
 import { setTimeout as delay } from 'node:timers/promises'
-import type { Item, ItemOverview, VaultOverview } from '@1password/sdk'
+import { AutofillBehavior, type Item, type ItemOverview, type VaultOverview } from '@1password/sdk'
 import { assert, test } from '#test'
+import { matchesLoginOrigin } from '../login.ts'
 import { onePasswordRequest } from '../onePasswordRequest.ts'
 import { OnePasswordCredentialProvider } from './OnePasswordCredentialProvider.ts'
 import type { OnePasswordClient } from './OnePasswordCredentialProvider.ts'
@@ -310,6 +311,59 @@ test('login verification binds a fresh code to the approved item revision, origi
       JSON.stringify(login).includes('mock-seed'),
     ],
     expected: ['654321', undefined, 'invalid-input', 'conflict', 'unsupported', 'excluded', false, false],
+  })
+})
+
+test('login API permission comes from the same fresh native revision as the password', async () => {
+  const { provider, ref, stored } = fixture()
+  const exact = await provider.readLogin(ref, 'https://example.com')
+  stored.get('vault-a')!.websites[0].autofillBehavior = AutofillBehavior.AnywhereOnWebsite
+  const website = await provider.readLogin(ref, 'https://example.com')
+  stored.get('vault-a')!.websites[0].autofillBehavior = AutofillBehavior.Never
+  const revoked = await provider.readLogin(ref, 'https://example.com').catch((error) => error.code)
+  assert({
+    given: 'an exact-host login, a fresh website-wide revision, and a later never-fill revision',
+    should: 'keep each read’s scope independent and reject a newly revoked login',
+    actual: [
+      exact.permitsOrigin?.('https://api.example.com'),
+      website.permitsOrigin?.('https://api.example.com'),
+      website.permitsOrigin?.('https://other.example'),
+      website.permitsOrigin?.('http://api.example.com'),
+      revoked,
+    ],
+    expected: [false, true, false, false, 'invalid-input'],
+  })
+})
+
+test('a native scheme-less website survives discovery, fresh login validation and saved-code continuation', async () => {
+  const { provider, ref, stored, counts } = fixture()
+  const item = stored.get('vault-a')!
+  item.websites = [{ url: 'example.com', label: 'Site', autofillBehavior: AutofillBehavior.AnywhereOnWebsite }]
+  const listing = await provider.list()
+  const found = listing.items.find((candidate) => candidate.ref.containerId === ref.containerId)!
+  assert({
+    given: 'a native Login with a website saved without a scheme',
+    should: 'find the HTTPS login without reading or rewriting its fields',
+    actual: [matchesLoginOrigin(found, 'https://example.com'), found.websites[0].url, counts()],
+    expected: [true, 'example.com', { reads: 0, writes: 0 }],
+  })
+  const login = await provider.readLogin(ref, 'https://example.com')
+  const otp = await provider.readLoginOtp(ref, 'https://example.com', login.otp!)
+  item.websites[0].autofillBehavior = AutofillBehavior.Never
+  const revoked = await provider.readLogin(ref, 'https://example.com').catch((error) => error.code)
+  assert({
+    given: 'fresh password and authenticator reads followed by a never-fill change',
+    should: 'permit the saved HTTPS website and API only while its native scope allows it',
+    actual: [
+      login.password.use((value) => value === 'mock-password'),
+      login.permitsOrigin?.('https://api.example.com'),
+      login.permitsOrigin?.('http://api.example.com'),
+      login.permitsOrigin?.('https://other.example'),
+      otp.code.use((value) => value === '123456'),
+      revoked,
+      counts().writes,
+    ],
+    expected: [true, true, false, false, true, 'invalid-input', 0],
   })
 })
 

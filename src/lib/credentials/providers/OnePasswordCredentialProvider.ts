@@ -87,7 +87,8 @@ export class OnePasswordCredentialProvider implements CredentialProvider {
   readLogin(ref: ItemRef, origin: string): Promise<LoginValues> {
     return this.call(async () => {
       const item = await this.load(ref)
-      if (!matchesLoginOrigin(this.summary(item), origin)) throw new CredentialError('invalid-input')
+      const summary = this.summary(item)
+      if (!matchesLoginOrigin(summary, origin)) throw new CredentialError('invalid-input')
       const username = item.fields.find((field) => !field.sectionId && field.id === 'username')
       const password = item.fields.find((field) => !field.sectionId && field.id === 'password')
       if (!username?.value || !password?.value || password.fieldType !== 'Concealed')
@@ -96,6 +97,7 @@ export class OnePasswordCredentialProvider implements CredentialProvider {
       return {
         username: new SensitiveValue(username.value),
         password: new SensitiveValue(password.value),
+        permitsOrigin: (destination) => matchesLoginOrigin(summary, destination),
         ...(codes.length === 1
           ? { otp: { field: { id: codes[0].id, sectionId: codes[0].sectionId }, revision: String(item.version) } }
           : {}),

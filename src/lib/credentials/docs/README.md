@@ -1,6 +1,6 @@
 ---
 created: 2026-09-27
-updated: 2026-10-02
+updated: 2026-10-05
 ---
 
 # Credential providers
@@ -95,12 +95,20 @@ calling the SDK, but the SDK has no atomic conditional-delete operation.
 The SDK's native timestamp objects remain inside this adapter; they are not
 exposed through the application model.
 
-`readLogin` revalidates a Login item's exact HTTPS origin and obtains the built-in
+`readLogin` revalidates a Login item's HTTPS autofill scope and obtains the built-in
 username and password from the same native revision. It is consumed only by the
 private browser worker after approval; never expose this through a Settings route.
+Native website fields may omit the scheme (for example, `atlas.example`). Login
+matching interprets those saved addresses as HTTPS without rewriting the item;
+the live page and API origins still require explicit HTTPS, and exact-host,
+port, website-wide, and never-fill restrictions still apply. Do not apply the
+browser-origin parser directly to saved website metadata.
+Its private origin predicate carries that revision's autofill scope to the
+browser's bounded scripted-login API policy; it is never a grant inferred from
+an earlier search result.
 When the item has exactly one TOTP field, `readLogin` also returns a field/revision
 binding without its code or seed. `readLoginOtp` revalidates that binding and the
-exact origin on a fresh native item read. The browser owns the short-lived,
+saved website's autofill scope on a fresh native item read. The browser owns the short-lived,
 single-use [verification continuation](../../browser/docs/README.md#verification-continuation).
 
 The adapter obtains TOTP codes from the SDK's computed OTP field details. That
