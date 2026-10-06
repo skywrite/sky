@@ -1,4 +1,4 @@
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import * as path from 'node:path'
 import { makeTempDir, readDir } from '#shared/fs/mod.ts'
 import { assert, test } from '#test'
@@ -6,6 +6,27 @@ import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import { copyFileDedup, copyToDayAttachments } from './attachments.ts'
 
 const DAY = new PlainDate('2026-01-27')
+
+test('attachment name collisions cannot reuse symlinks or directories', async () => {
+  const root = await tmp()
+  const destination = path.join(root, 'saved')
+  await mkdir(destination)
+  const source = path.join(root, 'original.pdf')
+  await writeFile(source, 'Example bytes')
+  await symlink(source, path.join(destination, 'Atlas.pdf'))
+  await mkdir(path.join(destination, 'Atlas_2.pdf'))
+  try {
+    const copied = await copyFileDedup(source, destination, 'Atlas.pdf')
+    assert({
+      given: 'a matching symlink and a directory occupy the first two candidate names',
+      should: 'save a regular file under the next name without reading or replacing either collision',
+      actual: [copied, await readFile(path.join(destination, copied!), 'utf8'), await readFile(source, 'utf8')],
+      expected: ['Atlas_3.pdf', 'Example bytes', 'Example bytes'],
+    })
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
 
 test('an image capture owns a separate copy so renaming it cannot break another note', async () => {
   const root = await tmp()

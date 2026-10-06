@@ -233,6 +233,30 @@ test('failed calendar sends preserve the edited draft and durable receipt in mod
   })
 })
 
+test('a partially failed attachment download keeps its saved paths at the chat boundary', async () => {
+  const receipt = {
+    complete: false,
+    files: [{ filename: 'Atlas.pdf', path: '/mock/Atlas.pdf', bytes: 4 }],
+    errors: [{ filename: 'Appendix.pdf', error: 'Incomplete attachment' }],
+  }
+  const result = await runToolCommand(
+    stubTasks(CommandResult.fail('1 of 2 attachments saved.', receipt)),
+    { commandName: 'google:email:attachments:download', toolName: 'google_email_attachments_download' },
+    { thread: 'example-thread' },
+  )
+  assert({
+    given: 'one saved attachment and one failed attachment',
+    should: 'let the model inspect the saved file and retry only the failed part',
+    actual: [
+      result.success,
+      result.files,
+      result.errors,
+      toolModelMessageSchema.safeParse(asToolMessage(result)).success,
+    ],
+    expected: [false, receipt.files, receipt.errors, true],
+  })
+})
+
 test('runToolCommand flattens success payloads to plain JSON', async () => {
   class Artifact {
     url: string

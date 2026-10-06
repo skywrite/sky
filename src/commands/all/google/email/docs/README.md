@@ -1,6 +1,6 @@
 ---
 created: 2026-08-30
-updated: 2026-10-01
+updated: 2026-10-05
 ---
 
 # google:email
@@ -19,11 +19,34 @@ Existing Gmail drafts still wait for the user to send them from Gmail.
   gives label-wide message/thread counts independently of the listing
   limit, added up over the mailboxes listed; `null` means a total could
   not be retrieved. `accounts` breaks the listing down by mailbox.
+- `google:email:search` — Gmail queries across connected mailboxes, including
+  archived and sent mail. Results carry thread IDs and accounts for reading;
+  per-account errors and `hasMore` prevent a limited search claiming completeness.
 - `google:email:read` — one thread with decoded bodies, oldest first,
   under 4,000-character per-message and 24,000-character per-thread caps.
   The budget goes to recent messages first. `totalMessages`,
   `omittedMessages`, and thread/per-message `truncated` flags identify
-  incomplete reads. An ai:chat/voice tool.
+  incomplete reads. `omittedMessageIds` names skipped messages; `message` selects
+  one for a 24,000-character read, and `offset=nextOffset` continues its body
+  without losing text at a character boundary. These API continuations keep
+  thread analysis in ordinary chat without a browser sign-in or checklist.
+  The `attachments` inventory covers the entire requested thread or selected
+  message independently of body limits, including nested and inline files.
+  Entries carry `messageId`, `partId`, original filename, MIME type and byte
+  size; encoded bytes and large provider attachment IDs stay out of chat.
+  An ai:chat/voice tool.
+- `google:email:attachments:download` — downloads the requested thread's
+  attachments, optionally restricted by `message` and `part`. Resolves the same
+  mailbox as read and verifies each selected part belongs to it. `directory`
+  is required: reuse the task's destination from the conversation or plan,
+  including its agreed subfolder layout. There is no fallback to daily notebook
+  storage; `read_file` manages its own conversation copies. Returns verified paths, sizes and SHA-256 values for
+  `read_file` to inspect. Email filenames are sanitized, identical bytes reuse
+  an existing copy, and conflicting names receive numbered suffixes. Original
+  filenames are retained as provider-supplied metadata, not new content IDs.
+  Partial failures and Stop retain successful paths plus errors for unsaved
+  parts through the chat tool boundary. Downloads neither modify mail nor
+  claim the files were inspected or uploaded elsewhere.
 - `google:email:draft:new` / `google:email:draft:reply` — drafts that
   wait in Gmail for the user to send by hand. Approval-gated tools.
   Creation returns `draftId` for `google:email:draft:update`.
@@ -31,6 +54,13 @@ Existing Gmail drafts still wait for the user to send them from Gmail.
 
 Read/view timestamps use nbdt `Instant` at the Gmail boundary and retain
 UTC seconds and milliseconds.
+
+Gmail may return attachment bytes in the message payload or behind an
+attachment endpoint; the shared decoder handles both and checks the declared
+size before saving. See Google's [message part body contract](https://developers.google.com/workspace/gmail/api/reference/rest/v1/users.messages.attachments).
+Inline files remain visible in chat; the capture/follow pipeline applies its
+existing signature-image filter separately. Shared Drive links are separate
+documents read with `google:read`.
 
 With several accounts connected, the chat tools work out the mailbox
 instead of asking: a thread or draft is opened in the mailbox that holds

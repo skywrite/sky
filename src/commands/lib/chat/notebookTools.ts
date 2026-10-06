@@ -320,10 +320,10 @@ export async function runToolCommand(
       .join(': ')
     const error = truncate(detail || `Failed: ${entry.commandName}`, MAX_TOOL_ERROR_CHARS)
     reviewFailed(error)
-    // Calendar failures carry durable receipts and the exact human-edited fields.
-    // Dropping them leaves the model with only the older preparation and encourages a replacement invite.
+    // These failures carry completed effects. Keep the receipts so a retry
+    // can inspect already-saved files or the original calendar operation.
     const receipt =
-      (entry.commandName === 'calendar:schedule' || entry.commandName === 'calendar:update') &&
+      ['calendar:schedule', 'calendar:update', 'google:email:attachments:download'].includes(entry.commandName) &&
       result.data &&
       typeof result.data === 'object'
         ? (JSON.parse(JSON.stringify(result.data)) as Record<string, unknown>)

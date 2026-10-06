@@ -50,8 +50,13 @@ export interface GmailAttachment {
   filename: string
   contentType: string
   size: number
-  /** Opaque id for getAttachment; only present in format=full responses. */
-  attachmentId: string
+  /** Stable MIME part id. Older in-memory capture records may lack it. */
+  partId?: string
+  /** Opaque id for getAttachment; small attachments can carry data directly instead. */
+  attachmentId?: string
+  /** Base64url bytes from the message payload; never include this in chat metadata. */
+  data?: string
+  inline?: boolean
 }
 
 export interface GmailMessage {
@@ -124,6 +129,7 @@ interface BodyWire {
 }
 
 interface PartWire {
+  partId?: string
   mimeType?: string
   filename?: string
   headers?: HeaderWire[]
@@ -279,7 +285,31 @@ export async function getAttachment(
 ): Promise<Uint8Array> {
   const url = `${GMAIL_API_URL}/messages/${encodeURIComponent(messageId)}/attachments/${encodeURIComponent(attachmentId)}`
   const wire = await client.getJson<AttachmentWire>(url)
-  return wire.data ? new Uint8Array(Buffer.from(wire.data, 'base64url')) : new Uint8Array(0)
+  if (typeof wire.data !== 'string') throw new Error('Gmail returned no attachment data. Retry this attachment.')
+  return decodeAttachment(wire.data)
+}
+
+/** Both Gmail attachment representations produce checked original bytes. */
+export async function getMessageAttachment(
+  client: GoogleClient,
+  messageId: string,
+  attachment: GmailAttachment,
+): Promise<Uint8Array> {
+  const data = attachment.attachmentId
+    ? await getAttachment(client, messageId, attachment.attachmentId)
+    : attachment.data !== undefined
+      ? decodeAttachment(attachment.data)
+      : undefined
+  if (!data) throw new Error(`Gmail supplied no downloadable content for ${attachment.filename}.`)
+  if (attachment.size > 0 && data.byteLength !== attachment.size)
+    throw new Error(`Incomplete attachment: expected ${attachment.size} bytes, received ${data.byteLength}. Retry it.`)
+  return data
+}
+
+function decodeAttachment(data: string): Uint8Array {
+  if (!/^[A-Za-z0-9_+/-]*={0,2}$/.test(data) || data.replace(/=+$/, '').length % 4 === 1)
+    throw new Error('Gmail returned invalid attachment data. Retry this attachment.')
+  return new Uint8Array(Buffer.from(data, 'base64url'))
 }
 
 /**
@@ -432,33 +462,32 @@ type BodyCollector = {
   attachments: GmailAttachment[]
 }
 
-function collectParts(part: PartWire | undefined, out: BodyCollector): void {
+function collectParts(part: PartWire | undefined, out: BodyCollector, location = '0'): void {
   if (!part) return
   const mime = (part.mimeType ?? '').toLowerCase()
   const filename = (part.filename ?? '').trim()
   if (filename) {
-    const attachmentId = part.body?.attachmentId
-    if (attachmentId && !isInlineSignatureImage(part)) {
-      out.attachments.push({
-        filename,
-        contentType: mime || 'application/octet-stream',
-        size: part.body?.size ?? 0,
-        attachmentId,
-      })
-    }
+    const disposition = part.headers?.find((header) => header.name?.toLowerCase() === 'content-disposition')?.value
+    out.attachments.push({
+      filename,
+      contentType: mime || 'application/octet-stream',
+      size: part.body?.size ?? 0,
+      partId: part.partId || location,
+      ...(part.body?.attachmentId ? { attachmentId: part.body.attachmentId } : {}),
+      ...(typeof part.body?.data === 'string' ? { data: part.body.data } : {}),
+      ...(disposition?.toLowerCase().startsWith('inline') ? { inline: true } : {}),
+    })
   } else if (mime === 'text/plain' && out.text === undefined && part.body?.data) {
     out.text = decodeBody(part.body.data)
   } else if (mime === 'text/html' && out.html === undefined && part.body?.data) {
     out.html = decodeBody(part.body.data)
   }
-  for (const child of part.parts ?? []) collectParts(child, out)
+  for (const [index, child] of (part.parts ?? []).entries()) collectParts(child, out, `${location}.${index}`)
 }
 
-/** Inline signature images (image001.png, …) are noise the IMAP pipeline also drops; keep both capture paths consistent. */
-function isInlineSignatureImage(part: PartWire): boolean {
-  if (!/^image\d+\.\w+$/i.test(part.filename ?? '')) return false
-  const disposition = (part.headers ?? []).find((h) => h.name?.toLowerCase() === 'content-disposition')
-  return (disposition?.value ?? '').toLowerCase().startsWith('inline')
+/** Capture policy only: chat still exposes inline images so an attached scan cannot disappear. */
+export function isInlineSignatureAttachment(attachment: GmailAttachment): boolean {
+  return attachment.inline === true && /^image\d+\.\w+$/i.test(attachment.filename)
 }
 
 /** Gmail body data is URL-safe base64. Decoded as UTF-8, matching the IMAP pipeline's tolerance for other charsets. */

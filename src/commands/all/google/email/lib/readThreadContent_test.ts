@@ -6,6 +6,33 @@ function message(overrides: Partial<GmailMessage> = {}): GmailMessage {
   return { id: 'a1', threadId: 'ff', labelIds: [], attachments: [], ...overrides }
 }
 
+test('email read continuations recover every character and every omitted message without a browser', () => {
+  const body = 'a'.repeat(3999) + '😀' + 'b'.repeat(30000) + ' Final correction.'
+  const messages = [
+    message({ id: 'a1', bodyText: body }),
+    ...Array.from({ length: 7 }, (_, i) => message({ id: `b${i}`, bodyText: String(i).repeat(4000) })),
+  ]
+  const initial = readThreadContent(messages)
+  let text = ''
+  let offset = 0
+  let reads = 0
+  do {
+    const part = readThreadContent(messages, { message: 'a1', offset }).messages[0]!
+    text += part.text
+    reads++
+    if (part.nextOffset === undefined) break
+    offset = part.nextOffset
+  } while (reads < 10)
+  const preview = readThreadContent([messages[0]!]).messages[0]!
+  const tail = readThreadContent([messages[0]!], { message: preview.id, offset: preview.nextOffset }).messages[0]!
+  assert({
+    given: 'an omitted older message with a long body and an emoji at a preview boundary',
+    should: 'name the omitted id and recover the complete body in bounded chunks',
+    actual: [initial.omittedMessageIds, text, reads, preview.text.length, tail.text.startsWith('😀')],
+    expected: [['a1', 'b0'], body, 2, 3999, true],
+  })
+})
+
 test('readThreadContent retains recent messages when the thread exceeds the budget', () => {
   const messages = Array.from({ length: 7 }, (_, i) =>
     message({ from: { address: `sender${i}@example.com` }, bodyText: String(i).repeat(4000) }),

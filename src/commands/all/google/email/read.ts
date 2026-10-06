@@ -4,6 +4,7 @@
  * by voice or chat; google:email:inbox:view supplies the threadId.
  */
 
+import { z } from 'zod'
 import { AIChatTool } from '#commands/lib/AIChatTool.ts'
 import { Arg, Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
@@ -15,7 +16,12 @@ import type { ReadThreadContent } from './lib/readThreadContent.ts'
 import { findOwningGmailClient } from './lib/resolveGmailClient.ts'
 
 const params = {
-  thread: Arg.string('Gmail API thread id (from google:email:inbox:view)'),
+  thread: Arg.string('Gmail API thread id (from google:email:search or google:email:inbox:view)'),
+  message: Flag.string('Read one message in full, in chunks; use its id or an omittedMessageIds entry'),
+  offset: Flag.number('Continue the selected message at its returned nextOffset', {
+    optional: true,
+    schema: z.coerce.number().int().min(0),
+  }),
   account: Flag.string(
     'Google account to try first — the `account` on the listed thread (email or unique part of it); left out, Sky finds the mailbox the thread is in',
     { short: 'a' },
@@ -45,10 +51,17 @@ export default class GoogleEmailReadTask extends Command {
     name: 'google:email:read',
     description:
       'Read one Gmail thread with sender, time, and body text, oldest first. Call it before ' +
-      'summarizing an email aloud or drafting a reply. Takes the threadId from google:email:inbox:view. ' +
+      'summarizing an email aloud or drafting a reply. Takes the threadId from google:email:search or google:email:inbox:view. ' +
       'Bodies are capped at 4,000 characters per message and 24,000 per thread, retaining the newest messages. ' +
-      'Check truncated and omittedMessages before treating the result as the complete conversation. The thread ' +
-      'is read from the connected account it lives in; `account` in the result says which. Changes nothing.',
+      'Check truncated and omittedMessages before treating the result as the complete conversation. ' +
+      'For omitted messages, pass message from omittedMessageIds. For shortened bodies, pass message=id and offset=nextOffset; ' +
+      'continue until no nextOffset remains. A selected message returns up to 24,000 characters per call. Use these ' +
+      'continuations, not a browser, to finish reading. Search can locate related threads beyond this thread. The thread ' +
+      'is read from the connected account it lives in; `account` in the result says which. ' +
+      'The attachments list includes every file in the thread (or selected message), even on omitted messages. ' +
+      'Use google:email:attachments:download with thread, account, the task’s destination as directory, ' +
+      'and optional messageId as message / partId as part; ' +
+      'then read_file on its saved paths to inspect the contents. Shared Drive links are read with google:read. Changes nothing.',
     params,
   }
 
@@ -74,7 +87,7 @@ export default class GoogleEmailReadTask extends Command {
     if (messages.length === 0) return CommandResult.fail(`Gmail thread ${thread} has no messages.`)
 
     try {
-      const content = readThreadContent(messages)
+      const content = readThreadContent(messages, { message: args.message, offset: args.offset })
       const subject = messages[0].subject || '(no subject)'
       const accountNote = accountSwitchNote(found)
       output.log(
@@ -90,6 +103,11 @@ export default class GoogleEmailReadTask extends Command {
         output.log(`  ${row.date ?? '(no date)'}  ${row.from}`)
         output.log(`    ${truncate(row.text, 200)}`)
       }
+      output.log(`  ${content.attachments.length} attachment(s) available through google:email:attachments:download.`)
+      for (const attachment of content.attachments)
+        output.log(
+          `    ${attachment.filename} — ${attachment.contentType}, ${attachment.size} bytes — message ${attachment.messageId}, part ${attachment.partId}`,
+        )
       return CommandResult.success({
         threadId: thread,
         subject,

@@ -10,15 +10,41 @@
 
 import { createHash, randomUUID } from 'node:crypto'
 import { constants, existsSync } from 'node:fs'
-import { copyFile, link, mkdir, readFile, unlink } from 'node:fs/promises'
+import { copyFile, link, mkdir, open, readFile, unlink } from 'node:fs/promises'
 import * as path from 'node:path'
 import type { Attachment } from '#shared/models/Markdown/Document/attachment.ts'
 import dayAttachmentsDir from '#shared/nbfs/dayAttachmentsDir.ts'
 import type { PlainDate } from '#universal/dates/nbdt/mod.ts'
 
+/** Keep untrusted attachment names within their chosen folder. */
+export function safeAttachmentName(name: string): string {
+  const base = name.replaceAll('\\', '/').split('/').pop()?.trim() ?? ''
+  const cleaned = base.replace(/[\u0000-\u001f:]/g, '-').replace(/^\.+/, '')
+  return cleaned.length > 0 ? cleaned : 'file'
+}
+
 export async function sha256File(filePath: string): Promise<string> {
   const data = await readFile(filePath)
   return createHash('sha256').update(data).digest('hex')
+}
+
+async function matchesFile(filePath: string, hash: string): Promise<boolean> {
+  try {
+    const file = await open(filePath, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK)
+    try {
+      if (!(await file.stat()).isFile()) return false
+      return (
+        createHash('sha256')
+          .update(await file.readFile())
+          .digest('hex') === hash
+      )
+    } finally {
+      await file.close()
+    }
+  } catch (error) {
+    if (['ENOENT', 'ELOOP', 'EISDIR'].includes((error as NodeJS.ErrnoException).code ?? '')) return false
+    throw error
+  }
 }
 
 /**
@@ -55,7 +81,7 @@ export async function copyFileDedup(
         if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
         if (options.unique) continue
         sourceHash ??= await sha256File(temporary)
-        if ((await sha256File(targetPath)) === sourceHash) return targetName
+        if (await matchesFile(targetPath, sourceHash)) return targetName
       }
     }
   } finally {

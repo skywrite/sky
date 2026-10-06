@@ -188,12 +188,26 @@ test('getThread', async () => {
 
   assert({
     given: 'a B-encoded subject, a real attachment, and an inline signature image',
-    should: 'decode the subject, keep the attachment, and drop the signature image',
+    should: 'decode the subject and expose both attachments with the inline image identified',
     expected: {
       subject: 'Re: Café plan',
       inReplyTo: '<msg-1@example.com>',
       attachments: [
-        { filename: 'atlas-report.pdf', contentType: 'application/pdf', size: 12345, attachmentId: 'att1' },
+        {
+          filename: 'atlas-report.pdf',
+          contentType: 'application/pdf',
+          size: 12345,
+          attachmentId: 'att1',
+          partId: '0.1',
+        },
+        {
+          filename: 'image001.png',
+          contentType: 'image/png',
+          size: 500,
+          attachmentId: 'att2',
+          partId: '0.2',
+          inline: true,
+        },
       ],
     },
     actual: {

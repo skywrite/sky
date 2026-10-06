@@ -3,7 +3,13 @@ import * as path from 'node:path'
 import type { CommandService } from '#commands/mod.ts'
 import { DIR_BASE } from '#config'
 import type { GoogleClient } from '#lib/google/mod.ts'
-import { accountCategory, getAttachment, getMessage, threadIdToDecimal } from '#lib/google/mod.ts'
+import {
+  accountCategory,
+  getMessageAttachment,
+  getMessage,
+  isInlineSignatureAttachment,
+  threadIdToDecimal,
+} from '#lib/google/mod.ts'
 import type { GmailMessage } from '#lib/google/mod.ts'
 import { DayDirFileWriter } from '#lib/nbfs/mod.ts'
 import { autoRelMessage } from '#lib/notebook/enrich/autoRel.ts'
@@ -138,8 +144,9 @@ export async function fetchUnsavedThreads(
 
       const downloadedAttachments: DownloadedAttachment[] = []
       for (const att of full.attachments) {
+        if (isInlineSignatureAttachment(att)) continue
         try {
-          const data = await getAttachment(client, full.id, att.attachmentId)
+          const data = await getMessageAttachment(client, full.id, att)
           if (data.length > 0) {
             downloadedAttachments.push({ filename: att.filename, data: Buffer.from(data) })
             output.log(`  Downloaded: ${att.filename} (${Math.round(data.length / 1024)}KB)`)

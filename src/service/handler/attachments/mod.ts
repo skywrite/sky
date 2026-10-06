@@ -10,7 +10,7 @@
 import { randomUUID } from 'node:crypto'
 import { mkdir, rm, writeFile } from 'node:fs/promises'
 import * as path from 'node:path'
-import { copyFileDedup } from '#lib/notebook/attachments.ts'
+import { copyFileDedup, safeAttachmentName } from '#lib/notebook/attachments.ts'
 import dayAttachmentsDir from '#shared/nbfs/dayAttachmentsDir.ts'
 import parseTimePath from '#shared/nbfs/parseTimePath.ts'
 
@@ -69,12 +69,7 @@ export function attachmentCandidates(
   return candidates
 }
 
-/** A file name fit for the notebook: the last path segment, no control characters, not hidden. */
-export function safeAttachmentName(name: string): string {
-  const base = name.replaceAll('\\', '/').split('/').pop()?.trim() ?? ''
-  const cleaned = base.replace(/[\u0000-\u001f:]/g, '-').replace(/^\.+/, '')
-  return cleaned.length > 0 ? cleaned : 'file'
-}
+export { safeAttachmentName }
 
 /**
  * Copies the bytes into the document's attachment directory, deduplicated by
