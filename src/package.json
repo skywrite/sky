@@ -75,7 +75,7 @@
     "qrcode": "1.5.3",
     "react": "19.2.8",
     "react-dom": "19.2.8",
-    "sharp": "0.35.4",
+    "sharp": "0.35.5",
     "string-similarity": "4.0.2",
     "strip-ansi": "7.0.1",
     "three": "0.185.1",
