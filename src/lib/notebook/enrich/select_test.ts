@@ -1,9 +1,12 @@
+import { NoObjectGeneratedError } from 'ai'
+import type { AIErrorEntry } from '#shared/ai/errorLog.ts'
 import { assert, test } from '#test'
-import type { PlaceJudgment, RelCandidate, SelectRequest } from './select.ts'
+import type { PlaceJudgment, RelCandidate, SelectRequest, SelectServices } from './select.ts'
 import {
   buildPlaceJudgmentsSchema,
   buildSelectInstructions,
   rankCandidates,
+  selectRel,
   validatePlaceSelection,
   validateSelection,
 } from './select.ts'
@@ -201,5 +204,86 @@ test('place judgment output requires an assessment for every place candidate', (
       { 'places/FR': destination, 'places/ES': incidental },
     ].map((places) => schema.safeParse({ places }).success),
     expected: [true, false, false, false],
+  })
+})
+
+/** Selector services whose model gives `answers` in turn (an Error rejects) and whose log is kept. */
+function scripted(answers: unknown[]) {
+  const reports: AIErrorEntry[] = []
+  let asked = 0
+  const services: SelectServices = {
+    ask: async () => {
+      const answer = answers[asked++]
+      if (answer instanceof Error) throw answer
+      return answer
+    },
+    report: async (entry) => {
+      reports.push(entry)
+    },
+  }
+  return { services, reports, asked: () => asked }
+}
+
+const REQUEST: SelectRequest = {
+  body: 'Acme Corp signed the Atlas rollout plan.',
+  summary: 'Atlas rollout plan signed',
+  kind: 'meeting',
+  candidates: CANDIDATES,
+  exemplars: [],
+}
+
+test('a selection naming no candidate is logged and asked once more', async () => {
+  const { services, reports, asked } = scripted([{ rel: ['Acme Corp (named in the text)'] }, { rel: ['Acme Corp'] }])
+  assert({
+    given: 'an answer naming only a non-candidate, then a verbatim one',
+    should: 'keep the second answer',
+    actual: await selectRel(REQUEST, 'balanced', services),
+    expected: { rel: ['Acme Corp'] },
+  })
+  assert({ given: 'one misfire', should: 'ask twice', actual: asked(), expected: 2 })
+  assert({
+    given: 'one misfire',
+    should: 'log it once with what the model said',
+    actual: reports.map((r) => [r.stage, r.message.includes('Named no candidate: ["Acme Corp (named in the text)"]')]),
+    expected: [['rel:select', true]],
+  })
+})
+
+test('a selection that fails twice is logged twice and returns its error', async () => {
+  const unparsed = new NoObjectGeneratedError({
+    message: 'No object generated: could not parse the response.',
+    text: '{"rel": ["Acme',
+    response: {} as never,
+    usage: {} as never,
+    finishReason: 'stop',
+  })
+  const { services, reports } = scripted([unparsed, new Error('Request timed out')])
+  assert({
+    given: 'an unparsable answer, then a timeout',
+    should: 'return no refs with the last error',
+    actual: await selectRel(REQUEST, 'balanced', services),
+    expected: { rel: [], error: 'Request timed out' },
+  })
+  assert({
+    given: 'an unparsable answer, then a timeout',
+    should: 'log both, the first with the raw answer',
+    actual: reports.map((r) => r.message.includes('Answer: {"rel": ["Acme')),
+    expected: [true, false],
+  })
+})
+
+test('a deliberate empty selection stands without another ask', async () => {
+  const { services, reports, asked } = scripted([{ rel: [] }])
+  assert({
+    given: 'an empty answer',
+    should: 'return no refs and no error',
+    actual: await selectRel(REQUEST, 'balanced', services),
+    expected: { rel: [] },
+  })
+  assert({
+    given: 'an empty answer',
+    should: 'neither ask again nor log',
+    actual: [asked(), reports.length],
+    expected: [1, 0],
   })
 })

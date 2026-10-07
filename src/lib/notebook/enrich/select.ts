@@ -1,6 +1,8 @@
-import { generateObject } from 'ai'
+import { generateObject, NoObjectGeneratedError } from 'ai'
 import { z } from 'zod'
+import { type AIErrorEntry, logAIError } from '#shared/ai/errorLog.ts'
 import { aiModel, type Role } from '#shared/ai/models.ts'
+import { currentUsageSource } from '#shared/ai/usageLog.ts'
 import truncate from '#shared/strings/truncate.ts'
 import { groundedPlaces, MAX_TRANSCRIPT_CHARS } from './extract.ts'
 import { normalizeEntityName } from './resolve.ts'
@@ -8,6 +10,8 @@ import { normalizeEntityName } from './resolve.ts'
 const MAX_SELECTED = 2
 const MAX_EXEMPLARS = 3
 const AI_TIMEOUT_MS = 60_000
+const MAX_ATTEMPTS = 2
+const MAX_LOGGED_ANSWER_CHARS = 1000
 
 export type RelCandidate = {
   ref: string
@@ -194,28 +198,90 @@ export function validatePlaceSelection(raw: string[], judgments: PlaceJudgment[]
   })
 }
 
-/** Never throws: errors come back as an empty selection with `error` set. */
-export async function selectRel(req: SelectRequest, role: Role): Promise<SelectOutcome> {
+/** The model call and the failure log, injectable so tests reach neither. */
+export interface SelectServices {
+  /** One parsed answer to the selection request; rejects when none parses. */
+  ask(request: { schema: z.ZodType; instructions: string; prompt: string }, role: Role): Promise<unknown>
+  report(entry: AIErrorEntry): Promise<void>
+}
+
+export const selectServices: SelectServices = {
+  ask: async (request, role) => {
+    const { object } = await generateObject({
+      ...aiModel(role),
+      schema: request.schema,
+      abortSignal: AbortSignal.timeout(AI_TIMEOUT_MS),
+      instructions: request.instructions,
+      prompt: request.prompt,
+    })
+    return object
+  },
+  report: logAIError,
+}
+
+/**
+ * Never throws: errors come back as an empty selection with `error` set.
+ *
+ * An answer that fails, or that names refs none of which is a candidate, is a
+ * misfire rather than a choice of none, and it used to drop every link without
+ * a trace. Each misfire is logged with what the model said, and the request is
+ * asked once more. A deliberate empty answer stands.
+ */
+export async function selectRel(
+  req: SelectRequest,
+  role: Role,
+  services: SelectServices = selectServices,
+): Promise<SelectOutcome> {
   const hasPlaces = req.candidates.some((c) => c.ref.startsWith('places/'))
   if (req.candidates.length === 0 || (req.placesOnly && !hasPlaces)) return { rel: [] }
+  let outcome: SelectOutcome = { rel: [] }
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    outcome = await selectOnce(req, role, hasPlaces, services)
+    if (!outcome.error) return outcome
+    await services.report({
+      source: currentUsageSource(),
+      stage: 'rel:select',
+      message: [
+        `Selecting rel for ${req.kind ?? 'conversation'} "${req.summary ?? '-'}" (attempt ${attempt} of ${MAX_ATTEMPTS}): ${outcome.error}`,
+        `Candidates: ${req.candidates.map((c) => c.ref).join(', ')}`,
+      ].join('. '),
+    })
+  }
+  return outcome
+}
+
+async function selectOnce(
+  req: SelectRequest,
+  role: Role,
+  hasPlaces: boolean,
+  services: SelectServices,
+): Promise<SelectOutcome> {
   try {
     const judgments = buildPlaceJudgmentsSchema(req.candidates)
     const selectionSchema = req.placesOnly ? judgments : hasPlaces ? judgments.extend(schema.shape) : schema
-    const { object } = await generateObject({
-      ...aiModel(role),
-      schema: selectionSchema,
-      abortSignal: AbortSignal.timeout(AI_TIMEOUT_MS),
-      instructions: buildSelectInstructions(req),
-      prompt: buildSelectPrompt(req),
-    })
+    const object = await services.ask(
+      { schema: selectionSchema, instructions: buildSelectInstructions(req), prompt: buildSelectPrompt(req) },
+      role,
+    )
     const places = hasPlaces
       ? Object.entries(judgments.parse(object).places).map(([ref, judgment]) => ({ ref, ...judgment }))
       : []
     const rel = req.placesOnly ? [] : schema.parse(object).rel
+    if (rel.length > 0 && validateSelection(rel, req.candidates).length === 0) {
+      return { rel: [], error: `Named no candidate: ${truncate(JSON.stringify(rel), MAX_LOGGED_ANSWER_CHARS, '…')}` }
+    }
     return { rel: hasPlaces ? validatePlaceSelection(rel, places, req) : validateSelection(rel, req.candidates) }
   } catch (err) {
-    return { rel: [], error: err instanceof Error ? err.message : String(err) }
+    return { rel: [], error: failureOf(err) }
   }
+}
+
+/** The error, plus the model's raw answer when one came back but did not parse. */
+function failureOf(err: unknown): string {
+  const message = err instanceof Error ? err.message : String(err)
+  return NoObjectGeneratedError.isInstance(err) && err.text
+    ? `${message} Answer: ${truncate(err.text, MAX_LOGGED_ANSWER_CHARS, '…')}`
+    : message
 }
 
 /** Deterministic control: evidence-ranked, capped — no model call. */
