@@ -1,6 +1,6 @@
 ---
 created: 2026-09-11
-updated: 2026-10-05
+updated: 2026-10-06
 ---
 
 # Research context limits
@@ -32,9 +32,15 @@ the request fails locally instead of sending an oversized prompt.
 
 ContextAssembler is a relevance selector with a **soft** budget: it keeps one
 eligible document even if that document alone exceeds the budget. Research
-must therefore bound the actual serialized tool output after selection. The
-query result's pages carry source paths and offsets into the original files;
-`notebook_read` can continue at `nextOffset` or jump to literal text with `find`.
-Counts and truncation flags describe partial coverage. Only emitted documents
-enter the run's source list. Changing the assembler's global admission rule
-would affect other callers and would not bound accumulated tool history.
+must therefore bound the actual serialized tool output after selection.
+
+Document text never comes from the files. Every page a research tool shows the
+model is served by the service's document endpoint, which strips the machine
+comments (a saved chat's context log is most of its bytes) and defines the
+offsets; see [the service](../../../../../service/docs/README.md#document-text-for-models-comes-from-the-service).
+The query tool scores and pages the first page of each match, `notebook_read`
+continues at `nextOffset` or jumps to literal text with `find`, and the person
+lookup lists files locally but pages their text the same way. Counts and
+truncation flags describe partial coverage. Only emitted documents enter the
+run's source list. Changing the assembler's global admission rule would affect
+other callers and would not bound accumulated tool history.

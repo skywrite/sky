@@ -1,32 +1,5 @@
+import type { DocumentPage } from '#shared/models/AI/DocumentPages/mod.ts'
 import truncate from '#shared/strings/truncate.ts'
-
-export const DOC_MAX_CHARS = 24_000
-
-export interface DocumentPage {
-  path: string
-  markdown: string
-  offset: number
-  totalChars: number
-  nextOffset?: number
-  truncated: boolean
-}
-
-/** Offsets refer to the original file, including frontmatter, and never split an emoji. */
-export function documentPage(path: string, markdown: string, offset = 0): DocumentPage {
-  let start = Math.min(Math.max(0, Math.floor(offset)), markdown.length)
-  const first = markdown.charCodeAt(start)
-  if (first >= 0xdc00 && first <= 0xdfff) start--
-  const text = truncate(markdown.slice(start), DOC_MAX_CHARS)
-  const end = start + text.length
-  return {
-    path,
-    markdown: text,
-    offset: start,
-    totalChars: markdown.length,
-    ...(end < markdown.length ? { nextOffset: end } : {}),
-    truncated: start > 0 || end < markdown.length,
-  }
-}
 
 function shortenPage(page: DocumentPage, chars: number): DocumentPage {
   const markdown = truncate(page.markdown, chars)

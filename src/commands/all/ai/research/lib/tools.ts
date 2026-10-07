@@ -4,6 +4,12 @@
  * other chat tools — the set is closed, so a research run can never
  * recurse or write.
  *
+ * Document text comes from the service's page endpoint, never from the
+ * files: the service strips the machine comments (a saved chat's context
+ * log is most of its bytes) and defines the offsets, so research reads the
+ * same characters the chat does. The person lookup lists filenames locally
+ * and pages their text through the same endpoint.
+ *
  * The sub-model is its own repair loop: an invalid query comes back as
  * the validator's errors in the tool result, and the model fixes and
  * retries within its step budget — there is no nested repair model call.
@@ -16,8 +22,10 @@ import * as path from 'node:path'
 import { jsonSchema } from 'ai'
 import type CommandService from '#commands/lib/core/CommandService.ts'
 import { DIR_PEOPLE, DIR_PEOPLE_OLD } from '#shared/config.ts'
-import { exists, readTextFile, walkToArray } from '#shared/fs/mod.ts'
+import { exists, walkToArray } from '#shared/fs/mod.ts'
 import ContextAssembler from '#shared/models/AI/ContextAssembler/mod.ts'
+import { type DocumentPageFetcher, fetchDocumentPages } from '#shared/models/AI/DocumentPages/client.ts'
+import { type DocumentPage, isDocumentPage } from '#shared/models/AI/DocumentPages/mod.ts'
 import {
   createChatScorer,
   type DocProvenance,
@@ -34,7 +42,7 @@ import { Document } from '#shared/models/Markdown/mod.ts'
 import MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
 import truncate from '#shared/strings/truncate.ts'
 import type { PlainDate } from '#universal/dates/nbdt/mod.ts'
-import { documentPage, fitDocumentPages, type DocumentPage } from './documents.ts'
+import { fitDocumentPages } from './documents.ts'
 
 /** Budget for one query result's embedded markdown. */
 const QUERY_RESULT_MAX_TOKENS = 30_000
@@ -58,6 +66,8 @@ export interface ResearchToolsOptions {
   question?: string
   /** Injected store for an isolated notebook; production builds it lazily. */
   loadStore?: () => Promise<MarkdownStore>
+  /** Pages of document text; production asks the running service. */
+  fetchPages?: DocumentPageFetcher
 }
 
 /** Lowercased, separator-free form both sides of a person match reduce to. */
@@ -100,6 +110,7 @@ export async function prepareQuery(graphql: string): Promise<{ query: string; er
 
 export function createResearchTools(opts: ResearchToolsOptions) {
   const { tasks, baseDir, today, trace, contextTokens, question } = opts
+  const fetchPages = opts.fetchPages ?? ((requests) => fetchDocumentPages(requests, 'ai:research'))
   const maxChars = Math.floor(Math.min(QUERY_RESULT_MAX_TOKENS, contextTokens) * 4)
   const closed = { success: false, error: 'The parent chat has disabled notebook reading.' }
 
@@ -155,15 +166,19 @@ export function createResearchTools(opts: ResearchToolsOptions) {
           }
         }
 
+        // The first page of each document, from the service: it is the text
+        // the sub-model may read, so it is also the text that gets scored.
         const docs: Array<{ doc: Document; path: string }> = []
-        const originals = new Map<string, string>()
-        for (const p of paths.slice(0, QUERY_READ_CAP)) {
+        const pageByPath = new Map<string, DocumentPage>()
+        const firstPages = await fetchPages(paths.slice(0, QUERY_READ_CAP).map((p) => ({ path: p })))
+        for (const page of firstPages) {
+          if (!isDocumentPage(page)) continue
+          const abs = path.resolve(baseDir, page.path)
           try {
-            const markdown = await readTextFile(p)
-            originals.set(p, markdown)
-            docs.push({ doc: Document.fromMarkdown(markdown), path: p })
+            pageByPath.set(abs, page)
+            docs.push({ doc: Document.fromMarkdown(page.markdown), path: abs })
           } catch {
-            // Skip unreadable files
+            // Skip a page that does not parse as a document
           }
         }
         const collection = DomainCollection.fromDocuments(docs, await getStore(), { depth: 1 })
@@ -190,15 +205,15 @@ export function createResearchTools(opts: ResearchToolsOptions) {
         }
         // ContextAssembler's budget is deliberately soft: one oversized doc is
         // still admitted. Cap the actual payload here, with recoverable pages.
+        // Linked documents the store added are paged through the service too.
+        const linked = assembler.kept.map(({ item }) => item.path).filter((p) => !pageByPath.has(p))
+        for (const page of linked.length > 0 ? await fetchPages(linked.map((p) => ({ path: p }))) : []) {
+          if (isDocumentPage(page)) pageByPath.set(path.resolve(baseDir, page.path), page)
+        }
         const pages: DocumentPage[] = []
         for (const { item } of assembler.kept) {
-          try {
-            // Linked documents also need original file offsets, not a store's reserialization.
-            const markdown = originals.get(item.path) ?? (await readTextFile(item.path))
-            pages.push(documentPage(path.relative(baseDir, item.path), markdown))
-          } catch {
-            // A linked document may have been removed since the store was built.
-          }
+          const page = pageByPath.get(item.path)
+          if (page) pages.push(page)
         }
         const documents = fitDocumentPages(pages, maxChars - JSON.stringify(metadata).length - 32)
         for (const doc of documents) trace.sources.add(doc.path)
@@ -208,7 +223,7 @@ export function createResearchTools(opts: ResearchToolsOptions) {
 
     notebook_read: {
       description:
-        'Read a page of a notebook document by its path. Continue at nextOffset to read more, or use find to jump to literal text in a long document. Offsets count characters from the start of the original file.',
+        'Read a page of a notebook document by its path. Continue at nextOffset to read more, or use find to jump to literal text in a long document. Offsets count characters from the start of the document as research reads it.',
       inputSchema: jsonSchema<{ path: string; offset?: number; find?: string }>({
         type: 'object',
         properties: {
@@ -226,27 +241,14 @@ export function createResearchTools(opts: ResearchToolsOptions) {
         if (contextTokens <= 0) return closed
         const abs = insideNotebook(requested)
         if (!abs) return { success: false, error: 'Path is outside the notebook.' }
-        try {
-          const markdown = await readTextFile(abs)
-          if (find) {
-            const search = new RegExp(RegExp.escape(find), 'giu')
-            search.lastIndex = offset
-            const at = search.exec(markdown)?.index
-            if (at === undefined)
-              return {
-                path: path.relative(baseDir, abs),
-                found: false,
-                note: 'Text not found at or after this offset.',
-              }
-            offset = Math.max(offset, at - 1000)
-          }
-          const [page] = fitDocumentPages([documentPage(path.relative(baseDir, abs), markdown, offset)], maxChars - 2)
-          if (!page) return { success: false, error: 'The reading budget is too small for this document excerpt.' }
-          record(abs)
-          return page
-        } catch {
-          return { success: false, error: `No document at ${requested}.` }
-        }
+        const [result] = await fetchPages([{ path: abs, offset, ...(find ? { find } : {}) }])
+        if (!result || 'error' in result)
+          return { success: false, error: result?.error ?? `No document at ${requested}.` }
+        if (!isDocumentPage(result)) return { path: result.path, found: false, note: result.note }
+        const [page] = fitDocumentPages([result], maxChars - 2)
+        if (!page) return { success: false, error: 'The reading budget is too small for this document excerpt.' }
+        record(abs)
+        return page
       },
     },
 
@@ -275,14 +277,7 @@ export function createResearchTools(opts: ResearchToolsOptions) {
             note: `No person file matched "${name}". Try notebook_query with involves/from/to filters or bodyContains.`,
           }
         }
-        const pages: DocumentPage[] = []
-        for (const file of matched) {
-          try {
-            pages.push(documentPage(path.relative(baseDir, file), await readTextFile(file)))
-          } catch {
-            // Skip unreadable files
-          }
-        }
+        const pages = (await fetchPages(matched.map((file) => ({ path: file })))).filter(isDocumentPage)
         const matches = fitDocumentPages(pages, maxChars - 16)
         for (const match of matches) trace.sources.add(match.path)
         return { matches }

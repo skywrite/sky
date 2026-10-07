@@ -1,7 +1,9 @@
 import { mkdir, rm } from 'node:fs/promises'
 import * as path from 'node:path'
 import { CommandResult, type CommandService } from '#commands/mod.ts'
+import { readDocumentPages } from '#service/context/document.ts'
 import { makeTempDir, writeTextFile } from '#shared/fs/mod.ts'
+import { cleanDocumentText } from '#shared/models/AI/DocumentPages/mod.ts'
 import type MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
 import { assert, test } from '#test'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
@@ -27,6 +29,7 @@ test('research bounds an oversized query document and can recover a passage near
       trace,
       contextTokens: 1000,
       loadStore: async () => NULL_STORE,
+      fetchPages: (requests) => readDocumentPages(baseDir, requests),
     })
     const result = await tools.notebook_query.execute({ graphql: '{ chats { path markdown } }' })
     if (!('documents' in result)) throw new Error('Expected a document result')
@@ -144,6 +147,7 @@ test('a capped query result keeps the documents that match the question, not the
       // Each document is about 420 tokens: room for two of the three.
       contextTokens: 1000,
       loadStore: async () => NULL_STORE,
+      fetchPages: (requests) => readDocumentPages(baseDir, requests),
       question: 'What is the status of the atlas rollout checklist?',
     })
     const result = await tools.notebook_query.execute({
@@ -155,6 +159,54 @@ test('a capped query result keeps the documents that match the question, not the
       should: 'keep the titled checklist and the mention that match the question, and drop the newer unrelated standup',
       actual: result.documents.map((d) => path.basename(d.path).split('_').pop()).sort(),
       expected: ['Atlas-rollout-checklist.md', 'Weekly-sync.md'],
+    })
+  } finally {
+    await rm(baseDir, { recursive: true, force: true })
+  }
+})
+
+test("a matched chat's context log never reaches the research agent", async () => {
+  const baseDir = await makeTempDir({ prefix: 'sky-research-log-' })
+  try {
+    const rel = 'time/2026/W40/10-01/actions/ai-chats/2026-10-01_090000_Atlas-sync.md'
+    const body =
+      '---\ncreated: 2026-10-01\nsummary: Atlas sync\n---\n\n## 2026-10-01 09:00 - **Jane Doe**\n\nWhere does the Atlas rollout stand?\n\n## 2026-10-01 09:01 - **Sky**\n\nThe checklist has two open steps.\n'
+    const log = `\n<!-- CONTEXT-LOG\n${JSON.stringify({ version: 2, turns: [{ turn: 1, universe: Array.from({ length: 120 }, (_, i) => ({ path: `time/2026/W40/10-01/actions/messages/m${i}.md`, score: 12.5, tokens: 900 })) }] })}\n-->\n`
+    const file = path.join(baseDir, rel)
+    await mkdir(path.dirname(file), { recursive: true })
+    await writeTextFile(file, body + log)
+    const trace = { sources: new Set<string>() }
+    const tools = createResearchTools({
+      tasks: { run: async () => CommandResult.success({ paths: [file] }) } as unknown as CommandService,
+      baseDir,
+      today: new PlainDate('2026-10-02'),
+      trace,
+      contextTokens: 2000,
+      loadStore: async () => NULL_STORE,
+      fetchPages: (requests) => readDocumentPages(baseDir, requests),
+    })
+    const result = await tools.notebook_query.execute({ graphql: '{ chats { path markdown } }' })
+    if (!('documents' in result)) throw new Error('Expected a document result')
+    const read = await tools.notebook_read.execute({ path: rel, find: 'CONTEXT-LOG' })
+    assert({
+      given:
+        'a chat whose log comment is more than ten times its conversation, under a budget the raw file would overflow',
+      should: 'serve the conversation whole, size it by the served text, and find no log text to read',
+      actual: {
+        rendered: result.rendered,
+        logInPage:
+          result.documents[0]!.markdown.includes('CONTEXT-LOG') || result.documents[0]!.markdown.includes('"universe"'),
+        truncated: result.documents[0]!.truncated,
+        totalChars: result.documents[0]!.totalChars,
+        logFound: 'found' in read ? read.found : 'page',
+      },
+      expected: {
+        rendered: 1,
+        logInPage: false,
+        truncated: false,
+        totalChars: cleanDocumentText(body + log).length,
+        logFound: false,
+      },
     })
   } finally {
     await rm(baseDir, { recursive: true, force: true })

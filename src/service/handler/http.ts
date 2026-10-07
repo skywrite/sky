@@ -14,6 +14,7 @@ import { planningDate } from '#lib/nbfs/taskDestination.ts'
 import type MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
 import { fetchNowSync } from '#shared/nbfs/mod.ts'
 import type { PlainDate, ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
+import { parseDocumentPageRequests, readDocumentPages } from '../context/document.ts'
 import { resolveContext } from '../context/mod.ts'
 import * as jsend from '../jsend.ts'
 import type { Store } from '../store.ts'
@@ -297,6 +298,26 @@ export function createHttpApp(options: HttpHandlerOptions): Hono {
       const message = err instanceof Error ? err.message : String(err)
       return c.json(jsend.fail({ message }), 400)
     }
+  })
+
+  // Pages of a document's text for a model: HTML comments stripped, offsets in
+  // that text, stamped with its digest. The one reader every model-facing
+  // tool pages through (see service/docs/README.md).
+  app.post('/context/document', async (c) => {
+    let body: unknown
+    try {
+      body = await c.req.json()
+    } catch {
+      return c.json(jsend.fail({ message: 'Body must be JSON' }), 400)
+    }
+    const requests = parseDocumentPageRequests(body)
+    if (!requests) {
+      return c.json(
+        jsend.fail({ message: 'Expected { requests: [{ path, offset?, length?, find? }] }, 1 to 200' }),
+        400,
+      )
+    }
+    return c.json(jsend.success({ pages: await readDocumentPages(markdownBaseDir, requests) }))
   })
 
   // Custom routes (e.g., /site-html in production)

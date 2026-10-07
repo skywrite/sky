@@ -1,6 +1,6 @@
 ---
 created: 2026-09-05
-updated: 2026-09-20
+updated: 2026-10-06
 ---
 
 # The service process
@@ -65,6 +65,27 @@ parses saved state in bounded workers so one file cannot block HTTP startup.
 Manual [Outbox checks](../../lib/outbox/docs/2026-09-08-checks-survive-restarts.md)
 also run in a detached worker, with a short activity hold protecting the HTTP
 startup request until that worker is registered.
+
+## Document text for models comes from the service
+
+The service is the only process that opens a notebook file to feed a model.
+`POST /context/document` takes `{ requests: [{ path, offset?, length?, find? }] }`
+and answers each request with a page of the document's text: HTML comments
+removed (a saved chat's `<!-- CONTEXT-LOG -->` block is more than nine tenths
+of the file), at most 24k characters, with `totalChars`, `nextOffset` and a
+`version` digest of the whole text. Offsets are positions in that text, so a
+page's `nextOffset` means the same characters on the next request while the
+version holds. A `find` request opens the page shortly before the first
+case-insensitive hit at or after the offset, or reports `found: false`. A path
+outside the notebook or a missing file fails only its own request.
+
+Clients page through `#shared/models/AI/DocumentPages/client.ts` and never
+read the file themselves; when the service is unreachable the pages are
+errors, not a disk read. Two readers with their own rules is how the research
+agent came to feed raw chat logs to its model
+([2026-10-06](2026-10-06-research-read-raw-chat-logs.md)). The research
+agent's three tools are the first clients; the chat's own query-result path
+still parses files locally and strips the same comments, and moves next.
 
 ## Notes
 
