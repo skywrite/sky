@@ -75,8 +75,8 @@ test('all journal results survive the event stream and reload, and selected link
     (event) => event.type === 'state' && event.state === 'done',
   )
   const last = streamed.at(-1)
+  const savedAtCompletion = JSON.parse(await readFile(path.join(w.dir, job.id, 'job.json'), 'utf8')) as ImportJob
   const snapshot = (await (await app.request(`/import/${job.id}`)).json()) as { job: ImportJob }
-  // A link update also waits for the job's queued writes to finish.
   await postJson(app, `/import/${job.id}/links`, { links: ['Atlas'] })
   const saved = JSON.parse(await readFile(path.join(w.dir, job.id, 'job.json'), 'utf8')) as ImportJob
   assert({
@@ -84,11 +84,12 @@ test('all journal results survive the event stream and reload, and selected link
     should: 'persist and stream every result and apply both link changes to each entry',
     actual: [
       last?.type === 'state' ? last.result?.files : null,
+      [savedAtCompletion.state, savedAtCompletion.result?.files],
       snapshot.job.result?.files,
       saved.result?.files,
       linked,
     ],
-    expected: [files, files, files, [...files, ...files]],
+    expected: [files, ['done', files], files, files, [...files, ...files]],
   })
 })
 

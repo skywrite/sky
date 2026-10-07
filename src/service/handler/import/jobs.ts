@@ -2,6 +2,7 @@ import { mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promise
 import * as path from 'node:path'
 import type { PlanStep } from '#commands/lib/output/OutputHandler.ts'
 import type { PromptRequest } from '#commands/lib/prompt/Prompter.ts'
+import { instantNow } from '#universal/dates/nbdt/mod.ts'
 import type { ImportKind, ReadBack } from './readback.ts'
 
 export type ImportState = 'new' | 'running' | 'needs-you' | 'done' | 'failed' | 'cancelled'
@@ -195,6 +196,8 @@ const JOB_FILE = 'job.json'
 export interface JobRecord {
   job: ImportJob
   events: ImportEvent[]
+  /** The latest state save and notification; reads must wait before reporting that state. */
+  stateSaved: Promise<void>
   /** The answer to the question the command is waiting on, when it is waiting */
   reply: ((answer: unknown) => void) | null
   /** The running command's cancel */
@@ -251,6 +254,7 @@ export class JobStore {
       this.records.set(id, {
         job,
         events: [],
+        stateSaved: Promise.resolve(),
         reply: null,
         abort: null,
         listeners: new Set(),
@@ -279,6 +283,7 @@ export class JobStore {
     const record: JobRecord = {
       job,
       events: [],
+      stateSaved: this.persist(job),
       reply: null,
       abort: null,
       listeners: new Set(),
@@ -286,7 +291,7 @@ export class JobStore {
       order: ++this.tick,
     }
     this.records.set(job.id, record)
-    await this.persist(job)
+    await record.stateSaved
     return record
   }
 
@@ -295,11 +300,14 @@ export class JobStore {
   }
 
   /** Newest activity first. */
-  list(): ImportJob[] {
+  async list(): Promise<ImportJob[]> {
+    await Promise.all([...this.records.values()].map((record) => this.waitForState(record)))
     return [...this.records.values()].sort((a, b) => b.order - a.order).map((r) => r.job)
   }
 
   async remove(id: string): Promise<void> {
+    const record = this.records.get(id)
+    if (record) await this.waitForState(record)
     this.records.delete(id)
     await rm(this.jobDir(id), { recursive: true, force: true })
   }
@@ -329,11 +337,11 @@ export class JobStore {
     return full
   }
 
-  /** A state change: recorded on the job, told to listeners, written to disk. */
+  /** Update immediately for run/cancel guards, but save before telling listeners or readers. */
   async setState(record: JobRecord, state: ImportState, patch: Partial<ImportJob> = {}): Promise<void> {
     Object.assign(record.job, patch, { state })
-    if (isSettled(state)) record.job.settled = new Date().toISOString()
-    this.emit(record, {
+    if (isSettled(state)) record.job.settled = instantNow()
+    const event: ImportEventBody = {
       type: 'state',
       state,
       line: record.job.line,
@@ -342,8 +350,21 @@ export class JobStore {
       ...(record.job.fields?.appendTo
         ? { audioAdded: record.job.audioAdded, canUndo: record.job.canUndo, undone: record.job.undone }
         : {}),
+    }
+    record.stateSaved = this.persist(record.job).then(() => {
+      this.emit(record, event)
     })
-    await this.persist(record.job)
+    await record.stateSaved
+  }
+
+  async waitForState(record: JobRecord): Promise<void> {
+    // Answering a prompt can queue another state while the previous one saves.
+    // A reconnect must wait for the latest state and its event before closing.
+    for (;;) {
+      const saved = record.stateSaved
+      await saved
+      if (saved === record.stateSaved) return
+    }
   }
 
   subscribe(record: JobRecord, listener: (event: ImportEvent) => void): () => void {

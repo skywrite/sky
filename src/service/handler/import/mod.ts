@@ -478,7 +478,7 @@ export function createImportRoutes(options: ImportRoutesOptions): Hono {
     await loaded
     // Finished imports leave at the next look, once their moment has passed.
     await store.sweep(options.now?.())
-    return c.json({ imports: store.list().map(summarize) })
+    return c.json({ imports: (await store.list()).map(summarize) })
   })
 
   app.get('/audio-conversations', async (c) => {
@@ -496,6 +496,7 @@ export function createImportRoutes(options: ImportRoutesOptions): Hono {
     await loaded
     const record = store.get(c.req.param('id'))
     if (!record) return notFound(c)
+    await store.waitForState(record)
     const { job } = record
     // A run that stopped left more to pick up than the upload showed; the
     // dialog opening again is when that is looked at.
@@ -527,6 +528,7 @@ export function createImportRoutes(options: ImportRoutesOptions): Hono {
     const record = store.get(c.req.param('id'))
     if (!record) return notFound(c)
     return streamSSE(c, async (stream) => {
+      await store.waitForState(record)
       let chain = Promise.resolve()
       const send = (event: { seq: number; type: string }) => {
         chain = chain.then(() =>
