@@ -34,7 +34,8 @@ export default async function fetchNow(options: FetchNowOptions = {}): Promise<Z
     }
   }
 
-  if (!dayModel) throw new Error('Unable to compute the current date / time.')
+  // No started day within the walk is no clock at all; see fetchNowSync.
+  if (!dayModel || !hasStarted) throw new Error('Unable to compute the current date / time: no day has been started.')
 
   // Convert now to the day's timezone (handles DST correctly at the actual instant)
   const nowInDayTz = now.inTimeZone(dayModel.timezone)

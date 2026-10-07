@@ -38,7 +38,10 @@ export default function fetchNowSync(options: FetchNowOptions = {}): ZonedDateTi
     }
   }
 
-  if (!dayModel) throw new Error('Unable to compute the current date / time.')
+  // No started day within the walk is no clock at all — an empty notebook, or one with
+  // day files nobody has started. Reading the oldest file as "now" would count the whole
+  // walk as hours (8769:15) and put the calendar a year ahead.
+  if (!dayModel || !hasStarted) throw new Error('Unable to compute the current date / time: no day has been started.')
 
   // Convert now to the day's timezone (handles DST correctly at the actual instant)
   const nowInDayTz = now.inTimeZone(dayModel.timezone)

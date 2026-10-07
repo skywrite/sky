@@ -111,6 +111,33 @@ test('fetchNow - throws when no day files exist', async () => {
   }
 })
 
+test('fetchNow - throws when day files exist but none was ever started', async () => {
+  const testDir = createTestDir()
+
+  try {
+    // A day prepared by a task move, never started: the walk back finds nothing started
+    const today = new Date()
+    createDayFile(testDir, today, { tz: 'America/Chicago' })
+    const mockNow = new ZonedDateTime(today, 'America/Chicago')
+
+    let message = ''
+    try {
+      await fetchNow({ timeDir: testDir, now: mockNow })
+    } catch (error) {
+      message = (error as Error).message
+    }
+
+    assert({
+      given: "today's day file with no started: time and no started day before it",
+      should: 'throw instead of reading the file as a clock a year of hours ahead',
+      actual: message,
+      expected: 'Unable to compute the current date / time: no day has been started.',
+    })
+  } finally {
+    cleanupTestDir(testDir)
+  }
+})
+
 test('fetchNow - uses default timezone when tz not specified', async () => {
   const testDir = createTestDir()
 

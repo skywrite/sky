@@ -1,6 +1,6 @@
 ---
 created: 2026-07-28
-updated: 2026-09-28
+updated: 2026-10-06
 ---
 
 # Notebook time and the notebook filesystem
@@ -137,7 +137,9 @@ were actually living.
 
 The hour is computed as `daysBack * 24 + clockHour`, so a day left open across two nights
 reports `49:30` rather than silently rolling over. There's a 365-day safety limit on the
-walk-back, so an empty notebook fails loudly instead of looping.
+walk-back, and a notebook with no started day inside it — empty, or holding only days
+prepared by a task move — has no notebook clock: `fetchNow()` throws, and the web pages
+fall back to the machine's date. It never reads an unstarted file as "now".
 
 ### Extended and negative hours
 
