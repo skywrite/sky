@@ -27,7 +27,9 @@ What holds the process (`activity.ts`): boot itself, a chat turn, a chat
 being filed, an import running, a heartbeat tick with its follow checks,
 an Outbox check starting its worker, a [Most Important creation flow](../../lib/mostImportant/docs/README.md), and a voice conversation for two minutes past
 its last request. A hold is taken where the work starts and released where it
-ends; a timed hold covers work the service only hears from in bursts.
+ends; its label can follow the current step without releasing the hold.
+The heartbeat names its Slack, email, Beeper, and automation checks as it moves
+through them. A timed hold covers work the service only hears from in bursts.
 
 The log (`/tmp/sky/logs/service.<date>.jsonl`) carries `reload-pending`
 when a change lands, `reload-deferred` with what it waits on,
@@ -35,9 +37,9 @@ when a change lands, `reload-deferred` with what it waits on,
 leaves.
 
 `GET /service/status` answers `{ pending, holding }`; `POST
-/service/restart` leaves now. The shell shows "restart pending" under the
-brand while one waits, its title naming what it waits on, and a click on it
-is "now".
+/service/restart` leaves now. The shell shows "Restart pending" under the
+brand while one waits, with the current wait visible underneath and a separate
+"Restart now" action.
 
 ## Work that survives restarts
 

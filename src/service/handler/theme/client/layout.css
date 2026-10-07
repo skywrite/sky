@@ -69,18 +69,34 @@ body {
   letter-spacing: -0.05em;
 }
 
-/* A restart waiting for the machine to go quiet; a click on it is "now" */
+/* Keep the restart's current wait visible under the clock. */
 .sky-restart {
-  align-self: flex-start;
   margin: -6px 10px 10px;
-  padding: 2px 9px;
-  border: 0;
-  border-radius: 999px;
-  font: inherit;
-  font-size: 12px;
-  color: var(--sky-accent);
+  padding: 10px 12px;
+  border-radius: var(--mantine-radius-md);
+  font-size: 14px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  color: var(--sky-text-2);
   background: var(--sky-accent-soft);
-  cursor: pointer;
+}
+
+.sky-restart-label {
+  font-weight: 600;
+  color: var(--sky-accent);
+}
+
+.sky-restart-waiting {
+  margin-top: 4px;
+}
+
+.sky-restart > .sky-button {
+  margin: 6px 0 0 -8px;
+}
+
+.sky-restart [role='alert'] {
+  margin-top: 6px;
+  color: var(--sky-action-danger);
 }
 
 /* Keep the New chat and New automation actions at their full size. */

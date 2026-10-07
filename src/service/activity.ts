@@ -23,10 +23,20 @@ function drop(id: number): void {
   for (const listener of listeners) listener()
 }
 
+export interface ActivityHold {
+  (): void
+  /** Describe the current step without releasing the hold. */
+  update(label: string): void
+}
+
 /** Take a hold for `label`; call the returned function once when the work is done. Calling it twice is harmless. */
-export function hold(label: string): () => void {
+export function hold(label: string): ActivityHold {
   const id = take(label)
-  return () => drop(id)
+  return Object.assign(() => drop(id), {
+    update(label: string) {
+      if (held.has(id)) held.set(id, label)
+    },
+  })
 }
 
 /**

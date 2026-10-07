@@ -95,6 +95,30 @@ test({ name: 'reload - a change while something is held waits for the release' }
   gate.close()
 })
 
+test({ name: 'reload - the wait follows the current background step until the work ends' }, async () => {
+  const { gate, codes } = harness()
+  const release = hold('Slack follow check')
+  gate.request('source changed')
+  await settle(30)
+  const first = gate.status().holding
+  release.update('email follow sync')
+  await settle(30)
+  const second = { holding: gate.status().holding, codes: [...codes] }
+  release()
+  await settle(30)
+  gate.close()
+  assert({
+    given: 'a pending restart while a background check moves from Slack to email',
+    should: 'report the current step, keep waiting between steps, and restart only after the work ends',
+    actual: { first, second, codes },
+    expected: {
+      first: ['Slack follow check'],
+      second: { holding: ['email follow sync'], codes: [] },
+      codes: [RELOAD_EXIT_CODE],
+    },
+  })
+})
+
 test({ name: 'reload - a wait with no end in sight says so now and then, and never forces its way out' }, async () => {
   const { gate, codes, events } = harness({ remindMs: 15 })
   const release = hold('import')

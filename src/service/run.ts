@@ -248,7 +248,7 @@ export default async function run() {
   setInterval(async () => {
     if (heartbeatRunning) return
     heartbeatRunning = true
-    const release = hold('heartbeat')
+    const release = hold('background activity check')
     // One wide event per tick, at debug so steady-state stays quiet; anything
     // that actually happens gets its own info/error record below.
     const tick = beginEvent(logHeartbeat, 'tick', { level: 'debug' })
@@ -291,6 +291,7 @@ export default async function run() {
       const commandService = new CommandService(ctx)
 
       // Slack follow check (every tick — has its own per-follow backoff)
+      release.update('Slack follow check')
       const result = await commandService.run('slack:follow:check', {})
 
       if (result.status === 'success') {
@@ -357,6 +358,7 @@ export default async function run() {
       // of holding this one — the slack check above shares the
       // heartbeatRunning guard.
       if (heartbeatTick % EMAIL_SYNC_TICKS === 0) {
+        release.update('email follow sync')
         const sweep = await syncGmailFollowAccounts({ secrets: ctx.secrets, tasks: commandService })
         const totals = sweepTotals(sweep)
         tick.set({
@@ -401,6 +403,7 @@ export default async function run() {
       // Beeper: the chats on this Mac. Nothing to do reads as a note, not an
       // error: no grant stored, or the desktop app closed.
       if (heartbeatTick % BEEPER_SYNC_TICKS === 0) {
+        release.update('Beeper inbox sync')
         const synced = await commandService.run('beeper:inbox:sync', {})
         if (synced.status !== 'success') {
           logHeartbeat.error('Beeper sync failed: {message}', { event: 'beeper-sync-failed', message: synced.message })
@@ -425,6 +428,7 @@ export default async function run() {
       // Only follow capture holds the service. The scheduled pass owns its
       // command calls and ledger in another process; a later tick, including
       // after a restart, reads its result before launching the next pass.
+      release.update('scheduled automation status check')
       const automationJob = await automationProcess.status()
       const pass = automationJob?.status === 'complete' ? automationJob.result : undefined
       tick.set({ automationsRunning: automationJob?.status === 'running' })
@@ -435,6 +439,7 @@ export default async function run() {
         })
       }
       if (automationJob?.status !== 'running') {
+        release.update('scheduled automation startup')
         const started = await automationProcess.start(automationPassInput(new ZonedDateTime()))
         if (started.status === 'failed') throw new Error(started.error ?? 'Scheduled worker could not start.')
         tick.set({ automationsRunning: true })
