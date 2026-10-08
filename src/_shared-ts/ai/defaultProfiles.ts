@@ -54,7 +54,6 @@ export const PROFILES = {
   // Sonnet 5.5 thinks by default; `disabled` and forced tool choice 400 (the AI SDK turns
   // them into `between_tools` and `auto`, with a warning). Effort stays the API default (high).
   'default-sonnet-5.5': defineProfile({ provider: 'anthropic', model: 'claude-sonnet-5-5', contextWindow: 1_000_000 }),
-  'default-haiku-4.5': defineProfile({ provider: 'anthropic', model: 'claude-haiku-4-5' }),
   // Haiku 5.5 thinks by default, and thinking spends maxOutputTokens: on the fast role's
   // short caps (a 64-token tool summary) it used the whole cap and returned no text
   // (measured 2026-10-07). So it runs as Haiku 4.5 always did, without thinking, at low

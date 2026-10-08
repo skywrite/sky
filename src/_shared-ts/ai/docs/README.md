@@ -1,6 +1,6 @@
 ---
 created: 2026-09-01
-updated: 2026-10-07
+updated: 2026-10-08
 ---
 
 # Model registry — roles, profiles, providers
@@ -120,7 +120,7 @@ also uses Jev to skip clearly irrelevant conversations before request extraction
   (`ai.roles`) changes its default; `ROLES` remains the shipped fallback.
 - Superseded profiles stay in the catalog unless explicitly retired: a
   person's config or a command flag may still name them. The retired
-  built-ins are Sonnet 5 (2026-09-28), Opus 5 (2026-09-22), Opus 4.6/4.8,
+  built-ins are Haiku 4.5 (2026-10-08), Sonnet 5 (2026-09-28), Opus 5 (2026-09-22), Opus 4.6/4.8,
   Sonnet 4.6, GPT-4o, and GPT-5.5.
 - GPT-6 Astra has `default-gpt-6-astra-low`, `default-gpt-6-astra-high`, and
   `default-gpt-6-astra-xhigh`, all using priority processing. The model
@@ -156,7 +156,7 @@ Tokens only; the invoice prices them.
 
 - [2026-10-07](2026-10-07-haiku-5-5-fast-role.md) — Haiku 5.5 takes the `fast`
   role with thinking off at low effort: with thinking on, a 64-token tool
-  summary came back empty. Haiku 4.5 stays in the catalog.
+  summary came back empty. Haiku 4.5 is retired (2026-10-08).
 - [2026-09-22](2026-09-22-opus-5-5-default.md) — Opus 5.5 replaces Opus 5 in
   the catalog and takes the `reasoning` role; the AI SDK moves to the release
   that knows the model's always-on thinking and no forced tool choice.

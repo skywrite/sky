@@ -81,7 +81,7 @@ test('preset effort is inherited, overridden for one call, and never mutated', (
   })
   let rejected = false
   try {
-    resolveProfile(defineProfile({ provider: 'anthropic', model: 'claude-haiku-4-5' }), { effort: 'high' })
+    resolveProfile(defineProfile({ provider: 'lm-studio', model: 'google/gemma-4-e4b' }), { effort: 'high' })
   } catch {
     rejected = true
   }
@@ -206,7 +206,7 @@ test('resolveProfile demuxes generic settings from provider-specific options', (
 })
 
 test('resolveProfile applies sampling overrides on non-thinking profiles', () => {
-  const profile = defineProfile({ provider: 'anthropic', model: 'claude-haiku-4-5' })
+  const profile = defineProfile({ provider: 'lm-studio', model: 'google/gemma-4-e4b' })
   const resolved = resolveProfile(profile, { temperature: 0 })
 
   assert({
@@ -386,8 +386,8 @@ test('aiModelByProfile resolves by name and rejects unknown names', () => {
   assert({
     given: 'a known profile name',
     should: 'resolve its model',
-    actual: modelId(aiModelByProfile('default-haiku-4.5').model),
-    expected: 'claude-haiku-4-5',
+    actual: modelId(aiModelByProfile('default-haiku-5.5').model),
+    expected: 'claude-haiku-5-5',
   })
 
   let threw = false
