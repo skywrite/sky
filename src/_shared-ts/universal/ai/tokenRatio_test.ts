@@ -4,16 +4,18 @@ import { DEFAULT_RATIO, observeRatio, seedRatio } from './tokenRatio.ts'
 test({ name: 'tokenRatio - seeds by model family, default for the unknown' }, () => {
   assert({
     given: 'the registry model ids',
-    should: 'seed the Opus 4.7 tokenizer family high, Haiku and GPT-6 lower, and an unknown model at the old slack',
+    should:
+      'seed the Opus 4.7 tokenizer family high (Haiku 5.5 with it), Haiku 4.5 and GPT-6 lower, and an unknown model at the old slack',
     actual: [
       'claude-opus-5-5',
       'claude-fable-5-1',
       'claude-sonnet-5-5',
+      'claude-haiku-5-5',
       'claude-haiku-4-5',
       'gpt-6-astra',
       'qwen-3.8-27b',
     ].map(seedRatio),
-    expected: [1.75, 1.75, 1.75, 1.25, 1.15, DEFAULT_RATIO],
+    expected: [1.75, 1.75, 1.75, 1.75, 1.25, 1.15, DEFAULT_RATIO],
   })
 })
 

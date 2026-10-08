@@ -11,7 +11,7 @@ import { defineProfile, type ModelProfile } from './models.ts'
  * Model ids stay in their canonical API form (claude-opus-5-5, gpt-6-astra); the profile
  * key is just a label. Sampling params (temperature/topP) belong only on profiles
  * whose model accepts them — thinking/reasoning models (Fable 5.1, Opus 5.5,
- * Sonnet 5.5, GPT-6 Astra) 400 on them, so those carry effort/thinking instead.
+ * Sonnet 5.5, Haiku 5.5, GPT-6 Astra) 400 on them, so those carry effort/thinking instead.
  */
 export const PROFILES = {
   // Fable 5.1 thinks unconditionally (no `disabled`, no budget) and rejects forced tool
@@ -55,6 +55,17 @@ export const PROFILES = {
   // them into `between_tools` and `auto`, with a warning). Effort stays the API default (high).
   'default-sonnet-5.5': defineProfile({ provider: 'anthropic', model: 'claude-sonnet-5-5', contextWindow: 1_000_000 }),
   'default-haiku-4.5': defineProfile({ provider: 'anthropic', model: 'claude-haiku-4-5' }),
+  // Haiku 5.5 thinks by default, and thinking spends maxOutputTokens: on the fast role's
+  // short caps (a 64-token tool summary) it used the whole cap and returned no text
+  // (measured 2026-10-07). So it runs as Haiku 4.5 always did, without thinking, at low
+  // effort; `disabled` holds up to high. It still 400s on sampling params, so
+  // thinkingEnabled() lists the model to keep resolveProfile's guard armed.
+  'default-haiku-5.5': defineProfile({
+    provider: 'anthropic',
+    model: 'claude-haiku-5-5',
+    contextWindow: 1_000_000,
+    options: { effort: 'low', thinking: { type: 'disabled' } },
+  }),
   'default-gpt-6-astra-xhigh': defineProfile({
     provider: 'openai',
     model: 'gpt-6-astra',

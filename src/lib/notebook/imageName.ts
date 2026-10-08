@@ -8,7 +8,7 @@ type GenerateName = (title: string, text: string, signal?: AbortSignal) => Promi
 const generateName: GenerateName = async (title, text, signal) => {
   const timeout = AbortSignal.timeout(10_000)
   const result = await generateText({
-    ...aiModelByProfile('default-haiku-4.5'),
+    ...aiModelByProfile('default-haiku-5.5'),
     maxOutputTokens: 120,
     maxRetries: 0,
     abortSignal: signal ? AbortSignal.any([signal, timeout]) : timeout,

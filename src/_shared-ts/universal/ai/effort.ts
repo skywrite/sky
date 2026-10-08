@@ -38,7 +38,7 @@ export function modelDefaultEffort(profile: EffortProfile): Effort | null {
   if (profile.provider === 'openai' && /^gpt-6\.1-sol(?:$|-)/.test(profile.model)) return 'medium'
   // https://platform.claude.com/docs/en/build-with-claude/effort
   if (profile.provider === 'anthropic' && effortLevels(profile).length > 1)
-    return /^claude-opus-5-5(?:$|-\d{8}$)/.test(profile.model) ? 'medium' : 'high'
+    return /^claude-(?:opus|haiku)-5-5(?:$|-\d{8}$)/.test(profile.model) ? 'medium' : 'high'
   return null
 }
 
@@ -55,11 +55,12 @@ export function effortLevels(profile: EffortProfile): readonly Effort[] {
   if (profile.provider === 'anthropic') {
     // https://platform.claude.com/docs/en/build-with-claude/effort
     if (
-      /^claude-(?:opus-(?:5(?:-5)?|4-[78])|sonnet-5(?:-5)?|fable-5(?:-1)?|mythos-5(?:-1)?)(?:$|-\d{8}$)/.test(
+      /^claude-(?:opus-(?:5(?:-5)?|4-[78])|sonnet-5(?:-5)?|fable-5(?:-1)?|mythos-5(?:-1)?|haiku-5-5)(?:$|-\d{8}$)/.test(
         profile.model,
       )
     )
-      return EFFORTS
+      // With thinking off the API stops at high; xhigh and max 400.
+      return thinkingOff(profile) ? EFFORTS.slice(0, EFFORTS.indexOf('high') + 1) : EFFORTS
     if (/^claude-(?:opus|sonnet)-4-6(?:$|-\d{8}$)/.test(profile.model)) return ['low', 'medium', 'high', 'max']
   }
   // https://developers.openai.com/api/docs/models/gpt-6-astra
@@ -71,18 +72,19 @@ export function effortLevels(profile: EffortProfile): readonly Effort[] {
 
 export function validateEffort(profile: EffortProfile, value: unknown): asserts value is EffortOverride {
   if (!isEffortOverride(value)) throw new Error(`Effort must be default, ${EFFORTS.join(', ')}.`)
+  // Checked first: the model takes these levels, just not with thinking off.
+  if (profile.provider === 'anthropic' && (value === 'xhigh' || value === 'max') && thinkingOff(profile)) {
+    throw new Error('Enable thinking before choosing X-high or Max effort.')
+  }
   if (value !== 'default' && !effortLevels(profile).includes(value)) {
     throw new Error(
       `${profile.model} does not support ${value} effort. Choose the preset default${effortLevels(profile).length ? ` or ${effortLevels(profile).join(', ')}` : ''}.`,
     )
   }
-  if (
-    profile.provider === 'anthropic' &&
-    (value === 'xhigh' || value === 'max') &&
-    (profile.options as { thinking?: { type?: string } } | undefined)?.thinking?.type === 'disabled'
-  ) {
-    throw new Error('Enable thinking before choosing X-high or Max effort.')
-  }
+}
+
+function thinkingOff(profile: EffortProfile): boolean {
+  return (profile.options as { thinking?: { type?: string } } | undefined)?.thinking?.type === 'disabled'
 }
 
 /** Change only effort; provider options such as service tier and thinking stay intact. */

@@ -1,6 +1,6 @@
 ---
 created: 2026-09-01
-updated: 2026-10-06
+updated: 2026-10-07
 ---
 
 # Model registry — roles, profiles, providers
@@ -48,8 +48,8 @@ characters a token) and what the model really counts. That gap is a ratio
 learned per model (`tokenRatio.ts`): every resolved model carries a meter
 that compares a request's serialized size with the input the provider
 reported — requests without tool results only, since tool JSON counts
-leaner than the prose the budget estimates — seeded per family (1.75 on the Opus 4.7 tokenizer line, 1.25 on
-Haiku, 1.15 on GPT-6) and kept in `<userData>/state/ai/token-ratios.json`.
+leaner than the prose the budget estimates — seeded per family (1.75 on the Opus 4.7 tokenizer line,
+Haiku 5.5 included; 1.25 on Haiku 4.5; 1.15 on GPT-6) and kept in `<userData>/state/ai/token-ratios.json`.
 On Claude the ratio is about 1.78, so a 1M window reaches the 500k stop,
 not 750k. Cerebras serves Qwen 3.8 at 131,072 tokens on the paid tier, so
 a chat there reads 50k at most; a profile with no window declared is not
@@ -154,6 +154,9 @@ Tokens only; the invoice prices them.
 
 ## Notes
 
+- [2026-10-07](2026-10-07-haiku-5-5-fast-role.md) — Haiku 5.5 takes the `fast`
+  role with thinking off at low effort: with thinking on, a 64-token tool
+  summary came back empty. Haiku 4.5 stays in the catalog.
 - [2026-09-22](2026-09-22-opus-5-5-default.md) — Opus 5.5 replaces Opus 5 in
   the catalog and takes the `reasoning` role; the AI SDK moves to the release
   that knows the model's always-on thinking and no forced tool choice.

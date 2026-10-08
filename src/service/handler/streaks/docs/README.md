@@ -1,6 +1,6 @@
 ---
 created: 2026-09-08
-updated: 2026-09-22
+updated: 2026-10-07
 ---
 
 # Streaks in the app
@@ -55,7 +55,7 @@ subsequent edits. Restarting the service expires those tokens.
 
 The streak's optional `category` is Personal or Professional. An explicit
 choice wins, then a saved category, then inference through `aiModel('fast')`
-(Haiku 4.5 by default). The shared `lib/streaks/category.ts` classifier uses
+(Haiku 5.5 by default). The shared `lib/streaks/category.ts` classifier uses
 the title, purpose, rules, tags, and linked project/goal context. Creation
 saves its result; legacy streaks are classified when archived. Viewing never
 classifies or rewrites a streak. The app's category selector and the CLI's

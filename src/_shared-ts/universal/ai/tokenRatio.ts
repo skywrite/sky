@@ -33,8 +33,9 @@ const RATIO_MIN = 0.5
 const RATIO_MAX = 4
 
 const SEEDS: ReadonlyArray<readonly [RegExp, number]> = [
-  // The Opus 4.7 tokenizer family, Fable included — measured 1.78 median.
-  [/^claude-(?:opus-5|fable-5|sonnet-5|opus-4-[78]|sonnet-4-[678])/, 1.75],
+  // The Opus 4.7 tokenizer family, Fable included — measured 1.78 median. Haiku 5.5 counts
+  // the same text as Opus 5.5 to the token (count_tokens, 2026-10-07); Haiku 4.5 does not.
+  [/^claude-(?:opus-5|fable-5|sonnet-5|haiku-5|opus-4-[78]|sonnet-4-[678])/, 1.75],
   [/^claude-haiku/, 1.25],
   [/^gpt-6/, 1.15],
 ]

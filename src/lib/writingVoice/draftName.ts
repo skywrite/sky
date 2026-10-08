@@ -21,7 +21,7 @@ export function draftStamp(now: string): string {
   return Instant.from(value).toString({ smallestUnit: 'second' }).replace('T', '_').replaceAll(':', '-')
 }
 
-export function createDraftName(model: () => ResolvedModel = () => aiModelByProfile('default-haiku-4.5')): DraftName {
+export function createDraftName(model: () => ResolvedModel = () => aiModelByProfile('default-haiku-5.5')): DraftName {
   return (input, text) =>
     runWithUsageSource('me:voice:draft-name', async () => {
       try {

@@ -15,7 +15,7 @@ import findWakeCutoff, { findWakeStart } from './wakeGap.ts'
 import writeRecapFile from './writeRecapFile.ts'
 
 // Extraction uses the same fast model profile for both transcript sources.
-const DEFAULT_DIGEST_PROFILE = 'default-haiku-4.5'
+const DEFAULT_DIGEST_PROFILE = 'default-haiku-5.5'
 
 export const codingRecapParams = {
   day: dayYesterdayArg(),

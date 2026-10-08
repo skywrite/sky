@@ -107,7 +107,7 @@ export type ProfileName = keyof typeof PROFILES
 /** Role -> profile pointers. The swap point: repoint a role to move every call site that uses it. */
 export const ROLES = {
   reasoning: 'default-opus-5.5',
-  fast: 'default-haiku-4.5',
+  fast: 'default-haiku-5.5',
   balanced: 'default-sonnet-5.5',
   vision: 'default-sonnet-5.5',
 } satisfies Record<Role, ProfileName>
@@ -177,11 +177,12 @@ const SAMPLING_KEYS = ['temperature', 'topP', 'topK'] as const
 
 /** True when a profile turns on extended thinking. */
 function thinkingEnabled(profile: ModelProfile): boolean {
-  // These models reason by default even when a custom preset omits thinking.
+  // These models reason by default even when a custom preset omits thinking, and reject
+  // sampling params even when a preset turns thinking off (Haiku 5.5's fast profile does).
   if (profile.provider === 'openai' && /^gpt-6(?:-astra|\.1-sol)(?:$|-)/.test(profile.model)) return true
   if (
     profile.provider === 'anthropic' &&
-    /^claude-(?:opus-5(?:-5)?|sonnet-5(?:-5)?|fable-5(?:-1)?)(?:$|-\d{8}$)/.test(profile.model)
+    /^claude-(?:opus-5(?:-5)?|sonnet-5(?:-5)?|fable-5(?:-1)?|haiku-5-5)(?:$|-\d{8}$)/.test(profile.model)
   )
     return true
   const thinking = (profile.options as { thinking?: { type?: string } } | undefined)?.thinking

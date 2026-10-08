@@ -24,7 +24,7 @@ const summarySlug = (text: string) =>
 async function nameSelection(text: string): Promise<string> {
   return runWithUsageSource('ai:chat:selection-name', async () => {
     const result = await generateText({
-      ...aiModelByProfile('default-haiku-4.5'),
+      ...aiModelByProfile('default-haiku-5.5'),
       maxOutputTokens: 120,
       maxRetries: 0,
       abortSignal: AbortSignal.timeout(10_000),

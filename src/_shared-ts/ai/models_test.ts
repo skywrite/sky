@@ -6,6 +6,7 @@ test('custom reasoning presets suppress unsupported sampling without an explicit
     defineProfile({ provider: 'openai', model: 'gpt-6.1-sol' }),
     defineProfile({ provider: 'anthropic', model: 'claude-sonnet-5' }),
     defineProfile({ provider: 'anthropic', model: 'claude-sonnet-5-5' }),
+    defineProfile({ provider: 'anthropic', model: 'claude-haiku-5-5' }),
   ]
   assert({
     given: 'roles assigned to reasoning presets without a thinking option',
@@ -15,6 +16,7 @@ test('custom reasoning presets suppress unsupported sampling without an explicit
       return [resolved.temperature, resolved.topP, resolved.maxOutputTokens]
     }),
     expected: [
+      [undefined, undefined, 1000],
       [undefined, undefined, 1000],
       [undefined, undefined, 1000],
       [undefined, undefined, 1000],
@@ -107,7 +109,7 @@ test('role assignments resolve the current preset, including overridden built-in
     given: 'a role reassigned to a customized built-in preset',
     should: 'use the latest assignment and preset options while keeping the model window',
     actual: [before.model, after.model, after.options, after.contextWindow, getRoles(config).fast],
-    expected: ['gpt-6-astra', 'claude-sonnet-5-5', { effort: 'low' }, 1_000_000, 'default-haiku-4.5'],
+    expected: ['gpt-6-astra', 'claude-sonnet-5-5', { effort: 'low' }, 1_000_000, 'default-haiku-5.5'],
   })
 })
 
@@ -124,9 +126,9 @@ test('aiModel resolves a role to its baseline profile model', () => {
   })
   assert({
     given: 'the fast role',
-    should: 'resolve to the haiku-4-5 profile model',
+    should: 'resolve to the haiku-5.5 profile model',
     actual: modelId(aiModel('fast').model),
-    expected: 'claude-haiku-4-5',
+    expected: 'claude-haiku-5-5',
   })
   assert({
     given: 'the balanced role',
@@ -153,9 +155,9 @@ test('aiModelId exposes the model id behind a role', () => {
 
 test('option-less baseline profiles carry no providerOptions', () => {
   assert({
-    given: 'a baseline profile with no options',
+    given: 'a baseline profile with no options (the balanced role)',
     should: 'omit providerOptions (behaviour-preserving)',
-    actual: aiModel('fast').providerOptions,
+    actual: aiModel('balanced').providerOptions,
     expected: undefined,
   })
 })
@@ -231,6 +233,24 @@ test('resolveProfile drops sampling overrides when the profile enables thinking'
     should: 'still apply',
     actual: resolved.maxOutputTokens,
     expected: 4096,
+  })
+})
+
+// Haiku 5.5's adaptive thinking spent a 64-token cap whole and returned no text, so the fast
+// profile turns it off; the model still rejects sampling params with thinking off.
+test('default-haiku-5.5 runs without thinking at low effort and still drops sampling', () => {
+  const resolved = aiModelByProfile('default-haiku-5.5', { temperature: 0, maxOutputTokens: 64 })
+  assert({
+    given: 'the default-haiku-5.5 profile with a temperature override',
+    should: 'resolve to Haiku 5.5 with thinking off at low effort, a 1M window, and no temperature',
+    actual: [
+      modelId(resolved.model),
+      resolved.providerOptions?.['anthropic'],
+      resolved.contextWindow,
+      resolved.temperature,
+      resolved.maxOutputTokens,
+    ],
+    expected: ['claude-haiku-5-5', { effort: 'low', thinking: { type: 'disabled' } }, 1_000_000, undefined, 64],
   })
 })
 

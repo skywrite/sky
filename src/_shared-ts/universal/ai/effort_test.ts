@@ -43,6 +43,45 @@ test('effort levels for Opus 5.5', () => {
   })
 })
 
+// Haiku 5.5 is the first Haiku with effort; the shipped preset turns thinking off,
+// where the API stops at high.
+test('effort levels for Haiku 5.5', () => {
+  const preset = {
+    provider: 'anthropic',
+    model: 'claude-haiku-5-5',
+    options: { effort: 'low', thinking: { type: 'disabled' } },
+  }
+  assert({
+    given: 'the Haiku 5.5 model with no preset options, and the shipped thinking-off preset',
+    should: 'advertise every level with thinking on, and up to high with it off',
+    actual: [effortLevels({ provider: 'anthropic', model: 'claude-haiku-5-5' }), effortLevels(preset)],
+    expected: [EFFORTS, ['low', 'medium', 'high']],
+  })
+  const rejections = (['high', 'xhigh'] as const).map((value) => {
+    try {
+      validateEffort(preset, value)
+      return undefined
+    } catch (error) {
+      return (error as Error).message
+    }
+  })
+  assert({
+    given: 'high and xhigh overrides on the thinking-off preset',
+    should: 'accept high, and explain that xhigh needs thinking',
+    actual: rejections,
+    expected: [undefined, 'Enable thinking before choosing X-high or Max effort.'],
+  })
+  assert({
+    given: 'the Haiku 5.5 model and a dated snapshot',
+    should: 'resolve the API default of medium',
+    actual: [
+      modelDefaultEffort({ provider: 'anthropic', model: 'claude-haiku-5-5' }),
+      modelDefaultEffort({ provider: 'anthropic', model: 'claude-haiku-5-5-20261001' }),
+    ],
+    expected: ['medium', 'medium'],
+  })
+})
+
 test('effort levels for GPT-6.1 Sol', () => {
   assert({
     given: 'the GPT-6.1 Sol model with no preset effort',
