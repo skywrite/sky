@@ -23,7 +23,7 @@ test('Slack capture commands classify speech before allocating titles and preser
       import { pendingSlackAttachment } from '#shared/models/Message/slack/write.ts'
       import Follow from '#shared/models/Follow/mod.ts'
       import dayFile from '#shared/nbfs/dayFile.ts'
-      import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
+      import { PlainDate, PlainDateTime } from '#universal/dates/nbdt/mod.ts'
       const words = ['Atlas release accountability.', 'Widget handoff review.']
       const summary = 'Atlas release accountability and Widget handoff'
       const classified = { summaries: [], tags: [], rel: [] }
@@ -57,6 +57,11 @@ test('Slack capture commands classify speech before allocating titles and preser
         await mkdir(path.dirname(file), { recursive: true })
         await writeFile(file, '# ' + day + '\\n\\n')
       }
+      // Follows stamp their records with the notebook clock, which needs a started day: today's.
+      const today = new PlainDate()
+      const todayFile = path.join(DIR_TIME, dayFile(today))
+      await mkdir(path.dirname(todayFile), { recursive: true })
+      await writeFile(todayFile, '---\\nstarted: 06:00\\ntz: America/Chicago\\n---\\n\\n# ' + today.ymd + '\\n\\n')
       await mkdir(DIR_USER_DATA, { recursive: true })
       const exports = new Map()
       let sequence = 0
