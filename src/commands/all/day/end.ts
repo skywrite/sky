@@ -1,11 +1,11 @@
-import { Command, CommandResult, dayNoFutureArg } from '#commands/mod.ts'
+import { Command, CommandResult, dayNoFutureArg, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
-import { DAY_END_COMMANDS } from '#config'
 import { writeDayItems } from '#lib/nbfs/mod.ts'
 import { readDay, writeDay } from '#shared/nbfs/mod.ts'
 
 const params = {
   day: dayNoFutureArg(),
+  perfect: Flag.bool('Mark the day perfect if all planned items are done', { default: true }),
 }
 
 type Params = InferParams<typeof params>
@@ -24,8 +24,8 @@ export default class DayEndTask extends Command {
   }
 
   async run({ args, context, tasks }: CommandArgs<Params>): Promise<CommandResult> {
-    const { output, notebookNow } = context
-    const { day } = args
+    const { output, notebookNow, config } = context
+    const { day, perfect } = args
 
     // Get YMD format for display
     const dayYMD = day.ymd
@@ -33,7 +33,7 @@ export default class DayEndTask extends Command {
     // Warn about unlogged meetings while the day can still be amended.
     await tasks.run('day:meeting:check', { day })
 
-    let dayObj = await readDay(day)
+    let dayObj = await readDay(day, config.DIR_TIME)
 
     dayObj = dayObj.setEnded(notebookNow) // Pass full ZonedDateTime to preserve timezone
 
@@ -48,18 +48,18 @@ export default class DayEndTask extends Command {
     // Design note: We intentionally don't have a Day.setPerfect() method because
     // the getter reads from computed state (lists), not YAML. Having a setter
     // that writes YAML while the getter ignores it would be confusing.
-    const isPerfect = dayObj.perfect
-    if (isPerfect) {
-      dayObj = dayObj.updateYaml({ perfect: true })
-    }
+    const isPerfect = perfect && dayObj.perfect
+    dayObj = dayObj.updateYaml({ perfect: isPerfect })
 
     dayObj = dayObj.removeEmptyLists()
 
-    await writeDay(dayObj)
+    await writeDay(dayObj, config.DIR_TIME)
 
     // Add entry to current day
     const dayItem = `${notebookNow.plainDateTime.time} > Notebook -> ${dayYMD} End`
-    await writeDayItems(notebookNow.plainDateTime.plainDate, 'Professional Complete', dayItem)
+    await writeDayItems(notebookNow.plainDateTime.plainDate, 'Professional Complete', dayItem, {
+      timeDir: config.DIR_TIME,
+    })
 
     output.log(`\n  Set ended on ${dayYMD} to ${dayObj.ended?.toString()}`)
     if (isPerfect) {
@@ -70,7 +70,7 @@ export default class DayEndTask extends Command {
     await tasks.run('day:attachments:check', { day })
 
     // Run configurable end-of-day commands (day.end in config)
-    for (const cmd of DAY_END_COMMANDS) {
+    for (const cmd of config.DAY_END_COMMANDS) {
       await tasks.run(cmd, { day }).catch((err: Error) => {
         console.warn(`  [day:end] ${cmd}: ${err.message}`)
       })

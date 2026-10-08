@@ -1,6 +1,6 @@
 ---
 created: 2026-09-03
-updated: 2026-10-06
+updated: 2026-10-08
 ---
 
 # The day's items, the day's rail, and the day's files
@@ -231,7 +231,7 @@ height cap. See [2026-09-05 — larger type without clipped tasks](2026-09-05-la
 A day runs from its start to the next day's start, and the notebook clock
 counts past 24:00 until then. The pages carry the two commands where the
 person already is. Each button runs the terminal's command at the moment it
-is pressed, with no other arguments; `createWeekHost` runs them in-process.
+is pressed; `createWeekHost` runs them in-process.
 
 - **Start** shows once the clock has moved past the open day, in two places
   (`theme/client/dayStart.tsx`). The open day's page, the one Today opens,

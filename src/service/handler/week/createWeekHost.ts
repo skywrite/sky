@@ -18,6 +18,6 @@ export function createWeekHost(config: typeof ConfigModule, env: Record<string, 
   }
   return {
     startDay: (day: PlainDate) => run('day:start', { day }),
-    endDay: (day: PlainDate) => run('day:end', { day }),
+    endDay: (day: PlainDate, options) => run('day:end', { day, perfect: options?.perfect ?? true }),
   }
 }

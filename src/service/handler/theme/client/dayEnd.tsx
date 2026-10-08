@@ -116,6 +116,7 @@ export function EndDayDialog({
   const [ending, setEnding] = useState<DayEnding | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [perfect, setPerfect] = useState(true)
   const schedule = useSchedule(ymd)
   // The open items as the dialog opened: a tick shows as done without the row leaving.
   const listed = useRef<Array<{ key: string; item: DayItem }> | null>(null)
@@ -188,7 +189,7 @@ export function EndDayDialog({
   const end = async () => {
     setBusy('end')
     setError(null)
-    const result = await send(`/day/${ymd}/end`, {})
+    const result = await send(`/day/${ymd}/end`, { perfect })
     setBusy(null)
     if (result.view) apply(result.view)
     if (result.error) return setError(result.error)
@@ -224,12 +225,21 @@ export function EndDayDialog({
         </div>
       )}
       {view && stillOpen === 0 && (
-        <div className="sky-end-perfect">
-          <span className="sky-check-box" data-on>
-            <Tick />
+        <button
+          type="button"
+          className="sky-end-perfect"
+          role="checkbox"
+          aria-label="Perfect day"
+          aria-checked={perfect}
+          data-on={perfect}
+          disabled={busy !== null}
+          onClick={() => setPerfect((checked) => !checked)}
+        >
+          <span className="sky-check-box" data-on={perfect}>
+            {perfect && <Tick />}
           </span>
-          Everything is done. This will be a perfect day.
-        </div>
+          {perfect ? 'Everything is done. This will be a perfect day.' : 'This day will not be marked perfect.'}
+        </button>
       )}
       {((ending?.endless.length ?? 0) > 0 || noNotes.length > 0) && (
         <div className="sky-end-section">

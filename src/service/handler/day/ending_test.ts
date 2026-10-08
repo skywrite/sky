@@ -142,3 +142,37 @@ test('end route - runs day:end when End is pressed and answers with the ended da
     },
   })
 })
+
+test('end route - passes the perfect-day choice and rejects a non-boolean choice', async () => {
+  const { base, timeDir } = await notebook()
+  const file = path.join(timeDir, dayFile(TUESDAY))
+  await writeFile(file, dayMarkdown(TUESDAY, 'started: 06:55\nended:\n'))
+  const choices: Array<boolean | undefined> = []
+  const app = createDayRoutes({
+    markdownBaseDir: base,
+    timeDir,
+    ownerNames: ['Jane Doe'],
+    today: () => WEDNESDAY,
+    commands: {
+      startDay: async () => {},
+      endDay: async (_day, options) => {
+        choices.push(options?.perfect)
+      },
+    },
+  })
+  const statuses: number[] = []
+  for (const body of [{}, { perfect: true }, { perfect: false }, { perfect: 'false' }]) {
+    const response = await app.request(`/${TUESDAY.ymd}/end`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+    statuses.push(response.status)
+  }
+  assert({
+    given: 'no preference, a checked box, an unchecked box, and an invalid preference',
+    should: 'default to automatic perfect-day marking, pass either choice and reject invalid input before ending',
+    actual: { choices, statuses },
+    expected: { choices: [true, true, false], statuses: [200, 200, 200, 400] },
+  })
+})

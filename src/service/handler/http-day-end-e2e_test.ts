@@ -1,5 +1,11 @@
+import { spyOn } from 'bun:test'
 import { readFile, writeFile } from 'node:fs/promises'
 import * as path from 'node:path'
+import DayEnd from '#commands/all/day/end.ts'
+import CommandContext from '#commands/lib/core/CommandContext.ts'
+import CommandService from '#commands/lib/core/CommandService.ts'
+import { CommandResult } from '#commands/mod.ts'
+import * as config from '#config'
 import DayDocument from '#shared/models/Day/document/mod.ts'
 import { dayDir, dayFile } from '#shared/nbfs/mod.ts'
 import { assert, test } from '#test'
@@ -48,6 +54,13 @@ tz: America/Chicago
 ## Personal Todos
 - Call the insurance company
 `
+
+const TUESDAY_DONE = TUESDAY_OPEN.replace(
+  '- 14:00 > Interview for the design lead role',
+  '- 14:00 > ~~Interview for the design lead role~~',
+)
+  .replace('- Write the offsite agenda', '- ~~Write the offsite agenda~~')
+  .replace('- Call the insurance company', '- ~~Call the insurance company~~')
 
 const FILES = {
   [TUESDAY_FILE]: TUESDAY_OPEN,
@@ -186,3 +199,113 @@ test(
     )
   },
 )
+
+test({ name: 'a completed day can end without being marked perfect', timeout: 60000 }, async (t) => {
+  await runWysiwygE2e(
+    t,
+    {
+      initialMarkdown: WEDNESDAY_OPEN,
+      tempPrefix: 'day-end-perfect-',
+      file: WEDNESDAY_FILE,
+      files: { [TUESDAY_FILE]: TUESDAY_DONE },
+      day: true,
+      now: NOW,
+      week: (base) => ({
+        startDay: async () => {},
+        endDay: async (day, options) => {
+          const context = CommandContext.test(
+            { ...config, DIR_TIME: path.join(base, 'time'), DAY_END_COMMANDS: [] },
+            { notebookNow: NOW, systemNow: NOW },
+          )
+          const tasks = new CommandService(context)
+          const run = spyOn(tasks, 'run').mockResolvedValue(CommandResult.success())
+          try {
+            const result = await new DayEnd().run({
+              context,
+              tasks,
+              rawArgs: { _: [] },
+              args: { day, perfect: options?.perfect ?? true },
+            })
+            if (!result.ok) throw new Error(result.message)
+          } finally {
+            run.mockRestore()
+          }
+        },
+      }),
+    },
+    async ({ page, origin, file, errors }) => {
+      await page.route('**/day/*/schedule', (route) =>
+        route.fulfill({ json: { read: true, errors: [], meetings: [] } }),
+      )
+      await page.setViewportSize({ width: 1440, height: 1000 })
+      await page.goto(`${origin}/${TUESDAY.ymd}`)
+      const tuesdayTitle = 'sky · Tuesday, September 24, 2030 · Day record'
+      const wednesdayTitle = 'sky · Wednesday, September 25, 2030 · Day record'
+      const titleIs = (title: string) => page.waitForFunction((expected) => document.title === expected, title)
+      await titleIs(tuesdayTitle)
+      await page.locator('.sky-side').getByRole('button', { name: 'Today', exact: true }).click()
+      await titleIs(wednesdayTitle)
+      await page.goBack()
+      await titleIs(tuesdayTitle)
+      await page.goForward()
+      await titleIs(wednesdayTitle)
+      await page.goBack()
+      await titleIs(tuesdayTitle)
+      await page.getByRole('button', { name: 'End Tuesday' }).click()
+      const dialog = page.locator('.sky-end')
+      const checkbox = dialog.getByRole('checkbox', { name: 'Perfect day' })
+      const initiallyChecked = await checkbox.getAttribute('aria-checked')
+      await checkbox.click()
+      await dialog.getByText('This day will not be marked perfect.').waitFor()
+      await page.waitForResponse((response) => response.url().endsWith(`/day/${TUESDAY.ymd}/summary`))
+      await titleIs(tuesdayTitle)
+      const checkedAfterRefresh = await checkbox.getAttribute('aria-checked')
+      await checkbox.press('Space')
+      const checkedAgain = await checkbox.getAttribute('aria-checked')
+      await checkbox.press('Space')
+      await dialog.getByRole('button', { name: 'End Tuesday' }).click()
+      await page.locator('.sky-day-ended').waitFor()
+      const tuesdayFile = path.join(file, '..', '..', '09-24', 'day.md')
+      const declined = DayDocument.fromMarkdown(await readFile(tuesdayFile, 'utf8'))
+      await page.reload()
+      await page.locator('.sky-day-ended').waitFor()
+      assert({
+        given: 'a completed plan and a perfect-day checkbox toggled with the pointer and keyboard',
+        should: 'end the day with the declined choice saved and no perfect badge after reloading',
+        actual: {
+          initiallyChecked,
+          checkedAfterRefresh,
+          checkedAgain,
+          perfect: declined.yaml.perfect,
+          ended: Boolean(declined.ended),
+          perfectBadges: await page.locator('.sky-day-perfect').count(),
+          title: await page.title(),
+        },
+        expected: {
+          initiallyChecked: 'true',
+          checkedAfterRefresh: 'false',
+          checkedAgain: 'true',
+          perfect: false,
+          ended: true,
+          perfectBadges: 0,
+          title: tuesdayTitle,
+        },
+      })
+
+      await writeFile(tuesdayFile, TUESDAY_DONE)
+      await page.setViewportSize({ width: 390, height: 844 })
+      await page.goto(`${origin}/week`)
+      await page.getByRole('button', { name: 'End Tuesday' }).click()
+      await page.locator('.sky-dialog-sheet .sky-end').waitFor()
+      await dialog.getByRole('button', { name: 'End Tuesday' }).click()
+      await dialog.waitFor({ state: 'detached' })
+      const accepted = DayDocument.fromMarkdown(await readFile(tuesdayFile, 'utf8'))
+      assert({
+        given: 'the same completed plan ended from the week page on a phone with the box left checked',
+        should: 'still record a perfect day',
+        actual: { perfect: accepted.yaml.perfect, ended: Boolean(accepted.ended), errors },
+        expected: { perfect: true, ended: true, errors: [] },
+      })
+    },
+  )
+})

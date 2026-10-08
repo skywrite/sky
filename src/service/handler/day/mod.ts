@@ -61,7 +61,7 @@ export interface DayCommands {
   /** day:start for the day waiting to begin, run the moment Start is pressed */
   startDay: (day: PlainDate) => Promise<void>
   /** day:end, run the moment End is pressed */
-  endDay: (day: PlainDate) => Promise<void>
+  endDay: (day: PlainDate, options?: { perfect?: boolean }) => Promise<void>
 }
 
 /**
@@ -277,8 +277,12 @@ export function createDayRoutes(options: DayRoutesOptions): Hono {
       if (view.record.ended) return c.json({ error: 'This day has already ended.', view }, 409)
       if (!view.record.started)
         return c.json({ error: 'This day never started, so it has no end to record.', view }, 409)
+      const body = (await c.req.json().catch(() => null)) as { perfect?: unknown } | null
+      const perfect = body?.perfect
+      if (perfect !== undefined && typeof perfect !== 'boolean')
+        return c.json({ error: 'Perfect day must be true or false.', view }, 400)
       try {
-        await commands.endDay(new PlainDate(ymd))
+        await commands.endDay(new PlainDate(ymd), { perfect: perfect ?? true })
       } catch (error) {
         return c.json({ error: (error as Error).message, view: await buildDayView(options, ymd) }, 422)
       }
