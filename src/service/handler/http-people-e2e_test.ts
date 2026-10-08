@@ -145,6 +145,12 @@ test(
       })
       await page.getByRole('link', { name: 'People & Orgs', exact: true }).click()
       await page.getByRole('heading', { name: 'Start with someone you know' }).waitFor()
+      assert({
+        given: 'the empty People screen',
+        should: 'identify its context in the browser title',
+        actual: await page.title(),
+        expected: 'sky · People & Orgs',
+      })
       await capture('01-empty-people')
       await page.getByRole('link', { name: /Organizations 0/ }).click()
       await page.getByRole('button', { name: 'Add your first organization' }).click()
@@ -193,7 +199,7 @@ test(
         given: 'an active LinkedIn import',
         should: 'show real stages, attention, elapsed time and responsive progress until the draft is ready',
         actual: [
-          signInStep.includes('Sign in'),
+          signInStep.includes('Open profile'),
           readingStep.includes('Read profile'),
           preparingStep.includes('Prepare draft'),
           progressOverflow,
@@ -220,6 +226,12 @@ test(
       await capture('03-person')
       await page.reload()
       await page.getByRole('heading', { name: 'Jane Doe', exact: true }).waitFor()
+      assert({
+        given: 'a direct profile page load after import review',
+        should: 'use the person’s name in the browser title',
+        actual: await page.title(),
+        expected: 'sky · Jane Doe',
+      })
       await page.getByRole('button', { name: 'Edit', exact: true }).click()
       await page.getByRole('textbox', { name: 'Role', exact: true }).fill('Design partner')
       await page.getByRole('button', { name: 'Save changes', exact: true }).click()
@@ -247,11 +259,29 @@ test(
       await refreshed
       await page.waitForTimeout(100)
       const afterRefresh = await page.evaluate(() => window.getSelection()?.toString())
+      assert({
+        given: 'a profile refresh in the background',
+        should: 'preserve the current browser title',
+        actual: await page.title(),
+        expected: 'sky · Jane Doe',
+      })
       await writeFile(personFile, (await readFile(personFile, 'utf8')) + '\nAn external notebook update.\n')
       store.set(personFile, await readFile(personFile, 'utf8'))
       await page.evaluate(() => window.dispatchEvent(new Event('focus')))
       await page.getByText('An external notebook update.', { exact: true }).waitFor()
       await page.locator('.sky-people-inline-orgs').getByRole('link', { name: 'Atlas', exact: true }).click()
+      await page.getByRole('heading', { name: 'Atlas', exact: true }).waitFor()
+      await page.goBack()
+      await page.getByRole('heading', { name: 'Jane Doe', exact: true }).waitFor()
+      const backTitle = await page.title()
+      await page.goForward()
+      await page.getByRole('heading', { name: 'Atlas', exact: true }).waitFor()
+      assert({
+        given: 'browser back and forward between a person and organization',
+        should: 'keep the browser title in sync with the current profile',
+        actual: [backTitle, await page.title()],
+        expected: ['sky · Jane Doe', 'sky · Atlas'],
+      })
       await page.getByRole('heading', { name: 'Atlas', exact: true }).waitFor()
       const members = await page.locator('.sky-people-row strong').allTextContents()
       await capture('04-organization')
@@ -276,9 +306,13 @@ test(
       await page.getByRole('heading', { name: 'Jane Doe', exact: true }).waitFor()
       await capture('09-dark')
       const sourcePage = await browser.newPage()
-      await sourcePage.setContent(
-        '<main><h1>Jane Doe</h1><section><h2>Experience</h2><p>Atlas · Design lead · Present</p><a href="https://www.linkedin.com/company/atlas-example/">Atlas</a></section><aside>Unrelated person</aside><section><h2>People also viewed</h2>Another person</section></main>',
+      await sourcePage.route('https://www.linkedin.com/in/jane-doe-example/', (route) =>
+        route.fulfill({
+          contentType: 'text/html',
+          body: '<main><h1>Jane Doe</h1><section><h2>Experience</h2><p>Atlas · Design lead · Present</p><a href="https://www.linkedin.com/company/atlas-example/">Atlas</a></section><aside>Unrelated person</aside><section><h2>People also viewed</h2>Another person</section></main>',
+        }),
       )
+      await sourcePage.goto('https://www.linkedin.com/in/jane-doe-example/')
       const evidence = await readProfileEvidence(sourcePage, 'https://www.linkedin.com/in/jane-doe-example/')
       assert({
         given: 'the real app with an isolated notebook and a scripted LinkedIn draft',

@@ -13,7 +13,7 @@ import {
 } from 'playwright'
 import { z } from 'zod'
 import { secureOrigin, type LoginValues } from '#lib/credentials/login.ts'
-import { LinkedInBrowserImport } from '#lib/linkedin/browser.ts'
+import { readProfileEvidence } from '#lib/linkedin/evidence.ts'
 import { captureLinkedInSignIn } from '#lib/linkedin/login.ts'
 import type { ExistingBrowserConnection } from '../existing/connection.ts'
 import { captureDownloadResponse, captureInlineDownloads } from '../existing/downloads.ts'
@@ -113,9 +113,9 @@ const definitions = {
 } as const
 
 const result = (text: string, isError = false): McpToolResult => ({ content: [{ type: 'text', text }], isError })
-const linkedInDefinition = {
-  description: 'Continue importing the selected LinkedIn profile. Returns progress or profile evidence only.',
-  schema: z.object({}).strict(),
+// Host-only capture: the import supplies its selected URL through a no-argument model tool.
+const profileDefinition = {
+  schema: z.object({ url: z.url().max(8000) }).strict(),
 }
 
 export interface PrivateBrowserOptions {
@@ -133,8 +133,6 @@ export interface PrivateBrowserOptions {
   nativeApproval?: NativeAuthenticationApproval
   offerNativeChoice?: boolean
   hasSavedLogins?: boolean
-  /** Limits this session to one trusted import, with no general browser tools or downloads. */
-  linkedInProfile?: string
   /** Test seam for synthetic sites. The worker's start schema cannot supply it. */
   prepare?: (page: Page) => Promise<void>
   /** Trusted test seam for stalled browser commands; not part of the worker protocol. */
@@ -164,7 +162,6 @@ export class PrivateBrowserSession {
   private closed = false
   private closing?: Promise<void>
   private readonly attemptedOrigins = new Set<string>()
-  private readonly linkedIn: LinkedInBrowserImport | undefined
   private lastPageUrl?: string
   private authenticating = false
 
@@ -178,15 +175,6 @@ export class PrivateBrowserSession {
   ) {
     if (options.attached) this.serverInfo.name = 'Sky · existing Brave'
     this.nativeAuth = options.nativeApproval ? new NativeAuthentication(options.nativeApproval) : undefined
-    if (options.linkedInProfile) {
-      this.allowedOrigin = 'https://www.linkedin.com'
-      this.linkedIn = new LinkedInBrowserImport(
-        options.linkedInProfile,
-        page,
-        (signal) => this.signIn(signal),
-        (text) => this.redact(text),
-      )
-    }
   }
 
   static async launch(options: PrivateBrowserOptions): Promise<PrivateBrowserSession> {
@@ -224,7 +212,7 @@ export class PrivateBrowserSession {
         const contextOptions = {
           viewport: null,
           serviceWorkers: 'block' as const,
-          acceptDownloads: !options.linkedInProfile,
+          acceptDownloads: true,
         }
         context = await chromium.launchPersistentContext(options.profileDir, { ...launchOptions, ...contextOptions })
         cookies = new BrowserSessionCookies(options.profileDir)
@@ -323,7 +311,7 @@ export class PrivateBrowserSession {
           : {}),
         uploadOrigin: () => session.uploadOrigin,
         origin: () => session.allowedOrigin,
-        allowSafeNavigation: !options.linkedInProfile,
+        allowSafeNavigation: true,
         blockedNavigation: (origin) => {
           session.blockedNavigationOrigin = origin
         },
@@ -385,7 +373,7 @@ export class PrivateBrowserSession {
         void dialog.dismiss().catch(() => {})
       })
       page.on('download', (download) => {
-        if (options.linkedInProfile || session.nativeAuth?.pending) {
+        if (session.nativeAuth?.pending) {
           void download.cancel().catch(() => {})
           return
         }
@@ -416,7 +404,7 @@ export class PrivateBrowserSession {
   }
 
   async listTools(): Promise<McpToolDefinition[]> {
-    return Object.entries(this.linkedIn ? { linkedin_step: linkedInDefinition } : definitions)
+    return Object.entries(definitions)
       .filter(([name]) => name !== 'browser_file_upload' || !!this.options.uploads?.files.length)
       .map(([name, definition]) => ({
         name,
@@ -462,7 +450,7 @@ export class PrivateBrowserSession {
   }
 
   private async saveDownload(suggestedName: string, bytes: Buffer): Promise<void> {
-    if (this.closed || this.options.linkedInProfile) return
+    if (this.closed) return
     const name = path.basename(suggestedName).replace(/[\p{Cc}\p{Cf}]/gu, '_') || 'download'
     if (
       this.redactor.contains(bytes.toString('utf8')) ||
@@ -627,7 +615,7 @@ export class PrivateBrowserSession {
         protect(origin, login)
         const deadline = performance.now() + 120_000
         const permitsOrigin = login.permitsOrigin
-        if (!this.options.linkedInProfile && permitsOrigin) {
+        if (permitsOrigin) {
           this.credentialFrame = frame
           this.credentialApi = (destination) => performance.now() < deadline && permitsOrigin(destination)
         }
@@ -706,7 +694,7 @@ export class PrivateBrowserSession {
   async callTool(name: string, args: Record<string, unknown>, options: CallOptions = {}): Promise<McpToolResult> {
     // Native authentication has its own approval deadline. Ordinary browser
     // input (notably Playwright's mouse wheel) otherwise has no timeout at all.
-    if (name === 'sign_in' || this.linkedIn) return this.performTool(name, args, options)
+    if (name === 'sign_in') return this.performTool(name, args, options)
     let timer: ReturnType<typeof setTimeout> | undefined
     const timeout = new Promise<McpToolResult>((resolve) => {
       const expire = () => {
@@ -735,13 +723,14 @@ export class PrivateBrowserSession {
   }
 
   private async performTool(name: string, args: Record<string, unknown>, options: CallOptions): Promise<McpToolResult> {
-    const definition = this.linkedIn
-      ? name === 'linkedin_step'
-        ? linkedInDefinition
-        : undefined
-      : Object.hasOwn(definitions, name)
-        ? definitions[name as keyof typeof definitions]
-        : undefined
+    const definition =
+      name === 'sky_read_linkedin_profile'
+        ? profileDefinition
+        : name === 'sky_show_browser'
+          ? definitions.sign_in
+          : Object.hasOwn(definitions, name)
+            ? definitions[name as keyof typeof definitions]
+            : undefined
     if (!definition || !definition.schema.safeParse(args).success)
       return result('This operation is not available in the private browser.', true)
     if (this.closed || this.busy || options.signal?.aborted)
@@ -758,6 +747,10 @@ export class PrivateBrowserSession {
     options.signal?.addEventListener('abort', abort, { once: true })
     let signInOperation: SignInResult['operation'] = 'inspect'
     try {
+      if (name === 'sky_show_browser') {
+        await this.page.bringToFront()
+        return result('The task browser is ready for your help.')
+      }
       if (
         this.options.attached &&
         [
@@ -771,34 +764,28 @@ export class PrivateBrowserSession {
         ].includes(name)
       ) {
         signInOperation = 'activate'
-        await this.page.bringToFront()
+        if (this.options.attached.activateTaskTab) await this.options.attached.activateTaskTab()
+        else await this.page.bringToFront()
         signInOperation = 'inspect'
       }
       // Continuation is owned here, not a model tool: the code never enters a tool request or response.
-      if (this.linkedIn || ['browser_snapshot', 'browser_wait_for', 'sign_in'].includes(name)) {
+      if (['browser_snapshot', 'browser_wait_for', 'sign_in'].includes(name)) {
         if (await verificationVisible(this.page)) {
           const verification = await this.verify(options.signal)
           if (name === 'sign_in') return result(JSON.stringify(verification))
           if (verification.status === 'submitted') {
-            if (this.linkedIn) return result('{"status":"waiting"}')
             if (await this.privateEntry())
-              return result(
-                this.redactor.text(
-                  `- Page URL: ${this.visibleUrl()}\n- Page Title: Finishing sign-in\n\n\`\`\`yaml\n- paragraph: A saved verification code was submitted. Take a fresh snapshot to check whether sign-in completed.\n\`\`\``,
+              return {
+                ...result(
+                  this.redactor.text(
+                    `- Page URL: ${this.visibleUrl()}\n- Page Title: Finishing sign-in\n\n\`\`\`yaml\n- paragraph: A saved verification code was submitted. Take a fresh snapshot to check whether sign-in completed.\n\`\`\``,
+                  ),
                 ),
-              )
+                structuredContent: { kind: 'authentication_required' },
+              }
           }
         } else if (!(await this.privateEntry())) this.options.broker.revoke()
       } else this.options.broker.revoke()
-      if (this.linkedIn) {
-        const step = await this.linkedIn.step(options.signal)
-        if (step.status === 'needs_user' && this.nativeAuth && !this.attemptedOrigins.has('native')) {
-          this.attemptedOrigins.add('native')
-          const signed = await this.nativeSignIn()
-          return result(JSON.stringify({ status: signed.status === 'submitted' ? 'waiting' : 'needs_user' }))
-        }
-        return result(JSON.stringify(step))
-      }
       if (name === 'sign_in') {
         if (this.uploadOrigin)
           return result('Files have been selected. Finish this upload before starting another sign-in task.', true)
@@ -816,14 +803,28 @@ export class PrivateBrowserSession {
           true,
         )
       if (name !== 'browser_navigate' && name !== 'browser_navigate_back' && (await this.privateEntry())) {
-        return result(
-          this.redactor.text(
-            `- Page URL: ${this.visibleUrl()}\n- Page Title: Sign-in needs you\n\n\`\`\`yaml\n- paragraph: ${this.redactor.active ? 'The sign-in step needs the person. Use wait_for_person to finish in the browser, including any code from SMS, email, or an authenticator app. Never ask them to paste a code into chat.' : 'A sign-in or verification step is required. Use sign_in for a password login, or wait_for_person to complete the step in the browser.'} Credential entry is hidden.\n\`\`\``,
+        return {
+          ...result(
+            this.redactor.text(
+              `- Page URL: ${this.visibleUrl()}\n- Page Title: Sign-in needs you\n\n\`\`\`yaml\n- paragraph: ${this.redactor.active ? 'The sign-in step needs the person. Use wait_for_person to finish in the browser, including any code from SMS, email, or an authenticator app. Never ask them to paste a code into chat.' : 'A sign-in or verification step is required. Use sign_in for a password login, or wait_for_person to complete the step in the browser.'} Credential entry is hidden.\n\`\`\``,
+            ),
           ),
-        )
+          structuredContent: { kind: 'authentication_required' },
+        }
       }
       const locator = typeof args.target === 'string' ? this.page.locator(`aria-ref=${args.target}`) : null
       switch (name) {
+        case 'sky_read_linkedin_profile': {
+          try {
+            const profile = await readProfileEvidence(this.page, String(args.url))
+            return result(this.redact(JSON.stringify(profile)))
+          } catch {
+            return result(
+              'The selected LinkedIn profile is not readable on this page. Open the requested profile, wait for its content, and try capture_profile again.',
+              true,
+            )
+          }
+        }
         case 'browser_file_upload': {
           const uploads = this.options.uploads
           if (!uploads || secureOrigin(this.page.url()) !== uploads.origin)

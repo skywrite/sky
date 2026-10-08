@@ -1,20 +1,23 @@
 import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises'
 import * as os from 'node:os'
 import * as path from 'node:path'
-import { setTimeout as delay } from 'node:timers/promises'
 import type { Item } from '@1password/sdk'
-import type { Page } from 'playwright'
+import { chromium, type Page } from 'playwright'
 import type { McpTextContent, McpToolResult } from '#lib/browser/mcp/client.ts'
 import { SignInBroker, type SignInBrokerOptions } from '#lib/browser/signIn/broker.ts'
 import { launchPrivateBrowser } from '#lib/browser/signIn/launch.ts'
+import { NATIVE_BROWSER } from '#lib/browser/signIn/nativeBrowser.ts'
 import { PrivateBrowserSession } from '#lib/browser/signIn/session.ts'
+import { runBrowserTask } from '#lib/browser/task/runTask.ts'
 import {
   OnePasswordCredentialProvider,
   type OnePasswordClient,
 } from '#lib/credentials/providers/OnePasswordCredentialProvider.ts'
 import { readJson, writeJson } from '#lib/jobs/files.ts'
+import { exists } from '#shared/fs/mod.ts'
 import { assert, test } from '#test'
-import { LinkedInBrowserResult } from './browser.ts'
+import { scriptedBrowserModel } from '#test/browserTask.ts'
+import { ProfileEvidence } from './evidence.ts'
 import importLinkedIn from './worker.ts'
 
 const PROFILE = 'https://www.linkedin.com/in/jane-doe-example/'
@@ -29,6 +32,11 @@ document.querySelector('button').onclick = async () => {
 </script>`
 const CHALLENGE =
   '<main><h1>Verification</h1><form method="post" action="/verify"><label>Code<input name="code" autocomplete="one-time-code"></label><button>Verify</button></form></main>'
+const PROFILE_HTML = `<title>Jane Doe | LinkedIn</title><main><h1>Jane Doe</h1><section><h2>About</h2><p>Research lead</p><p>${USERNAME} ${PASSWORD}</p></section><section><h2>Experience</h2><a href="/company/atlas-example/">Atlas</a><p>Atlas · Research lead · 2022 – Present</p></section><aside>Private sidebar</aside><form><textarea>Private authentication controls</textarea></form></main>`
+const text = (reply: McpToolResult) =>
+  reply.content
+    .flatMap((part) => (part.type === 'text' && 'text' in part ? [(part as McpTextContent).text] : []))
+    .join('\n')
 
 async function fixture(
   work: (f: {
@@ -91,7 +99,6 @@ async function fixture(
   const browser = await PrivateBrowserSession.launch({
     filesDir: path.join(dir, 'files'),
     profileDir: path.join(dir, 'profile'),
-    linkedInProfile: PROFILE,
     headless: true,
     broker: new SignInBroker(options),
     prepare: async (created) => {
@@ -107,13 +114,10 @@ async function fixture(
           signedIn = new URLSearchParams(request.postData() ?? '').get('code') === CODE
           await route.fulfill({ contentType: 'text/html', body: '<script>location.replace("/feed/")</script>' })
         } else if (url.pathname.startsWith('/in/')) {
-          if (!signedIn)
-            await route.fulfill({ contentType: 'text/html', body: '<script>location.replace("/authwall")</script>' })
-          else
-            await route.fulfill({
-              contentType: 'text/html',
-              body: `<main><h1>Jane Doe</h1><section><h2>About</h2><p>Research lead</p><p>${USERNAME} ${PASSWORD}</p></section><section><h2>Experience</h2><a href="/company/atlas-example/">Atlas</a><p>Atlas · Research lead · 2022 – Present</p></section><aside>Private sidebar</aside><form><textarea>Private authentication controls</textarea></form></main>`,
-            })
+          await route.fulfill({
+            contentType: 'text/html',
+            body: signedIn ? PROFILE_HTML : '<script>location.replace("/authwall")</script>',
+          })
         } else
           await route.fulfill({
             contentType: 'text/html',
@@ -137,7 +141,7 @@ async function fixture(
       item,
       manuallySignIn: async () => {
         signedIn = true
-        await page.goto('https://www.linkedin.com/feed/')
+        await page.goto(PROFILE)
       },
     })
   } finally {
@@ -146,14 +150,8 @@ async function fixture(
   }
 }
 
-async function step(browser: PrivateBrowserSession) {
-  const reply = await browser.callTool('linkedin_step', {})
-  if (reply.isError) throw new Error('Import step failed')
-  return LinkedInBrowserResult.parse(JSON.parse((reply.content[0] as McpTextContent).text))
-}
-
 test(
-  'Person import completes a saved authenticator challenge without asking for a code',
+  'the shared browser completes a saved LinkedIn authenticator challenge and scrubs evidence',
   { timeout: 30000 },
   async () => {
     await fixture(async (f) => {
@@ -164,59 +162,80 @@ test(
         value: 'mock-seed',
         details: { type: 'Otp', content: { code: CODE } },
       } as Item['fields'][number])
-      const outcomes = [await step(f.browser)]
-      for (let i = 0; i < 30 && outcomes.at(-1)?.status !== 'ready'; i++) {
-        await delay(100)
-        outcomes.push(await step(f.browser))
-      }
-      const serialized = JSON.stringify(outcomes)
+      await f.browser.callTool('browser_navigate', { url: 'https://www.linkedin.com/login' })
+      const signed = await f.browser.callTool('sign_in', {})
+      await f.page.waitForURL('**/checkpoint/challenge')
+      const verified = await f.browser.callTool('browser_snapshot', {})
+      await f.page.waitForURL('**/feed/')
+      await f.browser.callTool('browser_navigate', { url: PROFILE })
+      const captured = await f.browser.callTool('sky_read_linkedin_profile', { url: PROFILE })
+      const profile = ProfileEvidence.parse(JSON.parse(text(captured)))
       assert({
         given: 'a LinkedIn password login with a saved authenticator',
-        should: 'complete the challenge in the private worker and return only profile evidence',
+        should: 'use the shared sign-in flow and export only scrubbed main-page evidence',
         actual: [
-          outcomes.at(-1)?.status,
+          JSON.parse(text(signed)).status,
           f.counts,
-          [USERNAME, PASSWORD, CODE, 'mock-seed'].some((value) => serialized.includes(value)),
-          outcomes.some((outcome) => outcome.status === 'needs_user'),
+          [USERNAME, PASSWORD, CODE, 'mock-seed', 'Private sidebar', 'Private authentication controls'].some((value) =>
+            JSON.stringify([signed, verified, captured]).includes(value),
+          ),
+          profile.name,
+          profile.companies[0]?.name,
           await readdir(path.join(f.dir, 'files')),
         ],
-        expected: ['ready', { lookup: 1, choose: 1, read: 2, submitted: 1 }, false, false, []],
+        expected: ['submitted', { lookup: 1, choose: 1, read: 2, submitted: 1 }, false, 'Jane Doe', 'Atlas', []],
       })
     })
   },
 )
 
 test(
-  'Person import uses protected sign-in, hands off verification, and closes before extraction',
+  'Person import runs the shared browser task, resumes manual verification and closes before extraction',
   { timeout: 30000 },
   async () => {
     await fixture(async (f) => {
-      const outcomes: unknown[] = []
-      const stages: string[] = []
       const input = {
         url: PROFILE,
         progressFile: path.join(f.dir, 'progress.json'),
         cancelFile: path.join(f.dir, 'cancel.json'),
       }
+      const replies: McpToolResult[] = []
+      let resumed = false
       let closedBeforeExtraction = false
       let extractionSafe = false
-      const draft = await importLinkedIn(input, {
-        launch: async (options) => {
-          if (options.linkedInProfile !== PROFILE) throw new Error('Import must use the restricted worker')
-          return {
-            close: () => f.browser.close(),
-            callTool: async (name, args, options) => {
-              stages.push((await readJson<{ stage: string }>(input.progressFile))?.stage ?? '')
-              const reply = await f.browser.callTool(name, args, options)
-              outcomes.push(reply)
-              if (JSON.stringify(reply).includes('needs_user') && f.page.url().includes('/checkpoint/')) {
-                await f.page.getByLabel('Code').fill(CODE)
-                await f.page.getByRole('button', { name: 'Verify' }).click()
-              }
-              return reply
+      const result = await importLinkedIn(input, {
+        model: scriptedBrowserModel([
+          { name: 'browser_navigate', input: { url: 'https://www.linkedin.com/login' } },
+          { name: 'sign_in' },
+          { name: 'browser_snapshot' },
+          { name: 'wait_for_person', input: { message: 'Finish verification in the browser.' } },
+          { name: 'browser_navigate', input: { url: PROFILE } },
+          { name: 'capture_profile' },
+        ]),
+        runTask: (options) =>
+          runBrowserTask({
+            ...options,
+            browser: {
+              listTools: () => f.browser.listTools(),
+              close: () => f.browser.close(),
+              callTool: async (name, args, callOptions) => {
+                const reply = await f.browser.callTool(name, args, callOptions)
+                replies.push(reply)
+                if (name === 'sign_in') await f.page.waitForURL('**/checkpoint/challenge')
+                if (
+                  name === 'browser_snapshot' &&
+                  (await readJson<{ phase: string }>(input.progressFile))?.phase === 'needs_user' &&
+                  !resumed
+                ) {
+                  resumed = true
+                  await f.page.getByLabel('Code').fill(CODE)
+                  await f.page.getByRole('button', { name: 'Verify' }).click()
+                  await f.page.waitForURL('**/feed/')
+                }
+                return reply
+              },
             },
-          }
-        },
+          }),
         extract: async (source) => {
           closedBeforeExtraction = f.page.isClosed()
           extractionSafe =
@@ -236,54 +255,58 @@ test(
           }
         },
       })
-      const serialized = JSON.stringify(outcomes) + (await readFile(input.progressFile, 'utf8'))
       assert({
-        given: 'a profile behind a password login and a separate verification challenge',
-        should: 'approve and fill once, hand off the code, isolate the session, and return only a safe draft',
+        given: 'a profile behind a login and a separate verification challenge',
+        should: 'resume automatically after the person verifies, capture the selected page and close before extraction',
         actual: [
           f.counts,
-          draft.name,
+          resumed,
+          result.name,
           closedBeforeExtraction,
           extractionSafe,
-          [USERNAME, PASSWORD, CODE].some((value) => serialized.includes(value)),
-          stages.some((stage) => stage.includes('Approve')),
-          stages.some((stage) => stage.includes('verification')),
-          await readdir(path.join(f.dir, 'files')),
+          [USERNAME, PASSWORD, CODE].some((value) =>
+            (JSON.stringify(replies) + JSON.stringify(result) + '').includes(value),
+          ),
+          (await readFile(input.progressFile, 'utf8')).includes('Preparing'),
         ],
-        expected: [{ lookup: 1, choose: 1, read: 1, submitted: 1 }, 'Jane Doe', true, true, false, true, true, []],
+        expected: [{ lookup: 1, choose: 1, read: 1, submitted: 1 }, true, 'Jane Doe', true, true, false, true],
       })
     })
   },
 )
 
 test(
-  'declining approval or having no password manager keeps manual sign-in available without repeated prompts',
+  'profile capture rejects changed profiles, authentication pages and model-supplied overrides',
   { timeout: 30000 },
   async () => {
-    for (const configured of [true, false])
-      await fixture(async (f) => {
-        if (!configured) f.options.sources = async () => []
-        f.options.approval.allowLookup = async () => {
-          f.counts.lookup++
-          return false
-        }
-        let outcome = await step(f.browser)
-        for (let i = 0; i < 8 && outcome.status !== 'needs_user'; i++) outcome = await step(f.browser)
-        await step(f.browser)
-        await step(f.browser)
-        await f.manuallySignIn()
-        for (let i = 0; i < 8 && outcome.status !== 'ready'; i++) outcome = await step(f.browser)
-        assert({
-          given: configured ? 'a declined native prompt' : 'an unconfigured password manager',
-          should: 'continue after manual login without reading a credential or repeating approval',
-          actual: [outcome.status, f.counts],
-          expected: ['ready', { lookup: configured ? 1 : 0, choose: 0, read: 0, submitted: 0 }],
-        })
+    await fixture(async (f) => {
+      const replies: McpToolResult[] = []
+      await f.browser.callTool('browser_navigate', { url: 'https://www.linkedin.com/login' })
+      const hidden = await f.browser.callTool('sky_read_linkedin_profile', { url: PROFILE })
+      await f.manuallySignIn()
+      replies.push(await f.browser.callTool('sky_read_linkedin_profile', { url: PROFILE, approved: true }))
+      replies.push(await f.browser.callTool('sky_read_linkedin_profile', { url: 'https://evil.example' }))
+      await f.page.goto('https://www.linkedin.com/in/someone-else-example/')
+      replies.push(await f.browser.callTool('sky_read_linkedin_profile', { url: PROFILE }))
+      const tools = await f.browser.listTools()
+      assert({
+        given: 'credential entry, another profile and attempts to override the host operation',
+        should: 'withhold evidence and expose only ordinary browser controls to the model',
+        actual: [
+          (hidden.structuredContent as { kind: string }).kind,
+          text(hidden).includes(USERNAME),
+          replies.every((reply) => reply.isError),
+          tools.some((tool) => tool.name === 'browser_navigate'),
+          tools.some((tool) => tool.name.startsWith('sky_')),
+          f.counts.read,
+        ],
+        expected: ['authentication_required', false, true, true, false, 0],
       })
+    })
   },
 )
 
-test('cancelling Person import interrupts native approval and destroys the browser', { timeout: 30000 }, async () => {
+test('cancelling Person import interrupts native sign-in and closes its task', { timeout: 30000 }, async () => {
   await fixture(async (f) => {
     const input = {
       url: PROFILE,
@@ -295,144 +318,187 @@ test('cancelling Person import interrupts native approval and destroys the brows
       return new Promise((resolve) => f.page.once('close', () => resolve(false)))
     }
     let extracted = false
-    let error = ''
+    let message = ''
     try {
       await importLinkedIn(input, {
-        launch: async () => f.browser,
+        model: scriptedBrowserModel([
+          { name: 'browser_navigate', input: { url: 'https://www.linkedin.com/login' } },
+          { name: 'sign_in' },
+        ]),
+        runTask: (options) => runBrowserTask({ ...options, browser: f.browser }),
         extract: async () => {
           extracted = true
           throw new Error('Unexpected extraction')
         },
       })
-    } catch (failure) {
-      error = (failure as Error).message
+    } catch (error) {
+      message = (error as Error).message
     }
     assert({
-      given: 'cancellation while the approval dialog is waiting',
-      should: 'close the browser immediately without reading credentials or extracting a draft',
-      actual: [error, f.page.isClosed(), f.counts.read, extracted],
+      given: 'cancellation during sign-in approval',
+      should: 'close the task without reading credentials or extracting a draft',
+      actual: [message, f.page.isClosed(), f.counts.read, extracted],
       expected: ['Import cancelled.', true, 0, false],
     })
   })
 })
 
-test('a LinkedIn import cannot become a general browser or read another profile', { timeout: 30000 }, async () => {
-  await fixture(async (f) => {
-    const replies: McpToolResult[] = []
-    for (const name of ['browser_snapshot', 'browser_navigate', 'browser_evaluate', 'sign_in', 'approve'])
-      replies.push(await f.browser.callTool(name, {}))
-    replies.push(await f.browser.callTool('linkedin_step', { url: 'https://evil.example', approved: true }))
-    await step(f.browser)
-    await f.manuallySignIn()
-    await step(f.browser)
-    await step(f.browser)
-    await f.page.goto('https://www.linkedin.com/in/someone-else-example/')
-    const changed = await f.browser.callTool('linkedin_step', {})
-    let escaped = false
-    await f.page.goto('https://evil.example').then(
-      () => {
-        escaped = true
-      },
-      () => {},
-    )
-    assert({
-      given: 'arbitrary browser requests, a changed profile, and cross-origin navigation',
-      should: 'refuse all three without exporting page content',
-      actual: [replies.every((reply) => reply.isError), changed.isError, escaped, f.counts.read],
-      expected: [true, true, false, 0],
-    })
-  })
-})
-
-test('the real private worker exposes only the pinned LinkedIn import operation', { timeout: 30000 }, async () => {
-  const dir = await mkdtemp(path.join(os.tmpdir(), 'sky-linkedin-worker-test-'))
-  const browser = await launchPrivateBrowser({
-    objective: 'Import an example profile',
-    linkedInProfile: PROFILE,
-    filesDir: path.join(dir, 'files'),
-    profileDir: path.join(dir, 'profile'),
-    headless: true,
-  })
-  try {
-    const denied = await browser.callTool('browser_navigate', { url: 'https://www.linkedin.com/feed/' })
-    assert({
-      given: 'a worker started for one LinkedIn profile',
-      should: 'expose progress only and reject general browser control',
-      actual: [(await browser.listTools()).map((tool) => tool.name), denied.isError],
-      expected: [['linkedin_step'], true],
-    })
-  } finally {
-    await browser.close()
-    await rm(dir, { recursive: true, force: true })
-  }
-})
-
 test(
-  'LinkedIn JavaScript login approval cannot survive changed controls or a changed path',
+  'the real browser worker offers shared task controls and keeps profile capture host-only',
   { timeout: 30000 },
   async () => {
-    for (const change of ['controls', 'path'])
-      await fixture(async (f) => {
-        f.options.approval.choose = async () => {
-          if (change === 'controls')
-            await f.page.locator('main').evaluate((main) => main.replaceWith(main.cloneNode(true)))
-          else await f.page.evaluate(() => history.replaceState(null, '', '/feed/'))
-          return 0
-        }
-        let outcome = await step(f.browser)
-        for (let i = 0; i < 8 && outcome.status !== 'signing_in'; i++) outcome = await step(f.browser)
-        outcome = await step(f.browser)
-        assert({
-          given: `the ${change} changed during native approval`,
-          should: 'require the person without reading or filling the selected login',
-          actual: [outcome.status, f.counts.lookup, f.counts.read, f.counts.submitted],
-          expected: ['needs_user', 1, 0, 0],
-        })
+    const dir = await mkdtemp(path.join(os.tmpdir(), 'sky-linkedin-worker-test-'))
+    const browser = await launchPrivateBrowser({
+      objective: 'Import an example profile',
+      filesDir: path.join(dir, 'files'),
+      profileDir: path.join(dir, 'profile'),
+      headless: true,
+    })
+    try {
+      const names = (await browser.listTools()).map((tool) => tool.name)
+      const captured = await browser.callTool('sky_read_linkedin_profile', { url: PROFILE })
+      assert({
+        given: 'the shared worker before opening a profile',
+        should: 'offer browser-task navigation and sign-in without exposing capture or the removed LinkedIn script',
+        actual: [
+          names.includes('browser_navigate'),
+          names.includes('sign_in'),
+          names.some((name) => name.startsWith('sky_') || name === 'linkedin_step'),
+          captured.isError,
+        ],
+        expected: [true, true, false, true],
       })
+    } finally {
+      await browser.close()
+      await rm(dir, { recursive: true, force: true })
+    }
   },
 )
 
+test('LinkedIn login approval cannot survive changed controls or a changed path', { timeout: 30000 }, async () => {
+  for (const change of ['controls', 'path'])
+    await fixture(async (f) => {
+      await f.browser.callTool('browser_navigate', { url: 'https://www.linkedin.com/login' })
+      f.options.approval.choose = async () => {
+        if (change === 'controls')
+          await f.page.locator('main').evaluate((main) => main.replaceWith(main.cloneNode(true)))
+        else await f.page.evaluate(() => history.replaceState(null, '', '/feed/'))
+        return 0
+      }
+      const signed = await f.browser.callTool('sign_in', {})
+      assert({
+        given: `the ${change} changed during approval`,
+        should: 'reject the changed form before reading or submitting a credential',
+        actual: [JSON.parse(text(signed)).reason, f.counts.lookup, f.counts.read, f.counts.submitted],
+        expected: ['page_changed', 1, 0, 0],
+      })
+    })
+})
+
 test(
-  'a loaded profile with a name outside h1 proceeds to extraction instead of waiting for sign-in',
+  'profile capture recognizes a name outside h1 and fails promptly on unreadable content',
   { timeout: 30000 },
   async () => {
     await fixture(async (f) => {
-      await step(f.browser)
       await f.manuallySignIn()
-      await step(f.browser)
       await f.page.setContent(
         '<title>(3) Jane Doe | LinkedIn</title><div role="main"><p>Jane Doe</p><p>Research lead</p><section><h2>About</h2><p>Works on accessible design.</p></section><input name="pinnedSearch" value=""></div>',
       )
-      const ready = await step(f.browser)
-      const read = await step(f.browser)
+      const captured = await f.browser.callTool('sky_read_linkedin_profile', { url: PROFILE })
+      await f.page.setContent('<title>LinkedIn</title><main><p>Profile is loading</p></main>')
+      const unreadable = await f.browser.callTool('sky_read_linkedin_profile', { url: PROFILE })
       assert({
-        given: 'a profile name rendered as text in a main landmark, with an ordinary input whose name contains pin',
-        should: 'recognize the selected profile and read it without another sign-in handoff',
-        actual: [ready.status, read.status, read.status === 'ready' ? read.profile.name : '', f.counts.read],
-        expected: ['reading', 'ready', 'Jane Doe', 0],
+        given: 'a changed LinkedIn layout followed by content that is still loading',
+        should: 'capture a visible profile name and explain when the browser task needs to wait or retry',
+        actual: [
+          ProfileEvidence.parse(JSON.parse(text(captured))).name,
+          unreadable.isError,
+          text(unreadable).includes('not readable'),
+          f.counts.lookup,
+        ],
+        expected: ['Jane Doe', true, true, 0],
       })
     })
   },
 )
 
 test(
-  'an unreadable selected profile has a short, specific timeout instead of waiting for verification',
-  { timeout: 30000 },
+  'Person import reuses an existing Brave login and closes only its own task tab',
+  { ignore: !(await exists(NATIVE_BROWSER.executablePath)), timeout: 30000 },
   async () => {
-    await fixture(async (f) => {
-      await step(f.browser)
-      await f.manuallySignIn()
-      await step(f.browser)
-      await f.page.setContent('<title>LinkedIn</title><main><p>Profile is loading</p></main>')
-      const first = await step(f.browser)
-      await new Promise((resolve) => setTimeout(resolve, 20_100))
-      const last = await step(f.browser)
-      assert({
-        given: 'a selected profile whose content never becomes readable',
-        should: 'report profile loading and then a specific failure within 21 seconds',
-        actual: [first, last, f.counts.lookup],
-        expected: [{ status: 'loading_profile' }, { status: 'failed', reason: 'profile_unreadable' }, 0],
-      })
+    const root = await mkdtemp(path.join(os.tmpdir(), 'sky-linkedin-brave-test-'))
+    const context = await chromium.launchPersistentContext(path.join(root, 'brave-profile'), {
+      executablePath: NATIVE_BROWSER.executablePath,
+      headless: true,
     })
+    let lookups = 0
+    try {
+      await context.addCookies([{ name: 'session', value: 'synthetic-session', url: 'https://www.linkedin.com' }])
+      await context.route('**/*', async (route) => {
+        await route.fulfill({
+          contentType: 'text/html',
+          body: route.request().headers().cookie?.includes('session=synthetic-session') ? PROFILE_HTML : LOGIN,
+        })
+      })
+      const existingPage = context.pages()[0]!
+      await existingPage.goto(PROFILE)
+      const taskPage = await context.newPage()
+      const browser = await PrivateBrowserSession.launch({
+        profileDir: path.join(root, 'unused-profile'),
+        filesDir: path.join(root, 'files'),
+        attached: {
+          context,
+          page: taskPage,
+          protocol: (page) => context.newCDPSession(page),
+          close: () => taskPage.close(),
+        },
+        broker: new SignInBroker({
+          sources: async () => {
+            lookups++
+            return []
+          },
+          connect: async () => {
+            throw new Error('No credential lookup expected')
+          },
+          approval: { allowLookup: async () => false, choose: async () => null },
+        }),
+      })
+      const result = await importLinkedIn(
+        { url: PROFILE, cancelFile: path.join(root, 'cancel.json'), progressFile: path.join(root, 'progress.json') },
+        {
+          model: scriptedBrowserModel([
+            { name: 'browser_navigate', input: { url: PROFILE } },
+            { name: 'browser_snapshot' },
+            { name: 'capture_profile' },
+          ]),
+          runTask: (options) => runBrowserTask({ ...options, browser }),
+          extract: async (source) => ({
+            url: source.url,
+            name: source.name,
+            title: '',
+            location: '',
+            about: '',
+            current: [],
+            past: [],
+          }),
+        },
+      )
+      assert({
+        given: 'an already signed-in Brave profile with an existing tab',
+        should: 'reuse its login without credential lookup and preserve the browser, original tab and cookies',
+        actual: [
+          result.name,
+          lookups,
+          taskPage.isClosed(),
+          existingPage.isClosed(),
+          existingPage.url(),
+          (await context.cookies('https://www.linkedin.com')).some((cookie) => cookie.value === 'synthetic-session'),
+        ],
+        expected: ['Jane Doe', 0, true, false, PROFILE, true],
+      })
+    } finally {
+      await context.close()
+      await rm(root, { recursive: true, force: true })
+    }
   },
 )

@@ -36,7 +36,7 @@ export function PeopleImportProgress({ job }: { job?: LinkedInImport }) {
         </span>
         <div role="status" aria-live="polite" className="sky-people-import-status">
           <strong>{headings[phase]}</strong>
-          <p>{job?.stage ?? 'Starting a private browser for this import…'}</p>
+          <p>{job?.stage ?? 'Opening your selected browser for this import…'}</p>
         </div>
         {elapsed !== undefined && (
           <span className="sky-people-import-elapsed" aria-label={`${elapsed} seconds elapsed`}>
@@ -45,7 +45,7 @@ export function PeopleImportProgress({ job }: { job?: LinkedInImport }) {
         )}
       </div>
       <ol className="sky-people-import-steps" aria-label="Import steps">
-        {['Sign in', 'Read profile', 'Prepare draft'].map((label, index) => (
+        {['Open profile', 'Read profile', 'Prepare draft'].map((label, index) => (
           <li
             key={label}
             data-state={index < active ? 'done' : index === active ? 'active' : 'waiting'}

@@ -6,6 +6,7 @@ import ChatEngine, { type ChatEngineEvent, type TurnCut, type TurnResult } from 
 import { attachBrowserDriver, closeTab } from '../mcp/browserDriver.ts'
 import { BROWSER_TOOL_NAMES, browserToolsFrom } from '../mcp/tools.ts'
 import { launchPrivateBrowser } from '../signIn/launch.ts'
+import type { PrivateBrowserClient } from '../signIn/run.ts'
 import { browserTaskInstructions } from './prompt.ts'
 import type { BrowserUploads } from './uploads.ts'
 
@@ -28,7 +29,7 @@ export interface BrowserTaskOptions {
   /** The model's clock, a notebook datetime: `YYYY-MM-DD HH:MM` */
   when: string
   /** The host's tools beside the browser: read_file, save_file … */
-  tools?: Record<string, unknown>
+  tools?: Record<string, unknown> | ((browser: Pick<PrivateBrowserClient, 'callTool'>) => Record<string, unknown>)
   /**
    * The person is needed in the browser window. Resolves true once they say
    * they are done and Sky may look again, false when they stop the task.
@@ -42,6 +43,10 @@ export interface BrowserTaskOptions {
   browserRoot?: string
   /** Configured password managers use a private worker with a persistent Sky browser profile. */
   privateSignIn?: boolean
+  /** Keep an existing-Brave task in its own window without focusing it for input. */
+  background?: boolean
+  /** Trusted host/test connection; never supplied by a model tool. The task closes it on exit. */
+  browser?: PrivateBrowserClient
 }
 
 export interface BrowserTaskResult {
@@ -60,21 +65,24 @@ export interface BrowserTaskResult {
 }
 
 export async function runBrowserTask(options: BrowserTaskOptions): Promise<BrowserTaskResult> {
-  const privateBrowser = !!(options.privateSignIn || options.uploads)
-  const connection = privateBrowser
-    ? {
-        client: await launchPrivateBrowser(
-          {
-            objective: options.objective,
-            filesDir: options.filesDir,
-            headless: options.headless,
-            uploads: options.uploads,
-          },
-          options.abortSignal,
-        ),
-        driver: undefined,
-      }
-    : await attachBrowserDriver({ headless: options.headless, root: options.browserRoot })
+  const privateBrowser = !!(options.privateSignIn || options.uploads || options.browser)
+  const connection = options.browser
+    ? { client: options.browser, driver: undefined }
+    : privateBrowser
+      ? {
+          client: await launchPrivateBrowser(
+            {
+              objective: options.objective,
+              filesDir: options.filesDir,
+              headless: options.headless,
+              uploads: options.uploads,
+              background: options.background,
+            },
+            options.abortSignal,
+          ),
+          driver: undefined,
+        }
+      : await attachBrowserDriver({ headless: options.headless, root: options.browserRoot })
   const { client, driver } = connection
   let finished = false
   let signInFailure: string | undefined
@@ -104,7 +112,8 @@ export async function runBrowserTask(options: BrowserTaskOptions): Promise<Brows
           : { continued: false, note: 'The person stopped the task. Report what was done and what remains.' }
       },
     })
-    const tools = { ...browserTools, [WAIT_FOR_PERSON_TOOL]: waitForPerson, ...options.tools }
+    const hostTools = typeof options.tools === 'function' ? options.tools(client) : options.tools
+    const tools = { ...browserTools, [WAIT_FOR_PERSON_TOOL]: waitForPerson, ...hostTools }
 
     const engine = new ChatEngine({
       model: options.model,

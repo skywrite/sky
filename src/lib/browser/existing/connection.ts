@@ -5,6 +5,7 @@ import type { Browser, BrowserContext, CDPSession, Page } from 'playwright'
 import { resolveDownloadLocations } from '../downloadLocations.ts'
 import { NATIVE_BROWSER } from '../signIn/nativeBrowser.ts'
 import { ExistingBrowserError, type ExistingBrowserSettings } from './settings.ts'
+import { backgroundTaskPage, closeTaskTabs, connectionPage, taskWindowLauncher } from './taskWindow.ts'
 
 export type PageProtocol = Pick<CDPSession, 'send' | 'on' | 'off'>
 export interface ExistingBrowserConnection {
@@ -12,6 +13,8 @@ export interface ExistingBrowserConnection {
   page: Page
   downloadDirectories?: readonly string[]
   protocol(page: Page): Promise<PageProtocol>
+  /** Select only the owned task tab, preserving the foreground window. */
+  activateTaskTab?(): Promise<void>
   close(): Promise<void>
 }
 
@@ -33,28 +36,43 @@ const { tools } = require('playwright-core/lib/coreBundle') as {
 export async function connectExistingBrowser(
   token: string,
   settings: ExistingBrowserSettings,
-  options: { signal?: AbortSignal; executablePath?: string; userDataDir?: string; homeDir?: string } = {},
+  options: {
+    signal?: AbortSignal
+    executablePath?: string
+    userDataDir?: string
+    homeDir?: string
+    background?: boolean
+  } = {},
 ): Promise<ExistingBrowserConnection> {
   let browser: Browser | undefined
   let page: Page | undefined
+  let control: Page | undefined
+  let closePages: (() => Promise<void>) | undefined
+  let launcher: Awaited<ReturnType<typeof taskWindowLauncher>> | undefined
   const previousToken = process.env.PLAYWRIGHT_MCP_EXTENSION_TOKEN
   try {
     options.signal?.throwIfAborted()
     process.env.PLAYWRIGHT_MCP_EXTENSION_TOKEN = token
+    const executablePath = options.executablePath ?? NATIVE_BROWSER.executablePath
+    if (options.background) launcher = await taskWindowLauncher(executablePath)
     const args = {
       extension: true,
-      executablePath: options.executablePath ?? NATIVE_BROWSER.executablePath,
+      executablePath: launcher?.executablePath ?? executablePath,
       profileDirName: settings.profileDirName,
       ...(options.userDataDir ? { userDataDir: options.userDataDir } : {}),
     }
     const config = await tools.resolveCLIConfigForMCP(args, {})
     browser = (await tools.createBrowserWithInfo(config, { clientName: 'Sky' }, args)).browser
-    options.signal?.throwIfAborted()
     const context = browser.contexts()[0]
     if (!context) throw new Error('No extension context')
     // Never reuse, navigate, or close a pre-existing tab, even if shared with the extension.
-    page = await context.newPage()
+    if (options.background) control = connectionPage(context)
+    options.signal?.throwIfAborted()
+    const task = control ? await backgroundTaskPage(context, control) : { page: await context.newPage() }
+    page = task.page
+    closePages = 'close' in task ? task.close : undefined
     const ownedPage = page
+    const ownedControl = control
     const connected = browser
     const downloads = await resolveDownloadLocations({ ...options, profileDirName: settings.profileDirName })
     return {
@@ -62,21 +80,30 @@ export async function connectExistingBrowser(
       page,
       downloadDirectories: downloads.locations.map((location) => location.path),
       protocol: existingPageProtocol,
+      ...('activateTaskTab' in task ? { activateTaskTab: task.activateTaskTab } : {}),
       close: async () => {
         // A background renderer can stop answering input and page-close calls.
         // Disconnect the relay even when that tab never acknowledges close.
-        await Promise.race([ownedPage.close().catch(() => {}), delay(2000, undefined, { ref: false })])
+        if (closePages) await Promise.race([closePages(), delay(2000, undefined, { ref: false })])
+        else {
+          await Promise.race([ownedPage.close().catch(() => {}), delay(2000, undefined, { ref: false })])
+          if (ownedControl)
+            await Promise.race([ownedControl.close().catch(() => {}), delay(2000, undefined, { ref: false })])
+        }
         // A CDP-connected Browser.close disconnects the relay; it does not quit Brave.
         await connected.close().catch(() => {})
       },
     }
   } catch {
-    await page?.close().catch(() => {})
+    if (closePages || control)
+      await Promise.race([closePages?.() ?? closeTaskTabs(control!), delay(2000, undefined, { ref: false })])
+    else await page?.close().catch(() => {})
     await browser?.close().catch(() => {})
     throw new ExistingBrowserError(
       'Sky could not connect to your Brave browser. Open Brave with the Playwright extension enabled in the connected profile. If its token changed, reconnect in Settings → Browser automation. Your browser task has not started.',
     )
   } finally {
+    await launcher?.close().catch(() => {})
     if (previousToken === undefined) delete process.env.PLAYWRIGHT_MCP_EXTENSION_TOKEN
     else process.env.PLAYWRIGHT_MCP_EXTENSION_TOKEN = previousToken
   }

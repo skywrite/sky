@@ -5,12 +5,10 @@ import { z } from 'zod'
 import { DIR_STATE } from '#config'
 import { connectOnePassword } from '#lib/credentials/connect.ts'
 import { PasswordManagerSettingsStore } from '#lib/credentials/passwordManagers.ts'
-import { linkedInUrl } from '#lib/linkedin/types.ts'
 import { connectExistingBrowser } from '../existing/connection.ts'
 import { ExistingBrowserError, ExistingBrowserSettingsStore } from '../existing/settings.ts'
-import { SignInBroker } from './broker.ts'
 import { CredentialRun } from './credentialRun.ts'
-import { nativeAuthenticationApproval, nativeRunApproval, nativeSignInApproval } from './nativeApproval.ts'
+import { nativeAuthenticationApproval, nativeRunApproval } from './nativeApproval.ts'
 import { nativeBrowserAvailable, NATIVE_BROWSER } from './nativeBrowser.ts'
 import { BrowserProfileError, SKY_PRIVATE_BROWSER_PROFILE } from './profile.ts'
 import { RecoveringBrowserSession } from './recovery.ts'
@@ -34,11 +32,7 @@ const startSchema = z
       .strict()
       .optional(),
     headless: z.boolean().optional(),
-    linkedInProfile: z
-      .string()
-      .max(8000)
-      .transform((url) => linkedInUrl(url))
-      .optional(),
+    background: z.boolean().optional(),
   })
   .strict()
 const controllers = new Map<number, AbortController>()
@@ -87,20 +81,14 @@ async function request(method: string, params: unknown, signal: AbortSignal) {
       sources: async () => (await settings.read()).sources,
       connect: connectOnePassword,
     }
-    if (!options.linkedInProfile)
-      credentials ??= new CredentialRun({
-        ...brokerOptions,
-        approval: nativeRunApproval(options.runObjective ?? options.objective, lifetime.signal),
-        signal: lifetime.signal,
-      })
+    credentials ??= new CredentialRun({
+      ...brokerOptions,
+      approval: nativeRunApproval(options.runObjective ?? options.objective, lifetime.signal),
+      signal: lifetime.signal,
+    })
     const create = async () => {
       lifetime.signal.throwIfAborted()
-      const broker = options.linkedInProfile
-        ? new SignInBroker({
-            ...brokerOptions,
-            approval: nativeSignInApproval(`Import LinkedIn profile: ${options.linkedInProfile}`, lifetime.signal),
-          })
-        : credentials!.broker()
+      const broker = credentials!.broker()
       const saved = await settings.read()
       const existingStore = new ExistingBrowserSettingsStore()
       const existing = process.env.SKY_USE_EXISTING_BROWSER === '1' ? await existingStore.read() : undefined
@@ -111,7 +99,10 @@ async function request(method: string, params: unknown, signal: AbortSignal) {
       if (saved.nativeBrowser && !existing && !(await nativeBrowserAvailable()))
         throw new Error('Native browser unavailable')
       const attached = existing
-        ? await connectExistingBrowser(await existingStore.token(), existing, { signal: lifetime.signal })
+        ? await connectExistingBrowser(await existingStore.token(), existing, {
+            signal: lifetime.signal,
+            background: options.background,
+          })
         : undefined
       return PrivateBrowserSession.launch({
         ...options,
@@ -131,7 +122,6 @@ async function request(method: string, params: unknown, signal: AbortSignal) {
         ...(process.platform === 'darwin' && !options.headless && !attached
           ? {
               nativeApproval: nativeAuthenticationApproval(options.objective, lifetime.signal),
-              offerNativeChoice: !!options.linkedInProfile,
             }
           : {}),
       })

@@ -1,6 +1,6 @@
 ---
 created: 2026-09-25
-updated: 2026-10-05
+updated: 2026-10-08
 ---
 
 # Sky's browser
@@ -14,7 +14,7 @@ sky browser:task "Log in to my brokerage and download my 2025 tax forms to ~/Des
 ```
 
 The person watches the window. A saved existing-Brave connection takes precedence
-for ordinary browser tasks. Mac tasks and tasks with a configured password
+for browser tasks, including LinkedIn Person imports. Mac tasks and tasks with a configured password
 manager otherwise use the persistent Sky browser described below. Other platforms without saved
 password managers retain the existing shared browser. Unsupported sign-in steps and codes unavailable in the approved login pause for the
 person; Enter means "done, look again". Nothing on a web page is an instruction.
@@ -34,8 +34,8 @@ Each connection gets a tab group, and Sky creates its own page rather than
 navigating a pre-existing tab. Cleanup closes only its task pages and disconnects
 the relay; it never quits Brave, copies cookies, acquires the personal profile's
 lock, or edits that profile's preferences. A failed connection reports how to
-reconnect; it must not silently open a new, signed-out browser. Dedicated batch
-imports and explicit test profiles keep their separate browser lifecycle.
+reconnect; it must not silently open a new, signed-out browser. Explicit test
+profiles and the legacy batch helper keep their separate browser lifecycle.
 
 Existing sessions require no credential lookup or per-site native approval. When
 a site needs fresh authentication, `sign_in` uses the same 1Password broker and
@@ -52,6 +52,10 @@ Playwright routing must not also consume those interception events. Downloads
 are captured from response streams or generated download links into the task's
 folder. Never change the everyday profile's global download directory to make
 this work. Download capture is bounded at 100 MiB and failures are reported.
+Response-stream capture applies only to document navigations: CDN scripts,
+styles and API responses can carry `Content-Disposition: attachment` while
+Chromium still loads them into the page. Capturing those subresources as files
+aborts them and can leave a profile's sections permanently unloaded.
 Native downloads that bypass those hooks are tracked through the owned tab's
 `Page.downloadWillBegin` and completion events. `existing/nativeDownloads.ts`
 uses `downloadLocations.ts` to read the selected profile's download preference
@@ -78,7 +82,21 @@ PDF collection, upload restrictions, redirect blocking, and cancellation without
 quitting the original browser. The installed extension and Brave must remain
 compatible; this adapter deliberately fails instead of falling back to a new profile.
 
-Before sending input, the worker activates its own task tab. With the official
+Before sending input, the worker activates its own task tab. LinkedIn imports
+open the connection in a separate Brave window in the same profile. Their input
+activates only the task tab with `chrome.tabs.update`, preserving the focused
+window. The official extension still focuses Brave once when it connects; Sky
+brings the task window forward again only for a verification handoff. The owned
+connection page supplies these host-only tab controls, and both owned tabs close
+on cleanup. Ungroup its owned tabs before closing them: closing the last grouped
+tabs can preserve a saved group shortcut in Brave's bookmarks bar. The active
+tab-group API omits these closed groups; opt-in `SKY_BROWSER_UI_TESTS=1` coverage
+checks the synthetic browser's bookmarks bar through macOS Accessibility.
+Create the window before connecting: moving a connected tab group
+between windows can detach the debugger and end the relay. Other browser tasks
+retain their foreground behavior.
+
+With the official
 extension, a background tab can time out on a click and then leave Chromium's
 wheel-event acknowledgment pending indefinitely; Playwright's wheel API has no
 action timeout. A browser-action deadline retires an unresponsive page, and
@@ -127,8 +145,7 @@ supported JavaScript controls in a visible same-website child frame. Ordinary ta
 throughout the current run. `CredentialRun` retains that approval and the SDK
 clients inside the worker. A unique match permitted by the saved autofill scope is used automatically;
 multiple matches or incomplete lookup still require the native login chooser.
-Passwords are read freshly at each use, never cached for reuse. Dedicated imports
-retain their independent, per-use authorization.
+Passwords are read freshly at each use, never cached for reuse.
 
 A live chat plan owns `PrivateBrowserRun`, an in-memory worker lease shared across
 its browser subtasks and queued turns. Subtasks run in order and each gets a fresh
@@ -193,8 +210,7 @@ items do not grant other subdomains. This permission expires after two minutes
 and is revoked when either captured document navigates; it never permits a
 redirected credential body. Callback parameters join private redaction. This does not grant
 permission to fill on the destination: each new form requires its own permitted saved
-website match. Dedicated imports retain their pinned navigation policy, and file
-uploads retain their exact-origin restriction. A blocked top-level navigation is
+website match. File uploads retain their exact-origin restriction. A blocked top-level navigation is
 reported as a Sky restriction with its destination, not a password-manager outage
 or a generic request to finish sign-in on the browser's error page.
 
@@ -252,7 +268,7 @@ one private popup and up to eight provider origins. The worker rejects model
 operations throughout the handoff. Completing a second native dialog resumes
 only on the original site; cancellation, expiry, or returning elsewhere closes
 that task's browser while retaining the profile. Completion means the person returned control, not proof of login.
-LinkedIn uses this same handoff before resuming its pinned profile import.
+LinkedIn imports use this same handoff before returning to the selected profile.
 
 The popup's first network request is aborted until its Chromium Fetch interceptor
 is attached, then one GET is replayed. Redirect hops receive the same checks as
@@ -297,8 +313,8 @@ one. Browser capability checks are not evidence of a successful real-account log
 
 After submitting the approved password, the broker can retain an in-memory,
 single-use continuation for two minutes. It identifies only that login's one
-TOTP field and native item revision. On the next snapshot or LinkedIn workflow
-step, the worker can capture one empty code field and one submit button in a
+TOTP field and native item revision. On the next snapshot, the worker can
+capture one empty code field and one submit button in a
 same-origin, top-level POST form. It fetches a fresh code only then, checking the
 account, vault exclusions, item revision, website, concrete document and controls
 again before filling. The native prompt explicitly includes this code use.
@@ -333,25 +349,29 @@ remain outside this boundary. Settings stores preferences only; see the
 
 ## LinkedIn Person import
 
-Person import starts this same private worker, scoped at initialization to one
-canonical LinkedIn profile. In this mode the worker exposes only `linkedin_step`:
-fixed workflow progress followed by scrubbed profile evidence. The job cannot
-request general navigation, snapshots, downloads, credential reads, or an approval
-decision. Website credentials and the authenticated browser stay inside the
-worker; the normal People HTTP API still exposes only job progress and a draft.
+Person import runs `task/runTask.ts`, the reasoning driver used by `browser:task`.
+It honors the saved existing-Brave connection and reuses its website sign-ins;
+otherwise it uses Sky's persistent browser profile. It uses the ordinary browser
+tools to open the selected profile, sign in when needed, and load its relevant
+sections. Credentials remain inside the worker. The People HTTP API exposes only
+job progress and an editable draft.
 
-`lib/linkedin/browser.ts` owns the deterministic flow: open the profile, use the
-shared sign-in broker once if needed, complete supported saved-code challenges
-or wait for the person to finish verification,
-return from LinkedIn's feed to the selected profile, and capture its main content.
-Ordinary automation is confined to `https://www.linkedin.com`; an independently
-approved native SSO handoff may visit an identity provider and must return first. The import job closes
-the browser before sending evidence to its extraction model. Completion, failure,
-cancellation, or the five-minute deadline closes that job's browser while retaining
-its saved sign-in for later jobs. The previous
-persistent LinkedIn profile is neither read nor modified. No configured password
-manager or a declined approval leaves manual sign-in available in the private
-window. Other codes, passkeys and unsupported login variants still require the person.
+The import adds a no-argument `capture_profile` tool through the task's host-tool
+factory. Trusted code binds its selected URL to the worker's host-only
+`sky_read_linkedin_profile` operation, which is never listed among model tools.
+Capture rejects authentication pages and checks that the current canonical URL
+matches the selected profile before and after reading its main content and
+visible company links. Scrubbed page evidence, rather than the browser model's
+closing report, grounds the extraction model's draft.
+
+Verification that needs the person updates job progress and polls the shared
+browser's safe snapshots until credential entry ends, then the task returns to
+the selected profile automatically. Supported saved-code challenges use the same
+sign-in continuation as other browser tasks. The five-minute deadline or
+cancellation ends the task. Cleanup happens before draft extraction, closes only
+Sky's tabs and disconnects from existing Brave, or releases Sky's own profile
+while retaining its saved sign-ins. A failed Brave connection reports how to
+reconnect and never falls back to another browser.
 
 ## How a task runs
 

@@ -14,8 +14,8 @@ export async function launchPrivateBrowser(
     objective: string
     filesDir: string
     headless?: boolean
-    linkedInProfile?: string
     uploads?: BrowserUploads
+    background?: boolean
     /** Trusted host/test override; never included in a model tool or worker request. */
     profileDir?: string
   },
@@ -26,10 +26,8 @@ export async function launchPrivateBrowser(
   const environment = { ...process.env }
   const { profileDir, ...request } = options
   environment.SKY_PRIVATE_BROWSER_PROFILE = profileDir ?? SKY_PRIVATE_BROWSER_PROFILE
-  // Tests and dedicated imports retain their explicit profiles. Ordinary tasks
-  // use the person's saved browser choice, including uploads and Jev runs.
-  const existing =
-    !profileDir && !options.headless && !options.linkedInProfile && (await new ExistingBrowserSettingsStore().read())
+  // Explicit test profiles stay isolated. Every other task honors the saved browser choice.
+  const existing = !profileDir && !options.headless && (await new ExistingBrowserSettingsStore().read())
   if (existing) environment.SKY_USE_EXISTING_BROWSER = '1'
   else delete environment.SKY_USE_EXISTING_BROWSER
   for (const name of Object.keys(environment)) {
@@ -44,7 +42,7 @@ export async function launchPrivateBrowser(
       clientName: 'sky-private-task',
     })
   const host = browserTaskHost.getStore()
-  if (host?.browserRun && !profileDir && !options.headless && !options.linkedInProfile)
+  if (host?.browserRun && !profileDir && !options.headless)
     return host.browserRun.acquire(
       start,
       { ...request, runObjective: host.runObjective ?? options.objective },

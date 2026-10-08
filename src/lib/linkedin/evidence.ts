@@ -36,6 +36,15 @@ export async function visibleProfileName(page: Page): Promise<string | null> {
 
 /** Only the selected person's main content, excluding authentication controls and surrounding navigation. */
 export async function readProfileEvidence(page: Page, url: string): Promise<ProfileEvidence> {
+  const selected = linkedInUrl(url)
+  const atTarget = () => {
+    try {
+      return linkedInUrl(page.url()).toLowerCase() === selected.toLowerCase()
+    } catch {
+      return false
+    }
+  }
+  if (!atTarget()) throw new Error('The selected LinkedIn profile is not open')
   const name = await visibleProfileName(page)
   if (!name) throw new Error('LinkedIn profile heading unavailable')
   const captured = await page
@@ -60,8 +69,9 @@ export async function readProfileEvidence(page: Page, url: string): Promise<Prof
       clone.querySelectorAll('p, li, h1, h2, h3, div, section').forEach((node) => node.append('\n'))
       return { text: clone.textContent ?? '', companies }
     })
+  if (!atTarget()) throw new Error('The selected LinkedIn profile changed during capture')
   return {
-    url,
+    url: selected,
     name,
     text: captured.text
       .replace(/[ \t]+/g, ' ')

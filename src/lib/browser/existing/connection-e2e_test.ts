@@ -17,13 +17,84 @@ import { PrivateBrowserSession } from '../signIn/session.ts'
 import { prepareBrowserUploads } from '../task/uploads.ts'
 import { connectExistingBrowser } from './connection.ts'
 
+interface SyntheticChrome {
+  tabs: {
+    getCurrent(): Promise<{ id: number; windowId: number }>
+    query(options: { windowId?: number; active?: boolean; url?: string }): Promise<{ id: number }[]>
+    group(options: { tabIds: number[] }): Promise<number>
+    update(id: number, options: { active: boolean }): Promise<unknown>
+  }
+  tabGroups: {
+    update(id: number, options: { title: string }): Promise<unknown>
+  }
+  windows: {
+    get(id: number): Promise<{ id: number; focused: boolean }>
+    getAll(): Promise<{ id: number; focused: boolean }[]>
+    update(id: number, options: { focused: boolean }): Promise<unknown>
+  }
+}
+
+async function savedGroupShortcuts(root: string, pid: number): Promise<{ sky: number; original: number }> {
+  const script = path.join(root, 'saved-groups.swift')
+  await writeFile(
+    script,
+    `import ApplicationServices
+import Foundation
+
+func attribute(_ element: AXUIElement, _ name: String) -> AnyObject? {
+    var value: CFTypeRef?
+    guard AXUIElementCopyAttributeValue(element, name as CFString, &value) == .success else { return nil }
+    return value
+}
+
+func labels(_ element: AXUIElement, depth: Int = 0) -> [String] {
+    guard depth < 25 else { return [] }
+    let role = attribute(element, "AXRole") as? String ?? ""
+    if role == "AXWebArea" { return [] }
+    var result: [String] = []
+    if role == "AXButton" {
+        let values = ["AXTitle", "AXDescription", "AXHelp"].compactMap { attribute(element, $0) as? String }
+        if let label = values.first(where: { $0.contains(" group - ") }) { result.append(label) }
+    }
+    for child in attribute(element, "AXChildren") as? [AXUIElement] ?? [] {
+        result += labels(child, depth: depth + 1)
+    }
+    return result
+}
+
+guard AXIsProcessTrusted(), let pid = Int32(CommandLine.arguments[1]) else {
+    fatalError("The saved-group UI test requires macOS Accessibility access.")
+}
+let application = AXUIElementCreateApplication(pid)
+let windows = attribute(application, "AXWindows") as? [AXUIElement] ?? []
+let counts = windows.map { window -> [String: Int] in
+    let items = labels(window)
+    return ["sky": items.filter { $0.contains("Playwright · Sky group - ") }.count,
+            "original": items.filter { $0.contains(" Atlas group - ") }.count]
+}
+let result = ["sky": counts.map { $0["sky"]! }.max() ?? 0,
+              "original": counts.map { $0["original"]! }.max() ?? 0]
+print(String(data: try JSONSerialization.data(withJSONObject: result), encoding: .utf8)!)
+`,
+  )
+  const result = await runCommand(
+    'swift',
+    ['-module-cache-path', path.join(root, 'swift-cache'), script, String(pid)],
+    {
+      timeout: 20000,
+    },
+  )
+  if (!result.success) throw new Error('The saved-group UI probe could not run. Check macOS Accessibility access.')
+  return JSON.parse(result.stdout)
+}
+
 // Opt in with an unpacked official extension and a locally installed Brave.
 // Every browser profile, login, document, and server in this test is synthetic.
 test(
   {
-    name: 'existing Brave retains its sessions while task downloads, uploads and cancellation stay scoped',
+    name: 'existing Brave retains sessions, scopes files and keeps background input in its own window',
     ignore: process.env.SKY_EXTENSION_TESTS !== '1',
-    timeout: 90000,
+    timeout: 120000,
   },
   async () => {
     const root = await mkdtemp(path.join(tmpdir(), 'sky-existing-browser-test-'))
@@ -110,6 +181,39 @@ test(
           response.end()
           return
         }
+        if (request.url === '/profile.js') {
+          response.writeHead(200, {
+            'Content-Type': 'application/javascript',
+            'Content-Disposition': 'attachment; filename="profile.js"',
+          })
+          response.end(
+            'fetch("/profile.json").then(r=>r.json()).then(p=>{document.getElementById("details").innerHTML="<h2>About</h2><p>"+p.about+"</p><h2>Experience</h2><p>"+p.experience+"</p>"})',
+          )
+          return
+        }
+        if (request.url === '/profile.css') {
+          response.writeHead(200, {
+            'Content-Type': 'text/css',
+            'Content-Disposition': 'attachment; filename="profile.css"',
+          })
+          response.end('#details { color: rgb(12, 34, 56) }')
+          return
+        }
+        if (request.url === '/profile.json') {
+          response.writeHead(200, {
+            'Content-Type': 'application/json',
+            'Content-Disposition': 'attachment; filename="profile.json"',
+          })
+          response.end(JSON.stringify({ about: 'Research lead', experience: 'Atlas engineer' }))
+          return
+        }
+        if (request.url === '/profile') {
+          response.setHeader('Content-Type', 'text/html')
+          response.end(
+            '<title>Jane Doe | Atlas</title><link rel="stylesheet" href="/profile.css"><main><h1>Jane Doe</h1><div id="details">Loading profile sections</div></main><script src="/profile.js"></script>',
+          )
+          return
+        }
         response.setHeader('Content-Type', 'text/html')
         response.end(
           `<title>Atlas connection test</title><h1>${request.headers.cookie?.includes('atlas_session=synthetic-session') ? 'Session retained' : 'Signed out'}</h1><a href="/document">Download PDF</a><a download="Inline.pdf" href="data:application/pdf,%25PDF-1.4%20synthetic%20inline">Inline PDF</a><input id="files" type="file" hidden><button onclick="document.getElementById('files').click()">Choose files</button><script>document.getElementById('files').onchange=async e=>{await fetch('/receive',{method:'POST',body:e.target.files[0]});document.querySelector('h1').textContent='Upload received'}</script>`,
@@ -134,6 +238,8 @@ test(
       const preferencePath = path.join(profile, 'Default', 'Preferences')
       const preferences = JSON.parse(await readFile(preferencePath, 'utf8'))
       preferences.download = { ...preferences.download, default_directory: desktop, prompt_for_download: false }
+      preferences.auto_pin_new_tab_groups = true
+      preferences.bookmark_bar = { ...preferences.bookmark_bar, show_on_all_tabs: true }
       await writeFile(preferencePath, JSON.stringify(preferences))
       browser = spawn(
         executablePath,
@@ -151,6 +257,22 @@ test(
         { browser: 'brave' },
         { executablePath, userDataDir: profile, homeDir: root },
       )
+      const originalControl = attached.context.pages().find((page) => page.url().startsWith('chrome-extension:'))!
+      await originalControl.evaluate(async (url) => {
+        const chrome = (globalThis as unknown as { chrome: SyntheticChrome }).chrome
+        const original = await chrome.tabs.query({ url })
+        if (original.length !== 1) throw new Error('Missing synthetic original tab')
+        const groupId = await chrome.tabs.group({ tabIds: [original[0]!.id] })
+        await chrome.tabGroups.update(groupId, { title: 'Atlas' })
+      }, `${origin}/seed`)
+      if (process.env.SKY_BROWSER_UI_TESTS === '1') {
+        assert({
+          given: 'the synthetic original group and the first Sky connection',
+          should: 'show saved-group shortcuts so the cleanup assertion can detect leftover groups',
+          actual: await savedGroupShortcuts(root, browser.pid!),
+          expected: { sky: 1, original: 1 },
+        })
+      }
       const source = path.join(root, 'Upload.pdf')
       await writeFile(source, '%PDF-1.4 synthetic Atlas upload')
       await mkdir(path.join(root, 'task'))
@@ -449,6 +571,167 @@ test(
         expected: [[true, true], 1, 1, 0, 2, true],
       })
       credentialRun.close()
+      await task.close()
+      task = undefined
+
+      const background = await connectExistingBrowser(
+        token,
+        { browser: 'brave' },
+        { executablePath, userDataDir: profile, homeDir: root, background: true },
+      )
+      task = await PrivateBrowserSession.launch({
+        filesDir,
+        profileDir: path.join(root, 'unused-profile'),
+        attached: background,
+        broker: broker(),
+      })
+      const control = background.context.pages().find((page) => page.url().startsWith('chrome-extension:'))!
+      // This API is used only in the temporary synthetic extension profile.
+      const windows = () =>
+        control.evaluate(async () => {
+          const chrome = (globalThis as unknown as { chrome: SyntheticChrome }).chrome
+          const self = await chrome.tabs.getCurrent()
+          const current = await chrome.windows.get(self.windowId)
+          const all = await chrome.windows.getAll()
+          const other = all.find((window) => window.id !== self.windowId)!
+          const selected = await chrome.tabs.query({ windowId: other.id, active: true })
+          return {
+            taskWindowId: self.windowId,
+            focused: current.focused,
+            other: { id: other.id, focused: other.focused, tab: selected[0]!.id },
+          }
+        })
+      await control.evaluate(async () => {
+        const chrome = (globalThis as unknown as { chrome: SyntheticChrome }).chrome
+        const self = await chrome.tabs.getCurrent()
+        const all = await chrome.windows.getAll()
+        const other = all.find((window) => window.id !== self.windowId)!
+        await chrome.windows.update(other.id, { focused: true })
+      })
+      const before = await windows()
+      const existingFiles = (await readdir(filesDir)).sort()
+      await task.callTool('browser_navigate', { url: `${origin}/profile` })
+      await background.page.getByRole('heading', { name: 'Experience' }).waitFor({ timeout: 5000 })
+      const loadedProfile = await task.callTool('browser_snapshot', {})
+      assert({
+        given: 'a background profile whose scripts, styles and API data have attachment headers',
+        should: 'load the profile sections without collecting page resources as downloads or changing focus',
+        actual: [
+          JSON.stringify(loadedProfile).includes('Atlas engineer'),
+          await background.page.locator('#details').evaluate((element) => getComputedStyle(element).color),
+          (await readdir(filesDir)).sort(),
+          await windows(),
+        ],
+        expected: [true, 'rgb(12, 34, 56)', existingFiles, before],
+      })
+      await task.callTool('browser_navigate', { url: origin })
+      const session = await task.callTool('browser_snapshot', {})
+      await background.page.evaluate(() => {
+        document.body.innerHTML =
+          '<button onclick="this.textContent=\'Clicked\'">Click</button><label>Note<input></label><main style="height:3000px">Jane Doe</main>'
+      })
+      const controls = (await task.callTool('browser_snapshot', {})).content
+        .flatMap((part) => (part.type === 'text' && 'text' in part ? [part.text] : []))
+        .join('\n')
+      const clickRef = controls.match(/button "Click" \[ref=([^\]]+)\]/)?.[1]
+      const noteRef = controls.match(/textbox "Note" \[ref=([^\]]+)\]/)?.[1]
+      if (!clickRef || !noteRef) throw new Error('Missing synthetic input controls')
+      await control.evaluate(async () => {
+        const chrome = (globalThis as unknown as { chrome: SyntheticChrome }).chrome
+        // Deactivate the task tab without focusing its window. Input must
+        // reactivate the task tab while the original window remains focused.
+        await chrome.tabs.update((await chrome.tabs.getCurrent()).id, { active: true })
+      })
+      const clicked = await task.callTool('browser_click', { target: clickRef })
+      const typed = await task.callTool('browser_type', { target: noteRef, text: 'Atlas' })
+      const backgroundScrolled = await task.callTool('browser_mouse_wheel', { deltaX: 0, deltaY: 500 })
+      await background.page.waitForFunction(() => scrollY > 0)
+      const after = await windows()
+      assert({
+        given: 'a task in its own existing-Brave window while the person uses another window',
+        should: 'retain login, click, type and scroll without changing the focused window or its selected tab',
+        actual: [
+          JSON.stringify(session).includes('Session retained'),
+          clicked.isError,
+          typed.isError,
+          backgroundScrolled.isError,
+          await background.page.getByRole('button').textContent(),
+          await background.page.getByRole('textbox').inputValue(),
+          after,
+        ],
+        expected: [true, false, false, false, 'Clicked', 'Atlas', { ...before, focused: false }],
+      })
+      const toolNames = (await task.listTools()).map((tool) => tool.name)
+      const shown = await task.callTool('sky_show_browser', {})
+      assert({
+        given: 'the import host requests a real verification handoff',
+        should: 'show its owned window while keeping window controls out of model tools',
+        actual: [shown.isError, (await windows()).focused, toolNames.includes('sky_show_browser')],
+        expected: [false, true, false],
+      })
+      await task.close()
+      task = undefined
+      const connecting = new AbortController()
+      const cancelConnection = setTimeout(() => connecting.abort(), 1)
+      let connectionCancelled = false
+      try {
+        const interrupted = await connectExistingBrowser(
+          token,
+          { browser: 'brave' },
+          { executablePath, userDataDir: profile, homeDir: root, background: true, signal: connecting.signal },
+        )
+        await interrupted.close()
+      } catch {
+        connectionCancelled = true
+      } finally {
+        clearTimeout(cancelConnection)
+      }
+      const probe = await connectExistingBrowser(
+        token,
+        { browser: 'brave' },
+        { executablePath, userDataDir: profile, homeDir: root },
+      )
+      try {
+        const inspector = probe.context.pages().find((page) => page.url().startsWith('chrome-extension:'))!
+        assert({
+          given: 'cancellation while opening a background connection',
+          should: 'remove its connection window as well as a completed task window',
+          actual: [
+            connectionCancelled,
+            await inspector.evaluate(async () => {
+              const chrome = (globalThis as unknown as { chrome: SyntheticChrome }).chrome
+              return (await chrome.windows.getAll()).length
+            }),
+          ],
+          expected: [true, 1],
+        })
+        const retainedWindows = await inspector.evaluate(
+          async ({ taskWindowId, otherWindowId }) => {
+            const chrome = (globalThis as unknown as { chrome: SyntheticChrome }).chrome
+            const all = await chrome.windows.getAll()
+            return [all.some((window) => window.id === taskWindowId), all.some((window) => window.id === otherWindowId)]
+          },
+          { taskWindowId: before.taskWindowId, otherWindowId: before.other.id },
+        )
+        assert({
+          given: 'the background task finished and disconnected',
+          should: 'close its task window and leave the original browser window running',
+          actual: [retainedWindows, browser.exitCode === null],
+          expected: [[false, true], true],
+        })
+      } finally {
+        await probe.close()
+      }
+      // Closed saved groups are absent from chrome.tabGroups.query. Opt in to
+      // inspect only this temporary profile's actual bookmarks bar on macOS.
+      if (process.env.SKY_BROWSER_UI_TESTS === '1') {
+        assert({
+          given: 'foreground tasks, cancellation and a completed background task',
+          should: 'leave no saved Sky group shortcuts while preserving the original saved group',
+          actual: await savedGroupShortcuts(root, browser.pid!),
+          expected: { sky: 0, original: 1 },
+        })
+      }
     } finally {
       await task?.close()
       await setup?.close()

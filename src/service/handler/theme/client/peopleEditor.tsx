@@ -312,8 +312,8 @@ export function PeopleEditor({
               Import profile
             </Button>
             <p>
-              Sky opens a private browser and asks for approval when using a saved login. You’ll review the details here
-              before saving.
+              Sky uses your selected browser and existing LinkedIn sign-in. If sign-in is needed, complete it in the
+              browser. You’ll review the details here before saving.
             </p>
             {(running || importStarting) && <PeopleImportProgress job={running ? job : undefined} />}
             {running && (

@@ -18,12 +18,14 @@ export async function captureDownloadResponse(
   event: DownloadResponse,
   save: SaveDownload,
 ): Promise<boolean> {
+  // CDNs also mark scripts, styles and API data as attachments. Chromium still
+  // loads those as page resources; consuming their streams breaks the page.
+  if (event.resourceType !== 'Document') return false
   if (!event.responseStatusCode || event.responseStatusCode < 200 || event.responseStatusCode >= 300) return false
   const header = (name: string) => event.responseHeaders?.find((h) => h.name.toLowerCase() === name)?.value ?? ''
   const disposition = header('content-disposition')
   const type = header('content-type').split(';')[0].trim().toLowerCase()
-  if (!/\battachment\b/i.test(disposition) && !(event.resourceType === 'Document' && type === 'application/pdf'))
-    return false
+  if (!/\battachment\b/i.test(disposition) && type !== 'application/pdf') return false
   let stream: string | undefined
   try {
     if (Number(header('content-length')) > MAX_BYTES) throw new Error('Download too large')
