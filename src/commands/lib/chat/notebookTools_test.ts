@@ -359,18 +359,30 @@ test('runToolCommand reports external files to the host', async () => {
 test('extractExternalFiles - lifts id and action when a tool reports them', () => {
   const files = extractExternalFiles({
     files: [
-      { title: 'Atlas Plan', url: 'https://docs.google.com/document/d/f1/edit', id: 'f1', action: 'created' },
+      {
+        title: 'Atlas Plan',
+        url: 'https://docs.google.com/document/d/f1/edit',
+        id: 'f1',
+        action: 'created',
+        kind: 'doc',
+      },
       { title: 'Atlas Notes', url: 'https://docs.google.com/document/d/f2/edit' },
       { title: '', url: 'https://docs.google.com/document/d/f3/edit', id: 'f3' },
     ],
   })
 
   assert({
-    given: 'tool files with and without id/action, plus one with no title',
+    given: 'tool files with and without id/action/kind, plus one with no title',
     should: 'lift the optional fields and keep the title/url contract',
     actual: files,
     expected: [
-      { title: 'Atlas Plan', url: 'https://docs.google.com/document/d/f1/edit', id: 'f1', action: 'created' },
+      {
+        title: 'Atlas Plan',
+        url: 'https://docs.google.com/document/d/f1/edit',
+        id: 'f1',
+        action: 'created',
+        kind: 'doc',
+      },
       { title: 'Atlas Notes', url: 'https://docs.google.com/document/d/f2/edit' },
     ],
   })
@@ -378,8 +390,9 @@ test('extractExternalFiles - lifts id and action when a tool reports them', () =
 
 test('toolApprovalPolicy - who asks, who runs', async (t) => {
   const { toolApprovalPolicy } = await import('./notebookTools.ts')
-  const blessed = new Set(['google_agent:doc-1'])
-  const options = { isBlessed: (tool: string, key: string) => blessed.has(`${tool}:${key}`) }
+  // The host's check reads the grants ledger from disk: the policy awaits it.
+  const blessed = new Set(['doc-1'])
+  const options = { isBlessed: (_tool: string, key: string) => Promise.resolve(blessed.has(key)) }
   const statics = {
     toolName: 'google_agent',
     sessionKey: (input: Record<string, unknown>) => (typeof input.file === 'string' ? input.file : undefined),

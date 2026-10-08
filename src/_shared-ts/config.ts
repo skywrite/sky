@@ -43,6 +43,9 @@ export const DIR_STATE = path.join(DIR_USER_DATA, 'state')
 // whatever is syncing the folder, hundreds of times a day.
 export const FILE_AUTOMATIONS_STATE = path.join(DIR_STATE, 'automations.json')
 export const DIR_STATE_AI_CHATS = path.join(DIR_STATE, 'ai', 'chats')
+// The files Sky may edit without asking, for every chat on every host: a go
+// on a file and a file a tool created are recorded here once (chat tools).
+export const FILE_AI_FILE_GRANTS = path.join(DIR_STATE, 'ai', 'file-grants.json')
 export const DIR_STATE_FOLLOW_EMAIL_ACTIVE = path.join(DIR_STATE, 'follow', 'email', 'active')
 export const DIR_STATE_FOLLOW_EMAIL_ARCHIVE = path.join(DIR_STATE, 'follow', 'email', 'archive')
 export const DIR_STATE_FOLLOW_SLACK_ACTIVE = path.join(DIR_STATE, 'follow', 'slack', 'active')

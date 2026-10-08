@@ -57,10 +57,10 @@ export type FormatApprovalFn = (
 
 /**
  * Type for the optional static approvalSessionKey method on task classes.
- * When a call's input maps to a stable key (e.g. the targeted file id), the
- * approval prompt offers "don't ask again for this one this session" and
- * later calls with the same key are auto-approved. Return undefined for
- * inputs that should always prompt.
+ * When a call's input maps to a stable key (e.g. the targeted file id), a go
+ * on the call stands for that key in every chat from then on (the file
+ * grants ledger), and later calls with the same key are auto-approved.
+ * Return undefined for inputs that should always prompt.
  */
 export type ApprovalSessionKeyFn = (input: Record<string, unknown>) => string | undefined
 

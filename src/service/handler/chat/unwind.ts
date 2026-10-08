@@ -147,7 +147,6 @@ export function registerUnwind(app: Hono, host: UnwindHost): void {
         title: session.title,
         state: seed.state,
         attachments: seed.attachments,
-        approvals: seed.approvals,
         runs: thread.runs.filter((run) => run.at < kept),
         parent: session.parent,
         parentId: thread.parent?.id ?? null,

@@ -142,7 +142,6 @@ export function registerReplyThreads(app: Hono, host: ReplyThreadHost): (id: str
             state: found.resume.state,
             parent: found.resume.parent,
             parentId: id,
-            approvals: found.resume.approvals,
             attachments: found.resume.attachments,
             prefs: {
               profile: typeof savedProfile === 'string' ? savedProfile : undefined,

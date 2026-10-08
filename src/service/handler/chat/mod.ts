@@ -97,8 +97,6 @@ export interface ApprovalCard {
   toolName: string
   /** The call as the tool describes it — its own formatter's lines, or the input's fields */
   lines: string[]
-  /** The file the call is scoped to, when a go can stand for the session ("allow for this file") */
-  sessionKey?: string
   calendar?: CalendarPreparedDraft[]
   revision?: number
 }
@@ -118,10 +116,7 @@ export interface AnsweredApproval extends PendingApproval {
  * Puts a tool call to the person and resolves with their answer — the
  * routes' half of the session's approval handler. The turn waits on it.
  */
-export type AskApproval = (
-  card: ApprovalCard,
-  reviseCalendar?: ReviseCalendarApproval,
-) => Promise<ApprovalDecision & { always?: boolean }>
+export type AskApproval = (card: ApprovalCard, reviseCalendar?: ReviseCalendarApproval) => Promise<ApprovalDecision>
 
 /**
  * A tool's own words as it works, as the host hears them from the
@@ -181,8 +176,6 @@ export interface ThreadRestore {
   state: ResumeState
   /** Files recorded by the active thread before a restart. */
   attachments?: Attachment[]
-  /** The durable approval keys the snapshot carried (`tool:fileId`) */
-  approvals?: readonly string[]
   /** A saved chat being continued: the session writes back to its file */
   resume?: ResumeSession
   /** A branch: the chat it left, and the turn it left after */
@@ -402,7 +395,7 @@ export interface Thread {
   pending: Map<
     string,
     PendingApproval & {
-      resolve: (decision: ApprovalDecision & { always?: boolean }) => void
+      resolve: (decision: ApprovalDecision) => void
       reviseCalendar?: ReviseCalendarApproval
       replacementInput?: Record<string, unknown>
       revising?: boolean
@@ -1580,16 +1573,13 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
       busy: thread.busy,
       plan: thread.plan.plan,
       queued: thread.plan.queue,
-      pending: [...thread.pending.values()].map(
-        ({ id: approvalId, toolName, lines, sessionKey, calendar, revision }) => ({
-          id: approvalId,
-          toolName,
-          lines,
-          sessionKey,
-          calendar,
-          revision,
-        }),
-      ),
+      pending: [...thread.pending.values()].map(({ id: approvalId, toolName, lines, calendar, revision }) => ({
+        id: approvalId,
+        toolName,
+        lines,
+        calendar,
+        revision,
+      })),
       answered: thread.answered,
       runs: thread.runs,
       queries: [
@@ -1661,7 +1651,6 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
     if (!approval) return c.json({ message: 'no such approval — it may have been answered already' }, 404)
     const body = (await c.req.json().catch(() => null)) as {
       approved?: unknown
-      always?: unknown
       revision?: unknown
     } | null
     if (typeof body?.approved !== 'boolean') return c.json({ message: 'expected { approved: true | false }' }, 400)
@@ -1676,8 +1665,6 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
           )
         : undefined
     const approved = body.approved && !refused
-    // "Allow for this file": a go that stands for the session, when the card offered one.
-    const always = approved && body.always === true && approval.sessionKey !== undefined
 
     thread.pending.delete(approval.id)
     // The message that asked is the last turn; the reply lands after it.
@@ -1705,7 +1692,6 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
             reason: card.calendar
               ? `User approved these exact saved meeting details. They supersede earlier scheduling text and drafts; preserve them during recovery: ${JSON.stringify(card.calendar.map(({ id, fields }) => ({ draftId: id, fields })))}`
               : 'User approved',
-            always,
             ...(replacementInput ? { input: replacementInput } : {}),
           }
         : {
@@ -1754,7 +1740,6 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
       resume: found.resume,
       parent: found.resume.parent,
       parentId: null,
-      approvals: found.resume.approvals,
       attachments: found.resume.attachments,
       prefs: {
         profile:

@@ -36,7 +36,6 @@ export function restoreAnsweredApprovals(value: unknown): AnsweredApproval[] | u
         id: z.string(),
         toolName: z.string(),
         lines: z.array(z.string()),
-        sessionKey: z.string().optional(),
         approved: z.boolean(),
         at: z.number().int().nonnegative(),
         revision: z.number().int().nonnegative().optional(),

@@ -1,6 +1,6 @@
 ---
 created: 2026-09-01
-updated: 2026-10-06
+updated: 2026-10-08
 ---
 
 # Chat model — the pieces under every chat host
@@ -157,6 +157,8 @@ item, as `slack:unread` does per conversation. Read the
 [2026-09-23 note](2026-09-23-stop-reaches-the-command.md).
 
 ## Notes
+
+- [2026-10-08 — one go stands for every chat](../../../../service/handler/chat/docs/2026-10-08-one-go-stands-for-every-chat.md): file grants left the chat file's `approvals:` key for a notebook-wide ledger; a chat file no longer carries grants, and nothing reads the key old files still have.
 
 - [2026-10-05 — working context and durable failures](2026-10-05-working-context-and-durable-failures.md): retrieved source prefixes must be compactable independently of user prose, and failures must survive the same recovery path as replies.
 

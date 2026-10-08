@@ -156,7 +156,7 @@ export function ReplyThreadPanel({
                 approval={approval}
                 chatId={state.id}
                 onChange={chat.updateApproval}
-                onAnswer={(approved, always, revision) => chat.answer(approval.id, approved, always, revision)}
+                onAnswer={(approved, revision) => chat.answer(approval.id, approved, revision)}
               />
             </Fragment>
           ))}

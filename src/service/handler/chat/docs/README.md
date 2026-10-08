@@ -1,6 +1,6 @@
 ---
 created: 2026-09-01
-updated: 2026-10-06
+updated: 2026-10-08
 ---
 
 # Chat over HTTP — a thread, its tuning, and the story of its context
@@ -621,15 +621,18 @@ included, marked) and the documents kept before that the budget cuts now;
 a quiet turn carries the previous cuts forward, so a document cut two
 turns ago is not pushed out again; a broken turn keeps its errors.
 
-- **A go you already gave is not asked for again.** The web host keeps the
-  terminal's ledger per thread (`SessionBlessings`): a Google file reference
-  pasted into a message blesses that file for the process; a file a tool
-  reports as created is blessed for good; "Allow for this file" on a card
-  is a durable go. The tool approval config consults it, so a blessed call
-  runs inline with no card. Durable keys ride the thread's snapshot and
-  come back with a restored thread. A tool may also exempt calls outright
-  (`needsApprovalFor`) — `google_agent` runs create-only missions without
-  asking on every surface ([2026-09-03](2026-09-03-the-go-you-already-gave.md)).
+- **A go you already gave is not asked for again, in any chat.** Both hosts
+  share one ledger of granted files, `state/ai/file-grants.json` under the
+  user data dir (`commands/lib/chat/fileGrants.ts`, read through
+  `SessionBlessings`): any Allow on a file-scoped card and any file a tool
+  reports as created are recorded there, for every chat on every host; a
+  Google file reference pasted into a message blesses that file for the
+  process only. The tool approval config consults it, so a granted call
+  runs inline with no card. Deleting a key from the file revokes the grant.
+  A tool may also exempt calls outright (`needsApprovalFor`) —
+  `google_agent` runs create-only missions without asking on every surface
+  ([2026-09-03](2026-09-03-the-go-you-already-gave.md),
+  [2026-10-08](2026-10-08-one-go-stands-for-every-chat.md)).
 
 ### Ask first whether a message needs the notebook (experimental)
 
@@ -659,9 +662,8 @@ failed check reads as usual. See
 - A held call waits as long as it takes; there is no timeout. Closing the
   page does not answer it — the thread stays busy until someone does, or
   the service restarts.
-- No standing grants on the web yet: every gated call asks. The terminal's
-  per-file blessing ("don't ask again for this file") slots in through the
-  same approval config when that lands.
+- A go on a file-scoped call stands for the file in every chat, on every
+  host: the file grants ledger. Deleting its key is the revoke.
 - The wire never carries the whole universe twice: the stream carries
   counts, the context route carries the current records and the story's
   changes.

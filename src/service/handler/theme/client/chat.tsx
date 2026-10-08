@@ -114,8 +114,6 @@ export interface Approval {
   toolName: string
   /** The call as the tool describes it, line by line */
   lines: string[]
-  /** Set when a go can stand for the session — the card offers "allow for this file" */
-  sessionKey?: string
   calendar?: CalendarPreparedDraft[]
   revision?: number
 }
@@ -890,13 +888,13 @@ export function useChat(id: string) {
   // The person's answer to a held call. The stream carries the same news
   // back; either arrival clears the card.
   const answer = useCallback(
-    async (approvalId: string, approved: boolean, always = false, revision?: number) => {
+    async (approvalId: string, approved: boolean, revision?: number) => {
       if (!state.id) return
       const id = state.id
       const response = await fetch(`/chat/${id}/approvals/${approvalId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ approved, always, revision }),
+        body: JSON.stringify({ approved, revision }),
       }).catch(() => null)
       if (!response?.ok) {
         const failure = await response?.json().catch(() => null)
@@ -1858,7 +1856,7 @@ export function ApprovalCard({
   approval: Approval
   /** How it was answered, when it was */
   answered?: boolean
-  onAnswer?: (approved: boolean, always?: boolean, revision?: number) => Promise<void>
+  onAnswer?: (approved: boolean, revision?: number) => Promise<void>
   chatId?: string
   onChange?: (approval: Approval) => void
   settled?: boolean
@@ -1877,12 +1875,12 @@ export function ApprovalCard({
         settled={settled}
       />
     )
-  const answer = async (approved: boolean, always = false) => {
+  const answer = async (approved: boolean) => {
     if (answering || !onAnswer) return
     setAnswering(true)
     setError('')
     try {
-      await onAnswer(approved, always)
+      await onAnswer(approved)
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : 'Could not answer. Try again.')
     } finally {
@@ -1917,11 +1915,6 @@ export function ApprovalCard({
           <Button variant="primary" size="sm" disabled={answering} onClick={() => void answer(true)}>
             Allow
           </Button>
-          {approval.sessionKey && (
-            <Button variant="primary-quiet" size="sm" disabled={answering} onClick={() => void answer(true, true)}>
-              Allow for this file
-            </Button>
-          )}
           <Button size="sm" disabled={answering} onClick={() => void answer(false)}>
             Not now
           </Button>
@@ -2256,7 +2249,7 @@ export function ThreadColumn({
             approval={approval}
             chatId={state.id}
             onChange={chat.updateApproval}
-            onAnswer={(approved, always, revision) => answer(approval.id, approved, always, revision)}
+            onAnswer={(approved, revision) => answer(approval.id, approved, revision)}
           />
         </Fragment>
       ))}
@@ -2829,7 +2822,7 @@ export function ChatMain({
                   approval={approval}
                   chatId={state.id}
                   onChange={chat.updateApproval}
-                  onAnswer={(approved, always, revision) => chat.answer(approval.id, approved, always, revision)}
+                  onAnswer={(approved, revision) => chat.answer(approval.id, approved, revision)}
                 />
               </Fragment>
             ))}

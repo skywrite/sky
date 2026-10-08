@@ -79,6 +79,8 @@ export interface ExternalFileRef {
   id?: string
   /** What the tool did to it, when reported: 'created' | 'updated' | 'read'. */
   action?: string
+  /** What it is, when reported: a Google 'doc' | 'sheet' | 'slides' today. */
+  kind?: string
 }
 
 export interface CreateNotebookToolsOptions {
@@ -142,6 +144,7 @@ export function extractExternalFiles(payload: Record<string, unknown>): External
     const ref: ExternalFileRef = { title: f.title, url: f.url }
     if (typeof f.id === 'string' && f.id.trim()) ref.id = f.id
     if (typeof f.action === 'string' && f.action.trim()) ref.action = f.action
+    if (typeof f.kind === 'string' && f.kind.trim()) ref.kind = f.kind
     files.push(ref)
   }
   return files
@@ -422,11 +425,13 @@ export interface ToolApprovalConfigOptions {
   /** Host context for policies that inspect saved drafts instead of trusting tool arguments. */
   context?: CommandContext
   /**
-   * Session blessing check for a call's stable key (see approvalSessionKey).
-   * A blessed call returns 'approved' and executes inline — no prompt, no
-   * approval round. Absent, every gated tool statically prompts.
+   * The host's check of a call's stable key (see approvalSessionKey) against
+   * what the person already allowed — the file grants ledger, and the files
+   * pasted into this process. A blessed call returns 'approved' and executes
+   * inline — no prompt, no approval round. Absent, every gated tool
+   * statically prompts.
    */
-  isBlessed?: (toolName: string, sessionKey: string) => boolean
+  isBlessed?: (toolName: string, sessionKey: string) => boolean | Promise<boolean>
   /** Fired when a blessed call auto-approves — the host's one status line. */
   onAutoApproved?: (toolName: string, sessionKey: string) => void
 }
@@ -479,7 +484,7 @@ export function toolApprovalPolicy(
     const input = withoutBlankStrings(raw)
     if (needsApprovalFor && !(await needsApprovalFor(input, context))) return 'approved'
     const key = sessionKey?.(input)
-    if (key !== undefined && isBlessed?.(toolName, key)) {
+    if (key !== undefined && (await isBlessed?.(toolName, key))) {
       onAutoApproved?.(toolName, key)
       return 'approved'
     }
@@ -505,7 +510,7 @@ export function getApprovalFormatter(toolName: string): FormatApprovalFn | undef
 
 /**
  * Get the approvalSessionKey function for a tool, if the task class defines
- * one — the hook behind "don't ask again for this one this session".
+ * one — the key a go on the call stands for, in every chat from then on.
  */
 export function getApprovalSessionKey(toolName: string): ApprovalSessionKeyFn | undefined {
   const found = discoveredTools.find((t) => t.toolName === toolName)

@@ -6,6 +6,7 @@ import { generateText } from 'ai'
 import openEditor from 'open-editor'
 import colors from 'picocolors'
 import { aiEffortFlag } from '#commands/lib/aiParams.ts'
+import { FileGrants } from '#commands/lib/chat/fileGrants.ts'
 import { READ_FILE_TOOL } from '#commands/lib/chat/fileTools.ts'
 import { createChatFileTools } from '#commands/lib/chat/localFileTools.ts'
 import {
@@ -13,7 +14,6 @@ import {
   createToolApprovalConfig,
   getApprovalFormatter,
   getApprovalSessionKey,
-  sessionKeyToolNames,
 } from '#commands/lib/chat/notebookTools.ts'
 import { contextProducers } from '#commands/lib/chat/producers.ts'
 import { CHAT_READING } from '#commands/lib/chat/readingDefaults.ts'
@@ -29,7 +29,7 @@ import { AI_ERROR_LOG_DISPLAY } from '#shared/ai/errorLog.ts'
 import { getProfile, resolveProfile, roleProfile } from '#shared/ai/models.ts'
 import { ratioFor } from '#shared/ai/tokenRatio.ts'
 import { usageLine } from '#shared/ai/usage.ts'
-import { DIR_AI_MEMORY, DIR_ATTACHMENTS, DIR_STATE_AI_CHATS, PORT_SERVER } from '#shared/config.ts'
+import { DIR_AI_MEMORY, DIR_ATTACHMENTS, DIR_STATE_AI_CHATS, FILE_AI_FILE_GRANTS, PORT_SERVER } from '#shared/config.ts'
 import { fetchWithConnectRetry } from '#shared/models/Chat/ChatContext/fetchContext.ts'
 import type { RebuildReport } from '#shared/models/Chat/ChatContext/mod.ts'
 import ChatSession, { type ChatSessionEvent } from '#shared/models/Chat/ChatSession/mod.ts'
@@ -390,13 +390,14 @@ export default class AiChatTask extends Command {
     })
     output.log(colors.dim(`[server] gatherContext: ${(performance.now() - t0).toFixed(0)}ms`))
 
-    // Which (tool, file) pairs run without asking: "always" answers and
-    // files this session creates persist with the transcript (and return
-    // on --resume); pasted file refs bless for this process only. The
-    // toolApproval config consults this per call — a blessed call
-    // executes inline with no prompt and no approval round.
-    const blessings = new SessionBlessings()
-    if (resumeSession) blessings.restoreDurable(resumeSession.approvals)
+    // Which files run without asking: a go on a file-scoped call and a file
+    // a tool creates go to the notebook-wide ledger, for every chat; pasted
+    // file refs bless for this process only. The toolApproval config
+    // consults this per call — a blessed call executes inline with no
+    // prompt and no approval round.
+    const blessings = new SessionBlessings(new FileGrants(FILE_AI_FILE_GRANTS))
+    const noteGrantFailure = (error: unknown) =>
+      output.log(colors.dim(`Could not record the go in the file grants ledger: ${(error as Error).message}`))
     // The streamed reply leaves the line open between deltas; anything
     // else printing closes it first.
     let midLine = false
@@ -600,11 +601,17 @@ export default class AiChatTask extends Command {
             return answers
           },
           onExternalFiles: (_toolName, files) => {
-            // A file this session created is durably blessed: editing it
-            // again is the same intent that created it.
+            // A file this session created is granted for good: editing it
+            // again is the same intent that created it. A file it edited
+            // lends its name to the grant the go already made.
             for (const file of files) {
-              if (file.action !== 'created' || !file.id) continue
-              for (const tool of sessionKeyToolNames()) blessings.blessDurably(tool, file.id)
+              if (!file.id) continue
+              const details = { title: file.title, kind: file.kind, url: file.url }
+              const record =
+                file.action === 'created'
+                  ? blessings.grant(file.id, { via: 'created', source: 'ai:chat', ...details })
+                  : blessings.describe(file.id, details)
+              record.catch(noteGrantFailure)
             }
             onExternalFiles(files)
           },
@@ -636,7 +643,7 @@ export default class AiChatTask extends Command {
           },
           toolApproval: createToolApprovalConfig({
             context: tasks.context,
-            isBlessed: (toolName, key) => blessings.has(toolName, key),
+            isBlessed: (_toolName, key) => blessings.has(key),
             onAutoApproved: (toolName, key) => {
               closeStreamedLine()
               output.log(colors.dim(`◦ ${toolDisplayName(toolName)} auto-approved — blessed file ${key}`))
@@ -671,26 +678,15 @@ export default class AiChatTask extends Command {
           }
         }
 
-        if (sessionKey && blessings.has(toolName, sessionKey)) {
+        if (sessionKey && (await blessings.has(sessionKey))) {
           output.log(colors.dim('Auto-approved — you allowed this file already.'))
           return { approved: true, reason: 'Auto-approved: the user allowed this file' }
         }
 
-        let approved: boolean | symbol
-        if (sessionKey) {
-          const choice = await p.select({
-            message: 'Approve?',
-            options: [
-              { value: 'yes', label: 'Yes' },
-              { value: 'always', label: "Yes — don't ask again for this file (kept with this chat)" },
-              { value: 'no', label: 'No' },
-            ],
-          })
-          if (!p.isCancel(choice) && choice === 'always') blessings.blessDurably(toolName, sessionKey)
-          approved = p.isCancel(choice) ? choice : choice !== 'no'
-        } else {
-          approved = await p.confirm({ message: 'Approve?' })
-        }
+        // A yes on a file-scoped call stands for the file, in every chat.
+        const approved = await p.confirm({
+          message: sessionKey ? 'Approve? A yes stands for this file in every chat from now on.' : 'Approve?',
+        })
 
         if (p.isCancel(approved)) {
           return {
@@ -705,9 +701,9 @@ export default class AiChatTask extends Command {
               'User declined this call. It is a no to this input or this moment, not to the tool: do not run it again this turn, wait for their direction, and a later turn may ask again with new input.',
           }
         }
+        if (sessionKey) await blessings.grant(sessionKey, { via: 'allowed', source: 'ai:chat' }).catch(noteGrantFailure)
         return { approved: true, reason: 'User approved' }
       },
-      approvals: () => blessings.serializeDurable(),
       autosavePath,
       onEvent: render,
     })

@@ -95,7 +95,6 @@ export function replyThreadTestHost(
           parentId: typeof host?.parentId === 'string' ? host.parentId : null,
           runs: restoreToolRuns(host?.runs),
           title: typeof host?.title === 'string' ? host.title : null,
-          approvals: loaded.approvals,
           attachments: loaded.attachments,
           prefs: { profile: MODEL, contextTokens: 0, saves: typeof host?.saves === 'boolean' ? host.saves : true },
           ...(saved ? { resume: { ...saved.resume, state } } : {}),
@@ -128,7 +127,6 @@ export function replyThreadTestHost(
           ? (hooks) => over.tools!(hooks, { id, runs, started: (restore?.startTime ?? START).toString() })
           : async () => ({ tools: {}, toolApproval: {} }),
         approvalHandler: async ({ toolName }) => ask({ toolName, lines: ['Synthetic document update'] }),
-        approvals: () => [...(restore?.approvals ?? [])],
         autosavePath: snapshotPath(id, restore?.startTime ?? START),
         onEvent,
         fetchContext: async () => [],

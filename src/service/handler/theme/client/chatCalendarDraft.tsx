@@ -391,7 +391,7 @@ export function ChatCalendarDraft({
   approval: Approval
   answered?: boolean
   chatId?: string
-  onAnswer?: (approved: boolean, always?: boolean, revision?: number) => Promise<void>
+  onAnswer?: (approved: boolean, revision?: number) => Promise<void>
   onChange?: (approval: Approval) => void
   settled?: boolean
 }) {
@@ -680,7 +680,7 @@ export function ChatCalendarDraft({
                 onClick={() =>
                   void act(async () => {
                     for (const draft of drafts) pageAttempts.add(draft.id)
-                    await onAnswer!(true, false, approval.revision)
+                    await onAnswer!(true, approval.revision)
                   })
                 }
               >
@@ -718,11 +718,7 @@ export function ChatCalendarDraft({
                   Edit
                 </Button>
               )}
-              <Button
-                size="sm"
-                disabled={busy}
-                onClick={() => void act(() => onAnswer!(false, false, approval.revision))}
-              >
+              <Button size="sm" disabled={busy} onClick={() => void act(() => onAnswer!(false, approval.revision))}>
                 Not now
               </Button>
             </>

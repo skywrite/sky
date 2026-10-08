@@ -173,7 +173,7 @@ export default class GoogleAgentTask extends Command {
     }
   }
 
-  /** A go for a targeted mission covers its file id for the session. */
+  /** A go for a targeted mission covers its file id, in every chat from then on. */
   static approvalSessionKey(input: Record<string, unknown>): string | undefined {
     return missionApprovalKey(input)
   }

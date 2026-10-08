@@ -13,13 +13,13 @@ import { generateText, tool } from 'ai'
 import { z } from 'zod'
 import { gatherContext } from '#commands/all/ai/_lib/gatherContext.ts'
 import { harvestFileRefs, SessionBlessings } from '#commands/all/ai/chat/lib/approvals.ts'
+import { FileGrants } from '#commands/lib/chat/fileGrants.ts'
 import { createChatFileTools } from '#commands/lib/chat/localFileTools.ts'
 import {
   createNotebookTools,
   createToolApprovalConfig,
   getApprovalFormatter,
   getApprovalSessionKey,
-  sessionKeyToolNames,
   withoutBlankStrings,
 } from '#commands/lib/chat/notebookTools.ts'
 import { contextProducers } from '#commands/lib/chat/producers.ts'
@@ -346,13 +346,14 @@ export function createChatHost(config: typeof ConfigModule, env: Record<string, 
   const snapshotPath = (id: string, startTime: PlainDateTime) =>
     path.join(config.DIR_STATE_AI_CHATS, chatAutosaveFilename(startTime, id))
 
-  // Which (tool, file) pairs a thread may run without asking — the same
-  // ledger the terminal keeps: a pasted file reference for the process, a
-  // file the thread created or an "allow for this file" answer for good.
+  // Which files a thread may run without asking — the notebook-wide ledger
+  // every host shares: a go on a file-scoped card and a file a tool created
+  // stand for every chat; a pasted file reference blesses for the process.
+  const grants = new FileGrants(config.FILE_AI_FILE_GRANTS)
   const blessings = new Map<string, SessionBlessings>()
   const blessingsFor = (id: string): SessionBlessings => {
     let held = blessings.get(id)
-    if (!held) blessings.set(id, (held = new SessionBlessings()))
+    if (!held) blessings.set(id, (held = new SessionBlessings(grants)))
     return held
   }
 
@@ -361,7 +362,9 @@ export function createChatHost(config: typeof ConfigModule, env: Record<string, 
     const { web_search, ...publicWebTools } = createWebTools()
     const webTools = { ...publicWebTools, ...(env.PERPLEXITY_API_KEY ? { web_search } : {}) }
     const blessed = blessingsFor(id)
-    if (restore?.approvals) blessed.restoreDurable(restore.approvals)
+    // A go that could not be written down still stands for this process; the log says why.
+    const noteGrantFailure = (error: unknown) =>
+      logAIError({ source: 'chat', stage: 'file-grant', message: `${id}: ${(error as Error).message}` })
     const tasks = new CommandService(context)
     // The tools' own command service hears its output: every line a tool
     // prints in the terminal goes to the page instead of a buffer nobody
@@ -478,11 +481,17 @@ export function createChatHost(config: typeof ConfigModule, env: Record<string, 
                 onImages,
               }),
               onExternalFiles: (_toolName, files) => {
-                // A file this thread created is blessed: editing it again is
-                // the same intent that created it.
+                // A file this thread created is granted for good: editing it
+                // again is the same intent that created it. A file it edited
+                // lends its name to the grant the go already made.
                 for (const file of files) {
-                  if (file.action !== 'created' || !file.id) continue
-                  for (const tool of sessionKeyToolNames()) blessed.blessDurably(tool, file.id)
+                  if (!file.id) continue
+                  const details = { title: file.title, kind: file.kind, url: file.url }
+                  const record =
+                    file.action === 'created'
+                      ? blessed.grant(file.id, { via: 'created', source: sourceChatHref(id), ...details })
+                      : blessed.describe(file.id, details)
+                  record.catch(noteGrantFailure)
                 }
                 onExternalFiles(files)
               },
@@ -490,13 +499,13 @@ export function createChatHost(config: typeof ConfigModule, env: Record<string, 
           },
           toolApproval: createToolApprovalConfig({
             context: tasks.context,
-            isBlessed: (toolName, key) => blessed.has(toolName, key),
+            isBlessed: (_toolName, key) => blessed.has(key),
           }),
         }
       },
       // The card is the tool's own description of the call; the answer is the
-      // person's, from the page. A card scoped to a file offers "allow for
-      // this file"; that answer blesses the file for the thread.
+      // person's, from the page. A go on a call scoped to a file stands for
+      // the file, in every chat.
       approvalHandler: async ({ toolName, input: raw, abortSignal }) => {
         // The card and the key read the call as the command will: blanks dropped.
         const input = withoutBlankStrings(raw as Record<string, unknown>)
@@ -511,15 +520,11 @@ export function createChatHost(config: typeof ConfigModule, env: Record<string, 
         const sessionKey = getApprovalSessionKey(toolName)?.(input)
         const lines = await approvalCard(toolName, input, getApprovalFormatter(toolName), context)
         abortSignal?.throwIfAborted()
-        const decision = await ask({
-          toolName,
-          lines,
-          sessionKey,
-        })
-        if (decision.approved && decision.always && sessionKey) blessed.blessDurably(toolName, sessionKey)
+        const decision = await ask({ toolName, lines })
+        if (decision.approved && sessionKey)
+          await blessed.grant(sessionKey, { via: 'allowed', source: sourceChatHref(id) }).catch(noteGrantFailure)
         return decision
       },
-      approvals: () => blessed.serializeDurable(),
       autosavePath: snapshotPath(id, startTime),
       onSaved: (saved) => sourceLinks.set(id, path.relative(config.DIR_BASE, saved.path)),
       onEvent,
@@ -570,7 +575,6 @@ export function createChatHost(config: typeof ConfigModule, env: Record<string, 
             answered: restoreAnsweredApprovals(host?.answered),
             startTime: ref.startTime,
             state,
-            approvals,
             attachments: loaded.attachments,
             parent,
             interrupted,

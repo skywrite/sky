@@ -1,25 +1,49 @@
 /**
- * Session approval blessings for gated chat tools: which (tool, key) pairs
- * may run without asking. Two tiers with different lifetimes — durable keys
- * (files this session created, explicit "always" answers) persist into the
- * transcript and survive --resume; mention keys (file refs the user pasted)
- * last only as long as the process, because a paste is permission for now,
- * not a standing grant.
+ * What a chat may run without asking. Two tiers: the files its person
+ * pasted into this process, and the notebook-wide file grants ledger every
+ * chat on every host shares. A go on a file-scoped call and a file a tool
+ * created both go to the ledger; a paste is permission for now, not a
+ * standing grant, so a mention lasts only as long as the process. A grant
+ * the ledger could not take is held here so this process still honours it.
  */
 
+import type { FileGrantDetails, FileGrantInput, FileGrants } from '#commands/lib/chat/fileGrants.ts'
 import { resolveFileRef } from '#lib/google/mod.ts'
 
 export class SessionBlessings {
-  private readonly durable = new Set<string>()
   private readonly mentioned = new Set<string>()
+  /** Grants the ledger refused — the go still stands for this process. */
+  private readonly held = new Set<string>()
 
-  has(toolName: string, key: string): boolean {
-    return this.durable.has(`${toolName}:${key}`) || this.mentioned.has(key)
+  constructor(private readonly grants?: FileGrants) {}
+
+  async has(fileId: string): Promise<boolean> {
+    if (this.mentioned.has(fileId) || this.held.has(fileId)) return true
+    // The gate never breaks a turn: a ledger that cannot be read asks.
+    return (await this.grants?.has(fileId).catch(() => false)) ?? false
   }
 
-  /** An explicit "always" answer, or a file this session created — scoped to the tool. */
-  blessDurably(toolName: string, key: string): void {
-    this.durable.add(`${toolName}:${key}`)
+  /**
+   * A standing go for a file, from this chat for every chat. When the
+   * ledger cannot take it the grant is held for this process and the error
+   * is rethrown, so the host can say so.
+   */
+  async grant(fileId: string, input: FileGrantInput): Promise<void> {
+    if (!this.grants) {
+      this.held.add(fileId)
+      return
+    }
+    try {
+      await this.grants.grant(fileId, input)
+    } catch (error) {
+      this.held.add(fileId)
+      throw error
+    }
+  }
+
+  /** What a tool reported about a file already granted; nothing is granted here. */
+  async describe(fileId: string, details: FileGrantDetails): Promise<void> {
+    await this.grants?.describe(fileId, details)
   }
 
   /**
@@ -30,18 +54,6 @@ export class SessionBlessings {
    */
   blessMention(fileId: string): void {
     this.mentioned.add(fileId)
-  }
-
-  /** What the transcript persists. */
-  serializeDurable(): string[] {
-    return [...this.durable].sort()
-  }
-
-  /** Seed from a resumed transcript's saved `tool:key` entries. */
-  restoreDurable(entries: readonly string[]): void {
-    for (const entry of entries) {
-      if (entry.includes(':')) this.durable.add(entry)
-    }
   }
 }
 

@@ -1,64 +1,65 @@
+import { writeFile } from 'node:fs/promises'
+import * as path from 'node:path'
+import { FileGrants } from '#commands/lib/chat/fileGrants.ts'
+import { makeTempDir } from '#shared/fs/mod.ts'
 import { assert, test } from '#test'
 import { SessionBlessings, harvestFileRefs } from './approvals.ts'
 
 const ID = 'a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8'
 
-test('SessionBlessings - durable and mention tiers both answer has(), only durable serializes', () => {
+const ledgerIn = async () => path.join(await makeTempDir({ prefix: 'sky-blessings-' }), 'file-grants.json')
+
+test('SessionBlessings - a grant and a mention both answer has(); nothing else does', async () => {
   const blessings = new SessionBlessings()
-  blessings.blessDurably('google_agent', 'f-created-1')
+  await blessings.grant('f-created-1', { via: 'created' })
   blessings.blessMention('f-pasted-2')
 
   assert({
-    given: 'one durable and one mention blessing',
-    should: 'answer has() for both, serialize only the durable one',
+    given: 'one grant with no ledger behind it and one mention',
+    should: 'answer has() for both and for nothing else',
+    expected: { created: true, pasted: true, other: false },
+    actual: {
+      created: await blessings.has('f-created-1'),
+      pasted: await blessings.has('f-pasted-2'),
+      other: await blessings.has('f-unknown'),
+    },
+  })
+})
+
+test('SessionBlessings - a grant goes to the ledger for every chat; a mention stays in the process', async () => {
+  const file = await ledgerIn()
+  const ledger = new FileGrants(file)
+  const first = new SessionBlessings(ledger)
+  await first.grant('f1', { via: 'allowed', source: 'ai:chat', at: '2026-10-08 09:00 America/Chicago' })
+  first.blessMention('f2')
+  const next = new SessionBlessings(new FileGrants(file))
+
+  assert({
+    given: 'a grant and a mention from one chat, then another chat on the same ledger',
+    should: 'carry the grant with its record and not the mention',
     expected: {
-      created: true,
-      pasted: true,
-      other: false,
-      serialized: ['google_agent:f-created-1'],
+      grant: true,
+      mention: false,
+      recorded: { at: '2026-10-08 09:00 America/Chicago', via: 'allowed', source: 'ai:chat' },
     },
-    actual: {
-      created: blessings.has('google_agent', 'f-created-1'),
-      pasted: blessings.has('google_agent', 'f-pasted-2'),
-      other: blessings.has('google_agent', 'f-unknown'),
-      serialized: blessings.serializeDurable(),
-    },
+    actual: { grant: await next.has('f1'), mention: await next.has('f2'), recorded: await ledger.get('f1') },
   })
 })
 
-test('SessionBlessings - durable blessings scope to the tool, mentions cover any tool', () => {
-  const blessings = new SessionBlessings()
-  blessings.blessDurably('google_agent', 'f1')
-  blessings.blessMention('f2')
+test('SessionBlessings - a grant the ledger refuses still stands for this process', async () => {
+  const file = await ledgerIn()
+  await writeFile(file, 'nope')
+  const blessings = new SessionBlessings(new FileGrants(file))
+  const failure = await blessings.grant('f1', { via: 'allowed' }).then(
+    () => '',
+    (error: Error) => error.message,
+  )
 
   assert({
-    given: 'a durable key for one tool and a pasted-file mention',
-    should: 'scope the durable key to its tool but answer any tool for the mention',
-    expected: { durableOtherTool: false, mentionAnyTool: true },
-    actual: {
-      durableOtherTool: blessings.has('other_tool', 'f1'),
-      mentionAnyTool: blessings.has('other_tool', 'f2'),
-    },
-  })
-})
-
-test('SessionBlessings - restoreDurable round-trips serializeDurable', () => {
-  const first = new SessionBlessings()
-  first.blessDurably('google_agent', 'f2')
-  first.blessDurably('google_agent', 'f1')
-
-  const resumed = new SessionBlessings()
-  resumed.restoreDurable(first.serializeDurable())
-
-  assert({
-    given: 'a resumed session seeded from a saved session',
-    should: 'answer has() for the saved keys and serialize them back sorted',
-    expected: { f1: true, f2: true, serialized: ['google_agent:f1', 'google_agent:f2'] },
-    actual: {
-      f1: resumed.has('google_agent', 'f1'),
-      f2: resumed.has('google_agent', 'f2'),
-      serialized: resumed.serializeDurable(),
-    },
+    given: 'a ledger file that is not JSON',
+    should: 'rethrow the refusal after holding the grant in memory',
+    expected: { refused: true, held: true },
+    actual: { refused: failure.includes('not valid JSON'), held: await blessings.has('f1') },
   })
 })
 

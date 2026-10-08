@@ -24,12 +24,13 @@ export async function readJson<T>(file: string): Promise<T | null> {
   }
 }
 
-export async function writeJson(file: string, value: unknown): Promise<void> {
+/** Atomic: the file is whole or unchanged. `space` pretty-prints a file meant to be read, with a final newline. */
+export async function writeJson(file: string, value: unknown, space?: number): Promise<void> {
   await mkdir(path.dirname(file), { recursive: true })
   const temporary = `${file}.${randomUUID()}.tmp`
   const handle = await open(temporary, 'wx', 0o600)
   try {
-    await handle.writeFile(JSON.stringify(value), 'utf8')
+    await handle.writeFile(JSON.stringify(value, null, space) + (space ? '\n' : ''), 'utf8')
     await handle.sync()
     await handle.close()
     await rename(temporary, file)
