@@ -54,7 +54,7 @@ import { fitBudget } from '#universal/ai/readingBudget.ts'
 import { type PlainDateTime, ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
 import { hold } from '../../activity.ts'
 import { explorerHref } from '../explorer/mod.ts'
-import { prettyModel, PROVIDER_LABEL } from '../settings/mod.ts'
+import { prettyModel, profileLabel, PROVIDER_LABEL } from '../settings/mod.ts'
 import { branchPoints } from './branchPoint.ts'
 import { recoverCalendarApprovals, restoreAnsweredApprovals, type ReviseCalendarApproval } from './calendarApproval.ts'
 import { callSubject } from './callSubject.ts'
@@ -978,7 +978,7 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
       ? {
           ...choices.find((choice) => choice.name === current),
           name: current,
-          label: prettyModel(config.model),
+          label: profileLabel(config),
           provider: PROVIDER_LABEL[config.provider] ?? config.provider,
           roles: [],
           contextWindow: config.contextWindow,

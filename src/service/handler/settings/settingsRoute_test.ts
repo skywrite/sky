@@ -715,6 +715,24 @@ test({ name: 'settings route - connections ride along when the host has a keycha
   })
 })
 
+test({ name: 'choiceLabel - a labeled profile shows its label, and its unlabeled twin keeps the bare name' }, () => {
+  const all = {
+    'default-gpt-6.1-sol': { provider: 'openai', model: 'gpt-6.1-sol', options: { reasoningEffort: 'high' } },
+    'default-gpt-6.1-sol-ultrafast': {
+      provider: 'openai',
+      model: 'gpt-6.1-sol',
+      label: 'GPT 6.1 Sol (Ultrafast)',
+      options: { reasoningEffort: 'high', serviceTier: 'ultrafast' },
+    },
+  } as unknown as Parameters<typeof choiceLabel>[1]
+  assert({
+    given: 'Sol twice at the same effort, once with a label',
+    should: 'show the label, and leave the other with the model name alone',
+    actual: Object.keys(all).map((name) => choiceLabel(name, all)),
+    expected: ['GPT 6.1 Sol', 'GPT 6.1 Sol (Ultrafast)'],
+  })
+})
+
 test({ name: 'choiceLabel - two profiles on one model carry their effort; a lone one keeps the bare name' }, () => {
   const all = {
     'default-fable-5.1': {

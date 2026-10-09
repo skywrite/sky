@@ -382,6 +382,41 @@ test('default-gpt-6.1-sol runs at high effort and takes an effort override', () 
   })
 })
 
+test('default-gpt-6.1-sol-ultrafast runs Sol on the Ultrafast tier and keeps it under an effort override', () => {
+  const resolved = aiModelByProfile('default-gpt-6.1-sol-ultrafast')
+  assert({
+    given: 'the default-gpt-6.1-sol-ultrafast profile',
+    should: 'resolve to gpt-6.1-sol with its window, high effort, and the Ultrafast tier',
+    actual: [modelId(resolved.model), resolved.contextWindow, resolved.providerOptions?.['openai']],
+    expected: ['gpt-6.1-sol', 1_050_000, { reasoningEffort: 'high', serviceTier: 'ultrafast' }],
+  })
+  assert({
+    given: 'a low effort override',
+    should: 'change only the effort',
+    actual: aiModelByProfile('default-gpt-6.1-sol-ultrafast', { effort: 'low' }).providerOptions?.['openai'],
+    expected: { reasoningEffort: 'low', serviceTier: 'ultrafast' },
+  })
+  const customized: SkyConfig['ai'] = {
+    models: { strong: '', fast: '', transcription: '' },
+    profiles: {
+      'default-gpt-6.1-sol-ultrafast': {
+        provider: 'openai',
+        model: 'gpt-6.1-sol',
+        options: { reasoningEffort: 'low', serviceTier: 'ultrafast' },
+      },
+    },
+  }
+  assert({
+    given: 'the shipped label, and the same preset customized in Settings',
+    should: 'name it Ultrafast in both',
+    actual: [
+      getProfile('default-gpt-6.1-sol-ultrafast').label,
+      getProfile('default-gpt-6.1-sol-ultrafast', customized).label,
+    ],
+    expected: ['GPT 6.1 Sol (Ultrafast)', 'GPT 6.1 Sol (Ultrafast)'],
+  })
+})
+
 test('aiModelByProfile resolves by name and rejects unknown names', () => {
   assert({
     given: 'a known profile name',

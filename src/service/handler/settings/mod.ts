@@ -698,7 +698,7 @@ function modelRows(host: SettingsHost, config: SkyConfig): ModelRow[] {
       ...row,
       profile: name,
       value: profile
-        ? `${prettyModel(profile.model)} · ${PROVIDER_LABEL[profile.provider] ?? profile.provider}`
+        ? `${profileLabel(profile)} · ${PROVIDER_LABEL[profile.provider] ?? profile.provider}`
         : 'Preset unavailable',
     }
   })
@@ -719,15 +719,24 @@ export function prettyModel(id: string): string {
   return joined.replace(/ (\d+) (\d+)$/, ' $1.$2')
 }
 
+/** A profile's name in lists: its own label, else its model's name. */
+export function profileLabel(profile: Pick<ModelProfile, 'model' | 'label'>): string {
+  return profile.label ?? prettyModel(profile.model)
+}
+
 /**
- * A profile's line where models are listed: the model's name, and when another profile
- * runs the same model, the effort that tells them apart — `Claude Fable 5.1 · xhigh`
- * beside `Claude Fable 5.1 · high`. A model only one profile runs keeps its bare name.
+ * A profile's line where models are listed: its label when it has one, else the model's
+ * name, and when another unlabeled profile runs the same model, the effort that tells them
+ * apart — `Claude Fable 5.1 · xhigh` beside `Claude Fable 5.1 · high`. A model only one
+ * profile runs keeps its bare name.
  */
 export function choiceLabel(name: string, all: Record<string, ModelProfile>): string {
   const profile = all[name]
+  if (profile.label) return profile.label
   const model = prettyModel(profile.model)
-  const twins = Object.values(all).filter((p) => p.provider === profile.provider && p.model === profile.model)
+  const twins = Object.values(all).filter(
+    (p) => !p.label && p.provider === profile.provider && p.model === profile.model,
+  )
   if (twins.length < 2) return model
   const options = (profile.options ?? {}) as { effort?: string; reasoningEffort?: string }
   const effort = options.effort ?? options.reasoningEffort

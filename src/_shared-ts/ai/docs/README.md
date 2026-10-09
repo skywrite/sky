@@ -10,8 +10,8 @@ updated: 2026-10-08
 - **role** — `aiModel('reasoning')`. Semantic and stable; the four roles
   (`reasoning`, `fast`, `balanced`, `vision`) have shipped defaults in `ROLES`;
   `ai.roles` assigns them to presets in the user's configuration.
-- **profile** — `default-opus-5.5`. A named provider + model + options tuple.
-  The shipped set is `defaultProfiles.ts`; a person's own come from
+- **profile** — `default-opus-5.5`. A named provider + model + options tuple; an optional `label` names it
+  in pickers and Settings (else the model's name). The shipped set is `defaultProfiles.ts`; a person's own come from
   `ai.profiles` in `~/.sky/config.jsonc` (config wins on a name clash).
 - **provider** — the AI-SDK provider the profile resolves through
   (`anthropic`, `openai`, `ollama`, `lm-studio`, `cerebras`).

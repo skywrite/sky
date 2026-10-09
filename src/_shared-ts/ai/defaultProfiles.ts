@@ -87,6 +87,15 @@ export const PROFILES = {
     contextWindow: 1_050_000,
     options: { reasoningEffort: 'high' },
   }),
+  // The same model on OpenAI's Ultrafast tier, at 6x the price ($12/$60 per MTok) and with its
+  // own rate limits. The same short answer took 2.8 s instead of 9.9 s (measured 2026-10-08).
+  'default-gpt-6.1-sol-ultrafast': defineProfile({
+    provider: 'openai',
+    model: 'gpt-6.1-sol',
+    label: 'GPT 6.1 Sol (Ultrafast)',
+    contextWindow: 1_050_000,
+    options: { reasoningEffort: 'high', serviceTier: 'ultrafast' },
+  }),
   'default-local-reasoning': defineProfile({
     provider: 'lm-studio',
     model: 'qwen3.6-35b-a3b',

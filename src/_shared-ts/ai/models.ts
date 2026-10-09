@@ -76,6 +76,8 @@ export interface ModelProfile<P extends Provider = Provider> {
    * universal/ai/readingBudget.ts. Absent, the model takes any budget.
    */
   contextWindow?: number
+  /** What pickers and Settings call this profile; absent, they show the model's name. */
+  label?: string
   options?: CommonOptions & ProviderOptionsByProvider[P]
 }
 
@@ -288,6 +290,8 @@ function configProfiles(config: SkyConfig['ai'] | undefined): Record<string, Mod
       model: def.model,
       baseUrl: def.baseUrl,
       contextWindow: def.contextWindow ?? (sameModel ? builtin.contextWindow : undefined),
+      // A preset customized in Settings keeps the built-in's name in the pickers.
+      label: sameModel ? builtin.label : undefined,
       options: def.options,
     } as ModelProfile
   }

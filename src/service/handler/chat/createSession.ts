@@ -65,7 +65,7 @@ import type { ChatPlan } from '#universal/ai/chatPlan.ts'
 import { effectiveEffort, effortLevels, isEffortOverride } from '#universal/ai/effort.ts'
 import { fitBudget } from '#universal/ai/readingBudget.ts'
 import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
-import { prettyModel, PROVIDER_LABEL, ROLE_LABEL } from '../settings/mod.ts'
+import { profileLabel, PROVIDER_LABEL, ROLE_LABEL } from '../settings/mod.ts'
 import { approvalCard } from './approvalCard.ts'
 import { calendarApprovalPrompt, restoreAnsweredApprovals } from './calendarApproval.ts'
 import { unsavedDraftsOf } from './drafts.ts'
@@ -287,18 +287,20 @@ export function modelChoices(): ModelChoice[] {
   const all = getAllProfiles()
   const choices = Object.entries(all).map(([name, profile]) => ({
     name,
-    label: prettyModel(profile.model),
+    label: profileLabel(profile),
     provider: PROVIDER_LABEL[profile.provider] ?? profile.provider,
     roles: rolesBy.get(name) ?? [],
     contextWindow: profile.contextWindow,
     tokenRatio: ratioFor(profile.model),
     effort: { default: effectiveEffort(profile), levels: effortLevels(profile) },
     builtin: name in PROFILES,
+    // Presets that differ only in effort share one picker row; a label of its own gets its own row.
     group: JSON.stringify([
       profile.provider,
       profile.model,
       profile.baseUrl,
       profile.contextWindow,
+      profile.label,
       Object.entries(profile.options ?? {})
         .filter(([key]) => key !== 'effort' && key !== 'reasoningEffort')
         .sort(([a], [b]) => a.localeCompare(b)),
