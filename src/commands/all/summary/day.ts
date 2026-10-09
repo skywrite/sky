@@ -29,11 +29,9 @@ import { type StreakCompletion, streakCompletion, streakRow } from './lib/streak
 
 const PROMPT_FILE = new URL('./prompts/day.prompt.md', import.meta.url).pathname
 
-// Hard ceiling, matching ai:chat's context budget. The summary is the day's
-// complete record, so there is no notion of pruning it to fit — a day whose
-// context estimates over this refuses to generate instead. Heaviest observed
-// day: ~62k tokens.
-const CONTEXT_BUDGET_TOKENS = 300_000
+// Hard ceiling for the day's complete record. Over-budget contexts refuse
+// to generate instead of trimming the day's documents.
+const CONTEXT_BUDGET_TOKENS = 400_000
 
 // Follow previous: links two hops back — enough to read a reply in thread
 // context without dragging in a week-old tail.

@@ -22,9 +22,8 @@ import gatherWeekSummaries, { type WeekSummaryEntry } from './lib/gatherWeekSumm
 
 const PROMPT_FILE = new URL('./prompts/week.prompt.md', import.meta.url).pathname
 
-// Hard ceiling matching summary:day. Seven dailies plus tracking CSVs land
-// far below it in practice; the shared gate is uniformity, not an expected
-// limit — and like the day, an over-budget week refuses instead of trimming.
+// Hard ceiling. Seven dailies plus tracking CSVs land far below it in
+// practice; like the day, an over-budget week refuses instead of trimming.
 const CONTEXT_BUDGET_TOKENS = 300_000
 
 // The weekly is the week's canonical record and the primary input to weekly
