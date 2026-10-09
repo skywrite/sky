@@ -1,4 +1,4 @@
-import { generateObject } from 'ai'
+import { generateText, Output } from 'ai'
 import { z } from 'zod'
 import { aiModel } from '#shared/ai/models.ts'
 import type { JournalType } from '#shared/models/Journal/type.d.ts'
@@ -39,13 +39,13 @@ export async function generateQuestions(context: JournalContext): Promise<Genera
     },
   })
 
-  const result = await generateObject({
+  const result = await generateText({
     ...aiModel('reasoning'),
-    schema: QuestionSchema,
+    output: Output.object({ schema: QuestionSchema }),
     prompt,
   })
 
-  return result.object.questions
+  return result.output.questions
 }
 
 /**
@@ -72,9 +72,9 @@ export async function generateQuestionsForTypes(
     },
   })
 
-  const result = await generateObject({
+  const result = await generateText({
     ...aiModel('reasoning'),
-    schema: QuestionSchema,
+    output: Output.object({ schema: QuestionSchema }),
     prompt,
   })
 
@@ -82,8 +82,8 @@ export async function generateQuestionsForTypes(
   // occasionally returns a near-miss type string). With multiple, trust the
   // model's assignment but drop anything outside the requested set.
   if (types.length === 1) {
-    return result.object.questions.map((q) => ({ type: types[0], question: q.question }))
+    return result.output.questions.map((q) => ({ type: types[0], question: q.question }))
   }
   const wanted = new Set<JournalType>(types)
-  return result.object.questions.filter((q) => wanted.has(q.type as JournalType))
+  return result.output.questions.filter((q) => wanted.has(q.type as JournalType))
 }

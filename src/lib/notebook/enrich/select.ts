@@ -1,4 +1,4 @@
-import { generateObject, NoObjectGeneratedError } from 'ai'
+import { generateText, NoObjectGeneratedError, Output } from 'ai'
 import { z } from 'zod'
 import { type AIErrorEntry, logAIError } from '#shared/ai/errorLog.ts'
 import { aiModel, type Role } from '#shared/ai/models.ts'
@@ -207,14 +207,14 @@ export interface SelectServices {
 
 export const selectServices: SelectServices = {
   ask: async (request, role) => {
-    const { object } = await generateObject({
+    const { output } = await generateText({
       ...aiModel(role),
-      schema: request.schema,
+      output: Output.object({ schema: request.schema }),
       abortSignal: AbortSignal.timeout(AI_TIMEOUT_MS),
       instructions: request.instructions,
       prompt: request.prompt,
     })
-    return object
+    return output
   },
   report: logAIError,
 }

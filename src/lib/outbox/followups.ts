@@ -1,4 +1,4 @@
-import { generateObject } from 'ai'
+import { generateText, Output } from 'ai'
 import { z } from 'zod'
 import type { ResolvedModel } from '#shared/ai/models.ts'
 import { readPromptFile } from '#shared/prompts/load.ts'
@@ -64,15 +64,15 @@ export function createFollowupPlanner(
       followupOf: item.followupOf,
     }
     const history = await prepareConversationHistory(item.conversation, context, model)
-    const result = await generateObject({
+    const result = await generateText({
       ...model(),
-      schema: z.object({ followups: Proposals }),
+      output: Output.object({ schema: z.object({ followups: Proposals }) }),
       instructions: renderPromptFile(await readPromptFile(PROMPT), PROMPT, {}).output,
       prompt: JSON.stringify({ ...context, ...history }),
       abortSignal: AbortSignal.timeout(OUTBOX_MODEL_TIMEOUT_MS),
     })
     return Promise.all(
-      result.object.followups.map(async (followup) =>
+      result.output.followups.map(async (followup) =>
         write
           ? {
               ...followup,

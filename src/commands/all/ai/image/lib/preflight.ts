@@ -1,4 +1,4 @@
-import { generateObject } from 'ai'
+import { generateText, Output } from 'ai'
 import { z } from 'zod'
 import { aiModelByProfile } from '#shared/ai/models.ts'
 import type { ResolvedModel } from '#shared/ai/models.ts'
@@ -63,9 +63,9 @@ export async function preflightImage(
   const signal = request.signal ? AbortSignal.any([request.signal, timeout]) : timeout
   signal.throwIfAborted()
   const instructions = options.instructions ?? parsePromptFile(await readPromptFile(PROMPT_FILE), PROMPT_FILE).body
-  const { object } = await generateObject({
+  const { output } = await generateText({
     ...(options.model ?? aiModelByProfile('default-gpt-6-astra-low')),
-    schema: decisionSchema,
+    output: Output.object({ schema: decisionSchema }),
     instructions,
     messages: [
       {
@@ -99,7 +99,7 @@ export async function preflightImage(
     abortSignal: signal,
   })
   signal.throwIfAborted()
-  return object
+  return output
 }
 
 export async function selectImageSettings(

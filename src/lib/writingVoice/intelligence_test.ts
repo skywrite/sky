@@ -2,7 +2,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import * as path from 'node:path'
 import { createAnthropic } from '@ai-sdk/anthropic'
-import { generateObject, NoObjectGeneratedError } from 'ai'
+import { generateText, NoObjectGeneratedError, Output } from 'ai'
 import { MockLanguageModelV4 } from 'ai/test'
 import { z } from 'zod'
 import { assert, test } from '#test'
@@ -69,9 +69,9 @@ test('Every writing-voice operation uses arrays accepted by the Anthropic struct
   const resolved = { model: provider('claude-fable-5-1'), maxRetries: 0 }
   let legacyError = ''
   try {
-    await generateObject({
+    await generateText({
       ...resolved,
-      schema: QuestionSchema.extend({ options: z.tuple([z.string(), z.string()]) }),
+      output: Output.object({ schema: QuestionSchema.extend({ options: z.tuple([z.string(), z.string()]) }) }),
       prompt: 'Ask about the supplied writing example.',
     })
   } catch (error) {

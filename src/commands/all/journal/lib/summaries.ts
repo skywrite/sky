@@ -1,4 +1,4 @@
-import { generateObject } from 'ai'
+import { generateText, Output } from 'ai'
 import { z } from 'zod'
 import { aiModel } from '#shared/ai/models.ts'
 
@@ -9,16 +9,18 @@ export interface JournalToName {
 
 /** Shared by journal:rename and recorded journals before their filenames are allocated. */
 export async function summarizeJournals(journals: JournalToName[], signal?: AbortSignal) {
-  const result = await generateObject({
+  const result = await generateText({
     ...aiModel('fast'),
     abortSignal: signal,
-    schema: z.object({
-      summaries: z.array(
-        z.object({
-          fileName: z.string(),
-          summary: z.string().describe('5–7 word summary capturing the emotional/thematic essence'),
-        }),
-      ),
+    output: Output.object({
+      schema: z.object({
+        summaries: z.array(
+          z.object({
+            fileName: z.string(),
+            summary: z.string().describe('5–7 word summary capturing the emotional/thematic essence'),
+          }),
+        ),
+      }),
     }),
     instructions: [
       'Generate a 5–7 word Title Case summary for each journal entry.',
@@ -29,5 +31,5 @@ export async function summarizeJournals(journals: JournalToName[], signal?: Abor
     ].join('\n'),
     prompt: journals.map((journal) => `--- ${journal.fileName} ---\n${journal.content}`).join('\n\n'),
   })
-  return result.object.summaries
+  return result.output.summaries
 }

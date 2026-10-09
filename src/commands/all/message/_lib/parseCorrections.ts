@@ -1,4 +1,4 @@
-import { generateObject } from 'ai'
+import { generateText, Output } from 'ai'
 import { z } from 'zod'
 import { aiModel } from '#shared/ai/models.ts'
 import { readPromptFile } from '#shared/prompts/load.ts'
@@ -62,11 +62,11 @@ export async function parseCorrections(ctx: CorrectionsContext): Promise<ParsedC
   }
   const { output: prompt } = renderPromptFile(promptContent, 'parse-corrections.prompt.md', renderInput)
 
-  const result = await generateObject({
+  const result = await generateText({
     ...aiModel('reasoning'),
-    schema: CorrectionsSchema,
+    output: Output.object({ schema: CorrectionsSchema }),
     prompt,
   })
 
-  return result.object
+  return result.output
 }

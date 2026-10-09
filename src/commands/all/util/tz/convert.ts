@@ -1,4 +1,4 @@
-import { generateObject } from 'ai'
+import { generateText, Output } from 'ai'
 import colors from 'picocolors'
 import { z } from 'zod'
 import { Arg, Command, CommandResult, Flag } from '#commands/mod.ts'
@@ -46,7 +46,7 @@ declare module '#commands/lib/core/CommandTypesRegistry.ts' {
 
 // The model only classifies the query — `kind` picks which of the other fields apply, and
 // resolveAnchor() does the arithmetic. Kept flat rather than a discriminated union because
-// nested unions round-trip less reliably through generateObject.
+// nested unions round-trip less reliably through structured output.
 const TimezoneParseSchema = z.object({
   kind: z
     .enum(['now', 'relative', 'wallClock'])
@@ -231,13 +231,13 @@ export default class UtilTzConvertTask extends Command {
     // Use AI to parse the natural language query
     let parsed: z.infer<typeof TimezoneParseSchema>
     try {
-      const result = await generateObject({
+      const result = await generateText({
         ...aiModel('balanced'),
-        schema: TimezoneParseSchema,
+        output: Output.object({ schema: TimezoneParseSchema }),
         instructions: systemPrompt,
         prompt: query,
       })
-      parsed = result.object
+      parsed = result.output
     } catch (err) {
       return CommandResult.error(err as Error, 'Failed to parse timezone query')
     }

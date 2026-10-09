@@ -1,5 +1,5 @@
 import * as path from 'node:path'
-import { generateObject } from 'ai'
+import { generateText, Output } from 'ai'
 import { z } from 'zod'
 import { logAIError } from '#shared/ai/errorLog.ts'
 import { aiModel } from '#shared/ai/models.ts'
@@ -297,10 +297,10 @@ async function query<T>(query: string, variables: Record<string, unknown>): Prom
 export const documentRelServices: DocumentRelServices = {
   reportError: (message) => logAIError({ source: 'ai:chat', stage: 'rel:documents', message }),
   async extract(transcript, today) {
-    const { object } = await generateObject({
+    const { output } = await generateText({
       ...aiModel('fast'),
       abortSignal: AbortSignal.timeout(60_000),
-      schema: z.object({ mentions: z.array(mentionSchema) }),
+      output: Output.object({ schema: z.object({ mentions: z.array(mentionSchema) }) }),
       instructions: [
         'Find references to specific existing notebook records in a chat being saved: meetings, messages, journals, notes, or previous chats.',
         'A conversational reference is enough: "my meeting with Jane on Friday" or "that conversation with Jane" qualifies without a date, time, filename, or link.',
@@ -315,7 +315,7 @@ export const documentRelServices: DocumentRelServices = {
       ].join('\n'),
       prompt: `<chat>\n${transcript}\n</chat>`,
     })
-    return object.mentions
+    return output.mentions
   },
   async search(where, limit) {
     const data = await query<{ documents: Array<{ path: string }> }>(
@@ -332,16 +332,18 @@ export const documentRelServices: DocumentRelServices = {
     return data.documentContent?.content ?? null
   },
   async match(mention, conversation, candidates) {
-    const { object } = await generateObject({
+    const { output } = await generateText({
       ...aiModel('balanced'),
       abortSignal: AbortSignal.timeout(60_000),
-      schema: z.object({
-        isReference: z
-          .boolean()
-          .describe(
-            'The quoted conversation actually refers to an existing record, judged independently of the candidates',
-          ),
-        matches: z.array(z.string()).describe('All candidate refs still plausible for this reference'),
+      output: Output.object({
+        schema: z.object({
+          isReference: z
+            .boolean()
+            .describe(
+              'The quoted conversation actually refers to an existing record, judged independently of the candidates',
+            ),
+          matches: z.array(z.string()).describe('All candidate refs still plausible for this reference'),
+        }),
       }),
       instructions: [
         'Resolve one conversational reference to an existing notebook record.',
@@ -355,6 +357,6 @@ export const documentRelServices: DocumentRelServices = {
       ].join('\n'),
       prompt: JSON.stringify({ reference: mention, conversation, candidates }),
     })
-    return object.isReference ? object.matches : []
+    return output.isReference ? output.matches : []
   },
 }

@@ -1,4 +1,4 @@
-import { generateObject } from 'ai'
+import { generateText, Output } from 'ai'
 import colors from 'picocolors'
 import { z } from 'zod'
 import { getManifest } from '#commands/all/cli/_commandsManifest.ts'
@@ -171,13 +171,13 @@ export default class AutomationsDraftTask extends Command {
     for (let attempt = 0; attempt < 2 && problem; attempt++) {
       let object: z.infer<typeof DraftSchema>
       try {
-        const result = await generateObject({
+        const result = await generateText({
           ...aiModel('balanced'),
-          schema: DraftSchema,
+          output: Output.object({ schema: DraftSchema }),
           instructions: systemPrompt,
           prompt,
         })
-        object = result.object
+        object = result.output
       } catch (err) {
         return CommandResult.error(err as Error, 'The draft model call failed')
       }

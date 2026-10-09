@@ -1,4 +1,4 @@
-import { streamObject } from 'ai'
+import { Output, streamText } from 'ai'
 import { z } from 'zod'
 import { gatherContext } from '#commands/all/mi/_lib/gatherContext.ts'
 import { autoRelMessage } from '#lib/notebook/enrich/autoRel.ts'
@@ -52,16 +52,16 @@ async function render(name: string, input: RenderInput): Promise<string> {
 }
 
 async function generate<T>(schema: z.ZodType<T>, prompt: string, progress?: MIProgressReporter): Promise<T> {
-  const result = streamObject({ ...aiModel('reasoning'), schema, prompt, onError: () => {} })
+  const result = streamText({ ...aiModel('reasoning'), output: Output.object({ schema }), prompt, onError: () => {} })
   let receiving = false
   for await (const part of result.fullStream) {
     if (part.type === 'error') throw part.error
-    if (!receiving && part.type === 'object') {
+    if (!receiving && part.type === 'text-delta') {
       receiving = true
       progress?.({ stage: 'writing' })
     }
   }
-  return await result.object
+  return await result.output
 }
 
 export async function miSuggestionsPrompt(

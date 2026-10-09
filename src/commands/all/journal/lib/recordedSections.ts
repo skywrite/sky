@@ -1,4 +1,4 @@
-import { generateObject } from 'ai'
+import { generateText, Output } from 'ai'
 import { z } from 'zod'
 import { aiModel } from '#shared/ai/models.ts'
 import { readPromptFile } from '#shared/prompts/load.ts'
@@ -50,22 +50,24 @@ export async function organizeRecording(text: string, signal?: AbortSignal): Pro
   const { output: prompt } = renderPromptFile(await readPromptFile(PROMPT_FILE), 'recorded-sections.prompt.md', {
     journal: { transcript: text },
   })
-  const { object } = await generateObject({
+  const { output: object } = await generateText({
     ...aiModel('reasoning'),
     abortSignal: signal,
-    schema: z.object({
-      title: z.string().describe('A specific five to seven word Title Case title, in the speaker’s vocabulary'),
-      summary: z.string().describe('Two or three sentences describing the recording'),
-      sections: z
-        .array(
-          z.object({
-            heading: z.string().describe('A concrete topical heading, without the word transcript'),
-            firstWords: z
-              .string()
-              .describe('The first six to twelve words of this section, copied exactly, including punctuation'),
-          }),
-        )
-        .min(1),
+    output: Output.object({
+      schema: z.object({
+        title: z.string().describe('A specific five to seven word Title Case title, in the speaker’s vocabulary'),
+        summary: z.string().describe('Two or three sentences describing the recording'),
+        sections: z
+          .array(
+            z.object({
+              heading: z.string().describe('A concrete topical heading, without the word transcript'),
+              firstWords: z
+                .string()
+                .describe('The first six to twelve words of this section, copied exactly, including punctuation'),
+            }),
+          )
+          .min(1),
+      }),
     }),
     prompt,
   })

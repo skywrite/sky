@@ -1,4 +1,4 @@
-import { generateObject } from 'ai'
+import { generateText, Output } from 'ai'
 import { z } from 'zod'
 import type { ResolvedModel } from '#shared/ai/models.ts'
 import { readPromptFile } from '#shared/prompts/load.ts'
@@ -34,14 +34,14 @@ const PROMPTS = {
 export function createVoiceIntelligence(model: () => ResolvedModel = writingVoiceModel): VoiceIntelligence {
   async function ask<T>(kind: keyof typeof PROMPTS, schema: z.ZodType<T>, input: unknown): Promise<T> {
     const file = PROMPTS[kind]
-    const result = await generateObject({
+    const result = await generateText({
       ...model(),
-      schema,
+      output: Output.object({ schema }),
       instructions: `You are ${toolDisplayName('me_voice')}, the notebook owner's drafting agent.\n\n${renderPromptFile(await readPromptFile(file), file, {}).output}`,
       prompt: JSON.stringify(input),
       abortSignal: AbortSignal.timeout(120_000),
     })
-    return result.object
+    return result.output
   }
   return {
     draft: async (input) =>

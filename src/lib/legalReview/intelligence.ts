@@ -1,4 +1,4 @@
-import { streamObject, type UserContent } from 'ai'
+import { Output, streamText, type UserContent } from 'ai'
 import type { LoadedDocument } from '#lib/documents/loadDocument.ts'
 import { aiModel, type ResolvedModel } from '#shared/ai/models.ts'
 import { readPromptFile } from '#shared/prompts/load.ts'
@@ -47,9 +47,9 @@ export async function analyzeAgreements(
   try {
     // Streaming uses the provider's idle guard; a working review can outlive the old four-minute cutoff.
     // No tools: analysis cannot upload, comment, or edit. A failure returns to the caller without SDK retries.
-    const result = streamObject({
+    const result = streamText({
       ...(options.model ?? aiModel('reasoning')),
-      schema: AnalysisSchema,
+      output: Output.object({ schema: AnalysisSchema }),
       instructions,
       messages: [{ role: 'user', content }],
       abortSignal: signal,
@@ -59,12 +59,12 @@ export async function analyzeAgreements(
     let receiving = false
     for await (const part of result.fullStream) {
       if (part.type === 'error') throw part.error
-      if (!receiving && part.type === 'object') {
+      if (!receiving && part.type === 'text-delta') {
         receiving = true
         progress?.('Receiving the analysis; findings will be saved after validation')
       }
     }
-    return await result.object
+    return await result.output
   } catch (error) {
     if (signal.aborted) {
       const limit = timeoutMs % 60_000 === 0 ? `${timeoutMs / 60_000} minutes` : `${timeoutMs / 1000} seconds`

@@ -1,4 +1,4 @@
-import { generateObject } from 'ai'
+import { generateText, Output } from 'ai'
 import sharp from 'sharp'
 import { z } from 'zod'
 import { aiModelByProfile } from '#shared/ai/models.ts'
@@ -85,11 +85,11 @@ export async function planMixedImage(
   )
   signal.throwIfAborted()
   const instructions = options.instructions ?? parsePromptFile(await readPromptFile(PROMPT_FILE), PROMPT_FILE).body
-  const { object } = await generateObject({
+  const { output } = await generateText({
     ...(options.model ??
       aiModelByProfile(request.complexity === 'simple' ? 'default-gpt-6-astra-low' : 'default-gpt-6-astra-high')),
     instructions,
-    schema: mixedImagePlanSchema,
+    output: Output.object({ schema: mixedImagePlanSchema }),
     messages: [
       {
         role: 'user',
@@ -125,7 +125,7 @@ export async function planMixedImage(
     abortSignal: signal,
   })
   signal.throwIfAborted()
-  const plan = mixedImagePlanSchema.parse(object)
+  const plan = mixedImagePlanSchema.parse(output)
   if (!previousPlan) return { ...plan, regenerateArtwork: true }
   // Reusing a raster also reuses the prompt that created it. Do not record a
   // silently revised artwork description for pixels that were never regenerated.

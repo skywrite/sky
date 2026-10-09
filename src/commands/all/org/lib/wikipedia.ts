@@ -1,4 +1,4 @@
-import { generateObject } from 'ai'
+import { generateText, Output } from 'ai'
 import { z } from 'zod'
 import {
   fetchWikipediaArticle,
@@ -118,10 +118,10 @@ async function selectBestArticleAI(
 
   const { output: selectionPrompt } = renderPromptFile(promptContent, 'org-wikipedia-select.prompt.md', input)
 
-  const { object: parsed } = await generateObject({
+  const { output: parsed } = await generateText({
     ...aiModel('balanced'),
     abortSignal: AbortSignal.timeout(AI_TIMEOUT_MS),
-    schema: ArticleSelectionSchema,
+    output: Output.object({ schema: ArticleSelectionSchema }),
     prompt: selectionPrompt,
   })
 
@@ -233,10 +233,10 @@ async function resolveDisambiguationPage(
     input,
   )
 
-  const { object: parsed } = await generateObject({
+  const { output: parsed } = await generateText({
     ...aiModel('balanced'),
     abortSignal: AbortSignal.timeout(AI_TIMEOUT_MS),
-    schema: ArticleSelectionSchema,
+    output: Output.object({ schema: ArticleSelectionSchema }),
     prompt: disambiguationPrompt,
   })
 
@@ -286,10 +286,10 @@ async function validateArticleMatch(
 
   const { output: validationPrompt } = renderPromptFile(promptContent, 'org-wikipedia-validate.prompt.md', input)
 
-  const { object: parsed } = await generateObject({
+  const { output: parsed } = await generateText({
     ...aiModel('balanced'),
     abortSignal: AbortSignal.timeout(AI_TIMEOUT_MS),
-    schema: ArticleValidationSchema,
+    output: Output.object({ schema: ArticleValidationSchema }),
     prompt: validationPrompt,
   })
 

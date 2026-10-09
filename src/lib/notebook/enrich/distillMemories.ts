@@ -1,4 +1,4 @@
-import { generateObject } from 'ai'
+import { generateText, Output } from 'ai'
 import { z } from 'zod'
 import { logAIError } from '#shared/ai/errorLog.ts'
 import { aiModel, type Role } from '#shared/ai/models.ts'
@@ -18,7 +18,7 @@ import { MAX_CREATES_PER_SAVE, type MemoryOp } from '#shared/models/Memory/write
 // own conclusions, report figures, and assessments of people — see
 // models/Memory/docs/2026-08-29-distiller-harvested-its-own-answers.md.
 
-// generateObject has no timeout option; an unbounded call can hang forever.
+// Bounds the call: an unbounded one can hang forever.
 const AI_TIMEOUT_MS = 60_000
 
 // No `propose` op here: a proposal printed once at chat exit had no consumer.
@@ -71,11 +71,13 @@ export async function distillMemories(input: DistillInput, role: Role = 'balance
   const index = input.memories.length > 0 ? input.memories.map(indexLine).join('\n') : '(the store is empty)'
 
   try {
-    const { object } = await generateObject({
+    const { output } = await generateText({
       ...aiModel(role),
       abortSignal: AbortSignal.timeout(AI_TIMEOUT_MS),
-      schema: z.object({
-        ops: z.array(opSchema).describe('empty when the conversation taught nothing durable'),
+      output: Output.object({
+        schema: z.object({
+          ops: z.array(opSchema).describe('empty when the conversation taught nothing durable'),
+        }),
       }),
       prompt: [
         `You maintain a tiny cross-session memory store for a personal AI assistant. Below are a finished ${kind} and the store's current index. Decide what the store should learn from this conversation and return the operations.`,
@@ -130,7 +132,7 @@ export async function distillMemories(input: DistillInput, role: Role = 'balance
         '</transcript>',
       ].join('\n'),
     })
-    return object.ops
+    return output.ops
   } catch (err) {
     // Abstain, but never silently: a chronically failing distiller must be
     // distinguishable from "nothing worth remembering" in ai-errors.jsonl.

@@ -1,4 +1,4 @@
-import { generateObject } from 'ai'
+import { generateText, Output } from 'ai'
 import { z } from 'zod'
 import { fetchPeopleIndex, readServiceDocument } from '#lib/service/documents.ts'
 import { logAIError } from '#shared/ai/errorLog.ts'
@@ -24,7 +24,7 @@ import { fetchEntityScores } from './scores.ts'
 // format.ts (design: models/Person/docs/README.md); this module only asks
 // the model.
 
-// generateObject has no timeout option; an unbounded call can hang forever.
+// Bounds the call: an unbounded one can hang forever.
 const AI_TIMEOUT_MS = 180_000
 
 const LINE_RULE = `one fact, at most ${MAX_WORDS_PER_LINE} words, no semicolons`
@@ -189,31 +189,33 @@ export async function distillPersonFacts(
       : '(no existing profiles matched this conversation)'
 
   try {
-    const { object } = await generateObject({
+    const { output } = await generateText({
       ...aiModel(role),
       abortSignal: AbortSignal.timeout(AI_TIMEOUT_MS),
-      schema: z.object({
-        people: z
-          .array(
-            z.object({
-              name: z.string().describe('exactly as a listed profile names them'),
-              ops: z.array(opSchema),
-            }),
-          )
-          .describe('empty when the conversation taught nothing durable about anyone'),
-        unlisted: z
-          .array(
-            z.object({
-              name: z.string().describe("the person's name alone — no role, org, or qualifier in parentheses"),
-              kind: z
-                .enum(['person', 'organization', 'product', 'other'])
-                .describe(
-                  'person only for a human being; a company, team, product, protocol, project, or place is not a person and is dropped',
-                ),
-              gist: z.string().describe('one line of what the conversation established about them'),
-            }),
-          )
-          .describe('people materially discussed who have no profile listed'),
+      output: Output.object({
+        schema: z.object({
+          people: z
+            .array(
+              z.object({
+                name: z.string().describe('exactly as a listed profile names them'),
+                ops: z.array(opSchema),
+              }),
+            )
+            .describe('empty when the conversation taught nothing durable about anyone'),
+          unlisted: z
+            .array(
+              z.object({
+                name: z.string().describe("the person's name alone — no role, org, or qualifier in parentheses"),
+                kind: z
+                  .enum(['person', 'organization', 'product', 'other'])
+                  .describe(
+                    'person only for a human being; a company, team, product, protocol, project, or place is not a person and is dropped',
+                  ),
+                gist: z.string().describe('one line of what the conversation established about them'),
+              }),
+            )
+            .describe('people materially discussed who have no profile listed'),
+        }),
       }),
       prompt: [
         personFactsPrompt({ kind, userLabel: input.userLabel, today: input.today, profiles }),
@@ -226,8 +228,8 @@ export async function distillPersonFacts(
     // The kind field is the structural guard behind the prompt's "people
     // only": the model classifies every entry, and only people survive.
     return {
-      facts: object.people,
-      unlisted: object.unlisted.filter((u) => u.kind === 'person').map(({ name, gist }) => ({ name, gist })),
+      facts: output.people,
+      unlisted: output.unlisted.filter((u) => u.kind === 'person').map(({ name, gist }) => ({ name, gist })),
     }
   } catch (err) {
     // Abstain, but never silently: a chronically failing distiller must be

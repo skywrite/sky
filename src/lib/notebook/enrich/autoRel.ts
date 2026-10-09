@@ -1,4 +1,4 @@
-import { generateObject } from 'ai'
+import { generateText, Output } from 'ai'
 import { z } from 'zod'
 import { matchPlace, type PlaceMatch } from '#lib/places/catalog.ts'
 import { ensurePlaceRef } from '#lib/places/geography.ts'
@@ -265,9 +265,9 @@ export async function scopeRel(
   if (candidates.length === 0) return []
   const kind = opts.kind ?? 'text'
   try {
-    const { object } = await generateObject({
+    const { output } = await generateText({
       ...aiModel('balanced'),
-      schema: scopeSchema,
+      output: Output.object({ schema: scopeSchema }),
       abortSignal: AbortSignal.timeout(60_000),
       instructions: [
         `You judge which of the listed people and entities one ${kind} actually concerns. It was split out of a longer recording; the list covers the whole recording.`,
@@ -299,7 +299,7 @@ export async function scopeRel(
         'List the names this document concerns.',
       ].join('\n'),
     })
-    return subsetOf(object.keep, candidates)
+    return subsetOf(output.keep, candidates)
   } catch {
     return undefined
   }

@@ -1,4 +1,4 @@
-import { generateObject, generateText } from 'ai'
+import { generateText, Output } from 'ai'
 /**
  * AI Context Evolve - Evolves GraphQL queries based on conversation direction.
  *
@@ -154,9 +154,9 @@ export default class AIContextEvolveTask extends Command {
       )
     }
 
-    const { object } = await generateObject({
+    const { output: object } = await generateText({
       ...aiModel('balanced'),
-      schema,
+      output: Output.object({ schema }),
       instructions: cachedInstructions(systemPrompt),
       prompt: parts.join('\n'),
     })

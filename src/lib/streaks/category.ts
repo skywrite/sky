@@ -1,5 +1,5 @@
 import * as path from 'node:path'
-import { generateObject } from 'ai'
+import { generateText, Output } from 'ai'
 import { z } from 'zod'
 import { aiModel } from '#shared/ai/models.ts'
 import MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
@@ -22,9 +22,9 @@ export interface StreakCategoryEvidence {
 type CategoryJudge = (evidence: StreakCategoryEvidence) => Promise<StreakCategory | null>
 
 async function judgeCategory(evidence: StreakCategoryEvidence): Promise<StreakCategory | null> {
-  const { object } = await generateObject({
+  const { output } = await generateText({
     ...aiModel('fast'),
-    schema: z.object({ category: z.enum(STREAK_CATEGORIES).nullable() }),
+    output: Output.object({ schema: z.object({ category: z.enum(STREAK_CATEGORIES).nullable() }) }),
     maxOutputTokens: 128,
     maxRetries: 0,
     abortSignal: AbortSignal.timeout(10_000),
@@ -39,7 +39,7 @@ async function judgeCategory(evidence: StreakCategoryEvidence): Promise<StreakCa
     ].join('\n'),
     prompt: JSON.stringify(evidence),
   })
-  return object.category
+  return output.category
 }
 
 /** Only explicitly linked projects and goals are included as classification evidence. */

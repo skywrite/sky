@@ -6,7 +6,7 @@
  * message that appears twice was sent twice.
  */
 
-import { generateObject } from 'ai'
+import { generateText, Output } from 'ai'
 import { z } from 'zod'
 import { aiModel } from '#shared/ai/models.ts'
 import { readPromptFile } from '#shared/prompts/load.ts'
@@ -77,10 +77,10 @@ export async function extractMessageFromText(
 
   // The conversation first and the instructions after it: a long text reads
   // better with the question at the end.
-  const result = await generateObject({
+  const result = await generateText({
     ...aiModel('reasoning'),
-    schema: TextExtractionSchema,
+    output: Output.object({ schema: TextExtractionSchema }),
     prompt: `<conversation>\n${text}\n</conversation>\n\n${prompt}`,
   })
-  return result.object
+  return result.output
 }

@@ -1,4 +1,4 @@
-import { generateObject } from 'ai'
+import { generateText, Output } from 'ai'
 import sharp from 'sharp'
 import { z } from 'zod'
 import { aiModelByProfile } from '#shared/ai/models.ts'
@@ -60,11 +60,11 @@ export async function planImageMask(
     .toBuffer()
   signal.throwIfAborted()
   const instructions = options.instructions ?? parsePromptFile(await readPromptFile(PROMPT_FILE), PROMPT_FILE).body
-  const { object } = await generateObject({
+  const { output } = await generateText({
     ...(options.model ??
       aiModelByProfile(request.complexity === 'simple' ? 'default-gpt-6-astra-low' : 'default-gpt-6-astra-high')),
     instructions,
-    schema: maskPlanSchema,
+    output: Output.object({ schema: maskPlanSchema }),
     messages: [
       {
         role: 'user',
@@ -84,5 +84,5 @@ export async function planImageMask(
     abortSignal: signal,
   })
   signal.throwIfAborted()
-  return object
+  return output
 }

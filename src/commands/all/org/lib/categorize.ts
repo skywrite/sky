@@ -1,4 +1,4 @@
-import { generateObject } from 'ai'
+import { generateText, Output } from 'ai'
 import { z } from 'zod'
 import { aiModel } from '#shared/ai/models.ts'
 import { readPromptFile } from '#shared/prompts/load.ts'
@@ -10,8 +10,8 @@ const CATEGORIZE_PROMPT_FILE = new URL('../prompts/org-categorize.prompt.md', im
 
 /**
  * Hard ceiling on the categorization call. Nothing else bounds it: the Anthropic provider
- * disables Bun's 300s fetch cap (see anthropicProvider.ts), and `generateObject` — unlike
- * generateText — accepts no `timeout` option, only `abortSignal`. Without this, a stalled
+ * disables Bun's 300s fetch cap (see anthropicProvider.ts), and the call passes no `timeout`;
+ * this abort signal is its only limit. Without it, a stalled
  * socket hangs org:new forever with no output and no error. The call itself runs in a few
  * seconds, so anything approaching this is a dead connection, not slow work.
  */
@@ -107,10 +107,10 @@ export async function categorizeOrganization(
 
   const { output: categorizationPrompt } = renderPromptFile(promptContent, 'org-categorize.prompt.md', input)
 
-  const { object: parsed } = await generateObject({
+  const { output: parsed } = await generateText({
     ...aiModel('balanced'),
     abortSignal: AbortSignal.timeout(AI_TIMEOUT_MS),
-    schema: CategorizationSchema,
+    output: Output.object({ schema: CategorizationSchema }),
     prompt: categorizationPrompt,
   })
 

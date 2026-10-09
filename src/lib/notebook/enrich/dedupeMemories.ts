@@ -1,4 +1,4 @@
-import { generateObject } from 'ai'
+import { generateText, Output } from 'ai'
 import { z } from 'zod'
 import { logAIError } from '#shared/ai/errorLog.ts'
 import { aiModel, type Role } from '#shared/ai/models.ts'
@@ -49,10 +49,10 @@ export async function dedupeMemories(memories: MemoryEntry[], role: Role = 'fast
     .join('\n')
 
   try {
-    const { object } = await generateObject({
+    const { output } = await generateText({
       ...aiModel(role),
       abortSignal: AbortSignal.timeout(AI_TIMEOUT_MS),
-      schema: mergeSchema,
+      output: Output.object({ schema: mergeSchema }),
       prompt: [
         'Below is the full index of a tiny AI memory store. Different sessions occasionally write the same fact under different slugs. Identify entries that are GENUINELY the same fact — same referent, same claim — and return merges. Distinct facts about the same topic are NOT duplicates. Never merge entries marked locked. Most stores have no duplicates: an empty list is the normal answer.',
         '',
@@ -64,7 +64,7 @@ export async function dedupeMemories(memories: MemoryEntry[], role: Role = 'fast
 
     const known = new Map(memories.map((m) => [m.slug, m]))
     const usable = (slug: string) => known.has(slug) && !known.get(slug)?.locked
-    return object.merges.filter(
+    return output.merges.filter(
       (m) => usable(m.keep) && m.absorb.length > 0 && m.absorb.every((s) => usable(s) && s !== m.keep),
     )
   } catch (err) {

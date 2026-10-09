@@ -1,4 +1,4 @@
-import { generateObject } from 'ai'
+import { generateText, Output } from 'ai'
 import { z } from 'zod'
 import { logAIError } from '#shared/ai/errorLog.ts'
 import { aiModelByProfile } from '#shared/ai/models.ts'
@@ -39,7 +39,7 @@ const digestSchema = z.object({
   learned: z.array(z.string()),
 })
 
-// generateObject has no timeout option; an unbounded call can hang forever
+// Bounds the call: an unbounded one can hang forever
 // (see enrich/classify.ts). Session materials run far longer than a tag
 // pick's transcript, so this allows double the enrich budget.
 const AI_TIMEOUT_MS = 120_000
@@ -108,19 +108,19 @@ async function digestSession(
   source: string,
 ): Promise<SessionDigest | null> {
   try {
-    const { object } = await generateObject({
+    const { output } = await generateText({
       ...aiModelByProfile(profile),
-      schema: digestSchema,
+      output: Output.object({ schema: digestSchema }),
       abortSignal: AbortSignal.timeout(AI_TIMEOUT_MS),
       instructions,
       prompt: materials(session, day, timezone),
     })
-    const digest = normalizeDigest(object)
+    const digest = normalizeDigest(output)
     if (!digest) {
       await logAIError({
         source,
         stage: 'parse-digest',
-        message: `blank digest for session ${session.sessionId}: ${JSON.stringify(object).slice(0, 200)}`,
+        message: `blank digest for session ${session.sessionId}: ${JSON.stringify(output).slice(0, 200)}`,
       })
     }
     return digest

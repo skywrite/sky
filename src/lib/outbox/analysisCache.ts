@@ -1,5 +1,5 @@
 import * as path from 'node:path'
-import { generateObject, NoObjectGeneratedError } from 'ai'
+import { generateText, NoObjectGeneratedError, Output } from 'ai'
 import type { z } from 'zod'
 import type { ResolvedModel } from '#shared/ai/models.ts'
 import { atomicWrite, hash, readOptional } from './files.ts'
@@ -60,14 +60,14 @@ export class AnalysisCache {
     for (let attempt = 0; ; attempt++) {
       let value: T
       try {
-        const result = await generateObject({
+        const result = await generateText({
           ...model,
-          schema,
+          output: Output.object({ schema }),
           instructions,
           prompt: attemptPrompt,
           abortSignal: AbortSignal.timeout(OUTBOX_MODEL_TIMEOUT_MS),
         })
-        value = result.finishReason === 'length' && options.onOutputLimit ? options.onOutputLimit() : result.object
+        value = result.finishReason === 'length' && options.onOutputLimit ? options.onOutputLimit() : result.output
       } catch (error) {
         if (!options.onOutputLimit || !NoObjectGeneratedError.isInstance(error) || error.finishReason !== 'length')
           throw error

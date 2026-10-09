@@ -1,4 +1,4 @@
-import { generateObject } from 'ai'
+import { generateText, Output } from 'ai'
 import { z } from 'zod'
 import type { VoiceWriter } from '#lib/writingVoice/types.ts'
 import type { ResolvedModel } from '#shared/ai/models.ts'
@@ -275,19 +275,21 @@ export function createTriage(
       priorResponse,
     }
     const history = await prepareConversationHistory(conversation, context, model)
-    const judgment = await generateObject({
+    const judgment = await generateText({
       ...model(),
-      schema: Judgment.extend({
-        responseEvidence: z
-          .object({ ref: z.string(), quote: z.string().min(1).max(4000) })
-          .nullable()
-          .optional(),
+      output: Output.object({
+        schema: Judgment.extend({
+          responseEvidence: z
+            .object({ ref: z.string(), quote: z.string().min(1).max(4000) })
+            .nullable()
+            .optional(),
+        }),
       }),
       instructions: renderPromptFile(await readPromptFile(PROMPT), PROMPT, {}).output,
       prompt: JSON.stringify({ ...context, ...history }),
       abortSignal: AbortSignal.timeout(OUTBOX_MODEL_TIMEOUT_MS),
     })
-    const proposal = checked(judgment.object)
+    const proposal = checked(judgment.output)
     if (proposal.action === 'draft' && write)
       proposal.draft = (
         await write({
@@ -324,14 +326,14 @@ export function createReplyComposer(
       followupOf: item.followupOf,
     }
     const history = await prepareConversationHistory(item.conversation, context, model)
-    const result = await generateObject({
+    const result = await generateText({
       ...model(),
-      schema: Judgment.extend({ action: z.enum(['draft', 'decision']) }),
+      output: Output.object({ schema: Judgment.extend({ action: z.enum(['draft', 'decision']) }) }),
       instructions: renderPromptFile(await readPromptFile(COMPOSE_PROMPT), COMPOSE_PROMPT, {}).output,
       prompt: JSON.stringify({ ...context, ...history }),
       abortSignal: AbortSignal.timeout(OUTBOX_MODEL_TIMEOUT_MS),
     })
-    const proposal = checked(result.object)
+    const proposal = checked(result.output)
     if (proposal.action === 'draft' && write)
       proposal.draft = (
         await write({

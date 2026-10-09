@@ -1,5 +1,5 @@
 import { openai } from '@ai-sdk/openai'
-import { generateObject } from 'ai'
+import { generateText, Output } from 'ai'
 import { z } from 'zod'
 import CommandContext from '#commands/lib/core/CommandContext.ts'
 import CommandService from '#commands/lib/core/CommandService.ts'
@@ -127,16 +127,16 @@ async function converHtmlToMarkdown(jsonBlob: BrowserExtensionData): Promise<Jso
     cc: z.string(),
   })
 
-  const result = await generateObject({
+  const result = await generateText({
     model: openai('gpt-5.2'),
     prompt,
     maxOutputTokens: 64000,
-    schema: jsonMarkdownSchema,
+    output: Output.object({ schema: jsonMarkdownSchema }),
   })
 
   console.log(`[siteHtml] [${new Date().toISOString()}] Response received from AI`)
 
-  const data: JsonMarkdownContent = result.object
+  const data: JsonMarkdownContent = result.output
 
   // Sanitize name fields - AI sometimes outputs stray Unicode (e.g. Bengali characters)
   if (data.to) data.to = sanitizeName(data.to)

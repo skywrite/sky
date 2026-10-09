@@ -1,4 +1,4 @@
-import { generateObject } from 'ai'
+import { generateText, Output } from 'ai'
 import { z } from 'zod'
 import { aiModel, type Role } from '#shared/ai/models.ts'
 import truncate from '#shared/strings/truncate.ts'
@@ -9,7 +9,7 @@ const MAX_TRANSCRIPT_CHARS = 8000
 const MAX_TAGS = 3
 const HISTORY_LINES = 20
 const FAMILY_MENU_LINES = 400
-// generateObject has no timeout option; an unbounded call can hang forever (see org/_categorize.ts)
+// Bounds the call: an unbounded one can hang forever (see org/lib/categorize.ts).
 const AI_TIMEOUT_MS = 60_000
 
 export type ClassifyRequest = {
@@ -138,14 +138,14 @@ export async function chooseTags(req: ClassifyRequest, role: Role): Promise<Clas
   if (allowed.size === 0) return { tags: [], invented: 0 }
   const max = req.maxTags ?? MAX_TAGS
   try {
-    const { object } = await generateObject({
+    const { output } = await generateText({
       ...aiModel(role),
-      schema: schemaFor(max),
+      output: Output.object({ schema: schemaFor(max) }),
       abortSignal: AbortSignal.timeout(AI_TIMEOUT_MS),
       instructions: buildInstructions(req),
       prompt: buildPrompt(req),
     })
-    return { ...validateTags(object.tags, allowed, max) }
+    return { ...validateTags(output.tags, allowed, max) }
   } catch (err) {
     return { tags: [], invented: 0, error: err instanceof Error ? err.message : String(err) }
   }

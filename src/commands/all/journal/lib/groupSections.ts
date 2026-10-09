@@ -1,4 +1,4 @@
-import { generateObject } from 'ai'
+import { generateText, Output } from 'ai'
 import { z } from 'zod'
 import { loadMessageCorpus } from '#lib/notebook/enrich/corpus.ts'
 import { aiModel } from '#shared/ai/models.ts'
@@ -56,9 +56,9 @@ export async function groupByType(
   })
   const allowed = new Map(menu.map((m) => [m.name.toLowerCase(), m.name]))
   try {
-    const { object } = await generateObject({
+    const { output } = await generateText({
       ...aiModel('balanced'),
-      schema,
+      output: Output.object({ schema }),
       abortSignal: AbortSignal.timeout(AI_TIMEOUT_MS),
       instructions: [
         'You split one spoken journal recording into separate journal entries, using the journal types this notebook already files under.',
@@ -78,8 +78,8 @@ export async function groupByType(
       ].join('\n'),
       prompt: `Recording of ${totalWords} words, sections in spoken order:\n${sectionLines(sections)}`,
     })
-    const groups = toGroups(object.entries, sections.length)
-    object.entries.forEach((e, i) => {
+    const groups = toGroups(output.entries, sections.length)
+    output.entries.forEach((e, i) => {
       const name = allowed.get(e.type.trim().toLowerCase())
       if (name && groups[i]) groups[i].journalType = name
     })
@@ -114,9 +114,9 @@ export async function groupIntoBuckets(
     ),
   })
   try {
-    const { object } = await generateObject({
+    const { output } = await generateText({
       ...aiModel('balanced'),
-      schema,
+      output: Output.object({ schema }),
       abortSignal: AbortSignal.timeout(AI_TIMEOUT_MS),
       instructions: [
         'You allocate the sections of one spoken journal recording into the entries the owner named, plus at most one Remainder entry.',
@@ -131,7 +131,7 @@ export async function groupIntoBuckets(
       ].join('\n'),
       prompt: `Recording of ${totalWords} words, sections in spoken order:\n${sectionLines(sections)}`,
     })
-    const entries = object.entries.map((e) => ({
+    const entries = output.entries.map((e) => ({
       title: /^remainder$/i.test(e.bucket) ? e.title : e.bucket,
       summary: e.summary,
       sections: e.sections,

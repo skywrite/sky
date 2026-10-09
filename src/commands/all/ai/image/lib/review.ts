@@ -1,4 +1,4 @@
-import { generateObject } from 'ai'
+import { generateText, Output } from 'ai'
 import sharp from 'sharp'
 import { z } from 'zod'
 import { aiModelByProfile } from '#shared/ai/models.ts'
@@ -106,11 +106,11 @@ export async function reviewImageEdit(
   signal.throwIfAborted()
   const finalImageFacts = await imageVisualFacts(request.composite)
   const instructions = options.instructions ?? parsePromptFile(await readPromptFile(PROMPT_FILE), PROMPT_FILE).body
-  const { object } = await generateObject({
+  const { output } = await generateText({
     ...(options.model ??
       aiModelByProfile(request.edit.complexity === 'simple' ? 'default-gpt-6-astra-low' : 'default-gpt-6-astra-high')),
     instructions,
-    schema: imageReviewSchema,
+    output: Output.object({ schema: imageReviewSchema }),
     messages: [
       {
         role: 'user',
@@ -153,5 +153,5 @@ export async function reviewImageEdit(
     abortSignal: signal,
   })
   signal.throwIfAborted()
-  return object
+  return output
 }

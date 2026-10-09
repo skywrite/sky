@@ -1,4 +1,4 @@
-import { generateObject } from 'ai'
+import { generateText, Output } from 'ai'
 /**
  * AI Context Date - Extracts temporal information from a natural language prompt.
  *
@@ -101,9 +101,9 @@ export default class AIContextDateTask extends Command {
     }
     const { output: systemPrompt } = renderPromptFile(promptContent, 'context-date.prompt.md', renderInput)
 
-    const { object } = await generateObject({
+    const { output: object } = await generateText({
       ...aiModel('fast'),
-      schema,
+      output: Output.object({ schema }),
       instructions: systemPrompt,
       prompt: message,
     })

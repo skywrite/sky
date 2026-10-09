@@ -1,7 +1,7 @@
 import { mkdir, stat, unlink } from 'node:fs/promises'
 import * as path from 'node:path'
 import * as p from '@clack/prompts'
-import { generateObject } from 'ai'
+import { generateText, Output } from 'ai'
 import colors from 'picocolors'
 import { z } from 'zod'
 import { CommandResult } from '#commands/mod.ts'
@@ -333,14 +333,14 @@ export async function extractNoteFromImage(
     prompt += `\n\nAdditional context: ${aiContext}`
   }
 
-  const result = await generateObject({
+  const result = await generateText({
     ...aiModel('reasoning'),
     abortSignal: signal,
-    schema: ExtractionSchema,
+    output: Output.object({ schema: ExtractionSchema }),
     messages: [{ role: 'user', content: [...imageBlocks, { type: 'text', text: prompt }] }],
   })
 
-  return result.object
+  return result.output
 }
 
 export interface CorrectionsContext {
@@ -365,8 +365,12 @@ export async function parseNoteCorrections(ctx: CorrectionsContext): Promise<z.i
   }
   const { output: prompt } = renderPromptFile(promptContent, 'parse-corrections.prompt.md', renderInput)
 
-  const result = await generateObject({ ...aiModel('balanced'), schema: CorrectionsSchema, prompt })
-  return result.object
+  const result = await generateText({
+    ...aiModel('balanced'),
+    output: Output.object({ schema: CorrectionsSchema }),
+    prompt,
+  })
+  return result.output
 }
 
 /**

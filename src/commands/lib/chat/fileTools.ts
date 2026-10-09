@@ -168,11 +168,10 @@ export function toUserContent(output: ReadFileSuccess, document: LoadedDocument)
   if (document.kind === 'text') return [{ type: 'text', text: `${header}\n\n${document.text}` }]
   const data = Buffer.from(document.data).toString('base64')
   const providerOptions = { sky: { sourcePath: output.path, attachmentPath: output.attachmentPath } }
+  // Images ride as file parts too; the SDK's `image` part is deprecated.
   return [
     { type: 'text', text: header },
-    document.kind === 'image'
-      ? { type: 'image', image: data, mediaType: document.mediaType, providerOptions }
-      : { type: 'file', data, mediaType: document.mediaType, filename: output.attachment, providerOptions },
+    { type: 'file', data, mediaType: document.mediaType, filename: output.attachment, providerOptions },
   ]
 }
 

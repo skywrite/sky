@@ -1,4 +1,4 @@
-import { generateObject } from 'ai'
+import { generateText, Output } from 'ai'
 import { z } from 'zod'
 import { aiModel } from '#shared/ai/models.ts'
 import { readPromptFile } from '#shared/prompts/load.ts'
@@ -198,9 +198,9 @@ export async function extractMessageFromImage(
     prompt += `\n\nAdditional context: ${aiContext}`
   }
 
-  const result = await generateObject({
+  const result = await generateText({
     ...aiModel('reasoning'),
-    schema: ExtractionSchema,
+    output: Output.object({ schema: ExtractionSchema }),
     messages: [
       {
         role: 'user',
@@ -215,6 +215,6 @@ export async function extractMessageFromImage(
     ],
   })
 
-  const { messages, ...rest } = result.object
+  const { messages, ...rest } = result.output
   return { ...rest, messages: collapseAdjacentDuplicates(messages) }
 }

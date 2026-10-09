@@ -1,4 +1,4 @@
-import { generateObject, generateText, NoObjectGeneratedError } from 'ai'
+import { generateText, NoObjectGeneratedError, NoOutputGeneratedError, Output } from 'ai'
 import { z } from 'zod'
 import { getProfile, resolveProfile } from '#shared/ai/models.ts'
 import { readPromptFile } from '#shared/prompts/load.ts'
@@ -146,20 +146,24 @@ async function generateOngoingWork<T extends z.ZodType>(
   for (let attempt = 0; attempt < 2; attempt += 1) {
     signal.throwIfAborted()
     try {
-      const result = await generateObject({
+      const result = await generateText({
         ...model,
-        output: 'object',
-        schema,
+        output: Output.object({ schema }),
         instructions: `${guidance}\n\nReturn a complete, concise structured result. Use null for optional fields that do not apply.${attempt ? ' The previous response was incomplete or invalid. Regenerate a compact complete result; shorten prose and omit unnecessary proposals.' : ''}`,
         prompt: JSON.stringify(context),
         abortSignal: signal,
       })
       signal.throwIfAborted()
       checkFinishReason(result.finishReason)
-      if (result.finishReason !== 'length') return result.object
+      if (result.finishReason !== 'length') return result.output
       incomplete = true
     } catch (error) {
       signal.throwIfAborted()
+      // An empty answer leaves no output to read; it is retried like one that did not parse.
+      if (NoOutputGeneratedError.isInstance(error)) {
+        incomplete = false
+        continue
+      }
       if (!NoObjectGeneratedError.isInstance(error)) throw error
       checkFinishReason(error.finishReason)
       incomplete = error.finishReason === 'length'

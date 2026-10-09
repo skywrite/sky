@@ -1,5 +1,5 @@
 import { createAnthropic } from '@ai-sdk/anthropic'
-import { generateObject, NoObjectGeneratedError } from 'ai'
+import { generateText, NoOutputGeneratedError, Output } from 'ai'
 import { MockLanguageModelV4 } from 'ai/test'
 import { z } from 'zod'
 import type { VoiceDraftInput, VoiceWriter } from '#lib/writingVoice/types.ts'
@@ -99,22 +99,24 @@ test('Outbox requests a user-facing explanation and retains its established save
   const profile = PROFILES[OUTBOX_MODEL_PROFILE]
   const resolved = { ...resolveProfile(profile), model: provider(profile.model), maxRetries: 0 }
   let legacyFailure: unknown
+  let legacyFinish: string | undefined
   try {
-    await generateObject({
+    const result = await generateText({
       ...resolved,
-      schema: z.object({ reasoning: z.string(), draft: z.string() }),
+      output: Output.object({ schema: z.object({ reasoning: z.string(), draft: z.string() }) }),
       prompt: 'Revise the supplied reply and explain the result.',
     })
+    legacyFinish = result.finishReason
+    // A refusal leaves nothing to parse; the failure surfaces when the output is read.
+    legacyFailure = result.output
   } catch (error) {
     legacyFailure = error
   }
   assert({
     given: 'the provider declines the former structured reasoning request without response text',
     should: 'reproduce the SDK failure from an empty refusal response',
-    actual: NoObjectGeneratedError.isInstance(legacyFailure)
-      ? [legacyFailure.message, legacyFailure.finishReason]
-      : legacyFailure,
-    expected: ['No object generated: the model did not return a response.', 'content-filter'],
+    actual: [NoOutputGeneratedError.isInstance(legacyFailure) ? legacyFailure.message : legacyFailure, legacyFinish],
+    expected: ['No output generated.', 'content-filter'],
   })
 
   const composed = await createReplyComposer(

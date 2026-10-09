@@ -79,7 +79,7 @@ export interface ModelProfile<P extends Provider = Provider> {
   options?: CommonOptions & ProviderOptionsByProvider[P]
 }
 
-/** Resolver output — spread directly into generateText / generateObject / streamText. */
+/** Resolver output — spread directly into generateText / streamText. */
 export interface ResolvedModel {
   model: LanguageModel
   /** Total request capacity, carried to chat's per-request guard. */

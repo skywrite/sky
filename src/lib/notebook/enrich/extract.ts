@@ -1,4 +1,4 @@
-import { generateObject } from 'ai'
+import { generateText, Output } from 'ai'
 import { Lexer } from 'marked'
 import { z } from 'zod'
 import { normalizePlaceName, type PlaceMention } from '#lib/places/catalog.ts'
@@ -120,9 +120,9 @@ export function buildExtractPrompt(req: ExtractRequest): string {
 /** Never throws: model errors and timeouts come back with empty subjects and `error` set. */
 export async function extractSubjects(req: ExtractRequest, role: Role): Promise<ExtractOutcome> {
   try {
-    const { object } = await generateObject({
+    const { output } = await generateText({
       ...aiModel(role),
-      schema,
+      output: Output.object({ schema }),
       abortSignal: AbortSignal.timeout(AI_TIMEOUT_MS),
       instructions: buildExtractInstructions(req),
       prompt: buildExtractPrompt(req),
@@ -130,10 +130,10 @@ export async function extractSubjects(req: ExtractRequest, role: Role): Promise<
     const clean = (values: string[]) => [...new Set(values.map((v) => v.trim()).filter(Boolean))].slice(0, MAX_PER_KIND)
     return {
       subjects: {
-        people: clean(object.people),
-        orgs: clean(object.orgs),
-        projects: clean(object.projects),
-        places: groundedPlaces(object.places, req, [...object.people, ...object.orgs, ...object.projects]),
+        people: clean(output.people),
+        orgs: clean(output.orgs),
+        projects: clean(output.projects),
+        places: groundedPlaces(output.places, req, [...output.people, ...output.orgs, ...output.projects]),
       },
     }
   } catch (err) {

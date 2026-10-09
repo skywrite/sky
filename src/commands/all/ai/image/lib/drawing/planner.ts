@@ -1,4 +1,4 @@
-import { generateObject } from 'ai'
+import { generateText, Output } from 'ai'
 import sharp from 'sharp'
 import { aiModelByProfile } from '#shared/ai/models.ts'
 import type { ResolvedModel } from '#shared/ai/models.ts'
@@ -48,11 +48,11 @@ export async function planDrawing(
   )
   signal.throwIfAborted()
   const instructions = options.instructions ?? parsePromptFile(await readPromptFile(PROMPT_FILE), PROMPT_FILE).body
-  const { object } = await generateObject({
+  const { output } = await generateText({
     ...(options.model ??
       aiModelByProfile(request.complexity === 'complex' ? 'default-gpt-6-astra-high' : 'default-gpt-6-astra-low')),
     instructions,
-    schema: drawingSceneSchema,
+    output: Output.object({ schema: drawingSceneSchema }),
     messages: [
       {
         role: 'user',
@@ -85,7 +85,7 @@ export async function planDrawing(
     abortSignal: signal,
   })
   signal.throwIfAborted()
-  const scene = drawingSceneSchema.parse(object)
+  const scene = drawingSceneSchema.parse(output)
   if (scene.width !== request.width || scene.height !== request.height) {
     throw new Error('Drawing planner changed the requested canvas dimensions.')
   }

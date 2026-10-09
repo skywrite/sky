@@ -51,7 +51,7 @@ test('chat uploads carry document contents, keep original bytes, and survive rec
             typeof part.data === 'string' &&
             Buffer.from(part.data, 'base64').toString() === pdf,
         ),
-        image: parts.some((part) => part.type === 'image' && part.mediaType === 'image/png'),
+        image: parts.some((part) => part.type === 'file' && part.mediaType === 'image/png'),
         textOnly: clipped.text,
         names: clipped.files.map((file) => file.name),
       },

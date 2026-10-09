@@ -1,4 +1,4 @@
-import { generateObject } from 'ai'
+import { generateText, Output } from 'ai'
 import { z } from 'zod'
 import type { ResolvedModel } from '#shared/ai/models.ts'
 import { parseSlackConversation } from '#shared/models/Message/slack/parse.ts'
@@ -144,9 +144,9 @@ export async function prepareConversationHistory(
   let previous: Notes = { notes: '', evidence: [] }
   for (let index = 0; index < chunks.length - 1; index++) {
     const sources = chunks[index]
-    const result = await generateObject({
+    const result = await generateText({
       ...model(),
-      schema: HistoryNotes,
+      output: Output.object({ schema: HistoryNotes }),
       instructions,
       prompt: JSON.stringify({
         context,
@@ -157,7 +157,7 @@ export async function prepareConversationHistory(
       }),
       abortSignal: AbortSignal.timeout(OUTBOX_MODEL_TIMEOUT_MS),
     })
-    for (const evidence of result.object.evidence) {
+    for (const evidence of result.output.evidence) {
       const seen =
         evidence.quote.trim() &&
         [...sources, ...previous.evidence.map(({ ref, quote }) => ({ ref, body: quote }))].some(
@@ -166,7 +166,7 @@ export async function prepareConversationHistory(
       if (!seen)
         throw new Error('A history note cited a reply that was not found in the reviewed messages. Check again.')
     }
-    previous = result.object
+    previous = result.output
   }
   return {
     conversation: { ...conversation, sources: chunks.at(-1)! },

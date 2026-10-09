@@ -1,4 +1,4 @@
-import { generateObject } from 'ai'
+import { generateText, Output } from 'ai'
 import { z } from 'zod'
 import { readPromptFile } from '#shared/prompts/load.ts'
 import { renderPromptFile } from '#shared/prompts/mod.ts'
@@ -28,23 +28,23 @@ export function createProposer(ownerContext: string): Propose {
   return async ({ conversation, preferences, examples }) => {
     const context = { ownerContext, preferences, examples }
     const history = await prepareConversationHistory(conversation, context)
-    const judgment = await generateObject({
+    const judgment = await generateText({
       ...outboxModel(),
-      schema: Judgment,
+      output: Output.object({ schema: Judgment }),
       instructions: await instructions(JUDGMENT_PROMPT),
       prompt: JSON.stringify({ ...context, ...history }),
       abortSignal: AbortSignal.timeout(OUTBOX_MODEL_TIMEOUT_MS),
     })
-    const { action, title, situation, explanation: reasoning, questions, meaning } = judgment.object
+    const { action, title, situation, explanation: reasoning, questions, meaning } = judgment.output
     if (action === 'ignore' || !meaning.trim()) return { action, title, situation, reasoning, questions, draft: '' }
-    const voiced = await generateObject({
+    const voiced = await generateText({
       ...outboxModel(),
-      schema: Voice,
+      output: Output.object({ schema: Voice }),
       instructions: await instructions(VOICE_PROMPT),
       prompt: JSON.stringify({ medium: conversation.medium, preferences, meaning, examples }),
       abortSignal: AbortSignal.timeout(OUTBOX_MODEL_TIMEOUT_MS),
     })
-    if (!voiced.object.draft.trim()) throw new Error('The voice agent returned an empty reply.')
-    return { action, title, situation, reasoning, questions, draft: voiced.object.draft.trim() }
+    if (!voiced.output.draft.trim()) throw new Error('The voice agent returned an empty reply.')
+    return { action, title, situation, reasoning, questions, draft: voiced.output.draft.trim() }
   }
 }
