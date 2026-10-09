@@ -7,6 +7,7 @@
  * are derived from task params via the shared jsonSchema module — zero duplication.
  */
 
+import * as path from 'node:path'
 import { jsonSchema, tool } from 'ai'
 import colors from 'picocolors'
 import { getManifest } from '#commands/all/cli/_commandsManifest.ts'
@@ -99,6 +100,14 @@ export interface CreateNotebookToolsOptions {
    * ai:chat cross-references them in the saved transcript's rel.
    */
   onExternalFiles?: (toolName: string, files: ExternalFileRef[]) => void
+  /**
+   * A writing tool's result named notebook documents it created (`path`,
+   * `paths` or `created` under the notebook's time tree) — the session
+   * records them as the chat's own products. Needs `notebookDir`.
+   */
+  onCreatedDocuments?: (toolName: string, paths: string[]) => void
+  /** The notebook root that created-document paths must fall under */
+  notebookDir?: string
   /** The host's Stop for this one call: the command sees it as `context.signal`. */
   signal?: AbortSignal
 }
@@ -247,7 +256,7 @@ export function withoutBlankStrings(input: Record<string, unknown>): Record<stri
 
 export async function runToolCommand(
   tasks: CommandService,
-  entry: Pick<DiscoveredTool, 'toolName' | 'commandName'>,
+  entry: Pick<DiscoveredTool, 'toolName' | 'commandName'> & { needsApproval?: boolean },
   input: Record<string, unknown>,
   options: CreateNotebookToolsOptions = {},
 ): Promise<Record<string, unknown>> {
@@ -351,6 +360,12 @@ export async function runToolCommand(
     if (files.length > 0) options.onExternalFiles(entry.toolName, files)
   }
 
+  // Only a tool that writes can create a document; a reader's `path` is what it read.
+  if (options.onCreatedDocuments && options.notebookDir && entry.needsApproval !== false) {
+    const created = createdDocumentPaths(payload, options.notebookDir)
+    if (created.length > 0) options.onCreatedDocuments(entry.toolName, created)
+  }
+
   // Tools returning openQuestions get the native breakout: the user
   // settles them here, between execution and the model seeing the
   // result — no chat turns spent on Q&A
@@ -369,6 +384,27 @@ export async function runToolCommand(
   // roundtrip flattens it to plain JSON and drops undefined-valued keys
   // instead of shipping them.
   return JSON.parse(JSON.stringify(payload)) as Record<string, unknown>
+}
+
+/**
+ * Markdown documents under the notebook's time tree that a tool result names
+ * as its own: a `path`, or every entry of `paths` / `created`. Anything else a
+ * result carries — attachments, URLs, files it read — is not a created document.
+ */
+export function createdDocumentPaths(payload: Record<string, unknown>, notebookDir: string): string[] {
+  const timeRoot = path.join(path.resolve(notebookDir), 'time') + path.sep
+  const candidates = [
+    payload.path,
+    ...(Array.isArray(payload.paths) ? payload.paths : []),
+    ...(Array.isArray(payload.created) ? payload.created : []),
+  ]
+  const out: string[] = []
+  for (const candidate of candidates) {
+    if (typeof candidate !== 'string' || !candidate.endsWith('.md')) continue
+    const abs = path.resolve(notebookDir, candidate)
+    if (abs.startsWith(timeRoot) && !out.includes(abs)) out.push(abs)
+  }
+  return out
 }
 
 /**

@@ -29,7 +29,14 @@ import { AI_ERROR_LOG_DISPLAY } from '#shared/ai/errorLog.ts'
 import { getProfile, resolveProfile, roleProfile } from '#shared/ai/models.ts'
 import { ratioFor } from '#shared/ai/tokenRatio.ts'
 import { usageLine } from '#shared/ai/usage.ts'
-import { DIR_AI_MEMORY, DIR_ATTACHMENTS, DIR_STATE_AI_CHATS, FILE_AI_FILE_GRANTS, PORT_SERVER } from '#shared/config.ts'
+import {
+  DIR_AI_MEMORY,
+  DIR_ATTACHMENTS,
+  DIR_BASE,
+  DIR_STATE_AI_CHATS,
+  FILE_AI_FILE_GRANTS,
+  PORT_SERVER,
+} from '#shared/config.ts'
 import { fetchWithConnectRetry } from '#shared/models/Chat/ChatContext/fetchContext.ts'
 import type { RebuildReport } from '#shared/models/Chat/ChatContext/mod.ts'
 import ChatSession, { type ChatSessionEvent } from '#shared/models/Chat/ChatSession/mod.ts'
@@ -570,6 +577,8 @@ export default class AiChatTask extends Command {
           onAttachments,
         })
         const notebookTools = await createNotebookTools(tasks, {
+          notebookDir: DIR_BASE,
+          onCreatedDocuments: (_toolName, paths) => hooks.onCreatedDocuments(paths),
           researchContext: hooks.researchContext,
           legalReviewContext: legalReviewContext(hooks, DIR_ATTACHMENTS, `chat:terminal:${startTime.toString()}`),
           // Native question breakout: settle a tool's openQuestions in-place —

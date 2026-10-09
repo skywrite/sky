@@ -40,6 +40,24 @@ Existing spellings survive, equivalent refs deduplicate, and ambiguous or
 incomplete searches add nothing. `--no-auto-rel` skips this lookup along with
 entity suggestions. External artifact relationships retain their own path.
 
+Three sources feed rel besides the matcher's judgment, each added on
+2026-10-07 after a saved chat missed the organization, the video and the note
+it was about ([narrative](2026-10-07-rel-missed-what-the-clipped-transcript-hid.md)):
+
+- **Entity suggestions read the whole conversation.** The rel chooser gets the
+  full transcript with timestamps, not the classifier's 8k packing with its
+  1,200-character clip per reply, and extraction runs over overlapping windows
+  whose subjects are unioned. The selector reads the passages naming each
+  subject rather than whichever characters came first.
+- **Explicit phrases are read without a model.** "today's memo", "this
+  evening's Loom", "Jane's deck from yesterday" become dated mentions by rule;
+  the matcher still decides what they refer to, and a dated mention also
+  offers the context documents from that day as candidates. The model's own
+  extraction runs on the balanced role.
+- **The chat's own products are facts.** Notebook documents a writing tool
+  created during the session arrive through the session's created-documents
+  hook and join rel directly, without a chooser, even with auto-rel off.
+
 Place subjects and country creation follow the shared
 [place relationship rules](../../../../lib/places/docs/README.md#automatic-relationships-and-country-selection).
 New turns in a resumed chat can append place links even when other entity

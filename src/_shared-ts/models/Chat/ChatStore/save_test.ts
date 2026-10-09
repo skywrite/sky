@@ -1090,3 +1090,58 @@ test('saveChat - a branch whose parent was never kept files whole, as a chat of 
     },
   })
 })
+
+test('saveChat - rel reads the whole conversation, not the packed transcript', async () => {
+  const late = 'Acme Labs'
+  let relBody = ''
+  let tagBody = ''
+  await saveNew({
+    autoTag: true,
+    autoRel: true,
+    turns: [
+      msg('user', 'What should I focus on for the Atlas launch?', '2026-01-27 09:30'),
+      msg(
+        'assistant',
+        `${'The demo script and the pricing page copy. '.repeat(60)}The payments partner is ${late}.`,
+        '2026-01-27 09:31',
+      ),
+    ],
+    enricher: stubEnricher({
+      chooseTags: async (subject) => {
+        tagBody = subject.body
+        return undefined
+      },
+      chooseRel: async (subject) => {
+        relBody = subject.body
+        return undefined
+      },
+    }),
+  })
+  assert({
+    given: 'an assistant turn longer than the classifier clip, naming an organization at its end',
+    should: 'hand the rel chooser the whole conversation while the tag classifier keeps its packed transcript',
+    actual: {
+      relSeesIt: relBody.includes(late),
+      relStamped: relBody.includes('[2026-01-27 09:31]'),
+      tagsClipped: !tagBody.includes(late),
+    },
+    expected: { relSeesIt: true, relStamped: true, tagsClipped: true },
+  })
+})
+
+test('saveChat - documents the session created join rel as facts', async () => {
+  const timeDir = path.join(await tmpNotebook(), 'time')
+  const note = path.join(timeDir, '2026/W05/01-27/actions/notes/09-45_Launch-memo.md')
+  const { report } = await saveNew({
+    timeDir,
+    autoRel: false,
+    createdPaths: [note, '/elsewhere/not-in-the-notebook.md'],
+  })
+  const doc = ChatDocument.fromMarkdown(await readTextFile(report.path))
+  assert({
+    given: 'a note the session wrote under the notebook time tree, and a path outside it',
+    should: 'record the note by time ref without any chooser, and ignore the outsider',
+    actual: [...doc.rel],
+    expected: ['2026-01-27/actions/notes/09-45_Launch-memo'],
+  })
+})

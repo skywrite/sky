@@ -387,3 +387,63 @@ test('document rel - existing short refs, paths, and titled links retain their s
     expected: forms.map((form) => ['projects/Atlas', form, later]),
   })
 })
+
+test('document rel - explicit phrases are read as references without the model', async () => {
+  const { scanReferenceMentions } = await import('./documentRel.ts')
+  const turns = [
+    {
+      role: 'user' as const,
+      content: "Summarize Jane's Loom from this evening and today's memo.",
+      when: '2026-10-06 21:03',
+    },
+    {
+      role: 'assistant' as const,
+      content: 'Yesterday’s standup covered it; the Atlas deck is unchanged.',
+      when: '2026-10-06 21:04',
+    },
+  ]
+  const mentions = scanReferenceMentions(turns, '2026-10-07')
+  assert({
+    given: "an owner's video from this evening, today's memo, and yesterday's standup",
+    should:
+      'yield a dated video mention with the owner as its term, a dated document mention, and a meeting mention a day earlier',
+    actual: mentions.map((m) => ({ message: m.message, type: m.type, terms: m.terms, day: m.dateGte, quote: m.quote })),
+    expected: [
+      { message: 0, type: 'document', terms: [], day: '2026-10-06', quote: "today's memo" },
+      { message: 0, type: 'video', terms: ['Jane'], day: '2026-10-06', quote: "Jane's Loom from this evening" },
+      { message: 1, type: 'meeting', terms: [], day: '2026-10-05', quote: 'Yesterday’s standup' },
+    ],
+  })
+})
+
+test('document rel - a dated reference resolves to the same-day context document when the model saw nothing', async () => {
+  const video = '2026-10-06/actions/videos/Loom_Jane_Atlas-Walkthrough.md'
+  const lookups: unknown[] = []
+  const refs = await resolveDocumentRel(
+    {
+      turns: [{ role: 'user', content: "What did Jane's Loom from this evening conclude?", when: '2026-10-06 21:03' }],
+      today: '2026-10-07',
+      baseDir: '/notebook',
+      contextPaths: [`/notebook/${resolveTimeRef(video)}`, `/notebook/${resolveTimeRef(OTHER)}`],
+    },
+    services({
+      extract: async () => [],
+      search: async (where) => {
+        lookups.push(where)
+        return []
+      },
+      read: async () => '---\nfrom: Jane Doe\nsummary: Atlas walkthrough\n---\nA walkthrough of the Atlas launch.',
+      match: async (_mention, _text, candidates) => candidates.map((c) => c.ref),
+    }),
+  )
+  assert({
+    given: 'an explicit same-day video reference, an empty model extraction, and the video among the context paths',
+    should: 'offer the same-day video as the sole candidate, search within that day, and record it',
+    actual: {
+      refs,
+      searchedDay: (lookups[0] as { dateGte?: string; type?: string } | undefined)?.dateGte,
+      type: (lookups[0] as { type?: string } | undefined)?.type,
+    },
+    expected: { refs: [video.replace(/\.md$/, '')], searchedDay: '2026-10-06', type: 'video' },
+  })
+})

@@ -471,6 +471,8 @@ export function createChatHost(config: typeof ConfigModule, env: Record<string, 
             }),
             ...(await createNotebookTools(toolTasks, {
               sourceChat: sourceChatHref(id),
+              notebookDir: config.DIR_BASE,
+              onCreatedDocuments: (_toolName, paths) => hooks.onCreatedDocuments(paths),
               calendarHistory: runs,
               researchContext: hooks.researchContext,
               legalReviewContext: legalReviewContext(hooks, config.DIR_ATTACHMENTS, `chat:${id}`),

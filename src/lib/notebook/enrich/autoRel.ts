@@ -3,8 +3,9 @@ import { z } from 'zod'
 import { matchPlace, type PlaceMatch } from '#lib/places/catalog.ts'
 import { ensurePlaceRef } from '#lib/places/geography.ts'
 import { aiModel } from '#shared/ai/models.ts'
+import truncate from '#shared/strings/truncate.ts'
 import { loadMessageCorpus, relHistoryFor } from './corpus.ts'
-import { extractSubjects, groundedPlaces } from './extract.ts'
+import { type ExtractedSubjects, extractSubjects, MAX_TRANSCRIPT_CHARS } from './extract.ts'
 import { excludeParties, partyExclusionSet } from './parties.ts'
 import { buildEntityIndex, normalizeEntityName, placeRefInIndex, resolveSubjects } from './resolve.ts'
 import { fetchEntityScores } from './scores.ts'
@@ -15,6 +16,110 @@ import type { RelCandidate } from './select.ts'
 const REL_SINCE = '2025-01-01'
 const MAX_PRIOR_ONLY_CANDIDATES = 4
 const MAX_EXEMPLARS = 3
+/**
+ * Extraction reads the whole text in windows the extractor's budget fits,
+ * overlapping so a name on a boundary is whole in one of them. The packed
+ * head of a long reply used to be all the chooser saw: an organization
+ * named nine times in an 8k-character answer never reached it (2026-10-06).
+ */
+const WINDOW_OVERLAP_CHARS = 500
+const MAX_WINDOWS = 12
+/** Union caps — the selector chooses from these, so breadth costs little. */
+const MAX_UNION_PER_KIND = 12
+const EVIDENCE_EXCERPT_CHARS = 350
+const EVIDENCE_HEAD_SHARE = 0.4
+const EVIDENCE_MARK = '\n[…]\n'
+
+const isLowSurrogate = (code: number) => code >= 0xdc00 && code <= 0xdfff
+const isHighSurrogate = (code: number) => code >= 0xd800 && code <= 0xdbff
+
+/** `text.slice(start, end)` that never splits a surrogate pair. */
+function sliceWhole(text: string, start: number, end: number): string {
+  let from = Math.max(0, start)
+  let to = Math.min(text.length, end)
+  if (from > 0 && isLowSurrogate(text.charCodeAt(from))) from--
+  if (to < text.length && to > 0 && isHighSurrogate(text.charCodeAt(to - 1))) to--
+  return text.slice(from, to)
+}
+
+/** Overlapping windows covering the whole text, each within the extractor's budget. */
+export function textWindows(text: string, size = MAX_TRANSCRIPT_CHARS, overlap = WINDOW_OVERLAP_CHARS): string[] {
+  const body = text.trim()
+  if (body.length <= size) return [body]
+  const windows: string[] = []
+  let start = 0
+  while (start < body.length && windows.length < MAX_WINDOWS) {
+    windows.push(sliceWhole(body, start, start + size))
+    if (start + size >= body.length) break
+    start += size - overlap
+  }
+  return windows
+}
+
+/** One subject list from every window's: deduped by spelling, first spelling kept, places by name and kind. */
+export function unionSubjects(outcomes: ExtractedSubjects[]): ExtractedSubjects {
+  const dedupe = (lists: string[][]) => {
+    const seen = new Set<string>()
+    const out: string[] = []
+    for (const value of lists.flat()) {
+      const key = value.trim().toLowerCase().replace(/\s+/g, ' ')
+      if (!key || seen.has(key)) continue
+      seen.add(key)
+      out.push(value.trim())
+    }
+    return out.slice(0, MAX_UNION_PER_KIND)
+  }
+  const places: ExtractedSubjects['places'] = []
+  const seenPlaces = new Set<string>()
+  for (const place of outcomes.flatMap((o) => o.places)) {
+    const key = `${place.name.trim().toLowerCase()}|${place.kind ?? ''}`
+    if (seenPlaces.has(key)) continue
+    seenPlaces.add(key)
+    places.push(place)
+  }
+  return {
+    people: dedupe(outcomes.map((o) => o.people)),
+    orgs: dedupe(outcomes.map((o) => o.orgs)),
+    projects: dedupe(outcomes.map((o) => o.projects)),
+    places: places.slice(0, MAX_UNION_PER_KIND),
+  }
+}
+
+/**
+ * What the selector reads when the text outruns its budget: the opening,
+ * then the passages naming each extracted subject — the evidence extraction
+ * saw, not whichever characters came first.
+ */
+export function selectionEvidence(body: string, names: string[], maxChars = MAX_TRANSCRIPT_CHARS): string {
+  const text = body.trim()
+  if (text.length <= maxChars) return text
+  const headChars = Math.floor(maxChars * EVIDENCE_HEAD_SHARE)
+  const parts = [truncate(text, headChars)]
+  const covered: Array<[number, number]> = [[0, headChars]]
+  let used = headChars
+  const lower = text.toLowerCase()
+  for (const name of names) {
+    const needle = name.trim().toLowerCase()
+    if (needle.length < 2) continue
+    let from = 0
+    let found = 0
+    while (found < 2) {
+      const at = lower.indexOf(needle, from)
+      if (at < 0) break
+      from = at + needle.length
+      if (covered.some(([s, e]) => at >= s && at < e)) continue
+      const start = Math.max(0, at - EVIDENCE_EXCERPT_CHARS / 2)
+      const end = Math.min(text.length, at + needle.length + EVIDENCE_EXCERPT_CHARS / 2)
+      const excerpt = sliceWhole(text, start, end)
+      if (used + EVIDENCE_MARK.length + excerpt.length > maxChars) return parts.join(EVIDENCE_MARK)
+      parts.push(excerpt)
+      covered.push([start, end])
+      used += EVIDENCE_MARK.length + excerpt.length
+      found++
+    }
+  }
+  return parts.join(EVIDENCE_MARK)
+}
 
 export type AutoRelInput = {
   /**
@@ -138,13 +243,16 @@ export async function proposeRel(
       .map((r) => ({ summary: r.summary ?? '(no summary)', rel: r.rel }))
 
     const request = { body: input.body, summary: input.summary, kind: opts.kind, to: input.to, from: input.from }
-    const { subjects, error } = await services.extract(request, 'fast')
-    if (error) return { rel: [], unresolvedPlaces: [], error }
-    const places = groundedPlaces(subjects.places, request, [
-      ...subjects.people,
-      ...subjects.orgs,
-      ...subjects.projects,
-    ])
+    // Every window of the text is read. The extractor grounds each window's
+    // places against the window that quoted them, so the union needs no
+    // second grounding pass; one failed window loses its evidence, not the save.
+    const outcomes = await Promise.all(
+      textWindows(input.body).map((body) => services.extract({ ...request, body }, 'fast')),
+    )
+    const failures = outcomes.filter((o) => o.error)
+    if (failures.length === outcomes.length) return { rel: [], unresolvedPlaces: [], error: failures[0]!.error }
+    const subjects = unionSubjects(outcomes.filter((o) => !o.error).map((o) => o.subjects))
+    const places = subjects.places
     const resolved = resolveSubjects({ ...subjects, places }, index, scores, {
       projectStatuses: ['open'],
     })
@@ -198,7 +306,12 @@ export async function proposeRel(
 
     const selection = await services.select(
       {
-        body: input.body,
+        body: selectionEvidence(input.body, [
+          ...subjects.people,
+          ...subjects.orgs,
+          ...subjects.projects,
+          ...places.map((p) => p.quote),
+        ]),
         summary: input.summary,
         kind: opts.kind,
         to: input.to,

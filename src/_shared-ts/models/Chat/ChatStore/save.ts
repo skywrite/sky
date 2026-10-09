@@ -126,6 +126,15 @@ export const corpusEnricher: SaveEnricher = {
  */
 const MEMORY_TRANSCRIPT_CHARS = 48_000
 
+/** The time refs of the documents a session created, in rel's extensionless form. */
+function createdRefs(paths: readonly string[] | undefined, baseDir: string): string[] | undefined {
+  const refs = (paths ?? [])
+    .map((p) => documentTimeRef(p, baseDir))
+    .filter((ref): ref is string => Boolean(ref))
+    .map((ref) => ref.replace(/\.md$/, ''))
+  return refs.length ? [...new Set(refs)] : undefined
+}
+
 // -----------------------------------------------------------------------------
 // Filenames
 // -----------------------------------------------------------------------------
@@ -219,6 +228,12 @@ export interface SaveChatInput {
   attachments?: readonly Attachment[]
   /** Durable approval keys the session holds (already seeded from any resume) */
   approvals?: readonly string[]
+  /**
+   * Notebook documents this session's tools created — the chat's own
+   * products. They join rel as facts, without a model's say; a chat that
+   * wrote a note is about that note.
+   */
+  createdPaths?: readonly string[]
   /** Choose tags from the archived-chat corpus when the chat has none */
   autoTag?: boolean
   /** Suggest entities when rel is empty, and add explicitly referenced notebook records on every save */
@@ -323,6 +338,10 @@ export async function saveChat(input: SaveChatInput): Promise<SaveChatReport> {
 
   const transcript = buildChatTranscript(turns)
   const subject: EnrichSubject = { from: userSpeakerLabel(), summary: priorSummary ?? firstWords, body: transcript }
+  // Rel reads the whole conversation. The classifier's packed transcript
+  // clips an assistant turn to 1,200 characters; an organization named nine
+  // times in one 8k reply never reached the chooser that way (2026-10-06).
+  const relSubject: EnrichSubject = { ...subject, body: buildPersonTranscript(turns) }
   const wantMemory = Boolean(input.memoryDir && enricher.distillMemories)
   const wantPeople = Boolean(input.people && enricher.distillPersonFacts)
   const memoryTranscript = wantMemory ? buildChatTranscript(turns, { maxChars: MEMORY_TRANSCRIPT_CHARS }) : ''
@@ -331,7 +350,7 @@ export async function saveChat(input: SaveChatInput): Promise<SaveChatReport> {
     priorSummary ? Promise.resolve(undefined) : enricher.summarize(transcript),
     wantTags ? enricher.chooseTags(subject) : Promise.resolve(undefined),
     wantRel
-      ? enricher.chooseRel(subject)
+      ? enricher.chooseRel(relSubject)
       : wantPlaces
         ? enricher.choosePlaceRel!({
             ...subject,
@@ -375,6 +394,7 @@ export async function saveChat(input: SaveChatInput): Promise<SaveChatReport> {
       : Promise.resolve(undefined),
   ])
   const summary = priorSummary ?? autoSummary ?? firstWords
+  const relDay = (resume && documentTimeRef(resume.filePath, baseDir)?.slice(0, 10)) || day.ymd
 
   let savePath: string
   if (resume) {
@@ -398,10 +418,15 @@ export async function saveChat(input: SaveChatInput): Promise<SaveChatReport> {
     // resumed, or auto) — a session that touched a Google file always
     // records it, deduped against entries already carrying the URL.
     rel: mergeDocumentRel(
-      mergeRel(mergeRel(priorRel, autoRel), artifactRelEntries(input.externalFiles ?? new Map(), priorRel)),
-      documentRel,
+      mergeDocumentRel(
+        mergeRel(mergeRel(priorRel, autoRel), artifactRelEntries(input.externalFiles ?? new Map(), priorRel)),
+        documentRel,
+        baseDir,
+        relDay,
+      ),
+      createdRefs(input.createdPaths, baseDir),
       baseDir,
-      (resume && documentTimeRef(resume.filePath, baseDir)?.slice(0, 10)) || day.ymd,
+      relDay,
     ),
     tags: priorTags ?? autoTags?.split('; '),
     // Files read into the session join whatever the resumed file already

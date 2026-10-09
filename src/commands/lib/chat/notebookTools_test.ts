@@ -10,7 +10,7 @@
 import { APICallError, RetryError, toolModelMessageSchema } from 'ai'
 import { CommandResult, type CommandService } from '#commands/mod.ts'
 import { assert, test } from '#test'
-import { extractExternalFiles, runToolCommand } from './notebookTools.ts'
+import { createdDocumentPaths, extractExternalFiles, runToolCommand } from './notebookTools.ts'
 
 /**
  * Stand-in for a rich SDK error (APICallError): a class instance whose
@@ -513,5 +513,36 @@ test('runToolCommand - a host signal scopes the command run', async () => {
     should: 'run the first on a scope forked with that signal and the second on the plain scope',
     actual: seen,
     expected: ['withSignal(host)', 'scoped.run', 'run'],
+  })
+})
+
+test('createdDocumentPaths keeps only markdown a writing tool created under the notebook time tree', () => {
+  const notebook = '/nb'
+  const created = createdDocumentPaths(
+    {
+      success: true,
+      path: '/nb/time/2026/W05/01-27/actions/notes/09-45_Launch-memo.md',
+      paths: [
+        'time/2026/W05/01-27/actions/events/10-00_Standup.md',
+        '/nb/time/2026/W05/01-27/actions/notes/09-45_Launch-memo.md',
+      ],
+      created: [
+        '/nb/people/j/jane-doe.md',
+        '/elsewhere/time/2026/W05/01-27/x.md',
+        '/nb/time/2026/W05/01-27/attachments/memo.pdf',
+      ],
+      file: '/nb/time/2026/W05/01-27/actions/notes/ignored-key.md',
+    },
+    notebook,
+  )
+  assert({
+    given:
+      'a result naming documents by path, paths and created, with duplicates, a profile, an outsider and an attachment',
+    should: 'return the time-tree markdown once each, resolved against the notebook, and nothing else',
+    actual: created,
+    expected: [
+      '/nb/time/2026/W05/01-27/actions/notes/09-45_Launch-memo.md',
+      '/nb/time/2026/W05/01-27/actions/events/10-00_Standup.md',
+    ],
   })
 })

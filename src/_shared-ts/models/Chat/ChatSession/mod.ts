@@ -140,6 +140,8 @@ export interface ToolHooks {
   onExternalFiles: (files: ExternalFileRef[]) => void
   /** A tool copied files into the day's attachments — the session records them for the transcript's attachments. */
   onAttachments: (files: Attachment[]) => void
+  /** A tool created notebook documents — the chat's own products, recorded for the transcript's rel. */
+  onCreatedDocuments: (paths: string[]) => void
   /** Renderable results are appended to the reply even when the model omits their links. */
   onImages: (images: ChatImage[]) => void
 }
@@ -273,6 +275,8 @@ export default class ChatSession {
   // Files the session's tools copied into the day's attachments, by
   // filename — saved as the transcript's attachments: entries.
   private readonly attachments = new Map<string, Attachment>()
+  // Notebook documents the session's tools created — saved into rel as the chat's own products.
+  private readonly createdDocuments = new Set<string>()
   private systemPrompt = ''
   private contextPrompt = ''
   /** Documents admitted between turns (a pin, a wider budget), delivered with the next message. */
@@ -843,6 +847,9 @@ export default class ChatSession {
             onAttachments: (files) => {
               for (const file of files) this.attachments.set(file.file, file)
             },
+            onCreatedDocuments: (paths) => {
+              for (const p of paths) this.createdDocuments.add(p)
+            },
             onImages: (images) => replyImages.push(...images),
           })
       if (!this.toolsAnnounced) {
@@ -983,6 +990,7 @@ export default class ChatSession {
       endTime: await this.now(),
       externalFiles: this.externalFiles,
       attachments: [...this.attachments.values()],
+      createdPaths: [...this.createdDocuments],
       approvals: this.opts.approvals?.(),
       autoTag: opts.autoTag,
       autoRel: opts.autoRel,

@@ -9,6 +9,7 @@ import { detectTypeFromPath } from '#shared/models/Markdown/Collection/entityTyp
 import Document from '#shared/models/Markdown/Document/mod.ts'
 import { resolveTimeRef, toTimeRef } from '#shared/nbfs/mod.ts'
 import truncate from '#shared/strings/truncate.ts'
+import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 
 /** The conversation is the evidence; context paths are only lookup hints. */
 export interface DocumentRelInput {
@@ -96,6 +97,144 @@ function textSlice(text: string, start: number, length: number): string {
   const first = text.charCodeAt(start)
   if (start > 0 && first >= 0xdc00 && first <= 0xdfff) start--
   return truncate(text.slice(start), length, '')
+}
+
+/**
+ * References the text states outright, found without a model: "today's memo",
+ * "this evening's Loom", "Jane's deck from yesterday". The model's extractor
+ * noticed these in one run of three (2026-10-06); a phrase this explicit is
+ * read deterministically, and the matcher still decides what, if anything, it
+ * refers to. Terms stay to the owner's name — the noun narrows by type, and
+ * a common noun as a search term would cap the search and abstain.
+ */
+const REFERENCE_NOUNS: Record<string, NonNullable<DocumentMention['type']>> = {
+  loom: 'video',
+  video: 'video',
+  recording: 'video',
+  memo: 'document',
+  note: 'document',
+  pdf: 'document',
+  doc: 'document',
+  document: 'document',
+  deck: 'document',
+  whitepaper: 'document',
+  onepager: 'document',
+  meeting: 'meeting',
+  call: 'meeting',
+  standup: 'meeting',
+  sync: 'meeting',
+  message: 'message',
+  email: 'message',
+  thread: 'message',
+  chat: 'chat',
+  conversation: 'chat',
+  recap: 'recap',
+  journal: 'journal',
+}
+// Case-insensitive by construction: the `i` flag would also fold \p{Lu}, and
+// the owner's name must start with a real capital.
+const anyCase = (word: string) => word.replace(/[a-z]/g, (c) => `[${c.toUpperCase()}${c}]`)
+const NOUN_PATTERN = `(?:${[
+  'loom',
+  'video',
+  'recording',
+  'memo',
+  'note',
+  'pdf',
+  'doc',
+  'document',
+  'deck',
+  'whitepaper',
+  'one-?pager',
+  'meeting',
+  'call',
+  'standup',
+  'sync',
+  'message',
+  'email',
+  'thread',
+  'chat',
+  'conversation',
+  'recap',
+  'journal',
+]
+  .map(anyCase)
+  .join('|')})`
+const RELATIVE_DAY_PATTERN = `(?:${['today', 'this (?:morning|afternoon|evening)', 'tonight', 'yesterday', 'last night']
+  .map(anyCase)
+  .join('|')})`
+const NAME_PATTERN = "[\\p{Lu}][\\p{L}\\p{N}’'-]*"
+const DAY_PHRASE = new RegExp(
+  `\\b(${RELATIVE_DAY_PATTERN})(?:['’]s)?\\s+((?:(?:${NAME_PATTERN}|new|latest)\\s+){0,3}${NOUN_PATTERN})\\b`,
+  'gu',
+)
+const OWNER_PHRASE = new RegExp(
+  `\\b(${NAME_PATTERN})['’]s\\s+(?:(?:new|latest|recent)\\s+)?(${NOUN_PATTERN})\\b(?:\\s+(?:from|of)\\s+(${RELATIVE_DAY_PATTERN}))?`,
+  'gu',
+)
+const OWNER_BEFORE = new RegExp(`(${NAME_PATTERN})['’]s\\s*$`, 'u')
+const OWNER_STOP = new Set([
+  'today',
+  'yesterday',
+  'tonight',
+  'this',
+  'that',
+  'it',
+  'everyone',
+  'someone',
+  'anyone',
+  'one',
+  'here',
+  'there',
+  'what',
+  'who',
+  'let',
+])
+
+function nounType(noun: string): NonNullable<DocumentMention['type']> | null {
+  return REFERENCE_NOUNS[noun.toLowerCase().replace(/[^a-z]/g, '')] ?? null
+}
+
+function dayOf(turn: ConversationMessage, today: string, relative: string): string {
+  const stamp = turn.when && /^\d{4}-\d{2}-\d{2}/.test(turn.when) ? turn.when.slice(0, 10) : today
+  const back = /yesterday|last night/i.test(relative) ? 1 : 0
+  return back ? new PlainDate(stamp).addDays(-back).toString() : stamp
+}
+
+export function scanReferenceMentions(turns: ConversationMessage[], today: string): DocumentMention[] {
+  const mentions: DocumentMention[] = []
+  const seen = new Set<string>()
+  const push = (mention: DocumentMention) => {
+    const key = `${mention.message}:${mention.quote}`
+    if (seen.has(key)) return
+    seen.add(key)
+    mentions.push(mention)
+  }
+  for (const [message, turn] of turns.entries()) {
+    const content = turn.content.replace(/<!--[\s\S]*?-->/g, '')
+    for (const match of content.matchAll(DAY_PHRASE)) {
+      const phrase = match[2]!
+      const words = phrase.split(/\s+/)
+      const type = nounType(words.at(-1)!)
+      if (!type) continue
+      const owner = OWNER_BEFORE.exec(content.slice(Math.max(0, match.index - 60), match.index))?.[1]
+      const terms = [
+        ...(owner && !OWNER_STOP.has(owner.toLowerCase()) ? [owner] : []),
+        ...words.slice(0, -1).filter((w) => /^\p{Lu}/u.test(w)),
+      ]
+      const day = dayOf(turn, today, match[1]!)
+      push({ message, quote: match[0], type, terms, path: null, dateGte: day, dateLte: day })
+    }
+    for (const match of content.matchAll(OWNER_PHRASE)) {
+      const owner = match[1]!
+      if (OWNER_STOP.has(owner.toLowerCase())) continue
+      const type = nounType(match[2]!)
+      if (!type) continue
+      const day = match[3] ? dayOf(turn, today, match[3]) : null
+      push({ message, quote: match[0], type, terms: [owner], path: null, dateGte: day, dateLte: day })
+    }
+  }
+  return mentions
 }
 
 /** Every part of every message reaches extraction, including the middle of long replies. */
@@ -202,6 +341,9 @@ export async function resolveDocumentRel(
       // turn a general topic into an invented reference to a background file.
       mentions.push(...(await services.extract(window, input.today)))
     }
+    // Phrases that state a reference outright are read without the model;
+    // the matcher below still decides what they refer to.
+    mentions.push(...scanReferenceMentions(input.turns, input.today))
     const excluded = new Set((input.excludePaths ?? []).map((p) => documentTimeRef(p, input.baseDir)))
     const refs = new Set<string>()
     const seen = new Set<string>()
@@ -230,6 +372,18 @@ export async function resolveDocumentRel(
           if (mention.dateGte && /^\d{4}-\d{2}-\d{2}$/.test(mention.dateGte)) where.dateGte = mention.dateGte
           if (mention.dateLte && /^\d{4}-\d{2}-\d{2}$/.test(mention.dateLte)) where.dateLte = mention.dateLte
           if (terms.length === 0 && !where.dateGte && !where.dateLte) continue
+          // A dated reference ("today's memo") can mean a document the chat
+          // already had in context that day: those are candidates by date,
+          // not only by a term in their filename.
+          if (where.dateGte && where.dateLte) {
+            for (const known of input.contextPaths) {
+              const ref = documentTimeRef(known, input.baseDir)
+              const day = ref?.slice(0, 10)
+              if (!ref || !day || day < where.dateGte || day > where.dateLte) continue
+              if (mention.type && detectTypeFromPath(known) !== mention.type) continue
+              candidates.add(ref)
+            }
+          }
           for (const known of input.contextPaths) {
             if (mention.type && detectTypeFromPath(known) !== mention.type) continue
             const name = known.toLowerCase().replace(/[-_]/g, ' ')
@@ -297,8 +451,10 @@ async function query<T>(query: string, variables: Record<string, unknown>): Prom
 export const documentRelServices: DocumentRelServices = {
   reportError: (message) => logAIError({ source: 'ai:chat', stage: 'rel:documents', message }),
   async extract(transcript, today) {
+    // Reading references is judgment, not lookup: the fast role found the
+    // same two explicit references in one run of three (2026-10-06).
     const { output } = await generateText({
-      ...aiModel('fast'),
+      ...aiModel('balanced'),
       abortSignal: AbortSignal.timeout(60_000),
       output: Output.object({ schema: z.object({ mentions: z.array(mentionSchema) }) }),
       instructions: [
