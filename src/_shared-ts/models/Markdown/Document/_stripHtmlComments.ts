@@ -72,7 +72,11 @@ export function unclosedFence(markdown: string): MarkdownFence | null {
   return inFence
 }
 
-function stripHtmlCommentsFromLine(line: string, startsInComment: boolean): { text: string; inComment: boolean } {
+/** One line's text outside HTML comments, and whether a comment is still open after it. */
+export function stripHtmlCommentsFromLine(
+  line: string,
+  startsInComment: boolean,
+): { text: string; inComment: boolean } {
   let text = ''
   let inComment = startsInComment
   let cursor = 0
@@ -103,7 +107,8 @@ function stripHtmlCommentsFromLine(line: string, startsInComment: boolean): { te
   return { text, inComment }
 }
 
-function fenceForLine(line: string): MarkdownFence | null {
+/** The code fence a line opens, or null. */
+export function fenceForLine(line: string): MarkdownFence | null {
   const trimmed = line.trimStart()
   const marker = trimmed[0]
   if (marker !== '`' && marker !== '~') return null
@@ -120,7 +125,8 @@ function fenceForLine(line: string): MarkdownFence | null {
   return { marker, length }
 }
 
-function isClosingFence(line: string, fence: MarkdownFence): boolean {
+/** Whether a line closes the given fence. */
+export function isClosingFence(line: string, fence: MarkdownFence): boolean {
   const trimmed = line.trim()
   if (trimmed.length < fence.length) return false
 

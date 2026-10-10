@@ -70,11 +70,13 @@ tags: Work
 
 # Planning the Widget Launch
 
-## Sam
+## Conversation
+
+### **Sam**
 
 How should we plan the widget launch?
 
-## AI Assistant
+### **Sky**
 
 Start with a small beta group.`),
       path: '/test/time/2026/W06/02-03/actions/ai-chats/09-15_Planning-the-Widget-Launch.md',

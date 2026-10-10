@@ -40,7 +40,7 @@ test(
         now: new ZonedDateTime('2026-01-27T10:00:00', 'America/Chicago'),
         files: {
           [CHAT]:
-            '---\ncreated: 2026-01-27\nsummary: Atlas planning\n---\n\n# Atlas planning\n\n## User\n\nConfirm the launch owner.\n\n## Sky\n\nReview the sign-off with Jane.\n',
+            '---\ncreated: 2026-01-27\nsummary: Atlas planning\n---\n\n# Atlas planning\n\n## Conversation\n\n### **User**\n\nConfirm the launch owner.\n\n### **Sky**\n\nReview the sign-off with Jane.\n',
         },
         chat: (base) => ({
           timeDir: path.join(base, 'time'),

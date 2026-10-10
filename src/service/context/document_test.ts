@@ -6,7 +6,7 @@ import { assert, test } from '#test'
 import { parseDocumentPageRequests, readDocumentPages } from './document.ts'
 
 const CHAT_BODY =
-  '---\ncreated: 2026-10-01\nsummary: Atlas sync\n---\n\n## 2026-10-01 09:00 - **Jane Doe**\n\nWhere does the Atlas rollout stand?\n\n## 2026-10-01 09:01 - **Sky**\n\nThe checklist has two open steps.\n'
+  '---\ncreated: 2026-10-01\nsummary: Atlas sync\n---\n\n# Atlas sync\n\n## Conversation\n\n### 2026-10-01 09:00 - **Jane Doe**\n\nWhere does the Atlas rollout stand?\n\n### 2026-10-01 09:01 - **Sky**\n\nThe checklist has two open steps.\n'
 const CHAT_LOG = `\n<!-- CONTEXT-LOG\n${JSON.stringify({ version: 2, turns: [{ turn: 1, universe: Array.from({ length: 120 }, (_, i) => ({ path: `time/2026/W40/10-01/actions/messages/m${i}.md`, score: 12.5, tokens: 900, lex: 4 })) }] })}\n-->\n`
 
 test('a chat is served without its context log, with offsets in the served text', async () => {

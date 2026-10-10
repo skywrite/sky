@@ -2,18 +2,26 @@ import { FILE_ABOUT_ME } from '#shared/config.ts'
 import { readTextFileSync } from '#shared/fs/mod.ts'
 import AboutMeDocument from '#shared/models/AboutMe/document/mod.ts'
 import { type Attachment, attachmentsToYaml } from '#shared/models/Markdown/Document/attachment.ts'
-import SectionDocument, { type Section } from '#shared/models/Markdown/SectionDocument/mod.ts'
-import expand from '#shared/strings/expand.ts'
+import SectionDocument from '#shared/models/Markdown/SectionDocument/mod.ts'
 import type { ConversationMessage } from '../type.d.ts'
 import { type ContextTurnLog, splitContextLog } from './ContextLog/mod.ts'
+import {
+  CONVERSATION_HEADING,
+  isConversationHeading,
+  legacySpeakerOf,
+  markdownLines,
+  type SpeakerHeading,
+  speakerHeading,
+  speakerOf,
+} from './shape.ts'
 
 /**
- * A turn extracted from a chat document.
+ * A message extracted from a chat document.
  */
 export interface ChatTurn {
-  /** Speaker name from H2 heading (e.g. "Jane" or "Sky") */
+  /** The speaker heading's text (e.g. "2026-02-08 14:32 - **Jane**" or "Sky") */
   speaker: string
-  /** Full content of the turn, including any child sections rendered as markdown */
+  /** The message as written, its own headings included */
   content: string
 }
 
@@ -33,24 +41,7 @@ export interface ChatParent {
   key?: string
 }
 
-/**
- * The assistant's speaker label — Sky, the same name as the product. Every
- * assistant heading written today carries it.
- */
-const ASSISTANT_LABEL = 'Sky'
-
-/**
- * Labels the assistant wrote under before it was Sky. Transcripts already
- * in the notebook keep them, so they still parse as assistant turns — but
- * they are never written again: a resumed transcript is rebuilt from its
- * conversation on save, and its old headings come back as Sky.
- */
-const LEGACY_ASSISTANT_LABELS = ['AI Assistant']
-
-const ASSISTANT_LABELS = new Set([ASSISTANT_LABEL, ...LEGACY_ASSISTANT_LABELS])
-
 let cachedUserLabel: string | undefined
-let cachedPattern: RegExp | undefined
 
 /**
  * The user's speaker label: their first name from journal/about-me.md.
@@ -74,64 +65,76 @@ export function userSpeakerLabel(): string {
 /** Test-only override — production code always derives the label from the profile. */
 export function setUserSpeakerLabel(label: string): void {
   cachedUserLabel = label
-  cachedPattern = undefined
 }
 
-function escapeRegExp(text: string): string {
-  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+interface ParsedTranscript {
+  /** The `## Conversation` section was found */
+  found: boolean
+  /** Text between the section heading and its first message */
+  leading: string
+  messages: Array<{ heading: string; speaker: SpeakerHeading; content: string }>
 }
 
-const STAMP = String.raw`\d{4}-\d{2}-\d{2} \d{1,3}:\d{2}`
+/**
+ * Read the conversation out of a transcript body: everything after the
+ * `## Conversation` heading, split at H3 speaker headings outside code and
+ * comments. Every other line belongs to the message it sits in, whatever
+ * its heading level, exactly as written.
+ */
+function readTranscript(body: string, userLabel: string): ParsedTranscript {
+  const lines = markdownLines(body)
+  const at = lines.findIndex((line) => line.structural && isConversationHeading(line.text))
+  if (at === -1) return { found: false, leading: '', messages: [] }
 
-// A speaker heading in the notebook's message-file shape:
-// `## 2026-02-08 14:32 - **Jane**` — leading stamp for scan symmetry, bold
-// on the speaker (same convention slack/email captures use). The stamp is
-// notebook time — extended hours (25:30 and beyond) keep multi-digit hour
-// values, never clamped. Legacy transcripts stamped after a plain name
-// (`## Jane (2026-02-08 14:32)`) or not at all (`## Jane`) — all three
-// forms parse; writes emit only the message-file form. Anything else is
-// not a speaker heading and folds back like any assistant-emitted H2.
-function speakerPattern(): RegExp {
-  if (!cachedPattern) {
-    const names = [userSpeakerLabel(), ...ASSISTANT_LABELS].map(escapeRegExp).join('|')
-    cachedPattern = new RegExp(`^(?:(${STAMP}) - \\*\\*(${names})\\*\\*|(${names})(?: \\((${STAMP})\\))?)$`)
+  const messages: ParsedTranscript['messages'] = []
+  let leading = ''
+  let open: { heading: string; speaker: SpeakerHeading } | null = null
+  let from = lines[at]!.end
+  const close = (to: number) => {
+    const content = body.slice(from, to).trim()
+    if (open) messages.push({ heading: open.heading, speaker: open.speaker, content })
+    else leading = content
   }
-  return cachedPattern
-}
-
-function parseSpeaker(heading: string): { role: 'user' | 'assistant'; when?: string } | null {
-  const match = heading.match(speakerPattern())
-  if (!match) return null
-  const name = match[2] ?? match[3]
-  return { role: ASSISTANT_LABELS.has(name) ? 'assistant' : 'user', when: match[1] ?? match[4] }
+  for (const line of lines.slice(at + 1)) {
+    const speaker = line.structural ? speakerOf(line.text, userLabel) : null
+    if (!speaker) continue
+    close(line.start)
+    open = { heading: line.text.replace(/^ {0,3}### /, '').trim(), speaker }
+    from = line.end
+  }
+  close(body.length)
+  return { found: true, leading, messages }
 }
 
 /**
  * ChatDocument - parses AI chat transcript files.
  *
- * Format:
+ * Format (see shape.ts):
  * ```
  * ---
  * created: 2026-02-08
  * summary: Topic Summary
- * turns: 4
+ * turns: 2
  * ---
  *
  * # Topic Summary
  *
- * ## 2026-02-08 14:32 - **Jane**
+ * ## Conversation
+ *
+ * ### 2026-02-08 14:32 - **Jane**
+ *
  * User message.
  *
- * ## 2026-02-08 14:33 - **Sky**
+ * ### 2026-02-08 14:33 - **Sky**
+ *
  * AI response.
  * ```
  *
  * The user's heading label comes from their profile (see userSpeakerLabel);
- * the assistant's is Sky, with `AI Assistant` still read from older
- * transcripts (see LEGACY_ASSISTANT_LABELS). The stamp is optional —
- * transcripts from before turn stamps have bare `## Jane` / `## Sky`
- * headings, and early stamped ones carry a trailing `(2026-02-08 14:32)`
- * on a plain name instead.
+ * the assistant's is Sky. A message saved without a stamp has the bold
+ * name alone, `### **Jane**`. A file still in the earlier shape —
+ * speaker headings at H2, no Conversation section — reads as no
+ * conversation and reports `legacyShape`; `ai:chat:migrate` converts it.
  *
  * The header names no model: a chat may switch models between turns, and
  * each turn's context-log entry records the `settings` it ran under.
@@ -181,10 +184,23 @@ export default class ChatDocument extends SectionDocument {
     return Array.isArray(raw) ? raw.filter((v): v is string => typeof v === 'string') : []
   }
 
-  /** Conversation turns extracted from H2 sections */
+  /** The messages under `## Conversation`, one per speaker heading, unmerged */
   get turns(): ChatTurn[] {
-    if (!this.root) return []
-    return this.root.children.filter((s) => s.level === 2).map(sectionToTurn)
+    const { body } = splitContextLog(this.markdown)
+    return readTranscript(body, userSpeakerLabel()).messages.map((m) => ({ speaker: m.heading, content: m.content }))
+  }
+
+  /**
+   * The file is still in the shape before `## Conversation`: speaker
+   * headings at H2. Such a file reads as no conversation; a resume must
+   * refuse it rather than save over it.
+   */
+  get legacyShape(): boolean {
+    const { body } = splitContextLog(this.markdown)
+    const lines = markdownLines(body).filter((line) => line.structural)
+    if (lines.some((line) => isConversationHeading(line.text))) return false
+    const userLabel = userSpeakerLabel()
+    return lines.some((line) => legacySpeakerOf(line.text, userLabel) !== null)
   }
 
   /** Per-turn context pipeline log parsed from the trailing CONTEXT-LOG comment */
@@ -194,36 +210,23 @@ export default class ChatDocument extends SectionDocument {
 
   /**
    * The conversation as role-tagged messages, ready to seed a live session:
-   * the trailing context log stripped, H2 headings the assistant emitted inside
-   * a reply (split off as bogus speakers by the section parser) folded back
-   * into the preceding message, and consecutive same-role messages merged so
-   * the result alternates.
+   * the trailing context log stripped, and consecutive same-role messages
+   * merged so the result alternates. Text the section holds before its first
+   * speaker heading, which only a hand edit puts there, opens as the user's.
    */
   get conversation(): ConversationMessage[] {
     const { body } = splitContextLog(this.markdown)
-    const turns = new ChatDocument(this.yaml, body).turns
+    const transcript = readTranscript(body, userSpeakerLabel())
     const messages: ConversationMessage[] = []
+    if (transcript.leading) messages.push({ role: 'user', content: transcript.leading })
 
-    for (const turn of turns) {
-      const speaker = parseSpeaker(turn.speaker)
+    for (const { speaker, content } of transcript.messages) {
       const last = messages.at(-1)
-
-      if (!speaker) {
-        const heading = `## ${turn.speaker}`
-        const restored = turn.content ? `${heading}\n\n${turn.content}` : heading
-        if (last) {
-          last.content += `\n\n${restored}`
-        } else {
-          messages.push({ role: 'user', content: restored })
-        }
-        continue
-      }
-
       if (last && last.role === speaker.role) {
         // Merged turns keep the first stamp — the merge means one exchange.
-        last.content += `\n\n${turn.content}`
+        last.content += `\n\n${content}`
       } else {
-        const message: ConversationMessage = { role: speaker.role, content: turn.content }
+        const message: ConversationMessage = { role: speaker.role, content }
         if (speaker.when) message.when = speaker.when
         messages.push(message)
       }
@@ -270,25 +273,18 @@ export default class ChatDocument extends SectionDocument {
   }
 
   private static buildMarkdown(input: { summary: string; messages: ConversationMessage[] }): string {
-    const lines: string[] = [`# ${input.summary}`, '']
+    const lines: string[] = [`# ${input.summary}`, '', `## ${CONVERSATION_HEADING}`, '']
+    const userLabel = userSpeakerLabel()
 
     for (let i = 0; i < input.messages.length; i++) {
       const msg = input.messages[i]
-      if (msg.role === 'user') {
-        const user = userSpeakerLabel()
-        lines.push(msg.when ? `## ${msg.when} - **${user}**` : `## ${user}`)
+      lines.push(speakerHeading(msg.role, msg.when, userLabel))
+      lines.push('')
+      lines.push(msg.content)
+      lines.push('')
+      // Extra blank line after assistant response (before next question)
+      if (msg.role === 'assistant' && i < input.messages.length - 1) {
         lines.push('')
-        lines.push(msg.content)
-        lines.push('')
-      } else {
-        lines.push(msg.when ? `## ${msg.when} - **${ASSISTANT_LABEL}**` : `## ${ASSISTANT_LABEL}`)
-        lines.push('')
-        lines.push(msg.content)
-        lines.push('')
-        // Extra blank line after assistant response (before next question)
-        if (i < input.messages.length - 1) {
-          lines.push('')
-        }
       }
     }
 
@@ -300,47 +296,4 @@ export default class ChatDocument extends SectionDocument {
 export function firstWordsSummary(messages: ConversationMessage[]): string {
   const first = messages.find((m) => m.role === 'user')?.content ?? ''
   return first.trim().split(/\s+/).slice(0, 10).join(' ')
-}
-
-/**
- * Convert a Section to a ChatTurn, including child sections rendered back to markdown.
- */
-function sectionToTurn(section: Section): ChatTurn {
-  const parts: string[] = []
-
-  if (section.content) {
-    parts.push(section.content)
-  }
-
-  if (section.children.length > 0) {
-    if (section.content) parts.push('')
-    parts.push(renderChildSections(section.children))
-  }
-
-  return {
-    speaker: section.heading,
-    content: parts.join('\n').trim(),
-  }
-}
-
-/**
- * Render child sections back to markdown with proper heading levels.
- */
-function renderChildSections(sections: Section[]): string {
-  const lines: string[] = []
-
-  for (const section of sections) {
-    const prefix = expand('#', section.level)
-    lines.push(`${prefix} ${section.heading}`)
-    lines.push('')
-    if (section.content) {
-      lines.push(section.content)
-      lines.push('')
-    }
-    if (section.children.length > 0) {
-      lines.push(renderChildSections(section.children))
-    }
-  }
-
-  return lines.join('\n').trimEnd()
 }

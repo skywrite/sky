@@ -12,20 +12,22 @@ tags: Atlas/Launch
 
 # Atlas Launch Planning
 
-## 2026-01-26 09:30 - **Jane**
+## Conversation
+
+### 2026-01-26 09:30 - **Jane**
 
 What should I focus on for the Atlas launch this week?
 
-## 2026-01-26 09:31 - **AI Assistant**
+### 2026-01-26 09:31 - **Sky**
 
 The demo script and the pricing page copy.
 
 
-## 2026-01-27 08:12 - **Jane**
+### 2026-01-27 08:12 - **Jane**
 
 Draft the announcement outline.
 
-## 2026-01-27 08:13 - **AI Assistant**
+### 2026-01-27 08:13 - **Sky**
 
 Intro, demo, pricing, call to action.
 

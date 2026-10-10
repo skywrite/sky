@@ -1,10 +1,12 @@
 # Who is Jane Doe
 
-## Jane
+## Conversation
+
+### **Jane**
 
 who is Jane Doe, and where does the Atlas roadmap stand?
 
-## AI Assistant
+### **Sky**
 
 Jane Doe works with you on Atlas; the roadmap targets a Q1 rollout and Q2 expansion.
 

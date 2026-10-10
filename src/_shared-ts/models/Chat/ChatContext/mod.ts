@@ -243,10 +243,12 @@ async function mergePathsIntoCollection(
   for (const filePath of paths) {
     try {
       const content = await readTextFile(filePath)
-      const doc = Document.fromMarkdown(content)
-        .stripHtmlComments()
-        .filterSections((h) => !h.text.toLowerCase().includes('transcript'))
-      docs.push({ doc, path: filePath })
+      const doc = Document.fromMarkdown(content).stripHtmlComments()
+      // A saved chat keeps its replies' headings as message text (see fetchContext.ts).
+      docs.push({
+        doc: isAIChatPath(filePath) ? doc : doc.filterSections((h) => !h.text.toLowerCase().includes('transcript')),
+        path: filePath,
+      })
     } catch (err) {
       // Skip unreadable files
       console.warn(`[ai:chat] skipping context file ${filePath}: ${(err as Error).message}`)

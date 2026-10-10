@@ -127,6 +127,13 @@ export async function loadResumeSession(filePath: string, options: LoadResumeOpt
 async function loadLineage(filePath: string, options: LoadResumeOptions, seen: Set<string>): Promise<ResumeSession> {
   seen.add(filePath)
   const doc = ChatDocument.fromMarkdown(await readTextFile(filePath))
+  // An earlier-shape file reads as no conversation; continuing it would save
+  // the new turns over the old ones. Refuse, and say how to convert it.
+  if (doc.legacyShape) {
+    throw new Error(
+      `"${doc.summary || path.basename(filePath)}" was saved in the earlier chat format, which this version no longer reads, so it was not opened and nothing changed. Run \`sky ai:chat:migrate --execute\` to convert saved chats, then open it again.`,
+    )
+  }
   const created = doc.yaml['created']
   const own = reconstructResumeState(doc)
   // Older snapshots kept provider history in YAML. New ones share the saved

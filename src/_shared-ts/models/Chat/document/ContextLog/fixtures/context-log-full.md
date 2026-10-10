@@ -9,29 +9,31 @@ turns: 3
 
 # Atlas Beta Feedback Review
 
-## Jane
+## Conversation
+
+### **Jane**
 
 What did beta testers say about Atlas onboarding?
 
-## AI Assistant
+### **Sky**
 
 Testers liked the checklist but stalled on the import step.
 
 
-## Jane
+### **Jane**
 
 Which decision is still pending?
 
-## AI Assistant
+### **Sky**
 
 The pricing-tier decision is still open.
 
 
-## Jane
+### **Jane**
 
 Summarize next actions.
 
-## AI Assistant
+### **Sky**
 
 Fix the import step, close the pricing decision, and email the beta group.
 

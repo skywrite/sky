@@ -170,7 +170,7 @@ test("a matched chat's context log never reaches the research agent", async () =
   try {
     const rel = 'time/2026/W40/10-01/actions/ai-chats/2026-10-01_090000_Atlas-sync.md'
     const body =
-      '---\ncreated: 2026-10-01\nsummary: Atlas sync\n---\n\n## 2026-10-01 09:00 - **Jane Doe**\n\nWhere does the Atlas rollout stand?\n\n## 2026-10-01 09:01 - **Sky**\n\nThe checklist has two open steps.\n'
+      '---\ncreated: 2026-10-01\nsummary: Atlas sync\n---\n\n# Atlas sync\n\n## Conversation\n\n### 2026-10-01 09:00 - **Jane Doe**\n\nWhere does the Atlas rollout stand?\n\n### 2026-10-01 09:01 - **Sky**\n\nThe checklist has two open steps.\n'
     const log = `\n<!-- CONTEXT-LOG\n${JSON.stringify({ version: 2, turns: [{ turn: 1, universe: Array.from({ length: 120 }, (_, i) => ({ path: `time/2026/W40/10-01/actions/messages/m${i}.md`, score: 12.5, tokens: 900 })) }] })}\n-->\n`
     const file = path.join(baseDir, rel)
     await mkdir(path.dirname(file), { recursive: true })

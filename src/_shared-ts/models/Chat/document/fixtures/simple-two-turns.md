@@ -11,10 +11,12 @@ tags: Tech/AI
 
 # Exploring the Future of Payments
 
-## Jane
+## Conversation
+
+### **Jane**
 
 What do you think about the future of payments?
 
-## AI Assistant
+### **Sky**
 
 Payments are evolving rapidly. Stablecoins and AI agents are likely to drive the next wave of innovation.

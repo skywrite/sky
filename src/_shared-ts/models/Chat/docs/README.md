@@ -25,6 +25,33 @@ Agreement-review context and continuation links follow the [legal review design]
 
 Draft continuation links and version ownership follow the [writing voice design](../../../../lib/writingVoice/docs/README.md#editable-drafts-in-chat).
 
+## The transcript file
+
+A saved chat keeps its messages under `## Conversation`, the last section of
+the file: everything after that heading is conversation, and anything a save
+adds beside it, such as a summary, goes above it. Each message is an H3
+speaker heading, `### 2026-02-08 14:32 - **Jane**`, or `### **Jane**` for a
+message saved without a stamp. This is the shape saved Slack conversations
+use. The bold name is what tells a speaker from a reply's own `### Sky`
+section. `document/shape.ts` owns these rules for the reader, the writer and
+the migration.
+
+Message text stays exactly as the person or the model wrote it, headings of
+any level included. Reply-thread keys and the resume history key hash each
+message's role, stamp and text, so demoting a reply's headings would detach
+its threads and drop its tool history. New replies keep a clean outline
+because the chat prompt asks for H4 and below. For the same reason the
+context pipeline skips its transcript-section filter on chats: a reply's
+`## Transcript notes` would otherwise drop every later message.
+
+Nothing reads the earlier shape, where messages were `##` headings under the
+title. Such a file reads as no conversation and reports `legacyShape`, and
+resuming it fails with a pointer to `sky ai:chat:migrate --execute` instead
+of saving new turns over the old ones. The migration rewrites only speaker
+headings and adds the section heading; frontmatter, message text and the
+context log keep every byte. Transcripts the earlier reader cut short, where
+a reply carried a top-level heading of its own, read back whole now.
+
 ## Relationships to records discussed in the chat
 
 Saving with auto-rel enabled also resolves conversational references to dated

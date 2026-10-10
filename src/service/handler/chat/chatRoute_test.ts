@@ -2429,7 +2429,7 @@ test(
         turnsAfter: branchAfter.turns.length,
         branchExchanges: ended.saved.exchanges,
         branchBesideParent: ended.saved.path.startsWith(parentFile.replace(/\.md$/, '/')),
-        branchHoldsOwnOnly: (branchDoc.match(/^## /gm) ?? []).length,
+        branchHoldsOwnOnly: (branchDoc.match(/^### /gm) ?? []).length,
         branchRecordsParent: branchDoc.includes(`chat: ${parent.chat}`) && branchDoc.includes('turn: 1'),
         parentFiled: await exists(parentFile),
         parentStillLive: parentRow.turns.length,

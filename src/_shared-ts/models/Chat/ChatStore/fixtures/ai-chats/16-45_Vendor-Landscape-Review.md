@@ -12,10 +12,12 @@ turns:
 
 # Vendor Landscape Review
 
-## 2026-01-27 16:45 - **Jane**
+## Conversation
+
+### 2026-01-27 16:45 - **Jane**
 
 Which vendors are still in the running?
 
-## 2026-01-27 16:46 - **AI Assistant**
+### 2026-01-27 16:46 - **Sky**
 
 Two of the four shortlisted.

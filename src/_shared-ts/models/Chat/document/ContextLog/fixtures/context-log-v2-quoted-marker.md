@@ -9,11 +9,13 @@ turns: 1
 
 # Explaining The Context Log
 
-## Jane
+## Conversation
+
+### **Jane**
 
 How does the saved log format work?
 
-## AI Assistant
+### **Sky**
 
 Each transcript ends with a comment that opens with
 

@@ -12,11 +12,13 @@ parent:
 
 # Board Prep Instead
 
-## 2026-01-26 10:05 - **Jane**
+## Conversation
+
+### 2026-01-26 10:05 - **Jane**
 
 Let's do the board prep instead. What do I owe them by Thursday?
 
-## 2026-01-26 10:06 - **Sky**
+### 2026-01-26 10:06 - **Sky**
 
 Three things: the one-pager, the hiring update, and the vendor recommendation.
 

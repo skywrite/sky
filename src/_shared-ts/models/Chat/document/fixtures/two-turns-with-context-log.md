@@ -9,20 +9,22 @@ turns: 2
 
 # Atlas Launch Planning
 
-## Jane
+## Conversation
+
+### **Jane**
 
 What should I focus on for the Atlas launch this week?
 
-## AI Assistant
+### **Sky**
 
 Focus on the demo script and the pricing page copy.
 
 
-## Jane
+### **Jane**
 
 Draft the announcement outline.
 
-## AI Assistant
+### **Sky**
 
 Here is an outline: intro, demo, pricing, call to action.
 

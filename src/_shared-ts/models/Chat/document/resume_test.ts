@@ -97,7 +97,7 @@ test('reconstructResumeState - a transcript without a log degrades cleanly', asy
 
 test('reconstructResumeState - duplicate paths in a hand-edited log are deduped', () => {
   // Not writer-canonical (diff records only additions) — defensive only.
-  const body = '# Dedupe Test\n\n## Jane\n\nQuestion.\n\n## AI Assistant\n\nAnswer.\n'
+  const body = '# Dedupe Test\n\n## Conversation\n\n### **Jane**\n\nQuestion.\n\n### **Sky**\n\nAnswer.\n'
   const doc = ChatDocument.fromMarkdown(
     body +
       serializeContextLog([
@@ -204,7 +204,9 @@ test('verifyResumeCandidate - rejects a shrunken context log', async () => {
 })
 
 test('verifyResumeCandidate - allows the trailing-user merge of an interrupted chat', () => {
-  const original = reconstructResumeState(ChatDocument.fromMarkdown('# Interrupted\n\n## Jane\n\nOnly question.'))
+  const original = reconstructResumeState(
+    ChatDocument.fromMarkdown('# Interrupted\n\n## Conversation\n\n### **Jane**\n\nOnly question.'),
+  )
   const merged = buildCandidate(
     [
       { role: 'user', content: 'Only question.\n\nFollow-up thought.' },

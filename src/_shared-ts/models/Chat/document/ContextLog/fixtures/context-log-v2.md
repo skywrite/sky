@@ -9,20 +9,22 @@ turns: 2
 
 # Atlas Launch Checklist
 
-## Jane
+## Conversation
+
+### **Jane**
 
 What is left before the Atlas beta launch?
 
-## AI Assistant
+### **Sky**
 
 The import fix and the pricing decision are still open.
 
 
-## Jane
+### **Jane**
 
 Who owns the import fix?
 
-## AI Assistant
+### **Sky**
 
 Jane Doe owns the import fix.
 

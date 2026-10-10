@@ -14,6 +14,9 @@ async function readFixture(name: string): Promise<string> {
   return await readTextFile(path.join(FIXTURES_DIR, name))
 }
 
+/** A transcript in the current shape, title then the Conversation section. */
+const transcript = (title: string, ...lines: string[]) => [`# ${title}`, '', '## Conversation', '', ...lines].join('\n')
+
 // --- YAML metadata ---
 
 interface MetadataFixture {
@@ -69,12 +72,9 @@ const turnFixtures: TurnFixture[] = [
     file: 'simple-two-turns.md',
     description: 'simple two turns',
     expected: [
+      { speaker: '**Jane**', content: 'What do you think about the future of payments?' },
       {
-        speaker: 'Jane',
-        content: 'What do you think about the future of payments?',
-      },
-      {
-        speaker: 'AI Assistant',
+        speaker: '**Sky**',
         content:
           'Payments are evolving rapidly. Stablecoins and AI agents are likely to drive the next wave of innovation.',
       },
@@ -82,14 +82,11 @@ const turnFixtures: TurnFixture[] = [
   },
   {
     file: 'multi-turn-with-subheadings.md',
-    description: 'multi-turn with AI subheadings',
+    description: 'multi-turn with reply subheadings',
     expected: [
+      { speaker: '**Jane**', content: 'Help me compare MCP and x402 for agent payments.' },
       {
-        speaker: 'Jane',
-        content: 'Help me compare MCP and x402 for agent payments.',
-      },
-      {
-        speaker: 'AI Assistant',
+        speaker: '**Sky**',
         content: [
           'Great question. Let me break this down.',
           '',
@@ -105,12 +102,9 @@ const turnFixtures: TurnFixture[] = [
           'MCP is the better fit for AI agent payments.',
         ].join('\n'),
       },
+      { speaker: '**Jane**', content: 'Can you write a summary for the team?' },
       {
-        speaker: 'Jane',
-        content: 'Can you write a summary for the team?',
-      },
-      {
-        speaker: 'AI Assistant',
+        speaker: '**Sky**',
         content: [
           "Here's a draft:",
           '',
@@ -128,70 +122,50 @@ turnFixtures.forEach((fixture) => {
     const doc = ChatDocument.fromMarkdown(await readFixture(fixture.file))
     assert({
       given: fixture.description,
-      should: 'parse correct number of turns',
-      actual: doc.turns.length,
-      expected: fixture.expected.length,
+      should: 'read every message under its speaker, a reply keeping its own headings',
+      actual: doc.turns,
+      expected: fixture.expected,
     })
-    for (let i = 0; i < fixture.expected.length; i++) {
-      assert({
-        given: `${fixture.description} turn ${i}`,
-        should: `have speaker "${fixture.expected[i].speaker}"`,
-        actual: doc.turns[i].speaker,
-        expected: fixture.expected[i].speaker,
-      })
-      assert({
-        given: `${fixture.description} turn ${i}`,
-        should: 'have correct content',
-        actual: doc.turns[i].content,
-        expected: fixture.expected[i].content,
-      })
-    }
   })
 })
 
 // --- create() ---
 
-test('ChatDocument.create - produces valid document', () => {
+test('ChatDocument.create - every message goes under the Conversation section, at H3', () => {
   const doc = ChatDocument.create({
     summary: 'Test Chat',
     messages: [
-      { role: 'user', content: 'Hello' },
-      { role: 'assistant', content: 'Hi there!' },
+      { role: 'user', content: 'Hello', when: '2026-02-10 09:00' },
+      { role: 'assistant', content: 'Hi there!', when: '2026-02-10 09:01' },
     ],
     created: '2026-02-10',
     updated: '2026-02-10',
   })
-
   assert({
-    given: 'created ChatDocument',
-    should: 'have correct summary',
-    actual: doc.summary,
-    expected: 'Test Chat',
-  })
-
-  assert({
-    given: 'created ChatDocument',
-    should: 'have correct turnCount (1 exchange)',
-    actual: doc.turnCount,
-    expected: 1,
-  })
-
-  assert({
-    given: 'created ChatDocument',
-    should: 'have Jane as first speaker',
-    actual: doc.turns[0].speaker,
-    expected: 'Jane',
-  })
-
-  assert({
-    given: 'created ChatDocument',
-    should: 'have Sky as second speaker',
-    actual: doc.turns[1].speaker,
-    expected: 'Sky',
+    given: 'a created two-message chat',
+    should: 'write the title, then the Conversation section, then one H3 per message',
+    actual: { body: doc.markdown, turnCount: doc.turnCount, speakers: doc.turns.map((t) => t.speaker) },
+    expected: {
+      body: [
+        '',
+        '# Test Chat',
+        '',
+        '## Conversation',
+        '',
+        '### 2026-02-10 09:00 - **Jane**',
+        '',
+        'Hello',
+        '',
+        '### 2026-02-10 09:01 - **Sky**',
+        '',
+        'Hi there!',
+        '',
+      ].join('\n'),
+      turnCount: 1,
+      speakers: ['2026-02-10 09:00 - **Jane**', '2026-02-10 09:01 - **Sky**'],
+    },
   })
 })
-
-// --- create() → toMarkdown() → fromMarkdown() roundtrip ---
 
 test('ChatDocument.create - roundtrip preserves data', () => {
   const doc = ChatDocument.create({
@@ -206,105 +180,83 @@ test('ChatDocument.create - roundtrip preserves data', () => {
     updated: '2026-02-10',
     tags: ['Tech/AI'],
   })
-
   const reparsed = ChatDocument.fromMarkdown(doc.toMarkdown())
-
   assert({
     given: 're-parsed created document',
-    should: 'return correct summary',
-    actual: reparsed.summary,
-    expected: 'Roundtrip Test',
-  })
-
-  assert({
-    given: 're-parsed created document',
-    should: 'return correct turnCount (2 exchanges)',
-    actual: reparsed.turnCount,
-    expected: 2,
-  })
-
-  assert({
-    given: 're-parsed created document',
-    should: 'return correct number of turns',
-    actual: reparsed.turns.length,
-    expected: 4,
-  })
-
-  assert({
-    given: 're-parsed created document',
-    should: 'preserve first user content',
-    actual: reparsed.turns[0].content,
-    expected: 'What is 2+2?',
-  })
-
-  assert({
-    given: 're-parsed created document',
-    should: 'preserve last assistant content',
-    actual: reparsed.turns[3].content,
-    expected: "You're welcome.",
-  })
-
-  assert({
-    given: 're-parsed created document',
-    should: 'preserve tags',
-    actual: Array.from(reparsed.tags),
-    expected: ['Tech/AI'],
+    should: 'return the summary, exchange count, messages and tags it was created with',
+    actual: {
+      summary: reparsed.summary,
+      turnCount: reparsed.turnCount,
+      conversation: reparsed.conversation,
+      tags: Array.from(reparsed.tags),
+    },
+    expected: {
+      summary: 'Roundtrip Test',
+      turnCount: 2,
+      conversation: [
+        { role: 'user', content: 'What is 2+2?' },
+        { role: 'assistant', content: 'The answer is 4.' },
+        { role: 'user', content: 'Thanks!' },
+        { role: 'assistant', content: "You're welcome." },
+      ],
+      tags: ['Tech/AI'],
+    },
   })
 })
 
-// --- tag preservation (fromMarkdown → toMarkdown roundtrip) ---
+test('ChatDocument.create - a reply keeps its own headings, any level, exactly as written', () => {
+  const reply = [
+    'Two options stand out.',
+    '',
+    '## Recommendation',
+    '',
+    'Go with the first.',
+    '',
+    '### 2026-02-10 09:02 - **Recommendation**',
+    '',
+    '# Appendix',
+    '',
+    '```',
+    '### 2026-02-10 09:03 - **Jane**',
+    '```',
+  ].join('\n')
+  const messages: ConversationMessage[] = [
+    { role: 'user', content: 'Compare the options.', when: '2026-02-10 09:00' },
+    { role: 'assistant', content: reply, when: '2026-02-10 09:01' },
+    { role: 'user', content: 'Thanks.', when: '2026-02-10 09:05' },
+  ]
+  const doc = ChatDocument.create({ summary: 'Headings', messages, created: '2026-02-10', updated: '2026-02-10' })
+  assert({
+    given: 'a reply with H1, H2 and stamp-shaped H3 headings of its own, and a speaker heading quoted in a code block',
+    should: 'read back the same three messages, the reply byte for byte',
+    actual: ChatDocument.fromMarkdown(doc.toMarkdown()).conversation,
+    expected: messages,
+  })
+})
 
-test('ChatDocument - preserves existing tags through a parse/serialize roundtrip', () => {
-  // Chat documents never write tags themselves — but tags added to a saved
-  // chat (by hand, or carried through a future continue-conversation flow)
-  // must survive re-serialization so tag search keeps finding the chat.
+// --- reading ---
+
+test('ChatDocument - tags survive a parse/serialize roundtrip', () => {
   const source = `---
 created: 2026-02-10
 updated: 2026-02-10
 summary: Tagged Chat
-provider: claude
-model: claude-opus-4-6
 turns: 1
 tags: Acme/Marketing/Ideas; Acme/Company
 ---
 
-# Tagged Chat
-
-## Jane
-
-A question.
-
-## AI Assistant
-
-An answer.`
-
-  const doc = ChatDocument.fromMarkdown(source)
-
+${transcript('Tagged Chat', '### **Jane**', '', 'A question.', '', '### **Sky**', '', 'An answer.')}`
+  const serialized = ChatDocument.fromMarkdown(source).toMarkdown()
   assert({
-    given: 'a chat file with semicolon-delimited tags',
-    should: 'parse both tags',
-    actual: Array.from(doc.tags),
-    expected: ['Acme/Marketing/Ideas', 'Acme/Company'],
-  })
-
-  const serialized = doc.toMarkdown()
-
-  assert({
-    given: 'the re-serialized markdown',
-    should: 'retain the tags line',
-    actual: serialized.includes('tags: Acme/Marketing/Ideas; Acme/Company'),
-    expected: true,
-  })
-
-  assert({
-    given: 'a full parse/serialize/parse roundtrip',
-    should: 'still expose both tags',
-    actual: Array.from(ChatDocument.fromMarkdown(serialized).tags),
-    expected: ['Acme/Marketing/Ideas', 'Acme/Company'],
+    given: 'a chat file with semicolon-delimited tags, re-serialized',
+    should: 'retain the tags line and expose both tags',
+    actual: {
+      line: serialized.includes('tags: Acme/Marketing/Ideas; Acme/Company'),
+      tags: Array.from(ChatDocument.fromMarkdown(serialized).tags),
+    },
+    expected: { line: true, tags: ['Acme/Marketing/Ideas', 'Acme/Company'] },
   })
 })
-
-// --- conversation ---
 
 test('ChatDocument.conversation - maps speakers to roles', async () => {
   const doc = ChatDocument.fromMarkdown(await readFixture('simple-two-turns.md'))
@@ -323,266 +275,151 @@ test('ChatDocument.conversation - maps speakers to roles', async () => {
   })
 })
 
-test('ChatDocument.conversation - alternates through a multi-turn chat', async () => {
-  const doc = ChatDocument.fromMarkdown(await readFixture('multi-turn-with-subheadings.md'))
-  assert({
-    given: 'a four-turn chat with H3 subheadings',
-    should: 'produce four alternating messages',
-    actual: doc.conversation.map((m) => m.role),
-    expected: ['user', 'assistant', 'user', 'assistant'],
-  })
-  assert({
-    given: 'a four-turn chat with H3 subheadings',
-    should: 'keep subheadings inside the assistant content',
-    actual: doc.conversation[1].content.includes('### Key Differences'),
-    expected: true,
-  })
-})
-
-test('ChatDocument.conversation - folds assistant-emitted H2 headings back into the reply', () => {
+test('ChatDocument.conversation - merges consecutive same-role messages, keeping the first stamp', () => {
   const doc = ChatDocument.fromMarkdown(
-    [
-      '# Fold Test',
-      '',
-      '## Jane',
-      '',
-      'Compare the options.',
-      '',
-      '## AI Assistant',
-      '',
-      'Two options stand out.',
-      '',
-      '## Recommendation',
-      '',
-      'Go with the first option.',
-      '',
-      '## Jane',
-      '',
-      'Thanks.',
-    ].join('\n'),
-  )
-  assert({
-    given: 'an assistant reply containing a literal H2 heading',
-    should: 'fold the phantom section back into the assistant message',
-    actual: doc.conversation,
-    expected: [
-      { role: 'user', content: 'Compare the options.' },
-      { role: 'assistant', content: 'Two options stand out.\n\n## Recommendation\n\nGo with the first option.' },
-      { role: 'user', content: 'Thanks.' },
-    ],
-  })
-})
-
-test('ChatDocument.conversation - merges consecutive same-role turns', () => {
-  const doc = ChatDocument.fromMarkdown(
-    [
-      '# Merge Test',
-      '',
-      '## Jane',
+    transcript(
+      'Merge Test',
+      '### 2026-02-08 09:00 - **Jane**',
       '',
       'First thought.',
       '',
-      '## Jane',
+      '### 2026-02-08 09:01 - **Jane**',
       '',
       'Second thought.',
       '',
-      '## AI Assistant',
+      '### 2026-02-08 09:02 - **Sky**',
       '',
       'Answer.',
-    ].join('\n'),
+    ),
   )
   assert({
-    given: 'two consecutive user turns',
+    given: 'two consecutive user messages',
     should: 'merge them into one user message so roles alternate',
     actual: doc.conversation,
     expected: [
-      { role: 'user', content: 'First thought.\n\nSecond thought.' },
-      { role: 'assistant', content: 'Answer.' },
+      { role: 'user', content: 'First thought.\n\nSecond thought.', when: '2026-02-08 09:00' },
+      { role: 'assistant', content: 'Answer.', when: '2026-02-08 09:02' },
     ],
   })
 })
 
-// --- turn stamps ---
-
-test('ChatDocument - turn stamps round-trip through headings', () => {
-  const doc = ChatDocument.create({
-    summary: 'Stamped Chat',
-    messages: [
-      { role: 'user', content: 'Morning question.', when: '2026-02-08 09:12' },
-      { role: 'assistant', content: 'Morning answer.', when: '2026-02-08 09:13' },
-      { role: 'user', content: 'Late-night follow-up.', when: '2026-02-08 25:30' },
-      { role: 'assistant', content: 'Late-night answer.', when: '2026-02-08 25:31' },
+test('ChatDocument.conversation - only the Conversation section is conversation', () => {
+  const doc = ChatDocument.fromMarkdown(
+    [
+      '# Sectioned',
+      '',
+      '## Summary',
+      '',
+      '### **Jane**',
+      '',
+      'Text above the conversation is never a message.',
+      '',
+      '## Conversation',
+      '',
+      '### **Jane**',
+      '',
+      'The question.',
+      '',
+      '### **Sky**',
+      '',
+      'The answer.',
+    ].join('\n'),
+  )
+  assert({
+    given: 'a speaker-shaped heading in a section above Conversation',
+    should: 'read only the messages after the Conversation heading',
+    actual: doc.conversation,
+    expected: [
+      { role: 'user', content: 'The question.' },
+      { role: 'assistant', content: 'The answer.' },
     ],
+  })
+})
+
+test('ChatDocument - turn stamps round-trip through headings, extended hours intact', () => {
+  const messages: ConversationMessage[] = [
+    { role: 'user', content: 'Morning question.', when: '2026-02-08 09:12' },
+    { role: 'assistant', content: 'Morning answer.', when: '2026-02-08 09:13' },
+    { role: 'user', content: 'Late-night follow-up.', when: '2026-02-08 25:30' },
+    { role: 'assistant', content: 'Late-night answer.', when: '2026-02-08 25:31' },
+  ]
+  const markdown = ChatDocument.create({
+    summary: 'Stamped Chat',
+    messages,
     created: '2026-02-08',
     updated: '2026-02-08',
-  })
-
-  const markdown = doc.toMarkdown()
+  }).toMarkdown()
   assert({
     given: 'stamped messages',
-    should: 'write message-file headings — leading stamp, bold speaker',
-    actual: [
-      markdown.includes('## 2026-02-08 09:12 - **Jane**'),
-      markdown.includes('## 2026-02-08 09:13 - **Sky**'),
-      markdown.includes('## 2026-02-08 25:30 - **Jane**'),
-    ],
-    expected: [true, true, true],
-  })
-
-  assert({
-    given: 'the re-parsed markdown',
-    should: 'restore stamps (extended hours intact) with clean content',
-    actual: ChatDocument.fromMarkdown(markdown).conversation,
-    expected: [
-      { role: 'user', content: 'Morning question.', when: '2026-02-08 09:12' },
-      { role: 'assistant', content: 'Morning answer.', when: '2026-02-08 09:13' },
-      { role: 'user', content: 'Late-night follow-up.', when: '2026-02-08 25:30' },
-      { role: 'assistant', content: 'Late-night answer.', when: '2026-02-08 25:31' },
-    ],
+    should: 'write leading-stamp H3 headings and read the same messages back',
+    actual: {
+      headings: [
+        markdown.includes('### 2026-02-08 25:30 - **Jane**'),
+        markdown.includes('### 2026-02-08 09:13 - **Sky**'),
+      ],
+      conversation: ChatDocument.fromMarkdown(markdown).conversation,
+    },
+    expected: { headings: [true, true], conversation: messages },
   })
 })
 
 test('ChatDocument - unstamped headings parse with no when key, stamped and bare headings mix', () => {
   const doc = ChatDocument.fromMarkdown(
-    [
-      '# Resumed Chat',
-      '',
-      '## Jane',
-      '',
-      'Old question.',
-      '',
-      '## AI Assistant',
-      '',
-      'Old answer.',
-      '',
-      '## 2026-02-08 14:32 - **Jane**',
-      '',
-      'New question.',
-    ].join('\n'),
-  )
-  assert({
-    given: 'a pre-stamp transcript continued with stamped turns',
-    should: 'leave old messages unstamped and stamp the new one',
-    actual: doc.conversation,
-    expected: [
-      { role: 'user', content: 'Old question.' },
-      { role: 'assistant', content: 'Old answer.' },
-      { role: 'user', content: 'New question.', when: '2026-02-08 14:32' },
-    ],
-  })
-  assert({
-    given: 'a bare `## Jane` heading',
-    should: 'not set the when key at all',
-    actual: 'when' in doc.conversation[0],
-    expected: false,
-  })
-})
-
-test('ChatDocument - a stamp-shaped heading on a non-speaker still folds back', () => {
-  const doc = ChatDocument.fromMarkdown(
-    [
-      '# Fold Test',
-      '',
-      '## 2026-02-08 14:32 - **Jane**',
-      '',
-      'Compare the options.',
-      '',
-      '## 2026-02-08 14:33 - **AI Assistant**',
-      '',
-      'Two options stand out.',
-      '',
-      '## 2026-02-08 14:33 - **Recommendation**',
-      '',
-      'Go with the first option.',
-    ].join('\n'),
-  )
-  assert({
-    given: 'an assistant reply containing an H2 with a stamp-looking prefix',
-    should: 'fold the phantom section back, keeping real speaker stamps',
-    actual: doc.conversation,
-    expected: [
-      { role: 'user', content: 'Compare the options.', when: '2026-02-08 14:32' },
-      {
-        role: 'assistant',
-        content: 'Two options stand out.\n\n## 2026-02-08 14:33 - **Recommendation**\n\nGo with the first option.',
-        when: '2026-02-08 14:33',
-      },
-    ],
-  })
-})
-
-test('ChatDocument - legacy trailing-paren stamps still parse', () => {
-  const doc = ChatDocument.fromMarkdown(
-    [
-      '# Legacy Stamps',
-      '',
-      '## Jane (2026-02-08 14:32)',
-      '',
-      'Old-format question.',
-      '',
-      '## AI Assistant (2026-02-08 14:33)',
-      '',
-      'Old-format answer.',
-    ].join('\n'),
-  )
-  assert({
-    given: 'a transcript from the trailing-paren stamp era',
-    should: 'restore the stamps as when keys',
-    actual: doc.conversation,
-    expected: [
-      { role: 'user', content: 'Old-format question.', when: '2026-02-08 14:32' },
-      { role: 'assistant', content: 'Old-format answer.', when: '2026-02-08 14:33' },
-    ],
-  })
-})
-
-test('ChatDocument - the legacy AI Assistant label still reads as the assistant and writes back as Sky', () => {
-  // A transcript saved before the assistant was Sky, resumed after: the old
-  // headings stay in the file until the next save rebuilds it.
-  const doc = ChatDocument.fromMarkdown(
-    [
-      '# Renamed Assistant',
-      '',
-      '## 2026-02-08 14:32 - **Jane**',
+    transcript(
+      'Resumed Chat',
+      '### **Jane**',
       '',
       'Old question.',
       '',
-      '## 2026-02-08 14:33 - **AI Assistant**',
+      '### **Sky**',
       '',
       'Old answer.',
       '',
-      '## 2026-02-08 14:40 - **Jane**',
+      '### 2026-02-08 14:32 - **Jane**',
       '',
       'New question.',
-      '',
-      '## 2026-02-08 14:41 - **Sky**',
-      '',
-      'New answer.',
-    ].join('\n'),
+    ),
   )
   assert({
-    given: 'a transcript mixing the legacy and current assistant labels',
-    should: 'map both to the assistant role',
-    actual: doc.conversation,
-    expected: [
-      { role: 'user', content: 'Old question.', when: '2026-02-08 14:32' },
-      { role: 'assistant', content: 'Old answer.', when: '2026-02-08 14:33' },
-      { role: 'user', content: 'New question.', when: '2026-02-08 14:40' },
-      { role: 'assistant', content: 'New answer.', when: '2026-02-08 14:41' },
-    ],
+    given: 'a pre-stamp transcript continued with stamped messages',
+    should: 'leave old messages unstamped, without a when key, and stamp the new one',
+    actual: { conversation: doc.conversation, firstHasWhen: 'when' in doc.conversation[0]! },
+    expected: {
+      conversation: [
+        { role: 'user', content: 'Old question.' },
+        { role: 'assistant', content: 'Old answer.' },
+        { role: 'user', content: 'New question.', when: '2026-02-08 14:32' },
+      ],
+      firstHasWhen: false,
+    },
   })
+})
 
-  const rebuilt = ChatDocument.create({
-    summary: 'Renamed Assistant',
-    messages: doc.conversation,
-    created: '2026-02-08',
-    updated: '2026-02-08',
-  }).toMarkdown()
+test('ChatDocument - a file in the earlier shape reads as no conversation and says so', () => {
+  const earlier = ChatDocument.fromMarkdown(
+    [
+      '# Earlier',
+      '',
+      '## 2026-02-08 14:32 - **Jane**',
+      '',
+      'A question.',
+      '',
+      '## 2026-02-08 14:33 - **AI Assistant**',
+      '',
+      'An answer.',
+    ].join('\n'),
+  )
+  const current = ChatDocument.fromMarkdown(transcript('Current', '### **Jane**', '', 'A question.'))
+  const neither = ChatDocument.fromMarkdown('# Notes\n\nNo conversation here.\n')
   assert({
-    given: 'the conversation rebuilt for save',
-    should: 'write every assistant heading as Sky, none as AI Assistant',
-    actual: [rebuilt.includes('**AI Assistant**'), rebuilt.includes('## 2026-02-08 14:33 - **Sky**')],
-    expected: [false, true],
+    given: 'a transcript with H2 speaker headings and no Conversation section, a current one, and a non-chat note',
+    should: 'read no messages from the earlier one and flag only it',
+    actual: {
+      earlier: { messages: earlier.conversation.length, legacy: earlier.legacyShape },
+      current: { messages: current.conversation.length, legacy: current.legacyShape },
+      neither: neither.legacyShape,
+    },
+    expected: { earlier: { messages: 0, legacy: true }, current: { messages: 1, legacy: false }, neither: false },
   })
 })
 
@@ -608,59 +445,37 @@ test('firstWordsSummary - first user message, capped at ten words', () => {
 
 // --- contextLog + conversation on a saved transcript ---
 
+const SAVED_CONVERSATION: ConversationMessage[] = [
+  { role: 'user', content: 'What should I focus on for the Atlas launch this week?' },
+  { role: 'assistant', content: 'Focus on the demo script and the pricing page copy.' },
+  { role: 'user', content: 'Draft the announcement outline.' },
+  { role: 'assistant', content: 'Here is an outline: intro, demo, pricing, call to action.' },
+]
+
 test('ChatDocument - a v2 transcript parses conversation and log cleanly', async () => {
   const doc = ChatDocument.fromMarkdown(await readFixture('two-turns-with-context-log-v2.md'))
-
-  assert({
-    given: 'a saved chat with a trailing CONTEXT-LOG comment',
-    should: 'expose the conversation without any log debris',
-    actual: doc.conversation,
-    expected: [
-      { role: 'user', content: 'What should I focus on for the Atlas launch this week?' },
-      { role: 'assistant', content: 'Focus on the demo script and the pricing page copy.' },
-      { role: 'user', content: 'Draft the announcement outline.' },
-      { role: 'assistant', content: 'Here is an outline: intro, demo, pricing, call to action.' },
-    ],
-  })
-
-  assert({
-    given: 'a saved chat with a trailing CONTEXT-LOG comment',
-    should: 'parse both log entries',
-    actual: doc.contextLog.map((e) => e.turn),
-    expected: [1, 2],
-  })
-
   // The fixture must be byte-for-byte what the ai:chat writer produces —
   // this law is what makes resume's read side trustworthy against real files.
   const { body, entries } = splitContextLog(doc.markdown)
   assert({
-    given: 'the fixture body markdown',
-    should: 'reassemble byte-identically from body + serialized log',
-    actual: body + serializeContextLog(entries),
-    expected: doc.markdown,
+    given: 'a saved chat with a trailing CONTEXT-LOG comment',
+    should: 'expose the conversation without log debris, parse both entries, and reassemble byte-identically',
+    actual: {
+      conversation: doc.conversation,
+      turns: doc.contextLog.map((e) => e.turn),
+      reassembled: body + serializeContextLog(entries) === doc.markdown,
+    },
+    expected: { conversation: SAVED_CONVERSATION, turns: [1, 2], reassembled: true },
   })
 })
 
 test('ChatDocument - a legacy TURN-log transcript keeps a clean conversation, no entries', async () => {
   const doc = ChatDocument.fromMarkdown(await readFixture('two-turns-with-context-log.md'))
-
   assert({
     given: 'a saved chat with legacy trailing TURN comments',
-    should: 'expose the conversation without any log debris',
-    actual: doc.conversation,
-    expected: [
-      { role: 'user', content: 'What should I focus on for the Atlas launch this week?' },
-      { role: 'assistant', content: 'Focus on the demo script and the pricing page copy.' },
-      { role: 'user', content: 'Draft the announcement outline.' },
-      { role: 'assistant', content: 'Here is an outline: intro, demo, pricing, call to action.' },
-    ],
-  })
-
-  assert({
-    given: 'a saved chat with legacy trailing TURN comments',
-    should: 'parse no entries — the pre-JSON format is detected, never read',
-    actual: doc.contextLog,
-    expected: [],
+    should: 'expose the conversation without log debris, and parse no entries',
+    actual: { conversation: doc.conversation, log: doc.contextLog },
+    expected: { conversation: SAVED_CONVERSATION, log: [] },
   })
 })
 
@@ -675,27 +490,20 @@ test('ChatDocument.create - approvals round-trip and default to empty', () => {
     updated: '2026-09-01',
     approvals: ['google_agent:f123abc'],
   })
-
-  const reparsed = ChatDocument.fromMarkdown(doc.toMarkdown())
-
-  assert({
-    given: 'a document created with durable approval keys',
-    should: 'read them back after a markdown round-trip',
-    actual: reparsed.approvals,
-    expected: ['google_agent:f123abc'],
-  })
-
   const bare = ChatDocument.create({
     summary: 'No Approvals',
     messages: [{ role: 'user', content: 'hi' }],
     created: '2026-09-01',
     updated: '2026-09-01',
   })
-
   assert({
-    given: 'a document created without approvals',
-    should: 'omit the key and read back an empty list',
-    actual: { yamlHasKey: 'approvals' in bare.yaml, approvals: ChatDocument.fromMarkdown(bare.toMarkdown()).approvals },
-    expected: { yamlHasKey: false, approvals: [] },
+    given: 'a document created with durable approval keys, and one created without',
+    should: 'read the keys back after a round-trip, and omit the key when there are none',
+    actual: {
+      approvals: ChatDocument.fromMarkdown(doc.toMarkdown()).approvals,
+      bareHasKey: 'approvals' in bare.yaml,
+      bareApprovals: ChatDocument.fromMarkdown(bare.toMarkdown()).approvals,
+    },
+    expected: { approvals: ['google_agent:f123abc'], bareHasKey: false, bareApprovals: [] },
   })
 })

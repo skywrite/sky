@@ -180,7 +180,7 @@ test('loadResumeSession - a pre-log transcript resumes with no recorded context'
   })
 
   assert({
-    given: 'the same transcript, old enough to predate turn stamps too (bare `## Jane` headings)',
+    given: 'the same transcript, old enough to predate turn stamps too (unstamped `### **Jane**` headings)',
     should: 'still reseed both turns, unstamped',
     actual: session.state.conversation.map((m) => m.when),
     expected: [undefined, undefined],

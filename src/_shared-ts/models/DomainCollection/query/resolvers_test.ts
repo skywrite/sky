@@ -175,11 +175,13 @@ tags: Work
 
 # Planning the Widget Launch
 
-## Sam
+## Conversation
+
+### **Sam**
 
 How should we plan the widget launch?
 
-## AI Assistant
+### **Sky**
 
 Start with a small beta group.`),
       path: '/test/time/2026/W06/02-03/actions/ai-chats/09-15_Planning-the-Widget-Launch.md',
@@ -196,11 +198,13 @@ tags: Acme/Marketing/Ideas; Acme/Company
 
 # Brainstorm Marketing Ideas
 
-## Sam
+## Conversation
+
+### **Sam**
 
 Give me marketing ideas.
 
-## AI Assistant
+### **Sky**
 
 Here are three angles to consider.`),
       path: '/test/time/2026/W05/01-27/actions/ai-chats/18-42_Brainstorm-Marketing-Ideas.md',
@@ -221,11 +225,13 @@ parent:
 
 # First Cohort Size
 
-## Sam
+## Conversation
+
+### **Sam**
 
 How many accounts in the first cohort?
 
-## AI Assistant
+### **Sky**
 
 Twenty, then double.`),
       path: '/test/time/2026/W06/02-03/actions/ai-chats/09-15_Planning-the-Widget-Launch/09-40_First-Cohort-Size.md',

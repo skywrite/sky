@@ -9,11 +9,13 @@ turns: 1
 
 # How Chat Logging Works
 
-## Jane
+## Conversation
+
+### **Jane**
 
 How does the saved transcript record context?
 
-## AI Assistant
+### **Sky**
 
 Each saved chat ends with hidden comments like:
 

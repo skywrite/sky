@@ -9,6 +9,7 @@
 import { logAIError } from '#shared/ai/errorLog.ts'
 import { PORT_SERVER } from '#shared/config.ts'
 import { Document } from '#shared/models/Markdown/mod.ts'
+import { isAIChatPath } from '#shared/nbfs/mod.ts'
 
 // A service restart unbinds :9999 for up to ~70s — launchd takes 20-45s to
 // respawn the process, then the notebook rescan takes ~24s before the port
@@ -85,10 +86,14 @@ export async function fetchContextFromServer(
   for (const d of documents) {
     if (d.path && d.markdown) {
       try {
-        const doc = Document.fromMarkdown(d.markdown)
-          .stripHtmlComments()
-          .filterSections((h) => !h.text.toLowerCase().includes('transcript'))
-        docs.push({ doc, path: d.path })
+        const doc = Document.fromMarkdown(d.markdown).stripHtmlComments()
+        // A saved chat has no transcript sections, and its replies' own
+        // headings are message text: under `## Conversation` a reply's
+        // "## Transcript notes" would otherwise drop every later message.
+        docs.push({
+          doc: isAIChatPath(d.path) ? doc : doc.filterSections((h) => !h.text.toLowerCase().includes('transcript')),
+          path: d.path,
+        })
       } catch (err) {
         console.warn(`[ai:chat] failed to parse context doc ${d.path}: ${(err as Error).message}`)
       }

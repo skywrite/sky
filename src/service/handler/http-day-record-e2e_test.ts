@@ -42,11 +42,13 @@ ${parent ? `parent:\n  chat: ${parent.chat}\n  turn: ${parent.turn}\n` : ''}---
 
 # ${title}
 
-## Jane
+## Conversation
+
+### **Jane**
 
 Help me plan the next steps.
 
-## Sky
+### **Sky**
 
 Start with a short checklist and assign each action.
 `

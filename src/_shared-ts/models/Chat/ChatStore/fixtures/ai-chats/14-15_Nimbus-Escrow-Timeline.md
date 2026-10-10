@@ -8,10 +8,12 @@ turns: 1
 
 # Nimbus Escrow Timeline
 
-## Jane
+## Conversation
+
+### **Jane**
 
 When does the Nimbus escrow release?
 
-## AI Assistant
+### **Sky**
 
 Thirty days after countersignature.
