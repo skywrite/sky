@@ -294,6 +294,14 @@ test(
         suggestionsReady.resolve()
         await dialog.getByText('Writing your shortlist…', { exact: true }).waitFor()
         await page.clock.fastForward(7500)
+        // The writing stage starts its caption clock in an effect after its first render. A jump that lands
+        // before that effect moves the first new caption one period later, so allow for that period.
+        await dialog
+          .getByRole('status')
+          .locator('strong')
+          .filter({ hasNotText: 'Writing your shortlist…' })
+          .waitFor({ timeout: 10000 })
+          .catch(() => {})
         assert({
           given: 'a slow response after writing starts',
           should: 'rotate writing captions without resetting elapsed time or advancing the real stage',

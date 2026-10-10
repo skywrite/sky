@@ -147,7 +147,24 @@ test(
         'text/plain': '# Not html\n- item',
       })
       await waitForSettle(page)
-      await page.keyboard.press(`${process.platform === 'darwin' ? 'Meta' : 'Control'}+Shift+KeyV`)
+      // The editor's part of Cmd/Ctrl+Shift+V is the keydown, which marks the next paste as plain. A real
+      // press on Linux also runs Chromium's own paste-as-plain-text, whose paste from the test's empty
+      // clipboard would take that mark first, so the editor gets the keydown alone.
+      await page.evaluate(() => {
+        const anchor = document.getSelection()?.anchorNode
+        const target =
+          (anchor instanceof Element ? anchor : anchor?.parentElement) ?? document.querySelector('.sky-wysiwyg')!
+        target.dispatchEvent(
+          new KeyboardEvent('keydown', {
+            key: 'V',
+            code: 'KeyV',
+            shiftKey: true,
+            metaKey: true,
+            bubbles: true,
+            cancelable: true,
+          }),
+        )
+      })
       await dispatchClipboard(page, 'paste', { 'text/html': '<p><b>rich</b></p>', 'text/plain': 'plain' })
       await waitForSettle(page)
       await waitForAutosave(page)
