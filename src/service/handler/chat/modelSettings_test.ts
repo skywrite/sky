@@ -1,0 +1,55 @@
+import { assert, test } from '#test'
+import type { ChatSettingsHost, ThreadRestore } from './mod.ts'
+import { restoredModelPrefs } from './modelSettings.ts'
+
+const catalog = {
+  defaultModel: 'default-opus-5.5',
+  defaultContextTokens: 100_000,
+  choices: () => [{ name: 'default-opus-5.5' }, { name: 'default-sonnet-5.5' }],
+} as unknown as ChatSettingsHost
+
+/** A saved chat with one exchange, whose recovery record names a profile and an effort. */
+function savedUnder(profile: string, effort = 'high', modelConfig?: unknown): ThreadRestore {
+  return {
+    id: 'demo',
+    state: {
+      conversation: [
+        { role: 'user', content: 'Summarize the Atlas notes.' },
+        { role: 'assistant', content: 'Done.' },
+      ],
+      contextLog: [],
+    },
+    resume: { recovery: { host: { profile, effort, modelConfig } } },
+  } as unknown as ThreadRestore
+}
+
+test('restoredModelPrefs - a chat saved under a retired profile opens on the default model', () => {
+  const prefs = restoredModelPrefs({}, savedUnder('default-haiku-4.5'), catalog)
+  assert({
+    given: 'a saved chat set to a profile the catalog no longer has, with no configuration of its own',
+    should: 'open on the default model at its default effort, still locked to the conversation',
+    actual: [prefs.profile, prefs.effort, prefs.modelSettingsLocked],
+    expected: ['default-opus-5.5', 'default', true],
+  })
+})
+
+test('restoredModelPrefs - known profiles and saved configurations stay as they were', () => {
+  const known = restoredModelPrefs({}, savedUnder('default-sonnet-5.5'), catalog)
+  const config = { provider: 'anthropic', model: 'claude-haiku-4-5' }
+  const configured = restoredModelPrefs({}, savedUnder('default-haiku-4.5', 'default', config), catalog)
+  assert({
+    given: 'a chat on a profile the catalog has, and one on a retired profile that kept its configuration',
+    should: 'keep both as saved',
+    actual: [known.profile, known.effort, configured.profile, configured.modelConfig],
+    expected: ['default-sonnet-5.5', 'high', 'default-haiku-4.5', config],
+  })
+})
+
+test('restoredModelPrefs - a new chat asked for a retired profile starts on the default model', () => {
+  assert({
+    given: 'a new chat whose pending settings name a retired profile',
+    should: 'start on the default model',
+    actual: restoredModelPrefs({ profile: 'default-haiku-4.5', effort: 'low' }, undefined, catalog),
+    expected: { profile: 'default-opus-5.5', effort: 'default' },
+  })
+})

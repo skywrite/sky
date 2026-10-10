@@ -22,7 +22,21 @@ export function restoredModelPrefs(
   restore: ThreadRestore | undefined,
   catalog: ChatSettingsHost | undefined,
 ): ThreadPrefs {
-  if (!restore) return prefs
+  return knownProfile(restore ? fromRestore(prefs, restore, catalog) : prefs, catalog)
+}
+
+/**
+ * A chat set to a profile since retired from the catalog opens on the default model, at
+ * that model's default effort; looking the old name up would fail the open. A chat that
+ * kept its own configuration still runs as saved.
+ */
+function knownProfile(prefs: ThreadPrefs, catalog: ChatSettingsHost | undefined): ThreadPrefs {
+  if (!catalog || !prefs.profile || prefs.modelConfig) return prefs
+  if (catalog.choices().some((choice) => choice.name === prefs.profile)) return prefs
+  return { ...prefs, profile: catalog.defaultModel, effort: 'default' }
+}
+
+function fromRestore(prefs: ThreadPrefs, restore: ThreadRestore, catalog: ChatSettingsHost | undefined): ThreadPrefs {
   const recovery = restore.resume?.recovery
   const host = recovery?.host
   const last = restore.state.contextLog.findLast((entry) => entry.settings)?.settings
