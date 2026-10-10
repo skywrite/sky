@@ -1,3 +1,4 @@
+import type { Role } from '#shared/ai/models.ts'
 import { chooseTags } from './classify.ts'
 import { buildTagMenu, loadMessageCorpus, tagHistoryFor } from './corpus.ts'
 
@@ -37,7 +38,7 @@ export type AutoTagInput = {
  */
 export async function autoTagMessage(
   input: AutoTagInput,
-  opts: { mediums: string[]; kind?: string; maxTags?: number },
+  opts: { mediums: string[]; kind?: string; maxTags?: number; role?: Role },
 ): Promise<string | undefined> {
   try {
     const corpus = await loadMessageCorpus(opts.mediums)
@@ -59,7 +60,9 @@ export async function autoTagMessage(
         tagHistory: tagHistoryFor(records, input.conversation ?? input.to),
         menu,
       },
-      'fast',
+      // The classifier's model: the fast role by default; a medium whose
+      // captures are long and many-topic (chats) asks for a stronger one.
+      opts.role ?? 'fast',
     )
     return outcome.tags.length > 0 ? outcome.tags.join('; ') : undefined
   } catch {

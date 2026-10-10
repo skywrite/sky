@@ -1,3 +1,4 @@
+import type { Role } from '#shared/ai/models.ts'
 import type { ConversationMessage } from '#shared/models/Chat/type.d.ts'
 import truncate from '#shared/strings/truncate.ts'
 
@@ -10,9 +11,15 @@ import truncate from '#shared/strings/truncate.ts'
  * identity (no `to:`), so the menu and the most recent archived chats stand
  * in for the per-conversation history other mediums key on.
  */
-export const CHAT_ENRICH: { mediums: string[]; kind: string } = {
+export const CHAT_ENRICH: { mediums: string[]; kind: string; role: Role } = {
   mediums: ['chat'],
   kind: 'AI chat conversation',
+  // Tag choice runs on the balanced role for chats: run twice over the same
+  // fifty chats, the fast role picked the same tag set for 42% of them, the
+  // balanced role for 61% (2026-10-10). Subject extraction stays on the fast
+  // default — the balanced role measured no gain there, the candidate-bound
+  // selection already keeps rel stable. Other mediums keep fast throughout.
+  role: 'balanced',
 }
 
 // The classifier prompts keep only the head of an over-long body, and chat

@@ -2,7 +2,7 @@ import { generateText, Output } from 'ai'
 import { z } from 'zod'
 import { matchPlace, type PlaceMatch } from '#lib/places/catalog.ts'
 import { ensurePlaceRef } from '#lib/places/geography.ts'
-import { aiModel } from '#shared/ai/models.ts'
+import { aiModel, type Role } from '#shared/ai/models.ts'
 import truncate from '#shared/strings/truncate.ts'
 import { loadMessageCorpus, relHistoryFor } from './corpus.ts'
 import { type ExtractedSubjects, extractSubjects, MAX_TRANSCRIPT_CHARS } from './extract.ts'
@@ -145,6 +145,12 @@ export interface AutoRelOptions {
   kind?: string
   /** Saved chats can append newly discussed places while preserving their other entity links. */
   placesOnly?: boolean
+  /**
+   * Model role for subject extraction; selection always runs on the balanced
+   * role. Fast by default: on chats the balanced role measured no gain here
+   * (2026-10-10), the candidate-bound selection is what keeps rel stable.
+   */
+  extractRole?: Role
 }
 
 export interface AutoRelServices {
@@ -247,7 +253,7 @@ export async function proposeRel(
     // places against the window that quoted them, so the union needs no
     // second grounding pass; one failed window loses its evidence, not the save.
     const outcomes = await Promise.all(
-      textWindows(input.body).map((body) => services.extract({ ...request, body }, 'fast')),
+      textWindows(input.body).map((body) => services.extract({ ...request, body }, opts.extractRole ?? 'fast')),
     )
     const failures = outcomes.filter((o) => o.error)
     if (failures.length === outcomes.length) return { rel: [], unresolvedPlaces: [], error: failures[0]!.error }

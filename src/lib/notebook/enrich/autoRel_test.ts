@@ -141,3 +141,25 @@ test('proposeRel reads a subject named only at the end of a long conversation', 
     expected: { windows: true, lastWindowNamesIt: true, candidates: [late], selectorSawIt: true, rel: [late] },
   })
 })
+
+test("proposeRel extracts on the medium's role, fast unless the medium asks for more", async () => {
+  const roles: string[] = []
+  const services = {
+    buildIndex: async () => ({ candidates: [], canResolve: () => false }),
+    fetchScores: async () => new Map(),
+    loadCorpus: async () => ({ records: [] }),
+    extract: async (_req: unknown, role: string) => {
+      roles.push(role)
+      return { subjects: { people: [], orgs: [], projects: [], places: [] } }
+    },
+    select: async () => ({ rel: [] }),
+  }
+  await proposeRel({ body: 'A short note.' }, { mediums: ['message'] }, services as never)
+  await proposeRel({ body: 'A long chat.' }, { mediums: ['chat'], extractRole: 'balanced' }, services as never)
+  assert({
+    given: 'a medium without a role and a medium asking for the balanced role',
+    should: 'extract on fast for the first and balanced for the second',
+    actual: roles,
+    expected: ['fast', 'balanced'],
+  })
+})

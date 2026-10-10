@@ -1,6 +1,6 @@
 ---
 created: 2026-09-01
-updated: 2026-10-08
+updated: 2026-10-10
 ---
 
 # Chat model — the pieces under every chat host
@@ -57,6 +57,14 @@ it was about ([narrative](2026-10-07-rel-missed-what-the-clipped-transcript-hid.
 - **The chat's own products are facts.** Notebook documents a writing tool
   created during the session arrive through the session's created-documents
   hook and join rel directly, without a chooser, even with auto-rel off.
+
+Chat tag choice runs on the balanced role (`CHAT_ENRICH.role`), not the fast
+default other mediums keep: run twice over the same fifty chats, the fast role
+picked the same tag set for 42% of them, the balanced role for 61%
+([narrative](2026-10-10-enrichment-stability-before-accuracy.md)). Subject
+extraction stays on the fast role; the balanced role measured no gain there.
+None of the current models accept a sampling temperature, so consistency has to
+come from the model and from what it is allowed to answer.
 
 Place subjects and country creation follow the shared
 [place relationship rules](../../../../lib/places/docs/README.md#automatic-relationships-and-country-selection).
