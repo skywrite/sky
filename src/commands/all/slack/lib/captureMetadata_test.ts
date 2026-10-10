@@ -42,8 +42,10 @@ test('Slack capture commands classify speech before allocating titles and preser
       mock.module('#commands/all/audio/transcript/lib/glossary.ts', () => ({
         loadGlossary: async () => undefined, glossaryKeywords: () => [],
       }))
-      mock.module('#commands/all/audio/transcript/lib/transcribe.ts', () => ({
-        transcribeWithOpenAI: async () => { recognitions++; return { text: words[1] } },
+      // Recognition is mocked where the provider is chosen, so the person's own transcription setting
+      // (MacWhisper, Mistral, OpenAI) cannot route the capture past the mock.
+      mock.module('#commands/all/audio/transcript/lib/audio.ts', () => ({
+        transcribeAudio: async () => { recognitions++; return { text: words[1] } },
       }))
       const { default: NewTask } = await import('#commands/all/slack/new.ts')
       const { default: FollowTask } = await import('#commands/all/slack/follow/message/mod.ts')
