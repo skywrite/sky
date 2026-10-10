@@ -28,6 +28,7 @@ import { ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
 import type { BranchPoint } from '../../chat/branchPoint.ts'
 import type { UnwindBlocker } from '../../chat/unwind.ts'
 import { ChatActivity, type TurnQueries } from './chatActivity.tsx'
+import { agentModelDetails } from './chatAgentModel.ts'
 import { calendarActivitySummary, calendarRunLabel } from './chatCalendarActivity.ts'
 import { ChatCalendarDraft } from './chatCalendarDraft.tsx'
 import { clearChatDraft, useChatDraft, type ChatDraft } from './chatDraft.ts'
@@ -1580,6 +1581,7 @@ function stoppingLabel(runs: Run[]): string {
 
 function RunView({ run }: { run: Run }) {
   const [open, setOpen] = useState(false)
+  const agentModel = agentModelDetails(run)
   const running = run.status === null
   // A Stop reaches the command through its signal; until the run ends, the chip says what the wait is.
   const stopping = useContext(StoppingContext) && running
@@ -1642,6 +1644,12 @@ function RunView({ run }: { run: Run }) {
       {running && last && !open && <div className="sky-tool-last">{last}</div>}
       {open && (
         <div className="sky-tool-details">
+          {agentModel && (
+            <section aria-label="Agent model">
+              <div className="sky-tool-detail-label">Agent model</div>
+              <FieldsView value={agentModel} />
+            </section>
+          )}
           <div className="sky-tool-detail-label">Parameters passed</div>
           {run.input !== undefined ? (
             <FieldsView value={run.input} />

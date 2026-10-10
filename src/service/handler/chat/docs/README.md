@@ -1,6 +1,6 @@
 ---
 created: 2026-09-01
-updated: 2026-10-08
+updated: 2026-10-10
 ---
 
 # Chat over HTTP — a thread, its tuning, and the story of its context
@@ -503,6 +503,9 @@ a person can see and touch:
   Google tool has run, its `ToolRun` also carries the `account` its result
   reports (`runAccount`), or how many accounts a listing covered. The chip
   and the folded row both show it right after the tool's name.
+  Google Agent's expanded inspector also shows its recorded model, profile,
+  and effective effort. Older calls use their timing summary and explicit
+  effort argument; missing historical settings remain labeled not recorded.
   Calendar preparation calls share one expandable activity row even while a reply
   is running. Its labels come from scheduler results: a ready draft, missing
   details and an unsupported request are distinct from a created event.

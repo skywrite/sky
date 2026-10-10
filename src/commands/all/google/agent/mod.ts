@@ -30,7 +30,7 @@ import { actionKindRel } from '#shared/nbfs/mod.ts'
 import { readPromptFile } from '#shared/prompts/load.ts'
 import { thrownOutcome, TimingSpan } from '#shared/timing/mod.ts'
 import { timingSummary } from '#shared/timing/summary.ts'
-import { validateEffort } from '#universal/ai/effort.ts'
+import { effectiveEffort, effortLabel, type Effort, validateEffort } from '#universal/ai/effort.ts'
 import { accountSwitchNote, findOwningGoogleClient, resolveGoogleClientForNew } from '../lib/resolveClient.ts'
 import { missionAccount, missionApprovalKey, missionNeedsApproval } from './lib/approval.ts'
 import { withReadTarget, writeDocArtifact } from './lib/artifact.ts'
@@ -41,18 +41,8 @@ import type { MissionFile } from './lib/tools.ts'
 
 const MAX_STEPS = 48
 
-/**
- * The profile a mission runs on unless `--ai-reasoning` says otherwise. A
- * mission executes a brief the chat model already wrote — content, tab
- * names, design direction — so it needs Opus's hands without Opus's
- * deliberation: the same model at medium effort. Measured 2026-09-06 on one
- * brief: Opus 5 at xhigh took 19m28s for 25 steps, 19m05s of it thinking
- * (~46 s a step), and built the doc right; Qwen 3.8 on Cerebras took 4m49s,
- * probed request formats against the live doc and emptied two tabs.
- * `--ai-reasoning default-opus-5.5` is the full-depth run; `default-sonnet-5.5`
- * the faster, cheaper one.
- */
-const MISSION_PROFILE = 'default-opus-5.5-medium'
+/** Missions use the Ultrafast preset at medium effort unless their flags override it. */
+const MISSION_PROFILE = 'default-gpt-6.1-sol-ultrafast'
 /**
  * The watchdog counts EVERY stream frame: includeRawChunks surfaces the
  * provider's raw SSE events, so Anthropic's keep-alive pings re-arm it even
@@ -85,11 +75,14 @@ const params = {
     'Google account (email or unique part of it); left out, the account that can open --file, or the work account for something new',
     { short: 'a' },
   ),
-  reasoning: Flag.string('Model profile that runs the mission (e.g. default-opus-5.5-medium, default-sonnet-5.5)', {
-    long: 'ai-reasoning',
-    short: 'r',
-    default: () => MISSION_PROFILE,
-  }),
+  reasoning: Flag.string(
+    'Model profile that runs the mission (e.g. default-gpt-6.1-sol-ultrafast, default-sonnet-5.5)',
+    {
+      long: 'ai-reasoning',
+      short: 'r',
+      default: () => MISSION_PROFILE,
+    },
+  ),
   noOpen: Flag.bool('Do not open touched files in the browser', { default: false }),
 }
 
@@ -100,6 +93,14 @@ type Result = {
   steps: number
   artifact?: string
   timing: MissionTiming
+  /** The mission's resolved selection, retained even if the preset is later edited. */
+  agentModel: {
+    provider: ModelProfile['provider']
+    model: string
+    profile: string
+    effort: Effort | null
+    serviceTier?: string
+  }
   /** The account the mission ran as */
   account: string
   /** Set when another account was tried first and could not open the target file */
@@ -181,15 +182,23 @@ export default class GoogleAgentTask extends Command {
   async run({ args, context }: CommandArgs<Params>): Promise<CommandResult<Result>> {
     const { output, secrets } = context
 
-    // The mission's model is a profile, picked per run. The default is Opus
-    // at medium effort; `--ai-reasoning default-opus-5.5` is the full-depth run.
-    // An unknown name fails here, before any Google work.
+    // Keep medium local to the mission default; other profiles inherit their own effort.
+    const effort = args.effort ?? (args.reasoning === MISSION_PROFILE ? 'medium' : 'default')
+    // An unknown profile or unsupported effort fails before any Google work.
     let missionProfile: ModelProfile
     try {
       missionProfile = getProfile(args.reasoning)
-      validateEffort(missionProfile, args.effort ?? 'default')
+      validateEffort(missionProfile, effort)
     } catch (err) {
       return CommandResult.fail((err as Error).message)
+    }
+    const serviceTier = (missionProfile.options as { serviceTier?: unknown } | undefined)?.serviceTier
+    const agentModel: Result['agentModel'] = {
+      provider: missionProfile.provider,
+      model: missionProfile.model,
+      profile: args.reasoning,
+      effort: effort === 'default' ? effectiveEffort(missionProfile) : effort,
+      ...(typeof serviceTier === 'string' ? { serviceTier } : {}),
     }
     const { mission, file, account, import: importPath } = args
 
@@ -346,6 +355,9 @@ export default class GoogleAgentTask extends Command {
 
     if (accountNote) log(accountNote)
     log(`Mission started (${client.email} · ${args.reasoning})`)
+    log(
+      `Model: ${agentModel.model} · Profile: ${agentModel.profile} · Effort: ${agentModel.effort ? effortLabel(agentModel.effort) : 'Model default'}`,
+    )
 
     const abort = new AbortController()
     const missionSpan = new TimingSpan({ kind: 'generation', name: 'google:mission' })
@@ -356,7 +368,7 @@ export default class GoogleAgentTask extends Command {
         streamText({
           // A mission is expensive to lose — ride out 429/529 bursts with more
           // patience than the SDK's default 2 retries.
-          ...resolveProfile(missionProfile, { maxRetries: 4, effort: args.effort }),
+          ...resolveProfile(missionProfile, { maxRetries: 4, effort }),
           instructions: cachedInstructions([systemPrompt, slideDesignPromptSection()]),
           messages: [{ role: 'user', content: missionMessage }],
           tools,
@@ -488,6 +500,7 @@ export default class GoogleAgentTask extends Command {
         steps,
         artifact,
         timing,
+        agentModel,
         account: client.email,
         ...(accountNote ? { accountNote } : {}),
       })

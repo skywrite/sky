@@ -52,6 +52,15 @@ test(
         runs,
       }),
     )
+    app.get('/chat/tool-inspector-other', (c) =>
+      c.json({
+        turns: [{ role: 'user', content: 'Discuss Atlas follow-up.' }],
+        documents: 0,
+        kept: 0,
+        busy: false,
+        runs: [],
+      }),
+    )
     app.route('/', createTestHttpApp([root]))
     const server = serve({ fetch: app.fetch, hostname: '127.0.0.1', port: 0 })
     const address = server.address()
@@ -165,6 +174,122 @@ test(
         ],
         expected: [2, false, []],
       })
+      recordToolExecution(runs, 1, {
+        type: 'tool-execution-start',
+        phase: 'running',
+        toolName: 'google_agent',
+        toolCallId: 'google-current',
+        started: stamp + 16000,
+        input: { mission: 'Create an Atlas overview.' },
+      })
+      recordToolExecution(runs, 1, {
+        type: 'tool-execution-end',
+        toolName: 'google_agent',
+        toolCallId: 'google-current',
+        finished: stamp + 20000,
+        output: {
+          success: true,
+          report: 'Created the Atlas overview.',
+          agentModel: {
+            provider: 'openai',
+            model: 'gpt-6.1-sol',
+            profile: 'default-gpt-6.1-sol-ultrafast',
+            effort: 'medium',
+            serviceTier: 'ultrafast',
+          },
+        },
+      })
+      recordToolExecution(runs, 1, {
+        type: 'tool-execution-start',
+        phase: 'running',
+        toolName: 'google_agent',
+        toolCallId: 'google-legacy',
+        started: stamp + 21000,
+        input: { mission: 'Create an Atlas summary.', effort: 'high' },
+      })
+      recordToolExecution(runs, 1, {
+        type: 'tool-execution-end',
+        toolName: 'google_agent',
+        toolCallId: 'google-legacy',
+        finished: stamp + 25000,
+        output: {
+          success: true,
+          report: 'Created the Atlas summary.',
+          timing: {
+            profile: 'default-gpt-6.1-sol-ultrafast',
+            models: {
+              'openai.responses/gpt-6.1-sol': { count: 2 },
+              'anthropic.messages/claude-sonnet-5-5': { count: 5 },
+            },
+          },
+        },
+      })
+      busy = true
+      await page.reload()
+      const googleDetails = page.getByRole('button', { name: 'Google Agent details', exact: true })
+      await googleDetails.nth(0).click()
+      await googleDetails.nth(1).click()
+      const models = page.getByRole('region', { name: 'Agent model', exact: true })
+      await models.nth(1).waitFor()
+      const readModels = () =>
+        models.evaluateAll((sections) =>
+          sections.map((section) =>
+            Object.fromEntries(
+              [...section.querySelectorAll('dt')].map((field) => [
+                field.textContent,
+                field.nextElementSibling?.textContent,
+              ]),
+            ),
+          ),
+        )
+      const expectedModels = [
+        {
+          model: 'gpt-6.1-sol',
+          profile: 'default-gpt-6.1-sol-ultrafast',
+          effort: 'Medium',
+          'service tier': 'ultrafast',
+        },
+        { model: 'gpt-6.1-sol', profile: 'default-gpt-6.1-sol-ultrafast', effort: 'High' },
+      ]
+      const selectedModel = await models.first().evaluate((section) => {
+        const range = document.createRange()
+        range.selectNodeContents(section.querySelector('dl')!)
+        const selection = window.getSelection()!
+        selection.removeAllRanges()
+        selection.addRange(range)
+        return selection.toString()
+      })
+      await page.waitForResponse((response) => response.url().endsWith('/chat/tool-inspector'))
+      assert({
+        given: 'a resolved medium-effort mission and an older high-effort mission with nested critique calls',
+        should: 'show their actual model, profile, and effort while preserving selection and the chat title',
+        actual: [
+          await readModels(),
+          await page.evaluate(() => window.getSelection()?.toString()),
+          await page.title(),
+          await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth),
+        ],
+        expected: [expectedModels, selectedModel, 'sky:chat - Draft an update.', false],
+      })
+      busy = false
+      await page.reload()
+      await page.getByRole('button', { name: /Tools · 4/ }).click()
+      await googleDetails.nth(0).click()
+      await googleDetails.nth(1).click()
+      assert({
+        given: 'the same missions read back after reload',
+        should: 'preserve the recorded settings without browser errors',
+        actual: [await readModels(), errors],
+        expected: [expectedModels, []],
+      })
+      await page.goto(`http://127.0.0.1:${address.port}/thread/tool-inspector-other`)
+      await page.waitForFunction(() => document.title === 'sky:chat - Discuss Atlas follow-up.')
+      await page.goBack()
+      await page.waitForFunction(() => document.title === 'sky:chat - Draft an update.')
+      await page.goForward()
+      await page.waitForFunction(() => document.title === 'sky:chat - Discuss Atlas follow-up.')
+      await page.goBack()
+      await page.waitForFunction(() => document.title === 'sky:chat - Draft an update.')
     } finally {
       await browser?.close()
       await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())))

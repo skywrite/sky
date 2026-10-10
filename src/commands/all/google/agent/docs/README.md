@@ -1,16 +1,17 @@
 ---
 created: 2026-08-09
-updated: 2026-10-02
+updated: 2026-10-10
 ---
 
 # google:agent — the mission loop and its reliability ladder
 
-A mission is one `streamText` run (`mod.ts`): `MISSION_PROFILE` — Opus 5.5
-at medium effort (`default-opus-5.5-medium`) — with the agent tools, or the
-profile named by `--reasoning` (`default-opus-5.5` for full depth,
-`default-sonnet-5.5` for a faster, cheaper run), up to `MAX_STEPS = 48` steps, final
-text = the report. A mission executes a brief the chat model already
-wrote, so it needs Opus's hands without Opus's deliberation. Measured on one
+A mission is one `streamText` run (`mod.ts`): `MISSION_PROFILE` — GPT 6.1 Sol
+on the Ultrafast tier (`default-gpt-6.1-sol-ultrafast`) at medium effort — with
+the agent tools, up to `MAX_STEPS = 48` steps, final text = the report.
+`--ai-reasoning` selects another profile, inheriting its effort;
+`--ai-effort` overrides effort for the run (`default` inherits the selected
+profile's effort, including high for the shipped Ultrafast profile).
+A mission executes a brief the chat model already wrote. Measured on one
 three-tab brief on 2026-09-06: Opus 5 at xhigh, the default until then,
 took 19m28s for 25 steps, 19m05s of it thinking, and built the doc right;
 Qwen 3.8 on Cerebras, the default on trial from
