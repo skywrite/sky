@@ -1,6 +1,6 @@
 ---
 created: 2026-09-08
-updated: 2026-10-04
+updated: 2026-10-09
 ---
 
 # Writing voice
@@ -59,8 +59,14 @@ A record exists only for a draft the owner has used: edited, asked Sky to revise
 accepted or restored a version of, approved into its app, or recorded as sent.
 Until then the words stay where Sky wrote them, a chat turn's recorded `me_voice`
 result or the Outbox item's own state file, and both surfaces show them in the
-shared editor as an unsaved draft under a provisional id. The first use saves the
-record with the history shown, including an older item's original, approved pairs,
+shared editor as an unsaved draft under a provisional id. In chat, `me_voice`
+returns that id with the new draft, so Sky can revise its own draft before the turn
+ends; the result is the draft's next version, and the draft stays unsaved because
+the owner has not used it. A draft request without an id may carry `original`, the
+exact words to revise. See
+[Sky revises its own draft in the same turn](2026-10-09-sky-revises-its-own-draft-in-the-same-turn.md).
+The first use saves the record with the history shown,
+including an older item's original, approved pairs,
 and current text, without duplicating past learning. A deleted draft file never
 breaks its item or chat; they fall back to the words they hold. See
 [A draft is saved when it is used](2026-09-20-a-draft-is-saved-when-it-is-used.md).
@@ -180,5 +186,6 @@ are not independently distilled into a second memory store.
 
 ## Notes
 
+- [2026-10-09 — Sky revises its own draft in the same turn](2026-10-09-sky-revises-its-own-draft-in-the-same-turn.md).
 - [2026-09-20 — Sky learns from drafts alone](2026-09-20-sky-learns-from-drafts-alone.md).
 - [2026-09-20 — A draft is saved when it is used](2026-09-20-a-draft-is-saved-when-it-is-used.md).

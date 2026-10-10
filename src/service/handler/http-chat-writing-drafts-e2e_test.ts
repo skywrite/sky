@@ -9,7 +9,13 @@ import { listChatAutosaves } from '#shared/models/Chat/ChatStore/autosave.ts'
 import { serializeContextLog, splitContextLog } from '#shared/models/Chat/document/ContextLog/mod.ts'
 import { env } from '#shared/sys/mod.ts'
 import { assert, test } from '#test'
-import { EDITED_DRAFT, ORIGINAL_DRAFT, WARM_DRAFT, writingDraftTestHost } from './chat/draftsTestHelpers.ts'
+import {
+  correctedOnce,
+  EDITED_DRAFT,
+  ORIGINAL_DRAFT,
+  WARM_DRAFT,
+  writingDraftTestHost,
+} from './chat/draftsTestHelpers.ts'
 import { createChatRoutes } from './chat/mod.ts'
 import { createTestHttpApp } from './httpTestHelpers.ts'
 import { runWysiwygE2e } from './httpWysiwygE2eTestHelpers.ts'
@@ -198,6 +204,53 @@ test(
           await page.evaluate(() => window.getSelection()?.removeAllRanges())
           await page.screenshot({ path: path.join(screenshots, 'reformatted-drafts.png'), fullPage: true })
         }
+        await host!.writingDrafts.idle()
+      },
+    )
+  },
+)
+
+test(
+  { name: 'a draft Sky revises before its reply ends shows as one frame holding both versions', timeout: 90000 },
+  async (t) => {
+    let host: ReturnType<typeof writingDraftTestHost>
+    await runWysiwygE2e(
+      t,
+      {
+        initialMarkdown: '# Mock drafting notebook\n',
+        tempPrefix: 'sky-same-turn-draft-',
+        day: true,
+        chat: (root) =>
+          (host = writingDraftTestHost(root, {
+            followUp: correctedOnce((result) => ({ draftId: result.draftId, draftRevision: result.draftRevision })),
+          })),
+      },
+      async ({ page, origin, errors }) => {
+        await page.setViewportSize({ width: 1440, height: 1100 })
+        const sent = await page.request.post(`${origin}/chat/main/messages`, {
+          data: { message: 'Draft an email to Jane.', profile: 'test-thread-model', contextTokens: 0, saves: true },
+        })
+        if (!sent.ok() || (await sent.text()).includes('event: error')) throw new Error(await sent.text())
+        await page.goto(`${origin}/thread/main`)
+        const main = page.locator('.sky-split-main')
+        const frames = main.locator('.sky-writing-draft')
+        await frames.first().getByRole('button', { name: 'Edit', exact: true }).waitFor()
+        const screenshots = env.get('SKY_DRAFT_SCREENSHOTS')
+        if (screenshots) {
+          await mkdir(screenshots, { recursive: true })
+          await page.screenshot({ path: path.join(screenshots, 'same-turn-revision.png'), fullPage: true })
+        }
+        assert({
+          given: 'Sky drafts an email, then revises that draft before its reply ends',
+          should: 'show one frame with the revised words and both versions, without browser errors',
+          actual: [
+            await frames.count(),
+            await main.locator('.sky-writing-draft-body').allInnerTexts(),
+            await main.getByRole('button', { name: 'Versions · 2', exact: true }).count(),
+            errors,
+          ],
+          expected: [1, [WARM_DRAFT], 1, []],
+        })
         await host!.writingDrafts.idle()
       },
     )

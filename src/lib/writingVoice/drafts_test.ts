@@ -6,6 +6,8 @@ import { writingDraftTools } from './draftChat.ts'
 import { WritingDraftStore } from './drafts.ts'
 import { currentDraftVersion, type WritingDraftView } from './draftTypes.ts'
 import { failure, voiceFixture } from './testHelpers.ts'
+import { createWritingVoiceTools } from './tools.ts'
+import type { VoiceDraftInput } from './types.ts'
 
 test('a slow AI revision cannot overwrite an owner edit and compaction preserves draft history', async () => {
   let finish: ((text: string) => void) | undefined
@@ -152,9 +154,16 @@ test('a draft Sky writes in chat has no record until the owner uses it, and a de
     const files = () => readdir(path.join(f.store.dir, 'drafts')).catch(() => [] as string[])
     assert({
       given: 'a new draft written through the chat tool',
-      should: 'return its words with no record, no link, and no file in the notebook',
-      actual: [written.draft, written.draftId, written.draftRevision, links, await files()],
-      expected: ['The proposal is ready.', undefined, undefined, [], []],
+      should: 'return its words under a provisional id, with no record, no link, and no file in the notebook',
+      actual: [
+        written.draft,
+        written.unsaved,
+        written.draftRevision,
+        await store.get(written.draftId),
+        links,
+        await files(),
+      ],
+      expected: ['The proposal is ready.', true, 1, null, [], []],
     })
     const used = await store.adopt(
       store.initial({ meaning: written.draft }, written.draft, 'chat:sample', 'a'.repeat(32)),
@@ -166,8 +175,8 @@ test('a draft Sky writes in chat has no record until the owner uses it, and a de
     assert({
       given: 'the selected draft’s file deleted from the notebook',
       should: 'write the requested words as a new draft instead of failing on the missing record',
-      actual: [used.id.endsWith('_Atlas-Reply'), afresh.draft, afresh.draftId, await files()],
-      expected: [true, 'The proposal is ready for Friday.', undefined, []],
+      actual: [used.id.endsWith('_Atlas-Reply'), afresh.draft, afresh.unsaved, await files()],
+      expected: [true, 'The proposal is ready for Friday.', true, []],
     })
   } finally {
     await store.idle()
@@ -296,6 +305,53 @@ test('an edit the owner supplies in chat saves the unsaved draft it changes and 
           ['you', 'The draft is ready.'],
         ],
         [['I wanted to let you know that the draft is ready.', 'The draft is ready.']],
+      ],
+    })
+  } finally {
+    await store.idle()
+    await f.dispose()
+  }
+})
+
+test('words given to revise reach the writer in chat and in a terminal, with the request as direction', async () => {
+  const inputs: VoiceDraftInput[] = []
+  const f = await voiceFixture({
+    draft: async (input) => {
+      inputs.push(input)
+      return 'The proposal is ready, and I would value your review.'
+    },
+  })
+  const store = new WritingDraftStore(f.voice, undefined, async () => 'Atlas Reply')
+  try {
+    const hooks = {
+      context: { instructions: '', conversation: [{ role: 'user', content: 'Make my note to Jane warmer.' }] },
+      writingDrafts: { list: () => [], focus: () => undefined, link: async () => {} },
+    } as unknown as ToolHooks
+    const run = (tools: Record<string, unknown>) =>
+      (tools.me_voice as { execute: (input: unknown) => Promise<Record<string, unknown>> }).execute({
+        action: 'draft',
+        meaning: 'Make it warmer.',
+        medium: 'Email',
+        recipient: 'Jane Doe',
+        original: 'The proposal is ready.',
+      })
+    const chat = await run(
+      createWritingVoiceTools(store, { source: 'chat:sample', drafts: writingDraftTools(hooks, store) }),
+    )
+    const terminal = await run(createWritingVoiceTools(store, { source: 'terminal' }))
+    assert({
+      given: 'a request to revise words that no draft of the conversation holds, in chat and in a terminal',
+      should: 'give the writer those words as the text to revise and the request as direction, never dropping them',
+      actual: [
+        inputs.map((input) => [input.meaning, input.context?.includes('Make it warmer.')]),
+        [chat.success, chat.unsaved, terminal.success],
+      ],
+      expected: [
+        [
+          ['The proposal is ready.', true],
+          ['The proposal is ready.', true],
+        ],
+        [true, true, true],
       ],
     })
   } finally {

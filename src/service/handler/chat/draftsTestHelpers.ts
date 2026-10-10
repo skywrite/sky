@@ -15,6 +15,16 @@ export const EDITED_DRAFT = 'Hi Jane,\n\nThe Atlas draft is ready. Please review
 export const WARM_DRAFT =
   'Hi Jane,\n\nThe Atlas draft is ready. I would appreciate your review by Friday.\n\nThanks for your help.'
 
+/** Sky rereads its first draft and asks the writer once more, warmer, in the same turn. */
+export function correctedOnce(revision: (result: Record<string, unknown>) => Record<string, unknown>) {
+  let corrected = false
+  return (result: Record<string, unknown>) => {
+    if (corrected) return undefined
+    corrected = true
+    return { action: 'draft', meaning: 'Make it warmer.', instruction: 'Make it warmer.', ...revision(result) }
+  }
+}
+
 /** The HTTP routes, tools, writer and persistence are real; only model answers are scripted. */
 export function writingDraftTestHost(
   root: string,
@@ -23,6 +33,8 @@ export function writingDraftTestHost(
     briefs?: string[]
     draft?: (input: VoiceDraftInput) => string
     reply?: (text: string) => string
+    /** Another me_voice call in the same turn, built from the result before it: Sky correcting its own draft. */
+    followUp?: (result: Record<string, unknown>) => Record<string, unknown> | undefined
   } = {},
 ) {
   const voice = new WritingVoice(new WritingVoiceStore(root, path.join(root, 'voice-state')), {
@@ -82,39 +94,44 @@ export function writingDraftTestHost(
         instruction: direction,
         ...(currentId ? { draftId: currentId, draftRevision: currentRevision } : { newDraft: true }),
       }
-      const toolCallId = `mock-writing-${args.messages.length}`
-      report({ type: 'tool-execution-start', toolName: 'me_voice', toolCallId, input, phase: 'running', started: 1000 })
-      const result = await execute(input)
-      report({ type: 'tool-execution-end', toolName: 'me_voice', toolCallId, output: result, finished: 2000 })
-      if (!result.success) throw new Error(String(result.error))
+      const call = async (input: Record<string, unknown>, toolCallId: string) => {
+        report({
+          type: 'tool-execution-start',
+          toolName: 'me_voice',
+          toolCallId,
+          input,
+          phase: 'running',
+          started: 1000,
+        })
+        const result = await execute(input)
+        report({ type: 'tool-execution-end', toolName: 'me_voice', toolCallId, output: result, finished: 2000 })
+        if (!result.success) throw new Error(String(result.error))
+        return { input, toolCallId, result }
+      }
+      const first = await call(input, `mock-writing-${args.messages.length}`)
+      const next = calls.followUp?.(first.result)
+      const steps = next ? [first, await call(next, `mock-writing-${args.messages.length}-2`)] : [first]
+      const { result } = steps.at(-1)!
       const text =
         calls.reply?.(String(result.draft)) ??
         `Here is the message.\n\n> ${String(result.draft).replaceAll('\n', '\n> ')}\n\nPlease check the timing before sending.`
       args.sink.write(text)
       const responseMessages: ModelMessage[] = [
-        { role: 'assistant', content: [{ type: 'tool-call', toolName: 'me_voice', toolCallId, input }] },
-        {
-          role: 'tool',
-          content: [
-            {
-              type: 'tool-result',
-              toolName: 'me_voice',
-              toolCallId,
-              output: {
-                type: 'json',
-                value: {
-                  success: true,
-                  draft: String(result.draft),
-                  // Only a draft the owner has used has a record to name.
-                  ...(result.draftId
-                    ? { draftId: String(result.draftId), draftRevision: Number(result.draftRevision) }
-                    : {}),
-                  rulesRevision: String(result.rulesRevision),
-                },
+        ...steps.flatMap(({ input, toolCallId, result }): ModelMessage[] => [
+          { role: 'assistant', content: [{ type: 'tool-call', toolName: 'me_voice', toolCallId, input }] },
+          {
+            role: 'tool',
+            content: [
+              {
+                type: 'tool-result',
+                toolName: 'me_voice',
+                toolCallId,
+                // The model reads the whole result, as a provider receives it.
+                output: { type: 'json', value: JSON.parse(JSON.stringify(result)) },
               },
-            },
-          ],
-        },
+            ],
+          },
+        ]),
         { role: 'assistant', content: text },
       ]
       return { text, content: [], steps: [], responseMessages }

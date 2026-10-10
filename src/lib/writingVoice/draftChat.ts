@@ -1,21 +1,51 @@
 import type { ToolHooks } from '#shared/models/Chat/ChatSession/mod.ts'
 import { toolDisplayName } from '#universal/ai/toolDisplay.ts'
+import { reviseUnsaved } from './draftChanges.ts'
 import type { WritingDraftStore } from './drafts.ts'
 import {
+  type ChatDraftInput,
   currentDraftVersion,
+  unquotedDraft,
   type WritingDraft,
   type WritingDraftToolHost,
   type WritingDraftView,
 } from './draftTypes.ts'
-import { WritingVoiceError } from './types.ts'
+import { type VoiceDraftInput, WritingVoiceError } from './types.ts'
 
 export const WRITING_DRAFT_CHAT_INSTRUCTIONS = `## Editable message drafts
 This workflow applies only to the owner's personal communications written in their own voice. Write UI copy, product copy, mockups, specifications, documentation, sample dialogue, and other general writing directly in chat. Do not create, revise, accept, or learn from them through me_voice, even if an earlier turn mistakenly displayed them in a draft frame or the current drafts list contains them.
 The web chat displays ${toolDisplayName('me_voice')} drafts in editable frames with version history. Present the returned draft intact in the normal review blockquote, with your commentary outside it; the frame replaces that quote on the page. Revisions update that same draft.
-For an existing draft, pass its draftId and latest draftRevision to me_voice action draft. Use the current text below, including the owner's direct edits, rather than an older copy in the conversation. For a separate message use newDraft=true. A selected draft is the target of the draft's Ask Sky thread; keep revisions on that draft unless the user requests another message.
-A draft marked unsaved has no notebook record yet. Its record starts when the owner first works on it, and a revision you make at their request counts. Its draftId changes at that moment, so use the ids the tool returns and the list below, never an id from earlier in the conversation. A draft marked unavailable was deleted; treat it as not listed.
+For an existing draft, pass its draftId and latest draftRevision to me_voice action draft. Every draft result returns both, a new draft's included, so revise a draft you wrote this turn by them too. Use the current text below, including the owner's direct edits, rather than an older copy in the conversation. For a separate message use newDraft=true. A selected draft is the target of the draft's Ask Sky thread; keep revisions on that draft unless the user requests another message.
+A draft marked unsaved has no notebook record yet. Its record starts when the owner first works on it, and a revision you make at their request counts. Its draftId changes at that moment, so use the ids the tool returns and the list below, never an id from an earlier turn. A revision you make on your own in the turn that wrote it is not their use; the draft stays unsaved under the same draftId. A draft marked unavailable was deleted; treat it as not listed.
 An AI revision is a proposal. Only after the owner explicitly accepts it, use action accept with its draftId and draftRevision. A direct edit supplied in chat uses action learn with the draftId, draftRevision, exact original and revised text. Edits and approvals made in the frame are already captured for learning: do not record them again. The owner's actual direction is retained with revisions; never invent a reason or treat an AI suggestion as their decision.
 These are drafts for review; accepting a version does not authorize sending it.`
+
+/**
+ * The writer's request to revise these words. The agent's own text becomes direction, so the writer
+ * starts from the words it is changing rather than rewriting them from a description.
+ */
+export function revising(
+  words: string,
+  request: ChatDraftInput,
+  instruction: string,
+  draft?: WritingDraft,
+): VoiceDraftInput {
+  return {
+    ...request,
+    meaning: words,
+    medium: draft?.input.medium ?? request.medium,
+    recipient: draft?.input.recipient ?? request.recipient,
+    context: [
+      `Requested content from the chat agent: apply it only as required by the editing direction. Preserve unrelated details from the current draft supplied as meaning.\n${request.meaning}`,
+      request.context,
+      draft?.input.context,
+    ]
+      .filter(Boolean)
+      .join('\n\n')
+      .slice(0, 40_000),
+    instruction,
+  }
+}
 
 /** Words Sky wrote in this chat that nobody has worked on yet, under the ids the page shows them with. */
 export type UnsavedDrafts = () => Promise<WritingDraftView[]>
@@ -84,34 +114,48 @@ export function writingDraftTools(
     if (revision !== undefined && revision !== waiting.revision) throw stale()
     return save(waiting)
   }
+  /** The one draft of this conversation, saved or not, whose current words are exactly these. */
+  const holding = async (words: string): Promise<string | undefined> => {
+    const saved = await Promise.all(
+      links.list().map(async (ref) => {
+        const draft = await store.get(ref.id)
+        return draft && currentDraftVersion(draft).text === words ? draft.id : undefined
+      }),
+    )
+    const ids = [
+      ...saved.filter((id) => id !== undefined),
+      ...(await unsaved()).filter((draft) => currentDraftVersion(draft).text === words).map((draft) => draft.id),
+    ]
+    return ids.length === 1 ? ids[0] : undefined
+  }
+  /** The selected draft, unless its file was deleted: then it holds no words to revise. */
+  const focused = async () => {
+    const id = links.focus()
+    return id && (await store.get(id)) ? id : undefined
+  }
+  /** Drafts written this turn. Sky revising one before the turn ends is its own work, not the owner's use. */
+  const writtenThisTurn = new Set<string>()
   return {
     async draft(input) {
-      let id = input.newDraft ? undefined : (input.draftId ?? links.focus())
-      // A selected draft whose file was deleted no longer holds any words to revise.
-      if (id && !input.draftId && !(await store.get(id))) id = undefined
+      const { original, ...request } = input
+      // Words passed instead of an id name the draft that holds them; a selected draft is the default target.
+      const id = request.newDraft
+        ? undefined
+        : (request.draftId ?? (original === undefined ? await focused() : await holding(original)))
       if (id) {
         const waiting = await shown(id)
         if (!waiting && !isLinked(id)) throw new WritingVoiceError('That draft is not part of this conversation.', 404)
-        if (waiting && input.draftRevision !== undefined && input.draftRevision !== waiting.revision) throw stale()
-        const before: WritingDraft = waiting ?? (await store.require(id, input.draftRevision))
+        if (waiting && request.draftRevision !== undefined && request.draftRevision !== waiting.revision) throw stale()
+        const before: WritingDraft = waiting ?? (await store.require(id, request.draftRevision))
         if (!waiting) await store.beforeChange(before, 'sky')
-        const current = currentDraftVersion(before)
-        const writing = {
-          ...input,
-          meaning: current.text,
-          medium: before.input.medium,
-          recipient: before.input.recipient,
-          context: [
-            `Requested content from the chat agent: apply it only as required by the editing direction. Preserve unrelated details from the current draft supplied as meaning.\n${input.meaning}`,
-            input.context,
-            before.input.context,
-          ]
-            .filter(Boolean)
-            .join('\n\n')
-            .slice(0, 40_000),
-          instruction: input.instruction || direction(),
-        }
+        const writing = revising(currentDraftVersion(before).text, request, request.instruction || direction(), before)
         const result = await store.voice.draft(writing)
+        if (waiting && writtenThisTurn.has(waiting.id)) {
+          // The page lists this result as the same draft's next version, still unsaved.
+          const next = structuredClone(waiting)
+          reviseUnsaved(next, unquotedDraft(result.draft))
+          return { ...result, draftId: next.id, draftRevision: next.revision, unsaved: true }
+        }
         // Only a finished revision saves the record: a failed one leaves the words where they were.
         const target = waiting ? await save(waiting) : before
         const saved = await store.revise(
@@ -127,7 +171,13 @@ export function writingDraftTools(
         return { ...result, draftId: target.id, draftRevision: saved.revision }
       }
       // Untouched words stay in the chat that holds them. The owner's first use saves the record.
-      return store.voice.draft(input)
+      const result = await store.voice.draft(
+        original === undefined ? request : revising(original, request, request.instruction || direction()),
+      )
+      // A provisional id, not a record's name: the record takes a readable one when the owner first uses it.
+      const draftId = crypto.randomUUID().replaceAll('-', '')
+      writtenThisTurn.add(draftId)
+      return { ...result, draftId, draftRevision: 1, unsaved: true }
     },
     async accept(id, revision) {
       const draft = await used(id, revision)
@@ -141,22 +191,7 @@ export function writingDraftTools(
       }
     },
     async learn(input) {
-      let id = input.draftId
-      if (!id) {
-        const matches = await Promise.all(
-          links.list().map(async (ref) => {
-            const draft = await store.get(ref.id)
-            return draft && currentDraftVersion(draft).text === input.original ? draft.id : undefined
-          }),
-        )
-        const ids = [
-          ...matches.filter((value) => value !== undefined),
-          ...(await unsaved())
-            .filter((draft) => currentDraftVersion(draft).text === input.original)
-            .map((draft) => draft.id),
-        ]
-        if (ids.length === 1) id = ids[0]
-      }
+      const id = input.draftId ?? (await holding(input.original))
       if (!id) {
         // Words from outside this chat: the owner's change to them still becomes a draft, the one place Sky learns from.
         const saved = (await store.learning.capture(input))?.draft

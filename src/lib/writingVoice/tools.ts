@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { runWithUsageSource } from '#shared/ai/usageLog.ts'
 import { apiErrorMessage } from '#shared/models/Chat/ChatEngine/turnErrorMessage.ts'
 import { toolDisplayName } from '#universal/ai/toolDisplay.ts'
+import { revising } from './draftChat.ts'
 import { WritingDraftId } from './draftId.ts'
 import type { WritingDraftStore } from './drafts.ts'
 import { ChatDraftInputSchema, type WritingDraftToolHost } from './draftTypes.ts'
@@ -15,7 +16,7 @@ export const WRITING_VOICE_CHAT_INSTRUCTIONS = `
 
 ${AGENT_NAME} is the owner's personal drafting agent. Refer to this agent as ${AGENT_NAME} when speaking to the owner. Its callable tool ID is me_voice.
 
-Use me_voice only for the owner's personal communications written in their own voice: emails, messages, letters, posts authored as the owner, and scripts they will personally deliver. For these drafts and revisions, call action draft with the grounded intended meaning, recipient, medium, relevant context, and the owner's direction. ${AGENT_NAME} reads the latest shared rules on each call. Present its returned wording intact, using the normal chat review blockquote. Keep your commentary outside the draft.
+Use me_voice only for the owner's personal communications written in their own voice: emails, messages, letters, posts authored as the owner, and scripts they will personally deliver. For these drafts and revisions, call action draft with the grounded intended meaning, recipient, medium, relevant context, and the owner's direction. To revise words that have no draftId, such as a message the owner pasted, pass them verbatim as original and state the change in meaning. ${AGENT_NAME} reads the latest shared rules on each call. Present its returned wording intact, using the normal chat review blockquote. Keep your commentary outside the draft.
 
 Write UI copy, product copy, interface mockups, specifications, documentation, sample dialogue, and other general writing directly in chat. These are outside ${AGENT_NAME}'s scope. A request to write, draft, or revise text does not by itself make it a personal communication. Do not create, revise, accept, or learn from this material through me_voice, even if an earlier turn mistakenly presented it in a ${AGENT_NAME} draft frame. It must not become a personal writing example or preference.
 
@@ -46,7 +47,6 @@ const Input = z.discriminatedUnion('action', [
 // Providers receive an object schema; action-specific requirements are checked before execution.
 const ToolInput = ChatDraftInputSchema.partial().extend({
   action: z.enum(['draft', 'learn', 'answer', 'rules', 'compact', 'accept']),
-  original: EditInputSchema.shape.original.optional(),
   revised: EditInputSchema.shape.revised.optional(),
   id: EditId.optional(),
   revision: z.string().optional(),
@@ -73,7 +73,14 @@ export function createWritingVoiceTools(
             const input = Input.parse(raw)
             switch (input.action) {
               case 'draft':
-                return { success: true, ...(await (options.drafts ? options.drafts.draft(input) : voice.draft(input))) }
+                return {
+                  success: true,
+                  ...(await (options.drafts
+                    ? options.drafts.draft(input)
+                    : voice.draft(
+                        input.original === undefined ? input : revising(input.original, input, input.instruction),
+                      ))),
+                }
               case 'accept':
                 if (!options.drafts)
                   return { success: false, error: 'Editable draft acceptance is available in web chat.' }

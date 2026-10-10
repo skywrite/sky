@@ -2,9 +2,10 @@ import { mkdtemp, readdir, rm } from 'node:fs/promises'
 import * as os from 'node:os'
 import * as path from 'node:path'
 import { currentDraftVersion, type WritingDraftView } from '#lib/writingVoice/draftTypes.ts'
+import type { VoiceDraftInput } from '#lib/writingVoice/types.ts'
 import { loadResumeSession } from '#shared/models/Chat/ChatStore/mod.ts'
 import { assert, test } from '#test'
-import { EDITED_DRAFT, ORIGINAL_DRAFT, WARM_DRAFT, writingDraftTestHost } from './draftsTestHelpers.ts'
+import { correctedOnce, EDITED_DRAFT, ORIGINAL_DRAFT, WARM_DRAFT, writingDraftTestHost } from './draftsTestHelpers.ts'
 import { createChatRoutes } from './mod.ts'
 
 type App = ReturnType<typeof createChatRoutes>
@@ -274,6 +275,96 @@ test('a revision typed in the main chat is a first use: one record holds both ve
         (await host.writingDrafts.learning.edits()).length,
       ],
       expected: [[], 1, [[undefined, 1, [ORIGINAL_DRAFT, WARM_DRAFT]]], 'Make this warmer.', 0],
+    })
+  } finally {
+    await host.writingDrafts.idle()
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+const SHORT_DRAFT = 'Hi Jane,\n\nThe Atlas draft is ready for your review by Friday.\n\nThanks.'
+
+const writer = (input: VoiceDraftInput) =>
+  /shorter/i.test(input.instruction ?? '')
+    ? SHORT_DRAFT
+    : /warmer/i.test(input.instruction ?? '')
+      ? WARM_DRAFT
+      : input.meaning
+
+test('a revision Sky makes before its turn ends is the next version of the same draft, still unsaved', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'sky-chat-same-turn-revision-'))
+  const inputs: VoiceDraftInput[] = []
+  const host = writingDraftTestHost(root, {
+    inputs,
+    draft: writer,
+    followUp: correctedOnce((result) => ({ draftId: result.draftId, draftRevision: result.draftRevision })),
+  })
+  try {
+    const app = createChatRoutes(host)
+    await send(app, 'main', 'Draft an email to Jane.')
+    const drafts = (await read(app, '/main/drafts')).drafts as WritingDraftView[]
+    assert({
+      given: 'Sky drafts a message, then revises it in the same turn by the draftId the tool returned',
+      should: 'show one unsaved draft holding both versions, give the writer the words it revises, and write no file',
+      actual: [
+        drafts.map((draft) => [draft.unsaved, draft.turn, draft.versions.map((v) => [v.author, v.text])]),
+        inputs[1]?.meaning,
+        await draftFiles(root),
+      ],
+      expected: [
+        [
+          [
+            true,
+            1,
+            [
+              ['sky', ORIGINAL_DRAFT],
+              ['sky', WARM_DRAFT],
+            ],
+          ],
+        ],
+        ORIGINAL_DRAFT,
+        [],
+      ],
+    })
+    await send(app, 'main', 'Make it shorter.')
+    await host.writingDrafts.idle()
+    const after = (await read(app, '/main/drafts')).drafts as WritingDraftView[]
+    assert({
+      given: 'the owner then asks for a shorter version in the next turn',
+      should: 'save one record with all three versions, placed at the turn the draft began',
+      actual: [
+        after.map((draft) => [draft.unsaved, draft.turn, draft.versions.map((v) => v.text)]),
+        (await draftFiles(root)).length,
+      ],
+      expected: [[[undefined, 1, [ORIGINAL_DRAFT, WARM_DRAFT, SHORT_DRAFT]]], 1],
+    })
+  } finally {
+    await host.writingDrafts.idle()
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('a revision that names the draft by its words instead of its id revises that same draft', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'sky-chat-same-turn-words-'))
+  const inputs: VoiceDraftInput[] = []
+  const host = writingDraftTestHost(root, {
+    inputs,
+    draft: writer,
+    followUp: correctedOnce((result) => ({ original: result.draft })),
+  })
+  try {
+    const app = createChatRoutes(host)
+    await send(app, 'main', 'Draft an email to Jane.')
+    const drafts = (await read(app, '/main/drafts')).drafts as WritingDraftView[]
+    assert({
+      given: 'Sky revises its new draft in the same turn, passing the draft’s exact words as original and no id',
+      should: 'give the writer those words to revise and keep one unsaved draft with both versions',
+      actual: [
+        inputs[1]?.meaning,
+        drafts.map((draft) => [draft.unsaved, draft.versions.map((v) => v.text)]),
+        await draftFiles(root),
+      ],
+      expected: [ORIGINAL_DRAFT, [[true, [ORIGINAL_DRAFT, WARM_DRAFT]]], []],
     })
   } finally {
     await host.writingDrafts.idle()

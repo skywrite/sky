@@ -2,9 +2,10 @@ import type { Hono } from 'hono'
 import { z } from 'zod'
 import { hash } from '#lib/outbox/files.ts'
 import { changeDraft, DraftMutationSchema, mutateWritingDraft } from '#lib/writingVoice/draftActions.ts'
+import { reviseUnsaved } from '#lib/writingVoice/draftChanges.ts'
 import { WritingDraftId } from '#lib/writingVoice/draftId.ts'
 import type { WritingDraftStore } from '#lib/writingVoice/drafts.ts'
-import { currentDraftVersion, type WritingDraftView } from '#lib/writingVoice/draftTypes.ts'
+import { currentDraftVersion, unquotedDraft, type WritingDraftView } from '#lib/writingVoice/draftTypes.ts'
 import { MAX_WRITING_CHARS, WritingVoiceError } from '#lib/writingVoice/types.ts'
 import type { Thread, ToolRun } from './mod.ts'
 import type { ReplyThreadHost } from './replyThreads.ts'
@@ -39,8 +40,7 @@ function unsavedDrafts(
     )
       continue
     const turn = Math.floor(run.at / 2) + 1
-    const quoted = output.draft.split(/\r?\n/).every((line) => !line.trim() || line.startsWith('>'))
-    const text = quoted ? output.draft.replace(/^> ?/gm, '') : output.draft
+    const text = unquotedDraft(output.draft)
     // A saved record of these words, in this turn, already owns the frame.
     if (
       linked.some(
@@ -50,7 +50,15 @@ function unsavedDrafts(
       )
     )
       continue
-    const id = hash(JSON.stringify([chatId, run.callId, run.at, output.draft])).slice(0, 32)
+    // The writer names a draft nobody has used yet. Older results carry no name, so one is derived for them.
+    const named = output.unsaved === true ? WritingDraftId.safeParse(output.draftId).data : undefined
+    // Sky revised that draft before its turn ended: the same draft, one version on.
+    const earlier = named ? drafts.find((draft) => draft.id === named) : undefined
+    if (earlier) {
+      reviseUnsaved(earlier, text)
+      continue
+    }
+    const id = named ?? hash(JSON.stringify([chatId, run.callId, run.at, output.draft])).slice(0, 32)
     if (drafts.some((draft) => draft.id === id)) continue
     const draft = store.initial(
       {

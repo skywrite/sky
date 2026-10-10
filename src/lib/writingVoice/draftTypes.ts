@@ -46,6 +46,8 @@ export const ChatDraftInputSchema = DraftInputSchema.extend({
   draftId: WritingDraftId.optional(),
   draftRevision: z.number().int().positive().optional(),
   newDraft: z.boolean().optional(),
+  /** The exact words to revise when no draftId names them: this chat's draft that holds them, or words from elsewhere. */
+  original: z.string().min(1).max(MAX_WRITING_CHARS).optional(),
 })
 
 export type WritingDraft = z.infer<typeof WritingDraftSchema>
@@ -55,10 +57,16 @@ export type ChatDraftInput = z.input<typeof ChatDraftInputSchema>
 export type WritingDraftView = WritingDraft & { turn: number; unsaved?: boolean }
 
 export interface WritingDraftToolHost {
-  /** A new draft has no record yet, so no id: the owner's first use of it creates one. */
-  draft(input: ChatDraftInput): Promise<VoiceDraft & { draftId?: string; draftRevision?: number }>
+  /** A new draft has no record yet: it returns under a provisional id, and the owner's first use saves it under a readable one. */
+  draft(input: ChatDraftInput): Promise<VoiceDraft & { draftId: string; draftRevision: number; unsaved?: true }>
   accept(id: string, revision: number): Promise<unknown>
   learn(input: VoiceEditInput & { draftId?: string; draftRevision?: number }): Promise<unknown>
 }
 
 export const currentDraftVersion = (draft: WritingDraft): DraftVersion => draft.versions.at(-1)!
+
+/** A writer result as its draft shows it: words returned as a quote lose the quote markers. */
+export function unquotedDraft(text: string): string {
+  const quoted = text.split(/\r?\n/).every((line) => !line.trim() || line.startsWith('>'))
+  return quoted ? text.replace(/^> ?/gm, '') : text
+}

@@ -26,6 +26,14 @@ export function reviseDraft(
   if (input) draft.input = DraftInputSchema.parse(input)
 }
 
+/**
+ * Sky revising its own new draft before the turn that wrote it ends. Nobody has used the draft,
+ * so it stays unsaved. The version keeps the draft's own time, so every read lists it alike.
+ */
+export function reviseUnsaved(draft: WritingDraft, text: string): void {
+  reviseDraft(draft, text, 'sky', draft.created)
+}
+
 export function acceptDraft(draft: WritingDraft, now: string, explanation = ''): void {
   const version = currentDraftVersion(draft)
   if (version.accepted) return
