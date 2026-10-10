@@ -73,6 +73,9 @@ test(
             count: 'Ended 21:30\n·\n1 of 4 tasks complete',
           },
         })
+        // Close the badge's tooltip: left open, it trails the resize below by a frame and reads as overflow.
+        await badge.blur()
+        await page.getByRole('tooltip').waitFor({ state: 'hidden' })
 
         for (const width of [1500, 390]) {
           await page.setViewportSize({ width, height: 1000 })
@@ -160,7 +163,8 @@ test(
         const endedAfterCompletion = end(await readFile(file, 'utf8'))
         await writeFile(file, endedAfterCompletion)
         const undoResponse = page.waitForResponse(
-          (response) => response.url().endsWith(`/day/${DAY.ymd}/item`) && response.request().method() === 'POST',
+          (response) =>
+            response.url().endsWith(`/day/${DAY.ymd}/item/row/undo`) && response.request().method() === 'POST',
         )
         await undo.click()
         await page.locator('.sky-day-ended').waitFor()

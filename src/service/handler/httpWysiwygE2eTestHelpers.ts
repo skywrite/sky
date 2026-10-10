@@ -1,7 +1,8 @@
-// The editor's end-to-end suite: a temp notebook, the app served on a free port, Brave headless
-// driving the explorer page. Left out of `dev:test:unit` (a real browser); run it with
-// `bun test service/handler/http-wysiwyg-*-e2e_test.ts`. Tests are named by the behavior
-// specification's ids.
+// The web app's end-to-end harness: a temp notebook, the app served on a free port, a headless
+// browser driving its pages — Brave where a Mac has it, Playwright's Chromium elsewhere, which is
+// what CI's "web browser tests" job runs. Left out of `dev:test:unit`; `bun run dev:test:web:browser`
+// runs every `service/handler/*e2e_test.ts`, or name one file. The editor tests are named by the
+// behavior specification's ids.
 
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import * as os from 'node:os'
@@ -12,6 +13,7 @@ import type { ServerType } from '@hono/node-server'
 import { type Browser, chromium, type Page } from 'playwright'
 import { listAudioConversations, readAudioConversation } from '#commands/all/message/_lib/savedAudioConversation.ts'
 import type { MostImportantAI } from '#lib/mostImportant/types.ts'
+import { exists } from '#shared/fs/mod.ts'
 import MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
 import { env } from '#shared/sys/mod.ts'
 import type { ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
@@ -47,8 +49,18 @@ export interface WysiwygE2eFixture {
   errors: string[]
 }
 
-const BRAVE_EXECUTABLE_PATH =
-  env.get('BRAVE_EXECUTABLE_PATH') ?? '/Applications/Brave Browser.app/Contents/MacOS/Brave Browser'
+/**
+ * The browser the tests drive: a chosen executable (`SKY_BROWSER_EXECUTABLE`, as the
+ * self-launching tests read, or `BRAVE_EXECUTABLE_PATH`), else Brave where a Mac has it,
+ * else Playwright's own Chromium — which is what CI installs.
+ */
+const BRAVE_EXECUTABLE_PATH = '/Applications/Brave Browser.app/Contents/MacOS/Brave Browser'
+
+async function browserExecutable(): Promise<string | undefined> {
+  const chosen = env.get('SKY_BROWSER_EXECUTABLE') || env.get('BRAVE_EXECUTABLE_PATH')
+  if (chosen) return chosen
+  return (await exists(BRAVE_EXECUTABLE_PATH)) ? BRAVE_EXECUTABLE_PATH : undefined
+}
 
 /** The repaint pass runs 200 ms after an input; settle waits it out with room to spare. */
 const SETTLE_MS = 350
@@ -58,10 +70,11 @@ const AUTOSAVE_MS = 1400
 export const ROOT = '.sky-wysiwyg[contenteditable]'
 
 async function launchChromiumOrSkip(t: TestContext, popupBlocking = false): Promise<Browser> {
+  const executablePath = await browserExecutable()
   try {
     return await chromium.launch({
       headless: true,
-      executablePath: BRAVE_EXECUTABLE_PATH,
+      executablePath,
       ignoreDefaultArgs: popupBlocking ? ['--disable-popup-blocking'] : undefined,
     })
   } catch (error) {
@@ -69,7 +82,7 @@ async function launchChromiumOrSkip(t: TestContext, popupBlocking = false): Prom
       error instanceof Error &&
       (error.message.includes("Executable doesn't exist") || error.message.includes('Failed to launch'))
     ) {
-      t.skip(`Unable to launch Brave for e2e test at ${BRAVE_EXECUTABLE_PATH}`)
+      t.skip(`Unable to launch a browser for the e2e test (${executablePath ?? "Playwright's Chromium"})`)
     }
     throw error
   }

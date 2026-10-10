@@ -6,6 +6,7 @@ import { modShortcut, runWysiwygE2e } from './httpWysiwygE2eTestHelpers.ts'
 const DAY = '2026-01-28'
 const PERSON = 'people/Jane-Doe.md'
 const PLACE = 'places/Atlas-office.md'
+const NOTE = 'time/2026/W05/01-28/notes.md'
 
 test(
   {
@@ -28,7 +29,7 @@ test(
           'orgs/Atlas.md': '---\nname: Atlas Studio\n---\n\nAn independent design studio.\n',
           'projects/open/Atlas/_project/overview.md': '---\nname: Atlas\n---\n\nThe website launch.\n',
           'time/2026/W05/01-28/actions/meetings/10-00_Atlas.md': `---\nsummary: Atlas kickoff\nwho: [Jane Doe]\nrel: [projects/Atlas]\n---\n\nThe Atlas kickoff notes.\n`,
-          'time/2026/W05/01-28/notes.md': '---\ntitle: Atlas brief\n---\n\nThe launch needs a clearer introduction.\n',
+          [NOTE]: '---\ntitle: Atlas brief\n---\n\nThe launch needs a clearer introduction.\n',
           'library/Guide.md': '---\ntitle: Atlas guide\n---\n\nA guide to the launch.\n',
         },
       },
@@ -75,10 +76,11 @@ test(
           expected: 'yes',
         })
         await page.keyboard.press(modShortcut('k'))
-        await input.fill('Studio room')
-        await page.getByRole('option').filter({ hasText: 'Atlas office' }).waitFor()
+        await input.fill('Atlas brief')
+        await page.getByRole('option').filter({ hasText: 'Atlas brief' }).waitFor()
         await input.press('Enter')
-        await page.waitForURL(`${origin}/explorer/${PLACE}`)
+        // A note opens in the explorer; a place or a person would open its own page instead.
+        await page.waitForURL(`${origin}/explorer/${NOTE}`)
         await page.locator('.sky-doc-body').waitFor()
         await input.fill('Atlas')
         await page.locator('.sky-search-popover [role="option"]').first().waitFor()

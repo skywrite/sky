@@ -88,7 +88,11 @@ test(
         const composer = page.getByRole('textbox', { name: 'Message sky…', exact: true })
         await composer.fill('What comes next?')
         await page.getByRole('button', { name: 'Send', exact: true }).click()
-        await page.getByText('turn failed — sky restarted while replying. Send it again.', { exact: true }).waitFor()
+        // The failed turn's line carries a Retry button now, so match the alert, not the exact text.
+        await page
+          .getByRole('alert')
+          .filter({ hasText: 'turn failed — sky restarted while replying. Send it again.' })
+          .waitFor()
         await composer.fill('What comes next?')
         await page.getByRole('button', { name: 'Send', exact: true }).click()
         await page.getByText('Assign an owner.', { exact: true }).waitFor()

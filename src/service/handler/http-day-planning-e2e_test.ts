@@ -4,7 +4,7 @@ import { exists } from '#shared/fs/mod.ts'
 import DayDocument from '#shared/models/Day/mod.ts'
 import { dayFile } from '#shared/nbfs/mod.ts'
 import { assert, test } from '#test'
-import { PlainDate, Week, ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
+import { PlainDate, ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
 import { runWysiwygE2e } from './httpWysiwygE2eTestHelpers.ts'
 
 const DAY = new PlainDate('2026-01-27')
@@ -233,17 +233,25 @@ test(
           const saved = page.waitForResponse((response) => response.url().endsWith('/item/add'))
           await page.getByRole('button', { name: 'Add reminder', exact: true }).click()
           const result = (await (await saved).json()) as { undo: string }
-          await page.locator('.sky-plan-undo').getByRole('link', { name: 'Open schedule', exact: true }).click()
-          await page.waitForURL(`${origin}/week/${Week.of(monday)}`)
-          await page.getByText('Water the plants', { exact: true }).waitFor()
+          await page.locator('.sky-plan-undo .sky-undo-text').waitFor()
+          const mondayFile = path.join(timeDir, dayFile(monday))
           assert({
-            given: 'an add on a date next week',
-            should: 'show it on the schedule without creating a day',
-            actual: await exists(path.join(timeDir, dayFile(monday))),
-            expected: false,
+            given: 'an add on a date next week, from that date’s own page',
+            should: 'prepare that day without starting it, with the reminder in it',
+            actual: {
+              started: DayDocument.fromMarkdown(await readFile(mondayFile, 'utf8')).started,
+              reminder: (await readFile(mondayFile, 'utf8')).includes('- Water the plants'),
+            },
+            expected: { started: undefined, reminder: true },
           })
           const undo = await page.request.post(`${origin}/day/${monday.ymd}/item/undo`, { data: { id: result.undo } })
           if (!undo.ok()) throw new Error(await undo.text())
+          assert({
+            given: 'Undo of the first item on that day',
+            should: 'remove the untouched day file',
+            actual: await exists(mondayFile),
+            expected: false,
+          })
         }
         assert({ given: 'empty-day composers', should: 'finish without browser errors', actual: errors, expected: [] })
       },

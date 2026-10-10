@@ -153,10 +153,14 @@ test(
         })
         await page.goto(`${origin}/${DAY}`)
         await page.getByRole('button', { name: 'Add a file', exact: true }).waitFor()
-        await page.locator('.sky-day').evaluate((target, text) => {
+        // The day view remounts when its data arrives, so the drop finds the page at the moment it lands —
+        // a handle taken earlier can point at the element that was replaced, and a drop there goes nowhere.
+        await page.evaluate((text) => {
           const transfer = new DataTransfer()
           transfer.items.add(new File([text], 'Atlas.srt', { type: 'text/plain' }))
-          target.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: transfer }))
+          document
+            .querySelector('.sky-day')!
+            .dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: transfer }))
         }, SRT)
         await page.getByText('New video from a transcript', { exact: true }).waitFor()
         await page.getByRole('button', { name: '+ Add link', exact: true }).click()

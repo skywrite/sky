@@ -1,7 +1,6 @@
 // The day's drop: a file dropped on the day is an import, wherever it lands — the page, the
-// Files panel's header, its rows. Only the Files pad keeps a file as it is, and only the Files
-// button opens the panel; a drag never does. Left out of `dev:test:unit` (a real browser); run
-// it with `bun test service/handler/http-day-drop-e2e_test.ts`.
+// rail's sections. Only the rail's pad keeps a file as it is, and a drag opens nothing. Left out
+// of `dev:test:unit` (a real browser); run it with `bun test service/handler/http-day-drop-e2e_test.ts`.
 
 import { readdir } from 'node:fs/promises'
 import * as path from 'node:path'
@@ -35,7 +34,7 @@ const TRANSCRIPT = `WEBVTT
 
 test(
   {
-    name: 'day — a dropped file is an import wherever it lands; the pad alone keeps, and the button alone opens it',
+    name: 'day — a dropped file is an import wherever it lands; the pad alone keeps',
     timeout: 60000,
   },
   async (t) => {
@@ -45,18 +44,17 @@ test(
       async ({ page, origin, userDataDir, errors }) => {
         await page.setViewportSize({ width: 1400, height: 900 })
         await page.goto(`${origin}/${DAY.ymd}`)
-        // The header's Files button comes alive once the day has loaded.
-        await page.waitForSelector('.sky-day .sky-head button:has-text("Files"):not([disabled])')
+        // The rail, with its pad, is open on a wide window once the day has loaded.
+        await page.waitForSelector('.sky-rail-pad[data-drop-pad]')
         const dir = path.join(userDataDir, 'attachments', dayAttachmentsDir(DAY))
         const listDir = async () => ((await exists(dir)) ? (await readdir(dir)).sort() : [])
-        const panelOpen = () => page.evaluate(() => document.querySelector('.sky-files') !== null)
         const dialogOpen = () => page.evaluate(() => document.querySelector('.sky-confirm') !== null)
         const recap = { name: 'recap.vtt', type: 'text/vtt', text: TRANSCRIPT }
 
-        // Held over the page: the overlay, and no panel.
+        // Held over the page: the overlay, and no dialog.
         await dispatchFileDrag(page, '.sky-day .sky-col', recap)
         const overlayShown = await page.isVisible('.sky-drop')
-        const openedByDrag = await panelOpen()
+        const openedByDrag = await dialogOpen()
 
         // Let go on the page: the import dialog, and nothing in the directory.
         await dispatchFileDrop(page, '.sky-day .sky-col', recap)
@@ -64,54 +62,50 @@ test(
         const dropTitle = await page.textContent('.sky-confirm-title')
         const dropFile = (await page.textContent('.sky-confirm-file'))?.split(' · ')[0]
         const dirAfterDrop = await listDir()
-        const panelAfterDrop = await panelOpen()
         await page.getByRole('button', { name: 'Cancel', exact: true }).click()
         await page.waitForSelector('.sky-confirm', { state: 'detached' })
 
-        // The button opens the panel; a drop on the pad keeps, with no dialog.
-        await page.click('.sky-day .sky-head button:has-text("Files")')
-        await page.waitForSelector('.sky-files .sky-pad[data-drop-pad]')
-        await dispatchFileDrop(page, '.sky-files .sky-pad', {
+        // A drop on the rail's pad keeps, with no dialog.
+        await dispatchFileDrop(page, '.sky-rail-pad[data-drop-pad]', {
           name: 'atlas-deck.pdf',
           type: 'application/pdf',
           text: '%PDF-1.4 deck',
         })
-        await page.waitForSelector('.sky-files .sky-file-name:has-text("atlas-deck.pdf")')
+        await page.waitForSelector('.sky-undo-text:has-text("atlas-deck.pdf")')
         const toast = await page.textContent('.sky-undo-text')
         const dirAfterPad = await listDir()
         const dialogAfterPad = await dialogOpen()
 
-        // A drop on the panel's own rows, beside the pad, is an import like anywhere else.
-        await dispatchFileDrop(page, '.sky-files .sky-file', {
+        // A drop on the rail beside the pad is an import like anywhere else.
+        await dispatchFileDrop(page, '.sky-rail-sec[data-section="meetings"]', {
           name: 'notes.txt',
           type: 'text/plain',
           text: 'A few notes from the call.',
         })
         await page.waitForSelector('.sky-confirm-title:has-text("from a text file")')
-        const rowsTitle = await page.textContent('.sky-confirm-title')
-        const rowsFile = (await page.textContent('.sky-confirm-file'))?.split(' · ')[0]
-        const dirAfterRows = await listDir()
+        const railTitle = await page.textContent('.sky-confirm-title')
+        const railFile = (await page.textContent('.sky-confirm-file'))?.split(' · ')[0]
+        const dirAfterRail = await listDir()
         await page.getByRole('button', { name: 'Cancel', exact: true }).click()
         await page.waitForSelector('.sky-confirm', { state: 'detached' })
 
         assert({
           given:
-            'a day page; a transcript held over it, then dropped on it; the Files button; a file dropped on the pad; a text dropped on the panel’s rows',
+            'a day page; a transcript held over it, then dropped on it; a file dropped on the rail’s pad; a text dropped on the rail beside the pad',
           should:
-            'show the overlay and open no panel; open the import dialog with the directory untouched; open the panel from the button; keep from the pad with no dialog; import from the rows',
+            'show the overlay and open nothing; open the import dialog with the directory untouched; keep from the pad with no dialog; import from the rail',
           actual: [
             overlayShown,
             openedByDrag,
             dropTitle,
             dropFile,
             dirAfterDrop,
-            panelAfterDrop,
             toast,
             dirAfterPad,
             dialogAfterPad,
-            rowsTitle,
-            rowsFile,
-            dirAfterRows,
+            railTitle,
+            railFile,
+            dirAfterRail,
             errors,
           ],
           expected: [
@@ -120,7 +114,6 @@ test(
             'New meeting from a transcript',
             'recap.vtt',
             [],
-            false,
             'Kept a copy of “atlas-deck.pdf” with 2026-08-05',
             ['atlas-deck.pdf'],
             false,

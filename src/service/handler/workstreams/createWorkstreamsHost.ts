@@ -20,6 +20,15 @@ import { fetchNowSync } from '#shared/nbfs/mod.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import type { WorkstreamsRoutesOptions } from './mod.ts'
 
+/** The notebook's day, or the machine's for a notebook with no started day. */
+function todayYmd(): string {
+  try {
+    return fetchNowSync().plainDateTime.plainDate.ymd
+  } catch {
+    return PlainDate.today().ymd
+  }
+}
+
 export function createWorkstreamsHost(config: typeof Config): WorkstreamsRoutesOptions {
   const runtime = createWorkstreamsRuntime(config)
   const { store } = runtime
@@ -30,7 +39,7 @@ export function createWorkstreamsHost(config: typeof Config): WorkstreamsRoutesO
     reportDelivery: runtime.reportDelivery,
     now: workstreamNow,
     identityTime: workstreamIdentityTime,
-    today: () => fetchNowSync().plainDateTime.plainDate.ymd,
+    today: todayYmd,
     automation: async () => {
       await store.initialize()
       const { byName } = await loadAutomationDir(config.DIR_AUTOMATIONS, [
@@ -41,7 +50,7 @@ export function createWorkstreamsHost(config: typeof Config): WorkstreamsRoutesO
     },
     setup: async () => {
       await store.initialize()
-      return setupWorkstreams(config.DIR_AUTOMATIONS, store.stateDir, fetchNowSync().plainDateTime.plainDate.ymd)
+      return setupWorkstreams(config.DIR_AUTOMATIONS, store.stateDir, todayYmd())
     },
     capture: async (input, signal) => {
       const timeout = AbortSignal.timeout(30_000)
@@ -93,7 +102,7 @@ export function createWorkstreamsHost(config: typeof Config): WorkstreamsRoutesO
         existing,
         sources,
         now: workstreamNow(),
-        today: fetchNowSync().plainDateTime.plainDate.ymd,
+        today: todayYmd(),
       })
     },
     run: (id, request, trigger, reportingId) =>

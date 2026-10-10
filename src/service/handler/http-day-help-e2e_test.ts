@@ -3,7 +3,7 @@ import * as path from 'node:path'
 import dayFile from '#shared/nbfs/dayFile.ts'
 import { env } from '#shared/sys/mod.ts'
 import { assert, test } from '#test'
-import { PlainDate } from '#universal/dates/nbdt/mod.ts'
+import { PlainDate, ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
 import { replyThreadTestHost } from './chat/replyThreadsTestHelpers.ts'
 import { runWysiwygE2e } from './httpWysiwygE2eTestHelpers.ts'
 
@@ -46,6 +46,8 @@ test(
         file: FILE,
         files: { [DOCUMENT]: '# Atlas proposal\n\n## Next steps\n\nReview the draft.\n' },
         day: true,
+        // The page's day is today: the help chat it opens comes back to it as Today.
+        now: new ZonedDateTime(`${DAY.ymd}T12:00:00`, 'UTC'),
         chat: (root) =>
           replyThreadTestHost(root, {
             invokeModel: async ({ sink }) => {

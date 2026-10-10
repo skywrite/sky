@@ -79,6 +79,7 @@ bun run dev:fmt          # Format (oxfmt) — fixes what dev:check's fmt step fl
 bun run dev:lint         # Lint (oxlint + banned-apis + tasks)
 bun run dev:typecheck    # Type check (tsc)
 bun run dev:test:unit    # Run tests (bun test)
+bun run dev:test:web:browser  # The web app's browser tests (Brave on a Mac, else Playwright's Chromium; CI runs these too)
 ```
 
 **`dev:check` is mandatory after code changes.** It chains fmt (check-only), lint, typecheck, and the VS Code extension's own checks; if the fmt step fails, run `dev:fmt` to fix and re-run.

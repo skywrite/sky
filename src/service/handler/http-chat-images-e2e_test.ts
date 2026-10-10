@@ -140,7 +140,15 @@ test(
           should: 'give the model native image input and retained edit paths, and display its new image',
           actual: {
             images: await images.count(),
-            native: JSON.stringify(fixture!.calls[1]!.messages).includes('"type":"image"'),
+            // Images ride to the model as file parts with an image media type (the SDK's image part is deprecated).
+            native: fixture!.calls[1]!.messages.some(
+              (message) =>
+                Array.isArray(message.content) &&
+                message.content.some(
+                  (part) =>
+                    part.type === 'file' && String((part as { mediaType?: string }).mediaType).startsWith('image/'),
+                ),
+            ),
             input: fixture!.calls[1]!.files.includes('family-photo.png'),
             previous: fixture!.calls[1]!.files.includes('lighthouse-1.png'),
           },
@@ -153,7 +161,8 @@ test(
           actual: [
             messages.length,
             JSON.stringify(messages.at(-1)).includes('Change the background while keeping the people the same.'),
-            JSON.stringify(messages.at(-1)).includes('"type":"image"'),
+            JSON.stringify(messages.at(-1)).includes('"type":"file"') &&
+              JSON.stringify(messages.at(-1)).includes('"mediaType":"image/'),
             await thumbnail.count(),
           ],
           expected: [2, true, true, 1],

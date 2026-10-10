@@ -21,7 +21,7 @@ import { KeychainSecretsProvider } from '#lib/secrets/KeychainSecretsProvider.ts
 import { loadSkyConfig } from '#shared/config/loader.ts'
 import type PeopleStore from '#shared/models/Store/PeopleStore/mod.ts'
 import { dayDir, fetchNow } from '#shared/nbfs/mod.ts'
-import { PlainDate } from '#universal/dates/nbdt/mod.ts'
+import { PlainDate, PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import type { PersonScore } from '../../scoring/ScoringStore.ts'
 import type { Store } from '../../store.ts'
 import { createAttendeeNames } from './attendeeNames.ts'
@@ -207,7 +207,10 @@ export function createDayScheduleHost(options: {
         ownerNames: [],
       }).catch(() => null),
     ])
-    const now = (await fetchNow({ timeDir: options.timeDir })).plainDateTime
+    // The clock the rows are judged by: the notebook's, or the machine's for a notebook with no started day.
+    const now = await fetchNow({ timeDir: options.timeDir })
+      .then((clock) => clock.plainDateTime)
+      .catch(() => new PlainDateTime())
     return scheduleOf({
       day: day.ymd,
       events: calendar.meetings,
