@@ -1203,7 +1203,8 @@ function ConfirmBody({
 
   const size =
     files.length > 0 ? files.reduce((total, file) => total + file.size, 0) : new Blob([pending?.text ?? '']).size
-  const calendar = meeting ? null : live?.calendar
+  // A video is not a meeting: a transcript filed as one has no calendar event to match.
+  const calendar = meeting || fields.kind === 'video' ? null : live?.calendar
 
   if (documentInput && started && job)
     return (

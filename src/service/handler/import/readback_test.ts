@@ -32,6 +32,22 @@ Alex Chen: Morning. Shall we start with pricing?
 Jane Doe: Yes. The floor moves to the usage tier.
 `
 
+// A Zoom Clip: cues numbered from zero, and no names, since one person talks.
+const CLIP = `WEBVTT
+
+0
+00:00:00.800 --> 00:00:03.900
+Hi everyone, here is this week's Atlas update.
+
+1
+00:00:04.600 --> 00:01:20.800
+Pricing moved to the usage tier.
+
+2
+00:01:21.100 --> 00:01:45.000
+That's it for now.
+`
+
 const SRT = `1
 00:00:01,000 --> 00:00:04,000
 Jane Doe: Morning, everyone.
@@ -105,7 +121,7 @@ test('readTranscript', () => {
   const back = readTranscript(VTT, 'atlas-pricing-sync.vtt')
   assert({
     given: 'a Zoom transcript',
-    should: 'read its length, turns and speakers, and offer it as a meeting',
+    should: 'read its length, turns and speakers, and offer it as a meeting first, then a video',
     actual: {
       summary: back.summary,
       detail: back.detail,
@@ -119,9 +135,16 @@ test('readTranscript', () => {
       detail: 'Jane Doe, Alex Chen',
       minutes: 47,
       clock: null,
-      kinds: ['meeting'],
+      kinds: ['meeting', 'video'],
       refusal: null,
     },
+  })
+  const clip = readTranscript(CLIP, 'atlas-update.vtt')
+  assert({
+    given: "a Zoom Clip's transcript, whose cues name no speaker",
+    should: 'read a turn for each cue and offer it as a video first, then a meeting',
+    actual: [clip.summary, clip.detail, clip.kinds, clip.refusal],
+    expected: ['Zoom transcript · 2 minutes · 3 turns', null, ['video', 'meeting'], null],
   })
   assert({
     given: 'a .vtt that is not WebVTT',
@@ -170,11 +193,11 @@ test('readText', () => {
   })
   assert({
     given: 'a WebVTT body in a .txt',
-    should: 'offer a meeting with its transcript length, speakers and turns',
+    should: 'offer a meeting first, then a video, with its transcript length, speakers and turns',
     actual: readText(VTT, 'notes.txt'),
     expected: {
       source: 'transcript',
-      kinds: ['meeting'],
+      kinds: ['meeting', 'video'],
       summary: 'Zoom transcript · 47 minutes · 3 turns',
       detail: 'Jane Doe, Alex Chen',
       durationMinutes: 47,
@@ -380,7 +403,7 @@ test('readTranscript, a transcript without a header', () => {
     given: "a captioner's .vtt with no WEBVTT line and clock times",
     should: 'read it as a transcript, its length and its start from the first cue, and not call it Zoom',
     actual: [back.summary, back.detail, back.durationMinutes, back.clockStartSeconds, back.kinds, back.refusal],
-    expected: ['Transcript · 41 minutes · 3 turns', 'Jane Doe, Alex Chen', 41, 32400, ['meeting'], null],
+    expected: ['Transcript · 41 minutes · 3 turns', 'Jane Doe, Alex Chen', 41, 32400, ['meeting', 'video'], null],
   })
   assert({
     given: 'the same body in a .txt',

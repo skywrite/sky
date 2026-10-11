@@ -286,3 +286,43 @@ test('ZoomVTT.startSeconds', () => {
     expected: [32400, null],
   })
 })
+
+// Zoom Clips number their cues from zero and name no one: one person talking.
+const CLIP = `WEBVTT\r
+\r
+0\r
+00:00:00.800 --> 00:00:03.900\r
+Hi everyone, here is this week's Atlas update.\r
+\r
+1\r
+00:00:04.600 --> 00:00:21.800\r
+Pricing moved to the usage tier. The deck is in the channel.\r
+\r
+2\r
+00:00:22.100 --> 00:00:25.000\r
+That's it for now.\r
+`
+
+test('ZoomVTT — a Zoom Clip', () => {
+  const clip = ZoomVTT.parse(CLIP)
+  const meeting = ZoomVTT.parse(FIXTURE)
+  const teamsish = ZoomVTT.parse('WEBVTT\n\n00:00:01.000 --> 00:00:02.000\n<v John Smith>Hello there</v>\n')
+
+  assert({
+    given: "a Zoom Clip's transcript, a Zoom meeting's, and one with Teams-style voice tags",
+    should: 'say only the clip names no speaker',
+    actual: [clip.namesSpeakers, meeting.namesSpeakers, teamsish.namesSpeakers],
+    expected: [false, true, true],
+  })
+
+  assert({
+    given: "a Zoom Clip's transcript",
+    should: 'keep each cue as a turn of its own rather than one block',
+    actual: clip.toTurnText(),
+    expected: [
+      "[00:00:00] Hi everyone, here is this week's Atlas update.",
+      '[00:00:04] Pricing moved to the usage tier. The deck is in the channel.',
+      "[00:00:22] That's it for now.",
+    ].join('\n\n'),
+  })
+})

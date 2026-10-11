@@ -61,7 +61,7 @@ export function opening(text: string): string {
 
 export interface ReadBack {
   source: ImportSource
-  /** The kinds this file may be filed as — a transcript is a meeting, a recording could be anything */
+  /** The kinds this file may be filed as — a transcript is a meeting or a video, a recording could be anything */
   kinds: ImportKind[]
   /** One line: "Zoom transcript · 47 minutes · 212 turns" */
   summary: string
@@ -127,7 +127,11 @@ function refused(source: ImportSource, refusal: string): ReadBack {
   }
 }
 
-/** VTT contents: Zoom's transcript, or a captioner's headerless one, in a .vtt or .txt. */
+/**
+ * VTT contents: Zoom's transcript, or a captioner's headerless one, in a .vtt
+ * or .txt. A meeting's cues name who is talking; a Zoom Clip's name no one,
+ * so one that names no speaker is offered as a video first.
+ */
 export function readTranscript(text: string, name: string): ReadBack {
   if (!ZoomVTT.isVtt(text)) {
     const why = SRT.isSrt(text) ? 'is an SRT transcript — save it as .srt' : 'is not a WebVTT transcript'
@@ -142,7 +146,7 @@ export function readTranscript(text: string, name: string): ReadBack {
   const parts = [zoom ? 'Zoom transcript' : 'Transcript', length, `${vtt.turns.length} turns`]
   return {
     source: 'transcript',
-    kinds: ['meeting'],
+    kinds: vtt.namesSpeakers ? ['meeting', 'video'] : ['video', 'meeting'],
     summary: parts.filter((p): p is string => Boolean(p)).join(' · '),
     detail: speakers.length > 0 ? speakers.join(', ') : null,
     durationMinutes: minutes,

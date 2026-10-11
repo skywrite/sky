@@ -272,6 +272,19 @@ test("startArgs() — a video's transcript", () => {
       rawArgs: { _: [] },
     },
   })
+  const clip = startArgs({ ...memo, source: 'transcript' }, fields({ kind: 'video' }), '/tmp/clip.vtt')
+  assert({
+    given: "a Zoom Clip's .vtt filed as a video",
+    should: 'run video:new by the Zoom transcript door, with the record key and the clock',
+    actual: {
+      command: clip.command,
+      vtt: clip.args.fromZoomVtt,
+      srt: clip.args.fromSrt,
+      clock: clip.args.clock,
+      run: clip.args.run,
+    },
+    expected: { command: 'video:new', vtt: '/tmp/clip.vtt', srt: undefined, clock: PROPOSED, run: 'abc123' },
+  })
 })
 
 test('startArgs() — a screenshot', () => {

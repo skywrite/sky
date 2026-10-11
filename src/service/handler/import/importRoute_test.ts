@@ -49,6 +49,18 @@ Alex Chen: Morning. Shall we start with pricing?
 Jane Doe: Yes. The floor moves to the usage tier.
 `
 
+// A Zoom Clip's transcript: one person talking, so no cue names a speaker.
+const CLIP = `WEBVTT
+
+0
+00:00:00.800 --> 00:00:03.900
+Hi everyone, here is this week's Atlas update.
+
+1
+00:00:04.600 --> 00:02:10.000
+Pricing moved to the usage tier.
+`
+
 const FILED = 'time/2026/W05/01-27/actions/meetings/0931_Zoom_Jane-Doe_Atlas-pricing-sync.md'
 
 test('all journal results survive the event stream and reload, and selected links reach every entry', async () => {
@@ -649,7 +661,7 @@ test('POST /import stages a transcript and reads it back', async () => {
   const staged = (await readdir(path.join(w.dir, body.job.id))).filter((f) => !f.endsWith('.tmp'))
   assert({
     given: 'a .vtt dropped',
-    should: 'stage it, read it back, and offer it as a new meeting',
+    should: 'stage it, read it back, and offer it as a new meeting first, or a video',
     actual: {
       status: response.status,
       state: body.job.state,
@@ -667,7 +679,7 @@ test('POST /import stages a transcript and reads it back', async () => {
       state: 'new',
       summary: 'Zoom transcript · 47 minutes · 2 turns',
       detail: 'Jane Doe, Alex Chen',
-      kinds: ['meeting'],
+      kinds: ['meeting', 'video'],
       title: 'atlas-pricing-sync',
       when: '2026-01-27 09:31',
       lastModified: 1_700_000_000_000,
@@ -864,6 +876,30 @@ test("POST /import reads a video's .srt, offers it as a video only, and starts i
       kinds: ['video'],
       title: 'atlas-walkthrough',
       meeting: [400, 'this file cannot be filed as a meeting'],
+      video: 200,
+      started: ['video'],
+    },
+  })
+})
+
+test("POST /import offers a Zoom Clip's .vtt as a video first, and starts it as one", async () => {
+  const w = await world()
+  const app = createTestHttpApp([path.join(w.notebook, 'time')], { imports: w.options })
+  const response = await app.request('/import', { method: 'POST', body: upload('atlas-update.vtt', CLIP) })
+  const { job } = (await response.json()) as { job: ImportJob }
+  const video = await postJson(app, `/import/${job.id}/start`, { kind: 'video', when: '2026-01-27 09:31' })
+  assert({
+    given: "a Zoom Clip's .vtt dropped",
+    should: 'read it as a transcript, offer a video before a meeting, and start as a video',
+    actual: {
+      summary: job.readback.summary,
+      kinds: job.readback.kinds,
+      video: video.status,
+      started: w.runs.map((run) => run.fields?.kind),
+    },
+    expected: {
+      summary: 'Zoom transcript · 2 minutes · 2 turns',
+      kinds: ['video', 'meeting'],
       video: 200,
       started: ['video'],
     },

@@ -1,6 +1,6 @@
 ---
 created: 2026-09-01
-updated: 2026-10-02
+updated: 2026-10-11
 ---
 
 # Meeting from a file — the import
@@ -65,7 +65,7 @@ One door for every file kind. The kind picks the command:
 
 | Dropped | Door |
 | --- | --- |
-| VTT contents in `.vtt` or `.txt` | `meeting:new --from-zoom-vtt` |
+| VTT contents in `.vtt` or `.txt` | the kind chosen in the dialog: `meeting:new --from-zoom-vtt`, or `video:new --from-zoom-vtt` — a Zoom Clip's; a transcript whose cues name no speaker is offered as a video first |
 | `.srt` | `video:new --from-srt` — a video's transcript; a Loom's, a caption file's |
 | video recording (`.mp4`, `.mov`, `.m4v`, `.webm`, `.mkv`) | `journal:new --from-video --split` — extracts audio, reviews names and journal types, retains the original video |
 | plain-text `.txt` | the kind chosen in the dialog: `meeting:new --from-text` (first), or `message:new --from-text` — a chat's export |
@@ -172,7 +172,8 @@ is preselected) and **when** (proposed from the file's time and length,
 checked against the calendar within the meeting check's fifteen minutes;
 for a screenshot, when it was taken, and the calendar is not asked; for an
 `.srt`, from the file's time and length, and the calendar is not asked
-either — a video is not a meeting).
+either — a video is not a meeting, and a `.vtt` chosen as a video shows
+no calendar match).
 A when the person changed is passed as a stated argument, which the
 command keeps over anything the words say; left as proposed, it is passed
 as the file's clock, which the pipeline resolves the words against and

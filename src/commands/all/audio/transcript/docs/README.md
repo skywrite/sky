@@ -1,6 +1,6 @@
 ---
 created: 2026-09-02
-updated: 2026-09-28
+updated: 2026-10-11
 ---
 
 # The transcript pipeline
@@ -110,6 +110,11 @@ numbers, whole seconds, and the time of day in place of an offset from zero.
 Such a file's length runs from its first cue, not from zero, and that cue
 is also when the meeting began, which the web import proposes as the start.
 A numbered cue with no header is an SRT.
+
+A Zoom Clip's `.vtt` is Zoom's dialect with no names: one person talking,
+cues numbered from zero. Its cues are its turns — merged on speaker, the
+whole clip would be one block — and the web import offers it as a video
+before a meeting. A meeting's `.vtt` names a speaker on every cue.
 
 ## A name matched is a name corrected
 

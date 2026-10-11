@@ -26,13 +26,17 @@ import { actionKindRel } from '#shared/nbfs/mod.ts'
 import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 
 const params = {
-  summary: ArgOrFlag.string('Summary of the video (optional with --from-srt)', { short: 's' }),
+  summary: ArgOrFlag.string('Summary of the video (optional with --from-srt or --from-zoom-vtt)', { short: 's' }),
   medium: Flag.string('Video platform/medium (YouTube, Vimeo, Loom, etc.)', { short: 'm' }),
   from: Flag.string('Who the communication was from', { short: 'f' }),
   to: Flag.string('Who the communication was to', { short: 't' }),
   fromSrt: Flag.string('Path to an .srt transcript, or omit path to use the newest .srt on the Desktop', {
     optional: true,
   }),
+  fromZoomVtt: Flag.string(
+    "Path to a Zoom transcript — a Zoom Clip's .vtt — or omit path to use the newest .vtt on the Desktop",
+    { optional: true },
+  ),
   when: whenNBTime(),
   category: categoryComplete(),
   noAutoTag: Flag.bool('Skip automatic tagging from the archived-video tag corpus', { default: false }),
@@ -49,7 +53,7 @@ type Params = InferParams<typeof params>
 /** The video's absolute path: the day it went under is the pipeline's to settle, not the caller's */
 type Result = { filePath: string }
 
-const VIDEO_MEDIUMS = ['Loom', 'YouTube', 'Zoom Recording', 'Google Meet Recording', 'Vimeo', 'Video']
+const VIDEO_MEDIUMS = ['Loom', 'Zoom Clip', 'YouTube', 'Zoom Recording', 'Google Meet Recording', 'Vimeo', 'Video']
 
 // Videos classify against the video archive alone: a closed menu of tags
 // already on videos, and rel exemplars from earlier videos. See docs/README.md.
@@ -63,37 +67,44 @@ export default class VideoNewTask extends Command {
       'sky video:new "Weekly update" --from Jane --medium Loom',
       'sky video:new --from-srt                    # Summarize newest .srt on Desktop',
       'sky video:new --from-srt ~/Desktop/talk.srt # Summarize a specific transcript',
+      "sky video:new --from-zoom-vtt               # Summarize newest .vtt on Desktop, a Zoom Clip's",
     ],
     params,
-    postProcess: [validateAnyArgFlagExists('summary', 'fromSrt')],
+    postProcess: [validateAnyArgFlagExists('summary', 'fromSrt', 'fromZoomVtt')],
   }
 
   async run({ args, context, tasks, rawArgs }: CommandArgs<Params>): Promise<CommandResult<Result>> {
     const { output, config } = context
     let { medium, from, to, when, summary, category } = args
-    const { fromSrt } = args
+    const { fromSrt, fromZoomVtt } = args
     let body: string | undefined
     let rel: string[] | undefined
     let tags: string | undefined
-    let srtSourcePath: string | null = null
+    let transcriptPath: string | null = null
     /** The pipeline's run record for the transcript, forgotten once the video is filed */
     let run: TranscriptRun | null = null
 
-    // --from-srt pipeline: clean + summarize the transcript via audio:transcript:summary.
-    // The 'audio-message' template is the one-way-communication shape (from/to rather
-    // than a shared attendee list), which is what a recorded video is.
-    if (fromSrt !== undefined) {
-      const resolved = await this.resolveSrtPath(fromSrt, output)
+    if (fromSrt !== undefined && fromZoomVtt !== undefined) {
+      return CommandResult.fail('Use only one of --from-srt or --from-zoom-vtt')
+    }
+
+    // --from-srt / --from-zoom-vtt pipeline: clean + summarize the transcript via
+    // audio:transcript:summary. The 'audio-message' template is the
+    // one-way-communication shape (from/to rather than a shared attendee list),
+    // which is what a recorded video is.
+    const fromTranscript = fromSrt ?? fromZoomVtt
+    if (fromTranscript !== undefined) {
+      const resolved = await this.resolveTranscriptPath(fromSrt !== undefined ? '.srt' : '.vtt', fromTranscript, output)
       if (!resolved.ok) return CommandResult.fail(resolved.message)
-      srtSourcePath = resolved.path
-      output.log(colors.cyan(`Using transcript: ${path.basename(srtSourcePath)}`))
+      transcriptPath = resolved.path
+      output.log(colors.cyan(`Using transcript: ${path.basename(transcriptPath)}`))
 
       // The run record for the transcript: what an earlier run of it already
       // produced, picked up rather than paid for again. Keyed by the file, or
       // by a host that keyed it at upload — a filed run has moved the file
       // into the attachments, and the key still finds the record.
       const runOptions = runOptionsFor(context)
-      run = await TranscriptRun.resolve(args.run, srtSourcePath, runOptions)
+      run = await TranscriptRun.resolve(args.run, transcriptPath, runOptions)
       if (args.fresh) {
         await run.clear()
         output.log('Starting over.')
@@ -117,7 +128,7 @@ export default class VideoNewTask extends Command {
       ])
 
       const summaryResult = await tasks.run('audio:transcript:summary', {
-        fromSrt: srtSourcePath,
+        ...(fromSrt !== undefined ? { fromSrt: transcriptPath } : { fromZoomVtt: transcriptPath }),
         template: 'audio-message',
         run: run.key,
         fresh: args.fresh,
@@ -203,7 +214,7 @@ export default class VideoNewTask extends Command {
 
     // The document's default template heads the body with "# Video"; this command
     // has always used the medium instead ("# Loom", "# YouTube"), so pass a body.
-    // On the --from-srt path the AI summary + transcript replace the empty template.
+    // On a transcript's path the AI summary + transcript replace the empty template.
     const templateBody = [`# ${mediumValue}`, '', '## Summary', '', '(insert summary here)', '', '## Transcript'].join(
       '\n',
     )
@@ -215,9 +226,9 @@ export default class VideoNewTask extends Command {
     // A null file is the placeholder the manual path has always written for the user
     // to fill in, so this is deliberately looser than the Attachment type.
     let attachments: Array<{ file: string | null }> = [{ file: null }]
-    if (srtSourcePath) {
+    if (transcriptPath) {
       output.stage('file', 'Filing')
-      const sourcePath = srtSourcePath
+      const sourcePath = transcriptPath
       const attachDir = path.join(config.DIR_ATTACHMENTS as string, dayAttachmentsDir(whenDate))
       const attachmentFile = `${whenDate}_${mediumValue}_${partialSlug}${path.extname(sourcePath)}`
       const destPath = path.join(attachDir, attachmentFile)
@@ -275,30 +286,38 @@ export default class VideoNewTask extends Command {
   }
 
   /**
-   * Resolve --from-srt to a file. A valueless flag arrives as the string "true" at
-   * runtime, which means "search the Desktop".
+   * Resolve --from-srt or --from-zoom-vtt to a file. A valueless flag arrives as
+   * the string "true" at runtime, which means "search the Desktop" for that
+   * flag's own extension.
    *
-   * Resolved here rather than delegated to the pipeline's own --from-srt lookup so
-   * a wrong path fails before the pipeline starts, and so the attachment import
-   * below gets an absolute path.
+   * Resolved here rather than delegated to the pipeline's own lookup so a wrong
+   * path fails before the pipeline starts, and so the attachment import below
+   * gets an absolute path. An .srt must be named one; a Zoom transcript is taken
+   * under any name, as meeting:new takes it — the import hands on a .txt it read
+   * as VTT.
    */
-  private async resolveSrtPath(
-    fromSrt: string,
+  private async resolveTranscriptPath(
+    ext: '.srt' | '.vtt',
+    value: string,
     output: OutputHandler,
   ): Promise<{ ok: true; path: string } | { ok: false; message: string }> {
-    if (typeof fromSrt === 'string' && fromSrt !== 'true') {
-      if (path.extname(fromSrt).toLowerCase() !== '.srt') {
-        return { ok: false, message: `--from-srt requires an .srt file, got: ${path.basename(fromSrt)}` }
+    const flag = ext === '.srt' ? '--from-srt' : '--from-zoom-vtt'
+    if (typeof value === 'string' && value !== 'true') {
+      if (ext === '.srt' && path.extname(value).toLowerCase() !== '.srt') {
+        return { ok: false, message: `--from-srt requires an .srt file, got: ${path.basename(value)}` }
       }
-      return { ok: true, path: path.resolve(fromSrt) }
+      return { ok: true, path: path.resolve(value) }
     }
 
-    const found = await desktopFilesByExt(['.srt'])
+    const found = await desktopFilesByExt([ext])
     if (found.length === 0) {
-      return { ok: false, message: 'No .srt file found on Desktop. Specify a path: --from-srt /path/to/transcript.srt' }
+      return {
+        ok: false,
+        message: `No ${ext} file found on Desktop. Specify a path: ${flag} /path/to/transcript${ext}`,
+      }
     }
     if (found.length > 1) {
-      output.log(colors.gray(`${found.length} .srt files on Desktop, using newest`))
+      output.log(colors.gray(`${found.length} ${ext} files on Desktop, using newest`))
     }
     return { ok: true, path: found[0].path }
   }

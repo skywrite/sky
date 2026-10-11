@@ -1,6 +1,6 @@
 ---
 created: 2026-09-25
-updated: 2026-09-25
+updated: 2026-10-11
 ---
 
 # Video commands
@@ -10,11 +10,12 @@ Design notes for `src/commands/all/video/`.
 ## video:new
 
 Two paths. A summary with `--from`, `--to` and `--medium` writes a
-placeholder file for the editor to fill. `--from-srt` runs the transcript
-pipeline (`audio:transcript:summary` with the `audio-message` template: a
+placeholder file for the editor to fill. `--from-srt`, or `--from-zoom-vtt`
+for a Zoom Clip's `.vtt`, runs the transcript pipeline
+(`audio:transcript:summary` with the `audio-message` template: a
 recording is one-way, from/to rather than a shared attendee list), files
-the .srt under the day's attachments, and writes the summary with the
-cleaned transcript under it. The import page's .srt door calls this
+the transcript under the day's attachments, and writes the summary with the
+cleaned transcript under it. The import page's .srt and .vtt doors call this
 command with the staged file, the run key it issued at upload, and the
 file's clock.
 

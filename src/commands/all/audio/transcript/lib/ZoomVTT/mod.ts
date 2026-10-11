@@ -7,7 +7,8 @@
  * to warn at runtime. And the headerless dialect some live captioners save:
  * no `WEBVTT` line, no cue numbers, whole-second times that are the time of
  * day rather than an offset from the start — see `hasHeader`, which decides
- * where the length is measured from.
+ * where the length is measured from. A Zoom Clip's transcript is Zoom's
+ * dialect with no names in it: one person talking — see `namesSpeakers`.
  *
  * Parsing is lenient: unrecognized blocks and malformed cues are skipped,
  * never thrown on — a bad cue must not sink the transcript pipeline.
@@ -148,14 +149,25 @@ export default class ZoomVTT {
   }
 
   /**
+   * Whether the cues say who is talking: a `Name:` payload, or a Teams-style
+   * voice tag. A Zoom Clip's say no one — one person talking to the camera.
+   */
+  get namesSpeakers(): boolean {
+    return !this.looksLikeZoomDialect || this.cues.some((cue) => cue.speaker !== null)
+  }
+
+  /**
    * Consecutive cues from the same speaker merged into one turn. Cues with no
-   * speaker prefix are treated as continuations of the current turn.
+   * speaker prefix are treated as continuations of the current turn. In a file
+   * that names no speaker, each cue is a turn of its own: merged, a Zoom Clip
+   * would be one block, and Zoom already cuts a clip's cues into a sentence or a few.
    */
   get turns(): ZoomVTTTurn[] {
+    const named = this.namesSpeakers
     const turns: ZoomVTTTurn[] = []
     for (const cue of this.cues) {
       const last = turns[turns.length - 1]
-      if (last && (cue.speaker === last.speaker || cue.speaker === null)) {
+      if (named && last && (cue.speaker === last.speaker || cue.speaker === null)) {
         if (cue.text) last.text = last.text ? `${last.text} ${cue.text}` : cue.text
         last.endSeconds = cue.endSeconds
       } else {

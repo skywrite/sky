@@ -3,7 +3,8 @@
  * its arguments, and — kept apart — what the person actually said.
  *
  * A recording can be filed as any kind: the meeting and event doors take it
- * as --from-voice-memo, the rest as --from-audio. A transcript is a meeting.
+ * as --from-voice-memo, the rest as --from-audio. A transcript is a meeting or
+ * a video — a Zoom Clip's — each by --from-zoom-vtt.
  * Text — a .txt, or a text dragged onto the day — is a meeting or a message,
  * each by --from-text. Images become messages or notes, by --from-image. An .srt is
  * a video, by --from-srt.
@@ -144,7 +145,7 @@ export function startArgs(job: StartContext, fields: StartFields, input: string 
       return {
         command: 'video:new',
         args: {
-          fromSrt: filePath,
+          ...(job.source === 'srt' ? { fromSrt: filePath } : { fromZoomVtt: filePath }),
           category,
           when,
           fresh,
