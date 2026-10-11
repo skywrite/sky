@@ -20,7 +20,21 @@
     "no-this-alias": "off",
     "require-yield": "off",
     "triple-slash-reference": "off",
-    "no-new-array": "off"
+    "no-new-array": "off",
+
+    // The AI SDK deprecated these in 7.0.129 and warns on every call.
+    "no-restricted-imports": [
+      "error",
+      {
+        "paths": [
+          {
+            "name": "ai",
+            "importNames": ["generateObject", "streamObject"],
+            "message": "Deprecated in the AI SDK: use generateText or streamText with output: Output.object({ schema })."
+          }
+        ]
+      }
+    ]
   },
   // `extensions/` is listed because oxlint follows the extension's `shared` and
   // `lib` symlinks back into src/, which would lint that tree a second time.
