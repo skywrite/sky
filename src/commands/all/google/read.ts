@@ -22,6 +22,7 @@ const params = {
   ),
   tabId: Flag.string('Docs only: read a single tab by its tabId (a whole-file read lists them), as plain text'),
   offset: Flag.number('Character offset a truncated read said to continue from'),
+  version: Flag.string('Docs only: version returned by the previous page; pass it when continuing with offset'),
 }
 
 type Params = InferParams<typeof params>
@@ -35,6 +36,7 @@ type Result = {
   kind: WorkspaceKind
   url?: string
   content: string
+  version?: string
   /** Docs with several tabs: the tab map (a whole-file read covers all of them). */
   tabs?: ReadTab[]
   /** Set when a single tab was read. */
@@ -57,14 +59,14 @@ export default class GoogleReadTask extends Command {
     description:
       'Read a Google Doc (markdown), Sheet (csv, first tab) or Slides (text) by URL or file id. Long files ' +
       'return 40k chars per call — when the content ends with a [Truncated …] marker, call again with the ' +
-      'offset it names. A Doc with several tabs exports ALL of them, each opening with its tab title as a ' +
+      'offset and version it names. A Doc with several tabs exports ALL of them, each opening with its tab title as a ' +
       '# heading, plus a tabs list mapping titles to tabIds; pass tabId to read one tab as plain text. An ' +
       'uploaded Office file is read through its native Google twin — use the returned id for follow-up ' +
       'calls. The file is read from whichever connected account can open it; `account` in the result says ' +
       'which. Reads only; to edit or create files, use google:agent.',
     usage: [
       'sky google:read <url-or-file-id>',
-      'sky google:read <url> --offset 40000',
+      'sky google:read <url> --offset 40000 --version 42',
       'sky google:read <doc-url> --tab-id t.abc123',
       'sky google:read <url> -a work',
     ],
@@ -93,7 +95,8 @@ export default class GoogleReadTask extends Command {
         secrets,
         requested: args.account,
         what: `The file ${parsed.fileId}`,
-        attempt: (client) => readWorkspaceFile(client, { fileId: parsed.fileId, tabId, offset: args.offset }),
+        attempt: (client) =>
+          readWorkspaceFile(client, { fileId: parsed.fileId, tabId, offset: args.offset, version: args.version }),
       })
     } catch (err) {
       if (err instanceof AccountResolutionError) return CommandResult.fail(err.message)
@@ -136,6 +139,7 @@ export default class GoogleReadTask extends Command {
       kind: read.kind,
       url: read.file.webViewLink,
       content: read.content,
+      version: read.version,
       tabs: read.tabs?.map((t) => ({ tabId: t.tabId, title: t.title })),
       tab: read.tab,
       note: notes.length > 0 ? notes.join(' ') : undefined,

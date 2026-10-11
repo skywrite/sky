@@ -37,17 +37,29 @@ export function validateDocsRequests(requests: unknown): string | null {
   return validateBatchRequests(requests, DOCS_ALLOWED_REQUESTS, MAX_REQUESTS_PER_BATCH)
 }
 
-/** Apply validated batchUpdate requests; returns the number of replies. */
+export interface DocBatchResult {
+  applied: number
+  replies: unknown[]
+  revisionId?: string
+}
+
+/** Apply a batch against the revision whose contents were used to prepare it. */
 export async function batchUpdateDoc(
   client: GoogleClient,
   fileId: string,
   requests: Array<Record<string, unknown>>,
-): Promise<number> {
-  const body = await client.postJson<{ replies?: unknown[] }>(
+  requiredRevisionId: string,
+): Promise<DocBatchResult> {
+  if (!requiredRevisionId) throw new Error(`Read document ${fileId} before preparing edits; its revision is missing`)
+  const body = await client.postJson<{ replies?: unknown[]; writeControl?: { requiredRevisionId?: string } }>(
     `${DOCS_API_URL}/${encodeURIComponent(fileId)}:batchUpdate`,
-    { requests },
+    { requests, writeControl: { requiredRevisionId } },
   )
-  return body.replies?.length ?? requests.length
+  return {
+    applied: body.replies?.length ?? requests.length,
+    replies: body.replies ?? [],
+    revisionId: body.writeControl?.requiredRevisionId,
+  }
 }
 
 // ── Tabs ───────────────────────────────────────────────────────────────
@@ -83,10 +95,16 @@ export function flattenTabs<T extends { childTabs?: T[] }>(tabs: T[]): T[] {
   return flat
 }
 
-export async function fetchDoc<T>(client: GoogleClient, fileId: string, fields: string): Promise<T> {
+export async function fetchDoc<T>(
+  client: GoogleClient,
+  fileId: string,
+  fields: string,
+  suggestionsViewMode?: 'SUGGESTIONS_INLINE',
+): Promise<T> {
   const url = new URL(`${DOCS_API_URL}/${encodeURIComponent(fileId)}`)
   url.searchParams.set('includeTabsContent', 'true')
   url.searchParams.set('fields', fields)
+  if (suggestionsViewMode) url.searchParams.set('suggestionsViewMode', suggestionsViewMode)
   return await client.getJson<T>(url.toString())
 }
 
@@ -401,6 +419,11 @@ export function extractBaseText(content: SuggestStructuralElement[]): string {
 /** Every tab's base text in document order — single-tab docs return one entry. */
 export async function getDocTabTexts(client: GoogleClient, fileId: string): Promise<DocTabText[]> {
   const doc = await fetchDoc<RawSuggestDocument>(client, fileId, SUGGEST_FIELDS)
+  return summarizeDocTabTexts(doc)
+}
+
+/** Derive tab reads from the same structured snapshot used for the outline. */
+export function summarizeDocTabTexts(doc: RawSuggestDocument): DocTabText[] {
   const tabs = flattenTabs(doc.tabs ?? [])
   if (tabs.length === 0) return [{ text: extractBaseText(doc.body?.content ?? []) }]
   return tabs.map((tab) => ({

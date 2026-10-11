@@ -132,13 +132,14 @@ interface RawRestyleTab {
 
 export interface RawRestyleDocument {
   title?: string
+  revisionId?: string
   /** Pre-tabs response shape; every fetch here asks for tabs. */
   body?: { content?: RawStructural[] }
   namedStyles?: RawNamedStyles
   tabs?: RawRestyleTab[]
 }
 
-const RESTYLE_FIELDS = `title,tabs(${nestedTabFields(`${TAB_PROPS_FIELDS},documentTab(body,namedStyles)`)})`
+const RESTYLE_FIELDS = `title,revisionId,tabs(${nestedTabFields(`${TAB_PROPS_FIELDS},documentTab(body,namedStyles)`)})`
 
 interface Segment {
   tabId?: string
@@ -461,22 +462,39 @@ export interface RestyleResult {
   check: RestyleCheck
 }
 
-async function applyBatch(client: GoogleClient, fileId: string, batch: PlannedRequest[]): Promise<number> {
+async function applyBatch(
+  client: GoogleClient,
+  fileId: string,
+  batch: PlannedRequest[],
+  revision: { id: string },
+): Promise<number> {
+  const apply = async (requests: Array<Record<string, unknown>>): Promise<number> => {
+    const result = await batchUpdateDoc(client, fileId, requests, revision.id)
+    if (!result.revisionId) {
+      throw new Error(
+        `Updates were applied to document ${fileId}, but Google did not return its new revision. Read the document before continuing.`,
+      )
+    }
+    revision.id = result.revisionId
+    return result.applied
+  }
   try {
-    return await batchUpdateDoc(
-      client,
-      fileId,
-      batch.map((p) => p.request),
-    )
+    return await apply(batch.map((p) => p.request))
   } catch (err) {
     // A range spanning table cells is the one shape here the API might
     // refuse; a batch is atomic, so resend it with one range per paragraph.
-    if (!(err instanceof GoogleApiError) || err.status !== 400 || !batch.some((p) => p.expand)) throw err
+    if (
+      !(err instanceof GoogleApiError) ||
+      err.status !== 400 ||
+      /revision|writeControl/i.test(err.message) ||
+      !batch.some((p) => p.expand)
+    )
+      throw err
     const expanded = batch.flatMap((p) =>
       p.expand ? p.expand.map((range) => withRange(p.request, range)) : [p.request],
     )
     let applied = 0
-    for (const chunk of batchesOf(expanded)) applied += await batchUpdateDoc(client, fileId, chunk)
+    for (const chunk of batchesOf(expanded)) applied += await apply(chunk)
     return applied
   }
 }
@@ -491,7 +509,7 @@ export async function restyleDoc(
   spec: RestyleSpec,
   progress?: (line: string) => void,
 ): Promise<RestyleResult> {
-  const doc = await fetchDoc<RawRestyleDocument>(client, fileId, RESTYLE_FIELDS)
+  const doc = await fetchDoc<RawRestyleDocument>(client, fileId, RESTYLE_FIELDS, 'SUGGESTIONS_INLINE')
   if (spec.tabIds) {
     const unknown = unknownTabIds(doc, spec.tabIds)
     if (unknown.length > 0) {
@@ -503,10 +521,16 @@ export async function restyleDoc(
   }
   const plan = planRestyle(doc, spec)
   const batches = batchesOf(plan.requests)
+  if (batches.length > 0 && !doc.revisionId) {
+    throw new Error(
+      `Google did not return an editable revision for "${doc.title ?? fileId}". No typography changes were applied.`,
+    )
+  }
+  const revision = { id: doc.revisionId ?? '' }
   let applied = 0
   for (const [i, batch] of batches.entries()) {
     progress?.(`Restyling "${doc.title ?? fileId}": batch ${i + 1}/${batches.length} (${batch.length} requests)`)
-    applied += await applyBatch(client, fileId, batch)
+    applied += await applyBatch(client, fileId, batch, revision)
   }
   const after = applied > 0 ? await fetchDoc<RawRestyleDocument>(client, fileId, RESTYLE_FIELDS) : doc
   return { title: doc.title, tabs: plan.tabs, applied, batches: batches.length, check: checkRestyle(after, spec) }

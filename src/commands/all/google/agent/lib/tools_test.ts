@@ -3,6 +3,9 @@ import { TestSecretsProvider } from '#lib/secrets/TestSecretsProvider.ts'
 import { assert, test } from '#test'
 import { createAgentTools, createMissionState } from './tools.ts'
 
+const cacheRoot = mkdtempSync(path.join(tmpdir(), 'sky-agent-doc-test-'))
+afterAll(() => rmSync(cacheRoot, { recursive: true, force: true }))
+
 // ── Uploaded Office files through the agent tools ──────────────────────
 
 const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
@@ -80,17 +83,34 @@ async function agentToolsOver(api: (url: URL) => Response, calls: DriveCall[]) {
     sleep: async () => {},
   })
   const log: string[] = []
+  const state = createMissionState()
   const tools = createAgentTools({
     client,
+    snapshots: new DocSnapshotStore(cacheRoot),
     log: (line) => log.push(line),
-    state: createMissionState(),
+    state,
     missionModel: { model: 'test:google-agent' },
     critiquePrompt: '',
     deckCritiquePrompt: '',
     docCritiquePrompt: '',
   })
-  return { tools, log }
+  return { tools, log, state }
 }
+
+test('read_file tracks a newly converted file even when its export fails', async () => {
+  const api = uploadedWorkbookApi(false)
+  const { tools, state } = await agentToolsOver(
+    (url) => (url.pathname.endsWith('/f2/export') ? new Response('Export unavailable', { status: 500 }) : api(url)),
+    [],
+  )
+  const result = await tools.read_file.execute({ fileId: 'f1' })
+  assert({
+    given: 'a successful Office conversion followed by an export failure',
+    should: 'retain the created file in the mission record',
+    actual: [String(result).includes('Error:'), state.files.map((file) => ({ id: file.id, action: file.action }))],
+    expected: [true, [{ id: 'f2', action: 'created' }]],
+  })
+})
 
 test('read_file - an uploaded workbook is read through a freshly converted native twin', async () => {
   const calls: DriveCall[] = []
@@ -267,13 +287,17 @@ function handbookApi(): (url: URL) => Response {
     }
     if (url.pathname.endsWith(':batchUpdate')) {
       updated = true
-      return new Response(JSON.stringify({ replies: [{}, {}, {}, {}, {}, {}] }), { status: 200 })
+      return new Response(
+        JSON.stringify({ replies: [{}, {}, {}, {}, {}, {}], writeControl: { requiredRevisionId: 'revision-2' } }),
+        { status: 200 },
+      )
     }
     if (url.pathname === '/v1/documents/d1') {
       const style = updated ? { family: 'Inter', heading: 14, body: 10 } : { family: 'Arial', heading: 20, body: 11 }
       return new Response(
         JSON.stringify({
           title: 'Atlas Handbook',
+          revisionId: updated ? 'revision-2' : 'revision-1',
           tabs: [handbookTab('t.0', 'Overview', style.family, style), handbookTab('t.1', 'Notes', style.family, style)],
         }),
         { status: 200 },
@@ -400,3 +424,8 @@ test('a mission tool called three times with the same input and result is refuse
     },
   })
 })
+import { afterAll } from 'bun:test'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import * as path from 'node:path'
+import { DocSnapshotStore } from '#lib/google/docSnapshots.ts'

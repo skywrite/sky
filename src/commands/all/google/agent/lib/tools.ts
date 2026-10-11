@@ -2,8 +2,9 @@ import { readFile } from 'node:fs/promises'
 import * as os from 'node:os'
 import * as path from 'node:path'
 import { generateText, jsonSchema } from 'ai'
+import { docSnapshots } from '#lib/google/docSnapshots.ts'
+import type { DocSnapshotStore } from '#lib/google/docSnapshots.ts'
 import {
-  EXPORT_MIME,
   MAX_IMAGE_BYTES,
   RESTYLE_ROLES,
   WORKSPACE_MIME,
@@ -27,12 +28,9 @@ import {
   createSpreadsheet,
   csvToValues,
   driveImageUrl,
-  ensureConvertedTwin,
-  exportFile,
   exportFileBytes,
   extractChartIds,
   fetchThumbnailPng,
-  getDocOutline,
   getDocTabTexts,
   getElementAnchor,
   getFile,
@@ -60,7 +58,7 @@ import {
 import type { GoogleClient, RestyleSpec, WorkspaceKind } from '#lib/google/mod.ts'
 import type { ResolvedModel } from '#shared/ai/models.ts'
 import { RepetitionGuard, guardTools } from '#shared/models/Chat/ChatEngine/repetitionGuard.ts'
-import { paginateRead } from '../../lib/readWorkspaceFile.ts'
+import { readWorkspaceFile } from '../../lib/readWorkspaceFile.ts'
 import { addDocsComment, addSheetsComment, addSlidesComment } from './browserComments.ts'
 import { suggestDocsEdit } from './browserSuggestions.ts'
 import { svgToPng, validateSvgSource } from './svgToPng.ts'
@@ -174,8 +172,12 @@ export function createAgentTools(deps: {
   deckCritiquePrompt: string
   /** Vision reviewer instructions for inspect_doc_visually (PDF page review). */
   docCritiquePrompt: string
+  snapshots?: DocSnapshotStore
 }) {
   const { client, log, state, missionModel, critiquePrompt, deckCritiquePrompt, docCritiquePrompt } = deps
+
+  const snapshots = deps.snapshots ?? docSnapshots
+  const docRevisions = new Map<string, string | undefined>()
 
   const tools = {
     find_files: {
@@ -208,92 +210,78 @@ export function createAgentTools(deps: {
 
     read_file: {
       description:
-        'Read a file from Drive: Docs as markdown, Sheets as csv (first tab), Slides as text. An uploaded Office/csv/pdf file (.xlsx/.docx/.pptx…, stored as-is by Drive) is read through its native Google twin — converted on first read, reused after — and the result carries the twin id to use for every later call. Long files return 40k chars per call — when the content ends with a [Truncated …] marker, call again with the offset it names until you have read everything the mission needs. A Doc holding several tabs exports ALL of them in order, each opening with its tab title as a # heading, and returns a tabs list mapping those titles to tabIds (needed for tab-targeted edits); pass tabId to re-read just one tab (returned as plain text, not markdown).',
-      inputSchema: jsonSchema<{ fileId: string; offset?: number; tabId?: string }>({
+        'Read a file from Drive: Docs as markdown, Sheets as csv (first tab), Slides as text. An uploaded Office/csv/pdf file (.xlsx/.docx/.pptx…, stored as-is by Drive) is read through its native Google twin — converted on first read, reused after — and the result carries the twin id to use for every later call. Long files return 40k chars per call — when the content ends with a [Truncated …] marker, call again with the offset and version it names until you have read everything the mission needs. A Doc holding several tabs exports ALL of them in order, each opening with its tab title as a # heading, and returns a tabs list mapping those titles to tabIds (needed for tab-targeted edits); pass tabId to re-read just one tab (returned as plain text, not markdown).',
+      inputSchema: jsonSchema<{ fileId: string; offset?: number; tabId?: string; version?: string }>({
         type: 'object',
         properties: {
           fileId: { type: 'string' },
           offset: { type: 'number', description: 'Character offset a truncated read told you to continue from' },
+          version: {
+            type: 'string',
+            description: 'Docs: version from the previous page; required when continuing with offset',
+          },
           tabId: { type: 'string', description: 'Docs only: read just this tab (plain text, not markdown)' },
         },
         required: ['fileId'],
       }),
-      execute: async ({ fileId, offset, tabId }: { fileId: string; offset?: number; tabId?: string }) => {
+      execute: async ({
+        fileId,
+        offset,
+        tabId,
+        version,
+      }: {
+        fileId: string
+        offset?: number
+        tabId?: string
+        version?: string
+      }) => {
         try {
-          const source = await getFile(client, fileId)
-          let file = source
-          let kind = workspaceKind(source.mimeType)
-          let twin: Record<string, unknown> | undefined
-          let twinNote: string | undefined
-          if (!kind) {
-            if (!conversionTarget(source.mimeType)) {
-              return `Error: "${source.name}" is not a Doc/Sheet/Slides file or an upload Drive can convert (${source.mimeType})`
-            }
-            // Drive's "Save as Google Sheets/Docs/Slides", done once and reused — the source itself stays untouched.
-            const converted = await ensureConvertedTwin(client, source)
-            file = converted.twin
-            kind = converted.kind
-            if (converted.created) track(state, 'created', file)
-            log(
-              converted.created
-                ? `Converted "${source.name}" to a native ${kind} — ${file.webViewLink ?? file.id}`
-                : `Reading "${source.name}" through its native ${kind} twin — ${file.webViewLink ?? file.id}`,
-            )
-            twin = { id: file.id, name: file.name, url: file.webViewLink, created: converted.created }
-            twinNote = `"${source.name}" is an uploaded file Drive stores as-is; this content is its native Google ${kind} twin "${file.name}" (${
-              converted.created ? 'converted just now' : 'converted earlier from this same revision, reused'
-            }${
-              converted.superseded
-                ? `; an older twin ${converted.superseded.webViewLink ?? converted.superseded.id} predates the source's latest change and was left in place`
-                : ''
-            }). Use the twin id ${file.id} for every further tool call — get_values, outlines, comments, edits all refuse the original — and report the twin's URL alongside the original.`
-          }
-          if (tabId !== undefined) {
-            if (kind !== 'doc') return `Error: tabId applies only to Docs — "${file.name}" is a ${kind}`
-            const tabs = await getDocTabTexts(client, file.id)
-            const tab = tabs.find((t) => t.tabId === tabId)
-            if (!tab) {
-              const known = tabs.map((t) => `${t.tabId} ("${t.tabTitle ?? 'untitled'}")`).join(', ')
-              return `Error: no tab ${tabId} in "${file.name}" — its tabs: ${known}`
-            }
-            const page = paginateRead(tab.text, offset)
-            if (!page) return `Error: offset ${offset} is past the end — the tab is ${tab.text.length} chars`
-            log(
-              `Read "${file.name}" tab "${tab.tabTitle ?? tabId}" (${
-                page.start > 0 ? `chars ${page.start}-${page.end} of ` : ''
-              }${tab.text.length} chars)`,
-            )
-            return {
-              id: file.id,
-              name: file.name,
-              kind,
-              tabId,
-              tabTitle: tab.tabTitle,
-              content: page.content,
-              ...(twin ? { sourceId: source.id, twin, note: twinNote } : {}),
-            }
-          }
-          const [full, docTabs] = await Promise.all([
-            exportFile(client, file.id, EXPORT_MIME[kind]),
-            kind === 'doc' ? listDocTabs(client, file.id) : Promise.resolve([]),
-          ])
-          const page = paginateRead(full, offset)
-          if (!page) return `Error: offset ${offset} is past the end — "${file.name}" is ${full.length} chars`
-          log(
-            page.start > 0
-              ? `Read "${file.name}" (${kind}, chars ${page.start}-${page.end} of ${full.length})`
-              : `Read "${file.name}" (${kind}, ${full.length} chars${page.complete ? '' : `, first ${page.end} returned`})`,
+          const outcome = await readWorkspaceFile(
+            client,
+            { fileId, offset, tabId, version },
+            {
+              snapshots,
+              forEditing: true,
+              onConverted: (source, twin, created) => {
+                if (created) track(state, 'created', twin)
+                const kind = workspaceKind(twin.mimeType)
+                log(
+                  created
+                    ? `Converted "${source.name}" to a native ${kind} — ${twin.webViewLink ?? twin.id}`
+                    : `Reading "${source.name}" through its native ${kind} twin — ${twin.webViewLink ?? twin.id}`,
+                )
+              },
+            },
           )
-          const result: Record<string, unknown> = { id: file.id, name: file.name, kind, content: page.content }
-          if (twin) {
+          if (!outcome.ok) return `Error: ${outcome.message}`
+          const { read } = outcome
+          const { file, kind, page } = read
+          if (kind === 'doc') docRevisions.set(file.id, read.revisionId)
+          const result: Record<string, unknown> = { id: file.id, name: file.name, kind, content: read.content }
+          const notes: string[] = []
+          if (read.version) result.version = read.version
+          if (read.convertedFrom) {
+            const source = read.convertedFrom
             result.sourceId = source.id
-            result.twin = twin
-            result.note = twinNote
+            result.twin = { id: file.id, name: file.name, url: file.webViewLink, created: read.twinCreated }
+            notes.push(
+              `"${source.name}" is an uploaded file Drive stores as-is; this content is its native Google ${kind} twin "${file.name}" (${read.twinCreated ? 'converted just now' : 'converted earlier from this same revision, reused'}${read.supersededTwin ? `; an older twin ${read.supersededTwin.webViewLink ?? read.supersededTwin.id} predates the source's latest change and was left in place` : ''}). Use the twin id ${file.id} for every further tool call — get_values, outlines, comments, edits all refuse the original — and report the twin's URL alongside the original.`,
+            )
           }
-          if (docTabs.length > 1) {
-            result.tabs = docTabs.map((t) => ({ tabId: t.tabId, title: t.title }))
-            result.note = `${twinNote ? `${twinNote} ` : ''}This doc has ${docTabs.length} tabs — the export includes all of them, each opening with its tab title as a # heading. Tab-targeted tools need the tabIds listed here.`
+          if (read.tabs) {
+            result.tabs = read.tabs.map((tab) => ({ tabId: tab.tabId, title: tab.title }))
+            notes.push(
+              `This doc has ${read.tabs.length} tabs — the export includes all of them, each opening with its tab title as a # heading. Tab-targeted tools need the tabIds listed here.`,
+            )
           }
+          if (read.tab) {
+            result.tabId = read.tab.tabId
+            result.tabTitle = read.tab.title
+          }
+          if (notes.length) result.note = notes.join(' ')
+          log(
+            `Read "${file.name}"${read.tab ? ` tab "${read.tab.title ?? tabId}" (` : ` (${kind}, `}${page.start > 0 ? `chars ${page.start}-${page.end}` : `${page.end} chars`}${page.complete ? '' : ', more available'})`,
+          )
           return result
         } catch (err) {
           return toolError(err)
@@ -341,6 +329,8 @@ export function createAgentTools(deps: {
           if (tabs.length > 1) {
             return `Error: this doc has ${tabs.length} tabs — replacing the whole file would overwrite ALL of them. Edit the target tab with batch_update_doc (tabId from get_doc_outline) or suggest_doc_edit instead.`
           }
+          docRevisions.delete(fileId)
+          await snapshots.invalidate(client, fileId)
           const file = await replaceFileWithMarkdown(client, fileId, markdown)
           track(state, 'updated', file)
           log(`Rewrote "${file.name ?? fileId}" — ${file.webViewLink ?? file.id}`)
@@ -353,7 +343,7 @@ export function createAgentTools(deps: {
 
     batch_update_doc: {
       description:
-        "Apply Google Docs API batchUpdate requests to a document (styling, replaceAllText, tables, headers). Range-based requests need indexes — call get_doc_outline first. Docs with several tabs: indexes are tab-local, so set the tab's tabId inside each location/range object (requests without one hit the FIRST tab) — and replaceAllText hits ALL tabs unless scoped with tabsCriteria: {tabIds: [...]}. Tabs themselves are managed here too: addDocumentTab creates one (tabProperties: title, index), updateDocumentTabProperties renames/moves one (tabProperties + fields mask), deleteTab removes one — replies are not returned, so call get_doc_outline after adding a tab to learn its tabId.",
+        "Apply Google Docs API batchUpdate requests to a document (styling, replaceAllText, tables, headers). Range-based requests need indexes — call get_doc_outline first. Docs with several tabs: indexes are tab-local, so set the tab's tabId inside each location/range object (requests without one hit the FIRST tab) — and replaceAllText hits ALL tabs unless scoped with tabsCriteria: {tabIds: [...]}. Tabs themselves are managed here too: addDocumentTab creates one (tabProperties: title, index), updateDocumentTabProperties renames/moves one (tabProperties + fields mask), deleteTab removes one — nonempty replies include the new tabId. Read the document or get_doc_outline before preparing edits; writes are guarded against changes since that read.",
       inputSchema: jsonSchema<{ fileId: string; requests: Array<Record<string, unknown>> }>({
         type: 'object',
         properties: {
@@ -370,13 +360,28 @@ export function createAgentTools(deps: {
         const problem = validateDocsRequests(requests)
         if (problem) return `Error: ${problem}`
         try {
-          const applied = await batchUpdateDoc(client, fileId, requests)
+          const revisionId = docRevisions.get(fileId)
+          if (!docRevisions.has(fileId))
+            return `Error: read_file or get_doc_outline for document ${fileId} before preparing edits; no current document revision is available.`
+          if (!revisionId)
+            return `Error: Google did not provide an editable revision for document ${fileId}. Check that ${client.email} has edit access, then read it again before editing.`
+          const result = await batchUpdateDoc(client, fileId, requests, revisionId)
+          if (result.revisionId) docRevisions.set(fileId, result.revisionId)
+          else docRevisions.delete(fileId)
           const file = await getFile(client, fileId)
           track(state, 'updated', file)
-          log(`Applied ${applied} update(s) to "${file.name}"`)
-          return { applied }
+          log(`Applied ${result.applied} update(s) to "${file.name}"`)
+          return {
+            applied: result.applied,
+            replies: result.replies.filter(
+              (reply) => reply && typeof reply === 'object' && Object.keys(reply).length > 0,
+            ),
+          }
         } catch (err) {
-          return toolError(err)
+          docRevisions.delete(fileId)
+          return `${toolError(err)} — re-read document ${fileId} and check its current contents before preparing another batch; the document may have changed.`
+        } finally {
+          await snapshots.invalidate(client, fileId)
         }
       },
     },
@@ -1331,6 +1336,8 @@ export function createAgentTools(deps: {
           if (workspaceKind(file.mimeType) !== 'doc') {
             return `Error: "${file.name}" is not a Google Doc — restyle_doc styles Docs only`
           }
+          docRevisions.delete(fileId)
+          await snapshots.invalidate(client, fileId)
           const result = await restyleDoc(client, fileId, spec, log)
           track(state, 'updated', file)
           const { check } = result
@@ -1367,7 +1374,12 @@ export function createAgentTools(deps: {
       }),
       execute: async ({ fileId }: { fileId: string }) => {
         try {
-          const outline = await getDocOutline(client, fileId)
+          const snapshot = await snapshots.read(client, fileId, { forEditing: true, includeMarkdown: false })
+          docRevisions.set(
+            fileId,
+            snapshot.document.suggestionsViewMode === 'SUGGESTIONS_INLINE' ? snapshot.document.revisionId : undefined,
+          )
+          const outline = snapshot.outline
           const headingCount = outline.tabs
             ? outline.tabs.reduce((n, tab) => n + tab.headings.length, 0)
             : (outline.headings?.length ?? 0)
@@ -1376,7 +1388,7 @@ export function createAgentTools(deps: {
               outline.tabs ? `${outline.tabs.length} tab(s), ` : ''
             }${headingCount} heading(s)`,
           )
-          return outline
+          return { ...outline, version: snapshot.file.version }
         } catch (err) {
           return toolError(err)
         }

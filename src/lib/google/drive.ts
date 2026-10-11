@@ -86,6 +86,9 @@ export interface DriveFile {
   name: string
   mimeType: string
   modifiedTime?: string
+  /** Drive's monotonically increasing file version, including metadata changes. */
+  version?: string
+  capabilities?: { canEdit?: boolean; canComment?: boolean }
   webViewLink?: string
   /** App-private key/values (e.g. the source a converted twin was made from). */
   appProperties?: Record<string, string>
@@ -119,7 +122,8 @@ export function buildFilesQuery(options: { text?: string; kind?: WorkspaceKind }
   return clauses.join(' and ')
 }
 
-const FILE_FIELDS = 'id, name, mimeType, modifiedTime, webViewLink, appProperties'
+const FILE_FIELDS =
+  'id, name, mimeType, modifiedTime, version, capabilities(canEdit,canComment), webViewLink, appProperties'
 
 /** files.list with a raw Drive query. */
 export async function listFiles(

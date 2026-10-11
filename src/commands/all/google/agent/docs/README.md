@@ -1,6 +1,6 @@
 ---
 created: 2026-08-09
-updated: 2026-10-10
+updated: 2026-10-11
 ---
 
 # google:agent — the mission loop and its reliability ladder
@@ -92,9 +92,9 @@ polite "already in use" error.
 ## Reading long files
 
 `read_file` returns 40k-char pages; a truncated page ends with a
-self-directing marker (`[Truncated — N chars total; continue with offset:
-M]`) and the workflow prompt tells the model to keep reading. The progress
-log distinguishes a full read from a first page (`first 40000 returned`).
+self-directing marker naming the next offset and, for Docs, the version.
+The model passes both when continuing, so pages cannot silently mix revisions.
+Reads and outlines reuse the shared [document snapshot](../../docs/README.md#document-snapshots).
 
 ## Every mission says how long
 

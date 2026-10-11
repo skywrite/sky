@@ -1,6 +1,6 @@
 ---
 created: 2026-09-01
-updated: 2026-10-01
+updated: 2026-10-11
 ---
 
 # google — Workspace commands
@@ -29,6 +29,36 @@ The group's root commands, and where the depth lives:
 
 Shared plumbing sits in `lib/` (account resolution, the shared read path)
 on top of the API client in `#lib/google`.
+
+## Document snapshots
+
+`google:read` and the Google Agent's reads and outlines share
+`#lib/google/docSnapshots.ts`. A document first read by Sky gets a rebuildable
+sidecar at `<state>/google/docs/<account-hash>/<file-id-hash>/snapshot.json`.
+The account and provider ID are hashed to preserve their identity on
+case-insensitive filesystems. One atomic file holds the structured Docs response,
+Drive metadata, capture time, and the markdown export when one has been requested.
+Tab text and outlines come from that same structure; an outline or tab read does
+not trigger a markdown export.
+
+Every read checks current Drive metadata before reusing the sidecar. A matching
+`version` and unchanged edit/comment capabilities permit reuse; missing access
+never falls back to cached content. Captures and lazy exports check the version
+and capabilities before and after fetching, retrying at most three times if the
+document changes. Docs pagination carries that version and rejects a continuation
+from a different version. Malformed cache files are rebuilt; cache storage failure
+does not prevent a live read.
+
+Drive versions are persistent freshness markers. Docs revision IDs are separate,
+account-specific write tokens, guaranteed by Google for only 24 hours. Before an
+edit, a token older than 23 hours is renewed with a small Docs request and another
+Drive check. A changed access level refreshes the structure: positions from a
+read-only suggestions preview cannot be paired with an inline editing revision.
+The agent records the revision of the content it actually read and passes it as
+`requiredRevisionId` on batch edits. A conflict requires a new read and a newly
+prepared edit; deterministic restyling advances the required revision after every
+successful batch. See Google's [revision contract](https://developers.google.com/workspace/docs/api/reference/rest/v1/documents)
+and [write controls](https://developers.google.com/workspace/docs/api/reference/rest/v1/documents/batchUpdate#WriteControl).
 
 ## Which account a command uses
 

@@ -1,7 +1,22 @@
 import { GoogleClient, WORKSPACE_MIME, saveAccountTokens } from '#lib/google/mod.ts'
 import { TestSecretsProvider } from '#lib/secrets/TestSecretsProvider.ts'
 import { assert, test } from '#test'
-import { READ_LIMIT_CHARS, paginateRead, readWorkspaceFile } from './readWorkspaceFile.ts'
+import { READ_LIMIT_CHARS, paginateRead, readWorkspaceFile as readWorkspaceFileWithStore } from './readWorkspaceFile.ts'
+import type { WorkspaceReadRequest } from './readWorkspaceFile.ts'
+
+const cacheRoot = mkdtempSync(path.join(tmpdir(), 'sky-doc-read-test-'))
+const stores = new WeakMap<GoogleClient, DocSnapshotStore>()
+let storeCount = 0
+afterAll(() => rmSync(cacheRoot, { recursive: true, force: true }))
+
+function readWorkspaceFile(client: GoogleClient, request: WorkspaceReadRequest) {
+  let snapshots = stores.get(client)
+  if (!snapshots) {
+    snapshots = new DocSnapshotStore(path.join(cacheRoot, String(storeCount++)))
+    stores.set(client, snapshots)
+  }
+  return readWorkspaceFileWithStore(client, request, { snapshots })
+}
 
 test('paginateRead - returns short files whole', () => {
   const page = paginateRead('a short contract')
@@ -93,6 +108,7 @@ const DOC_META = JSON.stringify({
   id: 'd1',
   name: 'Atlas Plan',
   mimeType: WORKSPACE_MIME.doc,
+  version: '1',
   webViewLink: 'https://docs.google.com/document/d/d1/edit',
 })
 
@@ -289,3 +305,8 @@ test('readWorkspaceFile - an uploaded workbook reads through its existing native
       : outcome,
   })
 })
+import { afterAll } from 'bun:test'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import * as path from 'node:path'
+import { DocSnapshotStore } from '#lib/google/docSnapshots.ts'
