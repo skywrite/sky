@@ -6,6 +6,7 @@ import SectionDocument from '#shared/models/Markdown/SectionDocument/mod.ts'
 import type { ConversationMessage } from '../type.d.ts'
 import { type ContextTurnLog, splitContextLog } from './ContextLog/mod.ts'
 import {
+  atxHeading,
   CONVERSATION_HEADING,
   isConversationHeading,
   legacySpeakerOf,
@@ -13,6 +14,8 @@ import {
   type SpeakerHeading,
   speakerHeading,
   speakerOf,
+  summaryHeading,
+  summaryHeadingOf,
 } from './shape.ts'
 
 /**
@@ -23,6 +26,16 @@ export interface ChatTurn {
   speaker: string
   /** The message as written, its own headings included */
   content: string
+}
+
+/**
+ * The summary a save writes above the conversation. Not the title, which
+ * is the frontmatter `summary:`.
+ */
+export interface ChatSummary {
+  /** The model and effort that wrote it, as its heading names them ("Opus 5.5, High"); null when the heading names none */
+  by: string | null
+  text: string
 }
 
 /**
@@ -119,6 +132,10 @@ function readTranscript(body: string, userLabel: string): ParsedTranscript {
  *
  * # Topic Summary
  *
+ * ## Summary (Opus 5.5, High)
+ *
+ * What the chat covered.
+ *
  * ## Conversation
  *
  * ### 2026-02-08 14:32 - **Jane**
@@ -182,6 +199,23 @@ export default class ChatDocument extends SectionDocument {
   get approvals(): string[] {
     const raw = this.yaml['approvals']
     return Array.isArray(raw) ? raw.filter((v): v is string => typeof v === 'string') : []
+  }
+
+  /**
+   * The `## Summary` section above the conversation, or null when the file
+   * has none. Its text runs to the next H1 or H2.
+   */
+  get summarySection(): ChatSummary | null {
+    const { body } = splitContextLog(this.markdown)
+    const lines = markdownLines(body)
+    const end = lines.findIndex((line) => line.structural && isConversationHeading(line.text))
+    if (end === -1) return null
+    const above = lines.slice(0, end)
+    const at = above.findIndex((line) => line.structural && summaryHeadingOf(line.text))
+    if (at === -1) return null
+    const next = above.slice(at + 1).find((line) => line.structural && (atxHeading(line.text)?.level ?? 3) <= 2)
+    const text = body.slice(above[at]!.end, (next ?? lines[end]!).start).trim()
+    return { by: summaryHeadingOf(above[at]!.text)!.by, text }
   }
 
   /** The messages under `## Conversation`, one per speaker heading, unmerged */
@@ -255,6 +289,8 @@ export default class ChatDocument extends SectionDocument {
     approvals?: string[]
     /** The chat this one branched from; the key is absent for a chat that began on its own */
     parent?: ChatParent | null
+    /** Written above the conversation; the section is absent when there is none */
+    summarySection?: ChatSummary | null
   }): ChatDocument {
     const turnCount = Math.floor(input.messages.length / 2)
     const yaml: Record<string, unknown> = {
@@ -272,8 +308,16 @@ export default class ChatDocument extends SectionDocument {
     return new ChatDocument(yaml, markdown)
   }
 
-  private static buildMarkdown(input: { summary: string; messages: ConversationMessage[] }): string {
-    const lines: string[] = [`# ${input.summary}`, '', `## ${CONVERSATION_HEADING}`, '']
+  private static buildMarkdown(input: {
+    summary: string
+    messages: ConversationMessage[]
+    summarySection?: ChatSummary | null
+  }): string {
+    const lines: string[] = [`# ${input.summary}`, '']
+    if (input.summarySection?.text) {
+      lines.push(summaryHeading(input.summarySection.by), '', input.summarySection.text, '')
+    }
+    lines.push(`## ${CONVERSATION_HEADING}`, '')
     const userLabel = userSpeakerLabel()
 
     for (let i = 0; i < input.messages.length; i++) {

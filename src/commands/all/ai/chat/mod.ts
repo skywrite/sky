@@ -523,7 +523,9 @@ export default class AiChatTask extends Command {
           return
         case 'enriching':
           output.log('')
-          output.log(colors.dim(`Choosing ${event.choosing.join(' and ')} from the archived-chat corpus…`))
+          if (event.choosing.length > 0)
+            output.log(colors.dim(`Choosing ${event.choosing.join(' and ')} from the archived-chat corpus…`))
+          if (event.summary) output.log(colors.dim('Writing the summary…'))
           return
       }
     }
@@ -969,6 +971,7 @@ export default class AiChatTask extends Command {
       save: !ephemeral,
       autoTag: !noAutoTag,
       autoRel: !noAutoRel,
+      writeSummary: true,
       memoryDir: DIR_AI_MEMORY,
       people: true,
       logToDay: log ? { category: category || 'Professional' } : null,

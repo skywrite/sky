@@ -8,9 +8,10 @@ import type { SkyConfig } from '#shared/config/types.ts'
 import { env } from '#shared/sys/mod.ts'
 import { assert, test } from '#test'
 import { effectiveEffort, effortLevels, validateEffort } from '#universal/ai/effort.ts'
+import { prettyModel } from '#universal/ai/modelName.ts'
 import { FILE_CHAT_REPLY, fileChatHost } from './chat/filesTestHelpers.ts'
 import { createTestHttpApp } from './httpTestHelpers.ts'
-import { prettyModel, ROLE_LABEL, type SettingsHost } from './settings/mod.ts'
+import { ROLE_LABEL, type SettingsHost } from './settings/mod.ts'
 
 test(
   {

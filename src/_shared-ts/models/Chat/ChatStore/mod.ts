@@ -18,7 +18,7 @@ import type { Attachment } from '#shared/models/Markdown/Document/attachment.ts'
 import { splitContextLog } from '../document/ContextLog/mod.ts'
 import { conversationKey } from '../document/history.ts'
 import { inheritedMessages, joinLineage, prefixOf } from '../document/lineage.ts'
-import ChatDocument, { type ChatParent } from '../document/mod.ts'
+import ChatDocument, { type ChatParent, type ChatSummary } from '../document/mod.ts'
 import { reconstructResumeState, type ResumeState } from '../document/resume.ts'
 import { readChatRecovery, type ChatRecovery } from './recovery.ts'
 
@@ -44,6 +44,8 @@ export interface ResumeSession {
   /** The transcript's own created date; null when it has none — the caller stamps it */
   created: string | null
   summary: string
+  /** The file's `## Summary` section — kept by a save that writes no new one */
+  summarySection?: ChatSummary | null
   rel: string[]
   tags: string[]
   /** Files earlier sessions copied into the day's attachments — carried forward verbatim */
@@ -182,6 +184,7 @@ async function loadLineage(filePath: string, options: LoadResumeOptions, seen: S
     filePath,
     created: created === undefined || created === null ? null : String(created),
     summary: doc.summary,
+    summarySection: doc.summarySection,
     rel: Array.from(doc.rel),
     tags: Array.from(doc.tags),
     attachments: doc.attachments,

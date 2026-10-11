@@ -219,6 +219,7 @@ test('writeChatAutosave - a resumed session keeps its file identity', async () =
     filePath: '/notebook/time/2026-W04/2026-01-20-tue/actions/ai-chats/10-00_Atlas-Kickoff.md',
     created: '2026-01-20',
     summary: 'Atlas Kickoff',
+    summarySection: { by: 'Opus 5.5, High', text: 'Jane planned the Atlas kickoff.' },
     rel: ['projects/Atlas'],
     tags: ['planning'],
     attachments: [],
@@ -236,10 +237,17 @@ test('writeChatAutosave - a resumed session keeps its file identity', async () =
 
   assert({
     given: 'a snapshot of a resumed session with an external artifact',
-    should: 'carry the original summary, created, and tags, with the artifact joining rel',
-    actual: { summary: session.summary, created: session.created, tags: session.tags, rel: session.rel },
+    should: 'carry the original title, summary section, created, and tags, with the artifact joining rel',
+    actual: {
+      summary: session.summary,
+      summarySection: session.summarySection,
+      created: session.created,
+      tags: session.tags,
+      rel: session.rel,
+    },
     expected: {
       summary: 'Atlas Kickoff',
+      summarySection: { by: 'Opus 5.5, High', text: 'Jane planned the Atlas kickoff.' },
       created: '2026-01-20',
       tags: ['planning'],
       rel: ['projects/Atlas', '[Launch Plan](https://example.com/doc/atlas-plan)'],

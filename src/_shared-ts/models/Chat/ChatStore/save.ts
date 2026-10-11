@@ -48,10 +48,16 @@ import type { PlainDate, PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import { artifactRelEntries } from '../artifactRel.ts'
 import { type ContextTurnLog, serializeContextLog } from '../document/ContextLog/mod.ts'
 import { branchDir, replyThreadsDir } from '../document/lineage.ts'
-import ChatDocument, { type ChatParent, firstWordsSummary, userSpeakerLabel } from '../document/mod.ts'
+import ChatDocument, {
+  type ChatParent,
+  type ChatSummary,
+  firstWordsSummary,
+  userSpeakerLabel,
+} from '../document/mod.ts'
 import { universeOf, verifyResumeCandidate } from '../document/resume.ts'
 import { chatStatistics } from '../document/statistics.ts'
 import { buildChatTranscript, buildPersonTranscript, CHAT_ENRICH } from '../enrich.ts'
+import { writeChatSummary } from '../summarySection.ts'
 import type { ConversationMessage } from '../type.d.ts'
 import type { ResumeSession } from './mod.ts'
 import type { ChatRecovery } from './recovery.ts'
@@ -95,6 +101,15 @@ export interface SaveEnricher {
    * the save proceeds without profile ops.
    */
   distillPersonFacts?(transcript: string, today: string): Promise<PersonSaveDistill | undefined>
+  /**
+   * Write the `## Summary` section above the conversation — not the title,
+   * which `summarize` chooses. `earlier` is a branch's inherited opening:
+   * context the summary reads but does not cover. Undefined means abstain.
+   */
+  writeSummary?(input: {
+    turns: ConversationMessage[]
+    earlier: ConversationMessage[]
+  }): Promise<ChatSummary | undefined>
 }
 
 /** What a person distillation hands the save: who was seen, what was learned. */
@@ -116,6 +131,7 @@ export const corpusEnricher: SaveEnricher = {
   // never reaches this side, and the user is never their own subject.
   distillPersonFacts: (transcript, today) =>
     distillPersonFactsFromText({ text: transcript, today, userLabel: userSpeakerLabel(), kind: CHAT_ENRICH.kind }),
+  writeSummary: (input) => writeChatSummary({ ...input, userLabel: userSpeakerLabel() }),
 }
 
 /**
@@ -238,6 +254,12 @@ export interface SaveChatInput {
   autoTag?: boolean
   /** Suggest entities when rel is empty, and add explicitly referenced notebook records on every save */
   autoRel?: boolean
+  /**
+   * Write the `## Summary` section with the Thinking model when the save
+   * adds turns. Otherwise, or when the writer abstains or fails, the file's
+   * existing summary stays.
+   */
+  writeSummary?: boolean
   /** Record the chat as a day-file complete item (new chats only) */
   logToDay?: { category: string } | null
   /**
@@ -262,8 +284,8 @@ export interface SaveChatInput {
   enricher?: SaveEnricher
 }
 
-/** Emitted before the corpus calls, which are the slow part of a save. */
-export type SaveProgress = { type: 'enriching'; choosing: Array<'tags' | 'rel'> }
+/** Emitted before the model calls, which are the slow part of a save. */
+export type SaveProgress = { type: 'enriching'; choosing: Array<'tags' | 'rel'>; summary: boolean }
 
 export type DayLogOutcome =
   | { logged: true; category: string }
@@ -327,13 +349,17 @@ export async function saveChat(input: SaveChatInput): Promise<SaveChatReport> {
     turns.length > (resume?.own.conversation.length ?? 0),
   )
   const wantDocumentRel = input.autoRel === true && Boolean(enricher.chooseDocumentRel)
+  const wantSummary =
+    input.writeSummary === true &&
+    Boolean(enricher.writeSummary) &&
+    turns.length > (resume?.own.conversation.length ?? 0)
   const baseDir = path.dirname(timeDir)
 
-  if (wantTags || wantRel || wantPlaces || wantDocumentRel) {
+  if (wantTags || wantRel || wantPlaces || wantDocumentRel || wantSummary) {
     const choosing: Array<'tags' | 'rel'> = []
     if (wantTags) choosing.push('tags')
     if (wantRel || wantPlaces || wantDocumentRel) choosing.push('rel')
-    input.onProgress?.({ type: 'enriching', choosing })
+    input.onProgress?.({ type: 'enriching', choosing, summary: wantSummary })
   }
 
   const transcript = buildChatTranscript(turns)
@@ -346,7 +372,7 @@ export async function saveChat(input: SaveChatInput): Promise<SaveChatReport> {
   const wantPeople = Boolean(input.people && enricher.distillPersonFacts)
   const memoryTranscript = wantMemory ? buildChatTranscript(turns, { maxChars: MEMORY_TRANSCRIPT_CHARS }) : ''
   const personTranscript = wantPeople ? buildPersonTranscript(turns) : ''
-  const [autoSummary, autoTags, autoRel, documentRel, memoryOps, personDistill] = await Promise.all([
+  const [autoSummary, autoTags, autoRel, documentRel, memoryOps, personDistill, summarySection] = await Promise.all([
     priorSummary ? Promise.resolve(undefined) : enricher.summarize(transcript),
     wantTags ? enricher.chooseTags(subject) : Promise.resolve(undefined),
     wantRel
@@ -389,6 +415,12 @@ export async function saveChat(input: SaveChatInput): Promise<SaveChatReport> {
     wantPeople
       ? enricher.distillPersonFacts!(personTranscript, endTime.plainDate.ymd).catch(async (err) => {
           await logAIError({ source: 'ai:chat', stage: 'people', message: (err as Error).message })
+          return undefined
+        })
+      : Promise.resolve(undefined),
+    wantSummary
+      ? enricher.writeSummary!({ turns, earlier: input.turns.slice(0, inherited) }).catch(async (err) => {
+          await logAIError({ source: 'ai:chat', stage: 'summary', message: (err as Error).message })
           return undefined
         })
       : Promise.resolve(undefined),
@@ -436,6 +468,7 @@ export async function saveChat(input: SaveChatInput): Promise<SaveChatReport> {
     // writes a resumed session back without erasing what the file recorded.
     approvals: [...new Set([...(resume?.approvals ?? []), ...(input.approvals ?? [])])],
     parent,
+    summarySection: summarySection ?? resume?.summarySection ?? null,
   })
 
   // Memory and profile ops apply before the transcript serializes so this

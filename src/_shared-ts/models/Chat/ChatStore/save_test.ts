@@ -46,6 +46,7 @@ const neverCalled: SaveEnricher = {
   // Every save in this file that passes no memoryDir/peopleDirs must never distill.
   distillMemories: () => Promise.reject(new Error('distillMemories must not be called')),
   distillPersonFacts: () => Promise.reject(new Error('distillPersonFacts must not be called')),
+  writeSummary: () => Promise.reject(new Error('writeSummary must not be called')),
 }
 
 async function tmpNotebook(): Promise<string> {
@@ -1143,5 +1144,135 @@ test('saveChat - documents the session created join rel as facts', async () => {
     should: 'record the note by time ref without any chooser, and ignore the outsider',
     actual: [...doc.rel],
     expected: ['2026-01-27/actions/notes/09-45_Launch-memo'],
+  })
+})
+
+test('saveChat - the summary goes between the title and the conversation, under its writer', async () => {
+  let asked: { turns: number; earlier: number } | undefined
+  const { report } = await saveNew({
+    writeSummary: true,
+    enricher: stubEnricher({
+      writeSummary: async (input) => {
+        asked = { turns: input.turns.length, earlier: input.earlier.length }
+        return { by: 'Opus 5.5, High', text: 'Jane asked what the Atlas launch needs. Sky named the demo script.' }
+      },
+    }),
+  })
+  const markdown = await readTextFile(report.path)
+  assert({
+    given: 'a new chat saved with a summary',
+    should: 'hand the writer the whole conversation and write the section above the messages',
+    actual: { asked, head: markdown.slice(markdown.indexOf('# '), markdown.indexOf('### ')) },
+    expected: {
+      asked: { turns: 2, earlier: 0 },
+      head: [
+        '# Atlas Launch Planning',
+        '',
+        '## Summary (Opus 5.5, High)',
+        '',
+        'Jane asked what the Atlas launch needs. Sky named the demo script.',
+        '',
+        '## Conversation',
+        '',
+        '',
+      ].join('\n'),
+    },
+  })
+})
+
+test('saveChat - no summary unless the host asks for one', async () => {
+  let called = false
+  const { report } = await saveNew({
+    enricher: stubEnricher({
+      writeSummary: async () => {
+        called = true
+        return { by: 'Opus 5.5, High', text: 'Unwanted.' }
+      },
+    }),
+  })
+  assert({
+    given: 'a save without writeSummary',
+    should: 'never call the writer and write no section',
+    actual: { called, section: ChatDocument.fromMarkdown(await readTextFile(report.path)).summarySection },
+    expected: { called: false, section: null },
+  })
+})
+
+test('saveChat - a resume rewrites the summary for new turns and keeps it otherwise', async () => {
+  const { report: first } = await saveNew({
+    writeSummary: true,
+    enricher: stubEnricher({ writeSummary: async () => ({ by: 'Opus 5.5, High', text: 'The first summary.' }) }),
+  })
+  const resave = async (turns: ConversationMessage[], writeSummary: SaveEnricher['writeSummary']) => {
+    const report = await saveChat({
+      turns,
+      contextLog: [],
+      resume: await loadResumeSession(first.path),
+      timeDir: 'unused-on-resume',
+      day: DAY,
+      startTime: START,
+      endTime: new PlainDateTime('2026-01-28 08:20'),
+      writeSummary: true,
+      enricher: { ...neverCalled, writeSummary },
+    })
+    return ChatDocument.fromMarkdown(await readTextFile(report.path)).summarySection?.text
+  }
+  const more = [
+    ...TURNS,
+    msg('user', 'Draft the announcement outline.', '2026-01-28 08:12'),
+    msg('assistant', 'Intro, demo, pricing, call to action.', '2026-01-28 08:13'),
+  ]
+  const unchanged = await resave(TURNS, () => Promise.reject(new Error('no new turns, no new summary')))
+  const abstained = await resave(more, async () => undefined)
+  const rewritten = await resave(
+    [...more, msg('user', 'Who signs off?', '2026-01-28 08:30'), msg('assistant', 'Jane does.', '2026-01-28 08:31')],
+    async (input) => ({ by: 'Opus 5.5, High', text: `A summary of ${input.turns.length} messages.` }),
+  )
+  assert({
+    given: 'a resume with no new turns, then new turns the writer declines, then new turns it summarizes',
+    should: 'keep the file summary until a new one is written, then replace it',
+    actual: [unchanged, abstained, rewritten],
+    expected: ['The first summary.', 'The first summary.', 'A summary of 6 messages.'],
+  })
+})
+
+test('saveChat - a branch summary covers its own turns and reads its opening as context', async () => {
+  const timeDir = await tmpNotebook()
+  const parentChat = `time/${dayDir(DAY)}/actions/ai-chats/09-00_Help-with-the-week.md`
+  const parentPath = path.join(path.dirname(timeDir), parentChat)
+  await mkdir(path.dirname(parentPath), { recursive: true })
+  await writeTextFile(parentPath, '---\nsummary: Help with the week\nturns: 1\n---\n\n# Help with the week\n')
+  let asked: { turns: string[]; earlier: string[] } | undefined
+  await saveChat({
+    turns: [
+      msg('user', 'I need help with the week.', '2026-01-27 09:00'),
+      msg('assistant', 'Finances, board prep, hiring.', '2026-01-27 09:01'),
+      msg('user', 'Let us do the board prep instead.', '2026-01-27 09:30'),
+      msg('assistant', 'Three things by Thursday.', '2026-01-27 09:31'),
+    ],
+    contextLog: [],
+    resume: null,
+    parent: { chat: parentChat, turn: 1 },
+    inherited: 2,
+    timeDir,
+    day: DAY,
+    startTime: START,
+    endTime: END,
+    writeSummary: true,
+    enricher: stubEnricher({
+      writeSummary: async (input) => {
+        asked = { turns: input.turns.map((m) => m.content), earlier: input.earlier.map((m) => m.content) }
+        return undefined
+      },
+    }),
+  })
+  assert({
+    given: 'a branch left after turn 1 with one exchange of its own',
+    should: 'summarize its own exchange, with the parent exchange as the earlier conversation',
+    actual: asked,
+    expected: {
+      turns: ['Let us do the board prep instead.', 'Three things by Thursday.'],
+      earlier: ['I need help with the week.', 'Finances, board prep, hiring.'],
+    },
   })
 })

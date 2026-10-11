@@ -29,12 +29,28 @@ Draft continuation links and version ownership follow the [writing voice design]
 
 A saved chat keeps its messages under `## Conversation`, the last section of
 the file: everything after that heading is conversation, and anything a save
-adds beside it, such as a summary, goes above it. Each message is an H3
+adds beside it, such as the summary, goes above it. Each message is an H3
 speaker heading, `### 2026-02-08 14:32 - **Jane**`, or `### **Jane**` for a
 message saved without a stamp. This is the shape saved Slack conversations
 use. The bold name is what tells a speaker from a reply's own `### Sky`
 section. `document/shape.ts` owns these rules for the reader, the writer and
 the migration.
+
+The summary is `## Summary (Opus 5.5, High)`, between the title and the
+conversation: two to five short bullets from the Thinking role's model that
+follow the conversation as it moved, its heading naming the model and effort
+that wrote it (`summarySection.ts`). A chat changes direction as it goes, and
+the title and first message already say what was asked, so the bullets never
+restate the request.
+Both hosts ask for it at a chat's end, and the call runs alongside tags and
+rel. It runs at High where the model offers it, enough for a few bullets
+without X-high's wait. It reads the whole conversation under the speakers'
+names, not the classifier's packed transcript, whose per-turn clip cuts
+exactly where a long reply concludes; a branch's inherited opening goes in
+as context only. A save writes a new one only when it adds turns. A light
+save, or a call that fails (logged as stage `summary`) or declines, keeps the
+file's summary. The chat, day-summary and research prompts treat it as model
+output, like Sky's turns: never the person's words, never evidence.
 
 Message text stays exactly as the person or the model wrote it, headings of
 any level included. Reply-thread keys and the resume history key hash each

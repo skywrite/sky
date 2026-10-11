@@ -5,6 +5,10 @@
  * ```
  * # Title
  *
+ * ## Summary (Opus 5.5, High)
+ *
+ * What the chat covered, written at save time by the model the heading names.
+ *
  * ## Conversation
  *
  * ### 2026-02-08 14:32 - **Jane**
@@ -17,7 +21,8 @@
  * ```
  *
  * `## Conversation` is the last section: everything after its heading is
- * conversation, and anything a save adds beside it goes above it. A message
+ * conversation, and anything a save adds beside it, like the summary, goes
+ * above it. A message
  * is an H3 speaker heading, a leading notebook-time stamp and a bold speaker,
  * the shape saved Slack conversations use; a message saved without a stamp
  * has the bold name alone, `### **Jane**`. The bold is what tells a speaker
@@ -34,6 +39,8 @@ import {
 } from '#shared/models/Markdown/Document/_stripHtmlComments.ts'
 
 export const CONVERSATION_HEADING = 'Conversation'
+
+export const SUMMARY_HEADING = 'Summary'
 
 /** The assistant's speaker label — Sky, the same name as the product. */
 export const ASSISTANT_LABEL = 'Sky'
@@ -98,6 +105,23 @@ export function atxHeading(line: string): { level: number; text: string } | null
 export function isConversationHeading(line: string): boolean {
   const heading = atxHeading(line)
   return heading?.level === 2 && heading.text === CONVERSATION_HEADING
+}
+
+/**
+ * The summary heading: `## Summary (Opus 5.5, High)`. The parenthesis names
+ * the model, and its effort, that wrote the section. Null when the line is
+ * not one; `by` is null for a bare `## Summary`.
+ */
+export function summaryHeadingOf(line: string): { by: string | null } | null {
+  const heading = atxHeading(line)
+  if (heading?.level !== 2) return null
+  const match = new RegExp(`^${SUMMARY_HEADING}(?: \\((.+)\\))?$`).exec(heading.text)
+  return match ? { by: match[1] ?? null } : null
+}
+
+/** The line a summary section is written under. */
+export function summaryHeading(by: string | null): string {
+  return by ? `## ${SUMMARY_HEADING} (${by})` : `## ${SUMMARY_HEADING}`
 }
 
 /** The speaker an H3 message heading names, or null when the line is not one. */

@@ -336,6 +336,63 @@ test('ChatDocument.conversation - only the Conversation section is conversation'
   })
 })
 
+test('ChatDocument.create - a summary goes between the title and the Conversation section', () => {
+  const doc = ChatDocument.create({
+    summary: 'Test Chat',
+    messages: [
+      { role: 'user', content: 'Hello', when: '2026-02-10 09:00' },
+      { role: 'assistant', content: 'Hi there!', when: '2026-02-10 09:01' },
+    ],
+    created: '2026-02-10',
+    updated: '2026-02-10',
+    summarySection: { by: 'Opus 5.5, High', text: 'Jane said hello. Sky answered.' },
+  })
+  const reread = ChatDocument.fromMarkdown(doc.toMarkdown())
+  assert({
+    given: 'a created chat with a summary',
+    should: 'write it under a heading naming its writer, above the messages, and read both back',
+    actual: {
+      head: doc.markdown.split('### ')[0],
+      summary: reread.summarySection,
+      conversation: reread.conversation.map((m) => m.content),
+    },
+    expected: {
+      head: [
+        '',
+        '# Test Chat',
+        '',
+        '## Summary (Opus 5.5, High)',
+        '',
+        'Jane said hello. Sky answered.',
+        '',
+        '## Conversation',
+        '',
+        '',
+      ].join('\n'),
+      summary: { by: 'Opus 5.5, High', text: 'Jane said hello. Sky answered.' },
+      conversation: ['Hello', 'Hi there!'],
+    },
+  })
+})
+
+test('ChatDocument.summarySection - only the section above the conversation, named or bare', () => {
+  const bare = ChatDocument.fromMarkdown(
+    ['# Chat', '', '## Summary', '', 'Written by hand.', '', '## Conversation', '', '### **Jane**', '', 'Hi.'].join(
+      '\n',
+    ),
+  )
+  const inReply = ChatDocument.fromMarkdown(
+    transcript('Chat', '### **Jane**', '', 'Hi.', '', '### **Sky**', '', '## Summary (Opus 5.5, High)', '', 'A reply.'),
+  )
+  const none = ChatDocument.fromMarkdown(transcript('Chat', '### **Jane**', '', 'Hi.'))
+  assert({
+    given: 'a bare Summary heading, a Summary heading inside a reply, and no summary at all',
+    should: 'read the bare one with no writer, and no section for the other two',
+    actual: [bare.summarySection, inReply.summarySection, none.summarySection],
+    expected: [{ by: null, text: 'Written by hand.' }, null, null],
+  })
+})
+
 test('ChatDocument - turn stamps round-trip through headings, extended hours intact', () => {
   const messages: ConversationMessage[] = [
     { role: 'user', content: 'Morning question.', when: '2026-02-08 09:12' },

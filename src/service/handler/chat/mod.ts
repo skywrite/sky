@@ -51,11 +51,12 @@ import {
   type Effort,
   type EffortOverride,
 } from '#universal/ai/effort.ts'
+import { prettyModel } from '#universal/ai/modelName.ts'
 import { budgetFromEstimate, fitBudget } from '#universal/ai/readingBudget.ts'
 import { type PlainDateTime, ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
 import { hold } from '../../activity.ts'
 import { explorerHref } from '../explorer/mod.ts'
-import { prettyModel, profileLabel, PROVIDER_LABEL } from '../settings/mod.ts'
+import { profileLabel, PROVIDER_LABEL } from '../settings/mod.ts'
 import { branchPoints } from './branchPoint.ts'
 import { recoverCalendarApprovals, restoreAnsweredApprovals, type ReviseCalendarApproval } from './calendarApproval.ts'
 import { callSubject } from './callSubject.ts'

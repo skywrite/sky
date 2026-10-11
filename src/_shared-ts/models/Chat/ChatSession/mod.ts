@@ -257,6 +257,8 @@ export interface EndOptions {
   save: boolean
   autoTag?: boolean
   autoRel?: boolean
+  /** Write the `## Summary` section with the Thinking model */
+  writeSummary?: boolean
   memoryDir?: string | null
   people?: boolean
   logToDay?: { category: string } | null
@@ -969,7 +971,7 @@ export default class ChatSession {
    * File the conversation now and go on talking: what a branch asks of a
    * parent that has no file yet, since the branch's own file goes in the
    * folder beside its parent's. A light save — the pinned title, no tags,
-   * rel, memory or profile work; those come at the real end — after which
+   * rel, summary, memory or profile work; those come at the real end — after which
    * the session writes back to that file like a resumed chat. Already filed,
    * it answers with where. Returns null when there is nothing to file.
    */
@@ -980,6 +982,7 @@ export default class ChatSession {
       save: true,
       autoTag: false,
       autoRel: false,
+      writeSummary: false,
       memoryDir: null,
       people: false,
       ...options,
@@ -1023,6 +1026,7 @@ export default class ChatSession {
       approvals: this.opts.approvals?.(),
       autoTag: opts.autoTag,
       autoRel: opts.autoRel,
+      writeSummary: opts.writeSummary,
       memoryDir: opts.memoryDir,
       people: opts.people,
       logToDay: opts.logToDay,

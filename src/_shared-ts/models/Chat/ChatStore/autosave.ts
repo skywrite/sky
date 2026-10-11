@@ -139,6 +139,7 @@ export async function writeChatAutosave(filePath: string, input: ChatAutosaveInp
     // snapshots a resumed session without erasing what the file recorded.
     approvals: [...new Set([...(input.resume?.approvals ?? []), ...(input.approvals ?? [])])],
     parent: input.parent ?? input.resume?.parent ?? null,
+    summarySection: input.resume?.summarySection ?? null,
   })
   const parent = input.parent ?? input.resume?.parent
   const inherited = parent ? parent.turn * 2 : 0

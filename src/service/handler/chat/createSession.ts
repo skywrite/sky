@@ -634,6 +634,7 @@ export function createChatHost(config: typeof ConfigModule, env: Record<string, 
     endDefaults: {
       autoTag: true,
       autoRel: true,
+      writeSummary: true,
       memoryDir: config.DIR_AI_MEMORY,
       people: true,
       logToDay: { category: config.DEFAULT_CATEGORY },

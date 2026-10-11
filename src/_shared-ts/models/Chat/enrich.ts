@@ -40,13 +40,17 @@ const HEAD_SHARE = 0.6
  * the middle of a chat and at the end of a long turn. Sonnet receives this
  * separately from the packed classifier and memory inputs. Timestamps
  * anchor statements from resumed conversations to when they were made.
+ * The chat summary reads the same text under the speakers' own names.
  */
-export function buildPersonTranscript(messages: ConversationMessage[]): string {
+export function buildPersonTranscript(
+  messages: ConversationMessage[],
+  labels: { user: string; assistant: string } = { user: 'User', assistant: 'AI' },
+): string {
   return messages
     .flatMap((message) => {
       const text = message.content.replace(/<!--[\s\S]*?-->/g, '').trim()
       if (!text) return []
-      const role = message.role === 'user' ? 'User' : 'AI'
+      const role = message.role === 'user' ? labels.user : labels.assistant
       const when = message.when ? ` [${message.when}]` : ''
       return [`${role}${when}: ${text}`]
     })
@@ -70,7 +74,14 @@ export function buildChatTranscript(messages: ConversationMessage[], opts: { max
     const label = message.role === 'user' ? 'User' : 'AI'
     parts.push(`${label}: ${truncate(text, cap, CLIP_MARK)}`)
   }
-  const transcript = parts.join('\n\n')
+  return keepHeadAndTail(parts.join('\n\n'), maxChars)
+}
+
+/**
+ * A transcript cut to `maxChars` by dropping its middle: the topic is set
+ * early and concluded late. Shorter text comes back as it was.
+ */
+export function keepHeadAndTail(transcript: string, maxChars: number): string {
   if (transcript.length <= maxChars) return transcript
 
   const budget = maxChars - OMISSION_MARK.length

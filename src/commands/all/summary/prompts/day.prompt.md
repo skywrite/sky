@@ -63,6 +63,7 @@ Transcripts of {{me.firstName}} working with an AI tool. The messages sit under 
 
 - {{me.firstName}}'s turns are real actions: decisions made, positions taken, work directed. Quotable as his.
 - Assistant turns are material he received. Never attribute the assistant's statements, recommendations, or drafts to him.
+- A `## Summary (...)` section above the conversation is a model's summary of the session, written when it was saved. Use it to find your way; never attribute its content to {{me.firstName}}. The turns under {{me.firstName}}'s name are the record.
 - The session's outcome - research digested, a document produced, a decision reached - counts as Done when he used it.
 - Session outcomes often reappear later the same day as a message or doc. Report the outcome once, at its final form, not once per artifact.
 
