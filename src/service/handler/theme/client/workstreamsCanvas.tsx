@@ -1,5 +1,5 @@
 import { ActionIcon, Button } from '@mantine/core'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { WorkstreamColor } from '#lib/workstreams/colors.ts'
 import { CARD_HEIGHT, CARD_WIDTH, defaultWorkstreamPosition } from '#lib/workstreams/layout.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
@@ -134,6 +134,7 @@ export function WorkstreamsCanvas({
   onRelate,
   onInspectRelationship,
   relationshipPreviews = [],
+  holdCamera = false,
   disabled,
 }: {
   items: CanvasWorkstream[]
@@ -151,6 +152,7 @@ export function WorkstreamsCanvas({
   onRelate: (fromId: string, toId?: string) => void
   onInspectRelationship: (relationship: CanvasRelationship) => void
   relationshipPreviews?: CanvasRelationship[]
+  holdCamera?: boolean
   disabled: boolean
 }) {
   const stage = useRef<HTMLDivElement>(null)
@@ -187,7 +189,8 @@ export function WorkstreamsCanvas({
       saveCamera(cameraView.current, cameraRef.current)
     })
   }, [])
-  useEffect(() => {
+  // Before paint, so a view's first frame is never drawn through the previous view's camera.
+  useLayoutEffect(() => {
     if (cameraView.current !== view && frame.current !== null) {
       saveCamera(cameraView.current, cameraRef.current)
       cancelAnimationFrame(frame.current)
@@ -365,6 +368,8 @@ export function WorkstreamsCanvas({
       revealed.current = null
       return
     }
+    // The relationship editor highlights its source; the view stays where the person dragged the connector.
+    if (holdCamera) return
     const key = selected ? `selected:${view}:${selected}` : `overview:${view}`
     const element = stage.current
     if (revealed.current === key || !element || (selected && !positions.has(selected))) return
@@ -401,7 +406,7 @@ export function WorkstreamsCanvas({
     // must not pull the camera back after the person deliberately pans away.
     revealed.current = key
     if (next !== cameraRef.current) publish(next)
-  }, [selected, view, positions, boundsOf, publish, size, items, lanes, laneLeft, activityBox])
+  }, [selected, view, positions, boundsOf, publish, size, items, lanes, laneLeft, activityBox, holdCamera])
 
   useEffect(() => {
     const element = stage.current

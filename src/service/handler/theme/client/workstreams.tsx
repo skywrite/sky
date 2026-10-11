@@ -474,6 +474,7 @@ export function WorkstreamsMain({ id, navigate }: { id: string | null; navigate:
             items={canvasItems}
             view={view}
             selected={relationshipEditor?.source.id ?? id}
+            holdCamera={!!relationshipEditor}
             today={report.today}
             onSelect={(workstreamId) => navigate(`/workstreams/${encodeURIComponent(workstreamId)}`)}
             onMenu={openMenu}
