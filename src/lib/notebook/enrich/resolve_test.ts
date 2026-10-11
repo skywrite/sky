@@ -159,6 +159,56 @@ test('resolveMention: scores break ambiguity only when dominant', () => {
   })
 })
 
+test('resolveMention: the people on the records read settle a bare name before scores', () => {
+  const scores = new Map([
+    ['michael torres', 9],
+    ['michael vance', 1],
+  ])
+  const michael = (contextNames: string[], s?: Map<string, number>) =>
+    resolveMention('Michael', 'person', { index: index(), scores: s, contextNames: new Set(contextNames) })
+  assert({
+    given: 'a dominant score for one namesake and a record naming the other',
+    should: 'resolve to the namesake on the record',
+    actual: michael(['michael vance', 'jane doe'], scores),
+    expected: 'Michael Vance',
+  })
+  assert({
+    given: 'records naming both namesakes',
+    should: 'leave it to the dominant score',
+    actual: michael(['michael torres', 'michael vance'], scores),
+    expected: 'Michael Torres',
+  })
+  assert({
+    given: 'records naming neither namesake',
+    should: 'leave it to the dominant score',
+    actual: michael(['jane doe'], scores),
+    expected: 'Michael Torres',
+  })
+  assert({
+    given: 'no scores and a record naming one namesake',
+    should: 'resolve to the namesake on the record',
+    actual: michael(['michael vance']),
+    expected: 'Michael Vance',
+  })
+  const byName: EntityIndex = {
+    candidates: candidatesFromProfiles([
+      { kind: 'person', names: ['Sam Rivera', 'Samuel Rivera'] },
+      { kind: 'person', names: ['Sam Okafor'] },
+    ]),
+    canResolve: () => true,
+  }
+  assert({
+    given: 'a record spelling a namesake by another name their profile lists',
+    should: 'resolve to that namesake',
+    actual: resolveMention('Sam', 'person', {
+      index: byName,
+      scores: new Map([['sam okafor', 9]]),
+      contextNames: new Set(['samuel rivera']),
+    }),
+    expected: 'Sam Rivera',
+  })
+})
+
 test('resolveMention: fuzzy catches close variants, archived people need more', () => {
   assert({
     given: 'a light misspelling of a current person',

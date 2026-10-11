@@ -1130,6 +1130,53 @@ test('saveChat - rel reads the whole conversation, not the packed transcript', a
   })
 })
 
+test('saveChat - rel hears who was on the records the chat read', async () => {
+  const notebook = await tmpNotebook()
+  const record = async (file: string, frontmatter: string) => {
+    await mkdir(path.dirname(path.join(notebook, file)), { recursive: true })
+    await writeTextFile(path.join(notebook, file), `---\n${frontmatter}\n---\n\n# Record\n`)
+  }
+  const meeting = 'time/2026/W04/01-23/actions/meetings/18-00_In-Person_Michael-Vance_Review.md'
+  const email = 'time/2026/W04/01-24/actions/messages/09-00_email_Sam-Rivera-to-Jane-Doe_Atlas.md'
+  const cut = 'time/2026/W04/01-22/actions/meetings/09-00_Zoom_Michael-Torres_Standup.md'
+  const profile = 'people/2024/mi/Michael-Torres.md'
+  await record(meeting, 'who: Michael Vance, Jane Doe')
+  await record(email, 'from: Sam Rivera\nto:\n  - Jane Doe\n  - Alex Kim')
+  await record(cut, 'who: Michael Torres')
+  await record(profile, 'name:\n  - Michael Torres')
+  let contextNames: string[] | undefined
+  await saveNew({
+    timeDir: path.join(notebook, 'time'),
+    autoRel: true,
+    contextLog: [
+      {
+        turn: 1,
+        queries: [],
+        universe: [
+          { path: meeting, tokens: 200 },
+          { path: cut, tokens: 200, cut: 'floor' },
+          { path: profile, tokens: 40 },
+          { path: 'time/2026/W04/01-21/actions/meetings/10-00_Zoom_Deleted.md', tokens: 10 },
+        ],
+      },
+      { turn: 2, queries: [], added: [{ path: email, tokens: 100 }] },
+    ],
+    enricher: stubEnricher({
+      chooseRel: async (subject) => {
+        contextNames = subject.contextNames
+        return undefined
+      },
+    }),
+  })
+  assert({
+    given:
+      'a meeting and a later email the chat read, a meeting its context cut, a profile it read, and a deleted record',
+    should: 'hand the rel chooser the parties of the records it read, each once',
+    actual: contextNames,
+    expected: ['Michael Vance', 'Jane Doe', 'Sam Rivera', 'Alex Kim'],
+  })
+})
+
 test('saveChat - documents the session created join rel as facts', async () => {
   const timeDir = path.join(await tmpNotebook(), 'time')
   const note = path.join(timeDir, '2026/W05/01-27/actions/notes/09-45_Launch-memo.md')

@@ -27,12 +27,14 @@ import {
   mergeDocumentRel,
   resolveDocumentRel,
 } from '#lib/notebook/enrich/documentRel.ts'
+import { partyNames } from '#lib/notebook/enrich/parties.ts'
 import { summarizeTranscript } from '#lib/notebook/enrich/summarize.ts'
 import { serviceDocumentIO } from '#lib/service/documents.ts'
 import { AI_ERROR_LOG_PATH, logAIError } from '#shared/ai/errorLog.ts'
-import { exists, writeTextFile } from '#shared/fs/mod.ts'
+import { exists, readTextFile, writeTextFile } from '#shared/fs/mod.ts'
 import { unclosedFence } from '#shared/models/Markdown/Document/_stripHtmlComments.ts'
 import { type Attachment, mergeAttachments } from '#shared/models/Markdown/Document/attachment.ts'
+import Document from '#shared/models/Markdown/Document/mod.ts'
 import { loadMemories, type MemoryEntry } from '#shared/models/Memory/mod.ts'
 import { applyMemoryOps, type MemoryOp, type MemoryOpOutcome } from '#shared/models/Memory/write.ts'
 import {
@@ -72,6 +74,8 @@ export interface EnrichSubject {
   summary: string
   body: string
   existingRel?: string[]
+  /** The people on the records the session read — a bare name resolves among them first */
+  contextNames?: string[]
 }
 
 /**
@@ -149,6 +153,35 @@ function createdRefs(paths: readonly string[] | undefined, baseDir: string): str
     .filter((ref): ref is string => Boolean(ref))
     .map((ref) => ref.replace(/\.md$/, ''))
   return refs.length ? [...new Set(refs)] : undefined
+}
+
+/**
+ * The people on the records a session read: the who/from/to of every
+ * document its context shipped to the model, as the documents spell them.
+ * A bare name in the chat most likely means one of them. Cut documents were
+ * never read. Profiles name no parties, and must not count: a lookup by
+ * first name reads several namesakes' profiles, which says nothing about
+ * which one the chat means. An unreadable record adds no one.
+ */
+async function readParties(contextLog: ContextTurnLog[], baseDir: string): Promise<string[]> {
+  const read = new Set<string>()
+  for (const entry of contextLog) {
+    for (const record of [...(entry.universe ?? []), ...(entry.diff ?? []), ...(entry.added ?? [])]) {
+      if (!record.cut) read.add(record.path)
+    }
+  }
+  const parties = await Promise.all(
+    [...read].map(async (file) => {
+      try {
+        const { yaml } = Document.fromMarkdown(await readTextFile(path.join(baseDir, file)))
+        // Most records join names with commas; some list them in YAML
+        return partyNames([yaml.who, yaml.from, yaml.to].flat().filter((v): v is string => typeof v === 'string'))
+      } catch {
+        return []
+      }
+    }),
+  )
+  return [...new Set(parties.flat())]
 }
 
 // -----------------------------------------------------------------------------
@@ -375,8 +408,12 @@ export async function saveChat(input: SaveChatInput): Promise<SaveChatReport> {
   const [autoSummary, autoTags, autoRel, documentRel, memoryOps, personDistill, summarySection] = await Promise.all([
     priorSummary ? Promise.resolve(undefined) : enricher.summarize(transcript),
     wantTags ? enricher.chooseTags(subject) : Promise.resolve(undefined),
+    // The whole log, as for document refs below: a branch's bare name can
+    // mean someone on a record its parent read.
     wantRel
-      ? enricher.chooseRel(relSubject)
+      ? readParties(input.contextLog, baseDir).then((contextNames) =>
+          enricher.chooseRel({ ...relSubject, contextNames }),
+        )
       : wantPlaces
         ? enricher.choosePlaceRel!({
             ...subject,

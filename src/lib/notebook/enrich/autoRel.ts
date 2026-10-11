@@ -138,6 +138,13 @@ export type AutoRelInput = {
   summary?: string
   body: string
   existingRel?: string[]
+  /**
+   * The people on the records the text was read alongside, as those records
+   * spell them — a saved chat's context documents' who/from/to. A bare name
+   * that matches exactly one of them resolves to that person, whatever the
+   * interaction scores say.
+   */
+  contextNames?: string[]
 }
 
 export interface AutoRelOptions {
@@ -261,6 +268,7 @@ export async function proposeRel(
     const places = subjects.places
     const resolved = resolveSubjects({ ...subjects, places }, index, scores, {
       projectStatuses: ['open'],
+      contextNames: new Set((input.contextNames ?? []).map(normalizeEntityName)),
     })
     const parties = partyExclusionSet([input.from, input.to], { index, scores })
     // Keep competing subjects visible to the selector. Places-only limits what

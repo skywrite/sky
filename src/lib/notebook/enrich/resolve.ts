@@ -47,6 +47,13 @@ export type ResolveOptions = {
   scores?: Map<string, number>
   /** Project status buckets eligible for resolution; absent = all */
   projectStatuses?: string[]
+  /**
+   * Normalized names on the records the text was read alongside — a saved
+   * chat's context documents' who/from/to. They settle an ambiguous mention
+   * before the scores do: a score is a prior over everyone the user deals
+   * with, these records say who this conversation was about.
+   */
+  contextNames?: Set<string>
 }
 
 // Conservative bars: a wrong entity pollutes person/project pages, an abstain
@@ -223,8 +230,9 @@ export function placeRefInIndex(raw: string, index: EntityIndex): string | undef
 /**
  * Resolve one extracted mention to a canonical entity ref, or abstain.
  * Ladder: exact normalized match → unique first-name match → fuzzy with
- * uniqueness margin. Interaction scores break near-ties; without a dominant
- * score an ambiguous mention abstains rather than guesses.
+ * uniqueness margin. Among several matches, the one the context names wins;
+ * otherwise interaction scores break near-ties, and without a dominant score
+ * an ambiguous mention abstains rather than guesses.
  */
 export function resolveMention(name: string, kind: EntityKind, opts: ResolveOptions): string | undefined {
   if (kind === 'place') return matchPlace({ name }, opts.index.places?.choices ?? []).ref
@@ -238,16 +246,13 @@ export function resolveMention(name: string, kind: EntityKind, opts: ResolveOpti
   )
   if (pool.length === 0) return undefined
 
-  // A candidate answers to its written name and every other name it lists
-  const spellings = (c: EntityCandidate) => [c.norm, ...(c.aliases ?? [])]
-
   const exact = pool.filter((c) => spellings(c).includes(target))
-  if (exact.length > 0) return disambiguate(exact, opts.scores)?.ref
+  if (exact.length > 0) return disambiguate(exact, opts)?.ref
 
   // Single-token mention ("michael") against first names, people only
   if (kind === 'person' && !target.includes(' ')) {
     const firstName = pool.filter((c) => spellings(c).some((norm) => norm.split(' ')[0] === target))
-    if (firstName.length > 0) return disambiguate(firstName, opts.scores)?.ref
+    if (firstName.length > 0) return disambiguate(firstName, opts)?.ref
   }
 
   // Partial project names ("Atlas" → projects/Atlas-Rollout): every
@@ -258,7 +263,7 @@ export function resolveMention(name: string, kind: EntityKind, opts: ResolveOpti
       const candidateTokens = new Set(c.norm.split(' '))
       return targetTokens.every((t) => candidateTokens.has(t))
     })
-    if (subset.length > 0) return disambiguate(subset, opts.scores)?.ref
+    if (subset.length > 0) return disambiguate(subset, opts)?.ref
   }
 
   const rated = pool
@@ -273,7 +278,7 @@ export function resolveMention(name: string, kind: EntityKind, opts: ResolveOpti
   const contenders = rated.filter((r) => r.rating >= best.rating - FUZZY_MARGIN)
   return disambiguate(
     contenders.map((r) => r.c),
-    opts.scores,
+    opts,
   )?.ref
 }
 
@@ -288,7 +293,7 @@ export function resolveSubjects(
   subjects: SubjectLists,
   index: EntityIndex,
   scores: Map<string, number> | undefined,
-  opts: { projectStatuses?: string[] } = {},
+  opts: { projectStatuses?: string[]; contextNames?: Set<string> } = {},
 ): { refs: string[]; dropped: number; unresolvedPlaces: PlaceMatch[] } {
   const attempts: [string, EntityKind][] = [
     ...subjects.people.map((n): [string, EntityKind] => [n, 'person']),
@@ -299,7 +304,7 @@ export function resolveSubjects(
   let dropped = 0
   const unresolvedPlaces: PlaceMatch[] = []
   for (const [name, kind] of attempts) {
-    const base = { index, scores, projectStatuses: opts.projectStatuses }
+    const base = { index, scores, projectStatuses: opts.projectStatuses, contextNames: opts.contextNames }
     const ref = resolveMention(name, kind, base) ?? (kind === 'org' ? resolveMention(name, 'project', base) : undefined)
     if (!ref) {
       dropped++
@@ -319,10 +324,24 @@ export function resolveSubjects(
   return { refs, dropped, unresolvedPlaces }
 }
 
-/** Unique candidate wins; ties resolve only under a dominant interaction score. */
-function disambiguate(candidates: EntityCandidate[], scores?: Map<string, number>): EntityCandidate | undefined {
+/** A candidate answers to its written name and every other name it lists */
+function spellings(candidate: EntityCandidate): string[] {
+  return [candidate.norm, ...(candidate.aliases ?? [])]
+}
+
+/**
+ * Unique candidate wins. Among several, the only one the context names wins;
+ * remaining ties resolve only under a dominant interaction score.
+ */
+function disambiguate(
+  candidates: EntityCandidate[],
+  opts: Pick<ResolveOptions, 'scores' | 'contextNames'>,
+): EntityCandidate | undefined {
   if (candidates.length === 0) return undefined
   if (candidates.length === 1) return candidates[0]
+  const { scores, contextNames } = opts
+  const named = contextNames ? candidates.filter((c) => spellings(c).some((s) => contextNames.has(s))) : []
+  if (named.length === 1) return named[0]
   if (!scores) return undefined
   const ranked = candidates.map((c) => ({ c, score: scores.get(c.norm) ?? 0 })).sort((a, b) => b.score - a.score)
   const [top, second] = ranked

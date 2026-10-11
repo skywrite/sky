@@ -163,3 +163,40 @@ test("proposeRel extracts on the medium's role, fast unless the medium asks for 
     expected: ['fast', 'balanced'],
   })
 })
+
+test('proposeRel offers the namesake on the records the text was read with, not the top score', async () => {
+  const namesakes = ['Michael Torres', 'Michael Vance']
+  let offered: string[] = []
+  const proposal = await proposeRel(
+    {
+      from: 'Jane',
+      summary: "Michael's point in yesterday's review",
+      body: "User: What did you make of Michael's point in yesterday's review?",
+      contextNames: ['Michael Vance', 'Jane Doe'],
+    },
+    { mediums: ['chat'], kind: 'AI chat conversation' },
+    {
+      buildIndex: async () => ({
+        candidates: namesakes.map((ref) => ({ ref, kind: 'person' as const, norm: normalizeEntityName(ref) })),
+        canResolve: () => true,
+      }),
+      fetchScores: async () =>
+        new Map([
+          ['michael torres', 75],
+          ['michael vance', 15],
+        ]),
+      loadCorpus: async () => ({ records: [] }),
+      extract: async () => ({ subjects: { people: ['Michael'], orgs: [], projects: [], places: [] } }),
+      select: async (req) => {
+        offered = req.candidates.map((c) => c.ref)
+        return { rel: offered }
+      },
+    },
+  )
+  assert({
+    given: 'a bare first name whose top-scored namesake is 5× the other, and a record the chat read naming the other',
+    should: 'offer and propose the namesake on the record',
+    actual: { offered, rel: proposal.rel },
+    expected: { offered: ['Michael Vance'], rel: ['Michael Vance'] },
+  })
+})
