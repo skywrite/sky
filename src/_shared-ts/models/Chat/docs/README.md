@@ -1,6 +1,6 @@
 ---
 created: 2026-09-01
-updated: 2026-10-10
+updated: 2026-10-11
 ---
 
 # Chat model — the pieces under every chat host
@@ -100,8 +100,8 @@ relationships are already present.
 
 ## Fitting a conversation to its model
 
-The notebook slider is an estimated retrieval allowance, not the size of the
-whole request. `ChatEngine/requestBudget.ts` checks each SDK model call,
+The notebook slider is a retrieval allowance in the model's tokens, not the
+size of the whole request. `ChatEngine/requestBudget.ts` checks each SDK model call,
 including tool steps and approval continuations. Instructions, the conversation,
 tool definitions and results must fit together with room for output. Declared
 profile windows travel with the resolved model; an undeclared window can also

@@ -208,3 +208,34 @@ test('timeline - the real request size rides on the turn beside the estimate', (
     expected: [18_204, undefined],
   })
 })
+
+test({ name: "timeline - every count is told in the model's tokens" }, () => {
+  const log: ContextTurnLog[] = [
+    ...LOG.slice(0, 2),
+    {
+      turn: 3,
+      queries: ['{ q1 }', '{ q2 }'],
+      stats: { kept: 3, pruned: 2, excluded: 1, docTokens: 95, budget: 100, requestBudget: 80 },
+      adjustment: { notebookTokens: 60, shortenedToolResults: 0 },
+    },
+  ]
+  const [, grew, refit] = timelineOf(log, TURNS, 1.5)
+  assert({
+    given: 'a log counted in four-character estimates, read for a model at 1.5 tokens per estimate',
+    should: 'restate the turn totals, the documents, the tools and the reduction, leaving the document counts alone',
+    actual: {
+      stats: [grew.stats?.docTokens, grew.stats?.budget, grew.stats?.kept, refit.stats?.requestBudget],
+      added: grew.added.map((doc) => doc.tokens),
+      pushedOut: grew.pushedOut.map((doc) => doc.tokens),
+      tools: grew.tools.map((call) => call.tokens),
+      reduced: refit.adjustment?.notebookTokens,
+    },
+    expected: {
+      stats: [143, 150, 3, 120],
+      added: [38, 135],
+      pushedOut: [60],
+      tools: [450],
+      reduced: 90,
+    },
+  })
+})

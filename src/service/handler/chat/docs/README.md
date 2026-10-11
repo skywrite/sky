@@ -1,6 +1,6 @@
 ---
 created: 2026-09-01
-updated: 2026-10-10
+updated: 2026-10-11
 ---
 
 # Chat over HTTP — a thread, its tuning, and the story of its context
@@ -339,10 +339,9 @@ a person can see and touch:
   configuration so changing or removing a global preset cannot switch the provider
   beneath an existing conversation's file references and model history. Older chats
   recover their last recorded settings; filing preferences remain adjustable.
-  Context stops are Off, 25k, 50k, 100k, 300k, 500k, 750k. The stop a window
-  reaches is figured with the model's learned real-per-estimated token
-  ratio (about 1.78 on Claude, so a 1M window ends at 500k; see the model
-  registry's notes). A model whose host
+  Context stops are Off, 25k, 50k, 100k, 300k, 500k, 750k, counted in the
+  model's own tokens, so a 1M window reaches 750k (see the model registry's
+  notes). A model whose host
   serves less than the stops ask (Cerebras serves Qwen at 131,072 tokens a
   request) ends the slider at the last stop that fits, 50k there; the
   stops past it stay drawn, grayed, and a budget above them drops to that

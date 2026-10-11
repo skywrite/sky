@@ -93,9 +93,9 @@ export interface TurnStats {
   kept: number
   pruned: number
   excluded: number
-  /** Estimated tokens of shipped document markdown (the assembler budget) */
+  /** Estimated tokens of shipped document markdown (the assembler budget). Every count here is an estimate; hosts show them in the model's tokens. */
   docTokens: number
-  /** Token budget ceiling in effect this turn */
+  /** Token budget ceiling in effect this turn, as the estimate */
   budget?: number
   /** Smaller admission budget needed for the complete model request; budget remains the user's allowance. */
   requestBudget?: number
@@ -142,7 +142,7 @@ export interface TurnSettings {
   /** The preset the model was chosen by, and its effective effort — independent of later edits to the preset */
   preset?: string
   effort?: Effort
-  /** The reading budget, 0 = notebook closed. `stats.budget` is the assembler's ceiling and is absent when no assembly ran. */
+  /** The reading budget as its estimate, 0 = notebook closed. `stats.budget` is the assembler's ceiling and is absent when no assembly ran. */
   contextTokens?: number
 }
 

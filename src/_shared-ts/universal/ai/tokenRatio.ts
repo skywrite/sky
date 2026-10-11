@@ -1,13 +1,14 @@
 /**
- * Real tokens per estimated token.
+ * A model's tokens per estimated token.
  *
- * Every budget in the chat is an estimate at four characters a token. The
- * providers count differently: measured over 30 days to 2026-10-04, one
- * estimated token was 1.78 real tokens on Claude Opus 5, Opus 5.5 and Fable
- * 5.1, about 1.25 on Haiku 4.5, and 1.12 on GPT-6 Astra. A "300k" budget was
- * 535k on the wire; a 500k one sat at the 1M window. Neither tokenizer is
- * published, so the ratio is learned from what each call reports back —
- * seeded here per model family, then moved by observation.
+ * The chat measures the notebook at four characters a token; the providers
+ * count differently: measured over 30 days to 2026-10-04, one estimated token
+ * was 1.78 of the model's tokens on Claude Opus 5, Opus 5.5 and Fable 5.1,
+ * about 1.25 on Haiku 4.5, and 1.12 on GPT-6 Astra. A reading budget is in
+ * the model's tokens, and this ratio is how much text it holds
+ * (universal/ai/readingBudget.ts). Neither tokenizer is published, so the
+ * ratio is learned from what each call reports back — seeded here per model
+ * family, then moved by observation.
  */
 
 export interface TokenRatio {

@@ -307,7 +307,7 @@ export default class AiChatTask extends Command {
     // read nor queried; the ambient day (summaries, health, prices, calendar)
     // still frames the conversation, as it does on the web page.
     const asked = noContext ? 0 : maxContext
-    const contextBudget = fitBudget(asked, reasoningProfile.contextWindow, ratioFor(reasoningProfile.model))
+    const contextBudget = fitBudget(asked, reasoningProfile.contextWindow)
     const closed = contextBudget === 0
     if (contextBudget !== asked) {
       output.log(
@@ -538,6 +538,7 @@ export default class AiChatTask extends Command {
       baseDir,
       timeDir,
       contextTokens: contextBudget,
+      tokenRatio: ratioFor(reasoningProfile.model),
       summaryBaseline,
       resume: resumeSession,
       model: reasoning,

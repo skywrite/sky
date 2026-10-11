@@ -37,6 +37,7 @@ import { listDayChats, type ResumeSession } from '#shared/models/Chat/ChatStore/
 import { branchDir } from '#shared/models/Chat/document/lineage.ts'
 import type { ChatParent } from '#shared/models/Chat/document/mod.ts'
 import type { ResumeState } from '#shared/models/Chat/document/resume.ts'
+import { adjustmentInModelTokens } from '#shared/models/Chat/modelTokens.ts'
 import type { ConversationMessage } from '#shared/models/Chat/type.d.ts'
 import type { Attachment } from '#shared/models/Markdown/Document/attachment.ts'
 import { thrownOutcome, TimingSpan } from '#shared/timing/mod.ts'
@@ -50,7 +51,7 @@ import {
   type Effort,
   type EffortOverride,
 } from '#universal/ai/effort.ts'
-import { fitBudget } from '#universal/ai/readingBudget.ts'
+import { budgetFromEstimate, fitBudget } from '#universal/ai/readingBudget.ts'
 import { type PlainDateTime, ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
 import { hold } from '../../activity.ts'
 import { explorerHref } from '../explorer/mod.ts'
@@ -169,6 +170,8 @@ export interface ThreadRestore {
   runs?: ToolRun[]
   answered?: AnsweredApproval[]
   prefs?: ThreadPrefs
+  /** The reading budget as a snapshot saved it — an estimate, restored once the thread's model is known */
+  budget?: number
   title?: string | null
   /** When the thread started; absent, it starts now — a fresh branch does */
   startTime?: PlainDateTime
@@ -232,8 +235,6 @@ export interface ModelChoice {
   roles: string[]
   /** Tokens the host serves in one request; absent when the model takes any budget */
   contextWindow?: number
-  /** Real tokens per estimated one for this model, learned from its calls — the window fit and the slider's reach use it */
-  tokenRatio?: number
   effort?: { default: Effort | null; levels: readonly Effort[] }
   /** Same model and non-effort options: built-in effort variants share one picker entry. */
   group?: string
@@ -245,7 +246,7 @@ export interface ThreadSettings {
   model: { current: string; default: string; choices: ModelChoice[] }
   effort?: EffortOverride
   modelSettingsLocked: boolean
-  /** Token budget for the assembled document context; zero keeps the notebook closed */
+  /** Token budget for the assembled document context, in the model's tokens; zero keeps the notebook closed */
   contextTokens: number
   /** How many documents the model sees as the context stands; null before any turn */
   kept: number | null
@@ -270,7 +271,7 @@ export interface ChatSettingsHost {
     profile: ModelProfile
     config?: ModelConfig
     contextWindow?: number
-    /** Real tokens per estimated one for the model, learned from its calls */
+    /** The model's tokens per estimated one, learned from its calls — the session converts its budget by it */
     tokenRatio?: number
   }
   /**
@@ -279,6 +280,8 @@ export interface ChatSettingsHost {
    * profile on it; undefined when no profile has it.
    */
   profileFor?(model: string, current: string): string | undefined
+  /** The model's tokens per estimated one for a profile, or a thread's own configuration — a session reads by it, and a saved budget's estimate converts back by it */
+  tokenRatio?(profile: string, config?: ModelConfig): number
 }
 
 export interface ChatRoutesOptions {
@@ -787,7 +790,7 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
             prefs.effort,
             prefs.modelConfig,
           )
-          if (chosen) session.setModel(chosen.model, chosen.profile)
+          if (chosen) session.setModel(chosen.model, chosen.profile, chosen.tokenRatio)
           // A recovered allowance stays selected; per-request fitting handles changes in available room.
           if (prefs.modelSettingsLocked && prefs.contextTokens !== undefined)
             session.setContextTokens(prefs.contextTokens)
@@ -961,9 +964,6 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
   // The window the host serves for a profile, as the picker lists it; undefined takes any budget.
   const windowOf = (host: ChatSettingsHost, profile: string) =>
     host.choices().find((choice) => choice.name === profile)?.contextWindow
-  /** The model's learned real-per-estimated token ratio, for the budget fit; undefined uses the fixed slack. */
-  const ratioOf = (host: ChatSettingsHost, profile: string) =>
-    host.choices().find((choice) => choice.name === profile)?.tokenRatio
 
   // A thread's tuning: the live thread's own, else what was chosen for it, else the host's defaults.
   const settingsOf = (id: string): ThreadSettings | null => {
@@ -997,11 +997,7 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
         thread?.session.contextTokens ??
         (prefs?.modelSettingsLocked && prefs.contextTokens !== undefined
           ? prefs.contextTokens
-          : fitBudget(
-              prefs?.contextTokens ?? host.defaultContextTokens,
-              windowOf(host, current),
-              ratioOf(host, current),
-            )),
+          : fitBudget(prefs?.contextTokens ?? host.defaultContextTokens, windowOf(host, current))),
       kept: thread ? keptOf(thread) : null,
       documents: thread?.context?.collectionSize ?? null,
       saves: thread?.saves ?? prefs?.saves ?? true,
@@ -1014,8 +1010,19 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
       current?.modelSettingsLocked &&
       ((change.profile !== undefined && change.profile !== current.model.current) ||
         (change.effort !== undefined && change.effort !== current.effort) ||
-        (change.contextTokens !== undefined && change.contextTokens !== current.contextTokens))
+        (change.contextTokens !== undefined && !sameBudget(id, change.contextTokens, current.contextTokens)))
     )
+  }
+
+  /**
+   * A page loaded before budgets counted the model's tokens still sends the
+   * estimate its thread was saved with. Restated as the thread restored it,
+   * it is the thread's budget, not a change.
+   */
+  const sameBudget = (id: string, sent: number, budget: number): boolean => {
+    if (sent === budget) return true
+    const ratio = threads.get(id)?.session.contextTokenRatio
+    return ratio !== undefined && budgetFromEstimate(sent, ratio) === budget
   }
 
   // A pin, a drop, or a new budget reassembles between turns without a log
@@ -1207,7 +1214,7 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
       } catch (error) {
         return c.json({ message: (error as Error).message }, 400)
       }
-      if (fitBudget(body.contextTokens, chosen.contextWindow, chosen.tokenRatio) !== body.contextTokens) {
+      if (fitBudget(body.contextTokens, chosen.contextWindow) !== body.contextTokens) {
         return c.json({ message: 'The reading budget exceeds this model’s limit. Choose a smaller budget.' }, 400)
       }
     }
@@ -1305,7 +1312,7 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
         }
       }
       if (chosen) {
-        thread.session.setModel(chosen.model, chosen.profile)
+        thread.session.setModel(chosen.model, chosen.profile, chosen.tokenRatio)
         thread.modelConfig = chosen.config ? structuredClone(chosen.config) : undefined
         thread.profile = prefs.profile
         thread.effort = prefs.effort
@@ -1464,7 +1471,7 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
     if (!current?.modelSettingsLocked) {
       try {
         chosen = host.resolve(body.profile, effort)
-        if (fitBudget(body.contextTokens, chosen.contextWindow, chosen.tokenRatio) !== body.contextTokens) {
+        if (fitBudget(body.contextTokens, chosen.contextWindow) !== body.contextTokens) {
           return c.json({ message: 'The reading budget exceeds this model’s limit.' }, 400)
         }
       } catch (error) {
@@ -1496,7 +1503,7 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
       try {
         reserved = true
         if (chosen) {
-          thread.session.setModel(chosen.model, chosen.profile)
+          thread.session.setModel(chosen.model, chosen.profile, chosen.tokenRatio)
           thread.modelConfig = chosen.config ? structuredClone(chosen.config) : undefined
           thread.profile = prefs.profile
           thread.effort = prefs.effort
@@ -1591,7 +1598,14 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
       usage: [...thread.usage].map(([at, usage]) => ({ at, ...usage })),
       timings: [...thread.timings].map(([at, text]) => ({ at, text })),
       adjustments: thread.session.contextLog.flatMap((entry) =>
-        entry.adjustment ? [{ at: entry.turn * 2 - 1, adjustment: entry.adjustment }] : [],
+        entry.adjustment
+          ? [
+              {
+                at: entry.turn * 2 - 1,
+                adjustment: adjustmentInModelTokens(entry.adjustment, thread.session.contextTokenRatio),
+              },
+            ]
+          : [],
       ),
     })
   })
@@ -1717,7 +1731,7 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
       stats: report.stats ?? null,
       kept: report.kept,
       cut: report.cut,
-      log: timelineOf(thread.session.contextLog, thread.session.turns),
+      log: timelineOf(thread.session.contextLog, thread.session.turns, thread.session.contextTokenRatio),
     }
   }
 
@@ -1745,7 +1759,7 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
         profile:
           typeof found.resume.recovery?.host?.profile === 'string' ? found.resume.recovery.host.profile : undefined,
         effort: isEffortOverride(found.resume.recovery?.host?.effort) ? found.resume.recovery.host.effort : undefined,
-        contextTokens: found.resume.recovery?.contextTokens,
+        // The budget comes back from the saved estimate as the thread opens (restoredModelPrefs).
       },
     })
     return c.json({ id, opened: true }, 201)
@@ -1906,14 +1920,13 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
     // now, else the thread's. A model with a smaller window lowers a budget
     // that no longer fits, whether or not this change names one.
     const window = chosen ? chosen.contextWindow : windowOf(host, ridingWith)
-    const ratio = chosen ? chosen.tokenRatio : ratioOf(host, ridingWith)
     const standing = thread?.session.contextTokens ?? held?.contextTokens ?? host.defaultContextTokens
-    const budget = fitBudget(typeof tokens === 'number' ? tokens : standing, window, ratio)
+    const budget = fitBudget(typeof tokens === 'number' ? tokens : standing, window)
     const budgetChanges = typeof tokens === 'number' || budget !== standing
     if (thread) {
       if (thread.busy) return c.json({ message: 'a turn is still running on this thread' }, 409)
       if (chosen) {
-        thread.session.setModel(chosen.model, chosen.profile)
+        thread.session.setModel(chosen.model, chosen.profile, chosen.tokenRatio)
         thread.modelConfig = chosen.config ? structuredClone(chosen.config) : undefined
         thread.profile = ridingWith
         thread.effort = nextEffort

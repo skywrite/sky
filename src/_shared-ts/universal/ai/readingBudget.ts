@@ -2,16 +2,21 @@
  * The reading budget — how much of the notebook a chat turn may assemble
  * into context — and what a model's window makes of it.
  *
- * Budgets come in stops, nothing first, so the same seven choices stand on
- * the page's slider and behind the terminal's flag. A profile may declare
- * the window its host serves in one request; the budget that fits leaves
- * room for the rest of the request — the system prompt and the tool
- * schemas, and the reply, which for a reasoning model includes its thinking
- * — and allows for the budget being an estimate at four characters a token,
- * which the providers' tokenizers exceed by a ratio learned per model
- * (universal/ai/tokenRatio.ts; the fixed slack stands for a model nothing
- * has been observed on). A budget the window cannot take drops to the
+ * A budget is counted in the model's own tokens: the ones its window holds
+ * and its usage reports. Budgets come in stops, nothing first, so the same
+ * seven choices stand on the page's slider and behind the terminal's flag.
+ * A profile may declare the window its host serves in one request; the
+ * budget that fits leaves room for the rest of the request — the system
+ * prompt and the tool schemas, and the reply, which for a reasoning model
+ * includes its thinking. A budget the window cannot take drops to the
  * highest stop that fits. A profile with no window declared is not capped.
+ *
+ * The notebook is measured before any model sees it, at four characters a
+ * token. A session converts between that estimate and the model's tokens
+ * with the ratio learned per model (universal/ai/tokenRatio.ts): the
+ * assembler reads `estimatedTokens(budget, ratio)` of text, and every count a
+ * person reads is shown in the model's tokens. Sessions save the budget as
+ * that estimate, so a saved one returns through `budgetFromEstimate`.
  */
 
 export const STOPS: readonly number[] = [0, 25_000, 50_000, 100_000, 300_000, 500_000, 750_000]
@@ -32,11 +37,10 @@ export function stopIndex(tokens: number): number {
   return nearest
 }
 
-/** The largest budget a window can take, or null when no window is declared. `ratio` is the model's real tokens per estimated one. */
-export function readingCap(contextWindow: number | undefined, ratio = ESTIMATE_SLACK): number | null {
+/** The largest budget a window can take, or null when no window is declared. */
+export function readingCap(contextWindow: number | undefined): number | null {
   if (contextWindow === undefined) return null
-  const room = contextWindow - PROMPT_AND_TOOLS_TOKENS - REPLY_TOKENS
-  return Math.max(0, Math.floor(room / ratio))
+  return Math.max(0, contextWindow - PROMPT_AND_TOOLS_TOKENS - REPLY_TOKENS)
 }
 
 /** The highest stop within a cap; nothing always fits. */
@@ -47,13 +51,35 @@ export function highestStop(cap: number): number {
 }
 
 /** The last stop a window reaches — the slider's end; the final stop when no window is declared. */
-export function reachIndex(contextWindow: number | undefined, ratio = ESTIMATE_SLACK): number {
-  const cap = readingCap(contextWindow, ratio)
+export function reachIndex(contextWindow: number | undefined): number {
+  const cap = readingCap(contextWindow)
   return cap === null ? STOPS.length - 1 : STOPS.indexOf(highestStop(cap))
 }
 
 /** A budget as a window takes it: unchanged when it fits, else the highest stop that does. */
-export function fitBudget(tokens: number, contextWindow: number | undefined, ratio = ESTIMATE_SLACK): number {
-  const cap = readingCap(contextWindow, ratio)
+export function fitBudget(tokens: number, contextWindow: number | undefined): number {
+  const cap = readingCap(contextWindow)
   return cap === null || tokens <= cap ? tokens : highestStop(cap)
+}
+
+/** The notebook text a count of the model's tokens holds, at four characters a token. `ratio` is the model's tokens per estimated one. */
+export function estimatedTokens(tokens: number, ratio: number): number {
+  return Math.floor(tokens / ratio)
+}
+
+/** A four-characters-a-token estimate in the model's tokens. */
+export function modelTokens(estimated: number, ratio: number): number {
+  return Math.round(estimated * ratio)
+}
+
+/**
+ * A budget a session saved as its estimate, back in the model's tokens.
+ * Within a twentieth of a stop it is that stop — the ratio may have moved
+ * since the save; anything else keeps its size, so a budget saved before the
+ * slider counted the model's tokens reads what it always read.
+ */
+export function budgetFromEstimate(estimated: number, ratio: number): number {
+  const tokens = modelTokens(estimated, ratio)
+  const stop = STOPS[stopIndex(tokens)]
+  return Math.abs(tokens - stop) <= stop / 20 ? stop : tokens
 }

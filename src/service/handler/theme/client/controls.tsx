@@ -12,7 +12,6 @@ export interface ModelChoice {
   provider: string
   roles: string[]
   contextWindow?: number
-  tokenRatio?: number
   effort?: { default: Effort | null; levels: readonly Effort[] }
   group?: string
   builtin?: boolean
@@ -66,10 +65,7 @@ export function ChatControls({
   const effort = settings.effort && settings.effort !== 'default' ? settings.effort : (current?.effort?.default ?? null)
   const locked = settings.modelSettingsLocked || chat.state.inherited > 0
   const disabled = locked || chat.state.phase !== 'idle' || !!chat.tuning
-  const reach = Math.max(
-    reachIndex(current?.contextWindow, current?.tokenRatio),
-    locked ? stopIndex(settings.contextTokens) : 0,
-  )
+  const reach = Math.max(reachIndex(current?.contextWindow), locked ? stopIndex(settings.contextTokens) : 0)
   const at = Math.min(budget ?? stopIndex(settings.contextTokens), reach)
   const tokens = budget === null ? settings.contextTokens : STOPS[at]
   const choices = pickerChoices(settings)
@@ -190,7 +186,8 @@ export function ChatControls({
             </p>
           )}
           <p className="sky-chat-controls-note">
-            An estimated notebook allowance. Sky reads less when needed to leave room for the conversation and reply.
+            The most of your notebook Sky reads, in the model’s tokens. Sky reads less when needed to leave room for the
+            conversation and reply.
           </p>
         </section>
       </div>

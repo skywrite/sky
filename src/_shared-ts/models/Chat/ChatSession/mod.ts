@@ -31,6 +31,7 @@ import { timingDetail, type TimingDetail } from '#shared/timing/summary.ts'
 import { type ChatImage, withChatImages } from '#universal/ai/chatImages.ts'
 import type { ContextAdjustment } from '#universal/ai/contextAdjustment.ts'
 import type { Effort } from '#universal/ai/effort.ts'
+import { estimatedTokens, modelTokens } from '#universal/ai/readingBudget.ts'
 import { withSources } from '#universal/ai/sources.ts'
 import type { PlainDate, PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import { type ExternalFileRef, recordExternalFiles } from '../artifactRel.ts'
@@ -61,6 +62,7 @@ import { chatFilePath, type SaveChatReport, type SaveEnricher, type SaveProgress
 import { conversationKey, hasCompleteModelHistory, modelHistoryThrough } from '../document/history.ts'
 import { inheritedMessages, prefixOf } from '../document/lineage.ts'
 import type { ChatParent } from '../document/mod.ts'
+import { adjustmentInModelTokens, reportInModelTokens } from '../modelTokens.ts'
 import type { ConversationMessage } from '../type.d.ts'
 import { type AmbientContext, buildContextPrompt } from './contextPrompt.ts'
 
@@ -101,8 +103,9 @@ export interface ChatMessageFiles {
 
 /**
  * Everything a host renders while a session works, in the order it
- * happens. The engine's and context's own events pass through unchanged;
- * the rest mark the points in a turn a host prints something at.
+ * happens. The engine's and context's own events pass through, their
+ * token counts in the model's tokens; the rest mark the points in a turn a
+ * host prints something at.
  */
 export type ChatSessionEvent =
   | ChatEngineEvent
@@ -164,7 +167,14 @@ export interface ChatSessionOptions {
   baseDir: string
   /** Notebook time root — a new chat files under its day directory */
   timeDir: string
+  /** The reading budget, in the model's tokens */
   contextTokens?: number
+  /**
+   * The model's tokens per four-character estimated token (universal/ai/tokenRatio.ts):
+   * the budget's text is measured in estimates, and its counts are shown back in the
+   * model's tokens. Absent, the two are taken as one.
+   */
+  tokenRatio?: number
   /**
    * The host's preflight, run before each turn's reading: a quick judge of
    * whether the message needs the notebook. A skip verdict reads nothing
@@ -284,6 +294,10 @@ export default class ChatSession {
   private pendingSourcePaths = new Set<string>()
   /** What the transcript records — the model answering from now on, which a host may change between turns. */
   private profile: ModelProfile
+  /** The model's tokens per estimated token, held while the model stays, so the budget's text holds still between turns. */
+  private tokenRatio: number
+  /** The reading budget as the host set it, in the model's tokens; the context assembles within its estimate. */
+  private budgetTokens: number
   /** The file being written back to — the resume the host gave, or the file this session filed mid-life. */
   private resumeSession: ResumeSession | null
   /** A title pinned before the save: a branch names its family on the parent so the folder is known. */
@@ -349,11 +363,12 @@ export default class ChatSession {
         JSON.stringify(this.turns.slice(opts.resume.inherited)) !== JSON.stringify(opts.resume.own.conversation)
     this.now = opts.now ?? (async () => (await fetchNow()).plainDateTime)
     this.logError = opts.logError ?? logAIError
+    this.tokenRatio = opts.tokenRatio ?? 1
     this.context = new ChatContext({
       today: opts.today,
       days: opts.days,
       baseDir: opts.baseDir,
-      maxTokens: opts.contextTokens,
+      maxTokens: opts.contextTokens === undefined ? undefined : estimatedTokens(opts.contextTokens, this.tokenRatio),
       summaryBaseline: opts.summaryBaseline,
       ownChatPath: opts.resume?.filePath ?? null,
       // A branch's lineage is its own conversation already; a fresh branch's
@@ -365,6 +380,7 @@ export default class ChatSession {
       fetchContext: opts.fetchContext,
       logError: opts.logError,
     })
+    this.budgetTokens = opts.contextTokens ?? modelTokens(this.context.budget, this.tokenRatio)
     this.engine = new ChatEngine({
       model: opts.model,
       cacheKey: opts.cacheKey,
@@ -553,7 +569,7 @@ export default class ChatSession {
       this.seeded = true
       this.started = true
       this.contextPrompt = buildContextPrompt(this.opts.ambient, restored.rebuild.activityMarkdown)
-      return { restored }
+      return { restored: { ...restored, rebuild: reportInModelTokens(restored.rebuild, this.tokenRatio) } }
     }
 
     if (this.context.budget === 0) {
@@ -586,16 +602,27 @@ export default class ChatSession {
   /**
    * Think with another model from the next turn on. The frontmatter records
    * one model — the one set when the transcript is saved; each turn's log
-   * entry records the one it ran on.
+   * entry records the one it ran on. Another model counts the budget's text
+   * at its own ratio; the same model keeps the ratio the session holds.
    */
-  setModel(model: ResolvedModel, profile: ModelProfile): void {
+  setModel(model: ResolvedModel, profile: ModelProfile, tokenRatio?: number): void {
+    const another = profile.model !== this.profile.model
     this.engine.setModel(model)
     this.profile = profile
+    if (another && tokenRatio !== undefined && tokenRatio !== this.tokenRatio) {
+      this.tokenRatio = tokenRatio
+      this.context.setBudget(estimatedTokens(this.budgetTokens, tokenRatio))
+    }
   }
 
-  /** The token budget the document context is assembled within. */
+  /** The reading budget, in the model's tokens. */
   get contextTokens(): number {
-    return this.context.budget
+    return this.budgetTokens
+  }
+
+  /** The model's tokens per estimated token this session reads with — a host restates the saved log's counts by it. */
+  get contextTokenRatio(): number {
+    return this.tokenRatio
   }
 
   /**
@@ -605,7 +632,8 @@ export default class ChatSession {
    * next turn on; a budget after a closed start gathers at the next message.
    */
   setContextTokens(tokens: number): RebuildReport | null {
-    this.context.setBudget(tokens)
+    this.budgetTokens = tokens
+    this.context.setBudget(estimatedTokens(tokens, this.tokenRatio))
     return this.firstTurnPending || !this.seeded ? null : this.reassembled()
   }
 
@@ -637,7 +665,7 @@ export default class ChatSession {
     )
     this.queueAdditions(report)
     this.emit({ type: 'context-rebuilt', report })
-    return report
+    return reportInModelTokens(report, this.tokenRatio)
   }
 
   /** Documents a rebuild admitted beyond the segment wait for the next message, which delivers them. */
@@ -975,7 +1003,8 @@ export default class ChatSession {
         modelMessages: hasCompleteModelHistory(history, this.turns) ? history : undefined,
         workingContext: this.engine.workingContext.state,
         turnErrors: turnErrors(this.turns),
-        contextTokens: this.contextTokens,
+        // Saved as the estimate the context assembles within, as the log records it; read back through budgetFromEstimate.
+        contextTokens: this.context.budget,
         host: this.snapshotHostState?.(),
       },
       turns: this.turns,
@@ -1038,7 +1067,7 @@ export default class ChatSession {
           modelMessages: this.engine.snapshotMessages(),
           workingContext: this.engine.workingContext.state,
           turnErrors: turnErrors(this.turns),
-          contextTokens: this.contextTokens,
+          contextTokens: this.context.budget,
           host: this.snapshotHostState?.(),
         },
       })
@@ -1071,6 +1100,15 @@ export default class ChatSession {
   }
 
   private emit(event: ChatSessionEvent): void {
-    this.opts.onEvent?.(event)
+    this.opts.onEvent?.(this.inModelTokens(event))
+  }
+
+  /** The context pipeline counts in estimates; a host shows every count in the model's tokens. */
+  private inModelTokens(event: ChatSessionEvent): ChatSessionEvent {
+    if (event.type === 'context-rebuilt')
+      return { ...event, report: reportInModelTokens(event.report, this.tokenRatio) }
+    if (event.type === 'context-adjusted')
+      return { ...event, adjustment: adjustmentInModelTokens(event.adjustment, this.tokenRatio) }
+    return event
   }
 }

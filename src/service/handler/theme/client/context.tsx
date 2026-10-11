@@ -182,7 +182,7 @@ function budgetLine(stats: TurnStats): string {
   return stats.budget ? `${tokens(stats.docTokens)} of ${tokens(stats.budget)}` : tokens(stats.docTokens)
 }
 
-/** The real size of the turn's first request, beside the estimate it was built from. */
+/** The size of the turn's first request as the model counted it, beside what the notebook took of it. */
 function requestLine(requestTokens: number | undefined): string {
   return requestTokens === undefined ? '' : ` · request ${tokens(requestTokens)}`
 }

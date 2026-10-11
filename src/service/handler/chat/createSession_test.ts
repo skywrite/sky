@@ -131,9 +131,9 @@ test({ name: 'toolOutputSink - without a summarizer the events are the three as 
 test({ name: 'webReading - a new web thread reads with the shared defaults, lean baseline included' }, () => {
   assert({
     given: 'no stored budget and a model with no declared window',
-    should: 'sweep seven days under the 300k budget with the lean baseline on',
+    should: 'sweep seven days under the 500k budget with the lean baseline on',
     actual: webReading(undefined, undefined),
-    expected: { days: 7, contextTokens: 300_000, summaryBaseline: true },
+    expected: { days: 7, contextTokens: 500_000, summaryBaseline: true },
   })
 })
 
@@ -146,11 +146,11 @@ test({ name: 'webReading - a stored budget past the model window drops to the st
   })
 })
 
-test({ name: 'webReading - the model’s learned token ratio ends the budget where its window really does' }, () => {
+test({ name: 'webReading - a 1M window takes the 750k budget whole, in the model’s tokens' }, () => {
   assert({
-    given: 'a 300k preference on a 1M-window model counted at 1.78 real tokens per estimated one, and a 750k one',
-    should: 'keep 300k (534k on the wire) and drop 750k to the 500k stop',
-    actual: [webReading(300_000, 1_000_000, 1.78).contextTokens, webReading(750_000, 1_000_000, 1.78).contextTokens],
-    expected: [300_000, 500_000],
+    given: 'a 750k preference and a 500k one on a model that serves 1M tokens a request',
+    should: 'keep both: the window holds 750k of its own tokens with room for the prompt and reply',
+    actual: [webReading(750_000, 1_000_000).contextTokens, webReading(500_000, 1_000_000).contextTokens],
+    expected: [750_000, 500_000],
   })
 })

@@ -53,3 +53,45 @@ test('restoredModelPrefs - a new chat asked for a retired profile starts on the 
     expected: { profile: 'default-opus-5.5', effort: 'default' },
   })
 })
+
+/** A saved chat whose recovery record holds its budget as the estimate the session read within. */
+function savedEstimate(contextTokens: number, profile = 'default-opus-5.5'): ThreadRestore {
+  return {
+    id: 'demo',
+    state: {
+      conversation: [
+        { role: 'user', content: 'Summarize the Atlas notes.' },
+        { role: 'assistant', content: 'Done.' },
+      ],
+      contextLog: [],
+    },
+    resume: { recovery: { version: 1, contextTokens, host: { profile } } },
+  } as unknown as ThreadRestore
+}
+
+/** The catalog with each profile's ratio: Opus 5.5 counts 1.803 tokens per estimated one. */
+const counted = { ...catalog, tokenRatio: (profile: string) => (profile === 'default-opus-5.5' ? 1.803 : 1.25) }
+
+test("restoredModelPrefs - a saved budget comes back in the model's tokens", () => {
+  assert({
+    given:
+      'a 500k budget saved as its 277,315 estimate on Opus 5.5, a 300k saved before the slider counted the model’s tokens, and a host with no ratio',
+    should: 'return 500k, the old 300k at the 540,900 it reads, and the estimate as it was',
+    actual: [
+      restoredModelPrefs({}, savedEstimate(277_315), counted).contextTokens,
+      restoredModelPrefs({}, savedEstimate(300_000), counted).contextTokens,
+      restoredModelPrefs({}, savedEstimate(300_000), catalog).contextTokens,
+    ],
+    expected: [500_000, 540_900, 300_000],
+  })
+})
+
+test('restoredModelPrefs - a saved budget converts at the ratio of the model the chat now runs on', () => {
+  const restored = restoredModelPrefs({}, savedEstimate(300_000, 'default-haiku-4.5'), counted)
+  assert({
+    given: 'a 300k estimate saved under a retired profile, which opens on the default model',
+    should: 'read the same text on the default model: 300k at its 1.803',
+    actual: [restored.profile, restored.contextTokens],
+    expected: ['default-opus-5.5', 540_900],
+  })
+})

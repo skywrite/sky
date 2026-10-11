@@ -6,6 +6,7 @@ import { MockLanguageModelV3 } from 'ai/test'
 import { withCommandRun } from '#commands/lib/core/commandLog.ts'
 import * as config from '#config'
 import type { ModelProfile as ModelConfig, ResolvedModel } from '#shared/ai/models.ts'
+import { ratioFor } from '#shared/ai/tokenRatio.ts'
 import { exists, makeTempDir, readTextFile, writeTextFile } from '#shared/fs/mod.ts'
 import type { ProducerResult } from '#shared/models/Chat/ChatContext/mod.ts'
 import type { ModelInvoker } from '#shared/models/Chat/ChatEngine/mod.ts'
@@ -103,6 +104,8 @@ const settingsHost: ChatSettingsHost = {
   },
   // The test profiles are named after their models, so a logged model is its own profile.
   profileFor: (model) => (CHOICES.some((c) => c.name === model) ? model : undefined),
+  // As the web host's catalog: a saved budget converts back at the ratio its session read with.
+  tokenRatio: (profile) => ratioFor(profile),
 }
 
 /** The catalog with a model whose host serves 131,072 tokens a request — Qwen on Cerebras. */
@@ -147,6 +150,8 @@ async function testHost(
         baseDir: BASE_DIR,
         timeDir: tmp,
         contextTokens: prefs.contextTokens,
+        // As the web host does: the budget's text is counted at the model's ratio, which a restart restores by.
+        tokenRatio: ratioFor(prefs.profile ?? 'claude-opus-4-6'),
         resume: restore?.resume ?? null,
         restore: restore?.resume ? undefined : restore?.state,
         parent: restore?.resume ? null : (restore?.parent ?? null),
@@ -1519,6 +1524,37 @@ test('chat route - a browser carries its choices through a server restart', asyn
       turns: thread.turns.length,
     },
     expected: { model: 'test-quick', settings: ['test-quick', 5000, true], turns: 4 },
+  })
+})
+
+test('chat route - a page loaded before budgets counted the model’s tokens keeps its thread after a restart', async () => {
+  const host = await testHost()
+  const beforeRestart = appWith(host)
+  const prefs = { profile: 'test-quick', contextTokens: 300_000, saves: true }
+  await (
+    await post(beforeRestart, 'http://localhost/chat/older/messages', { message: 'Plan the demo.', ...prefs })
+  ).text()
+  const { state } = await loadResumeSession(path.join(host.tmp, 'older.autosave.md'))
+  const saved = state.contextLog.findLast((entry) => entry.settings)?.settings?.contextTokens
+  const afterRestart = appWith({ ...host, snapshots: async () => [{ id: 'older', startTime: START, state }] })
+  // Such a page holds the number its slider showed then: the estimate the thread was saved with.
+  const response = await post(afterRestart, 'http://localhost/chat/older/messages', {
+    message: 'Continue.',
+    ...prefs,
+    contextTokens: saved,
+  })
+  const frames = parseSSE(await response.text())
+  const settings = await getJson(afterRestart, 'http://localhost/chat/older/settings')
+  assert({
+    given: 'a thread restored with a 300k budget, saved as its 240k estimate, and a page that still sends the 240k',
+    should: 'take the message under the thread’s own budget instead of refusing it as a settings change',
+    actual: {
+      saved,
+      status: response.status,
+      answered: frames.some((f) => f.event === 'turn'),
+      budget: settings.contextTokens,
+    },
+    expected: { saved: 240_000, status: 200, answered: true, budget: 300_000 },
   })
 })
 

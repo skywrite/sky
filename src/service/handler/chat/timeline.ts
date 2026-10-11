@@ -16,6 +16,7 @@ import type {
   ToolCallRecord,
   TurnStats,
 } from '#shared/models/Chat/document/ContextLog/mod.ts'
+import { adjustmentInModelTokens, countsInModelTokens, statsInModelTokens } from '#shared/models/Chat/modelTokens.ts'
 import type { ConversationMessage } from '#shared/models/Chat/type.d.ts'
 import type { ContextAdjustment } from '#universal/ai/contextAdjustment.ts'
 
@@ -49,7 +50,7 @@ export interface TimelineEntry {
   errors: string[]
   /** The preflight's verdict on the message, when one ran */
   preflight?: PreflightVerdict
-  /** The turn's first request as the provider counted it — the real size behind the estimate */
+  /** The turn's first request as the provider counted it */
   requestTokens?: number
 }
 
@@ -82,9 +83,10 @@ function kindOf(entry: ContextTurnLog): TimelineKind {
 
 /**
  * The turn-by-turn story of a context log. `turns` supplies the stamps:
- * the k-th entry belongs to the k-th user message.
+ * the k-th entry belongs to the k-th user message. The log counts in
+ * estimates; `ratio` restates every count in the model's tokens.
  */
-export function timelineOf(log: ContextTurnLog[], turns: ConversationMessage[]): TimelineEntry[] {
+export function timelineOf(log: ContextTurnLog[], turns: ConversationMessage[], ratio = 1): TimelineEntry[] {
   const stamps = turns.filter((t) => t.role === 'user').map((t) => t.when?.slice(11) ?? null)
   const out: TimelineEntry[] = []
   // The budget's cuts as of the last assembly — a reused or failed turn carries them forward.
@@ -115,15 +117,15 @@ export function timelineOf(log: ContextTurnLog[], turns: ConversationMessage[]):
       kind,
       searches,
       queries: entry.stats?.budget === 0 ? [] : [...entry.queries],
-      added,
-      pushedOut,
-      tools: entry.tools ?? [],
+      added: countsInModelTokens(added, ratio),
+      pushedOut: countsInModelTokens(pushedOut, ratio),
+      tools: countsInModelTokens(entry.tools ?? [], ratio),
       errors: entry.errors ?? [],
     }
-    if (entry.stats) item.stats = entry.stats
+    if (entry.stats) item.stats = statsInModelTokens(entry.stats, ratio)
     if (entry.preflight) item.preflight = entry.preflight
     if (entry.requestTokens !== undefined) item.requestTokens = entry.requestTokens
-    if (entry.adjustment) item.adjustment = entry.adjustment
+    if (entry.adjustment) item.adjustment = adjustmentInModelTokens(entry.adjustment, ratio)
     if (kind === 'seed') item.found = entry.universe?.length ?? 0
     out.push(item)
   }

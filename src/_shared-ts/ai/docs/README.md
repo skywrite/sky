@@ -1,6 +1,6 @@
 ---
 created: 2026-09-01
-updated: 2026-10-10
+updated: 2026-10-11
 ---
 
 # Model registry — roles, profiles, providers
@@ -41,21 +41,27 @@ with a 400.
 
 A profile may declare `contextWindow` — the tokens its host serves in one
 request, when that is less than a chat may ask to read. A chat's reading
-budget is fitted to it (`universal/ai/readingBudget.ts`): the budget stays
-when it fits, else drops to the highest stop that leaves room for the
-prompt, the tools, the reply, and the gap between the estimate (four
-characters a token) and what the model really counts. That gap is a ratio
-learned per model (`tokenRatio.ts`): every resolved model carries a meter
-that compares a request's serialized size with the input the provider
-reported — requests without tool results only, since tool JSON counts
-leaner than the prose the budget estimates — seeded per family (1.75 on the Opus 4.7 tokenizer line,
+budget is counted in the model's own tokens and fitted to the window
+(`universal/ai/readingBudget.ts`): the budget stays when it fits, else drops
+to the highest stop that leaves room for the prompt, the tools and the
+reply. A 1M window reaches the 750k stop. Cerebras serves Qwen 3.8 at
+131,072 tokens on the paid tier, so a chat there reads 50k at most; a
+profile with no window declared is not capped.
+
+The notebook is measured before any model sees it, at four characters a
+token, and each model counts the same text differently. A session converts
+by a ratio learned per model (`tokenRatio.ts`): every resolved model carries
+a meter that compares a request's serialized size with the input the
+provider reported — requests without tool results only, since tool JSON
+counts leaner than prose — seeded per family (1.75 on the Opus 4.7 tokenizer line,
 Haiku 5.5 included; 1.25 on Haiku 4.5; 1.15 on GPT-6) and kept in `<userData>/state/ai/token-ratios.json`.
-On Claude the ratio is about 1.78, so a 1M window reaches the 500k stop,
-not 750k. Cerebras serves Qwen 3.8 at 131,072 tokens on the paid tier, so
-a chat there reads 50k at most; a profile with no window declared is not
-capped. Each chat turn also records the real size of its first request
-(`requestTokens` on the turn log), shown in the Context panel beside the
-estimate.
+The context assembles within the budget's estimate; every count a person
+sees — the slider, the Context panel, the terminal — is in the model's
+tokens. The saved log and a saved budget stay estimates, converted as they
+are shown or restored ([2026-10-11](2026-10-11-reading-budget-in-model-tokens.md)).
+Each chat turn also records the real size of its first request
+(`requestTokens` on the turn log), shown in the Context panel beside what
+the notebook took.
 
 ## Prompt caching
 
@@ -155,6 +161,9 @@ Tokens only; the invoice prices them.
 
 ## Notes
 
+- [2026-10-11](2026-10-11-reading-budget-in-model-tokens.md) — the reading
+  budget counts the model's tokens: the 10-05 learned ratio had made a 1M
+  window end at 500k of four-character estimates, which read as a cap.
 - [2026-10-07](2026-10-07-haiku-5-5-fast-role.md) — Haiku 5.5 takes the `fast`
   role with thinking off at low effort: with thinking on, a 64-token tool
   summary came back empty. Haiku 4.5 is retired (2026-10-08).

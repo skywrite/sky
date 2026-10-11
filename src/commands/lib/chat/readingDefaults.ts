@@ -11,8 +11,12 @@
 export const CHAT_READING = {
   /** Days of history the baseline sweeps, today included. */
   days: 7,
-  /** The reading budget in estimated tokens; 0 keeps the notebook closed. */
-  contextTokens: 300_000,
+  /**
+   * The reading budget in the model's tokens; 0 keeps the notebook closed.
+   * 500k is about what 300k read when the slider counted four-character
+   * estimates: Opus 5.5 counts about 1.8 tokens for each.
+   */
+  contextTokens: 500_000,
   /**
    * Lean baseline: days before yesterday seed from their summary (else the
    * day ledger alone), and message bodies stay out of today's and

@@ -12,6 +12,7 @@ export interface ChatRecovery {
   modelMessages?: ModelMessage[]
   workingContext?: WorkingContextState
   turnErrors?: { at: number; message: string }[]
+  /** The reading budget as the estimate the context assembles within; hosts read it back through budgetFromEstimate. */
   contextTokens?: number
   legalReview?: { id: string; turn: number }
   writingDrafts?: { id: string; turn: number }[]

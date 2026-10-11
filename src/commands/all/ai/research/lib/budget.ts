@@ -2,8 +2,16 @@ import type { LanguageModelV4CallOptions } from '@ai-sdk/provider'
 import type { LanguageModelMiddleware } from 'ai'
 import { estimateTokens } from '#shared/models/AI/ContextAssembler/mod.ts'
 import truncate from '#shared/strings/truncate.ts'
-import { ESTIMATE_SLACK, fitBudget, PROMPT_AND_TOOLS_TOKENS, REPLY_TOKENS } from '#universal/ai/readingBudget.ts'
+import {
+  ESTIMATE_SLACK,
+  estimatedTokens,
+  highestStop,
+  PROMPT_AND_TOOLS_TOKENS,
+  readingCap,
+  REPLY_TOKENS,
+} from '#universal/ai/readingBudget.ts'
 
+/** Research counts at four characters a token: a chat hands it the estimate its own budget holds. */
 const DEFAULT_CONTEXT_TOKENS = 300_000
 const COMPACTED =
   '\n[Research result shortened to fit the context budget. This is partial evidence; use notebook_read with a path and offset or find to recover omitted passages.]'
@@ -13,7 +21,11 @@ export function researchBudget(
   contextWindow?: number,
   tokenRatio: number = ESTIMATE_SLACK,
 ) {
-  const readingTokens = fitBudget(Math.max(0, contextTokens), contextWindow, tokenRatio)
+  // The window's room is in the model's tokens; restated as an estimate, it caps the reading.
+  const room = readingCap(contextWindow)
+  const cap = room === null ? null : estimatedTokens(room, tokenRatio)
+  const asked = Math.max(0, contextTokens)
+  const readingTokens = cap === null || asked <= cap ? asked : highestStop(cap)
   const inputTokens = Math.min(
     readingTokens + PROMPT_AND_TOOLS_TOKENS,
     contextWindow === undefined ? Infinity : Math.max(0, Math.floor((contextWindow - REPLY_TOKENS) / tokenRatio)),

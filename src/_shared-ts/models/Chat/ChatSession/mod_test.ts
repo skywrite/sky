@@ -186,6 +186,48 @@ test('a session recovers capacity, reports the reduction, and keeps it through r
   }
 })
 
+test("ChatSession - the budget counts the model's tokens; the context reads the text that holds", async () => {
+  const { session, events, tmp } = await makeSession({ contextTokens: 750_000, tokenRatio: 1.5 })
+  try {
+    await session.start()
+    await session.send('What is on the roadmap?')
+    const logged = session.contextLog.findLast((entry) => entry.stats)?.stats
+    const rebuilt = events.findLast((event) => event.type === 'context-rebuilt')
+    const reported = rebuilt?.type === 'context-rebuilt' ? rebuilt.report.stats : undefined
+    const saved = async () =>
+      (await loadResumeSession(path.join(tmp, 'autosave.md'), { baseDir: BASE_DIR, snapshot: true })).recovery
+        ?.contextTokens
+    const before = await saved()
+    session.setModel({} as ResolvedModel, { model: 'claude-opus-4-6' }, 3)
+    session.setModel({} as ResolvedModel, { model: 'claude-sonnet-x' }, 2)
+    await session.snapshot()
+    assert({
+      given: 'a 750k budget on a model counting 1.5 tokens per four-character estimate, then another model at 2',
+      should:
+        'assemble within 500k of estimate, show the counts in the model’s tokens, save the estimate, and re-read it for the new model only',
+      actual: {
+        budget: session.contextTokens,
+        assembled: logged?.budget,
+        shown: reported?.budget,
+        docTokens: reported?.docTokens === Math.round((logged?.docTokens ?? 0) * 1.5),
+        saved: before,
+        afterSwitch: [session.contextTokens, await saved()],
+      },
+      expected: {
+        budget: 750_000,
+        assembled: 500_000,
+        shown: 750_000,
+        docTokens: true,
+        saved: 500_000,
+        afterSwitch: [750_000, 375_000],
+      },
+    })
+  } finally {
+    await session.end({ save: false })
+    await rm(tmp, { recursive: true, force: true })
+  }
+})
+
 test('ChatSession Stop before context preserves turn numbering and the next context gathering', async () => {
   const { session, model, producerCalls, errors, tmp } = await makeSession()
   try {

@@ -97,11 +97,10 @@ import { restoreToolRuns } from './toolRuns.ts'
 export function webReading(
   storedBudget: number | undefined,
   contextWindow: number | undefined,
-  tokenRatio?: number,
 ): { days: number; contextTokens: number; summaryBaseline: boolean } {
   return {
     days: CHAT_READING.days,
-    contextTokens: fitBudget(storedBudget ?? CHAT_READING.contextTokens, contextWindow, tokenRatio),
+    contextTokens: fitBudget(storedBudget ?? CHAT_READING.contextTokens, contextWindow),
     summaryBaseline: CHAT_READING.summaryBaseline,
   }
 }
@@ -291,7 +290,6 @@ export function modelChoices(): ModelChoice[] {
     provider: PROVIDER_LABEL[profile.provider] ?? profile.provider,
     roles: rolesBy.get(name) ?? [],
     contextWindow: profile.contextWindow,
-    tokenRatio: ratioFor(profile.model),
     effort: { default: effectiveEffort(profile), levels: effortLevels(profile) },
     builtin: name in PROFILES,
     // Presets that differ only in effort share one picker row; a label of its own gets its own row.
@@ -324,6 +322,7 @@ export function createChatSettingsHost(): ChatSettingsHost {
       if (all[current]?.model === model) return current
       return Object.entries(all).find(([, profile]) => profile.model === model)?.[0]
     },
+    tokenRatio: (name, config) => ratioFor((config ?? getAllProfiles()[name])?.model ?? name),
     resolve: (name, effort = 'default', config) => {
       const profile = config ?? getProfile(name)
       return {
@@ -395,7 +394,8 @@ export function createChatHost(config: typeof ConfigModule, env: Record<string, 
       startTime,
       // The thread id keys OpenAI's prompt cache for the conversation's life, restarts included.
       cacheKey: id,
-      ...webReading(prefs.contextTokens, profile.contextWindow, ratioFor(profile.model)),
+      ...webReading(prefs.contextTokens, profile.contextWindow),
+      tokenRatio: ratioFor(profile.model),
       baseDir: config.DIR_BASE,
       timeDir: config.DIR_TIME,
       preflight: contextPreflightFor(context.secrets, () => plan?.plan),
@@ -550,12 +550,6 @@ export function createChatHost(config: typeof ConfigModule, env: Record<string, 
           const { approvals, parent } = loaded
           const recovery = loaded.recovery
           const host = recovery?.host
-          // The budget the last turn ran under; for a log older than turn settings, the last assembly's ceiling.
-          const budget =
-            recovery?.contextTokens ??
-            state.contextLog.findLast((entry) => entry.settings?.contextTokens !== undefined)?.settings
-              ?.contextTokens ??
-            state.contextLog.findLast((entry) => entry.stats?.budget !== undefined)?.stats?.budget
           const priorModel = state.contextLog.findLast((entry) => entry.settings)?.settings?.model
           const profile =
             typeof host?.profile === 'string'
@@ -567,7 +561,6 @@ export function createChatHost(config: typeof ConfigModule, env: Record<string, 
             effort: isEffortOverride(host?.effort) ? host.effort : undefined,
             saves: typeof host?.saves === 'boolean' ? host.saves : true,
             ...(profile ? { profile } : {}),
-            ...(budget !== undefined ? { contextTokens: budget } : {}),
           }
           const saved = typeof host?.saved === 'string' ? await openSaved(host.saved) : null
           restores.push({
@@ -583,6 +576,7 @@ export function createChatHost(config: typeof ConfigModule, env: Record<string, 
             parent,
             interrupted,
             prefs,
+            budget: recovery?.contextTokens,
             title: typeof host?.title === 'string' ? host.title : null,
             parentId: typeof host?.parentId === 'string' ? host.parentId : null,
             ...(saved
