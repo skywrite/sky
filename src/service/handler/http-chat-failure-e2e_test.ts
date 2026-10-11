@@ -65,7 +65,7 @@ test(
       })
       const page = await browser.newPage()
       await page.goto(`http://127.0.0.1:${address.port}/thread/failure-example`)
-      await page.locator('.sky-composer textarea').fill('Collect example documents.')
+      await page.locator('.sky-composer [role="textbox"]').fill('Collect example documents.')
       await page.getByRole('button', { name: 'Send', exact: true }).click()
       const alert = page.getByRole('alert').filter({ hasText: failure })
       await alert.waitFor()

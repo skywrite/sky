@@ -84,7 +84,7 @@ test(
       page.on('pageerror', (error) => errors.push(error.message))
       await page.goto(`http://127.0.0.1:${address.port}/thread/stop-test`)
       const composer = page.locator('.sky-composer-shell')
-      const input = composer.locator('textarea')
+      const input = composer.locator('[role="textbox"]')
       const send = composer.getByRole('button', { name: 'Send', exact: true })
       const stop = composer.getByRole('button', { name: 'Stop response', exact: true })
       await input.fill('Start a long answer.')

@@ -10,7 +10,7 @@ import * as path from 'node:path'
 import process from 'node:process'
 import { serve } from '@hono/node-server'
 import type { ServerType } from '@hono/node-server'
-import { type Browser, chromium, type Page } from 'playwright'
+import { type Browser, chromium, type Locator, type Page } from 'playwright'
 import { listAudioConversations, readAudioConversation } from '#commands/all/message/_lib/savedAudioConversation.ts'
 import type { MostImportantAI } from '#lib/mostImportant/types.ts'
 import { exists } from '#shared/fs/mod.ts'
@@ -316,6 +316,42 @@ export async function leafTexts(page: Page, selector: string): Promise<string[]>
       return text
     })
   }, selector)
+}
+
+/** What a chat composer holds, as a person reads it: paragraphs a blank line apart, no closing break. */
+export async function composerText(input: Locator): Promise<string> {
+  return await input.evaluate((element) => (element as HTMLElement).innerText.replace(/\n+$/, ''))
+}
+
+/** Writes into a chat composer the way a person does: each paragraph typed, Shift+Enter between them. */
+export async function writeInComposer(input: Locator, text: string) {
+  await input.click()
+  for (const [index, paragraph] of text.split('\n\n').entries()) {
+    if (index > 0) await input.page().keyboard.press('Shift+Enter')
+    await input.page().keyboard.insertText(paragraph)
+  }
+}
+
+/** The Markdown a chat's composer keeps as its draft — what Send would send, links and quote marks included. */
+export async function composerDraft(page: Page, chatId: string): Promise<string> {
+  return await page.evaluate(
+    (id) =>
+      (JSON.parse(localStorage.getItem(`sky-chat-draft:${id}`) ?? 'null') as { text?: string } | null)?.text ?? '',
+    chatId,
+  )
+}
+
+/** Whether a chat composer has the focus, its caret collapsed after the last character. */
+export async function caretAtComposerEnd(input: Locator): Promise<boolean> {
+  return await input.evaluate((element) => {
+    const selection = document.getSelection()
+    const anchor = selection?.anchorNode
+    if (!selection?.isCollapsed || !anchor || !element.contains(anchor)) return false
+    const after = document.createRange()
+    after.setStart(anchor, selection.anchorOffset)
+    after.setEnd(element, element.childNodes.length)
+    return element.contains(document.activeElement) && after.toString() === ''
+  })
 }
 
 /** The caret's character offset inside its leaf, and the leaf's node id. */

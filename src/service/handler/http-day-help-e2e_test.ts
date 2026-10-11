@@ -5,7 +5,7 @@ import { env } from '#shared/sys/mod.ts'
 import { assert, test } from '#test'
 import { PlainDate, ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
 import { replyThreadTestHost } from './chat/replyThreadsTestHelpers.ts'
-import { runWysiwygE2e } from './httpWysiwygE2eTestHelpers.ts'
+import { composerDraft, composerText, runWysiwygE2e } from './httpWysiwygE2eTestHelpers.ts'
 
 const DAY = new PlainDate('2026-02-04')
 const FILE = path.posix.join('time', dayFile(DAY))
@@ -96,7 +96,7 @@ test(
         for (const [index, item] of items.entries()) {
           await page.setViewportSize(index === 2 ? { width: 390, height: 844 } : { width: 1440, height: 1000 })
           let id = await openHelp(item, index)
-          const draft = await composer.inputValue()
+          const draft = await composerDraft(page, id)
           if (screenshot && (index === 0 || index === 2)) {
             await page.getByRole('button', { name: 'Send', exact: true }).waitFor({ state: 'visible' })
             await page.screenshot({
@@ -132,7 +132,7 @@ test(
             assert({
               given: 'a refreshed help chat with nothing sent',
               should: 'keep the request in the composer and stay temporary',
-              actual: { draft: await composer.inputValue(), temporary: await temporary.count(), calls: modelCalls },
+              actual: { draft: await composerDraft(page, id), temporary: await temporary.count(), calls: modelCalls },
               expected: { draft, temporary: 1, calls: 0 },
             })
             await discard.click()
@@ -166,7 +166,7 @@ test(
               contextTokens: body.contextTokens,
               calls: modelCalls,
               requests: sent.length,
-              draft: await composer.inputValue(),
+              draft: await composerText(composer),
             },
             expected: {
               message: true,

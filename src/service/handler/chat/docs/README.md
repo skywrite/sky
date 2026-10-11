@@ -80,6 +80,17 @@ This avoids links breaking at Save & close or after restart without filing a
 temporary conversation merely because it created a task. Discarded temporary
 chats and deleted transcripts report an unavailable source; the task keeps its notes.
 
+### Writing in the composer
+
+The composer is the editor the explorer and the journal use
+(`theme/client/composerEditor.tsx` over `wysiwyg/`): Markdown shows as it
+will read once sent, and what is sent is the Markdown. Enter sends;
+Shift+Enter is the editor's Enter — a new paragraph, the next list item, a
+line in a fence. A draft staged to end in a blank line — a selection's quote,
+a file's "About" link — opens with an empty paragraph under it, where the
+caret waits. Pasted files become clips; a dropped file is left to the
+conversation's drop target.
+
 ### Files in the conversation
 
 Drop files anywhere in a text conversation, choose them with the composer's
@@ -102,7 +113,7 @@ and cannot silently omit attachments that failed to load. These drafts belong
 to this browser and origin; they are not notebook records or device sync.
 
 Pending clips sit inside the rounded composer surface, above its message row.
-The files, textarea, paperclip, Send, and voice control share the composer's
+The files, text field, paperclip, Send, and voice control share the composer's
 centered width; errors align with that same container. A count and total size
 remain visible when the file grid is collapsed. Up to five files appear without
 an inner scrollbar; larger collections scroll beneath the count. Images have

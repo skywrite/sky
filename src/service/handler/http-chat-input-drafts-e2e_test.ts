@@ -1,7 +1,14 @@
 import { agreementPdf } from '#lib/legalReview/testHelpers.ts'
 import { assert, test } from '#test'
 import { FILE_CHAT_REPLY, fileChatHost } from './chat/filesTestHelpers.ts'
-import { runWysiwygE2e } from './httpWysiwygE2eTestHelpers.ts'
+import {
+  caretAtComposerEnd,
+  caretOffset,
+  composerText,
+  placeCaret,
+  runWysiwygE2e,
+  writeInComposer,
+} from './httpWysiwygE2eTestHelpers.ts'
 
 test(
   { name: 'unsent text and five attachment bytes survive refresh, navigation and a rejected upload', timeout: 60000 },
@@ -24,31 +31,23 @@ test(
         const input = composer.getByRole('textbox', { name: 'Message sky…', exact: true })
         const send = composer.getByRole('button', { name: 'Send', exact: true })
         const prompt = '  Review these together.\n\nKeep my exact line breaks — and this unfinished thought…  '
-        await input.fill(prompt)
+        await writeInComposer(input, prompt)
         // No debounce or wait between the last input event and reload.
         await page.reload()
         await input.waitFor()
         assert({
           given: 'text typed before the first message',
           should: 'restore the exact draft on an immediate refresh with the cursor at its end',
-          actual: await input.evaluate((element: HTMLTextAreaElement) => ({
-            text: element.value,
-            focused: element === document.activeElement,
-            start: element.selectionStart,
-            end: element.selectionEnd,
-          })),
-          expected: { text: prompt, focused: true, start: prompt.length, end: prompt.length },
+          actual: { text: await composerText(input), atEnd: await caretAtComposerEnd(input) },
+          expected: { text: prompt, atEnd: true },
         })
-        await input.evaluate((element: HTMLTextAreaElement) => element.setSelectionRange(2, 2))
+        await placeCaret(page, '.sky-composer-text .end-block', 2)
         await input.press('x')
         assert({
           given: 'an edit in the middle of the restored draft',
           should: 'keep the cursor at the edit instead of moving it back to the end',
-          actual: await input.evaluate((element: HTMLTextAreaElement) => ({
-            start: element.selectionStart,
-            end: element.selectionEnd,
-          })),
-          expected: { start: 3, end: 3 },
+          actual: (await caretOffset(page)).offset,
+          expected: 3,
         })
         await input.press('Backspace')
 
@@ -103,22 +102,18 @@ test(
           given: 'five dropped files and an unsent prompt after refresh',
           should: 'restore the text, filenames, count, PDF icon and image preview without invoking Sky',
           actual: {
-            text: await input.inputValue(),
+            text: await composerText(input),
             names: await composer.locator('.sky-chat-file-name').allTextContents(),
             pdfs: await composer.locator('svg[data-kind="pdf"]').count(),
             calls: fixture!.calls.length,
-            cursor: await input.evaluate((element: HTMLTextAreaElement) => ({
-              focused: element === document.activeElement,
-              start: element.selectionStart,
-              end: element.selectionEnd,
-            })),
+            atEnd: await caretAtComposerEnd(input),
           },
           expected: {
             text: prompt,
             names: files.map((file) => file.name),
             pdfs: 1,
             calls: 0,
-            cursor: { focused: true, start: prompt.length, end: prompt.length },
+            atEnd: true,
           },
         })
 
@@ -136,7 +131,7 @@ test(
         assert({
           given: 'back navigation to the original chat ID',
           should: 'restore its own unsent text',
-          actual: await input.inputValue(),
+          actual: await composerText(input),
           expected: prompt,
         })
 
@@ -176,7 +171,7 @@ test(
         assert({
           given: 'a rejected upload followed by refresh',
           should: 'keep the unsent message',
-          actual: await input.inputValue(),
+          actual: await composerText(input),
           expected: prompt,
         })
 
@@ -198,7 +193,7 @@ test(
           actual: {
             replacement: JSON.stringify(fixture!.calls[0]).includes('Replacement mock terms.'),
             stale: JSON.stringify(fixture!.calls[0]).includes('Original mock terms.'),
-            text: await input.inputValue(),
+            text: await composerText(input),
             pending: await composer.locator('.sky-chat-file').count(),
           },
           expected: { replacement: true, stale: false, text: '', pending: 0 },
@@ -208,7 +203,7 @@ test(
         assert({
           given: 'refresh after acceptance',
           should: 'leave the composer empty',
-          actual: { text: await input.inputValue(), files: await composer.locator('.sky-chat-file').count() },
+          actual: { text: await composerText(input), files: await composer.locator('.sky-chat-file').count() },
           expected: { text: '', files: 0 },
         })
         await page.goto(otherUrl)
@@ -216,7 +211,7 @@ test(
         assert({
           given: 'the other chat is reopened',
           should: 'still hold its own draft',
-          actual: await input.inputValue(),
+          actual: await composerText(input),
           expected: 'A separate unfinished conversation.',
         })
         await input.fill('')
@@ -225,7 +220,7 @@ test(
         assert({
           given: 'the user erased the whole draft',
           should: 'keep it erased after refresh',
-          actual: { text: await input.inputValue(), errors: errors.filter((error) => !error.includes('400')) },
+          actual: { text: await composerText(input), errors: errors.filter((error) => !error.includes('400')) },
           expected: { text: '', errors: [] },
         })
       },
@@ -264,7 +259,7 @@ test(
         assert({
           given: 'the browser refuses an attachment write',
           should: 'retain the text and attachment while making the failure visible',
-          actual: { text: await input.inputValue(), files: await composer.locator('.sky-chat-file').count() },
+          actual: { text: await composerText(input), files: await composer.locator('.sky-chat-file').count() },
           expected: { text: 'An unfinished message.', files: 1 },
         })
         await composer.getByRole('button', { name: 'Retry', exact: true }).click()
@@ -278,7 +273,7 @@ test(
         assert({
           given: 'retry succeeded and the text was erased',
           should: 'restore an attachment-only draft',
-          actual: await input.inputValue(),
+          actual: await composerText(input),
           expected: '',
         })
         await page.addInitScript(() => {

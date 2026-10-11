@@ -123,7 +123,7 @@ test({ name: 'Chat shows the wait between a completed tool and the main reply', 
         finishTurn.resolve()
         await page.getByRole('textbox', { name: 'Message sky…', exact: true }).waitFor({ state: 'visible' })
         await page.waitForFunction(
-          () => !document.querySelector<HTMLTextAreaElement>('.sky-composer textarea')?.disabled,
+          () => document.querySelector('.sky-composer [role="textbox"]')?.getAttribute('aria-disabled') !== 'true',
         )
         await restored.getByText(answer, { exact: true }).waitFor()
         assert({

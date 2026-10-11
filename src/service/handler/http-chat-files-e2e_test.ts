@@ -2,7 +2,7 @@ import * as os from 'node:os'
 import * as path from 'node:path'
 import { assert, test } from '#test'
 import { FILE_CHAT_REPLY, fileChatHost } from './chat/filesTestHelpers.ts'
-import { runWysiwygE2e } from './httpWysiwygE2eTestHelpers.ts'
+import { composerText, runWysiwygE2e } from './httpWysiwygE2eTestHelpers.ts'
 
 test(
   { name: 'chat clips files from drop, picker and paste; uploads read, retry, download and reload', timeout: 60000 },
@@ -69,7 +69,7 @@ test(
           should: 'give its contents to the model, clear the draft, and keep a clickable clip on the sent message',
           actual: {
             content: JSON.stringify(fixture!.calls[0]).includes('A two-week pilot.'),
-            draft: await composer.inputValue(),
+            draft: await composerText(composer),
             pending: await page.locator('.sky-composer-zone .sky-chat-file').count(),
             label: await clip.locator('.sky-chat-file-name').innerText(),
             title: await page.locator('.sky-head .sky-title').innerText(),
@@ -110,7 +110,7 @@ test(
           given: 'the server cannot read the uploaded file',
           should: 'keep the text and removable file in the composer for correction',
           actual: {
-            draft: await composer.inputValue(),
+            draft: await composerText(composer),
             pending: await page.getByRole('button', { name: 'Remove archive.bin', exact: true }).isVisible(),
             turns: await page.locator('.sky-turn-user').count(),
           },
@@ -165,7 +165,7 @@ test(
           const placement = await page.locator('.sky-composer').evaluate((composer) => {
             const field = composer.querySelector('.sky-composer-shell')!.getBoundingClientRect()
             const clip = composer.querySelector('.sky-chat-file')!.getBoundingClientRect()
-            const input = composer.querySelector('textarea')!.getBoundingClientRect()
+            const input = composer.querySelector('[role="textbox"]')!.getBoundingClientRect()
             const remove = composer.querySelector('.sky-chat-file button')!.getBoundingClientRect()
             return {
               insideField: clip.left >= field.left && clip.right <= field.right && clip.top >= field.top,

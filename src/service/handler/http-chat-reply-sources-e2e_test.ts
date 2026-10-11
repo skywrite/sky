@@ -56,7 +56,7 @@ test({ name: 'reply threads display the draft belonging to the selected response
       const main = page.locator('.sky-split-main')
       const buttons = main.locator('.sky-reply-acts').getByRole('button', { name: 'Work on this…', exact: true })
       const panel = page.getByRole('complementary', { name: 'Thread', exact: true })
-      const composer = panel.getByPlaceholder('Discuss or request changes…')
+      const composer = panel.getByRole('textbox', { name: 'Discuss or request changes…', exact: true })
       const visibleDrafts = panel.locator('.sky-writing-draft-body')
       for (const [index, expected] of [first, second, first, second].entries()) {
         const source = [0, 1, 2, 1][index]!

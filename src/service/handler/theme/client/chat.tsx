@@ -1,9 +1,7 @@
-import { ActionIcon, Button, Menu, Textarea, Tooltip } from '@mantine/core'
+import { ActionIcon, Button, Menu, Tooltip } from '@mantine/core'
 import {
   Fragment,
   createContext,
-  type ClipboardEvent,
-  type KeyboardEvent,
   type ReactNode,
   type RefObject,
   useCallback,
@@ -43,6 +41,7 @@ import { QuestionMenu, UnwindNote, type UnwindNoteState, useUnwind } from './cha
 import { useChatVoice } from './chatVoice.ts'
 import { ChatWritingDraft, WritingDraftReply } from './chatWritingDraft.tsx'
 import { splitWritingDrafts, useWritingDrafts, writingDraftRequest } from './chatWritingDrafts.ts'
+import { ComposerEditor, type ComposerEditorHandle } from './composerEditor.tsx'
 import { ContextPanel } from './context.tsx'
 import { ChatControls, TemporaryControl, type ThreadSettings } from './controls.tsx'
 import { fileHref } from './explorer.tsx'
@@ -2324,10 +2323,10 @@ export function Composer({
   const { state, send } = chat
   const [settingsOpen, setSettingsOpen] = useState(false)
   useEffect(() => setSettingsOpen(false), [state.id])
-  const inputRef = useRef<HTMLTextAreaElement>(null)
+  const inputRef = useRef<ComposerEditorHandle>(null)
   useEffect(() => {
     const focus = (event: Event) => {
-      if ((event as CustomEvent<string>).detail === state.id) inputRef.current?.focus()
+      if ((event as CustomEvent<string>).detail === state.id) inputRef.current?.focusEnd()
     }
     window.addEventListener('sky-draft-focus', focus)
     return () => window.removeEventListener('sky-draft-focus', focus)
@@ -2346,9 +2345,7 @@ export function Composer({
     const input = inputRef.current
     if (!input) return
     positionedDraft.current = state.id
-    input.focus({ preventScroll: true })
-    input.setSelectionRange(input.value.length, input.value.length)
-    input.scrollTop = input.scrollHeight
+    input.focusEnd()
   }, [state.id, autoFocus, hidden, draft.loading, busy])
   const canSend =
     !inputBusy && !chat.tuning && state.settings !== null && !sendDisabled && !draft.loading && !draft.missingFiles
@@ -2357,7 +2354,7 @@ export function Composer({
     if (!canSend) return
     const el = inputRef.current
     if (!el) return
-    const text = el.value
+    const text = el.content()
     const files = attach?.files ?? []
     if (!text.trim() && files.length === 0) return
     setSendError(null)
@@ -2371,13 +2368,6 @@ export function Composer({
       }).then((result) => {
         if (!result.ok && threadId.current === id) setSendError(result.error ?? 'Wait a moment and try again.')
       })
-    }
-  }
-
-  const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (event.key === 'Enter' && !event.shiftKey) {
-      event.preventDefault()
-      submit()
     }
   }
 
@@ -2449,29 +2439,19 @@ export function Composer({
                 </ActionIcon>
               </>
             )}
-            <div className="sky-input">
-              <Textarea
+            <div
+              className="sky-input"
+              onFocus={() => setSettingsOpen(false)}
+              onPointerDown={() => setSettingsOpen(false)}
+            >
+              <ComposerEditor
                 ref={inputRef}
-                variant="unstyled"
-                classNames={{ root: 'sky-input-root', input: 'sky-input-field' }}
-                autosize
-                minRows={1}
-                maxRows={attach?.files?.length ? 4 : 8}
+                text={draft.text}
                 placeholder={placeholder}
-                aria-label={placeholder}
-                value={draft.text}
-                onChange={(event) => draft.setText(event.currentTarget.value)}
-                onKeyDown={onKeyDown}
-                onFocus={() => setSettingsOpen(false)}
-                onPointerDown={() => setSettingsOpen(false)}
-                onPaste={(event: ClipboardEvent<HTMLTextAreaElement>) => {
-                  const files: File[] = Array.from(event.clipboardData.files)
-                  if (!attach || files.length === 0) return
-                  event.preventDefault()
-                  attach.onFiles(files)
-                }}
                 disabled={inputBusy || draft.loading}
-                autoFocus={autoFocus}
+                onText={draft.setText}
+                onSubmit={submit}
+                onFiles={attach?.onFiles}
               />
             </div>
             {canSteer && (

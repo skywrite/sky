@@ -1,7 +1,7 @@
 import type { Page } from 'playwright'
 import { assert, test } from '#test'
 import { voiceConversation } from './chat/voiceTranscript.ts'
-import { runWysiwygE2e } from './httpWysiwygE2eTestHelpers.ts'
+import { composerText, runWysiwygE2e } from './httpWysiwygE2eTestHelpers.ts'
 import { CALLS_URL, type VoiceEvent, type VoiceTurn } from './theme/client/voiceController.ts'
 
 interface BrowserVoice {
@@ -283,7 +283,7 @@ test(
             previous: await page.getByText('Start with the demo.', { exact: true }).isVisible(),
             question: await page.getByText('What should the demo show?', { exact: true }).isVisible(),
             composer: await composer.isVisible(),
-            draft: await composer.inputValue(),
+            draft: await composerText(composer),
             presence: await presence.count(),
           },
           expected: { previous: true, question: true, composer: true, draft, presence: 0 },
@@ -302,7 +302,7 @@ test(
           should: 'restore readable text and the draft, and hold new sends until retry',
           actual: {
             answer: await page.getByText('Invite a small pilot group.', { exact: true }).isVisible(),
-            draft: await composer.inputValue(),
+            draft: await composerText(composer),
             composer: await composer.isVisible(),
             sendDisabled: await page.getByRole('button', { name: 'Send', exact: true }).isDisabled(),
             presence: await presence.count(),
@@ -319,7 +319,7 @@ test(
             handoffPositions: handoffs.map((body) => body.after),
             retryMatches: JSON.stringify(handoffs[1]) === JSON.stringify(handoffs[2]),
             messages: await page.locator('.sky-turn').count(),
-            draft: await composer.inputValue(),
+            draft: await composerText(composer),
             sendEnabled: await page.getByRole('button', { name: 'Send', exact: true }).isEnabled(),
             stopped: await page.evaluate(() =>
               (window as unknown as { mockVoice: BrowserVoice }).mockVoice.microphones.map(

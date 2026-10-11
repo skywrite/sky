@@ -1,6 +1,6 @@
 import { assert, test } from '#test'
 import { replyThreadTestHost } from './chat/replyThreadsTestHelpers.ts'
-import { runWysiwygE2e } from './httpWysiwygE2eTestHelpers.ts'
+import { composerText, runWysiwygE2e } from './httpWysiwygE2eTestHelpers.ts'
 
 const USAGE = {
   inputTokens: 8,
@@ -99,7 +99,7 @@ test(
           actual: {
             turns: await page.locator('.sky-turn').count(),
             held: await held(),
-            box: await composer.inputValue(),
+            box: await composerText(composer),
             focused: await composer.evaluate((element) => element === document.activeElement),
           },
           expected: {
@@ -159,7 +159,7 @@ test(
         // An emptied chat shows no transcript to carry the quiet line: the question in the box says it.
         await page.waitForFunction(
           () =>
-            document.querySelector<HTMLTextAreaElement>('textarea[placeholder="Message sky…"]')?.value ===
+            document.querySelector<HTMLElement>('[role="textbox"][aria-label="Message sky…"]')?.innerText.trim() ===
             'Plan the Atlas launch.',
         )
         assert({
@@ -167,7 +167,7 @@ test(
           should: 'leave an empty chat with the question in the box, and no thread on the service',
           actual: {
             turns: await page.locator('.sky-turn').count(),
-            box: await composer.inputValue(),
+            box: await composerText(composer),
             thread: (await page.request.get(`${origin}/chat/atlas`)).status(),
             errors: errors.filter((error) => !error.includes('409')),
           },

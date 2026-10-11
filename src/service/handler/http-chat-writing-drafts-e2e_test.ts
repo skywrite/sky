@@ -18,7 +18,7 @@ import {
 } from './chat/draftsTestHelpers.ts'
 import { createChatRoutes } from './chat/mod.ts'
 import { createTestHttpApp } from './httpTestHelpers.ts'
-import { runWysiwygE2e } from './httpWysiwygE2eTestHelpers.ts'
+import { composerText, runWysiwygE2e } from './httpWysiwygE2eTestHelpers.ts'
 import { createWritingVoiceRoutes } from './settings/writingVoice.ts'
 
 test(
@@ -135,7 +135,7 @@ test(
         const main = page.locator('.sky-split-main')
         const replies = main.locator('.sky-turn[data-speaker="Sky"]')
         await replies.first().getByRole('button', { name: 'Edit', exact: true }).waitFor()
-        const composer = main.getByPlaceholder('Message sky…')
+        const composer = main.getByRole('textbox', { name: 'Message sky…', exact: true })
         await composer.fill('Make this warmer.')
         await composer.press('Enter')
         const current = replies.nth(1).locator('.sky-writing-draft')
@@ -284,7 +284,7 @@ test(
         const replies = main.locator('.sky-turn[data-speaker="Sky"]')
         const bodies = main.locator('.sky-writing-draft-body')
         const original = replies.nth(0).locator('.sky-writing-draft')
-        const composer = main.getByPlaceholder('Message sky…')
+        const composer = main.getByRole('textbox', { name: 'Message sky…', exact: true })
         await original.getByRole('button', { name: 'Edit', exact: true }).waitFor()
         const unsavedShots = env.get('SKY_DRAFT_SCREENSHOTS')
         if (unsavedShots) {
@@ -370,7 +370,7 @@ test(
         await latest.getByRole('button', { name: 'Work on this…', exact: true }).click()
         const sourceTurn = (await opened).request().postDataJSON().turn
         const panel = page.getByRole('complementary', { name: 'Thread', exact: true })
-        const threadComposer = panel.getByPlaceholder('What would you like to change?')
+        const threadComposer = panel.getByRole('textbox', { name: 'What would you like to change?', exact: true })
         await threadComposer.fill('Make this warmer.')
         await threadComposer.press('Enter')
         await latest
@@ -379,7 +379,7 @@ test(
         assert({
           given: 'a revision requested through the latest draft’s discussion',
           should: 'open at that response and update its card without adding a main reply or changing earlier drafts',
-          actual: [sourceTurn, await replies.count(), await bodies.allInnerTexts(), await composer.inputValue()],
+          actual: [sourceTurn, await replies.count(), await bodies.allInnerTexts(), await composerText(composer)],
           expected: [3, 3, [ORIGINAL_DRAFT, WARM_DRAFT, WARM_DRAFT], 'Keep this unsent main-chat message.'],
         })
         await panel.getByRole('button', { name: 'Close thread', exact: true }).click()
@@ -551,12 +551,12 @@ test(
       await body.getByText('The Atlas draft is ready. Please review it by Friday.', { exact: true }).waitFor()
       await card.getByRole('button', { name: /^Versions/ }).click()
 
-      const composer = page.locator('.sky-split-main').getByPlaceholder('Message sky…')
+      const composer = page.locator('.sky-split-main').getByRole('textbox', { name: 'Message sky…', exact: true })
       await composer.fill('Keep this unsent main-chat message.')
       await card.getByRole('button', { name: 'Work on this…', exact: true }).click()
       const panel = page.getByRole('complementary', { name: 'Thread', exact: true })
       await panel.getByRole('heading', { name: 'Draft discussion', exact: true }).waitFor()
-      const replyComposer = panel.getByPlaceholder('What would you like to change?')
+      const replyComposer = panel.getByRole('textbox', { name: 'What would you like to change?', exact: true })
       await replyComposer.fill('Make this warmer; I want the request to feel appreciative.')
       await replyComposer.press('Enter')
       await body
@@ -571,7 +571,7 @@ test(
         should:
           'update the single main draft without consuming its composer or treating an unaccepted proposal as the owner’s writing',
         actual: [
-          await composer.inputValue(),
+          await composerText(composer),
           await page.locator('.sky-split-main .sky-writing-draft').count(),
           currentDraftVersion(await host.writingDrafts.require(record.id)).text,
         ],

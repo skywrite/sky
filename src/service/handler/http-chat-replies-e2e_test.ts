@@ -1,6 +1,6 @@
 import { assert, test } from '#test'
 import { replyThreadTestHost, type ReplyTestCall } from './chat/replyThreadsTestHelpers.ts'
-import { runWysiwygE2e } from './httpWysiwygE2eTestHelpers.ts'
+import { caretAtComposerEnd, composerText, runWysiwygE2e } from './httpWysiwygE2eTestHelpers.ts'
 
 test(
   {
@@ -82,7 +82,7 @@ test(
             given: 'closing a thread while its specialist runs',
             should: 'keep the parent draft intact and the refinement out of the main transcript',
             actual: {
-              draft: await mainComposer.inputValue(),
+              draft: await composerText(mainComposer),
               leaked: await main
                 .getByText('Draft a response to the team in my voice based on the five reviews.', { exact: true })
                 .count(),
@@ -164,7 +164,7 @@ test(
               inViewport: phone!.x >= 0 && phone!.x + phone!.width <= 431,
               reachable: await replyComposer.evaluate((element) => {
                 const box = element.getBoundingClientRect()
-                return document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2) === element
+                return element.contains(document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2))
               }),
             },
             expected: { inViewport: true, reachable: true },
@@ -188,16 +188,11 @@ test(
             given: 'main and reply composers both held unfinished drafts before refresh',
             should: 'restore each draft and keep the reply attachment in its own thread',
             actual: {
-              main: await mainComposer.inputValue(),
-              reply: await replyComposer.inputValue(),
+              main: await composerText(mainComposer),
+              reply: await composerText(replyComposer),
               mainFiles: await main.locator('.sky-composer .sky-chat-file').count(),
               replyFiles: await panel.locator('.sky-composer .sky-chat-file').count(),
-              cursorAtEnd: await replyComposer.evaluate(
-                (element: HTMLTextAreaElement) =>
-                  element === document.activeElement &&
-                  element.selectionStart === element.value.length &&
-                  element.selectionEnd === element.value.length,
-              ),
+              cursorAtEnd: await caretAtComposerEnd(replyComposer),
             },
             expected: {
               main: 'A main-chat draft that must survive opening and closing the thread.',

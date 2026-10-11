@@ -10,6 +10,7 @@ import { env } from '#shared/sys/mod.ts'
 import { assert, test } from '#test'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import { createTestHttpApp } from './httpTestHelpers.ts'
+import { composerText } from './httpWysiwygE2eTestHelpers.ts'
 
 test(
   {
@@ -411,14 +412,14 @@ test(
       await page.goto(`${origin}/tracking/sleep`)
       await page.getByRole('button', { name: 'Discuss with Sky', exact: true }).click()
       await page.waitForURL('**/thread/*')
-      const composer = page.locator('.sky-composer textarea')
+      const composer = page.locator('.sky-composer [role="textbox"]')
       await composer.waitFor()
       assert({
         given: 'Discuss with Sky',
         should: 'prepare a draft with the selected data and leave sending to the user',
         actual: [
-          (await composer.inputValue()).includes('Read before bed'),
-          (await composer.inputValue()).includes('data/tracking/2030/sleep.csv'),
+          (await composerText(composer)).includes('Read before bed'),
+          (await composerText(composer)).includes('data/tracking/2030/sleep.csv'),
           errors,
         ],
         expected: [true, true, []],

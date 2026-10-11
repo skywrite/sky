@@ -1,7 +1,7 @@
 import { agreementPdf } from '#lib/legalReview/testHelpers.ts'
 import { assert, test } from '#test'
 import { FILE_CHAT_REPLY, fileChatHost } from './chat/filesTestHelpers.ts'
-import { runWysiwygE2e } from './httpWysiwygE2eTestHelpers.ts'
+import { composerText, runWysiwygE2e, writeInComposer } from './httpWysiwygE2eTestHelpers.ts'
 
 test(
   { name: 'five dropped attachments stay visible with format icons, a live count and a long message', timeout: 60000 },
@@ -25,7 +25,7 @@ test(
           'Compare the definitions and notice terms, and revisit earlier findings when a later agreement changes them.',
           'After all five have been reviewed, give me a prioritized list of questions for the team.',
         ].join('\n\n')
-        await input.fill(prompt)
+        await writeInComposer(input, prompt)
         const names = [
           '[Clean] Atlas - Master Services Agreement - Review copy 2026-02-04.docx',
           'Widget - Supplemental Terms - Proposed revision.doc',
@@ -82,7 +82,7 @@ test(
             const field = element.querySelector('.sky-composer-shell')!.getBoundingClientRect()
             const list = element.querySelector('.sky-chat-files')!
             const header = element.querySelector('.sky-chat-attachments-head')!.getBoundingClientRect()
-            const input = element.querySelector('textarea')!.getBoundingClientRect()
+            const input = element.querySelector('[role="textbox"]')!.getBoundingClientRect()
             const send = element.querySelector('[aria-label="Send"]')!.getBoundingClientRect()
             const cards = [...list.querySelectorAll('.sky-chat-file')].map((card) => card.getBoundingClientRect())
             return {
@@ -124,7 +124,7 @@ test(
           actual: {
             label: await tray.getByText('5 files attached', { exact: true }).isVisible(),
             expanded: await tray.getByRole('button', { name: 'Show files', exact: true }).getAttribute('aria-expanded'),
-            text: await input.inputValue(),
+            text: await composerText(input),
           },
           expected: { label: true, expanded: 'false', text: prompt },
         })

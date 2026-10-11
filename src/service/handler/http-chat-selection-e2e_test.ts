@@ -2,7 +2,7 @@ import { mkdir } from 'node:fs/promises'
 import * as path from 'node:path'
 import { assert, test } from '#test'
 import { replyThreadTestHost, type ReplyTestCall } from './chat/replyThreadsTestHelpers.ts'
-import { runWysiwygE2e } from './httpWysiwygE2eTestHelpers.ts'
+import { composerDraft, composerText, runWysiwygE2e } from './httpWysiwygE2eTestHelpers.ts'
 
 test(
   { name: 'a selection opens a saved fresh-chat composer without inheriting the parent history', timeout: 90000 },
@@ -98,7 +98,7 @@ test(
           should: 'leave the source selection and unsent original message available for retry',
           actual: {
             selection: await page.evaluate(() => document.getSelection()?.toString().trim()),
-            draft: await input.inputValue(),
+            draft: await composerText(input),
           },
           expected: { selection: selected, draft: 'Keep this unfinished message in the original chat.' },
         })
@@ -120,7 +120,7 @@ test(
           actual: {
             path: new URL(page.url()).pathname,
             selection: await page.evaluate(() => document.getSelection()?.toString().trim()),
-            draft: await input.inputValue(),
+            draft: await composerText(input),
           },
           expected: {
             path: '/thread/selection-parent',
@@ -134,7 +134,6 @@ test(
         await fresh.waitForURL(`${origin}/thread/2025-03-15_123456_Atlas-Next-Steps-2`)
         const freshInput = fresh.getByRole('textbox', { name: 'Message sky…', exact: true })
         await freshInput.waitFor()
-        const quote = await freshInput.inputValue()
         const expectedQuote = `From [Planning the week](/thread/selection-parent#chat-selection-parent-reply-1) · Sky\n\n${selected
           .split('\n')
           .map((line) => (line ? `> ${line}` : '>'))
@@ -145,25 +144,28 @@ test(
           given: 'a selection chat is opened and immediately reloaded',
           should: 'restore only the editable quote with the cursor below it, and make no conversational model call',
           actual: {
-            text: await freshInput.inputValue(),
-            originalText: await input.inputValue(),
+            text: await composerDraft(fresh, '2025-03-15_123456_Atlas-Next-Steps-2'),
+            originalText: await composerText(input),
             originalPath: new URL(page.url()).pathname,
             calls: calls.length,
-            cursor: await freshInput.evaluate((element: HTMLTextAreaElement) => ({
-              focused: element === document.activeElement,
-              at: element.selectionStart,
-            })),
+            // In the empty paragraph after the quote, not at the end of its last line.
+            cursorBelow: await freshInput.evaluate((element) => {
+              const anchor = document.getSelection()?.anchorNode
+              const leaf = (anchor instanceof Element ? anchor : anchor?.parentElement)?.closest('.end-block')
+              return element === document.activeElement && leaf === element.lastElementChild && !leaf?.textContent
+            }),
           },
           expected: {
             text: expectedQuote,
             originalText: 'Keep this unfinished message in the original chat.',
             originalPath: '/thread/selection-parent',
             calls: 1,
-            cursor: { focused: true, at: quote.length },
+            cursorBelow: true,
           },
         })
         await fresh.screenshot({ path: '/tmp/sky-chat-selection-browser/new-chat.png' })
-        await freshInput.fill(`${quote}What should we investigate before drafting?`)
+        // Typed under the quote, where the caret already waits.
+        await fresh.keyboard.type('What should we investigate before drafting?')
         await fresh.getByRole('button', { name: 'Send', exact: true }).click()
         await fresh.getByText('All five agreements have been reviewed together.', { exact: true }).last().waitFor()
         const state = await (await fresh.request.get(`${origin}/chat/2025-03-15_123456_Atlas-Next-Steps-2`)).json()
@@ -216,7 +218,7 @@ test(
         assert({
           given: 'the browser blocks a new tab',
           should: 'open the saved quoted composer in this tab',
-          actual: await page.getByRole('textbox', { name: 'Message sky…', exact: true }).inputValue(),
+          actual: await composerDraft(page, '2025-03-15_123456_Atlas-Next-Steps-3'),
           expected: expectedQuote,
         })
         assert({

@@ -8,6 +8,7 @@ import { env } from '#shared/sys/mod.ts'
 import { assert, test } from '#test'
 import { planTestHost, samplePlan } from './chat/planTestHelpers.ts'
 import { createTestHttpApp } from './httpTestHelpers.ts'
+import { composerText } from './httpWysiwygE2eTestHelpers.ts'
 
 test(
   {
@@ -58,7 +59,7 @@ test(
       const errors: string[] = []
       page.on('pageerror', (error) => errors.push(error.message))
       await page.goto(`http://127.0.0.1:${address.port}/thread/plan-example`)
-      await page.locator('.sky-composer textarea').fill('Collect the example documents.')
+      await page.locator('.sky-composer [role="textbox"]').fill('Collect the example documents.')
       await page.getByRole('button', { name: 'Send', exact: true }).click()
       await page.getByRole('complementary', { name: 'Plan', exact: true }).waitFor()
       await page.locator('.sky-plan-attention').getByText('Needs you', { exact: true }).waitFor()
@@ -105,20 +106,20 @@ test(
         ],
         expected: [true, 3, true],
       })
-      await page.locator('.sky-composer textarea').fill('Check for duplicate documents first.')
+      await page.locator('.sky-composer [role="textbox"]').fill('Check for duplicate documents first.')
       await page.getByRole('button', { name: 'Send instruction', exact: true }).click()
       await page.locator('.sky-plan-queue-note').waitFor()
       assert({
         given: 'a new instruction during a browser handoff',
         should: 'accept it visibly and preserve the current work',
         actual: [
-          await page.locator('.sky-composer textarea').inputValue(),
+          await composerText(page.locator('.sky-composer [role="textbox"]')),
           (await page.locator('.sky-plan-queue-note').innerText()).includes('1 instruction waiting'),
         ],
         expected: ['', true],
       })
       await page.getByRole('button', { name: 'Chat', exact: true }).click()
-      await page.locator('.sky-composer textarea').fill('What is two plus two?')
+      await page.locator('.sky-composer [role="textbox"]').fill('What is two plus two?')
       await page.getByRole('button', { name: 'Send', exact: true }).click()
       await page.getByText('Four.', { exact: true }).waitFor()
       assert({

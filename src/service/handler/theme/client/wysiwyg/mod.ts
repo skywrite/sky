@@ -78,6 +78,11 @@ export interface EditorState {
   hideFrontmatter?: boolean
   /** The host owns Save; no file API, polling, or autosave in this mode. */
   local?: boolean
+  /**
+   * A source ending in a blank line opens with an empty paragraph after its last block, so writing
+   * starts under it — a composer's quoted passage with room left for the reply.
+   */
+  roomBelow?: boolean
 }
 
 export type EditorStatusKind = 'saved' | 'dirty' | 'saving' | 'conflict' | 'error'
@@ -91,6 +96,13 @@ export interface EditorHooks {
   onFrontmatter?(text: string | null): void
   /** The caret tried to leave the document upward — Up or Left at its start — and there is nothing above but the panel. */
   onReachTop?(): void
+  /**
+   * Enter belongs to the host, which sends what was written — a chat's composer. Shift+Enter is
+   * then the editor's Enter: a new paragraph, the next list item, a line in a fence.
+   */
+  onSubmit?(): void
+  /** Files pasted in go to the host — a chat's clips; a file dropped is left to the page around the editor. */
+  onFiles?(files: File[]): void
 }
 
 export type EditorFormat = 'bold' | 'italic' | 'heading' | 'paragraph' | 'bullets' | 'undo' | 'redo'
@@ -108,6 +120,8 @@ export interface EditorHandle {
   setFrontmatter(text: string | null): void
   /** Puts the caret at the start of the first block the panel does not own. */
   focusStart(): void
+  /** Puts the caret after the last character of the last block. */
+  focusEnd(): void
   destroy(): void
 }
 
@@ -132,6 +146,7 @@ export function mountEditor(root: HTMLElement, state: EditorState, hooks: Editor
     frontmatter: () => editor.frontmatterText(),
     setFrontmatter: (text) => editor.setFrontmatter(text),
     focusStart: () => editor.focusStart(),
+    focusEnd: () => editor.focusEnd(),
     destroy: () => editor.destroy(),
   }
 }
@@ -218,6 +233,7 @@ class Editor {
     this.context = contextFor(this.doc, state.resolveImage, state.hideFrontmatter === true)
     this.version = state.version
     this.ensureBlock()
+    if (state.roomBelow) this.leaveRoomBelow(state.content)
     root.innerHTML = renderDocument(this.doc, this.context)
     root.contentEditable = 'true'
     this.applyBusyMode()
@@ -263,6 +279,13 @@ class Editor {
     this.listeners.push({ target, type, handler })
   }
 
+  private leaveRoomBelow(source: string) {
+    if (!/\n[ \t]*\n\s*$/.test(source)) return
+    const last = this.doc.root.lastChild
+    if (last?.type === 'paragraph' && last.text.length === 0) return
+    this.doc.root.appendChild(this.doc.createNode('paragraph'))
+  }
+
   /** A document is never without a block to type into (TYP-34). */
   private ensureBlock() {
     if (this.doc.blocks.some((block) => block.type !== 'frontmatter')) return
@@ -272,7 +295,8 @@ class Editor {
   // --- input -----------------------------------------------------------------------------------
 
   private onBeforeInput(event: InputEvent) {
-    const type = event.inputType
+    // Where the host owns Enter, Shift+Enter is the editor's Enter.
+    const type = this.hooks.onSubmit && event.inputType === 'insertLineBreak' ? 'insertParagraph' : event.inputType
     const pairAt = this.pairAt
     this.pairAt = null
     if (type === 'historyUndo' || type === 'historyRedo') {
@@ -285,6 +309,7 @@ class Editor {
       event.preventDefault()
       return
     }
+    this.wholeRootAsText()
     const selection = document.getSelection()
     const range = selection && selection.rangeCount > 0 ? selection.getRangeAt(0) : null
     const leaf = selectedLeaf(this.root)
@@ -494,6 +519,20 @@ class Editor {
 
   private onKeyDown(event: KeyboardEvent) {
     const mod = event.metaKey || event.ctrlKey
+    if (
+      this.hooks.onSubmit &&
+      event.key === 'Enter' &&
+      !event.shiftKey &&
+      !mod &&
+      !event.altKey &&
+      !event.isComposing &&
+      !this.composing &&
+      !inChrome(document.getSelection()?.anchorNode)
+    ) {
+      event.preventDefault()
+      this.hooks.onSubmit()
+      return
+    }
     if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') this.goalX = null
     if (this.atom && this.onAtomKey(event)) return
     if (!mod && !event.altKey && (event.key === 'ArrowLeft' || event.key === 'ArrowRight')) {
@@ -817,6 +856,27 @@ class Editor {
     return true
   }
 
+  /**
+   * The root's whole contents selected from outside — an automated fill, a page's own Select All —
+   * sit on the root's child boundaries, which no leaf reads; input over them is input over the whole
+   * text, so the range moves onto it, from the first block's start to the last block's end.
+   */
+  private wholeRootAsText() {
+    const selection = document.getSelection()
+    const range = selection && selection.rangeCount > 0 ? selection.getRangeAt(0) : null
+    if (!selection || !range || range.startContainer !== this.root || range.endContainer !== this.root) return
+    if (range.startOffset !== 0 || range.endOffset !== this.root.childNodes.length) return
+    const leaves = this.root.querySelectorAll<HTMLElement>('.end-block[data-node]')
+    const first = leaves[0]
+    const last = leaves[leaves.length - 1]
+    if (!first || !last) return
+    const text = document.createRange()
+    text.setStart(...positionAt(first, 0))
+    text.setEnd(...positionAt(last, textOf(last).length))
+    selection.removeAllRanges()
+    selection.addRange(text)
+  }
+
   private wholeLeafSelected(selection: Selection, leaf: HTMLElement): boolean {
     if (selection.isCollapsed || selection.rangeCount === 0) return false
     const range = selection.getRangeAt(0)
@@ -1074,6 +1134,15 @@ class Editor {
     if (!leaf) return
     this.root.focus({ preventScroll: true })
     this.place(leaf.id, 0)
+  }
+
+  focusEnd() {
+    this.flushAll()
+    let leaf: Node | null = this.doc.root.lastLeaf()
+    while (leaf && !this.reachable(leaf)) leaf = leaf.previousLeaf()
+    if (!leaf) return
+    this.root.focus({ preventScroll: true })
+    this.place(leaf.id, leaf.text.length)
   }
 
   /** Sets the front matter body from the panel: one undo step, the block created or removed as needed. */
@@ -1655,6 +1724,8 @@ class Editor {
   private onDrop(event: DragEvent) {
     const data = event.dataTransfer
     if (!data) return
+    // The page's drop target takes the file, and settles its own drag state.
+    if (this.hooks.onFiles && data.types.includes('Files')) return
     event.preventDefault()
     const range = document.caretRangeFromPoint(event.clientX, event.clientY)
     const leaf = range ? leafElementAt(range.startContainer) : null
@@ -1687,7 +1758,12 @@ class Editor {
    */
   private attachFiles(data: DataTransfer): boolean {
     const files = [...data.files]
-    if (files.length === 0 || !this.state.attachPath) return false
+    if (files.length === 0) return false
+    if (this.hooks.onFiles) {
+      this.hooks.onFiles(files)
+      return true
+    }
+    if (!this.state.attachPath) return false
     void this.storeFiles(files, this.state.attachPath)
     return true
   }

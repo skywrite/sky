@@ -129,8 +129,64 @@
   color: var(--sky-dim);
 }
 
+/* The editor the explorer and the journal use, writing at a message's size: blocks spaced as a
+   sent message reads, eight lines before it scrolls. */
+.sky-composer-editor {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+
+.sky-composer-editor[data-empty]::before {
+  content: attr(data-placeholder);
+  position: absolute;
+  inset: 0 auto auto 0;
+  font-size: 18px;
+  line-height: 1.5;
+  color: var(--sky-dim);
+  pointer-events: none;
+}
+
+.sky-composer-editor[inert] {
+  opacity: 0.6;
+}
+
+.sky-composer-editor .sky-composer-text {
+  max-height: 12em;
+  overflow-y: auto;
+  padding-bottom: 0;
+  font-size: 18px;
+  line-height: 1.5;
+  color: var(--sky-text);
+  overflow-wrap: anywhere;
+}
+
+.sky-composer-editor .sky-composer-text :is(p, ul, ol, blockquote, pre, table) {
+  max-width: none;
+  margin: 0 0 11px;
+}
+
+.sky-composer-editor .sky-composer-text :is(h1, h2, h3, h4, h5, h6) {
+  font-size: 20px;
+  font-weight: 600;
+  margin: 16px 0 6px;
+}
+
+.sky-composer-editor .sky-composer-text > :first-child {
+  margin-top: 0;
+}
+
+.sky-composer-editor .sky-composer-text > :last-child {
+  margin-bottom: 0;
+}
+
+.sky-composer-shell:has(.sky-chat-attachments) .sky-composer-text {
+  max-height: 6em;
+}
+
 @media (max-width: 900px) {
-  .sky-composer-shell:has(.sky-chat-attachments) .sky-input-field {
+  .sky-composer-shell:has(.sky-chat-attachments) .sky-input-field,
+  .sky-composer-shell:has(.sky-chat-attachments) .sky-composer-text {
     max-height: 4em;
   }
 
