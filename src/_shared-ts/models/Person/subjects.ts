@@ -28,6 +28,16 @@
  *   lowercase in the transcript — then it is prose ("The", "Will", "Art")
  *   wearing a sentence-initial capital, not a name.
  *
+ * A host that knows which records the text was read alongside — a saved
+ * chat, whose context shipped meetings and messages to the model — passes
+ * the people those records name, and they settle a bare handle before the
+ * score does: when exactly one of its namesakes is named there in full,
+ * that one alone rides. A chat about last night's dinner means the Sam who
+ * was at it, not the Sam the user deals with most. Otherwise the score
+ * decides as above. These names only choose among the text's own
+ * namesakes; unlike anchors, they never put a profile on the table that the
+ * text doesn't mention.
+ *
  * A host that already confirmed who a text concerns — meeting:new, whose
  * transcript pipeline matched names against the contacts list and showed
  * the who/rel lists to the user — passes them as anchors, and discovery
@@ -121,6 +131,13 @@ export interface FindPersonSubjectsInput {
    * pins nothing. See profilesPinnedBy.
    */
   anchors?: string[]
+  /**
+   * The people on the records the text was read alongside — a saved chat's
+   * context documents' who/from/to. The only namesake of a bare handle that
+   * one of them names in full rides alone, whatever the scores say; a bare
+   * name here names no one. Ignored when anchored.
+   */
+  contextNames?: string[]
   limit?: number
 }
 
@@ -165,6 +182,11 @@ export async function findPersonSubjects(input: FindPersonSubjectsInput): Promis
   for (const anchor of input.anchors ?? []) {
     for (const entry of profilesPinnedBy(anchor, input.index)) pinned.add(entry)
   }
+  // Profiles the records the text was read with name in full
+  const onRecord = new Set<PersonIndexEntry>()
+  for (const name of input.contextNames ?? []) {
+    for (const entry of profilesPinnedBy(name, input.index)) onRecord.add(entry)
+  }
 
   const matched: Candidate[] = []
   for (const entry of input.index) {
@@ -198,9 +220,10 @@ export async function findPersonSubjects(input: FindPersonSubjectsInput): Promis
   }
 
   // A profile named in full is never cut. A handle shared by several
-  // profiles resolves by score: the leader always, a runner-up only while
-  // the leader doesn't dominate it — unless the host anchored discovery,
-  // when a bare handle resolves to nobody.
+  // profiles resolves to the only one the records read name; failing that,
+  // by score: the leader always, a runner-up only while the leader doesn't
+  // dominate it — unless the host anchored discovery, when a bare handle
+  // resolves to nobody.
   const kept = new Set<PersonIndexEntry>()
   for (const candidate of matched) if (candidate.full > 0) kept.add(candidate.entry)
   if (!anchored) {
@@ -213,6 +236,11 @@ export async function findPersonSubjects(input: FindPersonSubjectsInput): Promis
       }
     }
     for (const group of byHandle.values()) {
+      const named = group.filter((c) => onRecord.has(c.entry))
+      if (named.length === 1) {
+        kept.add(named[0].entry)
+        continue
+      }
       group.sort((a, b) => b.score - a.score || a.entry.name.localeCompare(b.entry.name))
       const [leader, ...rest] = group
       kept.add(leader.entry)
@@ -261,7 +289,8 @@ export function profilesAnsweringTo(name: string, index: PersonIndexEntry[]): Pe
 }
 
 /**
- * The profiles a confirmed who/rel name pins for anchored discovery: a
+ * The profiles a name pins — a confirmed who/rel name for anchored
+ * discovery, or a party on a record the text was read with: a
  * name of two or more words pins every profile answering to it in full
  * (profilesAnsweringTo), and a single word — a bare first name — pins
  * nothing, whatever the scores say and even when a profile carries it as

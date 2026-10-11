@@ -86,13 +86,15 @@ export interface PersonFactsDistillation extends PersonDistillResult {
  * people index, ranked by the service's interaction scores so a bare first
  * name surfaces the likely namesakes), then the distill call. A host that
  * already confirmed the text's people passes them as anchors, and a bare
- * name then resolves to nobody (models/Person/subjects.ts). Service
+ * name then resolves to nobody (models/Person/subjects.ts); a saved chat
+ * passes the people on the records it read, and a bare name settles among
+ * them before the scores do. Service
  * trouble degrades to no subjects and the distiller still runs for its
  * unlisted lane; the caller applies the result via applyPersonFacts. The
  * user is never their own subject.
  */
 export async function distillPersonFactsFromText(
-  input: { text: string; today: string; userLabel: string; kind: string; anchors?: string[] },
+  input: { text: string; today: string; userLabel: string; kind: string; anchors?: string[]; contextNames?: string[] },
   role: Role = 'balanced',
 ): Promise<PersonFactsDistillation | undefined> {
   let index: PersonIndexEntry[] = []
@@ -107,6 +109,7 @@ export async function distillPersonFactsFromText(
       excludeNames: [input.userLabel],
       scoreFor: (name) => scores?.get(normalizeEntityName(name)) ?? 0,
       anchors: input.anchors,
+      contextNames: input.contextNames,
     })
   } catch {
     subjects = []

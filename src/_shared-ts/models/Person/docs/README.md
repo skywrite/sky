@@ -1,6 +1,6 @@
 ---
 created: 2026-08-29
-updated: 2026-10-01
+updated: 2026-10-11
 ---
 
 # Person profiles — what the AI may write, and how it must read
@@ -164,9 +164,16 @@ every op skips writes nothing.
 Chat (`ai:chat`). The user is the speaker.
 
 - A full name in the text pins its profile.
-- A bare first name resolves by interaction score. The leader rides alone
-  when it scores `SCORE_DOMINANCE` (3×) the runner-up. Below that the top
-  `PER_HANDLE_LIMIT` (2) ride and the model judges.
+- A bare first name first checks the records the chat read. When exactly
+  one namesake is named in full in the `who:`/`from:`/`to:` of a document
+  the context shipped, that one rides alone, whatever the scores say. A
+  bare name on a record names no one, and the records never add a profile
+  the text doesn't mention. Added 2026-10-11, after a chat about the
+  previous night's dinner with Sam put the user's top-scored Sam on the
+  table instead of the Sam who was there.
+- Otherwise a bare first name resolves by interaction score. The leader
+  rides alone when it scores `SCORE_DOMINANCE` (3×) the runner-up. Below
+  that the top `PER_HANDLE_LIMIT` (2) ride and the model judges.
 - A 0-score namesake never rides beside a scored one. A new profile does
   not change a bare name's resolution until it earns a score.
 - A handle counts only capitalized, and not when the text also uses it in
@@ -201,7 +208,8 @@ pipeline's box reads it too, so the two never disagree.
 `ai:chat` (`Chat/ChatStore/save.ts`) and `meeting:new`. Both print the 👤
 lines through `formatPersonOpLine`. The chat's context log records the
 outcomes. `meeting:new` passes the confirmed who/rel as anchors; the chat
-passes none.
+passes none, only the full names on the records its context shipped
+(`contextNames`) — the same list its rel resolves bare names against.
 
 ## Open
 
@@ -211,9 +219,10 @@ passes none.
   self-heal on the next applied op to that file. A one-off pass over the
   rest is a separate command with its own go.
 - `replace` cannot target the lead prose under `# Name` or a dated section.
-- Chat discovery keeps the score prior. A bare name the user types about
-  someone else's world ("her fiancé Sam") still resolves to the user's
-  top-scored Sam.
+- Chat discovery keeps the score prior when no record the chat read names
+  a namesake. A bare name the user types about someone else's world ("her
+  fiancé Sam") still resolves to the user's top-scored Sam unless such a
+  record names the right Sam in full.
 - A typed `who:`/`rel:` line replaces the whole list — deliberate, and the
   hint says so. There is no add-or-remove-one syntax.
 - The unlisted lane screens a bare name against every namesake, so a

@@ -102,12 +102,14 @@ it was about ([narrative](2026-10-07-rel-missed-what-the-clipped-transcript-hid.
   hook and join rel directly, without a chooser, even with auto-rel off.
 
 A bare first name resolves among the people on the records the chat read
-before interaction scores decide. When exactly one namesake appears in the
-`who:`/`from:`/`to:` of a document the context shipped, rel names that
-person; otherwise the score rule applies as before. Profiles the chat read do
-not count: a lookup by first name reads several namesakes' profiles. Added
-2026-10-11, after a chat about yesterday's meeting with Sam linked the
-user's top-scored Sam instead of the Sam who was there.
+before interaction scores decide. When exactly one namesake appears by full
+name in the `who:`/`from:`/`to:` of a document the context shipped, rel
+names that person; otherwise the score rule applies as before. Profiles the
+chat read do not count: a lookup by first name reads several namesakes'
+profiles. Neither does a bare first name on a record. Added 2026-10-11,
+after a chat about yesterday's meeting with Sam linked the user's top-scored
+Sam instead of the Sam who was there. Profile facts read the same list
+([Person docs](../../Person/docs/README.md#who-rides-the-prompt)).
 
 Chat tag choice runs on the balanced role (`CHAT_ENRICH.role`), not the fast
 default other mediums keep: run twice over the same fifty chats, the fast role

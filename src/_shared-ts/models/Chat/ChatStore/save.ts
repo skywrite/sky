@@ -100,11 +100,17 @@ export interface SaveEnricher {
   /**
    * Discover who the conversation discussed and distill durable person
    * facts (people/ profile ops) for them. Owns its subject discovery so the
-   * save needs no people transport of its own. Optional: a host that does
-   * not opt into `people` never invokes it, and undefined means abstain —
-   * the save proceeds without profile ops.
+   * save needs no people transport of its own. `contextNames` are the people
+   * on the records the session read: a bare name settles among them before
+   * the interaction score. Optional: a host that does not opt into `people`
+   * never invokes it, and undefined means abstain — the save proceeds
+   * without profile ops.
    */
-  distillPersonFacts?(transcript: string, today: string): Promise<PersonSaveDistill | undefined>
+  distillPersonFacts?(
+    transcript: string,
+    today: string,
+    contextNames?: string[],
+  ): Promise<PersonSaveDistill | undefined>
   /**
    * Write the `## Summary` section above the conversation — not the title,
    * which `summarize` chooses. `earlier` is a branch's inherited opening:
@@ -133,8 +139,14 @@ export const corpusEnricher: SaveEnricher = {
   // Discovery + distill live in the lib (shared with meeting:new): subjects
   // resolve through the service's people index, so people/ vs people-old/
   // never reaches this side, and the user is never their own subject.
-  distillPersonFacts: (transcript, today) =>
-    distillPersonFactsFromText({ text: transcript, today, userLabel: userSpeakerLabel(), kind: CHAT_ENRICH.kind }),
+  distillPersonFacts: (transcript, today, contextNames) =>
+    distillPersonFactsFromText({
+      text: transcript,
+      today,
+      userLabel: userSpeakerLabel(),
+      kind: CHAT_ENRICH.kind,
+      contextNames,
+    }),
   writeSummary: (input) => writeChatSummary({ ...input, userLabel: userSpeakerLabel() }),
 }
 
@@ -161,7 +173,9 @@ function createdRefs(paths: readonly string[] | undefined, baseDir: string): str
  * A bare name in the chat most likely means one of them. Cut documents were
  * never read. Profiles name no parties, and must not count: a lookup by
  * first name reads several namesakes' profiles, which says nothing about
- * which one the chat means. An unreadable record adds no one.
+ * which one the chat means. A record's bare first name says no more than
+ * the chat's own, so only full names count. An unreadable record adds no
+ * one.
  */
 async function readParties(contextLog: ContextTurnLog[], baseDir: string): Promise<string[]> {
   const read = new Set<string>()
@@ -181,7 +195,7 @@ async function readParties(contextLog: ContextTurnLog[], baseDir: string): Promi
       }
     }),
   )
-  return [...new Set(parties.flat())]
+  return [...new Set(parties.flat())].filter((name) => name.split(/\s+/).length > 1)
 }
 
 // -----------------------------------------------------------------------------
@@ -405,15 +419,16 @@ export async function saveChat(input: SaveChatInput): Promise<SaveChatReport> {
   const wantPeople = Boolean(input.people && enricher.distillPersonFacts)
   const memoryTranscript = wantMemory ? buildChatTranscript(turns, { maxChars: MEMORY_TRANSCRIPT_CHARS }) : ''
   const personTranscript = wantPeople ? buildPersonTranscript(turns) : ''
+  // The people on the records the session read settle a bare name for rel
+  // and profile facts alike. The whole log, as for document refs below: a
+  // branch's bare name can mean someone on a record its parent read.
+  const contextNames: Promise<string[]> =
+    wantRel || wantPeople ? readParties(input.contextLog, baseDir) : Promise.resolve([])
   const [autoSummary, autoTags, autoRel, documentRel, memoryOps, personDistill, summarySection] = await Promise.all([
     priorSummary ? Promise.resolve(undefined) : enricher.summarize(transcript),
     wantTags ? enricher.chooseTags(subject) : Promise.resolve(undefined),
-    // The whole log, as for document refs below: a branch's bare name can
-    // mean someone on a record its parent read.
     wantRel
-      ? readParties(input.contextLog, baseDir).then((contextNames) =>
-          enricher.chooseRel({ ...relSubject, contextNames }),
-        )
+      ? contextNames.then((names) => enricher.chooseRel({ ...relSubject, contextNames: names }))
       : wantPlaces
         ? enricher.choosePlaceRel!({
             ...subject,
@@ -450,10 +465,12 @@ export async function saveChat(input: SaveChatInput): Promise<SaveChatReport> {
     // Same abstain contract for the CRM — the enricher owns its subject
     // discovery, so this catch is the whole safety net around it.
     wantPeople
-      ? enricher.distillPersonFacts!(personTranscript, endTime.plainDate.ymd).catch(async (err) => {
-          await logAIError({ source: 'ai:chat', stage: 'people', message: (err as Error).message })
-          return undefined
-        })
+      ? contextNames
+          .then((names) => enricher.distillPersonFacts!(personTranscript, endTime.plainDate.ymd, names))
+          .catch(async (err) => {
+            await logAIError({ source: 'ai:chat', stage: 'people', message: (err as Error).message })
+            return undefined
+          })
       : Promise.resolve(undefined),
     wantSummary
       ? enricher.writeSummary!({ turns, earlier: input.turns.slice(0, inherited) }).catch(async (err) => {

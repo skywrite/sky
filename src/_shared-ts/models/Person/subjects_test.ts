@@ -195,6 +195,52 @@ test('findPersonSubjects - a dominant score resolves a bare first name to one pr
   })
 })
 
+test('findPersonSubjects - the namesake on a record the text was read with settles a bare first name before scores', async () => {
+  const dominant = (name: string) => ({ 'Sam Rivera': 300, 'Sam Okafor': 0.4, 'Sam Lindqvist': 0.2 })[name] ?? 0
+  const find = (contextNames: string[], scoreFor?: (name: string) => number) =>
+    findPersonSubjects({
+      transcript: 'Sam explained the pricing over dinner.',
+      index: [...INDEX, ...SAMS],
+      readDocument: reader({ ...PROFILES, ...SAM_PROFILES }),
+      scoreFor,
+      contextNames,
+    }).then((subjects) => subjects.map((s) => s.name))
+  const [onRecord, both, bare, unscored] = await Promise.all([
+    find(['Sam Okafor', 'Jane Doe'], dominant),
+    find(['Sam Okafor', 'Sam Lindqvist'], dominant),
+    find(['Sam'], dominant),
+    find(['Sam Lindqvist']),
+  ])
+
+  assert({
+    given: 'a bare "Sam" and a record naming a low-scored Sam and someone the text never mentions',
+    should: 'keep the Sam on the record alone and add no one else',
+    actual: onRecord,
+    expected: ['Sam Okafor'],
+  })
+
+  assert({
+    given: 'records naming two of the Sams',
+    should: 'leave it to the scores, which pick the dominant Sam',
+    actual: both,
+    expected: ['Sam Rivera'],
+  })
+
+  assert({
+    given: 'a record naming only "Sam", which one profile carries as an explicit alias',
+    should: 'leave it to the scores — a bare name on a record names no one',
+    actual: bare,
+    expected: ['Sam Rivera'],
+  })
+
+  assert({
+    given: 'no interaction scores and a record naming one Sam',
+    should: 'keep that Sam alone',
+    actual: unscored,
+    expected: ['Sam Lindqvist'],
+  })
+})
+
 test('findPersonSubjects - a handle the transcript also uses in lowercase is prose, not a name', async () => {
   const index = [...INDEX, entry(['The Market Maker'], 'people/2019/th/The-Market-Maker.md')]
   const profiles = { ...PROFILES, 'people/2019/th/The-Market-Maker.md': '---\nname: The Market Maker\n---\n' }

@@ -1177,6 +1177,49 @@ test('saveChat - rel hears who was on the records the chat read', async () => {
   })
 })
 
+test('saveChat - profile facts hear the full names on the records the chat read, as rel does', async () => {
+  const notebook = await tmpNotebook()
+  const meeting = 'time/2026/W04/01-23/actions/meetings/18-00_In-Person_Michael-Vance_Dinner.md'
+  await mkdir(path.dirname(path.join(notebook, meeting)), { recursive: true })
+  await writeTextFile(path.join(notebook, meeting), '---\nwho: Michael Vance, Sam\n---\n\n# Dinner\n')
+  const save = async (autoRel: boolean) => {
+    const heard: { rel?: string[]; people?: string[] } = {}
+    await saveNew({
+      timeDir: path.join(notebook, 'time'),
+      autoRel,
+      people: true,
+      contextLog: [{ turn: 1, queries: [], universe: [{ path: meeting, tokens: 200 }] }],
+      enricher: stubEnricher({
+        chooseRel: async (subject) => {
+          heard.rel = subject.contextNames
+          return undefined
+        },
+        distillPersonFacts: async (_transcript, _today, contextNames) => {
+          heard.people = contextNames
+          return undefined
+        },
+      }),
+    })
+    return heard
+  }
+  const withRel = await save(true)
+  const withoutRel = await save(false)
+
+  assert({
+    given: 'a meeting the chat read naming one attendee in full and another by first name only',
+    should: 'hand profile facts the same full names as rel, and the bare first name to neither',
+    actual: withRel,
+    expected: { rel: ['Michael Vance'], people: ['Michael Vance'] },
+  })
+
+  assert({
+    given: 'the same chat saved without choosing rel',
+    should: 'still hand profile facts the names',
+    actual: withoutRel,
+    expected: { people: ['Michael Vance'] },
+  })
+})
+
 test('saveChat - documents the session created join rel as facts', async () => {
   const timeDir = path.join(await tmpNotebook(), 'time')
   const note = path.join(timeDir, '2026/W05/01-27/actions/notes/09-45_Launch-memo.md')
