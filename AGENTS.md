@@ -244,7 +244,7 @@ There is no single install that sets up the whole repo. Each project has its own
 
 | Project dir | Lockfile | Manager | Contents |
 |---|---|---|---|
-| `src/` | `bun.lock` | bun | **The real app (`sky`)** — all runtime deps, incl. the Vercel AI SDK (`ai`, `@ai-sdk/*`), `@anthropic-ai/sdk`, `openai`. **This is the install that matters.** |
+| `src/` | `bun.lock` | bun | **The real app (`sky`)** — all runtime deps, incl. the Vercel AI SDK (`ai`, `@ai-sdk/*`) and `openai`. **This is the install that matters.** |
 | `./` (root) | `bun.lock` | bun | Thin `packages/*` workspace (`@skywrite/commands`, `@skywrite/core`) only — **no third-party deps**, so installing here is nearly a no-op. |
 
 **Trap:** installing only at the repo root does NOT install the app — the app's deps live in `src/`. Always install from `src/`.
