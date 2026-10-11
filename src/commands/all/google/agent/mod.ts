@@ -337,8 +337,6 @@ export default class GoogleAgentTask extends Command {
       })
     }
     const log = (line: string) => output.log(colors.dim(`◦ ${line}`))
-    const tools = createAgentTools({ client, log, state, critiquePrompt, deckCritiquePrompt, docCritiquePrompt })
-
     const missionMessage = [
       `Mission: ${mission.trim()}`,
       target && targetFile
@@ -362,13 +360,23 @@ export default class GoogleAgentTask extends Command {
     const abort = new AbortController()
     const missionSpan = new TimingSpan({ kind: 'generation', name: 'google:mission' })
     try {
+      // Resolve once so visual reviews use the same model, effort and tier as the mission.
+      // Four retries let an expensive mission ride out transient provider failures.
+      const missionModel = resolveProfile(missionProfile, { maxRetries: 4, effort })
+      const tools = createAgentTools({
+        client,
+        log,
+        state,
+        missionModel,
+        critiquePrompt,
+        deckCritiquePrompt,
+        docCritiquePrompt,
+      })
       // Streamed for the same reason as ai:chat: long generations hold the
       // socket past Anthropic's non-streaming ceiling on flaky networks.
       const stream = missionSpan.run(() =>
         streamText({
-          // A mission is expensive to lose — ride out 429/529 bursts with more
-          // patience than the SDK's default 2 retries.
-          ...resolveProfile(missionProfile, { maxRetries: 4, effort }),
+          ...missionModel,
           instructions: cachedInstructions([systemPrompt, slideDesignPromptSection()]),
           messages: [{ role: 'user', content: missionMessage }],
           tools,

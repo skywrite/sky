@@ -84,6 +84,7 @@ async function agentToolsOver(api: (url: URL) => Response, calls: DriveCall[]) {
     client,
     log: (line) => log.push(line),
     state: createMissionState(),
+    missionModel: { model: 'test:google-agent' },
     critiquePrompt: '',
     deckCritiquePrompt: '',
     docCritiquePrompt: '',

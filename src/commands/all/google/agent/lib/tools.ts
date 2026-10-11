@@ -58,7 +58,7 @@ import {
   workspaceKind,
 } from '#lib/google/mod.ts'
 import type { GoogleClient, RestyleSpec, WorkspaceKind } from '#lib/google/mod.ts'
-import { aiModel } from '#shared/ai/models.ts'
+import type { ResolvedModel } from '#shared/ai/models.ts'
 import { RepetitionGuard, guardTools } from '#shared/models/Chat/ChatEngine/repetitionGuard.ts'
 import { paginateRead } from '../../lib/readWorkspaceFile.ts'
 import { addDocsComment, addSheetsComment, addSlidesComment } from './browserComments.ts'
@@ -166,6 +166,8 @@ export function createAgentTools(deps: {
   client: GoogleClient
   log: (line: string) => void
   state: MissionState
+  /** The mission's resolved model and options, shared by all visual reviews. */
+  missionModel: ResolvedModel
   /** Vision reviewer instructions for inspect_slide_visually. */
   critiquePrompt: string
   /** Vision reviewer instructions for inspect_deck_visually (cross-slide consistency). */
@@ -173,7 +175,7 @@ export function createAgentTools(deps: {
   /** Vision reviewer instructions for inspect_doc_visually (PDF page review). */
   docCritiquePrompt: string
 }) {
-  const { client, log, state, critiquePrompt, deckCritiquePrompt, docCritiquePrompt } = deps
+  const { client, log, state, missionModel, critiquePrompt, deckCritiquePrompt, docCritiquePrompt } = deps
 
   const tools = {
     find_files: {
@@ -407,7 +409,7 @@ export function createAgentTools(deps: {
             ? `You are shown a document rendered as PDF pages.\n\n${purpose.trim()}`
             : docCritiquePrompt
           const { text } = await generateText({
-            ...aiModel('vision'),
+            ...missionModel,
             messages: [
               {
                 role: 'user',
@@ -543,7 +545,7 @@ export function createAgentTools(deps: {
             ? `You are shown one rendered slide from a presentation.\n\n${purpose.trim()}`
             : critiquePrompt
           const { text } = await generateText({
-            ...aiModel('vision'),
+            ...missionModel,
             messages: [
               {
                 role: 'user',
@@ -599,7 +601,7 @@ export function createAgentTools(deps: {
               ? `${instruction}\n\n(Only the first ${slides.length} of ${outline.slides.length} slides are shown.)`
               : instruction
           const { text } = await generateText({
-            ...aiModel('vision'),
+            ...missionModel,
             messages: [
               {
                 role: 'user',

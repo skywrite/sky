@@ -11,6 +11,9 @@ the agent tools, up to `MAX_STEPS = 48` steps, final text = the report.
 `--ai-reasoning` selects another profile, inheriting its effort;
 `--ai-effort` overrides effort for the run (`default` inherits the selected
 profile's effort, including high for the shipped Ultrafast profile).
+Visual reviews of Docs, individual slides, and whole decks use that same
+resolved model, effort, and service tier in separate calls with fresh review
+context; they do not resolve the shared `vision` role.
 A mission executes a brief the chat model already wrote. Measured on one
 three-tab brief on 2026-09-06: Opus 5 at xhigh, the default until then,
 took 19m28s for 25 steps, 19m05s of it thinking, and built the doc right;
