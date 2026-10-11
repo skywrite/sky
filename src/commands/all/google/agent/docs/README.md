@@ -44,6 +44,32 @@ Two properties of that loop are non-obvious and load-bearing:
   input grows with the square of its step count
   ([2026-09-03](../../../../../_shared-ts/ai/docs/2026-09-03-cache-tail-every-step.md)).
 
+## Workspace tools and prompts
+
+`lib/missionWorkspace.ts` scopes each model request to shared Drive tools and
+the requested Workspace formats. It infers explicit outputs from the opening
+instruction, excluding titles, topics and supplied content; an otherwise
+unspecified request uses the target file's native or conversion format.
+Shared `read_file` can read a source of another format without loading that
+format's editing tools. An ambiguous request starts with shared tools only.
+This selection is local and adds no classification model call.
+
+`load_workspace_tools` lets the mission enable another format when it actually
+needs one, such as Sheets for a native linked chart in Slides. Ordinary deck
+text, numbers and diagrams do not create a companion spreadsheet. Prompt
+loading completes before a format becomes enabled. The next `prepareStep`
+adds both its tool definitions and its instructions; already-loaded prompt
+segments remain the same prefix. Failed loads preserve the previous scope.
+Unloaded tools also refuse execution if the model guesses their names.
+
+The full tool registry stays local for execution, but the SDK's `activeTools`
+filters what reaches the model. Every tool declares its owning format or
+shared status, so adding one cannot silently enlarge every request. The
+common `agent.prompt.md` is joined only with selected `docs.prompt.md`,
+`slides.prompt.md` and `sheets.prompt.md`; slide design tokens accompany Slides
+only. These files use the normal prompt library and its notebook overrides.
+Format-specific instructions belong in their format's prompt.
+
 ## The timeout ladder
 
 Every layer must give up **before** the layer above it loses patience, and

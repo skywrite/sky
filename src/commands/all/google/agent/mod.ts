@@ -14,17 +14,16 @@ import { DocSnapshotStore } from '#lib/google/docSnapshots.ts'
 import {
   AccountResolutionError,
   GoogleApiError,
+  conversionTarget,
   deleteFile,
   getFile,
   importFileAsDoc,
   resolveFileRef,
-  slideDesignPromptSection,
   workspaceKind,
 } from '#lib/google/mod.ts'
 import type { DriveFile } from '#lib/google/mod.ts'
 import { logAIError } from '#shared/ai/errorLog.ts'
 import { getProfile, type ModelProfile, resolveProfile } from '#shared/ai/models.ts'
-import { cachedInstructions, cacheTailStep } from '#shared/ai/promptCache.ts'
 import { readDir, readTextFile } from '#shared/fs/mod.ts'
 import { apiErrorMessage } from '#shared/models/Chat/ChatEngine/turnErrorMessage.ts'
 import { actionKindRel } from '#shared/nbfs/mod.ts'
@@ -37,6 +36,7 @@ import { missionAccount, missionApprovalKey, missionNeedsApproval } from './lib/
 import { withReadTarget, writeMissionRecords } from './lib/artifact.ts'
 import { preserveDocumentCopies } from './lib/documentCopies.ts'
 import { IMPORT_EXTENSIONS, MAX_IMPORT_BYTES, resolveImportSource } from './lib/importFile.ts'
+import { createMissionWorkspace, missionWorkspaces } from './lib/missionWorkspace.ts'
 import { formatTiming, type MissionTiming } from './lib/timing.ts'
 import { createAgentTools, createMissionState } from './lib/tools.ts'
 import type { MissionFile } from './lib/tools.ts'
@@ -345,7 +345,7 @@ export default class GoogleAgentTask extends Command {
       target && targetFile
         ? `Target file id: ${target.fileId} — "${targetFile.name}" (${workspaceKind(targetFile.mimeType) ?? targetFile.mimeType})${target.tabId ? ` — the link names tab ${target.tabId}: the mission concerns that tab (pass this tabId to doc tools)` : ''}${importedFrom ? ` — just created by converting the local file ${importedFrom}; the mission concerns this Doc` : ''}`
         : undefined,
-      missionData ? `Data (pass verbatim to set_values via its csv parameter):\n\n${missionData.trim()}` : undefined,
+      missionData ? `Supplied data (preserve these values exactly):\n\n${missionData.trim()}` : undefined,
       imagePaths.length > 0
         ? `Images available on disk (stage with upload_image using these exact paths):\n${imagePaths.join('\n')}`
         : undefined,
@@ -377,18 +377,33 @@ export default class GoogleAgentTask extends Command {
         deckCritiquePrompt,
         docCritiquePrompt,
       })
+      const workspacePrompts = { doc: 'docs.prompt.md', slides: 'slides.prompt.md', sheet: 'sheets.prompt.md' }
+      const workspace = await createMissionWorkspace({
+        tools,
+        initial: missionWorkspaces(
+          mission,
+          targetFile ? (workspaceKind(targetFile.mimeType) ?? conversionTarget(targetFile.mimeType)) : undefined,
+        ),
+        commonPrompt: systemPrompt,
+        loadPrompt: (kind) => readPromptFile(path.join(promptDir, workspacePrompts[kind])),
+        log,
+      })
+      log(
+        `Workspace tools: ${workspace.formats.join(', ') || 'shared Drive'} · ${workspace.activeTools().length} enabled`,
+      )
       // Streamed for the same reason as ai:chat: long generations hold the
       // socket past Anthropic's non-streaming ceiling on flaky networks.
       const stream = missionSpan.run(() =>
         streamText({
           ...missionModel,
-          instructions: cachedInstructions([systemPrompt, slideDesignPromptSection()]),
+          instructions: workspace.instructions(),
           messages: [{ role: 'user', content: missionMessage }],
-          tools,
+          tools: workspace.tools,
+          activeTools: workspace.activeTools(),
           stopWhen: isStepCount(MAX_STEPS),
           // A mission replays its whole history on every step; moving the cache
           // breakpoint to the step's last message makes that replay a cache read.
-          prepareStep: cacheTailStep,
+          prepareStep: workspace.prepareStep,
           abortSignal: abort.signal,
           // Raw SSE frames (pings included) feed the stall watchdog, so a long
           // silent think is not mistaken for a dead stream.
