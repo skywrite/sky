@@ -97,6 +97,84 @@ async function agentToolsOver(api: (url: URL) => Response, calls: DriveCall[]) {
   return { tools, log, state }
 }
 
+test('read_file includes tab-local editing positions for whole-document and single-tab reads', async () => {
+  const calls: DriveCall[] = []
+  const { tools } = await agentToolsOver((url) => {
+    if (url.pathname.endsWith('/export')) return new Response('# Overview\nPlan.\n# Details\nNotes.')
+    if (url.hostname === 'docs.googleapis.com') {
+      return Response.json({
+        documentId: 'atlas-tabs',
+        title: 'Atlas Plan',
+        revisionId: 'revision-1',
+        suggestionsViewMode: 'SUGGESTIONS_INLINE',
+        tabs: ['Overview', 'Details'].map((title) => ({
+          tabProperties: { tabId: `t.${title.toLowerCase()}`, title },
+          documentTab: {
+            body: {
+              content: [
+                {
+                  startIndex: 1,
+                  endIndex: title.length + 2,
+                  paragraph: {
+                    paragraphStyle: { namedStyleType: 'HEADING_1' },
+                    elements: [{ textRun: { content: `${title}\n` } }],
+                  },
+                },
+              ],
+            },
+          },
+        })),
+      })
+    }
+    return Response.json({
+      id: 'atlas-tabs',
+      name: 'Atlas Plan',
+      mimeType: WORKSPACE_MIME.doc,
+      version: '1',
+      capabilities: { canEdit: true },
+    })
+  }, calls)
+  const full = (await tools.read_file.execute({ fileId: 'atlas-tabs', includeOutline: true })) as Record<
+    string,
+    unknown
+  >
+  const tab = (await tools.read_file.execute({
+    fileId: 'atlas-tabs',
+    tabId: 't.details',
+    includeOutline: true,
+  })) as Record<string, unknown>
+  const outline = full.outline as {
+    tabs: Array<{ tabId: string; headings: Array<{ text: string; startIndex: number }> }>
+  }
+  assert({
+    given: 'a two-tab document read whole and then one tab read with the outline requested',
+    should: 'keep the complete outline and tab-local positions without fetching structure twice',
+    actual: {
+      fullContent: full.content,
+      tabContent: tab.content,
+      tabId: tab.tabId,
+      positions: outline.tabs.map((entry) => [entry.tabId, entry.headings[0]?.text, entry.headings[0]?.startIndex]),
+      sameOutline: JSON.stringify(full.outline) === JSON.stringify(tab.outline),
+      versions: [full.version, tab.version],
+      documentReads: calls.filter((call) => call.path === '/v1/documents/atlas-tabs').length,
+      exports: calls.filter((call) => call.path.endsWith('/export')).length,
+    },
+    expected: {
+      fullContent: '# Overview\nPlan.\n# Details\nNotes.',
+      tabContent: 'Details\n',
+      tabId: 't.details',
+      positions: [
+        ['t.overview', 'Overview', 1],
+        ['t.details', 'Details', 1],
+      ],
+      sameOutline: true,
+      versions: ['1', '1'],
+      documentReads: 1,
+      exports: 1,
+    },
+  })
+})
+
 test('read_file tracks a newly converted file even when its export fails', async () => {
   const api = uploadedWorkbookApi(false)
   const { tools, state } = await agentToolsOver(
@@ -116,7 +194,7 @@ test('read_file - an uploaded workbook is read through a freshly converted nativ
   const calls: DriveCall[] = []
   const { tools, log } = await agentToolsOver(uploadedWorkbookApi(false), calls)
 
-  const result = (await tools.read_file.execute({ fileId: 'f1' })) as Record<string, unknown>
+  const result = (await tools.read_file.execute({ fileId: 'f1', includeOutline: true })) as Record<string, unknown>
 
   assert({
     given: 'an .xlsx uploaded to Drive with no twin yet',
@@ -128,6 +206,7 @@ test('read_file - an uploaded workbook is read through a freshly converted nativ
       twin: { id: 'f2', name: 'Atlas Tracker v4 (Google Sheets)', url: TWIN_URL, created: true },
       content: 'Line,Amount\nAtlas hosting,1200',
       notePointsAtTwin: true,
+      hasOutline: false,
     },
     actual: {
       id: result.id,
@@ -136,6 +215,7 @@ test('read_file - an uploaded workbook is read through a freshly converted nativ
       twin: result.twin,
       content: result.content,
       notePointsAtTwin: String(result.note).includes('Use the twin id f2'),
+      hasOutline: 'outline' in result,
     },
   })
 

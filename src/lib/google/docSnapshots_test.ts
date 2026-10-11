@@ -9,6 +9,7 @@ import { READ_LIMIT_CHARS, readWorkspaceFile } from '#commands/all/google/lib/re
 import { TestSecretsProvider } from '#lib/secrets/TestSecretsProvider.ts'
 import { assert, test } from '#test'
 import { GoogleClient } from './client.ts'
+import type { DocOutline } from './docs.ts'
 import { DocSnapshotStore } from './docSnapshots.ts'
 import { restyleDoc } from './docsRestyle.ts'
 import { WORKSPACE_MIME } from './drive.ts'
@@ -370,6 +371,101 @@ test('document pagination reuses one export and refuses mixed versions', async (
       f.calls.exports,
     ],
     expected: [true, true, false, true, 1],
+  })
+})
+
+test('Google Agent combines content and editing positions without another Google request', async () => {
+  const f = await fixture()
+  const tools = f.tools()
+  const read = (await tools.read_file.execute({ fileId: FILE_ID, includeOutline: true })) as {
+    content: string
+    version: string
+    outline: DocOutline
+  }
+  const afterRead = { ...f.calls }
+  const heading = read.outline.headings?.[0]
+  const edited = await tools.batch_update_doc.execute({
+    fileId: FILE_ID,
+    requests: [
+      {
+        updateTextStyle: {
+          range: { startIndex: heading?.startIndex, endIndex: heading?.endIndex },
+          textStyle: { bold: true },
+          fields: 'bold',
+        },
+      },
+    ],
+  })
+  assert({
+    given: 'one content read requesting an outline, followed by a range edit',
+    should: 'return matching text and positions and guard the edit with that same snapshot revision',
+    actual: {
+      content: read.content,
+      version: read.version,
+      heading,
+      calls: afterRead,
+      edited,
+      requiredRevision: f.bodies[0]?.writeControl?.requiredRevisionId,
+    },
+    expected: {
+      content: '# Atlas Plan\nAtlas overview\n',
+      version: '1',
+      heading: { style: 'HEADING_1', text: 'Atlas overview', startIndex: 1, endIndex: 16, headingId: 'h.overview' },
+      calls: { metadata: 2, documents: 1, exports: 1, revisions: 0, writes: 0 },
+      edited: { applied: 1, replies: [] },
+      requiredRevision: 'revision-1',
+    },
+  })
+})
+
+test('combined reads refresh content and outline together after a concurrent change', async () => {
+  const f = await fixture()
+  f.state.onExport = () => {
+    if (f.calls.exports === 1) {
+      f.state.version++
+      f.state.text = 'Updated overview\n'
+    }
+  }
+  const read = (await f.tools().read_file.execute({ fileId: FILE_ID, includeOutline: true })) as {
+    content: string
+    version: string
+    outline: DocOutline
+  }
+  assert({
+    given: 'a collaborator changes the document while its markdown export is being fetched',
+    should: 'return both representations from the new version',
+    actual: [read.version, read.content, read.outline.headings?.[0]?.text, read.outline.headings?.[0]?.endIndex],
+    expected: ['2', '# Atlas Plan\nUpdated overview\n', 'Updated overview', 18],
+  })
+})
+
+test('combined reads do not repeat the outline on content-only continuation pages', async () => {
+  const f = await fixture()
+  f.state.text = 'x'.repeat(READ_LIMIT_CHARS + 10)
+  const tools = f.tools()
+  const first = (await tools.read_file.execute({ fileId: FILE_ID, includeOutline: true })) as Record<string, unknown>
+  const second = (await tools.read_file.execute({ fileId: FILE_ID, offset: READ_LIMIT_CHARS, version: '1' })) as Record<
+    string,
+    unknown
+  >
+  f.state.version++
+  const stale = await tools.read_file.execute({
+    fileId: FILE_ID,
+    offset: READ_LIMIT_CHARS,
+    version: '1',
+    includeOutline: true,
+  })
+  assert({
+    given: 'an outline requested for the first page, then a content-only continuation and a stale continuation',
+    should: 'omit the optional outline by default and refuse mixed versions without another export',
+    actual: [
+      !!first.outline,
+      'outline' in second,
+      second.version,
+      String(stale).includes('restart at offset 0'),
+      f.calls.exports,
+    ],
+    expected: [true, false, '1', true, 1],
   })
 })
 

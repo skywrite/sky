@@ -95,6 +95,23 @@ polite "already in use" error.
 self-directing marker naming the next offset and, for Docs, the version.
 The model passes both when continuing, so pages cannot silently mix revisions.
 Reads and outlines reuse the shared [document snapshot](../../docs/README.md#document-snapshots).
+`read_file` can include the outline from that same snapshot with
+`includeOutline: true`, so content and editing positions need no separate
+tool round. The outline covers all tabs even on a single-tab content read;
+continuation pages and content-only reads omit it by default.
+
+## Document verification
+
+The prompt chooses verification by the change's likely effect. Small text
+edits use a guarded write and content read-back; new documents and changes
+that could affect layout also receive a PDF review. The final content read
+serves as the audience read and can include structural verification. Planned
+writing and styling finish before these checks, which can run together.
+Further reviews follow fixes that affect what was checked. These are agent
+workflow instructions, not tool restrictions: explicit visual investigations
+can inspect an existing document before editing. Keeping the checks tied to
+the change avoids redundant model turns without treating every edit as safe
+to verify from text alone.
 
 ## Every mission says how long
 

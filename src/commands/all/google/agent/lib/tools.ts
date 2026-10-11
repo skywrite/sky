@@ -212,8 +212,14 @@ export function createAgentTools(deps: {
 
     read_file: {
       description:
-        'Read a file from Drive: Docs as markdown, Sheets as csv (first tab), Slides as text. An uploaded Office/csv/pdf file (.xlsx/.docx/.pptx…, stored as-is by Drive) is read through its native Google twin — converted on first read, reused after — and the result carries the twin id to use for every later call. Long files return 40k chars per call — when the content ends with a [Truncated …] marker, call again with the offset and version it names until you have read everything the mission needs. A Doc holding several tabs exports ALL of them in order, each opening with its tab title as a # heading, and returns a tabs list mapping those titles to tabIds (needed for tab-targeted edits); pass tabId to re-read just one tab (returned as plain text, not markdown).',
-      inputSchema: jsonSchema<{ fileId: string; offset?: number; tabId?: string; version?: string }>({
+        'Read a file from Drive: Docs as markdown, Sheets as csv (first tab), Slides as text. For Docs, includeOutline also returns headings and editing indexes from the SAME snapshot, avoiding a separate get_doc_outline call. An uploaded Office/csv/pdf file (.xlsx/.docx/.pptx…, stored as-is by Drive) is read through its native Google twin — converted on first read, reused after — and the result carries the twin id to use for every later call. Long files return 40k chars per call — when the content ends with a [Truncated …] marker, call again with the offset and version it names until you have read everything the mission needs. A Doc holding several tabs exports ALL of them in order, each opening with its tab title as a # heading, and returns a tabs list mapping those titles to tabIds (needed for tab-targeted edits); pass tabId to re-read just one tab (returned as plain text, not markdown).',
+      inputSchema: jsonSchema<{
+        fileId: string
+        offset?: number
+        tabId?: string
+        version?: string
+        includeOutline?: boolean
+      }>({
         type: 'object',
         properties: {
           fileId: { type: 'string' },
@@ -223,6 +229,11 @@ export function createAgentTools(deps: {
             description: 'Docs: version from the previous page; required when continuing with offset',
           },
           tabId: { type: 'string', description: 'Docs only: read just this tab (plain text, not markdown)' },
+          includeOutline: {
+            type: 'boolean',
+            description:
+              'Docs only: include the complete document outline (all tabs) for heading indexes or structural verification. Omit on content-only reads and continuation pages.',
+          },
         },
         required: ['fileId'],
       }),
@@ -231,11 +242,13 @@ export function createAgentTools(deps: {
         offset,
         tabId,
         version,
+        includeOutline,
       }: {
         fileId: string
         offset?: number
         tabId?: string
         version?: string
+        includeOutline?: boolean
       }) => {
         try {
           const checkpoint = state.documentCopies.checkpoint()
@@ -264,6 +277,7 @@ export function createAgentTools(deps: {
           const result: Record<string, unknown> = { id: file.id, name: file.name, kind, content: read.content }
           const notes: string[] = []
           if (read.version) result.version = read.version
+          if (includeOutline && read.snapshot) result.outline = read.snapshot.outline
           if (read.convertedFrom) {
             const source = read.convertedFrom
             result.sourceId = source.id
@@ -351,7 +365,7 @@ export function createAgentTools(deps: {
 
     batch_update_doc: {
       description:
-        "Apply Google Docs API batchUpdate requests to a document (styling, replaceAllText, tables, headers). Range-based requests need indexes — call get_doc_outline first. Docs with several tabs: indexes are tab-local, so set the tab's tabId inside each location/range object (requests without one hit the FIRST tab) — and replaceAllText hits ALL tabs unless scoped with tabsCriteria: {tabIds: [...]}. Tabs themselves are managed here too: addDocumentTab creates one (tabProperties: title, index), updateDocumentTabProperties renames/moves one (tabProperties + fields mask), deleteTab removes one — nonempty replies include the new tabId. Read the document or get_doc_outline before preparing edits; writes are guarded against changes since that read.",
+        "Apply Google Docs API batchUpdate requests to a document (styling, replaceAllText, tables, headers). Range-based requests need current indexes from read_file with includeOutline or get_doc_outline. Docs with several tabs: indexes are tab-local, so set the tab's tabId inside each location/range object (requests without one hit the FIRST tab) — and replaceAllText hits ALL tabs unless scoped with tabsCriteria: {tabIds: [...]}. Tabs themselves are managed here too: addDocumentTab creates one (tabProperties: title, index), updateDocumentTabProperties renames/moves one (tabProperties + fields mask), deleteTab removes one — nonempty replies include the new tabId. Read the document before preparing edits; writes are guarded against changes since that read. Batch related changes and finish planned writing and styling before verification.",
       inputSchema: jsonSchema<{ fileId: string; requests: Array<Record<string, unknown>> }>({
         type: 'object',
         properties: {
@@ -399,7 +413,7 @@ export function createAgentTools(deps: {
 
     inspect_doc_visually: {
       description:
-        'Render a Google Doc to PDF and look at its pages. Without purpose: strict layout/typography QA (walls of text, heading problems, table overflow, spacing) — use after substantial writes. With purpose: answers that instruction instead (any visual question from the mission).',
+        'Render a Google Doc to PDF and review its pages for layout/typography defects. Use for new documents and changes that may affect layout, after ALL planned writing and styling is complete. Small text/number fixes with no likely layout impact need only a read_file check. Review the completed document once; review again after fixing a visual defect or another change that could affect layout. With purpose: answers that instruction instead, including explicit visual review or diagnosis missions.',
       inputSchema: jsonSchema<{ fileId: string; purpose?: string }>({
         type: 'object',
         properties: {
@@ -419,7 +433,7 @@ export function createAgentTools(deps: {
           }
           const pdf = await exportFileBytes(client, file.id, 'application/pdf')
           if (pdf.length > MAX_DOC_PDF_BYTES) {
-            return `Error: the rendered PDF is too large to review (${pdf.length} bytes) — verify via get_doc_outline and read_file instead`
+            return `Error: the rendered PDF is too large to review (${pdf.length} bytes) — use read_file with includeOutline to check content and structure, and report that visual verification was unavailable`
           }
           const instruction = purpose?.trim()
             ? `You are shown a document rendered as PDF pages.\n\n${purpose.trim()}`
@@ -1388,7 +1402,7 @@ export function createAgentTools(deps: {
 
     get_doc_outline: {
       description:
-        'Inspect a Google Doc: title, headings with startIndex/endIndex (for range-based styling), paragraph count, end index. A doc holding several tabs returns one outline per tab under `tabs` (tabId, tabTitle, headings) — indexes are LOCAL to each tab. Use after writes to verify structure.',
+        'Read only a Google Doc outline: title, headings with startIndex/endIndex (for range-based styling), paragraph count, end index. A doc holding several tabs returns one outline per tab under `tabs` (tabId, tabTitle, headings) — indexes are LOCAL to each tab. When you also need content, use read_file with includeOutline instead to get both from one snapshot. Do not repeat an outline already returned by that read unless an intervening change requires fresh indexes.',
       inputSchema: jsonSchema<{ fileId: string }>({
         type: 'object',
         properties: { fileId: { type: 'string' } },
