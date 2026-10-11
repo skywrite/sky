@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import * as path from 'node:path'
+import { preserveDocumentCopies } from '#commands/all/google/agent/lib/documentCopies.ts'
 import { createAgentTools, createMissionState } from '#commands/all/google/agent/lib/tools.ts'
 import { READ_LIMIT_CHARS, readWorkspaceFile } from '#commands/all/google/lib/readWorkspaceFile.ts'
 import { TestSecretsProvider } from '#lib/secrets/TestSecretsProvider.ts'
@@ -136,11 +137,11 @@ async function fixture(email = 'jane@example.com', cacheRoot = path.join(root, S
       })
     }) as typeof fetch,
   })
-  const tools = () =>
+  const tools = (missionState = createMissionState()) =>
     createAgentTools({
       client,
       snapshots,
-      state: createMissionState(),
+      state: missionState,
       log: () => {},
       missionModel: { model: 'test:google-agent' },
       critiquePrompt: '',
@@ -510,5 +511,125 @@ test('outline versions keep legitimate rereads out of the identical-result repet
     should: 'return each observed version instead of refusing the third read as a duplicate',
     actual: versions,
     expected: ['1', '2', '3'],
+  })
+})
+
+test('the notebook copy reuses complete exports and is discarded by later writes', async () => {
+  const f = await fixture()
+  f.state.text = `${'Atlas plan.\n'.repeat(5000)}End of plan.\n`
+  const mission = createMissionState()
+  const tools = f.tools(mission)
+  const first = await tools.read_file.execute({ fileId: FILE_ID })
+  const before = mission.documentCopies.get(FILE_ID)
+  await tools.batch_update_doc.execute({
+    fileId: FILE_ID,
+    requests: [{ insertText: { endOfSegmentLocation: {}, text: 'Final update.\n' } }],
+  })
+  const afterWrite = mission.documentCopies.get(FILE_ID)
+  await tools.get_doc_outline.execute({ fileId: FILE_ID })
+  const afterOutline = mission.documentCopies.get(FILE_ID)
+  await tools.read_file.execute({ fileId: FILE_ID })
+  const final = mission.documentCopies.get(FILE_ID)
+  const beforeSave = { ...f.calls }
+  const preserved = await preserveDocumentCopies(f.client, mission.files, mission.documentCopies, f.snapshots)
+  assert({
+    given: 'a paginated read, an edit, an outline and the final read',
+    should: 'preserve the whole final export without an archival download or an obsolete copy',
+    actual: [
+      (first as { content: string }).content.includes('[Truncated'),
+      before?.markdown.endsWith('End of plan.\n'),
+      afterWrite,
+      afterOutline,
+      final?.markdown === `# Atlas Plan\n${f.state.text}`,
+      final?.version,
+      f.calls.exports,
+      'snapshot' in (first as object),
+      f.calls,
+      preserved.documents[0]?.markdown === final?.markdown,
+    ],
+    expected: [true, true, undefined, undefined, true, '2', 2, false, beforeSave, true],
+  })
+})
+
+test('a read overlapping a write cannot resurrect an obsolete notebook copy', async () => {
+  const f = await fixture()
+  const snapshot = await f.snapshots.read(f.client, FILE_ID)
+  const copies = createMissionState().documentCopies
+  const before = copies.checkpoint()
+  copies.observe(snapshot, before)
+  const finish = copies.beginWrite(FILE_ID)
+  const during = copies.checkpoint()
+  copies.observe(snapshot, during)
+  const whileWriting = copies.get(FILE_ID)
+  finish()
+  copies.observe(snapshot, before)
+  copies.observe(snapshot, during)
+  const afterOldReads = copies.get(FILE_ID)
+  copies.observe(snapshot, copies.checkpoint())
+  assert({
+    given: 'a delayed read from before or during a mutation',
+    should: 'require a read begun after the mutation finished before preserving content',
+    actual: [whileWriting, afterOldReads, copies.get(FILE_ID)?.version],
+    expected: [undefined, undefined, '1'],
+  })
+})
+
+test('observing a collaborator change discards an earlier notebook export', async () => {
+  const f = await fixture()
+  const mission = createMissionState()
+  const tools = f.tools(mission)
+  await tools.read_file.execute({ fileId: FILE_ID })
+  f.state.version++
+  f.state.text = 'Collaborator update.\n'
+  await tools.get_doc_outline.execute({ fileId: FILE_ID })
+  assert({
+    given: 'an outline showing a newer version than the saved markdown',
+    should: 'omit the earlier export without adding a new download',
+    actual: [mission.documentCopies.get(FILE_ID), f.calls.exports],
+    expected: [undefined, 1],
+  })
+})
+
+test('saving fills a missing final copy using the already captured structure', async () => {
+  const f = await fixture()
+  const mission = createMissionState()
+  const tools = f.tools(mission)
+  await tools.read_file.execute({ fileId: FILE_ID })
+  await tools.batch_update_doc.execute({
+    fileId: FILE_ID,
+    requests: [{ insertText: { endOfSegmentLocation: {}, text: 'Final update.\n' } }],
+  })
+  await tools.get_doc_outline.execute({ fileId: FILE_ID })
+  const preserved = await preserveDocumentCopies(f.client, mission.files, mission.documentCopies, f.snapshots)
+  assert({
+    given: 'a final outline without a final markdown read',
+    should: 'fetch only the missing export and preserve the updated contents',
+    actual: [preserved.documents[0]?.markdown, preserved.issues, f.calls.documents, f.calls.exports],
+    expected: ['# Atlas Plan\nAtlas overview\nFinal update.\n', [], 2, 2],
+  })
+})
+
+test('copy preservation handles lost access and writes still running after a timeout', async () => {
+  const f = await fixture()
+  const mission = createMissionState()
+  const files = [{ id: FILE_ID, title: 'Atlas Plan', kind: 'doc' as const, action: 'updated' as const }]
+  const finish = mission.documentCopies.beginWrite(FILE_ID)
+  const pending = await preserveDocumentCopies(f.client, files, mission.documentCopies, f.snapshots)
+  const metadataWhileWriting = f.calls.metadata
+  finish()
+  f.state.denied = true
+  const denied = await preserveDocumentCopies(f.client, files, mission.documentCopies, f.snapshots)
+  assert({
+    given: 'an uncertain write followed by lost access',
+    should: 'omit the copy and identify the affected document without failing the completed mission',
+    actual: [
+      pending.documents.length,
+      pending.issues[0]?.includes('still running'),
+      metadataWhileWriting,
+      denied.documents.length,
+      denied.issues[0]?.includes('Atlas Plan'),
+      denied.issues[0]?.includes('Access denied'),
+    ],
+    expected: [0, true, 0, 0, true, true],
   })
 })

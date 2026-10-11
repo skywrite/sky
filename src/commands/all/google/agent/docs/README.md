@@ -99,9 +99,11 @@ Reads and outlines reuse the shared [document snapshot](../../docs/README.md#doc
 ## Every mission says how long
 
 The mission uses the [shared timing system](../../../../../_shared-ts/timing/docs/README.md).
-The closing line and notebook record retain profile, steps, model/tool time,
-and per-tool counts, now with a trace ID and overlap/other measurements.
-`lib/timing.ts` is a compatibility export for the record format. The command
+The closing line and command result retain profile, steps, model/tool time,
+and per-tool counts, with a trace ID and overlap/other measurements.
+Each mission also saves these details and its resolved model/effort to
+`<state>/google/missions/<span-id>.json`, joined to the central timing logs
+by its existing span ID. `lib/timing.ts` retains the older record format. The command
 trace also covers preparation and cleanup outside the mission's model loop.
 
 ## The notebook record
@@ -111,6 +113,25 @@ day's `actions/google-docs/` folder, named by time, medium and title
 (`lib/artifact.ts`). Docs, Slides and Sheets share the folder; the medium
 tag tells them apart. The folder is named once, in the notebook's kind
 table ([nbfs](../../../../../../docs/nbfs.md)).
+
+The day record keeps the mission, report, links and complete Markdown from
+the agent's last document read. Pagination limits the model's output, not
+this saved copy. `lib/documentCopies.ts` retains the export already fetched
+by verification, so preserving it adds no Google request. A later write discards
+it, including failed/uncertain writes and reads overlapping a mutation.
+An outline observing a newer version also discards older Markdown. When
+there is no complete read after the last change, the save step fills the
+missing copy through the shared snapshot store without another model turn.
+This fallback is measured as `preserve_doc_content`. A failed read or a
+write still running after a timeout leaves an explanation and the live
+document link in the day record. Slides and Sheets retain their report
+and links.
+
+Execution metadata belongs in the mission's state record; raw document
+structure and revision tokens belong in the shared snapshot cache. The
+day's content is historical and survives future cache refreshes. Notebook
+and diagnostic writes report failures independently, preserving whichever
+record could be saved. Existing day records are not rewritten.
 
 ## Fonts and sizes by role
 

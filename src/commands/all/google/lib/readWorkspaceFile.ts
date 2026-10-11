@@ -6,7 +6,7 @@
  */
 
 import { docSnapshots } from '#lib/google/docSnapshots.ts'
-import type { DocSnapshotStore } from '#lib/google/docSnapshots.ts'
+import type { DocSnapshot, DocSnapshotStore } from '#lib/google/docSnapshots.ts'
 import {
   EXPORT_MIME,
   conversionTarget,
@@ -61,6 +61,8 @@ export interface WorkspaceReadRequest {
 }
 
 export interface WorkspaceRead {
+  /** Internal complete read-back for notebook preservation; never sent to the model. */
+  snapshot?: DocSnapshot
   /** The file the content came from — the native twin when the source is an uploaded Office file. */
   file: DriveFile
   kind: WorkspaceKind
@@ -149,6 +151,7 @@ export async function readWorkspaceFile(
     return {
       ok: true,
       read: {
+        snapshot,
         file,
         kind,
         content: page.content,
@@ -174,6 +177,7 @@ export async function readWorkspaceFile(
   return {
     ok: true,
     read: {
+      snapshot,
       file,
       kind,
       content: page.content,

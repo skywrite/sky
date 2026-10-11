@@ -1,5 +1,16 @@
+import { afterAll } from 'bun:test'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import * as path from 'node:path'
 import { assert, test } from '#test'
-import { artifactMedium, buildDocArtifact, docArtifactFileName, withReadTarget } from './artifact.ts'
+import {
+  artifactMedium,
+  buildDocArtifact,
+  docArtifactFileName,
+  withReadTarget,
+  writeMissionRecords,
+} from './artifact.ts'
+import type { MissionRecordInput } from './artifact.ts'
 import type { MissionFile } from './tools.ts'
 
 test('docArtifactFileName', () => {
@@ -94,32 +105,115 @@ test('withReadTarget', () => {
   })
 })
 
-test('buildDocArtifact carries the mission timing when given one', () => {
-  const artifact = buildDocArtifact({
-    date: '2026-07-29',
-    time: '09:15',
+const directories: string[] = []
+afterAll(async () => {
+  await Promise.all(directories.map((dir) => rm(dir, { recursive: true, force: true })))
+})
+
+async function recordFixture() {
+  const root = await mkdtemp(path.join(tmpdir(), 'sky-google-record-test-'))
+  directories.push(root)
+  const input: MissionRecordInput = {
+    runId: 'atlas-mission-1',
     account: 'jane@example.com',
     mission: 'Create Atlas Q3 Plan',
-    files: [{ id: 'f1', title: 'Atlas Q3 Plan', url: 'https://docs.google.com/document/d/f1/edit', action: 'created' }],
-    report: 'Done.',
+    files: [{ id: 'f1', title: 'Atlas Q3 Plan', url: 'https://example.com/atlas', kind: 'doc', action: 'created' }],
+    report: 'Created the plan.',
+    documents: [
+      { fileId: 'f1', version: '42', capturedAt: '2026-07-29T09:15:00Z', markdown: '# Atlas\n\nComplete plan.\n' },
+    ],
+    agentModel: { provider: 'openai', model: 'test-model', profile: 'test-profile', effort: 'medium' },
     timing: {
-      profile: 'default-cerebras-qwen-3.8',
+      profile: 'test-profile',
       steps: 4,
       wallMs: 12_000,
       modelMs: 3000,
       toolMs: 8000,
       tools: { batch_update_doc: { count: 2, ms: 8000 } },
     },
-  })
+  }
+  return {
+    input,
+    now: { date: '2026-07-29', time: '09:15' },
+    options: { timeDir: path.join(root, 'time'), stateDir: path.join(root, 'state') },
+    root,
+  }
+}
+
+test('mission records preserve readable content and store execution details in state', async () => {
+  const f = await recordFixture()
+  const result = await writeMissionRecords(f.now, f.input, f.options)
+  const artifact = await readFile(result.artifact!, 'utf8')
+  const diagnostics = JSON.parse(await readFile(result.diagnostics!, 'utf8'))
   assert({
-    given: 'a mission record with timing',
-    should: 'name the profile and steps in front matter and carry the timing block after the report',
+    given: 'a mission with a verified document and timing data',
+    should: 'keep complete markdown in the day record and diagnostics in the state directory',
     actual: [
-      artifact.includes('\nprofile: default-cerebras-qwen-3.8\nsteps: 4\n---'),
-      artifact.includes(
-        '## Timing\n\n- steps: 4\n- wall: 12s\n- model: 3.0s\n- tools: 8.0s\n  - batch_update_doc: 2× 8.0s',
-      ),
+      result.issues,
+      artifact.includes(f.input.documents![0]!.markdown),
+      /profile:|steps:|## Timing|batch_update_doc/.test(artifact),
+      diagnostics.agentModel,
+      diagnostics.timing,
+      diagnostics.artifact === result.artifact,
+      diagnostics.documents,
+      result.diagnostics!.startsWith(f.options.stateDir),
     ],
-    expected: [true, true],
+    expected: [
+      [],
+      true,
+      false,
+      f.input.agentModel,
+      f.input.timing,
+      true,
+      [{ fileId: 'f1', version: '42', capturedAt: '2026-07-29T09:15:00Z' }],
+      true,
+    ],
+  })
+})
+
+test('a missing final read is explained without presenting the input draft as finished content', async () => {
+  const f = await recordFixture()
+  const artifact = buildDocArtifact({ ...f.input, ...f.now, documents: [] })
+  assert({
+    given: 'a document that was changed without a complete read-back',
+    should: 'retain the report and document link and explain the missing copy',
+    actual: [
+      artifact.includes('Created the plan.'),
+      artifact.includes('https://example.com/atlas'),
+      artifact.includes('not captured after the last change'),
+    ],
+    expected: [true, true, true],
+  })
+})
+
+test('notebook and diagnostic storage failures do not discard the other record', async () => {
+  const f = await recordFixture()
+  const blocked = path.join(f.root, 'blocked')
+  await writeFile(blocked, 'occupied')
+  const noDiagnostics = await writeMissionRecords(f.now, f.input, { ...f.options, stateDir: blocked })
+  const noNotebook = await writeMissionRecords(f.now, f.input, { ...f.options, timeDir: blocked })
+  assert({
+    given: 'unwritable diagnostics and then an unwritable notebook',
+    should: 'preserve the successful record and report exactly which write failed',
+    actual: [
+      (await readFile(noDiagnostics.artifact!, 'utf8')).includes('Complete plan.'),
+      noDiagnostics.issues.length,
+      noDiagnostics.issues[0]?.includes('mission diagnostics'),
+      JSON.parse(await readFile(noNotebook.diagnostics!, 'utf8')).timing.steps,
+      noNotebook.issues.length,
+      noNotebook.issues[0]?.includes('notebook record'),
+    ],
+    expected: [true, 1, true, 4, 1, true],
+  })
+})
+
+test('read-only missions retain diagnostics without adding an empty notebook record', async () => {
+  const f = await recordFixture()
+  const result = await writeMissionRecords(f.now, { ...f.input, files: [], documents: [] }, f.options)
+  assert({
+    given: 'a mission that only read files',
+    should: 'save its timing while leaving the day folder alone',
+    actual: [result.artifact, JSON.parse(await readFile(result.diagnostics!, 'utf8')).timing.steps, result.issues],
+    expected: [undefined, 4, []],
   })
 })

@@ -61,6 +61,7 @@ import { RepetitionGuard, guardTools } from '#shared/models/Chat/ChatEngine/repe
 import { readWorkspaceFile } from '../../lib/readWorkspaceFile.ts'
 import { addDocsComment, addSheetsComment, addSlidesComment } from './browserComments.ts'
 import { suggestDocsEdit } from './browserSuggestions.ts'
+import { DocumentCopies } from './documentCopies.ts'
 import { svgToPng, validateSvgSource } from './svgToPng.ts'
 
 export interface MissionFile {
@@ -77,6 +78,7 @@ type RestyleInput = RestyleSpec & { fileId: string }
 /** What the mission touched — drives the notebook artifact and the command result. */
 export interface MissionState {
   files: MissionFile[]
+  documentCopies: DocumentCopies
   /** Images staged in Drive for placement; the command deletes them when the mission ends. */
   tempUploads: Array<{ id: string; name: string }>
   /** Fires once per newly-tracked file — the command uses it to open the file in the browser. */
@@ -84,7 +86,7 @@ export interface MissionState {
 }
 
 export function createMissionState(): MissionState {
-  return { files: [], tempUploads: [] }
+  return { files: [], tempUploads: [], documentCopies: new DocumentCopies() }
 }
 
 function track(
@@ -236,6 +238,7 @@ export function createAgentTools(deps: {
         version?: string
       }) => {
         try {
+          const checkpoint = state.documentCopies.checkpoint()
           const outcome = await readWorkspaceFile(
             client,
             { fileId, offset, tabId, version },
@@ -255,6 +258,7 @@ export function createAgentTools(deps: {
           )
           if (!outcome.ok) return `Error: ${outcome.message}`
           const { read } = outcome
+          if (read.snapshot) state.documentCopies.observe(read.snapshot, checkpoint)
           const { file, kind, page } = read
           if (kind === 'doc') docRevisions.set(file.id, read.revisionId)
           const result: Record<string, unknown> = { id: file.id, name: file.name, kind, content: read.content }
@@ -324,12 +328,14 @@ export function createAgentTools(deps: {
         required: ['fileId', 'markdown'],
       }),
       execute: async ({ fileId, markdown }: { fileId: string; markdown: string }) => {
+        let finishWrite: (() => void) | undefined
         try {
           const tabs = await listDocTabs(client, fileId)
           if (tabs.length > 1) {
             return `Error: this doc has ${tabs.length} tabs — replacing the whole file would overwrite ALL of them. Edit the target tab with batch_update_doc (tabId from get_doc_outline) or suggest_doc_edit instead.`
           }
           docRevisions.delete(fileId)
+          finishWrite = state.documentCopies.beginWrite(fileId)
           await snapshots.invalidate(client, fileId)
           const file = await replaceFileWithMarkdown(client, fileId, markdown)
           track(state, 'updated', file)
@@ -337,6 +343,8 @@ export function createAgentTools(deps: {
           return { id: file.id, name: file.name, url: file.webViewLink }
         } catch (err) {
           return toolError(err)
+        } finally {
+          finishWrite?.()
         }
       },
     },
@@ -359,12 +367,14 @@ export function createAgentTools(deps: {
       execute: async ({ fileId, requests }: { fileId: string; requests: Array<Record<string, unknown>> }) => {
         const problem = validateDocsRequests(requests)
         if (problem) return `Error: ${problem}`
+        let finishWrite: (() => void) | undefined
         try {
           const revisionId = docRevisions.get(fileId)
           if (!docRevisions.has(fileId))
             return `Error: read_file or get_doc_outline for document ${fileId} before preparing edits; no current document revision is available.`
           if (!revisionId)
             return `Error: Google did not provide an editable revision for document ${fileId}. Check that ${client.email} has edit access, then read it again before editing.`
+          finishWrite = state.documentCopies.beginWrite(fileId)
           const result = await batchUpdateDoc(client, fileId, requests, revisionId)
           if (result.revisionId) docRevisions.set(fileId, result.revisionId)
           else docRevisions.delete(fileId)
@@ -381,6 +391,7 @@ export function createAgentTools(deps: {
           docRevisions.delete(fileId)
           return `${toolError(err)} — re-read document ${fileId} and check its current contents before preparing another batch; the document may have changed.`
         } finally {
+          finishWrite?.()
           await snapshots.invalidate(client, fileId)
         }
       },
@@ -759,6 +770,7 @@ export function createAgentTools(deps: {
         required: ['fileId', 'name'],
       }),
       execute: async ({ fileId, name }: { fileId: string; name: string }) => {
+        const finishWrite = state.documentCopies.beginWrite(fileId)
         try {
           const file = await renameFile(client, fileId, name)
           track(state, 'updated', file)
@@ -766,6 +778,8 @@ export function createAgentTools(deps: {
           return { id: file.id, name: file.name, url: file.webViewLink }
         } catch (err) {
           return toolError(err)
+        } finally {
+          finishWrite()
         }
       },
     },
@@ -1024,6 +1038,7 @@ export function createAgentTools(deps: {
         if (replacement.length > 1500) {
           return 'Error: replacement is too long (max 1500 chars) — suggest passage-sized changes; a full rewrite belongs in a comment or a direct edit'
         }
+        let finishWrite: (() => void) | undefined
         try {
           const file = await getFile(client, fileId)
           if (workspaceKind(file.mimeType) !== 'doc') return `Error: "${file.name}" is not a Google Doc`
@@ -1048,6 +1063,7 @@ export function createAgentTools(deps: {
             return `Error: searchText occurs ${occurrences} time(s) — occurrence ${target} does not exist`
           }
           const before = new Set(await listDocSuggestionIds(client, fileId))
+          finishWrite = state.documentCopies.beginWrite(fileId)
           await suggestDocsEdit({ documentId: fileId, searchText, replacement, occurrence: target, tabId })
           // The UI flow is blind; the API is the witness — a landed suggestion
           // brings new pending-suggestion ids.
@@ -1065,6 +1081,8 @@ export function createAgentTools(deps: {
           return result
         } catch (err) {
           return toolError(err)
+        } finally {
+          finishWrite?.()
         }
       },
     },
@@ -1331,12 +1349,14 @@ export function createAgentTools(deps: {
       execute: async ({ fileId, ...spec }: RestyleInput) => {
         const problem = validateRestyleSpec(spec)
         if (problem) return `Error: ${problem}`
+        let finishWrite: (() => void) | undefined
         try {
           const file = await getFile(client, fileId)
           if (workspaceKind(file.mimeType) !== 'doc') {
             return `Error: "${file.name}" is not a Google Doc — restyle_doc styles Docs only`
           }
           docRevisions.delete(fileId)
+          finishWrite = state.documentCopies.beginWrite(fileId)
           await snapshots.invalidate(client, fileId)
           const result = await restyleDoc(client, fileId, spec, log)
           track(state, 'updated', file)
@@ -1360,6 +1380,8 @@ export function createAgentTools(deps: {
           }
         } catch (err) {
           return toolError(err)
+        } finally {
+          finishWrite?.()
         }
       },
     },
@@ -1374,7 +1396,9 @@ export function createAgentTools(deps: {
       }),
       execute: async ({ fileId }: { fileId: string }) => {
         try {
+          const checkpoint = state.documentCopies.checkpoint()
           const snapshot = await snapshots.read(client, fileId, { forEditing: true, includeMarkdown: false })
+          state.documentCopies.observe(snapshot, checkpoint)
           docRevisions.set(
             fileId,
             snapshot.document.suggestionsViewMode === 'SUGGESTIONS_INLINE' ? snapshot.document.revisionId : undefined,

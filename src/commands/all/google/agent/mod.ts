@@ -10,6 +10,7 @@ import type CommandContext from '#commands/lib/core/CommandContext.ts'
 import type { OutputHandler } from '#commands/lib/output/OutputHandler.ts'
 import { ArgOrFlag, Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
+import { DocSnapshotStore } from '#lib/google/docSnapshots.ts'
 import {
   AccountResolutionError,
   GoogleApiError,
@@ -33,7 +34,8 @@ import { timingSummary } from '#shared/timing/summary.ts'
 import { effectiveEffort, effortLabel, type Effort, validateEffort } from '#universal/ai/effort.ts'
 import { accountSwitchNote, findOwningGoogleClient, resolveGoogleClientForNew } from '../lib/resolveClient.ts'
 import { missionAccount, missionApprovalKey, missionNeedsApproval } from './lib/approval.ts'
-import { withReadTarget, writeDocArtifact } from './lib/artifact.ts'
+import { withReadTarget, writeMissionRecords } from './lib/artifact.ts'
+import { preserveDocumentCopies } from './lib/documentCopies.ts'
 import { IMPORT_EXTENSIONS, MAX_IMPORT_BYTES, resolveImportSource } from './lib/importFile.ts'
 import { formatTiming, type MissionTiming } from './lib/timing.ts'
 import { createAgentTools, createMissionState } from './lib/tools.ts'
@@ -92,6 +94,7 @@ type Result = {
   files: MissionFile[]
   steps: number
   artifact?: string
+  diagnostics?: string
   timing: MissionTiming
   /** The mission's resolved selection, retained even if the preset is later edited. */
   agentModel: {
@@ -363,8 +366,10 @@ export default class GoogleAgentTask extends Command {
       // Resolve once so visual reviews use the same model, effort and tier as the mission.
       // Four retries let an expensive mission ride out transient provider failures.
       const missionModel = resolveProfile(missionProfile, { maxRetries: 4, effort })
+      const snapshots = new DocSnapshotStore(path.join(context.config.DIR_STATE, 'google', 'docs'))
       const tools = createAgentTools({
         client,
+        snapshots,
         log,
         state,
         missionModel,
@@ -469,24 +474,35 @@ export default class GoogleAgentTask extends Command {
         ].join('\n')
       }
 
+      const preservation = missionSpan.run(() => new TimingSpan({ kind: 'tool', name: 'preserve_doc_content' }))
+      const { documents, issues: contentIssues } = await preservation.run(() =>
+        preserveDocumentCopies(client, state.files, state.documentCopies, snapshots),
+      )
+      preservation.finish(contentIssues.length > 0 ? 'fail' : 'success')
+
       // The mission's last word on itself: what ran, how long, where the time went.
       missionSpan.finish(stalled ? 'aborted' : modelError ? 'error' : 'success')
       const timing: MissionTiming = { ...timingSummary(missionSpan), profile: args.reasoning, steps }
       log(formatTiming(timing))
 
-      let artifact: string | undefined
-      if (state.files.length > 0) {
-        try {
-          const now = context.notebookNow
-          artifact = await writeDocArtifact(
-            { date: now.date, time: now.time },
-            { account: client.email, mission: mission.trim(), files: state.files, report, timing },
-          )
-          log(`Recorded in notebook: ${artifact}`)
-        } catch (err) {
-          output.log(colors.dim(`◦ Could not write the notebook record: ${(err as Error).message}`))
-        }
-      }
+      const now = context.notebookNow
+      const { artifact, diagnostics, issues } = await writeMissionRecords(
+        { date: now.date, time: now.time },
+        {
+          account: client.email,
+          mission: mission.trim(),
+          files: state.files,
+          report,
+          documents,
+          contentIssues,
+          timing,
+          agentModel,
+          runId: missionSpan.record.spanId,
+        },
+        { timeDir: context.config.DIR_TIME, stateDir: context.config.DIR_STATE },
+      )
+      if (artifact) log(`Recorded in notebook: ${artifact}`)
+      for (const issue of [...contentIssues, ...issues]) log(issue)
 
       output.log('')
       output.log(report.trim())
@@ -507,6 +523,7 @@ export default class GoogleAgentTask extends Command {
         files: withReadTarget(state.files, readTarget),
         steps,
         artifact,
+        diagnostics,
         timing,
         agentModel,
         account: client.email,
