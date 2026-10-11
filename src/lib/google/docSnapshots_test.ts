@@ -34,6 +34,7 @@ async function fixture(email = 'jane@example.com', cacheRoot = path.join(root, S
     revisionSuffix: '',
     onExport: undefined as (() => void) | undefined,
     onWrite: undefined as (() => void) | undefined,
+    creations: 0,
   }
   const calls = { metadata: 0, documents: 0, exports: 0, revisions: 0, writes: 0 }
   const bodies: Array<{ requests: Array<Record<string, unknown>>; writeControl?: { requiredRevisionId?: string } }> = []
@@ -48,6 +49,10 @@ async function fixture(email = 'jane@example.com', cacheRoot = path.join(root, S
     sleep: async () => {},
     fetchFn: (async (input: unknown, init?: RequestInit) => {
       const url = new URL(String(input))
+      if (url.pathname === '/upload/drive/v3/files') {
+        state.creations++
+        return json({ id: FILE_ID, name: state.title, mimeType: WORKSPACE_MIME.doc, version: String(state.version) })
+      }
       if (url.pathname.endsWith(':batchUpdate')) {
         calls.writes++
         const body = JSON.parse(String(init?.body)) as (typeof bodies)[number]
@@ -371,6 +376,215 @@ test('document pagination reuses one export and refuses mixed versions', async (
       f.calls.exports,
     ],
     expected: [true, true, false, true, 1],
+  })
+})
+
+test('creating a document applies its starting style before returning', async () => {
+  const f = await fixture()
+  const mission = createMissionState()
+  const result = (await f.tools(mission).create_doc.execute({ title: 'Atlas Plan', markdown: '# Atlas overview' })) as {
+    id: string
+    style: { preset: string; status: string }
+  }
+  assert({
+    given: 'a new document with the default creation preset',
+    should: 'create once, apply a guarded formatting batch, and retain the document for the final record',
+    actual: [
+      result.id,
+      result.style.preset,
+      result.style.status,
+      f.state.creations,
+      f.calls.documents,
+      f.calls.writes,
+      f.bodies[0]?.writeControl?.requiredRevisionId,
+      !!f.bodies[0]?.requests.some((request) => request.updateDocumentStyle),
+      mission.files[0]?.action,
+      mission.documentCopies.isWriting(FILE_ID),
+    ],
+    expected: [FILE_ID, 'standard', 'applied', 1, 1, 1, 'revision-1', true, 'created', false],
+  })
+})
+
+test('creation can retain imported formatting for a custom style mission', async () => {
+  const f = await fixture()
+  const result = (await f
+    .tools()
+    .create_doc.execute({ title: 'Atlas Plan', markdown: '# Atlas overview', stylePreset: 'none' })) as {
+    style: { status: string }
+  }
+  assert({
+    given: 'an explicit opt-out from the standard style',
+    should: 'return the created file without fetching or modifying its styles',
+    actual: [result.style.status, f.state.creations, f.calls.documents, f.calls.writes],
+    expected: ['skipped', 1, 0, 0],
+  })
+})
+
+test('a creation styling conflict preserves the created document for recovery', async () => {
+  const f = await fixture()
+  f.state.onWrite = () => {
+    f.state.version++
+  }
+  const mission = createMissionState()
+  const result = (await f.tools(mission).create_doc.execute({ title: 'Atlas Plan', markdown: '# Atlas overview' })) as {
+    id: string
+    style: { status: string }
+    warning: string
+  }
+  assert({
+    given: 'a collaborator changes a newly created document before the style batch lands',
+    should: 'return its existing id and explain recovery without retrying creation or unguarded styling',
+    actual: [
+      result.id,
+      result.style.status,
+      result.warning.includes('do not create another copy'),
+      f.state.creations,
+      f.calls.writes,
+      f.bodies[0]?.writeControl?.requiredRevisionId,
+      mission.files[0]?.id,
+      mission.documentCopies.isWriting(FILE_ID),
+    ],
+    expected: [FILE_ID, 'incomplete', true, 1, 1, 'revision-1', FILE_ID, false],
+  })
+})
+
+test('large creation presets chain revisions across bounded batches', async () => {
+  const f = await fixture()
+  f.state.paragraphs = 121
+  const result = (await f.tools().create_doc.execute({ title: 'Atlas Plan', markdown: '# Atlas overview' })) as {
+    style: { status: string }
+  }
+  assert({
+    given: 'a document requiring more than one formatting batch',
+    should: 'respect the request limit and guard each batch with the preceding revision',
+    actual: [
+      result.style.status,
+      f.bodies.length,
+      f.bodies.every((body) => body.requests.length <= 100),
+      f.bodies.map((body) => body.writeControl?.requiredRevisionId),
+    ],
+    expected: ['applied', 2, true, ['revision-1', 'revision-2']],
+  })
+})
+
+test('a batch can return fresh content and outline and preserve the final copy', async () => {
+  const f = await fixture()
+  const mission = createMissionState()
+  const tools = f.tools(mission)
+  await tools.read_file.execute({ fileId: FILE_ID })
+  const before = { ...f.calls }
+  const result = (await tools.batch_update_doc.execute({
+    fileId: FILE_ID,
+    requests: [{ insertText: { endOfSegmentLocation: {}, text: 'Final update.\n' } }],
+    readBack: 'contentAndOutline',
+  })) as {
+    applied: number
+    readBack: Record<string, unknown>
+  }
+  const after = { ...f.calls }
+  const saved = await preserveDocumentCopies(f.client, mission.files, mission.documentCopies, f.snapshots)
+  await tools.batch_update_doc.execute({
+    fileId: FILE_ID,
+    requests: [{ insertText: { endOfSegmentLocation: {}, text: 'Next.\n' } }],
+  })
+  assert({
+    given: 'one guarded edit requesting an inline content and structure read',
+    should:
+      'return the updated version, preserve the complete export without another read, and authorize the next guarded edit',
+    actual: [
+      result.applied,
+      result.readBack.content,
+      result.readBack.version,
+      (result.readBack.outline as DocOutline).headings?.[0]?.text,
+      after.documents - before.documents,
+      after.exports - before.exports,
+      after.metadata - before.metadata,
+      saved.documents[0]?.markdown,
+      saved.issues,
+      f.bodies.map((body) => body.writeControl?.requiredRevisionId),
+    ],
+    expected: [
+      1,
+      '# Atlas Plan\nAtlas overview\nFinal update.\n',
+      '2',
+      'Atlas overview\nFinal update.',
+      1,
+      1,
+      2,
+      '# Atlas Plan\nAtlas overview\nFinal update.\n',
+      [],
+      ['revision-1', 'revision-2'],
+    ],
+  })
+})
+
+test('batch read-backs paginate without exposing internal snapshots or forcing outlines', async () => {
+  const f = await fixture()
+  f.state.text = 'x'.repeat(READ_LIMIT_CHARS + 10)
+  const mission = createMissionState()
+  const tools = f.tools(mission)
+  await tools.read_file.execute({ fileId: FILE_ID })
+  const result = (await tools.batch_update_doc.execute({
+    fileId: FILE_ID,
+    requests: [{ insertText: { endOfSegmentLocation: {}, text: 'End.\n' } }],
+    readBack: 'content',
+  })) as {
+    readBack: Record<string, unknown>
+  }
+  const continuation = (await tools.read_file.execute({
+    fileId: FILE_ID,
+    offset: READ_LIMIT_CHARS,
+    version: '2',
+  })) as Record<string, unknown>
+  assert({
+    given: 'a long document returned as part of an edit',
+    should: 'use normal continuation rules while keeping the full final copy privately',
+    actual: [
+      String(result.readBack.content).includes('version: 2'),
+      'outline' in result.readBack,
+      'snapshot' in result.readBack,
+      String(continuation.content).endsWith('End.\n'),
+      mission.documentCopies.get(FILE_ID)?.markdown.endsWith('End.\n'),
+      f.calls.exports,
+    ],
+    expected: [true, false, false, true, true, 2],
+  })
+})
+
+test('a failed read-back does not turn an acknowledged edit into a retryable write', async () => {
+  const f = await fixture()
+  const mission = createMissionState()
+  const tools = f.tools(mission)
+  await tools.read_file.execute({ fileId: FILE_ID })
+  f.state.onWrite = () => {
+    f.state.denied = true
+  }
+  const result = (await tools.batch_update_doc.execute({
+    fileId: FILE_ID,
+    requests: [{ insertText: { endOfSegmentLocation: {}, text: 'Applied.\n' } }],
+    readBack: 'content',
+  })) as {
+    applied: number
+    readBackError: string
+    readBack?: unknown
+  }
+  const retry = await tools.batch_update_doc.execute({
+    fileId: FILE_ID,
+    requests: [{ insertText: { endOfSegmentLocation: {}, text: 'Other.\n' } }],
+  })
+  assert({
+    given: 'the write succeeds but the subsequent metadata read loses access',
+    should: 'report the applied edit, require a new read, and discard the old notebook copy',
+    actual: [
+      result.applied,
+      result.readBack,
+      result.readBackError.includes('do not resend this batch'),
+      String(retry).includes('no current document revision'),
+      f.calls.writes,
+      mission.files[0]?.action,
+      mission.documentCopies.get(FILE_ID),
+    ],
+    expected: [1, undefined, true, true, 1, 'updated', undefined],
   })
 })
 

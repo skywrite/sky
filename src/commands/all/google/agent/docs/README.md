@@ -103,8 +103,14 @@ continuation pages and content-only reads omit it by default.
 ## Document verification
 
 The prompt chooses verification by the change's likely effect. Small text
-edits use a guarded write and content read-back; new documents and changes
-that could affect layout also receive a PDF review. The final content read
+edits use a guarded write and content read-back; the final batch can return
+that read directly with `readBack: "content"` or `"contentAndOutline"`.
+The read uses the shared snapshot path after write invalidation finishes,
+preserving pagination, edit revisions and the complete notebook copy.
+An acknowledged write stays recorded as applied when its follow-up read
+fails: the result names `readBackError` and directs recovery to a read,
+never a repeated write. New documents and changes that could affect layout
+also receive a PDF review. The final content read
 serves as the audience read and can include structural verification. Planned
 writing and styling finish before these checks, which can run together.
 Further reviews follow fixes that affect what was checked. These are agent
@@ -112,6 +118,14 @@ workflow instructions, not tool restrictions: explicit visual investigations
 can inspect an existing document before editing. Keeping the checks tied to
 the change avoids redundant model turns without treating every edit as safe
 to verify from text alone.
+
+`create_doc` applies a standard starting style before returning. The preset
+in `lib/createDocStyle.ts` combines typography, heading spacing and margins
+in guarded batches, preserving content and emphasis. Custom-formatting
+missions can opt out with `stylePreset: "none"`. A style failure returns the
+already-created file and an incomplete-style warning so recovery cannot
+mistake it for a failed creation and make a duplicate. The preset does not
+replace the final visual review or apply automatically to existing files.
 
 ## Every mission says how long
 
