@@ -34,6 +34,7 @@ import { ChatCalendarDraft } from './chatCalendarDraft.tsx'
 import { clearChatDraft, useChatDraft, type ChatDraft } from './chatDraft.ts'
 import { FileClips, Paperclip, type PendingChatFile, useChatFiles } from './chatFiles.tsx'
 import { ChatImages, replyImages } from './chatImages.tsx'
+import { onChatLinkClick } from './chatLinks.ts'
 import { renderChatMarkdown, renderStreamingChatMarkdown } from './chatMarkdown.ts'
 import { chatMessageId, ChatTurnNavigation } from './chatNavigation.tsx'
 import { ChatPlanBar, ChatPlanPanel } from './chatPlan.tsx'
@@ -2654,7 +2655,7 @@ export function ChatMain({
   }
 
   return (
-    <div className="sky-main" data-temporary={state.settings?.saves === false}>
+    <div className="sky-main" data-temporary={state.settings?.saves === false} onClick={onChatLinkClick}>
       <header className="sky-head sky-chat-head">
         <Button size="sm" className="sky-chat-back" onClick={back.onClick} style={{ marginLeft: -10 }}>
           ‹ {back.label}

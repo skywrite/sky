@@ -202,9 +202,18 @@ test(
           actual: { opened, href: await openDocument.getAttribute('href') },
           expected: { opened: [LEAF], href: leafUrl },
         })
+        const documentTab = page.waitForEvent('popup')
         await openDocument.click()
-        await page.waitForURL(`${origin}${leafUrl}`)
-        await page.getByRole('button', { name: 'Edit', exact: true }).waitFor()
+        const tab = await documentTab
+        await tab.waitForURL(`${origin}${leafUrl}`)
+        await tab.getByRole('button', { name: 'Edit', exact: true }).waitFor()
+        assert({
+          given: 'Open document clicked in the conversation header',
+          should: 'open the document in a new tab and keep the conversation where it is',
+          actual: page.url(),
+          expected: `${origin}/thread/continued-chat`,
+        })
+        await tab.close()
         await page.goto(`${origin}/${DAY.ymd}`)
 
         threads = [
@@ -311,8 +320,11 @@ test(
           }),
           expected: true,
         })
+        const phoneTab = page.waitForEvent('popup')
         await openDocument.click()
-        await page.waitForURL(`${origin}${leafUrl}`)
+        const phoneDocument = await phoneTab
+        await phoneDocument.waitForURL(`${origin}${leafUrl}`)
+        await phoneDocument.close()
 
         await page.setViewportSize({ width: 1500, height: 1000 })
         await page.goto(`${origin}/${EARLIER.ymd}`)

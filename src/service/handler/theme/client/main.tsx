@@ -276,16 +276,21 @@ function Canvas() {
   }
   const dismissKept = useCallback(() => setKept([]), [])
   const newChat = () => openThread(crypto.randomUUID())
-  // A saved chat opened to continue: the service makes (or finds) its thread, and the page turns to it.
-  const openSaved = async (chat: string) => {
+  // A saved chat opened to continue: the service makes (or finds) its thread, and the page turns to it —
+  // or, given a tab opened for it, that tab does.
+  const openSaved = async (chat: string, tab: Window | null = null) => {
     const response = await fetch('/chat/open', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ chat }),
     }).catch(() => null)
-    if (!response?.ok) return
+    if (!response?.ok) {
+      tab?.close()
+      return
+    }
     const body = (await response.json()) as { id: string }
-    openThread(body.id)
+    if (tab) tab.location.href = `/thread/${body.id}`
+    else openThread(body.id)
   }
   const branchesOf = (id: string) => others.filter((t) => t.parent?.id === id)
   // Back to the day at once. The save — enrichment included — finishes behind
@@ -626,7 +631,13 @@ function Canvas() {
                   .map((b) => ({ id: null, chat: b.chat, title: b.title, turn: b.turn })),
               ]}
               onBranched={openThread}
-              onOpenSaved={(saved) => void openSaved(saved)}
+              // A saved branch named in the chat opens like its other links, in a new tab. The tab is
+              // opened inside the click, the only time a browser allows one; a blocked tab turns this page.
+              onOpenSaved={(saved) => {
+                const tab = window.open('', '_blank')
+                if (tab) tab.document.title = 'sky:chat - Opening chat'
+                void openSaved(saved, tab)
+              }}
             />
           </Fragment>
         ) : (
