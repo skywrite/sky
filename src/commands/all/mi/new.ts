@@ -4,7 +4,7 @@ import { ArgOrFlag, Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { saveMostImportant } from '#lib/mostImportant/store.ts'
 import type { MIDraft } from '#lib/mostImportant/types.ts'
-import { DayDirFileWriter } from '#lib/nbfs/mod.ts'
+import { DayDirFileWriter, ensureDay } from '#lib/nbfs/mod.ts'
 import { autoRelMessage } from '#lib/notebook/enrich/autoRel.ts'
 import { autoTagMessage } from '#lib/notebook/enrich/autoTag.ts'
 import openEditor from '#lib/shell/openEditor.ts'
@@ -178,6 +178,8 @@ export default class MiNewTask extends Command {
 
     if (summary) {
       const dayItem = `MI/${count} -> [${summary}](most-important/${path.basename(filePath)})`
+      // The MI may land on a day that has no day file yet
+      await ensureDay(whenDay)
       let dayObj = await readDay(whenDay)
       dayObj = dayObj.addMostImportantItem(dayItem)
       await writeDay(dayObj)

@@ -7,7 +7,7 @@ import colors from 'picocolors'
 import { Arg, categoryComplete, Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { DIR_DECISIONS } from '#config'
-import { writeDayItems } from '#lib/nbfs/mod.ts'
+import { ensureDay, writeDayItems } from '#lib/nbfs/mod.ts'
 import { exists, outputFile, readTextFile, walk, writeTextFile } from '#shared/fs/mod.ts'
 import DecisionDocument from '#shared/models/Decision/mod.ts'
 import { fetchNow, readDay } from '#shared/nbfs/mod.ts'
@@ -266,6 +266,8 @@ export default class DecisionsResolveTask extends Command {
     const dayItem = `${entryTime} > decisions/${decision.name} -> Resolved | ${decision.title}`
 
     try {
+      // The decision may land on a day that has no day file yet
+      await ensureDay(resolvedAt.plainDateTime.plainDate)
       await writeDayItems(resolvedAt.plainDateTime.plainDate, category, dayItem)
       output.log(colors.gray(`Added to ${category}: ${dayItem}`))
     } catch (err) {

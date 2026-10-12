@@ -1,6 +1,7 @@
 import colors from 'picocolors'
 import { Arg, Command, CommandResult, dayArg } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
+import { ensureDay } from '#lib/nbfs/mod.ts'
 import { computeStreakCounts, loadStreaks, strikeStreakItem } from '#lib/streaks/mod.ts'
 import { readDay, writeDay } from '#shared/nbfs/mod.ts'
 
@@ -49,13 +50,9 @@ export default class StreaksDoneTask extends Command {
       return CommandResult.fail(`Unknown streak "${name}"`)
     }
 
-    let dayModel
-    try {
-      dayModel = await readDay(day)
-    } catch {
-      output.error(`No day file for ${day.ymd}`)
-      return CommandResult.fail(`No day file for ${day.ymd}`)
-    }
+    // The day may have no day file yet
+    await ensureDay(day)
+    const dayModel = await readDay(day)
 
     const result = strikeStreakItem(dayModel, found.streak, day)
 
