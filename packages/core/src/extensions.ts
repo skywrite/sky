@@ -1,1 +1,1 @@
-export type * from '../../../src/service/handler/theme/client/extensionContract.ts'
+export type * from '../../../src/web/client/extensions/extensionContract.ts'

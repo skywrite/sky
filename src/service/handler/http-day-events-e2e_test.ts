@@ -3,8 +3,8 @@ import * as path from 'node:path'
 import { dayDir, dayFile } from '#shared/nbfs/mod.ts'
 import { assert, test } from '#test'
 import { PlainDate, ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
+import type { ThreadSummary } from '../../web/client/day/day.tsx'
 import { runWysiwygE2e } from './httpWysiwygE2eTestHelpers.ts'
-import type { ThreadSummary } from './theme/client/day.tsx'
 
 const DAY = new PlainDate('2026-01-27')
 const EMPTY_DAY = DAY.addDays(-1)

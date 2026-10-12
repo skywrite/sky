@@ -15,7 +15,7 @@ gets its own pair of logs under `/tmp/sky-service/`.
 
 The service watches its own source (`reload.ts`) — everything under `src`
 that the server imports or starts with: `.ts`, `.tsx`, `.json`,
-`.graphql`, `.env`. Not the page's sources under `handler/theme/client`,
+`.graphql`, `.env`. Not the page's sources under `web/client`,
 which are built on request; not tests, docs, or fixtures. A change marks a
 restart pending. The process leaves only once nothing is held, after a
 short grace so a response in flight lands — however long that takes, with

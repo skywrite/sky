@@ -6,7 +6,7 @@ updated: 2026-09-06
 # Clock — notebook time against the world's
 
 Design notes for `src/service/handler/clock/` and the page it serves,
-`theme/client/clock.tsx`.
+`web/client/clock/clock.tsx`.
 
 ## What is built
 
@@ -28,7 +28,7 @@ clocks under it, then a list of common regions.
   `CommandContext` per request, so notebook now is read the way every
   command reads it, and a conversion is an in-process command run, model
   call included.
-- `theme/client/clock.tsx` — the page and the ambient sidebar clock.
+- `web/client/clock/clock.tsx` — the page and the ambient sidebar clock.
   The client ticks per minute from the snapshot (the notebook day plus
   its zone are enough to reproduce extended hours) and refetches on
   focus and every few minutes, so a `day:start` elsewhere shows up soon

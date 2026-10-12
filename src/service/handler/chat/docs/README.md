@@ -6,7 +6,7 @@ updated: 2026-10-11
 # Chat over HTTP — a thread, its tuning, and the story of its context
 
 Design notes for `src/service/handler/chat/` and the page that drives it,
-`theme/client/chat.tsx` with `controls.tsx` and `context.tsx`.
+`web/client/chat/chat.tsx` with `controls.tsx` and `context.tsx`.
 
 Reply timing starts at prompt acceptance, includes thread creation and the
 first context load, and is saved on each turn through the
@@ -83,7 +83,7 @@ chats and deleted transcripts report an unavailable source; the task keeps its n
 ### Writing in the composer
 
 The composer is the editor the explorer and the journal use
-(`theme/client/composerEditor.tsx` over `wysiwyg/`): Markdown shows as it
+(`web/client/chat/composerEditor.tsx` over `wysiwyg/`): Markdown shows as it
 will read once sent, and what is sent is the Markdown. Enter sends;
 Shift+Enter is the editor's Enter — a new paragraph, the next list item, a
 line in a fence. A draft staged to end in a blank line — a selection's quote,
@@ -101,7 +101,7 @@ after refresh or navigation, including before the first message. Main chats
 and reply threads own separate drafts. A rejected upload keeps the draft and its clips for correction.
 There can be up to ten files totaling 20 MB in one message.
 
-`theme/client/chatDraft.ts` owns this browser draft, separate from the server's
+`web/client/chat/chatDraft.ts` owns this browser draft, separate from the server's
 conversation history. Text and the current attachment revision are written
 synchronously to local storage; IndexedDB retains the files' actual bytes and
 MIME types. Attachment writes run in order, and restoration must match the
@@ -144,7 +144,7 @@ reply so previews survive filing and branching without provider history.
 This happens even if generation succeeds and the final model reply fails.
 Only validated PNG, JPEG, and WebP bytes are served inline; the original
 download URL remains an attachment. Server image commands do not open a
-desktop viewer. The rendering lives in `theme/client/chatImages.tsx`.
+desktop viewer. The rendering lives in `web/client/chat/chatImages.tsx`.
 Photo sizing, automatic edit masks and pixel preservation belong to the
 [image command](../../../../commands/all/ai/image/docs/README.md).
 
@@ -282,7 +282,7 @@ a person can see and touch:
   including drafts destined for Slack. Introductions and editing notes stay
   outside the quote; the enclosing review quote is removed for delivery.
   Slack syntax and its decorative subject underline apply when
-  preparing the delivery payload. `theme/client/chatMarkdown.ts` also renders
+  preparing the delivery payload. `web/client/chat/chatMarkdown.ts` also renders
   older fenced Slack drafts as quoted prose when a reply finishes or is read
   back: paragraphs, emphasis, lists, and links, with the underline removed.
   Drafts already inside a quote keep that single review container. It
@@ -297,12 +297,12 @@ a person can see and touch:
   [2026-09-29 — A draft ends the turn](2026-09-29-a-draft-ends-the-turn.md).
 - **Text stays selected through background refreshes.** Completed replies
   and rich approval previews use the
-  [shared HTML renderer](../../theme/docs/README.md#text-selection-and-rendered-html).
+  [shared HTML renderer](../../../../web/docs/README.md#text-selection-and-rendered-html).
 - **A reply reads as rendered markdown while it is written.** The line
   under the caret is shown as it will read once finished: an opened bold,
   italic or code span closes where the text stops, and a link shows its
   text until its address arrives (`settleStreamingMarkdown` in
-  `theme/client/chatMarkdown.ts`). The page redraws only the block being
+  `web/client/chat/chatMarkdown.ts`). The page redraws only the block being
   written (`RenderedBlocks`), so a selection in the blocks above it holds.
 - **Stop replaces the send arrow while a reply runs.** `POST /chat/:id/stop`
   aborts that thread's model request and releases pending approvals, including

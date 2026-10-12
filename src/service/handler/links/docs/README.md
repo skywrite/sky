@@ -6,7 +6,7 @@ updated: 2026-10-01
 # Links between notebook records
 
 `links/` owns the picker shared by imports and a document's `rel` property.
-The client lives in `theme/client/links.tsx` and uses the existing modal,
+The client lives in `web/client/links/links.tsx` and uses the existing modal,
 phone drawer, colors and typography. Links stay as ordinary YAML references.
 Saved links show the primary name or title with a small type icon beside it.
 Dates, participants and branch details remain available in the picker.
@@ -19,7 +19,7 @@ selected country once; searches and `/resolve` never create files. Imports
 use the same creation boundary when validating an explicit selection.
 
 Record previews follow the
-[shared HTML selection rule](../../theme/docs/README.md#text-selection-and-rendered-html).
+[shared HTML selection rule](../../../../web/docs/README.md#text-selection-and-rendered-html).
 
 ## Choosing a record
 

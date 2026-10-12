@@ -6,7 +6,7 @@ updated: 2026-09-28
 # Explorer — the notebook's files as pages
 
 Design notes for `src/service/handler/explorer/` and the page it serves,
-`theme/client/explorer.tsx`.
+`web/client/explorer/explorer.tsx`.
 
 ## What is built
 
@@ -26,7 +26,7 @@ files it holds, one row per entry; `/explorer` itself lists the roots.
   line of its day that links to it off the day file; `POST …/undo` puts
   both back while the toast still holds Undo. See
   `2026-09-25-delete-from-the-menu.md`.
-- `theme/client/explorer.tsx` — the tree, the reading column, and the
+- `web/client/explorer/explorer.tsx` — the tree, the reading column, and the
   editor mount. The column resolves its path as a file first, then as
   a directory, and re-reads whichever it shows every few seconds, so a
   save or a new capture from another session lands in place. The ⋯ menu
@@ -42,12 +42,12 @@ files it holds, one row per entry; `/explorer` itself lists the roots.
   by what they share with this one, each linked to its own page; tags.
   `meetingHref(path)` is the page's address, used by search results. See
   `2026-09-27-a-meeting-has-a-page.md`.
-- `theme/client/meetingPage.tsx` — that page: the person page's header
+- `web/client/meetings/meetingPage.tsx` — that page: the person page's header
   above the document, its column beside it, the document's own title line
   and its Time/Date and Attendees sections not drawn twice. The explorer
   is not involved: `/explorer/<path>` shows the same file as written, and
   the page's Edit opens it there with the editor on (`?edit`).
-- `theme/client/frontmatter/` — the identity line under the title and
+- `web/client/frontmatter/` — the identity line under the title and
   the rail beside the document: tags, links, what links here, files,
   the outline, the raw YAML behind a switch. The rail's Files section
   lists `attachments:` and, while editing, adds to it — a pad to drop a

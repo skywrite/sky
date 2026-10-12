@@ -9,7 +9,7 @@ Today and dated day pages open `/<day>/journal`; the current topic resolves to
 `/<day>/journal/<topic>` so direct links, reloads and browser history identify
 the same reflection. Saved reflections created here reopen in this view.
 Existing CLI journals remain ordinary documents. The shared WYSIWYG engine is
-embedded by `theme/client/markdownEditor.tsx`; writing does not require Explorer.
+embedded by `web/client/editor/markdownEditor.tsx`; writing does not require Explorer.
 
 Health and Mood load the selected day's recurring questions, including their
 subquestions, with defaults for a new notebook. They remain available even if

@@ -6,10 +6,10 @@ updated: 2026-09-11
 # Automations — the machine's own jobs, on a page
 
 Design notes for `src/service/handler/automations/` and the pages it
-serves, `theme/client/automations.tsx`.
+serves, `web/client/automations/automations.tsx`.
 
 Descriptions and proposal previews follow the
-[shared HTML selection rule](../../theme/docs/README.md#text-selection-and-rendered-html).
+[shared HTML selection rule](../../../../web/docs/README.md#text-selection-and-rendered-html).
 
 ## What is built
 
@@ -106,7 +106,7 @@ file. See [describe, then customize](2026-09-07-describe-then-customize.md).
   and all commands having nothing to do makes it nothing. A scheduled group leaves
   one history record containing each command's result. Each command keeps its own
   timeout; a hung command is reported as failed and remaining commands continue.
-- `theme/client/automations.tsx` — the pages. They speak person:
+- `web/client/automations/automations.tsx` — the pages. They speak person:
   triggers arrive as written (`EVERY-WEEKDAY 07:15`, `every 5m`) and
   render as words ("Weekdays at 7:15", "every 5 minutes"); outcomes
   render as "ran", "nothing to do", "couldn't run". Patterns outside the

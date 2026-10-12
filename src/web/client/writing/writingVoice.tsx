@@ -1,0 +1,493 @@
+import { Button, Select, Textarea, TextInput } from '@mantine/core'
+import { useCallback, useEffect, useId, useRef, useState } from 'react'
+import type { VoiceDraft, VoiceEditRecord, VoiceRules } from '#lib/writingVoice/types.ts'
+import { Block } from '../settings/settingsBlocks.tsx'
+import './writingVoice.css'
+
+const API = '/settings/_api/writing-voice'
+
+export async function writingVoiceRequest<T>(route: string, method = 'GET', body?: unknown): Promise<T> {
+  const response = await fetch(`${API}${route}`, {
+    method,
+    headers: { 'Content-Type': 'application/json' },
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  })
+  const data = (await response.json().catch(() => ({}))) as { message?: string }
+  if (!response.ok) throw new Error(data.message ?? `Sky answered ${response.status}.`)
+  return data as T
+}
+
+/** One edit of a draft and what Sky learned from it. */
+function EditCard({
+  edit: example,
+  onChange,
+}: {
+  key?: string
+  edit: VoiceEditRecord
+  onChange: (edit: VoiceEditRecord) => void
+}) {
+  const [own, setOwn] = useState(false)
+  const [text, setText] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const answerHintId = useId()
+  const ownAnswerId = useId()
+  const act = async (action: string, answer?: { option?: number; text?: string }) => {
+    if (busy) return
+    setBusy(true)
+    setError('')
+    try {
+      const result = await writingVoiceRequest<{ edit: VoiceEditRecord }>(
+        `/edits/${encodeURIComponent(example.id)}/${action}`,
+        'POST',
+        {
+          revision: example.revision,
+          ...answer,
+        },
+      )
+      onChange(result.edit)
+      setOwn(false)
+    } catch (problem) {
+      setError(problem instanceof Error ? problem.message : 'Sky could not save your answer.')
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <section className="sky-writing-example" aria-label="Learn from your revision">
+      <div className="sky-writing-label">Your writing voice · {example.medium}</div>
+      {example.lesson ? (
+        <>
+          <p className="sky-writing-lesson" role="status">
+            Learned: {example.lesson.text}
+          </p>
+          <p className="sky-writing-scope">Applies to: {example.lesson.scope}</p>
+        </>
+      ) : example.answer ? (
+        <p role="status">
+          {example.error
+            ? 'Your answer is saved. Sky could not finish the lesson.'
+            : 'Your answer is saved. Sky is learning from it…'}
+        </p>
+      ) : example.question ? (
+        <>
+          <h3 className="sky-writing-question">{example.question.question}</h3>
+          <div className="sky-writing-change">
+            <div className="sky-writing-excerpt">
+              <span>Sky's draft</span>
+              <p>{example.question.before || '(added text)'}</p>
+            </div>
+            <div className="sky-writing-excerpt sky-writing-excerpt-revised">
+              <span>Your revision</span>
+              <p>{example.question.after || '(removed text)'}</p>
+            </div>
+          </div>
+          <p className="sky-writing-answer-hint" id={answerHintId}>
+            Choose the reason that fits your edit. Your answer helps Sky draft in your voice.
+          </p>
+          <div
+            className="sky-writing-choices"
+            role="group"
+            aria-label="Reason for your revision"
+            aria-describedby={answerHintId}
+          >
+            {example.question.options.map((option, index) => (
+              <Button
+                key={index}
+                className="sky-writing-choice"
+                disabled={busy}
+                onClick={() => void act('answer', { option: index })}
+              >
+                <span className="sky-writing-choice-number" aria-hidden="true">
+                  {index + 1}
+                </span>
+                <span className="sky-writing-choice-text">{option}</span>
+                <svg
+                  className="sky-writing-choice-arrow"
+                  width="20"
+                  height="20"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.6"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="M5 12h14m-6-6 6 6-6 6" />
+                </svg>
+              </Button>
+            ))}
+          </div>
+          <Button
+            className="sky-writing-own-toggle"
+            variant="primary-quiet"
+            disabled={busy}
+            aria-expanded={own}
+            aria-controls={ownAnswerId}
+            onClick={() => setOwn(!own)}
+            leftSection={<span aria-hidden="true">+</span>}
+          >
+            Write my own
+          </Button>
+          {own && (
+            <div className="sky-writing-own" id={ownAnswerId}>
+              <Textarea
+                autoFocus
+                label="What would you like Sky to learn?"
+                placeholder="Explain why you made this change…"
+                value={text}
+                onChange={(event) => setText(event.currentTarget.value)}
+                autosize
+                minRows={2}
+                maxLength={4000}
+                disabled={busy}
+              />
+              <Button variant="primary" disabled={busy || !text.trim()} onClick={() => void act('answer', { text })}>
+                Save answer
+              </Button>
+            </div>
+          )}
+        </>
+      ) : (
+        <p role="status">
+          {example.error
+            ? 'Your edit is saved. Sky could not prepare the question.'
+            : 'Sky is preparing one question about your revision…'}
+        </p>
+      )}
+      {(error || example.error) && (
+        <p role="alert" className="sky-writing-error">
+          {error || example.error}
+        </p>
+      )}
+      {example.error && (
+        <Button disabled={busy} onClick={() => void act('prepare')}>
+          Retry learning
+        </Button>
+      )}
+      {busy && <p role="status">Saving your answer and learning from it…</p>}
+      <details className="sky-writing-pair">
+        <summary>Draft, revision, and your answer</summary>
+        <div className="sky-writing-change">
+          <div>
+            <span>Original draft</span>
+            <p>{example.original}</p>
+          </div>
+          <div>
+            <span>Your revision</span>
+            <p>{example.revised}</p>
+          </div>
+        </div>
+        {example.answer && <p>Your answer: {example.answer}</p>}
+      </details>
+    </section>
+  )
+}
+
+/** One unresolved question at a time, shared by Chat and Outbox. */
+export function WritingVoiceQuestions({
+  source,
+  refreshKey,
+  polling = false,
+}: {
+  key?: string
+  source: string
+  refreshKey?: string | number
+  polling?: boolean
+}) {
+  const [examples, setExamples] = useState<VoiceEditRecord[]>([])
+  const [error, setError] = useState('')
+  const [learned, setLearned] = useState<VoiceEditRecord | null>(null)
+  const awaiting = examples.some(
+    (example) => !example.lesson && !example.error && (!example.question || example.answer),
+  )
+  useEffect(() => {
+    let active = true
+    const load = () =>
+      writingVoiceRequest<{ edits: VoiceEditRecord[] }>(`/edits?source=${encodeURIComponent(source)}`)
+        .then((data) => {
+          if (active) {
+            setExamples(data.edits)
+            setError('')
+          }
+        })
+        .catch((problem: unknown) => {
+          if (active) setError(problem instanceof Error ? problem.message : 'Writing questions could not be loaded.')
+        })
+    void load()
+    const timer = polling || awaiting ? setInterval(() => void load(), 3000) : undefined
+    return () => {
+      active = false
+      clearInterval(timer)
+    }
+  }, [source, refreshKey, polling, awaiting])
+  useEffect(() => {
+    setExamples([])
+    setLearned(null)
+    setError('')
+  }, [source])
+  const example = examples.find((entry) => !entry.lesson) ?? learned
+  if (!example) return null
+  return (
+    <div className="sky-writing-questions">
+      <EditCard
+        key={example.id}
+        edit={example}
+        onChange={(next) => {
+          setExamples((current) => current.map((entry) => (entry.id === next.id ? next : entry)))
+          if (next.lesson) setLearned(next)
+        }}
+      />
+      {error && <p role="alert">{error}</p>}
+    </div>
+  )
+}
+
+type VoiceStatus = {
+  rules: VoiceRules
+  edits: VoiceEditRecord[]
+  compacting: boolean
+  compactionError: string | null
+}
+
+export function WritingVoicePane({
+  model,
+  onModelChange,
+}: {
+  model: { profile: string; choices: Array<{ value: string; label: string }> }
+  onModelChange: (profile: string) => void
+}) {
+  const [status, setStatus] = useState<VoiceStatus | null>(null)
+  const [rules, setRules] = useState('')
+  const [rulesRevision, setRulesRevision] = useState('')
+  const [error, setError] = useState('')
+  const [note, setNote] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [meaning, setMeaning] = useState('')
+  const [medium, setMedium] = useState('Email')
+  const [original, setOriginal] = useState('')
+  const [revised, setRevised] = useState('')
+  const initialized = useRef(false)
+  const reload = useCallback(async () => {
+    const data = await writingVoiceRequest<VoiceStatus>('')
+    setStatus(data)
+    if (!initialized.current) {
+      setRules(data.rules.text)
+      setRulesRevision(data.rules.revision)
+      initialized.current = true
+    }
+  }, [])
+  useEffect(() => {
+    void reload().catch((problem: unknown) =>
+      setError(problem instanceof Error ? problem.message : 'Writing voice could not be loaded.'),
+    )
+  }, [reload])
+  useEffect(() => {
+    if (!status?.compacting) return
+    const timer = setInterval(() => void reload().catch(() => {}), 2500)
+    return () => clearInterval(timer)
+  }, [status?.compacting, reload])
+  const act = async (work: () => Promise<void>) => {
+    if (busy) return
+    setBusy(true)
+    setError('')
+    setNote('')
+    try {
+      await work()
+      await reload()
+    } catch (problem) {
+      setError(problem instanceof Error ? problem.message : 'Sky could not complete this step.')
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <div className="sky-writing-settings">
+      {error && (
+        <p role="alert" className="sky-writing-error">
+          {error}
+        </p>
+      )}
+      {note && <p role="status">{note}</p>}
+
+      <Block
+        head="Writing rules"
+        note="Prose, words, punctuation, characters, and formatting. Add context when a preference applies only to certain messages."
+      >
+        <Textarea
+          label="Your writing rules"
+          value={rules}
+          onChange={(event) => setRules(event.currentTarget.value)}
+          autosize
+          minRows={8}
+          maxRows={24}
+          maxLength={80_000}
+          disabled={!status || busy}
+        />
+        <div className="sky-writing-actions">
+          <Button
+            variant="primary"
+            disabled={!status || busy || rules === status.rules.text}
+            onClick={() =>
+              void act(async () => {
+                const saved = await writingVoiceRequest<VoiceRules>('/rules', 'PUT', {
+                  text: rules,
+                  revision: rulesRevision,
+                })
+                setRules(saved.text)
+                setRulesRevision(saved.revision)
+                setNote('Writing rules saved.')
+              })
+            }
+          >
+            Save rules
+          </Button>
+          {status && status.rules.revision !== rulesRevision && (
+            <Button
+              disabled={busy}
+              onClick={() => {
+                setRules(status.rules.text)
+                setRulesRevision(status.rules.revision)
+              }}
+            >
+              Load updated rules
+            </Button>
+          )}
+        </div>
+      </Block>
+      <Block
+        head="Try your voice"
+        note="Give Sky the meaning, then revise its draft. Sky will ask one question to understand your edit."
+      >
+        <TextInput
+          label="Medium"
+          value={medium}
+          onChange={(event) => setMedium(event.currentTarget.value)}
+          maxLength={80}
+        />
+        <Textarea
+          label="What do you want to say?"
+          value={meaning}
+          onChange={(event) => setMeaning(event.currentTarget.value)}
+          autosize
+          minRows={3}
+          maxLength={40_000}
+        />
+        <div className="sky-writing-actions">
+          <Button
+            disabled={busy || !meaning.trim() || !medium.trim()}
+            onClick={() =>
+              void act(async () => {
+                const result = await writingVoiceRequest<VoiceDraft>('/draft', 'POST', { meaning, medium })
+                setOriginal(result.draft)
+                setRevised(result.draft)
+              })
+            }
+          >
+            Draft in my voice
+          </Button>
+        </div>
+        {original && (
+          <>
+            <Textarea
+              label="Revise the draft"
+              value={revised}
+              onChange={(event) => setRevised(event.currentTarget.value)}
+              autosize
+              minRows={3}
+              maxLength={40_000}
+            />
+            <div className="sky-writing-actions">
+              <Button
+                variant="primary"
+                disabled={busy || !revised.trim() || original === revised}
+                onClick={() =>
+                  void act(async () => {
+                    await writingVoiceRequest('/edits', 'POST', {
+                      original,
+                      revised,
+                      medium,
+                      context: meaning.slice(0, 8000),
+                    })
+                    setOriginal('')
+                    setRevised('')
+                    setNote('Your edit is saved as a draft. Answer the question below to teach Sky why you changed it.')
+                  })
+                }
+              >
+                Learn from this revision
+              </Button>
+            </div>
+          </>
+        )}
+      </Block>
+      <Block
+        head="Learning from your revisions"
+        note="Sky learns from your drafts: each edit keeps your wording, your reason, and the lesson. After eight lessons, Sky folds them into your rules. The drafts keep their history."
+      >
+        {status?.compactionError && (
+          <p role="alert">Folding lessons into your rules paused: {status.compactionError} Your drafts keep them.</p>
+        )}
+        <div className="sky-writing-actions">
+          <Button
+            disabled={busy || status?.compacting || !status?.edits.some((edit) => edit.lesson)}
+            onClick={() =>
+              void act(async () => {
+                const result = await writingVoiceRequest<{ compacted: number }>('/compact', 'POST', {})
+                setNote(`${result.compacted} lessons folded into your writing rules.`)
+              })
+            }
+          >
+            {status?.compacting ? 'Folding lessons into your rules…' : 'Fold lessons into my rules'}
+          </Button>
+        </div>
+        {status && status.edits.length === 0 && (
+          <p className="sky-set-note">Your edits will appear here as Sky learns your voice.</p>
+        )}
+        {status?.edits.map((edit) => (
+          <EditCard
+            key={edit.id}
+            edit={edit}
+            onChange={(next) => {
+              setStatus((current) =>
+                current
+                  ? { ...current, edits: current.edits.map((entry) => (entry.id === next.id ? next : entry)) }
+                  : current,
+              )
+              void reload().catch(() => {})
+            }}
+          />
+        ))}
+      </Block>
+      <details className="sky-set-disclosure">
+        <summary>Writing model</summary>
+        <Block
+          head="Writing model"
+          note="Used for drafting, learning from your edits, and folding lessons into your rules. Changes apply to the next call in Chat and Outbox."
+        >
+          <Select
+            label="Model configuration"
+            searchable
+            allowDeselect={false}
+            value={model.profile}
+            data={
+              model.choices.some((choice) => choice.value === model.profile)
+                ? model.choices
+                : [
+                    { value: model.profile, label: `Unavailable configuration: ${model.profile}`, disabled: true },
+                    ...model.choices,
+                  ]
+            }
+            onChange={(value) => value && onModelChange(value)}
+            disabled={busy}
+            nothingFoundMessage="No matching model configurations"
+          />
+          <p className="sky-set-note">
+            Manage model configurations and their settings in <a href="/settings/ai/models">AI &gt; Models</a>.
+          </p>
+        </Block>
+      </details>
+    </div>
+  )
+}

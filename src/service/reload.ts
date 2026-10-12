@@ -29,7 +29,7 @@ export function isServerSource(relPath: string): boolean {
   if (p.includes('node_modules/')) return false
   if (p.startsWith('fixtures/') || p.includes('/fixtures/')) return false
   if (p.startsWith('docs/') || p.includes('/docs/')) return false
-  if (p.includes('handler/theme/client/')) return false
+  if (p.includes('web/client/')) return false
   if (/_test\.tsx?$/.test(p)) return false
   if (p === '.env' || p.endsWith('/.env')) return true
   return /\.(ts|tsx|json|graphql)$/.test(p)

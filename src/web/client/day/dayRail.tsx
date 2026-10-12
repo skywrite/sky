@@ -1,0 +1,667 @@
+import { ActionIcon, Button, FileButton, Menu, UnstyledButton } from '@mantine/core'
+import { type DragEvent, Fragment, type ReactNode, useEffect, useState } from 'react'
+import { filesHref, type Kept, moveIn, readListing } from '../attachments/files.tsx'
+import { fileHref } from '../explorer/explorer.tsx'
+import { type ImportJob, importStateWord, type MeetingImport, useFileDrop } from '../import/import.tsx'
+import { meetingHref } from '../meetings/meetingPage.tsx'
+import { refusalOf } from '../settings/settingsBlocks.tsx'
+import { RailToggle } from '../shell/railToggle.tsx'
+import type { DayData, ThreadSummary } from './day.tsx'
+import { DayChatResume } from './dayChatResume.tsx'
+import { chatState, chatTurnCount, dayChatRows } from './dayChats.ts'
+
+/**
+ * The rail beside a day: what is around the day rather than in its
+ * record — the day's meetings, chats, work in progress,
+ * and a pad to attach files. Drawn the way a document's Details rail is
+ * drawn, so the two read alike. The record itself stays in the column.
+ */
+
+// -----------------------------------------------------------------------------
+// The schedule, as the service answers it
+// -----------------------------------------------------------------------------
+
+export interface ScheduledMeeting {
+  classification?: {
+    key: string
+    type: 'meeting' | 'notification' | 'uncertain'
+    source: 'automatic' | 'manual' | 'fallback'
+  }
+  calendarUrl?: string
+  title: string
+  /** `HH:MM`; empty for an all-day event */
+  start: string
+  end: string
+  allDay: boolean
+  /** The other people, names or addresses */
+  who: string[]
+  joinUrl: string | null
+  state: 'past' | 'now' | 'next'
+  /** The notebook's record of it, when one is filed */
+  record: { path: string; title: string; inline?: boolean } | null
+}
+
+export interface DaySchedule {
+  stale?: boolean
+  /** Whether the calendar answered; local meetings may still be present */
+  read: boolean
+  errors: string[]
+  meetings: ScheduledMeeting[]
+  notifications?: ScheduledMeeting[]
+  hideNotifications?: boolean
+  classificationWarning?: string
+}
+
+const SCHEDULE_MS = 60_000
+const SCHEDULE_CHANGED = 'sky:schedule-changed'
+
+async function saveEventType(ymd: string, key: string, type: 'meeting' | 'notification' | null) {
+  const response = await fetch(`/day/${ymd}/schedule/type`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ key, type }),
+  }).catch(() => null)
+  const error = await refusalOf(response)
+  if (!error) window.dispatchEvent(new CustomEvent(SCHEDULE_CHANGED, { detail: ymd }))
+  return error
+}
+
+/** The day's schedule, re-read every minute so "now" moves; null until the first answer. */
+export function useSchedule(ymd: string | null): DaySchedule | null {
+  const [schedule, setSchedule] = useState<DaySchedule | null>(null)
+  useEffect(() => {
+    setSchedule(null)
+    if (!ymd) return
+    let alive = true
+    let timer: ReturnType<typeof setTimeout> | undefined
+    let request: AbortController | undefined
+    let version = 0
+    const update = (body: DaySchedule) => {
+      if (!alive) return
+      setSchedule((previous) =>
+        !body.read && (previous?.meetings.length || previous?.notifications?.length)
+          ? {
+              ...previous,
+              read: false,
+              stale: true,
+              errors: body.errors,
+              hideNotifications: body.hideNotifications ?? previous.hideNotifications,
+            }
+          : body,
+      )
+    }
+    const read = async () => {
+      const current = ++version
+      clearTimeout(timer)
+      request?.abort()
+      const controller = new AbortController()
+      request = controller
+      // Initial loading can need two serialized Keychain reads and a token write.
+      const deadline = setTimeout(() => controller.abort(), 90_000)
+      try {
+        const response = await fetch(`/day/${ymd}/schedule`, { signal: controller.signal })
+        if (!response.ok) throw new Error('Calendar unavailable')
+        const body = (await response.json()) as DaySchedule
+        if (current === version) update(body)
+      } catch {
+        if (current === version)
+          update({ read: false, errors: ['Calendar refresh failed. Sky will retry.'], meetings: [] })
+      } finally {
+        clearTimeout(deadline)
+        if (alive && current === version) timer = setTimeout(read, SCHEDULE_MS)
+      }
+    }
+    const refresh = (event: Event) => {
+      if ((event as CustomEvent<string>).detail === ymd) void read()
+    }
+    window.addEventListener(SCHEDULE_CHANGED, refresh)
+    void read()
+    return () => {
+      alive = false
+      clearTimeout(timer)
+      request?.abort()
+      window.removeEventListener(SCHEDULE_CHANGED, refresh)
+    }
+  }, [ymd])
+  return schedule
+}
+
+// -----------------------------------------------------------------------------
+// Words
+// -----------------------------------------------------------------------------
+
+const NAMED = 2
+
+/** `Jane Doe, Alex Chen, 4 more` — the first names in full, the rest counted. */
+function whoLine(who: string[]): string {
+  if (who.length <= NAMED + 1) return who.join(', ')
+  return `${who.slice(0, NAMED).join(', ')}, ${who.length - NAMED} more`
+}
+
+function minutesOf(time: string): number {
+  const [h, m] = time.split(':').map(Number)
+  return h * 60 + m
+}
+
+/** `30 min`, `1 h`, `1 h 15 min` — a meeting's length. */
+function lengthWords(start: string, end: string): string {
+  const total = minutesOf(end) - minutesOf(start)
+  if (!(total > 0)) return ''
+  const hours = Math.floor(total / 60)
+  const mins = total % 60
+  if (hours === 0) return `${mins} min`
+  return mins > 0 ? `${hours} h ${mins} min` : `${hours} h`
+}
+
+// -----------------------------------------------------------------------------
+// Sections
+// -----------------------------------------------------------------------------
+
+function Section({
+  title,
+  count,
+  children,
+  drop,
+  extra,
+}: {
+  title: string
+  count?: number
+  children: ReactNode
+  drop?: ReturnType<typeof useFileDrop>
+  /** At the heading's right edge */
+  extra?: ReactNode
+}) {
+  return (
+    <section
+      className="sky-rail-sec"
+      data-section={title.toLowerCase().replace(/\s+/g, '-')}
+      data-meetings-drop={drop ? true : undefined}
+      data-dragging={drop?.dragging || undefined}
+      {...drop?.handlers}
+    >
+      <h2 className="sky-rail-sec-h">
+        <span>{title}</span>
+        {count !== undefined && count > 0 ? <span className="sky-rail-count">{count}</span> : null}
+        {extra}
+      </h2>
+      {children}
+    </section>
+  )
+}
+
+function MeetingRow({
+  meeting: m,
+  ymd,
+  onImportMeeting,
+  onDismiss,
+}: {
+  meeting: ScheduledMeeting
+  ymd: string
+  onImportMeeting?: (files: File[], meeting: MeetingImport) => void
+  onDismiss?: (meeting: ScheduledMeeting) => void
+}) {
+  const notification = m.classification?.type === 'notification'
+  const canDismiss = m.classification?.type === 'uncertain' && !m.record && Boolean(onDismiss)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const changeType = async (type: 'meeting' | 'notification' | null) => {
+    if (!m.classification) return
+    setBusy(true)
+    setError(null)
+    const refusal = await saveEventType(ymd, m.classification.key, type)
+    if (refusal) setError(refusal)
+    else if (type === 'notification') onDismiss?.(m)
+    setBusy(false)
+  }
+  const canDrop = Boolean(!notification && onImportMeeting && m.state === 'past' && !m.record && !m.allDay && m.start)
+  const drop = useFileDrop(canDrop, (files) => onImportMeeting?.(files, { title: m.title, when: `${ymd} ${m.start}` }))
+  return (
+    <div
+      className="sky-dr-item"
+      data-state={m.state}
+      data-meeting-drop={canDrop || undefined}
+      data-dragging={drop.dragging || undefined}
+      title={canDrop ? 'Drop a transcript or recording to import this meeting' : undefined}
+      {...drop.handlers}
+    >
+      <span className="sky-dr-time">{m.allDay ? 'all day' : m.start}</span>
+      <span className="sky-dr-label" title={m.title}>
+        {m.title || '(untitled)'}
+      </span>
+      <span className="sky-dr-event-actions">
+        <span className="sky-dr-mark">
+          {drop.dragging ? (
+            'drop to import'
+          ) : notification ? (
+            m.state === 'now' ? (
+              'now'
+            ) : m.state === 'next' ? (
+              lengthWords(m.start, m.end)
+            ) : (
+              ''
+            )
+          ) : m.state === 'past' ? (
+            m.record ? (
+              <a href={meetingHref(m.record.path) ?? fileHref(m.record.path)}>{m.record.inline ? 'noted' : 'filed'}</a>
+            ) : (
+              'no record'
+            )
+          ) : m.state === 'now' ? (
+            m.joinUrl ? (
+              <a href={m.joinUrl} target="_blank" rel="noopener noreferrer">
+                join
+              </a>
+            ) : (
+              'now'
+            )
+          ) : (
+            lengthWords(m.start, m.end)
+          )}
+        </span>
+        {m.classification && (
+          <Menu position="bottom-end" withinPortal>
+            <Menu.Target>
+              <ActionIcon
+                size={24}
+                variant="subtle"
+                aria-label={`Change type for ${m.title || 'untitled event'}`}
+                title="Change type"
+                disabled={busy}
+              >
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                  <circle cx="3" cy="8" r="1.3" />
+                  <circle cx="8" cy="8" r="1.3" />
+                  <circle cx="13" cy="8" r="1.3" />
+                </svg>
+              </ActionIcon>
+            </Menu.Target>
+            <Menu.Dropdown>
+              <Menu.Label>Change type for this event</Menu.Label>
+              <Menu.Item onClick={() => void changeType('meeting')}>Meeting</Menu.Item>
+              <Menu.Item
+                title={canDismiss ? 'Save as a family notification or reminder' : undefined}
+                onClick={() => void changeType('notification')}
+              >
+                {canDismiss ? 'Dismiss' : 'Family notification or reminder'}
+              </Menu.Item>
+              {m.classification.source === 'manual' && (
+                <Menu.Item onClick={() => void changeType(null)}>Use automatic classification</Menu.Item>
+              )}
+              {m.calendarUrl && (
+                <>
+                  <Menu.Divider />
+                  <Menu.Item component="a" href={m.calendarUrl} target="_blank" rel="noopener noreferrer">
+                    Open in Google Calendar
+                  </Menu.Item>
+                </>
+              )}
+            </Menu.Dropdown>
+          </Menu>
+        )}
+      </span>
+      {(m.who.length > 0 || m.state === 'now') && (
+        <span className="sky-dr-who">
+          {[whoLine(m.who), m.state === 'now' && !m.allDay ? `until ${m.end}` : ''].filter(Boolean).join(' · ')}
+        </span>
+      )}
+      {error && (
+        <span className="sky-dr-event-error" role="alert">
+          {error}
+        </span>
+      )}
+    </div>
+  )
+}
+
+function ScheduleSection({
+  schedule,
+  ymd,
+  onImportMeeting,
+}: {
+  schedule: DaySchedule | null
+  ymd: string
+  onImportMeeting?: (files: File[], meeting: MeetingImport) => void
+}) {
+  const drop = useFileDrop(Boolean(onImportMeeting), (files) => onImportMeeting?.(files, { day: ymd }))
+  const [dismissed, setDismissed] = useState<ScheduledMeeting | null>(null)
+  const [undoBusy, setUndoBusy] = useState(false)
+  const [undoError, setUndoError] = useState<string | null>(null)
+  useEffect(() => {
+    setDismissed(null)
+    setUndoError(null)
+  }, [ymd])
+  const undo = async () => {
+    if (!dismissed?.classification) return
+    setUndoBusy(true)
+    const previous = dismissed.classification
+    const error = await saveEventType(
+      ymd,
+      previous.key,
+      previous.source === 'manual' && previous.type !== 'uncertain' ? previous.type : null,
+    )
+    setUndoError(error)
+    if (!error) setDismissed(null)
+    setUndoBusy(false)
+  }
+  return (
+    <>
+      <Section
+        title="Meetings"
+        count={schedule?.meetings.length}
+        drop={onImportMeeting ? drop : undefined}
+        extra={
+          schedule?.classificationWarning && (
+            <UnstyledButton
+              className="sky-rail-browse"
+              title={schedule.classificationWarning}
+              aria-label="Retry calendar sorting"
+              onClick={() => window.dispatchEvent(new CustomEvent(SCHEDULE_CHANGED, { detail: ymd }))}
+            >
+              Retry sorting
+            </UnstyledButton>
+          )
+        }
+      >
+        {schedule && !schedule.read && (
+          <p className="sky-rail-empty">
+            {schedule.stale ? 'Showing the last available schedule. ' : ''}
+            {schedule.errors[0] ?? 'Calendar not read.'} <a href="/settings/connections">Connections</a>
+          </p>
+        )}
+        {schedule?.read && schedule.meetings.length === 0 && <p className="sky-rail-empty">No meetings.</p>}
+        {schedule?.meetings.map((m, i) => (
+          <Fragment key={m.classification?.key ?? `${ymd}-${m.start}-${i}`}>
+            <MeetingRow
+              meeting={m}
+              ymd={ymd}
+              onImportMeeting={onImportMeeting}
+              onDismiss={(meeting) => {
+                setDismissed(meeting)
+                setUndoError(null)
+              }}
+            />
+          </Fragment>
+        ))}
+        {dismissed && (
+          <div className="sky-dr-correction" role="status">
+            <span title={dismissed.title}>Saved as reminder</span>
+            <Button size="compact-xs" variant="secondary" loading={undoBusy} onClick={() => void undo()}>
+              Undo
+            </Button>
+          </div>
+        )}
+        {undoError && (
+          <p className="sky-dr-event-error" role="alert">
+            {undoError}
+          </p>
+        )}
+      </Section>
+      {schedule?.hideNotifications === false && Boolean(schedule.notifications?.length) && (
+        <Section title="Family & reminders" count={schedule?.notifications?.length}>
+          {schedule?.notifications?.map((m) => (
+            <Fragment key={m.classification?.key}>
+              <MeetingRow meeting={m} ymd={ymd} />
+            </Fragment>
+          ))}
+        </Section>
+      )}
+    </>
+  )
+}
+
+/**
+ * Only the day's live chats belong in the rail. Keep their branch context
+ * and any saved document links from the full hierarchy in the day record.
+ */
+function ChatsSection({
+  ymd,
+  chats,
+  threads,
+  onOpenThread,
+  onOpenSaved,
+}: {
+  ymd: string
+  chats: DayData['chats']
+  threads: ThreadSummary[]
+  onOpenThread: (id: string) => void
+  onOpenSaved: (chat: string) => void
+}) {
+  const rows = dayChatRows(ymd, chats, threads).filter((row) => row.target.kind === 'live')
+  if (rows.length === 0) {
+    return (
+      <Section title="Chats">
+        <p className="sky-rail-empty">No live chats.</p>
+      </Section>
+    )
+  }
+  return (
+    <Section title="Chats" count={rows.length}>
+      {rows.map((row) => (
+        <div
+          className="sky-dr-item"
+          data-live={row.target.kind === 'live' || undefined}
+          data-branch={Boolean(row.parent) || undefined}
+          data-depth={row.depth}
+          key={row.key}
+        >
+          <span className="sky-dr-time">{row.time}</span>
+          <span className="sky-dr-chat-heading" style={{ paddingInlineStart: row.depth * 14 }}>
+            {row.path ? (
+              <a className="sky-dr-label sky-dr-open" title={row.title} href={fileHref(row.path)}>
+                {row.title}
+              </a>
+            ) : (
+              <a
+                className="sky-dr-label sky-dr-open"
+                title={row.title}
+                href={
+                  row.target.kind === 'live'
+                    ? `/thread/${encodeURIComponent(row.target.id)}`
+                    : fileHref(row.target.path)
+                }
+              >
+                {row.title}
+              </a>
+            )}
+            {row.path && (
+              <DayChatResume
+                onClick={() =>
+                  row.target.kind === 'live' ? onOpenThread(row.target.id) : onOpenSaved(row.target.path)
+                }
+              />
+            )}
+          </span>
+          <span className="sky-dr-mark">{chatState(row) ?? chatTurnCount(row)}</span>
+          {row.parent && (
+            <span className="sky-dr-who" title={`From turn ${row.parent.turn} of ${row.parent.title}`}>
+              {row.state !== null && `${chatTurnCount(row)} · `}from turn {row.parent.turn} of {row.parent.title}
+            </span>
+          )}
+        </div>
+      ))}
+    </Section>
+  )
+}
+
+/**
+ * Imports still in hand: running, waiting on the person, or stopped where a
+ * start could pick them up. A filed one is on the day already, and a file
+ * sky refused was never work — neither is anyone's to do.
+ */
+export function inHand(job: ImportJob): boolean {
+  if (job.readback.refusal) return false
+  return job.state === 'running' || job.state === 'needs-you' || job.state === 'failed'
+}
+
+function WorkingSection({ imports, onOpenImport }: { imports: ImportJob[]; onOpenImport: (id: string) => void }) {
+  const jobs = imports.filter(inHand)
+  if (jobs.length === 0) return null
+  return (
+    <Section title="Working" count={jobs.length}>
+      {jobs.map((j) => (
+        <Fragment key={j.id}>
+          <div className="sky-dr-work" data-state={j.state}>
+            <span className="sky-dr-work-txt">
+              {j.title}
+              <span className="sky-dr-work-line">{j.line ?? importStateWord(j)}</span>
+            </span>
+            {j.state === 'needs-you' ? (
+              <Button size="compact-xs" variant="primary" onClick={() => onOpenImport(j.id)}>
+                Review
+              </Button>
+            ) : (
+              <Button size="compact-xs" onClick={() => onOpenImport(j.id)}>
+                Open
+              </Button>
+            )}
+          </div>
+        </Fragment>
+      ))}
+    </Section>
+  )
+}
+
+/** How many folders and files the day keeps, for the heading; re-counted after each keep. */
+function useDayFileCount(ymd: string, version: number): number {
+  const [count, setCount] = useState(0)
+  useEffect(() => {
+    let alive = true
+    readListing(ymd)
+      .then((listing) => alive && setCount(listing.folders.length + listing.files.length))
+      .catch(() => alive && setCount(0))
+    return () => {
+      alive = false
+    }
+  }, [ymd, version])
+  return count
+}
+
+/**
+ * The pad at the foot of the rail: a file dropped or chosen here is kept
+ * with the day — the original moves in when this Mac has it, else a copy
+ * lands — and the toast says what happened and holds Undo. The pad lists
+ * nothing; the heading counts what the day keeps, and Browse opens the
+ * day's files as a page.
+ */
+function AttachmentsPad({ ymd, onKept }: { ymd: string; onKept: (kept: Kept[]) => void }) {
+  const [over, setOver] = useState(0)
+  const [busy, setBusy] = useState<string | null>(null)
+  const [problem, setProblem] = useState<string | null>(null)
+  const [kept, setKeptCount] = useState(0)
+  const count = useDayFileCount(ymd, kept)
+  const hasFiles = (event: DragEvent) => Array.from(event.dataTransfer?.types ?? []).includes('Files')
+  const keep = async (files: File[]) => {
+    if (files.length === 0 || busy) return
+    const kept: Kept[] = []
+    setProblem(null)
+    try {
+      for (const file of files) {
+        setBusy(`Moving ${file.name}…`)
+        kept.push(
+          await moveIn(file, ymd, (fraction) => setBusy(`Copying ${file.name} · ${Math.round(fraction * 100)}%`)),
+        )
+      }
+    } catch (err) {
+      setProblem((err as Error).message)
+    } finally {
+      setBusy(null)
+    }
+    if (kept.length > 0) {
+      onKept(kept)
+      setKeptCount((n) => n + 1)
+    }
+  }
+  const drop = (event: DragEvent) => {
+    if (!hasFiles(event)) return
+    event.preventDefault()
+    setOver(0)
+    void keep(event.dataTransfer ? Array.from(event.dataTransfer.files) : [])
+  }
+  return (
+    <div className="sky-rail-foot">
+      <Section
+        title="File Attachments"
+        count={count}
+        extra={
+          <a className="sky-rail-browse" href={filesHref(ymd)}>
+            Browse
+          </a>
+        }
+      >
+        <div
+          className="sky-rail-pad sky-dr-pad"
+          data-drop-pad=""
+          data-over={over > 0 ? '' : undefined}
+          data-busy={busy ? '' : undefined}
+          onDragEnter={(e) => hasFiles(e) && setOver((n) => n + 1)}
+          onDragOver={(e) => hasFiles(e) && e.preventDefault()}
+          onDragLeave={(e) => hasFiles(e) && setOver((n) => Math.max(0, n - 1))}
+          onDrop={drop}
+        >
+          {busy ?? (
+            <>
+              <span className="sky-rail-drop-words">Drop a file here, or </span>
+              <FileButton multiple onChange={(files) => void keep(files)}>
+                {(props) => (
+                  <button type="button" className="sky-rail-choose" {...props}>
+                    choose files…
+                  </button>
+                )}
+              </FileButton>
+            </>
+          )}
+        </div>
+        {problem ? <p className="sky-rail-problem">{problem}</p> : null}
+      </Section>
+    </div>
+  )
+}
+
+// -----------------------------------------------------------------------------
+// The rail
+// -----------------------------------------------------------------------------
+
+export function DayRail({
+  ymd,
+  chats,
+  threads,
+  imports,
+  onOpenThread,
+  onOpenSaved,
+  onOpenImport,
+  onImportMeeting,
+  onKept,
+  onToggle,
+}: {
+  ymd: string
+  /** Chats filed under the day */
+  chats: DayData['chats']
+  /** Every live thread; the rail keeps the ones that started on this day */
+  threads: ThreadSummary[]
+  /** Imports, when the day is today */
+  imports: ImportJob[]
+  onOpenThread: (id: string) => void
+  /** A saved chat, by its notebook-relative path, opened to continue */
+  onOpenSaved: (chat: string) => void
+  onOpenImport: (id: string) => void
+  onImportMeeting?: (files: File[], meeting: MeetingImport) => void
+  /** Files the pad kept — the toast's words, and what Undo reverses */
+  onKept: (kept: Kept[]) => void
+  /** Folds the rail away — the chevron in its corner */
+  onToggle: () => void
+}) {
+  const schedule = useSchedule(ymd)
+  return (
+    <aside className="sky-rail" data-day="" aria-label="Details">
+      <div className="sky-rail-head">
+        <RailToggle open onClick={onToggle} />
+      </div>
+      <div className="sky-rail-body">
+        <ScheduleSection schedule={schedule} ymd={ymd} onImportMeeting={onImportMeeting} />
+        <ChatsSection ymd={ymd} chats={chats} threads={threads} onOpenThread={onOpenThread} onOpenSaved={onOpenSaved} />
+        <WorkingSection imports={imports} onOpenImport={onOpenImport} />
+      </div>
+      <AttachmentsPad ymd={ymd} onKept={onKept} />
+    </aside>
+  )
+}

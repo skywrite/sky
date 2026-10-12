@@ -5,8 +5,8 @@ import type { MIDraftInput, MostImportantAI } from '#lib/mostImportant/types.ts'
 import { dayFile } from '#shared/nbfs/mod.ts'
 import { assert, test } from '#test'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
+import { frames, type Frame } from '../../../web/client/chat/turnStream.ts'
 import { createReloadGate, RELOAD_EXIT_CODE } from '../../reload.ts'
-import { frames, type Frame } from '../theme/client/turnStream.ts'
 import { createDayRoutes } from './mod.ts'
 
 const DAY = new PlainDate('2030-06-17')

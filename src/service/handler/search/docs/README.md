@@ -26,7 +26,7 @@ the route asks that store; when it cannot answer, profiles open as files and
 search still works. A place opens at its ref, unless another record claims
 the same ref: the page cannot tell them apart, so both open in Explorer.
 
-`theme/client/search.tsx` owns the persistent header and `/search` page.
+`web/client/search/search.tsx` owns the persistent header and `/search` page.
 The query, filter, ordering, and page offset live in the URL so Back and
 reload restore the search. Requests cancel on query changes; results for
 an old query never remain selectable while a new one loads.

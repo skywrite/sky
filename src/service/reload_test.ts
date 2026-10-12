@@ -32,7 +32,7 @@ test({ name: 'reload - the server source calls for a restart; pages, tests, docs
       '.env',
       'package.json',
       '_shared-ts/models/DomainCollection/query/schema.graphql',
-      'service/handler/theme/client/chat.tsx',
+      'web/client/chat/chat.tsx',
       'service/handler/chat/chatRoute_test.ts',
       'service/handler/chat/docs/README.md',
       '_shared-ts/models/Chat/ChatContext/fixtures/notebook/day.md',
@@ -46,7 +46,7 @@ test({ name: 'reload - the server source calls for a restart; pages, tests, docs
 test({ name: 'reload - a change with nothing held restarts once, after the grace' }, async () => {
   const { gate, codes, events } = harness()
   gate.onChange('service/run.ts')
-  gate.onChange('service/handler/theme/client/chat.tsx')
+  gate.onChange('web/client/chat/chat.tsx')
   gate.onChange('service/server.ts')
   const before = gate.status()
   await settle(30)

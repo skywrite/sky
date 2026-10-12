@@ -80,8 +80,8 @@ page is told when one takes longer. A button in a screen is the terminal
 command, run as-is.
 
 The screens compile into the web app's bundle at boot
-(`service/handler/theme/mod.ts`): the build replaces
-`client/extensionsGenerated.ts` with one import per extension. Because the
+(`web/bundle.ts`): the build replaces
+`client/extensions/extensionsGenerated.ts` with one import per extension. Because the
 extension resolves React and Mantine through the links made at install,
 there is one copy of each on the page.
 

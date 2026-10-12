@@ -6,7 +6,7 @@ updated: 2026-10-03
 # The week page
 
 Design notes for `src/service/handler/week/` and the page that drives it,
-`theme/client/week.tsx`. The week is the notebook's unit of planning: the
+`web/client/week/week.tsx`. The week is the notebook's unit of planning: the
 week directory, day files created as needed, `week.md`, `checkins.md`. This page
 shows it, and moves the two things a week needs moving: a day that is
 waiting to start, and what is waiting for the week after.

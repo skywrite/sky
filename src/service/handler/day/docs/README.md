@@ -8,7 +8,7 @@ updated: 2026-10-08
 Stable activity references and two-way updates with ongoing work are implemented by `lib/workstreams/day.ts`; the complete model is described in the [workstream design](../../../../../docs/topics/workstreams/README.md).
 
 Design notes for `src/service/handler/day/` and the page that drives it,
-`theme/client/day.tsx` with `dayRail.tsx`.
+`web/client/day/day.tsx` with `dayRail.tsx`.
 
 The day view opens on the saved summary when `summary.md` exists, with a
 Summary / Day record switch back to the plan and record. Without a summary,
@@ -26,7 +26,7 @@ prose. The complete file opens in Explorer. Older one-sentence openings remain
 readable; custom formats render their document body, and empty files offer a
 link to edit them. The file is sufficient even when `day.md` is absent.
 
-`theme/client/daySummary.tsx` renders this content with `RenderedHtml` and polls
+`web/client/day/daySummary.tsx` renders this content with `RenderedHtml` and polls
 only `GET /day/:ymd/summary`, keeping unchanged text nodes and selections intact.
 The `view=summary|record` URL query preserves an explicit choice across reloads
 and browser history; a day without the query opens its default view. The day
@@ -68,7 +68,7 @@ editing into Details does not save. Save commits; Cancel discards. Refreshes
 preserve drafts, including when a changed or ended day prevents saving.
 
 A web address in an item shows as a chip in place of the address
-(`theme/client/dayItemLinks.ts`, drawn by `dayItemText.tsx`). The chip is named
+(`web/client/day/dayItemLinks.ts`, drawn by `dayItemText.tsx`). The chip is named
 from the address alone, such as "Slack message" or the site's host; nothing is
 fetched. The file keeps the full address, and the inline editor shows it. Such
 a row still edits in place. A notebook or workstream link keeps the whole text
@@ -217,7 +217,7 @@ their sub-workstream. Broken references remain visible with a repair message.
 Day item requests check their origin and serialize app writes with workstream
 planning. Ordinary unlinked web rows use occurrence- and revision-checked block
 operations; legacy callers without an occurrence retain the Day model's line operations.
-The swipe itself is `theme/client/swipe.ts`: horizontal only, so a touch
+The swipe itself is `web/client/day/swipe.ts`: horizontal only, so a touch
 that moves more up or down than sideways stays the page's scroll.
 
 Narrative: [2026-09-03 — an item can leave the day](2026-09-03-an-item-can-leave-the-day.md).
@@ -234,7 +234,7 @@ person already is. Each button runs the terminal's command at the moment it
 is pressed; `createWeekHost` runs them in-process.
 
 - **Start** shows once the clock has moved past the open day, in two places
-  (`theme/client/dayStart.tsx`). The open day's page, the one Today opens,
+  (`web/client/day/dayStart.tsx`). The open day's page, the one Today opens,
   whispers it in a second status line until 04:00 ("Past midnight. Still
   Thursday until you start Friday · Start Friday"), then carries a block at
   the top of its column: the calendar's date, one sentence saying what is
@@ -248,7 +248,7 @@ is pressed; `createWeekHost` runs them in-process.
   started day now.
 - **End** shows on a started day once the calendar has moved past it: in
   the status line beside the count, and in the week's Days rows. It asks
-  first (`theme/client/dayEnd.tsx`) — the plan's open items with live
+  first (`web/client/day/dayEnd.tsx`) — the plan's open items with live
   checkboxes, the records with no end time, the calendar meetings with no
   notes — and runs `day:end` when pressed; a late end reads with the date it
   was pressed. Starting the next day does not end the previous one: its
@@ -281,7 +281,7 @@ when Details is closed. Video rows come from `actions/videos/`: their
 saved summary names the recording, with its time, sender, recipients, and
 platform. The row opens the notebook's video record and transcript.
 
-The Chats block and the rail use one hierarchy (`theme/client/dayChats.ts`).
+The Chats block and the rail use one hierarchy (`web/client/day/dayChats.ts`).
 Each branch sits below its parent, at any depth, and says which turn it
 left from. Counts on branches name only their **new turns**; shared turns
 remain in the parent and are assembled when the chat opens. Saved titles
@@ -308,7 +308,7 @@ Document navigation: [2026-09-08 — saved chat titles open their documents](202
 Calendar event types, manual corrections and missing-record expectations follow
 the [shared classification contract](../../../../lib/calendarClassification/docs/README.md).
 
-A day has the Details rail a document has (`theme/client/rail.ts` holds the
+A day has the Details rail a document has (`web/client/shell/rail.ts` holds the
 one rule for opening it: a third column on a wide window, remembered; an
 overlay below 1180px). It folds from the chevron in its top-left corner;
 folded, the chevron waits at the header's end and brings it back. Its body
@@ -364,7 +364,7 @@ that is only kept, so the day file and notebook git stay as they were.
 
 ### The page
 
-`/<ymd>/files` is the directory as a page (`theme/client/dayFiles.tsx`),
+`/<ymd>/files` is the directory as a page (`web/client/day/dayFiles.tsx`),
 titled by a crumb — `Thursday, September 3, 2026 › File Attachments` —
 and reached from the rail's heading, or from a note's Files section
 ("All of the day's files…"). Folders come first, then files, one row each:

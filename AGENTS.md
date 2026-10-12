@@ -50,7 +50,8 @@ sky-oss/
       lib/               # Command runner infrastructure
     lib/                 # Application libraries
       services/          # launchctl service management
-    service/             # GraphQL server + file watcher
+    service/             # GraphQL server, file watcher, and the web app's HTTP routes (handler/)
+    web/                 # The web app's React client (client/, one folder per feature) and its bundler
     test/                # Test infrastructure
     tmpl/                # Templates for new documents
 ```
@@ -174,7 +175,7 @@ When a change meets the threshold above, use its existing topic home and the sma
 
 ### Browser Text Selection
 
-- **Preserve text selection across unrelated renders and background polling.** Render read-only HTML with the shared `RenderedHtml` component in `src/service/handler/theme/client/renderedHtml.tsx`.
+- **Preserve text selection across unrelated renders and background polling.** Render read-only HTML with the shared `RenderedHtml` component in `src/web/client/lib/renderedHtml.tsx`.
 - **Never create a fresh `dangerouslySetInnerHTML` prop object during a client React render.** React compares the object by identity and can replace unchanged text nodes, destroying the browser's selection. Memoizing just the HTML string is insufficient; the shared renderer memoizes the prop object by that string.
 - A view that must manage its own DOM (for example, syntax highlighting) must update it only when the HTML changes. Preserve existing text nodes during unrelated updates.
 - When fixing a shared rendering bug, search the web client for the same pattern and fix every affected surface. Verify in a browser that selection survives background refreshes, including a drag across a refresh and a range spanning paragraphs, and that changed content still appears.

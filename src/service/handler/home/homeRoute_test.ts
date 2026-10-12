@@ -10,7 +10,7 @@ const storePromise = MarkdownStore.build({
   timeDirs: [`${FIXTURES_DIR}/time`],
 })
 
-// NOTE: `/` now serves the client app shell (see theme/themeRoute_test.ts).
+// NOTE: `/` now serves the client app shell (see web/bundle_test.ts).
 // The SSR home renderer is unrouted but kept — its search API lives on below.
 
 test({ name: 'search api - 503 before the index is ready' }, async () => {

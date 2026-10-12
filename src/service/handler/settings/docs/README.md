@@ -6,7 +6,7 @@ updated: 2026-10-04
 # Settings — the web's settings section
 
 Design notes for `src/service/handler/settings/` and the pages in
-`theme/client/settings.tsx`. Read this before adding a setting.
+`web/client/settings/settings.tsx`. Read this before adding a setting.
 
 ## The shape
 
@@ -23,7 +23,7 @@ Settings use one level of navigation: Appearance; Me (About me, Writing style);
 AI (Models, Audio transcription, Voice, Prompts); Connections; Browser automation;
 Extensions; Notebook; Advanced; Experimental; About Sky.
 Group labels open their first page; the adjacent disclosure toggles their children.
-`theme/client/settingsRoutes.ts` owns canonical paths and legacy aliases, including
+`web/client/settings/settingsRoutes.ts` owns canonical paths and legacy aliases, including
 prompt detail paths. Existing `/settings/ai`, `/settings/voice`,
 `/settings/writing-voice`, and `/settings/prompts/...` links keep working.
 
@@ -79,7 +79,7 @@ Pages:
   available. See the [prompt library design](../../../../_shared-ts/prompts/docs/README.md)
   for storage, references, conflict handling, and runtime behavior.
 - **Connections** — account integrations (`connections.ts`, its host in
-  `createConnectionsHost.ts`, the pane in `theme/client/settingsConnections.tsx`).
+  `createConnectionsHost.ts`, the pane in `web/client/settings/settingsConnections.tsx`).
   Google, Slack and Beeper retain their existing setup and account management.
   API keys stay with their integrations; the TypeSafe service row links to
   its validated key setup. Accounts that lose
@@ -91,7 +91,7 @@ Pages:
   Since 2026-09-22 a connected Beeper row reads which networks are saved
   and which wait, and leads to Beeper's own page.
 - **Connections → Beeper** — `/settings/connections/beeper`, the first
-  connection with a page of its own (`theme/client/settingsBeeper.tsx` in
+  connection with a page of its own (`web/client/settings/settingsBeeper.tsx` in
   the shell `settingsConnectionPage.tsx`; routes under `/beeper/…` in
   `connections.ts`). A connection's page carries what Sky does with it:
   status, a card per network with three switches (save, groups, hold
@@ -105,7 +105,7 @@ Pages:
 - **Connections → Google** — `/settings/connections/google`
   includes the Calendar classification switch; see the
   [classification contract](../../../../lib/calendarClassification/docs/README.md).
-  (`theme/client/settingsGoogle.tsx`; routes under `/google/…` in
+  (`web/client/settings/settingsGoogle.tsx`; routes under `/google/…` in
   `connections.ts`). Connect shows what the person agrees to, then Sky
   sets up the Google Cloud side itself in a window they sign in to and the
   page follows the run as a checklist (`lib/google/cloudSetup/docs/README.md`).

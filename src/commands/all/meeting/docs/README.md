@@ -62,7 +62,7 @@ already wait on Next.
 - **The terminal** keeps the multiselect it has always had. Space ticks,
   Enter confirms; the hint beside each item says where it goes
   (`me · → Tomorrow`). A ticked item takes the when it arrived with.
-- **The web page** (`service/handler/theme/client/import.tsx`) shows a
+- **The web page** (`web/client/import/import.tsx`) shows a
   link to the source meeting with its title, date/time and attendees,
   an editable description and a chip on every row — Today, Tomorrow, the rest of this week by name,
   another day, a time, Next — and one chip in the lead sentence that moves

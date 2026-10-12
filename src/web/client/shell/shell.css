@@ -1,0 +1,23 @@
+/* App stylesheet entrypoint. Shared foundations precede feature styles.
+   Keep this import order explicit; see ../docs/README.md for ownership. */
+@import './tokens.css';
+@import './layout.css';
+@import '../search/search.css';
+@import './components.css';
+@import './dialogs.css';
+@import '../chat/chat.css';
+@import '../chat/chatPlan.css';
+@import '../chat/composer.css';
+@import '../chat/chat-tools.css';
+@import '../chat/toolLines.css';
+@import '../chat/context.css';
+@import '../explorer/explorer.css';
+@import '../editor/document.css';
+@import '../editor/editor.css';
+@import '../frontmatter/frontmatter.css';
+@import './details.css';
+@import '../day/day.css';
+@import '../day/daySummary.css';
+@import '../day/day-rail.css';
+@import '../week/week.css';
+@import '../day/day-files.css';

@@ -6,7 +6,7 @@ updated: 2026-10-11
 # Meeting from a file — the import
 
 Design notes for `src/service/handler/import/` and the page that fronts it,
-`theme/client/import.tsx`.
+`web/client/import/import.tsx`.
 
 ## What is built
 

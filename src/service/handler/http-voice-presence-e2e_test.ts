@@ -1,8 +1,8 @@
 import type { Page } from 'playwright'
 import { assert, test } from '#test'
+import { CALLS_URL, type VoiceEvent, type VoiceTurn } from '../../web/client/voice/voiceController.ts'
 import { voiceConversation } from './chat/voiceTranscript.ts'
 import { composerText, runWysiwygE2e } from './httpWysiwygE2eTestHelpers.ts'
-import { CALLS_URL, type VoiceEvent, type VoiceTurn } from './theme/client/voiceController.ts'
 
 interface BrowserVoice {
   ready: number

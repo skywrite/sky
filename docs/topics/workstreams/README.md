@@ -47,10 +47,10 @@ themselves evidence of useful progress.
 
 The implementation is composed in `src/lib/workstreams/` and
 `src/service/handler/workstreams/`. The React surface lives in
-`src/service/handler/theme/client/workstreams*.tsx`, with the existing Sky shell.
+`src/web/client/workstreams/workstreams*.tsx`, with the existing Sky shell.
 
 Prose and report previews follow the
-[shared HTML selection rule](../../../src/service/handler/theme/docs/README.md#text-selection-and-rendered-html).
+[shared HTML selection rule](../../../src/web/docs/README.md#text-selection-and-rendered-html).
 
 - **Capture and evolution:** a rough intention can be shaped by the configured
   model, edited, and saved. New context, actions, decisions, sources, people,
