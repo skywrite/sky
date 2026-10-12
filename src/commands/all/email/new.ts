@@ -2,7 +2,7 @@ import * as path from 'node:path'
 import { validateAnyArgFlagExists } from '#commands/cli/mod.ts'
 import { ArgOrFlag, category, Command, CommandResult, Flag, whenNBTime } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
-import { DayDirFileWriter, messageFileName } from '#lib/nbfs/mod.ts'
+import { DayDirFileWriter, ensureDay, messageFileName } from '#lib/nbfs/mod.ts'
 import { atomicWrite } from '#lib/outbox/files.ts'
 import openEditor from '#lib/shell/openEditor.ts'
 import slugify from '#lib/string/slugify.ts'
@@ -78,6 +78,9 @@ export default class EmailNewTask extends Command {
     const ddfw = new DayDirFileWriter(whenDate)
 
     const baseKey = `${when.time} > ${who} Email`
+
+    // The email may land on a day that has no day file yet
+    await ensureDay(whenDate)
 
     // /Now captures share a minute. Only a matching thread (or an older
     // capture's follow ID) proves this is a re-capture; an unknown identity

@@ -85,3 +85,43 @@ test('email:new keeps same-minute threads separate and recaptures only a matchin
     await rm(temp, { recursive: true, force: true })
   }
 })
+
+test('email:new creates the day file when the email lands on a day that has none', async () => {
+  const temp = await mkdtemp(path.join(tmpdir(), 'email-new-test-'))
+  try {
+    const result = await runCommand(
+      'bun',
+      [
+        '--eval',
+        `
+      import { strict as check } from 'node:assert'
+      import { readFile } from 'node:fs/promises'
+      import * as path from 'node:path'
+      import Task from '#commands/all/email/new.ts'
+      import { DIR_TIME } from '#config'
+      import dayFile from '#shared/nbfs/dayFile.ts'
+      import { readDay } from '#shared/nbfs/mod.ts'
+      import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
+      const when = new PlainDateTime('2026-04-11 09:30')
+      const created = await new Task().run({
+        args: { from: 'Jane Doe', to: 'John Smith', subject: 'Atlas kickoff', summary: 'Atlas kickoff', when, threadId: '201', markdown: 'Kickoff notes.', noEditor: true },
+        context: { output: { log() {} } },
+      })
+      check.equal(created.ok, true, created.message)
+      check.equal((await readDay(when.plainDate)).started, undefined)
+      const daily = await readFile(path.join(DIR_TIME, dayFile(when.plainDate)), 'utf8')
+      check.equal(daily.split(created.data.filePath).length - 1, 1)
+    `,
+      ],
+      { env: { SKY_DIR: path.join(temp, 'notebook'), SKY_DATA_DIR: path.join(temp, 'user-data') } },
+    )
+    assert({
+      given: 'an email captured onto a day that has no day file',
+      should: 'create the day, unstarted, with the email linked',
+      actual: result.success || result.stderr,
+      expected: true,
+    })
+  } finally {
+    await rm(temp, { recursive: true, force: true })
+  }
+})
