@@ -1,6 +1,6 @@
 ---
 created: 2026-09-06
-updated: 2026-10-03
+updated: 2026-10-12
 ---
 
 # Open work
@@ -10,6 +10,10 @@ what it trades. Written when the item is named, not when it is built.
 When an item ships, its file goes, and the subsystem's own docs carry the
 story from there.
 
+- [The client build's retry leaves with Bun's resolver fix](bundle-retry-leaves-with-bun-fix.md) —
+  `web/bundle.ts` builds the client once more when a build only failed to
+  resolve files, around a `bun test` bug (oven-sh/bun#22941); it goes once
+  a Bun release carries their PR #36245.
 - [Days start and close by themselves](days-start-and-close-themselves.md) —
   the first act after hours away starts the day, a tidied day closes
   itself; agreed as the direction, parked after the buttons moved.
