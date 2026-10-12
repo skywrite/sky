@@ -120,8 +120,7 @@ test(
       const origin = `http://127.0.0.1:${address.port}`
       browser = await chromium.launch({
         headless: true,
-        executablePath:
-          env.get('SKY_BROWSER_EXECUTABLE') ?? '/Applications/Brave Browser.app/Contents/MacOS/Brave Browser',
+        executablePath: env.get('SKY_BROWSER_EXECUTABLE') || undefined,
       })
       const page = await browser.newPage({ viewport: { width: 1440, height: 1080 } })
       currentPage = page

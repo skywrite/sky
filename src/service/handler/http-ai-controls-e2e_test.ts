@@ -121,8 +121,7 @@ test(
     try {
       browser = await chromium.launch({
         headless: true,
-        executablePath:
-          env.get('SKY_BROWSER_EXECUTABLE') ?? '/Applications/Brave Browser.app/Contents/MacOS/Brave Browser',
+        executablePath: env.get('SKY_BROWSER_EXECUTABLE') || undefined,
       })
       const page = await browser.newPage({ viewport: { width: 1600, height: 1150 }, deviceScaleFactor: 2 })
       const errors: string[] = []
