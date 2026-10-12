@@ -1,6 +1,6 @@
 ---
 created: 2026-07-28
-updated: 2026-10-06
+updated: 2026-10-11
 ---
 
 # Notebook time and the notebook filesystem
@@ -141,6 +141,17 @@ walk-back, and a notebook with no started day inside it — empty, or holding on
 prepared by a task move — has no notebook clock: `fetchNow()` throws, and the web pages
 fall back to the machine's date. It never reads an unstarted file as "now".
 
+### An outside moment files the same way
+
+A timestamp that arrives from outside — a Slack message's send time — goes through
+`notebookTimeAt(when)`, which asks the same question of that moment: which day was open
+then? It is the last day started at or before the moment, and the time is counted on that
+day. A message sent at 00:30 Tuesday while Monday is still open is **Monday 24:30**, where
+you would have filed it yourself at that moment, and it stays there after Tuesday starts,
+because Tuesday started later. A day file nobody started (one an import prepared) never
+takes over. The search looks back a week; a moment deeper into a stretch with no started
+day files under its calendar day.
+
 ### Extended and negative hours
 
 Times in the notebook are not clamped to `00:00`–`23:59`. The parser accepts any two-digit
@@ -181,7 +192,8 @@ a meeting at `09:00` three time zones ago still reads `09:00`.
 - `convertToNotebookTimezone(when)` — take an outside timestamp (an email header, a
   calendar event) and express it as wall-clock time in the day's zone. It's deliberately
   liberal: unparseable input warns and falls back to notebook now rather than throwing, and
-  a bad `tz:` keeps the system wall clock
+  a bad `tz:` keeps the system wall clock. The day is the timestamp's calendar day;
+  `notebookTimeAt(when)` takes the same input and places it on the day open at that moment
 - `sky util:timezone` reads the system zone; `sky util:now` prints notebook now;
   `sky util:tz:convert` does natural-language conversions
 
@@ -251,6 +263,7 @@ layout — the examples show the default:
 | `fetchNow()` / `fetchNowSync()` | `ZonedDateTime` in notebook time |
 | `dayTimezone(date)` | IANA zone string for that day |
 | `convertToNotebookTimezone(when)` | `PlainDateTime` in the day's zone |
+| `notebookTimeAt(when)` | `PlainDateTime` on the day that was open at that moment |
 | `normalizeToPlainDate(input)` | `PlainDate` from a `PlainDate` or `YYYY-MM-DD` string |
 | `computePreviousRef(path, date)` | A relative day reference |
 

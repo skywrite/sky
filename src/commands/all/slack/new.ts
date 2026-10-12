@@ -4,18 +4,13 @@ import openEditor from 'open-editor'
 import { validateAnyArgFlagExists } from '#commands/cli/mod.ts'
 import { ArgOrFlag, category, Command, CommandResult, Flag, whenNBTime } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
-import { DIR_TIME } from '#config'
 import { DayDirFileWriter, ensureDay, messageFileName } from '#lib/nbfs/mod.ts'
 import { autoRelMessage } from '#lib/notebook/enrich/autoRel.ts'
 import { autoTagMessage } from '#lib/notebook/enrich/autoTag.ts'
 import slugify from '#lib/string/slugify.ts'
 import { readTextFile } from '#shared/fs/mod.ts'
-import DayDocument from '#shared/models/Day/mod.ts'
 import MessageDocument from '#shared/models/Message/mod.ts'
-import dayFile from '#shared/nbfs/dayFile.ts'
-import { fetchNowSync, readDay, writeDay } from '#shared/nbfs/mod.ts'
-import { PlainDate, PlainDateTime, ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
-import currentTimezoneIANA from '#universal/dates/timezones/currentTimezoneIANA.ts'
+import { notebookTimeAt, readDay, writeDay } from '#shared/nbfs/mod.ts'
 import { captureMessages, type SlackCaptureMessage } from './lib/captureMessages.ts'
 import type { SlackFileRef } from './lib/copyToAttachments.ts'
 import { SLACK_ENRICH } from './lib/enrich.ts'
@@ -236,11 +231,11 @@ export default class SlackNewTask extends Command {
 
     const data = exportResult.data
 
-    // Default --when to message timestamp (converted to notebook timezone)
+    // Default --when to the message's notebook time: past midnight it stays on the day still open
     const when = rawArgs.when
       ? args.when
       : data.message.timeLabel
-        ? await convertToNotebookTimezone(data.message.timeLabel)
+        ? await notebookTimeAt(data.message.timeLabel)
         : args.when
 
     // Derive from/to
@@ -260,20 +255,6 @@ export default class SlackNewTask extends Command {
   }
 }
 
-// TODO: extract convertToNotebookTimezone and getDayTimezone into shared helpers (duplicated in heartbeat/follow-new.ts and service/handler/siteHtml.ts)
-async function convertToNotebookTimezone(when: string): Promise<PlainDateTime> {
-  const systemTimezone = currentTimezoneIANA()
-  const inSystemTz = new ZonedDateTime(when, systemTimezone)
-  const dayTimezone = await getDayTimezone(inSystemTz.date)
-
-  if (systemTimezone === dayTimezone) {
-    return PlainDateTime.fromString(when)
-  }
-
-  const inDayTz = inSystemTz.inTimeZone(dayTimezone)
-  return PlainDateTime.fromString(`${inDayTz.date} ${inDayTz.time}`)
-}
-
 /** Extract first name from a display name. Handles channels (#general), group DMs (Alice Smith, Bob Jones → Alice, Bob). */
 function firstName(name: string): string {
   if (name.startsWith('#')) return name
@@ -281,15 +262,4 @@ function firstName(name: string): string {
     .split(', ')
     .map((n) => n.split(' ')[0])
     .join(', ')
-}
-
-async function getDayTimezone(dateStr: string): Promise<string> {
-  try {
-    const plainDate = new PlainDate(dateStr)
-    const df = path.join(DIR_TIME, dayFile(plainDate))
-    const dayModel = DayDocument.fromMarkdown(await readTextFile(df))
-    return dayModel.timezone
-  } catch {
-    return fetchNowSync().timezone
-  }
 }

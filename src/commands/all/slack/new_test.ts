@@ -121,3 +121,53 @@ test('slack:new creates the day file when the message lands on a day that has no
     await rm(temp, { recursive: true, force: true })
   }
 })
+
+test('slack:new files a message sent past midnight under the day still open', async () => {
+  const temp = await mkdtemp(path.join(tmpdir(), 'slack-new-test-'))
+  try {
+    const result = await runCommand(
+      'bun',
+      [
+        '--eval',
+        `
+      import { strict as check } from 'node:assert'
+      import { mkdir, readFile, writeFile } from 'node:fs/promises'
+      import * as path from 'node:path'
+      import Task from '#commands/all/slack/new.ts'
+      import { DIR_TIME } from '#config'
+      import dayFile from '#shared/nbfs/dayFile.ts'
+      import currentTimezoneIANA from '#universal/dates/timezones/currentTimezoneIANA.ts'
+      const open = path.join(DIR_TIME, dayFile('2030-09-26'))
+      const next = path.join(DIR_TIME, dayFile('2030-09-27'))
+      for (const [file, ymd, yaml] of [[open, '2030-09-26', 'started: "08:00"\\n'], [next, '2030-09-27', '']]) {
+        await mkdir(path.dirname(file), { recursive: true })
+        await writeFile(file, '---\\n' + yaml + 'tz: ' + currentTimezoneIANA() + '\\n---\\n\\n# ' + ymd + '\\n\\n')
+      }
+      const link = 'https://atlas.slack.com/archives/C0ATLAS/p1790000000000001'
+      const data = { channelId: 'C0ATLAS', channelName: 'atlas', conversationType: 'channel', link, message: { ts: '1790000000.000001', timeLabel: '2030-09-27 00:30', userName: 'Jane Doe', text: 'Still up.', permalink: link } }
+      const created = await new Task().run({
+        args: { fromLink: link, summary: 'Atlas', noEditor: true, noAutoTag: true, noAutoRel: true },
+        rawArgs: {}, context: { output: { log() {} } },
+        tasks: { async run(name) { if (name !== 'slack:cli:export') throw new Error('Unexpected task ' + name); return { ok: true, data } } },
+      })
+      check.equal(created.ok, true, created.message)
+      check.ok(created.data.filePath.includes('24-30_slack_'), created.data.filePath)
+      const daily = await readFile(open, 'utf8')
+      check.ok(daily.includes('24:30 >'), daily)
+      check.equal(daily.split(created.data.filePath).length - 1, 1)
+      check.ok(!(await readFile(next, 'utf8')).includes(created.data.filePath))
+    `,
+      ],
+      { env: { SKY_DIR: path.join(temp, 'notebook'), SKY_DATA_DIR: path.join(temp, 'user-data') } },
+    )
+    assert({
+      given:
+        'a linked message sent at 00:30 while the previous day is still open and the next is prepared but unstarted',
+      should: 'file it under the open day at 24:30, not the next',
+      actual: result.success || result.stderr,
+      expected: true,
+    })
+  } finally {
+    await rm(temp, { recursive: true, force: true })
+  }
+})

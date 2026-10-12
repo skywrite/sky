@@ -85,7 +85,7 @@ async function fixture(
   })
   const spies = [
     fetch,
-    spyOn(nbfs, 'convertToNotebookTimezone').mockImplementation(async (when) => {
+    spyOn(nbfs, 'notebookTimeAt').mockImplementation(async (when) => {
       if (typeof when !== 'string') throw new Error('Expected a wall-clock string')
       return new PlainDateTime(when)
     }),

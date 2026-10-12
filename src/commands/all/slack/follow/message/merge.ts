@@ -24,7 +24,7 @@ import slugify from '#lib/string/slugify.ts'
 import { outputFile, readTextFile, writeTextFile } from '#shared/fs/mod.ts'
 import Follow, { type FollowMessage } from '#shared/models/Follow/mod.ts'
 import MessageDocument from '#shared/models/Message/mod.ts'
-import { computePreviousRef, convertToNotebookTimezone, fetchNowSync, toTimeRef } from '#shared/nbfs/mod.ts'
+import { computePreviousRef, fetchNowSync, notebookTimeAt, toTimeRef } from '#shared/nbfs/mod.ts'
 import type { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import { findCapturedThread } from './mod.ts'
 
@@ -235,7 +235,7 @@ async function captureTogether(
   const channel = earliest.channelName || earliest.channelId
   const to = resolveRecipient(earliest, from)
   const when = earliest.message.timeLabel
-    ? await convertToNotebookTimezone(earliest.message.timeLabel)
+    ? await notebookTimeAt(earliest.message.timeLabel)
     : fetchNowSync().plainDateTime
 
   const channelSlug = slugify(channel, { preserveCase: true })
@@ -255,7 +255,7 @@ async function captureTogether(
   // Group by notebook day; one doc per day, chained like a smart split
   const byDay = new Map<string, { msgs: SlackCaptureMessage[]; when: PlainDateTime }>()
   for (const msg of messages) {
-    const msgWhen = msg.timeLabel ? await convertToNotebookTimezone(msg.timeLabel) : when
+    const msgWhen = msg.timeLabel ? await notebookTimeAt(msg.timeLabel) : when
     const day = msgWhen.plainDate.toString()
     if (!byDay.has(day)) byDay.set(day, { msgs: [], when: msgWhen })
     byDay.get(day)!.msgs.push(msg)
@@ -303,7 +303,7 @@ async function captureTogether(
 
   const now = fetchNowSync().plainDateTime
   const lastMsg = messages[messages.length - 1]
-  const lastActivity = lastMsg?.timeLabel ? await convertToNotebookTimezone(lastMsg.timeLabel) : when
+  const lastActivity = lastMsg?.timeLabel ? await notebookTimeAt(lastMsg.timeLabel) : when
   const follow = Follow.create({
     source: 'Slack',
     ref: fresh[0].anchor,

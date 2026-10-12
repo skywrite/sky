@@ -8,7 +8,7 @@ import { atomicWrite } from '#lib/outbox/files.ts'
 import { readTextFile } from '#shared/fs/mod.ts'
 import Follow from '#shared/models/Follow/mod.ts'
 import MessageDocument from '#shared/models/Message/mod.ts'
-import { computePreviousRef, convertToNotebookTimezone, fetchNow, resolveTimeRef, toTimeRef } from '#shared/nbfs/mod.ts'
+import { computePreviousRef, fetchNow, notebookTimeAt, resolveTimeRef, toTimeRef } from '#shared/nbfs/mod.ts'
 import type { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import { captureMessages } from './captureMessages.ts'
 import resolveRecipient from './resolveRecipient.ts'
@@ -71,7 +71,7 @@ export async function pollSlackFollow(
   const written: string[] = []
   const synced = await syncSlackFollow(follow, exports.flatMap(captureMessages), {
     read: async (ref) => MessageDocument.fromMarkdown(await readTextFile(path.join(DIR_BASE, resolveTimeRef(ref)))),
-    notebookTime: convertToNotebookTimezone,
+    notebookTime: notebookTimeAt,
     saveFollow: async (pending) => atomicWrite(followPath, pending.toYaml()),
     update: async (ref, doc, messages, day) => {
       const transcriptRuns = new Set<string>()

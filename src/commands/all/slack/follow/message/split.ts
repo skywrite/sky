@@ -10,7 +10,7 @@ import slugify from '#lib/string/slugify.ts'
 import { outputFile, readTextFile, writeTextFile } from '#shared/fs/mod.ts'
 import Follow from '#shared/models/Follow/mod.ts'
 import SlackFollowRegistry from '#shared/models/Follow/SlackFollowRegistry.ts'
-import { convertToNotebookTimezone, fetchNowSync } from '#shared/nbfs/mod.ts'
+import { fetchNowSync, notebookTimeAt } from '#shared/nbfs/mod.ts'
 import { anchorTs } from './merge.ts'
 
 const params = {
@@ -108,11 +108,9 @@ export default class SlackFollowMessageSplitTask extends Command {
     // No conversation is saved here; retain recognition checkpoints for a later capture.
     const messages = await prepareSlackVoiceTranscripts(captureMessages(data), { output, signal: context.signal })
     const summary = (await summarizeSlackMessage(messages[0], messages.slice(1))) ?? 'Split conversation'
-    const when = data.message.timeLabel
-      ? await convertToNotebookTimezone(data.message.timeLabel)
-      : fetchNowSync().plainDateTime
+    const when = data.message.timeLabel ? await notebookTimeAt(data.message.timeLabel) : fetchNowSync().plainDateTime
     const lastReplyLabel = data.thread?.replies.at(-1)?.timeLabel
-    const lastActivity = lastReplyLabel ? await convertToNotebookTimezone(lastReplyLabel) : when
+    const lastActivity = lastReplyLabel ? await notebookTimeAt(lastReplyLabel) : when
     const now = fetchNowSync().plainDateTime
 
     const split = Follow.create({

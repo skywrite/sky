@@ -53,7 +53,7 @@ export default async function convertToNotebookTimezone(
 }
 
 /** Parse the input into the system timezone, or return a warning reason. */
-function toSystemZoned(when: string | Date, systemTimezone: string): ZonedDateTime | string {
+export function toSystemZoned(when: string | Date, systemTimezone: string): ZonedDateTime | string {
   if (when instanceof Date) {
     if (Number.isNaN(when.getTime())) return 'received an invalid Date'
     return new ZonedDateTime(when, systemTimezone)

@@ -4,7 +4,7 @@ import { z } from 'zod'
 import CommandContext from '#commands/lib/core/CommandContext.ts'
 import CommandService from '#commands/lib/core/CommandService.ts'
 import * as config from '#shared/config.ts'
-import { convertToNotebookTimezone, fetchNowSync } from '#shared/nbfs/mod.ts'
+import { convertToNotebookTimezone, fetchNowSync, notebookTimeAt } from '#shared/nbfs/mod.ts'
 import { readPromptFile } from '#shared/prompts/load.ts'
 import { type RenderInput, renderPromptFile } from '#shared/prompts/mod.ts'
 import { env } from '#shared/sys/mod.ts'
@@ -68,7 +68,9 @@ function sanitizeName(value: string): string {
 async function executeTask(contentData: JsonMarkdownContent): Promise<void> {
   // Convert when from system timezone to notebook day's timezone
   // Pre-parse to PlainDateTime since CommandService.run() doesn't parse overrides
-  const when = contentData.when ? await convertToNotebookTimezone(contentData.when) : fetchNowSync().plainDateTime
+  // A Slack message files under the day that was open when it was sent, like a capture from its link
+  const toNotebook = contentData.medium === 'Slack' ? notebookTimeAt : convertToNotebookTimezone
+  const when = contentData.when ? await toNotebook(contentData.when) : fetchNowSync().plainDateTime
 
   const commandArgs = {
     ...contentData,

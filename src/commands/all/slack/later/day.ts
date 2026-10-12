@@ -5,7 +5,7 @@ import type { AgentSlackLaterItem } from '#commands/all/slack/cli/lib/agent-slac
 import { formatSlackTimestamp } from '#commands/all/slack/lib/mod.ts'
 import { Arg, Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
-import { convertToNotebookTimezone } from '#shared/nbfs/mod.ts'
+import { notebookTimeAt } from '#shared/nbfs/mod.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import { captureLaterItems, openInSlack } from './lib/capture.ts'
 import { resolveLaterConversations } from './lib/conversations.ts'
@@ -211,11 +211,11 @@ export default class SlackLaterDayTask extends Command {
     const dayItems: DayItem[] = []
     for (const item of list.items) {
       const timeLabel = formatSlackTimestamp(item.ts, systemNow.timezone)
-      const messageDay = (await convertToNotebookTimezone(timeLabel)).plainDate.toString()
+      const messageDay = (await notebookTimeAt(timeLabel)).plainDate.toString()
       let savedDay: string | undefined
       if (item.date_saved) {
         const savedLabel = formatSlackTimestamp(String(item.date_saved), systemNow.timezone)
-        savedDay = (await convertToNotebookTimezone(savedLabel)).plainDate.toString()
+        savedDay = (await notebookTimeAt(savedLabel)).plainDate.toString()
       }
       const link = laterItemLink(workspace, item)
       dayItems.push({ item, messageDay, savedDay, timeLabel, link })

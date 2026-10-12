@@ -26,14 +26,8 @@ import { outputFile, readTextFile, writeTextFile } from '#shared/fs/mod.ts'
 import Follow from '#shared/models/Follow/mod.ts'
 import SlackFollowRegistry from '#shared/models/Follow/SlackFollowRegistry.ts'
 import MessageDocument from '#shared/models/Message/mod.ts'
-import {
-  computePreviousRef,
-  convertToNotebookTimezone,
-  fetchNowSync,
-  resolveTimeRef,
-  toTimeRef,
-} from '#shared/nbfs/mod.ts'
-import { PlainDate, PlainDateTime } from '#universal/dates/nbdt/mod.ts'
+import { computePreviousRef, fetchNowSync, notebookTimeAt, resolveTimeRef, toTimeRef } from '#shared/nbfs/mod.ts'
+import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 
 const params = {
   link: Arg.string('Slack message link (workspace URL, app URL, or slack:// deeplink)'),
@@ -170,11 +164,11 @@ export default class SlackFollowMessageTask extends Command {
       if (owner) return refreshCapturedThread(owner, refresh)
     }
 
-    // Default --when to message timestamp (converted to notebook day's timezone)
+    // Default --when to the message's notebook time: past midnight it stays on the day still open
     const when = rawArgs.when
       ? args.when
       : data.message.timeLabel
-        ? await convertToNotebookTimezone(data.message.timeLabel)
+        ? await notebookTimeAt(data.message.timeLabel)
         : args.when
 
     // Speech must inform the summary before it becomes the follow and attachment folder name.
@@ -200,7 +194,8 @@ export default class SlackFollowMessageTask extends Command {
 
     // 3c. Smart split: if no --when AND root message is before today AND thread has replies,
     //     split messages across their actual days instead of lumping everything on one day.
-    const today = PlainDate.today()
+    //     Today is the notebook's, so a thread from just before midnight stays whole on the open day.
+    const today = fetchNowSync().plainDateTime.plainDate
     const hasThread = data.thread && data.thread.replies.length > 0
     const shouldSmartSplit = !rawArgs.when && when.plainDate.toString() < today.toString() && hasThread
 
@@ -210,7 +205,7 @@ export default class SlackFollowMessageTask extends Command {
     // created on a quiet thread must not look freshly active, or backoff and
     // expiry anchor on a fiction.
     const lastReplyLabel = messages.at(-1)?.timeLabel
-    const lastActivity = lastReplyLabel ? await convertToNotebookTimezone(lastReplyLabel) : when
+    const lastActivity = lastReplyLabel ? await notebookTimeAt(lastReplyLabel) : when
     const now = fetchNowSync().plainDateTime
 
     // A follow that would be born expired is declined: a thread already quiet
@@ -265,7 +260,7 @@ export default class SlackFollowMessageTask extends Command {
       type DayMsg = SlackCaptureMessage & { when: PlainDateTime }
       const allMessages: DayMsg[] = []
       for (const message of messages) {
-        allMessages.push({ ...message, when: await convertToNotebookTimezone(message.timeLabel) })
+        allMessages.push({ ...message, when: await notebookTimeAt(message.timeLabel) })
       }
 
       // Group by notebook date
