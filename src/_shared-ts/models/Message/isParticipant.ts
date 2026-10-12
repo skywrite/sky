@@ -13,7 +13,7 @@ const DM_THREAD = /^dm with /
  * `from:`/`to:`/`cc:` frontmatter (strings, comma-separated lists, or arrays)
  * or the body's dialogue headers. `names` are the owner's names. `addresses`
  * are their email addresses, which an email capture writes in place of a
- * name when the sender's mail gave none.
+ * name when neither the mail nor a person profile names them.
  *
  * A message where the notebook owner appears nowhere is an archival capture —
  * a thread saved for reference, not activity. Empty `names` returns true:

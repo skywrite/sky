@@ -1,5 +1,4 @@
 import { contactEmails } from '#lib/calendarScheduler/people.ts'
-import type { CalendarEvent } from '#lib/google/mod.ts'
 import { normalizeName } from '#shared/models/Store/normalize.ts'
 import type PeopleStore from '#shared/models/Store/PeopleStore/mod.ts'
 import { FAMILIAR_NAME_THRESHOLD } from '../../scoring/familiarity.ts'
@@ -11,11 +10,21 @@ interface AttendeeName {
   shorten: boolean
 }
 
-/** Read the current contacts once per schedule; only explicit email matches identify a person. */
+/** One person on a calendar event or an email, as the source gave them. */
+export interface Attendee {
+  email: string
+  name?: string
+  self?: boolean
+}
+
+/**
+ * Read the current contacts once per schedule or email capture; only explicit
+ * email matches identify a person.
+ */
 export function createAttendeeNames(
   people?: PeopleStore | null,
-  scores: readonly PersonScore[] = [],
-): (attendees: CalendarEvent['attendees']) => string[] {
+  scores: readonly Pick<PersonScore, 'name' | 'familiarityScore'>[] = [],
+): (attendees: readonly Attendee[]) => string[] {
   const byName = new Map(scores.map((person) => [normalizeName(person.name), person.familiarityScore ?? 0]))
   const profiles = [...(people?.getAll() ?? [])]
   const owners = new Map<string, Set<string>>()

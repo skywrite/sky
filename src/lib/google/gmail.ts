@@ -70,6 +70,8 @@ export interface GmailMessage {
   from?: GmailAddress
   to?: GmailAddress[]
   cc?: GmailAddress[]
+  /** Only the sender's copy keeps a Bcc header, so this is mail the account sent. */
+  bcc?: GmailAddress[]
   /** RFC 822 Message-ID header. */
   messageId?: string
   inReplyTo?: string
@@ -448,6 +450,7 @@ function normalizeMessage(wire: MessageWire): GmailMessage | null {
   const subject = headers.get('subject')
   const to = parseAddressList(headers.get('to'))
   const cc = parseAddressList(headers.get('cc'))
+  const bcc = parseAddressList(headers.get('bcc'))
 
   return {
     id: wire.id,
@@ -459,6 +462,7 @@ function normalizeMessage(wire: MessageWire): GmailMessage | null {
     from: parseAddressList(headers.get('from'))[0],
     to: to.length > 0 ? to : undefined,
     cc: cc.length > 0 ? cc : undefined,
+    bcc: bcc.length > 0 ? bcc : undefined,
     messageId: headers.get('message-id'),
     inReplyTo: headers.get('in-reply-to'),
     references: headers.get('references'),

@@ -219,6 +219,45 @@ test('getThread', async () => {
   })
 })
 
+test('getThread reads the recipients of mail the account sent, Bcc included', async () => {
+  const client = await clientWith(
+    [
+      {
+        messages: [
+          {
+            id: 'm1',
+            threadId: 't1',
+            payload: {
+              mimeType: 'text/plain',
+              headers: [
+                { name: 'From', value: 'Jane Doe <jane@example.com>' },
+                { name: 'To', value: 'sam@example.com' },
+                { name: 'Cc', value: 'Alex Chen <alex@example.com>' },
+                { name: 'Bcc', value: 'taylor@example.com, Morgan Lee <morgan@example.com>' },
+              ],
+              body: { data: b64url('Forwarding the Atlas notes.') },
+            },
+          },
+        ],
+      },
+    ],
+    [],
+  )
+
+  const [message] = await getThread(client, 't1', { format: 'full' })
+
+  assert({
+    given: 'a sent message whose copy keeps its Bcc header',
+    should: 'parse Bcc like To and Cc',
+    expected: {
+      to: [{ address: 'sam@example.com' }],
+      cc: [{ name: 'Alex Chen', address: 'alex@example.com' }],
+      bcc: [{ address: 'taylor@example.com' }, { name: 'Morgan Lee', address: 'morgan@example.com' }],
+    },
+    actual: { to: message?.to, cc: message?.cc, bcc: message?.bcc },
+  })
+})
+
 test('resolveLabelId', async () => {
   const labelsPage = {
     labels: [

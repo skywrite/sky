@@ -28,6 +28,8 @@ import { buildEmailTranscript, EMAIL_ENRICH } from './enrich.ts'
 import { followFileName, uniqueFollowFileName } from './followLifecycle.ts'
 import { getInboxThreads, LISTING_DEPTH } from './getInboxThreads.ts'
 import type { InboxThreadsResult } from './getInboxThreads.ts'
+import { loadParticipantNames, messageParticipants } from './participants.ts'
+import type { ParticipantNames } from './participants.ts'
 
 // Gmail-API twin of email/lib/fetchUnsavedThreads.ts. Phase 2 (downloading
 // bodies and attachments) is the only transport-bound part; the notebook side
@@ -170,6 +172,9 @@ export async function fetchUnsavedThreads(
   // ── Phase 3: Save to day files ─────────────────────────────────
   output.log(`\n  Saving ${downloaded.length} message(s)...\n`)
 
+  // People are written by name, never by address, wherever a profile knows them.
+  const names = await loadParticipantNames()
+
   // Group by thread (decimal id — the rendering follow files store)
   const byThread = new Map<string, DownloadedMessage[]>()
   for (const msg of downloaded) {
@@ -237,7 +242,7 @@ export async function fetchUnsavedThreads(
     let failed = false
     for (const msg of threadMessages) {
       try {
-        converted.push(await convertMessage(msg, priorMarkdown, whenOverride, output))
+        converted.push(await convertMessage(msg, priorMarkdown, whenOverride, names, output))
       } catch (err) {
         output.log(`  Warning: conversion failed (${(err as Error).message}) — thread left in inbox for retry`)
         failed = true
@@ -254,7 +259,7 @@ export async function fetchUnsavedThreads(
     const summary = inheritedSummary ?? enriched.summary
     const tags = inheritedTags ?? enriched.tags
     const rel = inheritedRel ?? enriched.rel
-    const from = normalizeFromName(threadMessages[0].from?.name || threadMessages[0].from?.address || 'unknown')
+    const { from } = messageParticipants(threadMessages[0], names)
 
     // The follow's name flows forward into every capture — the existing
     // follow's own name, or the one the new follow will take (planThreadFollow
@@ -329,6 +334,7 @@ type ConvertedMessage = {
   from: string
   to: string
   cc: string
+  bcc: string
   /** Converted body, empty when the source had none — the `(empty)` placeholder is a write-time concern. */
   markdown: string
   /** The message's own timestamp, in the timezone of the notebook day it arrived on — always the `## ` header. */
@@ -346,19 +352,10 @@ async function convertMessage(
   msg: DownloadedMessage,
   priorMarkdown: string[],
   whenOverride: PlainDateTime | undefined,
+  names: ParticipantNames,
   output: Output,
 ): Promise<ConvertedMessage> {
-  const from = normalizeFromName(msg.from?.name || msg.from?.address || '(unknown)')
-  const to =
-    msg.to
-      ?.map((a) => normalizeFromName(a.name || a.address || ''))
-      .filter(Boolean)
-      .join(', ') || ''
-  const cc =
-    msg.cc
-      ?.map((a) => normalizeFromName(a.name || a.address || ''))
-      .filter(Boolean)
-      .join(', ') || ''
+  const { from, to, cc, bcc } = messageParticipants(msg, names)
 
   // Convert body to markdown via AI (with thread context for dedup).
   // emailToMarkdown reads only the bodies; uid is a required-but-unused
@@ -382,7 +379,7 @@ async function convertMessage(
 
   // When --when is passed, all messages go into one file at that date
   // Otherwise, use the message's own date
-  return { msg, from, to, cc, markdown: converted.markdown || '', msgWhen, when: whenOverride ?? msgWhen }
+  return { msg, from, to, cc, bcc, markdown: converted.markdown || '', msgWhen, when: whenOverride ?? msgWhen }
 }
 
 type WriteContext = {
@@ -409,7 +406,7 @@ export async function writeMessage(
   ctx: WriteContext,
 ): Promise<{ date: string; path: string } | null> {
   const { threadId, createdEntries, previous, summary, followFile, tags, rel, category, tasks, output } = ctx
-  const { msg, from, to, cc, msgWhen, when } = message
+  const { msg, from, to, cc, bcc, msgWhen, when } = message
   const dateStr = when.plainDate.toString()
 
   // Save attachments
@@ -442,6 +439,7 @@ export async function writeMessage(
     to: to || undefined,
     threadId,
     ...(cc ? { cc } : {}),
+    ...(bcc ? { bcc } : {}),
     when,
     subject: msg.subject || '(no subject)',
     // The subject is the fallback label, and stays in `subject:` either way.
@@ -621,10 +619,4 @@ async function enrichThread(opts: {
 /** A YAML field worth inheriting: present, a string, and not blank. */
 function nonEmpty(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim() ? value : undefined
-}
-
-/** Convert "Lastname, Firstname" → "Firstname Lastname" */
-function normalizeFromName(name: string): string {
-  const match = name.match(/^([^,]+),\s*(.+)$/)
-  return match ? `${match[2]} ${match[1]}` : name
 }
