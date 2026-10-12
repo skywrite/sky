@@ -99,13 +99,31 @@ async function clientSourcesAt(): Promise<number> {
 }
 
 async function buildAssets(): Promise<Map<string, ThemeAsset>> {
-  const build = (entries: ScreenEntry[]) =>
+  const once = (entries: ScreenEntry[]) =>
     Bun.build({
       entrypoints: [path.join(__dirname, 'client/main.tsx')],
       target: 'browser',
       minify: true,
       plugins: [extensionsPlugin(entries)],
     })
+  // Under `bun test`, a build can report files that are there as unresolvable: the runner's scan for
+  // test files leaves cached folder handles read to their end, and the first build to re-read one of
+  // them sees it empty (oven-sh/bun#22941; its fix, #36245, had not shipped as of Bun 1.4.3). That
+  // read drops the bad handle, so a build that failed only on resolution is tried once more before
+  // it counts. Any other failure stands.
+  const unresolvedOnly = (messages: ReadonlyArray<BuildMessage | ResolveMessage>) => {
+    const errors = messages.filter((message) => message.level === 'error')
+    return errors.length > 0 && errors.every((message) => message.name === 'ResolveMessage')
+  }
+  const build = async (entries: ScreenEntry[]) => {
+    try {
+      const result = await once(entries)
+      return result.success || !unresolvedOnly(result.logs) ? result : once(entries)
+    } catch (error) {
+      if (error instanceof AggregateError && unresolvedOnly(error.errors)) return once(entries)
+      throw error
+    }
+  }
 
   // Bun.build throws on a failed build; either way a failure with extensions
   // is retried without them, so the web app never depends on an extension.
