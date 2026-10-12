@@ -3,7 +3,7 @@ import * as path from 'node:path'
 import { exists, makeTempDir, readTextFile, writeTextFile } from '#shared/fs/mod.ts'
 import type { MemoryEntry } from '#shared/models/Memory/mod.ts'
 import type { MemoryOp } from '#shared/models/Memory/write.ts'
-import { dayDir } from '#shared/nbfs/mod.ts'
+import { dayDir, readDay } from '#shared/nbfs/mod.ts'
 import { assert, test } from '#test'
 import { PlainDate, PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import type { ContextTurnLog } from '../document/ContextLog/mod.ts'
@@ -536,6 +536,26 @@ test('saveChat - day-file logging is skipped on resume, never duplicated', async
     should: 'skip it — the chat was logged when it was first saved',
     actual: report.dayLog,
     expected: { logged: false, reason: 'resume' },
+  })
+})
+
+test('saveChat - a chat on a day with no day file creates the day and logs it there', async () => {
+  const { timeDir, report } = await saveNew({ logToDay: { category: 'Professional' } })
+  const day = await readDay(DAY, timeDir)
+
+  assert({
+    given: 'a new chat asked to log to a day that has no day file',
+    should: 'create the day, unstarted, with the chat logged',
+    actual: {
+      dayLog: report.dayLog,
+      started: day.started,
+      items: day.lists.find((list) => list.title === 'Professional Complete')?.items,
+    },
+    expected: {
+      dayLog: { logged: true, category: 'Professional' },
+      started: undefined,
+      items: ['09:30 > AI Chat -> [Atlas Launch Planning](actions/ai-chats/09-30_Atlas-Launch-Planning.md)'],
+    },
   })
 })
 

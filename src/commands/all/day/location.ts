@@ -1,5 +1,6 @@
 import { Command, CommandResult, dayArg, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
+import { ensureDay } from '#lib/nbfs/mod.ts'
 import { readDay, writeDay } from '#shared/nbfs/mod.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import fetchDeviceLocation from '../util/location/fetchDeviceLocation.ts'
@@ -73,6 +74,8 @@ export default class DayLocationTask extends Command {
 
     // Update day document
     const targetDay = day ?? PlainDate.today()
+    // The day may have no day file yet
+    await ensureDay(targetDay)
     let dayModel = await readDay(targetDay)
     dayModel = dayModel.setLocation(placePath)
     await writeDay(dayModel)

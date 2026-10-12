@@ -1,5 +1,6 @@
 import type { CommandArgs, CommandDescription } from '#commands/lib/commands.d.ts'
 import { Command, CommandResult } from '#commands/mod.ts'
+import { ensureDay } from '#lib/nbfs/mod.ts'
 import { readDay, writeDay } from '#shared/nbfs/mod.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 
@@ -16,6 +17,8 @@ export default class DayTimezoneTask extends Command {
     const { output } = context
     const now = new PlainDate()
 
+    // Today may have no day file yet
+    await ensureDay(now)
     let dayModel = await readDay(now)
 
     const tzResult = await tasks.run('util:timezone')

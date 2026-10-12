@@ -17,6 +17,7 @@
 
 import { mkdir, rename } from 'node:fs/promises'
 import * as path from 'node:path'
+import { ensureDay } from '#lib/nbfs/ensureDay.ts'
 import { autoRelMessage, mergeRel } from '#lib/notebook/enrich/autoRel.ts'
 import { autoTagMessage } from '#lib/notebook/enrich/autoTag.ts'
 import { distillMemories } from '#lib/notebook/enrich/distillMemories.ts'
@@ -646,8 +647,9 @@ async function writeRecoveryCopy(markdown: string, endTime: PlainDateTime, recov
 /**
  * Record the chat as a complete item on its day. Skipped on resume: the
  * chat was logged when it was first saved, and a second time key would
- * duplicate it. A day-file failure never fails the save — the transcript
- * is already on disk by this point.
+ * duplicate it. A day with no day file is created first, unstarted. A
+ * day-file failure never fails the save — the transcript is already on
+ * disk by this point.
  */
 async function logChatToDay(input: {
   timeDir: string
@@ -668,6 +670,7 @@ async function logChatToDay(input: {
     const key = `${input.startTime.time} > AI Chat`
     const value = `[${input.summary}](${relativePath})`
 
+    await ensureDay(input.day, input.timeDir)
     let dayDoc = await readDay(input.day, input.timeDir)
     dayDoc = dayDoc.setCompleteItem(key, value, { time: input.startTime.time, category: input.category })
     await writeDay(dayDoc, input.timeDir)

@@ -2,7 +2,7 @@ import { mkdir, readFile } from 'node:fs/promises'
 import * as path from 'node:path'
 import { z } from 'zod'
 import { writeFileDedup } from '#commands/all/email/lib/copyToAttachments.ts'
-import { DayDirFileWriter, messageFileName } from '#lib/nbfs/mod.ts'
+import { DayDirFileWriter, ensureDay, messageFileName } from '#lib/nbfs/mod.ts'
 import slugify from '#lib/string/slugify.ts'
 import { exists, readTextFile, writeTextFile } from '#shared/fs/mod.ts'
 import outputFile from '#shared/fs/outputFile.ts'
@@ -612,14 +612,18 @@ export async function syncBeeper(options: BeeperSyncOptions): Promise<BeeperSync
       result.files.push(toTimeRef(filePath))
       log(`  ${network} · ${label}: ${sections.length} message(s) on ${date} → ${rel}`)
       try {
+        // The capture may land on a day that has no day file yet
+        await ensureDay(day, options.timeDir)
         let dayDoc = await readDay(day, options.timeDir)
         dayDoc = dayDoc.setCompleteItem(`${first.when.time} > ${who} ${network}`, `[${summary}](${rel})`, {
           time: first.when.time,
           category,
         })
         await writeDay(dayDoc, options.timeDir)
-      } catch {
-        result.notes.push(`${date} has no day file; the ${network} capture is saved without a day entry.`)
+      } catch (err) {
+        result.notes.push(
+          `${date}'s day file could not be updated (${(err as Error).message}); the ${network} capture is saved without a day entry.`,
+        )
       }
     }
 

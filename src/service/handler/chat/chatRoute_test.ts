@@ -903,10 +903,11 @@ test('chat route - web saving logs to its notebook day and reports logging failu
       },
     })
 
-    await rm(dayPath)
+    // A missing day file is now created; a file naming another date cannot be read
+    await writeTextFile(dayPath, '# **2026-01-28 - Wed**\n\n## Personal Complete\n- 08:00 > Morning walk\n')
     host.endDefaults.enricher = { ...stubEnricher, summarize: async () => 'Atlas Next Steps' }
-    await (await send(app, 'http://localhost/chat/missing-day/messages', { message: 'Review the next steps.' })).text()
-    const partial = await getJsonAfterEnd('missing-day', true)
+    await (await send(app, 'http://localhost/chat/wrong-day/messages', { message: 'Review the next steps.' })).text()
+    const partial = await getJsonAfterEnd('wrong-day', true)
     assert({
       given: 'a transcript saved when its day file cannot be read',
       should: 'keep the transcript and return the logging failure to the page',

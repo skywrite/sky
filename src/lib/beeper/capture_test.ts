@@ -202,11 +202,13 @@ test('beeper capture - chats land as one saved message per chat per day, then gr
       ),
     )
     const dayText = await readTextFile(path.join(timeDir, dayFile(day11)))
+    const day10Text = await readTextFile(path.join(timeDir, dayFile(PlainDate.fromString('2026-03-10'))))
     const saved = await readdir(path.join(attachmentsDir, dayAttachmentsDir(day11)))
     const state = await loadBeeperSyncState(stateFile)
     assert({
       given: 'two WhatsApp chats with three days of talk, a read-only channel, and a Slack chat',
-      should: 'write nothing on a dry run, then a file per chat per day with the right names, links, and day entry',
+      should:
+        'write nothing on a dry run, then a file per chat per day with the right names, links, and day entries, creating a missing day file',
       actual: [
         [dry.messages, dry.files.length, afterDry],
         [first.chats, first.messages, first.files.length, first.complete, first.accountsSkipped, first.skipped],
@@ -233,6 +235,7 @@ test('beeper capture - chats land as one saved message per chat per day, then gr
         dayText.includes('07:55 > Atlas launch team WhatsApp -> [Kickoff moved to 3pm](actions/messages/'),
         saved,
         first.notes,
+        day10Text.includes('09:12 > Maya WhatsApp -> ['),
         [state.lastSync, state.chats.c1?.cursor, state.chats.c1?.seen, Object.keys(state.chats.c1?.files ?? {})],
       ],
       expected: [
@@ -266,7 +269,8 @@ test('beeper capture - chats land as one saved message per chat per day, then gr
         true,
         true,
         ['2026-03-11_WhatsApp_budget.png'],
-        ['2026-03-10 has no day file; the WhatsApp capture is saved without a day entry.'],
+        [],
+        true,
         ['2026-03-11T13:00:00Z', '0005', ['c1-0001', 'c1-0002', 'c1-0003'], ['2026-03-10', '2026-03-11']],
       ],
     })
