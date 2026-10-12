@@ -259,6 +259,7 @@ class Editor {
     })
     this.listen(document, 'selectionchange', () => this.onSelectionChange())
     this.listen(root, 'click', (event) => this.onClick(event as MouseEvent))
+    this.listen(root, 'focus', () => this.onFocus())
     this.listen(root, 'copy', (event) => this.onCopy(event as ClipboardEvent, false))
     this.listen(root, 'cut', (event) => this.onCopy(event as ClipboardEvent, true))
     this.listen(root, 'paste', (event) => this.onPaste(event as ClipboardEvent))
@@ -630,6 +631,23 @@ class Editor {
       return
     }
     if (event.target === this.root) this.clickInMargin(event.clientX, event.clientY)
+  }
+
+  /**
+   * A caret on the root itself, between blocks, takes no keys: a redraw while unfocused leaves it
+   * there, and a click into an empty paragraph keeps it. On focus it goes into the block it sits
+   * before, or to the end of the last one.
+   */
+  private onFocus() {
+    const selection = document.getSelection()
+    const range = selection && selection.rangeCount > 0 ? selection.getRangeAt(0) : null
+    if (!range?.collapsed || range.startContainer !== this.root) return
+    const block = this.root.childNodes[range.startOffset]
+    const id = block instanceof HTMLElement ? block.dataset.node : undefined
+    let leaf: Node | null = (id ? this.doc.getNode(id)?.firstLeaf() : null) ?? null
+    while (leaf && !this.reachable(leaf)) leaf = leaf.nextLeaf()
+    if (leaf) this.place(leaf.id, 0)
+    else this.focusEnd()
   }
 
   private onMouseDown(event: MouseEvent) {

@@ -49,6 +49,16 @@ test(
           },
           expected: { sent: 'Review the **Atlas** plan:\n\n- pricing\n- notice terms', left: '', errors: [] },
         })
+        // The composer was emptied while it was locked for the reply; a click must still put the caret in it.
+        await page.getByRole('button', { name: 'Send', exact: true }).waitFor()
+        await input.click()
+        await page.keyboard.type('Thanks')
+        assert({
+          given: 'a click into the composer once the reply is in',
+          should: 'take what is typed next',
+          actual: await composerText(input),
+          expected: 'Thanks',
+        })
       },
     )
   },
