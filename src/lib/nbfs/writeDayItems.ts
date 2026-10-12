@@ -2,6 +2,7 @@ import { DIR_TIME } from '#config'
 import type { Link } from '#shared/models/Markdown/Link/mod.ts'
 import { normalizeToPlainDate, readDay, writeDay } from '#shared/nbfs/mod.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
+import { ensureDay } from './ensureDay.ts'
 
 interface WriteDayItemsOptions {
   links?: Map<string, Link>
@@ -9,7 +10,8 @@ interface WriteDayItemsOptions {
 }
 
 /**
- * Add items to a day's collection and write the updated day file.
+ * Add items to a day's collection and write the updated day file. A day with
+ * no day file yet is created first, unstarted.
  *
  * @param day - PlainDate instance or YMD string (e.g., "2025-03-15")
  * @param collectionTitle - Title of the collection to add items to
@@ -26,6 +28,7 @@ export default async function writeDayItems(
   const plainDate = normalizeToPlainDate(day)
   if (typeof items === 'string') items = [items]
 
+  await ensureDay(plainDate, timeDir)
   let dayObj = await readDay(plainDate, timeDir)
   for (let i = 0; i < items.length; i++) {
     dayObj = dayObj.addItem(collectionTitle, items[i], i === 0 ? { links } : undefined)
