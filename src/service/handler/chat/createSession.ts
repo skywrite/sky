@@ -23,6 +23,7 @@ import {
   withoutBlankStrings,
 } from '#commands/lib/chat/notebookTools.ts'
 import { contextProducers } from '#commands/lib/chat/producers.ts'
+import { createReadChatTool } from '#commands/lib/chat/readChat.ts'
 import { CHAT_READING } from '#commands/lib/chat/readingDefaults.ts'
 import { renderChatSystemPrompt } from '#commands/lib/chat/systemPrompt.ts'
 import { createWebTools } from '#commands/lib/chat/webTools.ts'
@@ -471,6 +472,7 @@ export function createChatHost(config: typeof ConfigModule, env: Record<string, 
               cwd: config.DIR_HOME,
               onAttachments,
             }),
+            ...createReadChatTool({ notebookDir: config.DIR_BASE }),
             ...(await createNotebookTools(toolTasks, {
               sourceChat: sourceChatHref(id),
               notebookDir: config.DIR_BASE,

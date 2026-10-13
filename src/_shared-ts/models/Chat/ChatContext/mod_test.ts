@@ -33,6 +33,7 @@ const FIX = {
   roadmap: abs('projects/Atlas/Roadmap.md'),
   person: abs('people/Jane-Doe.md'),
   ownChat: abs('time/2026/W05/01-27/actions/ai-chats/09-00_Prior-Session.md'),
+  pastChat: abs('time/2026/W05/01-26/actions/ai-chats/16-00_Atlas-Launch-Plan.md'),
   weekPlan: abs('time/2026/W05/week.md'),
   memory: abs('ai/memory/atlas-terms.md'),
 }
@@ -473,7 +474,7 @@ test('ChatContext.firstTurn - admission by evidence sizes context to the questio
       floored: 2,
       bar: 4,
       budget: 300_000,
-      scoring: 's5',
+      scoring: 's6',
     },
   })
 })
@@ -1058,6 +1059,48 @@ test('ChatContext - a shipped document stays when the conversation moves on; the
       additionRepeatsJournal: false,
       joined: ['people/Jane-Doe.md'],
       logged: ['people/Jane-Doe.md'],
+    },
+  })
+})
+
+test('ChatContext - a past chat comes in as its card; pinned by hand, it comes in whole once', async () => {
+  const { context } = makeContext({
+    fetchContext: fetchFake({ today: [FIX.day], goals: [FIX.goal] }),
+    producers: {
+      produceInitialQuery: () => Promise.resolve(ok({ paths: [FIX.pastChat], query: 'q1' })),
+      evolveQueries: () => Promise.resolve(ok({ queries: ['q1'], changed: false })),
+      executeQuery: () => Promise.resolve(ok({ paths: [FIX.pastChat] })),
+    },
+  })
+  await context.seedBaseline()
+  const first = await context.firstTurn('When did we decide to launch Atlas?')
+  const segment = first.rebuilt!.activityMarkdown!
+  const chatPath = 'time/2026/W05/01-26/actions/ai-chats/16-00_Atlas-Launch-Plan.md'
+  await context.pin(chatPath)
+  const pinned = context.reassemble()
+  await context.pin(chatPath)
+  const again = context.reassemble()
+  assert({
+    given: 'a query that returns a saved chat, then the person pinning that chat twice',
+    should:
+      'ship the card first, then deliver the whole chat once, as an addition, with the card gone from the segment',
+    actual: {
+      cardSummary: segment.includes('Sky drafted a launch checklist for Atlas.'),
+      cardNote: segment.includes('read_chat opens it'),
+      cardConversation: segment.includes('escrow timeline'),
+      wholeAdded: pinned.additionsMarkdown?.includes('escrow timeline'),
+      cardInSegment: pinned.activityMarkdown?.includes('read_chat opens it'),
+      pinnedKept: pinned.kept.find((r) => r.path === chatPath)?.pinned,
+      addedAgain: again.additionsMarkdown,
+    },
+    expected: {
+      cardSummary: true,
+      cardNote: true,
+      cardConversation: false,
+      wholeAdded: true,
+      cardInSegment: false,
+      pinnedKept: true,
+      addedAgain: null,
     },
   })
 })

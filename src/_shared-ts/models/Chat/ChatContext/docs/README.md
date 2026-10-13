@@ -1,6 +1,6 @@
 ---
 created: 2026-08-15
-updated: 2026-10-05
+updated: 2026-10-12
 ---
 
 # ChatContext admission — evidence in, budget as a cap
@@ -109,6 +109,20 @@ whole **minus message-capture bodies**: day.md ledgers every capture at a
 line each, and retrieval fetches any body a conversation asks about. See
 [2026-09-01](2026-09-01-lean-baseline-drops-message-bodies.md) for the
 capture-volume shift that forced this.
+
+A saved chat enters the pool as its **card** (`chatCard.ts`): the file
+above `## Conversation` — frontmatter, title and the `## Summary` a save
+writes — and a line counting the messages left out. A past chat is past
+output, and its conversation is nearly all of its tokens; whole, every chat
+a medium or broad query touched shipped its old turns. Admission scores the
+card, so a chat comes in on a word match only when its title, tags, links or
+summary carry the word. The conversation is one tool call away: `read_chat`
+(`commands/lib/chat/readChat.ts`) opens it by the path the card came under.
+Keeping the last week's chats whole was rejected: the recent ones are where
+most of the chat tokens were. A chat the person pins by hand comes in whole,
+replacing its card; it leaves the shipped set first, so it arrives as an
+addition rather than vanishing into a segment the model already read.
+Scoring `s6` marks logs whose chat scores and tokens are the card's.
 
 The scorer never changes — s3 answers "how much evidence does this one doc
 carry?", which no policy needs re-answered. What changes is the set-level

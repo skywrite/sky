@@ -16,6 +16,7 @@ import {
   getApprovalSessionKey,
 } from '#commands/lib/chat/notebookTools.ts'
 import { contextProducers } from '#commands/lib/chat/producers.ts'
+import { createReadChatTool } from '#commands/lib/chat/readChat.ts'
 import { CHAT_READING } from '#commands/lib/chat/readingDefaults.ts'
 import { renderChatSystemPrompt } from '#commands/lib/chat/systemPrompt.ts'
 import { createWebTools } from '#commands/lib/chat/webTools.ts'
@@ -37,6 +38,7 @@ import {
   FILE_AI_FILE_GRANTS,
   PORT_SERVER,
 } from '#shared/config.ts'
+import { READ_CHAT_TOOL } from '#shared/models/Chat/ChatContext/chatCard.ts'
 import { fetchWithConnectRetry } from '#shared/models/Chat/ChatContext/fetchContext.ts'
 import type { RebuildReport } from '#shared/models/Chat/ChatContext/mod.ts'
 import ChatSession, { type ChatSessionEvent } from '#shared/models/Chat/ChatSession/mod.ts'
@@ -466,6 +468,9 @@ export default class AiChatTask extends Command {
           } else if (event.toolName === READ_FILE_TOOL) {
             const input = event.input as { path: string }
             output.log(colors.dim(`Reading file: ${input.path}`))
+          } else if (event.toolName === READ_CHAT_TOOL) {
+            const input = event.input as { path: string }
+            output.log(colors.dim(`Reading chat: ${input.path}`))
           } else {
             output.log(colors.dim(`Running: ${toolDisplayName(event.toolName)}...`))
           }
@@ -633,6 +638,7 @@ export default class AiChatTask extends Command {
           tools: {
             ...webTools,
             ...fileTools,
+            ...createReadChatTool({ notebookDir: DIR_BASE }),
             ...notebookTools,
             ...createWritingVoiceTools(createWritingLessons(context.config), {
               source: `chat:terminal:${startTime.toString()}`,

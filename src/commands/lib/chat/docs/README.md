@@ -1,6 +1,6 @@
 ---
 created: 2026-09-10
-updated: 2026-10-05
+updated: 2026-10-12
 ---
 
 # Chat prompt and tools
@@ -41,6 +41,13 @@ files are rejected during preflight. Folder moves can finish partially after
 an error or Stop; their results identify both paths, and retries must inspect
 them first. Source directories are removed only while empty, so newly added
 files are preserved. A filesystem move is not evidence of an upload.
+
+## Past chats
+
+A session's context carries each saved chat as its card. `read_chat`
+(`readChat.ts`) opens one whole and read-only, by the path the card came
+under, in both hosts; see
+[ChatContext admission](../../../../_shared-ts/models/Chat/ChatContext/docs/README.md).
 
 ## What the prompt rules on
 

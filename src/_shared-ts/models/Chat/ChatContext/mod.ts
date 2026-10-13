@@ -64,6 +64,7 @@ import {
 import { replyThreadsDir } from '../document/lineage.ts'
 import type { ResumeState } from '../document/resume.ts'
 import type { ConversationMessage } from '../type.d.ts'
+import { contextDocument } from './chatCard.ts'
 import createDayLabeler from './dayLabel.ts'
 import { fetchContextFromServer } from './fetchContext.ts'
 import { resolveUniverse, type UniverseResolution } from './resolveUniverse.ts'
@@ -231,24 +232,22 @@ export interface ChatContextOptions {
 // -----------------------------------------------------------------------------
 
 /**
- * Read the given files from disk and merge them into the collection,
- * stripping chat metadata comments and transcript sections. Builds DomainCollection without a local MarkdownStore.
+ * Read the given files from disk and merge them into the collection as the
+ * context reads them (chatCard.ts): comments and transcript sections
+ * stripped, a saved chat as its card unless `wholeChats`. Builds
+ * DomainCollection without a local MarkdownStore.
  */
 async function mergePathsIntoCollection(
   paths: string[],
   existing: DomainCollection | null,
+  opts: { wholeChats?: boolean } = {},
 ): Promise<DomainCollection | null> {
   if (paths.length === 0) return existing
   const docs: Array<{ doc: Document; path: string }> = []
   for (const filePath of paths) {
     try {
       const content = await readTextFile(filePath)
-      const doc = Document.fromMarkdown(content).stripHtmlComments()
-      // A saved chat keeps its replies' headings as message text (see fetchContext.ts).
-      docs.push({
-        doc: isAIChatPath(filePath) ? doc : doc.filterSections((h) => !h.text.toLowerCase().includes('transcript')),
-        path: filePath,
-      })
+      docs.push({ doc: contextDocument(filePath, content, { wholeChat: opts.wholeChats }), path: filePath })
     } catch (err) {
       // Skip unreadable files
       console.warn(`[ai:chat] skipping context file ${filePath}: ${(err as Error).message}`)
@@ -299,6 +298,8 @@ export default class ChatContext {
   /** Documents the person pinned in or kept out by hand — absolute paths, honored every rebuild. */
   private userPins = new Set<string>()
   private userExcludes = new Set<string>()
+  /** Saved chats in the universe whole, pinned by hand, where retrieval brings only their cards. */
+  private wholeChats = new Set<string>()
   /**
    * The user-stated window from turn 1, when the question named one. While
    * set, every rebuild admits with the sweep-stratified policy — evolve
@@ -848,16 +849,30 @@ export default class ChatContext {
     this.contextPaths = []
     this.shipped.clear()
     this.segment.clear()
+    this.wholeChats.clear()
   }
 
   // ---------------------------------------------------------------------------
   // By hand
   // ---------------------------------------------------------------------------
 
-  /** Pin a document in: it bypasses scoring and the budget, and joins the universe if it wasn't there. */
+  /**
+   * Pin a document in: it bypasses scoring and the budget, and joins the
+   * universe if it wasn't there. A saved chat pinned by hand comes in whole,
+   * over the card retrieval brought: the model has seen only the card, so
+   * the whole chat ships again, as a newcomer.
+   */
   async pin(relPath: string): Promise<void> {
     const abs = path.join(this.baseDir, relPath)
-    if (!this.collection?.paths.includes(abs)) {
+    if (isAIChatPath(abs) && !this.wholeChats.has(abs)) {
+      const whole = await mergePathsIntoCollection([abs], null, { wholeChats: true })
+      if (!whole) throw new Error(`no such document: ${relPath}`)
+      // Of two copies at one depth, a merge keeps the receiver's.
+      this.collection = this.collection ? whole.merge(this.collection) : whole
+      this.wholeChats.add(abs)
+      this.shipped.delete(abs)
+      this.segment.delete(abs)
+    } else if (!this.collection?.paths.includes(abs)) {
       // The merge skips what it cannot read; a pin on nothing is an error, not a silent no-op.
       const merged = await mergePathsIntoCollection([abs], this.collection)
       if (!merged?.paths.includes(abs)) throw new Error(`no such document: ${relPath}`)

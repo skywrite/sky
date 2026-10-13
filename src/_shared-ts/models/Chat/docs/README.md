@@ -1,6 +1,6 @@
 ---
 created: 2026-09-01
-updated: 2026-10-11
+updated: 2026-10-12
 ---
 
 # Chat model — the pieces under every chat host
@@ -42,6 +42,8 @@ follow the conversation as it moved, its heading naming the model and effort
 that wrote it (`summarySection.ts`). A chat changes direction as it goes, and
 the title and first message already say what was asked, so the bullets never
 restate the request.
+Past chats enter a session's context as that summary, on a card
+([ChatContext](../ChatContext/docs/README.md)).
 Both hosts ask for it at a chat's end, and the call runs alongside tags and
 rel. It runs at High where the model offers it, enough for a few bullets
 without X-high's wait. It reads the whole conversation under the speakers'

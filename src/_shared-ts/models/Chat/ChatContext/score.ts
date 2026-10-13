@@ -100,9 +100,10 @@ export const CHAT_SCORE = {
  * score composition or weights change materially — logged scores are only
  * interpretable against the semantics that produced them ('s4' = composed
  * scorer + relevance floor + per-turn provenance decay; 's5' = the same
- * scorer with admission by evidence in place of the relative floor).
+ * scorer with admission by evidence in place of the relative floor; 's6' =
+ * 's5' with a saved chat scored, and shipped, as its card — chatCard.ts).
  */
-export const SCORING = 's5'
+export const SCORING = 's6'
 
 // -----------------------------------------------------------------------------
 // Provenance — retrieval evidence accumulated by ChatContext
