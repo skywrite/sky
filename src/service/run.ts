@@ -1,6 +1,8 @@
 import * as path from 'node:path'
 import process from 'node:process'
 import { sweepTotals, syncGmailFollowAccounts } from '#commands/all/google/email/lib/heartbeatSync.ts'
+import { slackConnection } from '#commands/all/slack/lib/agentSlack.ts'
+import { slackIssueMessage } from '#commands/all/slack/lib/connection.ts'
 import CommandContext from '#commands/lib/core/CommandContext.ts'
 import CommandService from '#commands/lib/core/CommandService.ts'
 import { automationPassInput, createAutomationProcess } from '#lib/automations/process.ts'
@@ -139,13 +141,18 @@ customRoutes.set('/site-html', async (req: Request) => {
 
 // The service's own state for the shell: a restart waiting for idle and what
 // it waits on. A POST to restart is the person saying "now".
-customRoutes.set('/service/status', (req: Request) =>
-  Promise.resolve(
-    req.method === 'GET'
-      ? createJsonResponse(jsend.success(reload.status()))
-      : new Response('Method not allowed', { status: 405 }),
-  ),
-)
+customRoutes.set('/service/status', async (req: Request) => {
+  if (req.method !== 'GET') return new Response('Method not allowed', { status: 405 })
+  const issues = await slackConnection.issues().catch(() => [])
+  return createJsonResponse(
+    jsend.success({
+      ...reload.status(),
+      ...(issues.length
+        ? { slack: { message: slackIssueMessage(issues[0]), count: issues.length, workspace: issues[0].workspace } }
+        : {}),
+    }),
+  )
+})
 customRoutes.set('/service/restart', (req: Request) => {
   if (req.method !== 'POST') return Promise.resolve(new Response('Method not allowed', { status: 405 }))
   // The answer leaves first; the process follows.

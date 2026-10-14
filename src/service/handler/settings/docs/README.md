@@ -1,6 +1,6 @@
 ---
 created: 2026-08-30
-updated: 2026-10-04
+updated: 2026-10-14
 ---
 
 # Settings — the web's settings section
@@ -84,6 +84,10 @@ Pages:
   API keys stay with their integrations; the TypeSafe service row links to
   its validated key setup. Accounts that lose
   Keychain access retain their contextual Restore access action.
+  Slack checks remain noninteractive and show persistent pauses. Its explicit
+  Restore access action tests saved credentials before any Brave import; the
+  [Slack authentication boundary](../../../../commands/all/slack/README.md#authentication-and-background-checks)
+  owns this contract.
   Since 2026-09-16 the Accounts block carries a Beeper row: Connect runs
   the desktop app's own approval page and stores the grant as
   `beeper/desktop`, a token made in Beeper is accepted instead, and its

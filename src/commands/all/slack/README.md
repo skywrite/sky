@@ -1,6 +1,6 @@
 ---
 created: 2026-01-18
-updated: 2026-09-12
+updated: 2026-10-14
 ---
 
 # Slack Tasks
@@ -8,6 +8,45 @@ updated: 2026-09-12
 Run `nb cli:commands | grep slack` to see all available Slack commands.
 
 Saved message boundaries and layout compatibility are owned by the [Slack conversation parser](../../../_shared-ts/models/Message/slack/docs/README.md).
+
+## Authentication and background checks
+
+`lib/connection.ts` owns authentication for CLI calls, direct API requests and
+Settings. Ordinary operations read only the selected workspace's credentials
+through Sky's [noninteractive Keychain helper](../../../lib/secrets/docs/README.md).
+They never launch browser import or an interactive Keychain read. A denied
+read or rejected session persists a workspace pause under Sky's machine-local
+`state/slack/connection` directory. Service restarts and subsequent checks honor
+that pause; network failures instead have a short cooldown. These state files
+contain status and a revision, never tokens or cookies. Revision checks prevent
+an older request from overwriting a newer pause or successful recovery.
+
+The unchanged agent-slack loader eagerly reads every workspace from Keychain
+even when `SLACK_TOKEN` is supplied. Environment variables alone therefore
+cannot prevent macOS dialogs. On macOS, `lib/protectedProcess.ts` launches it
+inside a child sandbox denying the `security` executable, Keychain IPC and
+Apple Events, with the selected credentials in environment variables. Setting
+`SLACK_TOKEN` also disables agent-slack's automatic refresh. There is no
+unrestricted fallback: if macOS removes or refuses `sandbox-exec`, Slack pauses
+until Sky gains another protected execution mechanism. The other Sky processes
+and third-party checkout are unaffected.
+
+Settings → Connections → Slack shows the pause and offers Restore access;
+`sky slack:auth` performs the same explicit recovery. Recovery first tests the
+saved session, restoring native Keychain access only when needed. Only missing
+or rejected credentials lead to `agent-slack auth import-brave`. That deliberate
+import can request macOS approval and requires a signed-in Slack tab in Brave.
+Cancellation leaves the pause in place. Concurrent recovery requests join one
+attempt; background callers remain paused. `sky slack:auth --check` always stays
+noninteractive. The shell reports pauses from metadata without reading secrets.
+Its recovery link selects the affected workspace, including one other than the
+configured default. `sky slack:auth --workspace <workspace-url>` targets the same
+recovery from the CLI.
+
+The native sandbox regression test is opt-in (`SKY_SLACK_SANDBOX_TESTS=1`)
+because macOS cannot apply a child sandbox from inside some development
+sandboxes. It invokes `security help` only, so a regression cannot read a real
+credential or request authentication.
 
 ## API Limitations: Bulk Unread Counts
 

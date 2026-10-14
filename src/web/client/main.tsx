@@ -214,11 +214,13 @@ function Canvas() {
           ? 'sky · audition'
           : isStreaks
             ? 'sky · streaks'
-            : settingsSection === 'writing-voice'
-              ? 'sky · Writing style'
-              : settingsSection === 'browser-automation'
-                ? 'sky · Browser automation'
-                : 'sky'
+            : settingsSection === 'connections'
+              ? 'sky · Connections'
+              : settingsSection === 'writing-voice'
+                ? 'sky · Writing style'
+                : settingsSection === 'browser-automation'
+                  ? 'sky · Browser automation'
+                  : 'sky'
   }, [
     threadId,
     chatTitle,

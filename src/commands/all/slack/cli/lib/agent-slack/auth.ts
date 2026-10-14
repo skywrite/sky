@@ -6,9 +6,11 @@
  * `auth whoami` prints the local credential config as JSON.
  */
 
+import type { SlackIssue } from '#commands/all/slack/lib/connection.ts'
+
 export type AgentSlackAuthStatus =
   | { ok: true; url?: string; team?: string; user?: string; userId?: string }
-  | { ok: false; error: string }
+  | ({ ok: false; error: string } & Partial<SlackIssue>)
 
 export function parseAuthTest(stdout: string, stderr: string): AgentSlackAuthStatus {
   try {

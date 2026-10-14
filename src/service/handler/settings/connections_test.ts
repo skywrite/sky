@@ -464,7 +464,7 @@ test({ name: 'connections route - the Google client is saved, then a sign-in can
   })
 })
 
-test({ name: 'connections route - Slack is asked, and re-imported on request' }, async () => {
+test({ name: 'connections route - Slack is checked, and restored on request' }, async () => {
   const { app, slackCalls } = hostWith()
   const status = await app.request('/slack')
   const again = await post(app, '/slack/reconnect', {})
@@ -473,6 +473,70 @@ test({ name: 'connections route - Slack is asked, and re-imported on request' },
     should: 'pass each to the host and answer what it said',
     actual: [status.status, await status.json(), again.status, slackCalls],
     expected: [200, CONNECTED, 200, ['status', 'reconnect']],
+  })
+})
+
+test('Slack recovery requests join one attempt, and pausing never starts recovery', async () => {
+  const { host } = hostWith()
+  let restores = 0
+  let pauses = 0
+  let finish!: () => void
+  let began!: () => void
+  const started = new Promise<void>((resolve) => {
+    began = resolve
+  })
+  const paused: SlackStatus = { installed: true, ok: false, reason: 'paused', error: 'Slack syncing is paused.' }
+  host.slack.reconnect = async () => {
+    restores++
+    began()
+    await new Promise<void>((resolve) => {
+      finish = resolve
+    })
+    return CONNECTED
+  }
+  host.slack.pause = async () => {
+    pauses++
+  }
+  host.slack.status = async () => paused
+  const app = createConnectionsRoutes(host)
+  const first = app.request('/slack/reconnect', { method: 'POST' })
+  const second = app.request('/slack/reconnect', { method: 'POST' })
+  await started
+  finish()
+  const replies = await Promise.all([first, second])
+  const pause = await app.request('/slack/pause', { method: 'POST' })
+  assert({
+    given: 'concurrent restore actions followed by Pause syncing',
+    should: 'join recovery and only persist a pause',
+    actual: [restores, pauses, ...(await Promise.all(replies.map((reply) => reply.json()))), await pause.json()],
+    expected: [1, 1, CONNECTED, CONNECTED, paused],
+  })
+})
+
+test('Slack status, recovery and pause preserve the workspace selected in a notice', async () => {
+  const { host } = hostWith()
+  const selected: (string | undefined)[] = []
+  host.slack.status = async (workspace) => {
+    selected.push(workspace)
+    return CONNECTED
+  }
+  host.slack.reconnect = async (workspace) => {
+    selected.push(workspace)
+    return CONNECTED
+  }
+  host.slack.pause = async (workspace) => {
+    selected.push(workspace)
+  }
+  const workspace = 'https://widget.slack.com'
+  const app = createConnectionsRoutes(host)
+  await app.request(`/slack?workspace=${encodeURIComponent(workspace)}`)
+  await post(app, '/slack/reconnect', { workspace })
+  await post(app, '/slack/pause', { workspace })
+  assert({
+    given: 'a notice for a workspace other than the default',
+    should: 'target every action to that workspace',
+    actual: selected,
+    expected: [workspace, workspace, workspace, workspace],
   })
 })
 

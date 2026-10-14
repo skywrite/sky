@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto'
 import process from 'node:process'
 import { BEEPER_SYNC_STATE, type BeeperSyncOutcome } from '#commands/all/beeper/inbox/sync.ts'
-import { reimportSlackFromBrave, slackAuthStatus, slackProfileName } from '#commands/all/slack/lib/authStatus.ts'
+import { slackConnection } from '#commands/all/slack/lib/agentSlack.ts'
+import { restoreSlackAccess, slackAuthStatus, slackProfileName } from '#commands/all/slack/lib/authStatus.ts'
 import CommandContext from '#commands/lib/core/CommandContext.ts'
 import CommandService from '#commands/lib/core/CommandService.ts'
 import * as notebookConfig from '#config'
@@ -164,10 +165,10 @@ function googleSetup(secrets: SecretsProvider): ConnectionsHost['google']['setup
   }
 }
 
-async function slackStatus(): Promise<SlackStatus> {
+async function slackStatus(selectedWorkspace?: string): Promise<SlackStatus> {
   if (!(await isCommandAvailable('agent-slack'))) return { installed: false }
-  const status = await slackAuthStatus()
-  if (!status.ok) return { installed: true, ok: false, error: status.error }
+  const status = await slackAuthStatus(selectedWorkspace)
+  if (!status.ok) return { installed: true, ...status }
   const workspace = status.url ?? SLACK_WORKSPACE ?? null
   const displayName = status.userId && workspace ? await slackProfileName(status.userId, workspace) : undefined
   return {
@@ -180,11 +181,11 @@ async function slackStatus(): Promise<SlackStatus> {
   }
 }
 
-async function slackReconnect(): Promise<SlackStatus> {
+async function slackReconnect(workspace?: string): Promise<SlackStatus> {
   if (!(await isCommandAvailable('agent-slack'))) return { installed: false }
-  const imported = await reimportSlackFromBrave()
-  if (!imported.ok) return { installed: true, ok: false, error: imported.error }
-  return slackStatus()
+  const restored = await restoreSlackAccess(workspace)
+  if (!restored.ok) return { installed: true, ...restored }
+  return slackStatus(workspace)
 }
 
 /**
@@ -384,7 +385,7 @@ export function createConnectionsHost(): ConnectionsHost {
     secrets,
     providers: () => KNOWN_PROVIDERS.map((id) => ({ id, label: PROVIDER_LABEL[id] ?? id })),
     google: googleSignIn(secrets),
-    slack: { status: slackStatus, reconnect: slackReconnect },
+    slack: { status: slackStatus, reconnect: slackReconnect, pause: (workspace) => slackConnection.pause(workspace) },
     beeper: beeperConnection(secrets, BEEPER_SYNC_STATE, runCheck),
     typesafe: typesafeConnection(secrets),
   }

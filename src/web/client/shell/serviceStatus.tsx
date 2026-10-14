@@ -11,6 +11,7 @@ import { useEffect, useState } from 'react'
 interface Status {
   pending: { since: number; reasons: string[]; files: string[] } | null
   holding: string[]
+  slack?: { message: string; count: number; workspace?: string }
 }
 
 const POLL_MS = 5000
@@ -71,18 +72,35 @@ export function RestartPending() {
     }
   }
 
-  if (!status?.pending) return null
-  const waitingOn = [...new Set(status.holding)].map((label) => ACTIVITY_LABELS[label] ?? label).join(', ')
+  if (!status?.pending && !status?.slack) return null
+  const waitingOn = [...new Set(status?.holding ?? [])].map((label) => ACTIVITY_LABELS[label] ?? label).join(', ')
   return (
-    <div className="sky-restart">
-      <div role="status">
-        <div className="sky-restart-label">Restart pending</div>
-        <div className="sky-restart-waiting">{waitingOn ? `Waiting for ${waitingOn}` : 'Restarting shortly'}</div>
-      </div>
-      <Button variant="primary-quiet" size="compact-sm" loading={restarting} onClick={() => void restart()}>
-        {restarting ? 'Restarting…' : 'Restart now'}
-      </Button>
-      {error && <div role="alert">{error}</div>}
-    </div>
+    <>
+      {status?.slack && (
+        <div className="sky-restart" role="status">
+          <div className="sky-restart-label">
+            Slack sync paused{status.slack.count > 1 ? ` · ${status.slack.count} workspaces` : ''}
+          </div>
+          <div className="sky-restart-waiting">{status.slack.message}</div>
+          <a
+            href={`/settings/connections${status.slack.workspace ? `?slackWorkspace=${encodeURIComponent(status.slack.workspace)}` : ''}`}
+          >
+            Manage Slack access
+          </a>
+        </div>
+      )}
+      {status?.pending && (
+        <div className="sky-restart">
+          <div role="status">
+            <div className="sky-restart-label">Restart pending</div>
+            <div className="sky-restart-waiting">{waitingOn ? `Waiting for ${waitingOn}` : 'Restarting shortly'}</div>
+          </div>
+          <Button variant="primary-quiet" size="compact-sm" loading={restarting} onClick={() => void restart()}>
+            {restarting ? 'Restarting…' : 'Restart now'}
+          </Button>
+          {error && <div role="alert">{error}</div>}
+        </div>
+      )}
+    </>
   )
 }

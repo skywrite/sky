@@ -1,14 +1,15 @@
-import { runCommand } from '#lib/sys/mod.ts'
+import { slackConnection } from './agentSlack.ts'
+import type { SlackCredentials } from './connection.ts'
 
 export async function getSlackCredentials(
   workspaceUrl: string,
-): Promise<{ token: string; cookie: string } | undefined> {
-  const [tokenResult, cookieResult] = await Promise.all([
-    runCommand('security', ['find-generic-password', '-s', 'agent-slack', '-a', `xoxc:${workspaceUrl}`, '-w']),
-    runCommand('security', ['find-generic-password', '-s', 'agent-slack', '-a', 'xoxd', '-w']),
-  ])
-  if (tokenResult.code !== 0 || cookieResult.code !== 0) return undefined
-  return { token: tokenResult.stdout.trim(), cookie: cookieResult.stdout.trim() }
+): Promise<(SlackCredentials & { cookie: string }) | undefined> {
+  try {
+    const credentials = await slackConnection.credentials(workspaceUrl)
+    return { ...credentials, cookie: credentials.cookie ?? '' }
+  } catch {
+    return undefined
+  }
 }
 
 /**
@@ -36,8 +37,12 @@ export async function slackEdgeApiCall(
       signal: AbortSignal.timeout(10_000),
     })
     const json = (await response.json()) as Record<string, unknown>
+    if (json.ok === false && /^(invalid_auth|token_expired|token_revoked|not_authed)$/.test(String(json.error)))
+      await slackConnection.reportFailure(creds, 'expired')
+    else if (response.status === 429) await slackConnection.reportFailure(creds, 'network')
     return json.ok === false ? undefined : json
   } catch {
+    await slackConnection.reportFailure(creds, 'network').catch(() => {})
     return undefined
   }
 }
@@ -58,7 +63,7 @@ export async function slackApiCall(
 
   const formBody = new URLSearchParams(serialized)
   try {
-    const response = await fetch(`${workspaceUrl}/api/${method}`, {
+    const response = await fetch(`${creds.workspace}/api/${method}`, {
       method: 'POST',
       headers: {
         Cookie: `d=${encodeURIComponent(creds.cookie)}`,
@@ -68,8 +73,12 @@ export async function slackApiCall(
       signal: AbortSignal.timeout(10_000),
     })
     const json = (await response.json()) as Record<string, unknown>
+    if (json.ok === false && /^(invalid_auth|token_expired|token_revoked|not_authed)$/.test(String(json.error)))
+      await slackConnection.reportFailure(creds, 'expired')
+    else if (response.status === 429) await slackConnection.reportFailure(creds, 'network')
     return json.ok ? json : undefined
   } catch {
+    await slackConnection.reportFailure(creds, 'network').catch(() => {})
     return undefined
   }
 }

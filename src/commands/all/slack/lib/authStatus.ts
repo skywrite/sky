@@ -4,7 +4,7 @@ import {
   parseAuthTest,
 } from '#commands/all/slack/cli/lib/agent-slack/mod.ts'
 import { SLACK_WORKSPACE } from '#config'
-import { runAgentSlack } from './agentSlack.ts'
+import { runAgentSlack, slackConnection } from './agentSlack.ts'
 
 /** What a Brave re-import needs; shown when one fails. */
 export const IMPORT_REQUIREMENTS = [
@@ -15,10 +15,12 @@ export const IMPORT_REQUIREMENTS = [
 ].join('\n')
 
 /** `agent-slack auth test` against the configured workspace — agent-slack's default one when none is set. */
-export async function slackAuthStatus(): Promise<AgentSlackAuthStatus> {
-  const args = ['auth', 'test', ...(SLACK_WORKSPACE ? ['--workspace', SLACK_WORKSPACE] : [])]
+export async function slackAuthStatus(workspace = SLACK_WORKSPACE): Promise<AgentSlackAuthStatus> {
+  const args = ['auth', 'test', ...(workspace ? ['--workspace', workspace] : [])]
   const result = await runAgentSlack(args)
-  return parseAuthTest(result.stdout, result.stderr)
+  return result.issue
+    ? { ok: false, error: result.stderr, ...result.issue }
+    : parseAuthTest(result.stdout, result.stderr)
 }
 
 /** The signed-in person's profile name; auth.test's user field may be an old account handle. */
@@ -38,12 +40,10 @@ export async function slackProfileName(
   }
 }
 
-/** Fresh browser-session tokens from a logged-in Slack tab in Brave. */
-export async function reimportSlackFromBrave(): Promise<{ ok: true; output: string } | { ok: false; error: string }> {
-  const imported = await runAgentSlack(['auth', 'import-brave'])
-  if (!imported.success) {
-    const detail = (imported.stderr.trim() || imported.stdout.trim() || `exit code ${imported.code}`).trim()
-    return { ok: false, error: `agent-slack auth import-brave failed: ${detail}\n${IMPORT_REQUIREMENTS}` }
-  }
-  return { ok: true, output: imported.stdout.trim() }
+/** Deliberate recovery: restore saved access first; import Brave only for missing/expired tokens. */
+export async function restoreSlackAccess(workspace?: string): Promise<AgentSlackAuthStatus> {
+  const result = await slackConnection.recover(workspace)
+  return result.issue
+    ? { ok: false, error: result.stderr, ...result.issue }
+    : parseAuthTest(result.stdout, result.stderr)
 }

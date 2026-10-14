@@ -3,7 +3,7 @@
  *
  * A Google account signs in here the way `sky google:auth` does: the consent
  * page opens in a tab, and Sky's service receives the redirect on this
- * machine. Slack is agent-slack's: its test is shown, a re-import offered.
+ * machine. Slack checks saved access silently and offers deliberate recovery.
  * Beeper Desktop approves Sky on its own page, opened from here. API keys
  * belong to their integrations; TypeSafe validates its key before storage.
  */
@@ -50,7 +50,13 @@ type SlackStatus =
       user: string | null
       displayName?: string | null
     }
-  | { installed: true; ok: false; error: string }
+  | {
+      installed: true
+      ok: false
+      error: string
+      workspace?: string
+      reason?: 'keychain' | 'expired' | 'missing' | 'network' | 'unavailable' | 'paused'
+    }
 
 type ConnectState = { status: 'waiting' } | { status: 'done'; email: string } | { status: 'failed'; message: string }
 
@@ -119,48 +125,65 @@ export function useConnections() {
   return { data, note, reload }
 }
 
-// ── Slack: agent-slack's test, and a re-import when it fails ────────
+// ── Slack: silent status checks and deliberate recovery ───────────
 
 function useSlack() {
+  const workspace = new URLSearchParams(window.location.search).get('slackWorkspace') ?? undefined
   const [status, setStatus] = useState<SlackStatus | null>(null)
   const [busy, setBusy] = useState(false)
   const [warn, setWarn] = useState<string | null>(null)
   const [hint, setHint] = useState<string | null>(null)
 
-  const ask = useCallback((how: 'status' | 'check' | 'reconnect') => {
-    setBusy(true)
-    setWarn(null)
-    setHint(null)
-    const answer =
-      how === 'reconnect' ? postJson(`${API}/slack/reconnect`, {}) : fetch(`${API}/slack`).catch(() => null)
-    void answer
-      .then(async (r) => {
-        if (!r?.ok) {
-          setWarn(await refusalOf(r))
-          return
-        }
-        const next = (await r.json()) as SlackStatus
-        setStatus(next)
-        if (how !== 'status' && next.installed && next.ok) {
-          const name = next.displayName?.trim()
-          setHint(
-            name
-              ? `Connection successful. Signed in as ${name}.`
-              : 'Connection successful. Your Slack profile name could not be retrieved.',
-          )
-        }
-      })
-      .catch(() => setWarn("Couldn't check the Slack connection. Please try again."))
-      .finally(() => setBusy(false))
-  }, [])
+  const ask = useCallback(
+    (how: 'status' | 'check' | 'reconnect' | 'pause') => {
+      setBusy(true)
+      setWarn(null)
+      setHint(null)
+      const answer =
+        how === 'reconnect' || how === 'pause'
+          ? postJson(`${API}/slack/${how}`, { workspace })
+          : fetch(`${API}/slack${workspace ? `?workspace=${encodeURIComponent(workspace)}` : ''}`).catch(() => null)
+      void answer
+        .then(async (r) => {
+          if (!r?.ok) {
+            setWarn(await refusalOf(r))
+            return
+          }
+          const next = (await r.json()) as SlackStatus
+          setStatus(next)
+          if (how !== 'status' && next.installed && next.ok) {
+            const name = next.displayName?.trim()
+            setHint(
+              name
+                ? `Connection successful. Signed in as ${name}.`
+                : 'Connection successful. Your Slack profile name could not be retrieved.',
+            )
+          }
+        })
+        .catch(() => setWarn("Couldn't check the Slack connection. Please try again."))
+        .finally(() => setBusy(false))
+    },
+    [workspace],
+  )
 
   useEffect(() => ask('status'), [ask])
 
-  return { status, busy, warn, hint, check: () => ask('check'), reconnect: () => ask('reconnect') }
+  return {
+    status,
+    busy,
+    warn,
+    hint,
+    check: () => ask('check'),
+    reconnect: () => ask('reconnect'),
+    pause: () => ask('pause'),
+  }
 }
 
 function SlackRow() {
-  const { status, busy, warn, hint, check, reconnect } = useSlack()
+  const { status, busy, warn, hint, check, reconnect, pause } = useSlack()
+  const reason = status?.installed && !status.ok ? status.reason : undefined
+  const recovery =
+    reason === 'missing' ? 'Connect from Brave' : reason === 'expired' ? 'Refresh from Brave' : 'Restore access'
   const sub = !status
     ? warn
       ? 'Try checking the connection again.'
@@ -170,8 +193,14 @@ function SlackRow() {
       : status.ok
         ? [status.team, status.workspace?.replace(/^https?:\/\//, '').replace(/\/$/, '')].filter(Boolean).join(' · ') ||
           'Connected'
-        : 'Sign in to Slack in Brave, then reconnect.'
-  const trouble = warn ?? (status?.installed && !status.ok ? `Connection failed. ${status.error}` : null)
+        : reason === 'keychain'
+          ? 'macOS is blocking access to your saved Slack credentials. Syncing is paused.'
+          : reason === 'expired' || reason === 'missing'
+            ? 'Sign in to Slack in Brave, then connect or refresh your saved session.'
+            : reason === 'network'
+              ? 'Slack is temporarily unreachable. Sky will retry after a cooldown.'
+              : 'Slack syncing is paused. Restore access when you are ready.'
+  const trouble = warn ?? (status?.installed && !status.ok ? status.error : null)
 
   return (
     <Row
@@ -187,6 +216,12 @@ function SlackRow() {
               {trouble}
             </p>
           )}
+          {status?.installed && !status.ok && reason !== 'network' && (
+            <p>
+              Restore access checks your saved session first. macOS may request your login password. Brave is used only
+              if a new session is needed.
+            </p>
+          )}
         </>
       }
     >
@@ -196,18 +231,25 @@ function SlackRow() {
         status.ok ? (
           <span className="sky-set-status">Connected</span>
         ) : (
-          <span className="sky-set-off">Not connected</span>
+          <span className="sky-set-off">{reason === 'missing' ? 'Not connected' : 'Paused'}</span>
         )
       ) : null}
       {status?.installed !== false &&
         (status?.installed && !status.ok ? (
           <Button size="compact-sm" variant="primary" disabled={busy} onClick={reconnect}>
-            {busy ? 'Reconnecting…' : 'Reconnect'}
+            {busy ? 'Restoring…' : recovery}
           </Button>
         ) : (
-          <Button size="compact-sm" disabled={busy} onClick={check}>
-            {busy ? 'Checking…' : 'Check'}
-          </Button>
+          <>
+            <Button size="compact-sm" disabled={busy} onClick={check}>
+              {busy ? 'Checking…' : 'Check'}
+            </Button>
+            {status?.installed && status.ok && (
+              <Button size="compact-sm" disabled={busy} onClick={pause}>
+                Pause syncing
+              </Button>
+            )}
+          </>
         ))}
     </Row>
   )

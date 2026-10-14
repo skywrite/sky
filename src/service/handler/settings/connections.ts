@@ -7,14 +7,15 @@
  * never complete secret values. Password manager setup lives separately
  * under Browser automation and does not consume these legacy secret routes.
  *
- * Slack's credentials are agent-slack's: the page reports its test and can
- * re-import them from Brave, the way `sky slack:auth` does. Beeper Desktop
+ * Slack's credentials are agent-slack's: checks stay silent, and explicit
+ * recovery restores saved access before a Brave import. Beeper Desktop
  * signs in from here the way `sky beeper:auth` does, or takes a token made
  * in the app. TypeSafe's validated setup lives under Connections; its
  * key is still stored only after TypeSafe accepts it.
  */
 
 import { Hono } from 'hono'
+import type { SlackIssue } from '#commands/all/slack/lib/connection.ts'
 import type { BeeperPreview, HeldChat, LastRun } from '#lib/beeper/mod.ts'
 import { BEEPER_SECRETS_CATEGORY } from '#lib/beeper/secrets.ts'
 import {
@@ -87,7 +88,7 @@ export type SlackStatus =
       user: string | null
       displayName?: string | null
     }
-  | { installed: true; ok: false; error: string }
+  | ({ installed: true; ok: false; error: string } & Partial<SlackIssue>)
 
 /** How a Google sign-in started from the page is going. */
 export type GoogleConnectState =
@@ -186,9 +187,10 @@ export interface ConnectionsHost {
     }
   }
   slack: {
-    status: () => Promise<SlackStatus>
-    /** A Brave re-import, then the test again */
-    reconnect: () => Promise<SlackStatus>
+    status: (workspace?: string) => Promise<SlackStatus>
+    /** Explicit recovery; restores Keychain access before deciding whether a Brave import is needed. */
+    reconnect: (workspace?: string) => Promise<SlackStatus>
+    pause?: (workspace?: string) => Promise<void>
   }
   beeper: {
     status: () => Promise<BeeperStatus>
@@ -409,17 +411,39 @@ export function createConnectionsRoutes(host: ConnectionsHost): Hono {
     }
   })
 
-  // Slack: agent-slack's own test, and a Brave re-import when it fails.
+  // Slack status reads are silent; authentication UI belongs to explicit recovery only.
   app.get('/slack', async (c) => {
     try {
-      return c.json(await host.slack.status())
+      return c.json(await host.slack.status(c.req.query('workspace')))
     } catch (err) {
       return c.json(message(err), 500)
     }
   })
+  const restoringSlack = new Map<string, Promise<SlackStatus>>()
   app.post('/slack/reconnect', async (c) => {
     try {
-      return c.json(await host.slack.reconnect())
+      const body = await c.req.json<{ workspace?: string }>().catch(() => ({}))
+      const workspace = 'workspace' in body && typeof body.workspace === 'string' ? body.workspace : undefined
+      const key = workspace ?? ''
+      let recovery = restoringSlack.get(key)
+      if (!recovery) {
+        recovery = host.slack.reconnect(workspace).finally(() => {
+          restoringSlack.delete(key)
+        })
+        restoringSlack.set(key, recovery)
+      }
+      return c.json(await recovery)
+    } catch (err) {
+      return c.json(message(err), 500)
+    }
+  })
+  app.post('/slack/pause', async (c) => {
+    if (!host.slack.pause) return c.json({ message: 'Slack pause is unavailable.' }, 503)
+    try {
+      const body = await c.req.json<{ workspace?: string }>().catch(() => ({}))
+      const workspace = 'workspace' in body && typeof body.workspace === 'string' ? body.workspace : undefined
+      await host.slack.pause(workspace)
+      return c.json(await host.slack.status(workspace))
     } catch (err) {
       return c.json(message(err), 500)
     }
