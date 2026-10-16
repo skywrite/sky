@@ -11,7 +11,7 @@ import { useEffect, useState } from 'react'
 interface Status {
   pending: { since: number; reasons: string[]; files: string[] } | null
   holding: string[]
-  slack?: { message: string; count: number; workspace?: string }
+  slack?: { message: string; count: number; workspace?: string; reason?: string }
 }
 
 const POLL_MS = 5000
@@ -79,13 +79,14 @@ export function RestartPending() {
       {status?.slack && (
         <div className="sky-restart" role="status">
           <div className="sky-restart-label">
-            Slack sync paused{status.slack.count > 1 ? ` · ${status.slack.count} workspaces` : ''}
+            {status.slack.reason === 'network' ? 'Slack reconnecting…' : 'Slack sync paused'}
+            {status.slack.count > 1 ? ` · ${status.slack.count} workspaces` : ''}
           </div>
           <div className="sky-restart-waiting">{status.slack.message}</div>
           <a
             href={`/settings/connections${status.slack.workspace ? `?slackWorkspace=${encodeURIComponent(status.slack.workspace)}` : ''}`}
           >
-            Manage Slack access
+            {status.slack.reason === 'network' ? 'View Slack connection' : 'Manage Slack access'}
           </a>
         </div>
       )}

@@ -144,11 +144,19 @@ customRoutes.set('/site-html', async (req: Request) => {
 customRoutes.set('/service/status', async (req: Request) => {
   if (req.method !== 'GET') return new Response('Method not allowed', { status: 405 })
   const issues = await slackConnection.issues().catch(() => [])
+  const issue = issues.find((issue) => issue.reason !== 'network') ?? issues[0]
   return createJsonResponse(
     jsend.success({
       ...reload.status(),
-      ...(issues.length
-        ? { slack: { message: slackIssueMessage(issues[0]), count: issues.length, workspace: issues[0].workspace } }
+      ...(issue
+        ? {
+            slack: {
+              message: slackIssueMessage(issue),
+              count: issues.length,
+              workspace: issue.workspace,
+              reason: issue.reason,
+            },
+          }
         : {}),
     }),
   )

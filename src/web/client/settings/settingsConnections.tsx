@@ -87,14 +87,16 @@ export const API = '/settings/_api/connections'
 
 /** The sign-in is asked after this often while the tab is open. */
 const SIGN_IN_POLL_MS = 1500
+const SLACK_RETRY_MS = 5000
 
 // ── Talking to the service ──────────────────────────────────────────
 
-export function postJson(url: string, body: unknown): Promise<Response | null> {
+export function postJson(url: string, body: unknown, signal?: AbortSignal): Promise<Response | null> {
   return fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
+    signal,
   }).catch(() => null)
 }
 
@@ -133,25 +135,43 @@ function useSlack() {
   const [busy, setBusy] = useState(false)
   const [warn, setWarn] = useState<string | null>(null)
   const [hint, setHint] = useState<string | null>(null)
+  const [retrying, setRetrying] = useState(false)
+  const pending = useRef<AbortController | null>(null)
 
   const ask = useCallback(
     (how: 'status' | 'check' | 'reconnect' | 'pause') => {
+      if (pending.current) return
+      const request = new AbortController()
+      pending.current = request
       setBusy(true)
       setWarn(null)
-      setHint(null)
+      if (how !== 'status') setHint(null)
       const answer =
         how === 'reconnect' || how === 'pause'
-          ? postJson(`${API}/slack/${how}`, { workspace })
-          : fetch(`${API}/slack${workspace ? `?workspace=${encodeURIComponent(workspace)}` : ''}`).catch(() => null)
+          ? postJson(`${API}/slack/${how}`, { workspace }, request.signal)
+          : fetch(`${API}/slack${workspace ? `?workspace=${encodeURIComponent(workspace)}` : ''}`, {
+              signal: request.signal,
+            }).catch(() => null)
       void answer
         .then(async (r) => {
+          if (pending.current !== request) return
+          if (!r || r.status >= 500) {
+            if (how === 'pause' || how === 'reconnect') {
+              const refusal = await refusalOf(r)
+              if (pending.current === request) setWarn(refusal)
+            } else setRetrying(true)
+            return
+          }
           if (!r?.ok) {
-            setWarn(await refusalOf(r))
+            const refusal = await refusalOf(r)
+            if (pending.current === request) setWarn(refusal)
             return
           }
           const next = (await r.json()) as SlackStatus
+          if (pending.current !== request) return
           setStatus(next)
-          if (how !== 'status' && next.installed && next.ok) {
+          setRetrying(next.installed && !next.ok && next.reason === 'network')
+          if ((how === 'reconnect' || how === 'check') && next.installed && next.ok) {
             const name = next.displayName?.trim()
             setHint(
               name
@@ -160,19 +180,59 @@ function useSlack() {
             )
           }
         })
-        .catch(() => setWarn("Couldn't check the Slack connection. Please try again."))
-        .finally(() => setBusy(false))
+        .catch(() => {
+          if (pending.current !== request) return
+          if (how === 'pause' || how === 'reconnect')
+            setWarn("Couldn't confirm the Slack action. Check the connection and try again.")
+          else setRetrying(true)
+        })
+        .finally(() => {
+          if (pending.current !== request) return
+          pending.current = null
+          setBusy(false)
+        })
     },
     [workspace],
   )
 
-  useEffect(() => ask('status'), [ask])
+  useEffect(() => {
+    setStatus(null)
+    setRetrying(false)
+    setWarn(null)
+    setHint(null)
+    ask('status')
+    return () => {
+      pending.current?.abort()
+      pending.current = null
+    }
+  }, [ask])
+
+  useEffect(() => {
+    if (!retrying || busy) return
+    // The silent endpoint enforces the server's cooldown before contacting Slack again.
+    const timer = window.setTimeout(() => ask('status'), SLACK_RETRY_MS)
+    return () => window.clearTimeout(timer)
+  }, [ask, busy, retrying, status])
+
+  useEffect(() => {
+    const online = () => ask('status')
+    const visible = () => {
+      if (document.visibilityState === 'visible') ask('status')
+    }
+    window.addEventListener('online', online)
+    document.addEventListener('visibilitychange', visible)
+    return () => {
+      window.removeEventListener('online', online)
+      document.removeEventListener('visibilitychange', visible)
+    }
+  }, [ask])
 
   return {
     status,
     busy,
     warn,
     hint,
+    retrying,
     check: () => ask('check'),
     reconnect: () => ask('reconnect'),
     pause: () => ask('pause'),
@@ -180,27 +240,30 @@ function useSlack() {
 }
 
 function SlackRow() {
-  const { status, busy, warn, hint, check, reconnect, pause } = useSlack()
+  const { status, busy, warn, hint, retrying, check, reconnect, pause } = useSlack()
   const reason = status?.installed && !status.ok ? status.reason : undefined
   const recovery =
     reason === 'missing' ? 'Connect from Brave' : reason === 'expired' ? 'Refresh from Brave' : 'Restore access'
-  const sub = !status
-    ? warn
-      ? 'Try checking the connection again.'
-      : 'Checking…'
-    : !status.installed
-      ? 'Sky talks to Slack through agent-slack, which this Mac does not have.'
-      : status.ok
-        ? [status.team, status.workspace?.replace(/^https?:\/\//, '').replace(/\/$/, '')].filter(Boolean).join(' · ') ||
-          'Connected'
-        : reason === 'keychain'
-          ? 'macOS is blocking access to your saved Slack credentials. Syncing is paused.'
-          : reason === 'expired' || reason === 'missing'
-            ? 'Sign in to Slack in Brave, then connect or refresh your saved session.'
-            : reason === 'network'
-              ? 'Slack is temporarily unreachable. Sky will retry after a cooldown.'
-              : 'Slack syncing is paused. Restore access when you are ready.'
-  const trouble = warn ?? (status?.installed && !status.ok ? status.error : null)
+  const sub = retrying
+    ? 'The connection is temporarily unavailable. Sky will retry automatically.'
+    : !status
+      ? warn
+        ? 'Try checking the connection again.'
+        : 'Checking…'
+      : !status.installed
+        ? 'Sky talks to Slack through agent-slack, which this Mac does not have.'
+        : status.ok
+          ? [status.team, status.workspace?.replace(/^https?:\/\//, '').replace(/\/$/, '')]
+              .filter(Boolean)
+              .join(' · ') || 'Connected'
+          : reason === 'keychain'
+            ? 'macOS is blocking access to your saved Slack credentials. Syncing is paused.'
+            : reason === 'expired' || reason === 'missing'
+              ? 'Sign in to Slack in Brave, then connect or refresh your saved session.'
+              : reason === 'network'
+                ? 'Slack is temporarily unreachable. Sky will retry after a cooldown.'
+                : 'Slack syncing is paused. Restore access when you are ready.'
+  const trouble = warn ?? (status?.installed && !status.ok && !retrying ? status.error : null)
 
   return (
     <Row
@@ -216,7 +279,7 @@ function SlackRow() {
               {trouble}
             </p>
           )}
-          {status?.installed && !status.ok && reason !== 'network' && (
+          {status?.installed && !status.ok && !retrying && (
             <p>
               Restore access checks your saved session first. macOS may request your login password. Brave is used only
               if a new session is needed.
@@ -225,7 +288,11 @@ function SlackRow() {
         </>
       }
     >
-      {warn ? (
+      {retrying ? (
+        <span className="sky-set-off" role="status">
+          Reconnecting…
+        </span>
+      ) : warn ? (
         <span className="sky-set-off">Check failed</span>
       ) : status?.installed ? (
         status.ok ? (
@@ -235,7 +302,18 @@ function SlackRow() {
         )
       ) : null}
       {status?.installed !== false &&
-        (status?.installed && !status.ok ? (
+        (retrying ? (
+          <>
+            <Button size="compact-sm" disabled={busy} onClick={check}>
+              {busy ? 'Checking…' : 'Check now'}
+            </Button>
+            {status?.installed && (
+              <Button size="compact-sm" disabled={busy} onClick={pause}>
+                Pause syncing
+              </Button>
+            )}
+          </>
+        ) : status?.installed && !status.ok ? (
           <Button size="compact-sm" variant="primary" disabled={busy} onClick={reconnect}>
             {busy ? 'Restoring…' : recovery}
           </Button>

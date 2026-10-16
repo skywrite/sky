@@ -45,11 +45,11 @@ export class SlackConnectionError extends Error {
 
 export function slackIssueMessage(issue: SlackIssue): string {
   const name = issue.workspace ? `Slack (${new URL(issue.workspace).hostname})` : 'Slack'
+  if (issue.reason === 'network') return `${name} is temporarily unreachable. Sky will retry automatically.`
   const why = {
     keychain: 'macOS is not allowing access to its saved credentials',
     expired: 'Slack rejected its saved session',
     missing: 'no usable saved credentials are available',
-    network: 'Slack could not be reached; Sky will retry after a cooldown',
     unavailable: 'Sky could not start its protected Slack connection',
     paused: 'syncing has been paused',
   }[issue.reason]

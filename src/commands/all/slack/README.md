@@ -17,7 +17,9 @@ through Sky's [noninteractive Keychain helper](../../../lib/secrets/docs/README.
 They never launch browser import or an interactive Keychain read. A denied
 read or rejected session persists a workspace pause under Sky's machine-local
 `state/slack/connection` directory. Service restarts and subsequent checks honor
-that pause; network failures instead have a short cooldown. These state files
+that pause; network failures instead have a short cooldown. Connections shows
+Reconnecting and refreshes silent status checks until connectivity returns;
+authentication recovery remains explicit. These state files
 contain status and a revision, never tokens or cookies. Revision checks prevent
 an older request from overwriting a newer pause or successful recovery.
 

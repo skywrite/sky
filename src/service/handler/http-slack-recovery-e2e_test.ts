@@ -1,6 +1,173 @@
+import { slackIssueMessage } from '#commands/all/slack/lib/connection.ts'
 import { assert, test } from '#test'
 import { runWysiwygE2e } from './httpWysiwygE2eTestHelpers.ts'
 import type { SlackStatus } from './settings/connections.ts'
+
+test(
+  { name: 'Slack retries wake-time network failures silently and clears stale connection UI', timeout: 60000 },
+  async (t) => {
+    await runWysiwygE2e(
+      t,
+      { initialMarkdown: '# Sample\n', tempPrefix: 'sky-slack-network-browser-' },
+      async ({ page, origin, errors }) => {
+        await page.clock.install()
+        const workspace = 'https://atlas.slack.com'
+        let status: SlackStatus = {
+          installed: true,
+          ok: false,
+          reason: 'network',
+          workspace,
+          error: slackIssueMessage({ reason: 'network', workspace }),
+        }
+        let reads = 0
+        let authentications = 0
+        let finish!: () => void
+        let began!: () => void
+        const started = new Promise<void>((resolve) => {
+          began = resolve
+        })
+        await page.route('**/settings/_api/settings', (route) =>
+          route.fulfill({ json: { theme: 'light', textSize: 'default' } }),
+        )
+        await page.route('**/settings/_api/connections?accountsOnly=true', (route) =>
+          route.fulfill({
+            json: { google: { client: false, accounts: [], setup: [], leftovers: [] }, secrets: [] },
+          }),
+        )
+        await page.route('**/settings/_api/connections/beeper', (route) =>
+          route.fulfill({ json: { running: false, connected: false, accounts: [] } }),
+        )
+        await page.route('**/settings/_api/connections/slack/reconnect', (route) => {
+          authentications++
+          return route.fulfill({ json: status })
+        })
+        await page.route(/\/settings\/_api\/connections\/slack(?:\?|$)/, async (route) => {
+          reads++
+          if (reads === 1) {
+            await route.fulfill({ status: 503, json: { message: 'Temporarily unavailable.' } })
+            return
+          }
+          if (reads === 2) {
+            began()
+            await new Promise<void>((resolve) => {
+              finish = resolve
+            })
+          }
+          await route.fulfill({ json: status })
+        })
+        await page.route('**/service/status', (route) =>
+          route.fulfill({
+            json: {
+              data: {
+                pending: null,
+                holding: [],
+                ...(status.installed && !status.ok
+                  ? { slack: { count: 1, message: status.error, workspace, reason: status.reason } }
+                  : {}),
+              },
+            },
+          }),
+        )
+        await page.goto(`${origin}/settings/connections?slackWorkspace=${encodeURIComponent(workspace)}`)
+        const slack = page.locator('.sky-set-row').filter({ has: page.getByText('Slack', { exact: true }) })
+        await slack.getByText('Reconnecting…', { exact: true }).waitFor()
+        await page.getByText('Slack reconnecting…', { exact: true }).waitFor()
+        assert({
+          given: 'a wake-time network interruption',
+          should: 'offer a silent check and show reconnection without an authentication warning',
+          actual: [
+            await slack.getByRole('button', { name: 'Check now', exact: true }).count(),
+            await slack.getByRole('button', { name: 'Restore access', exact: true }).count(),
+            await slack.getByRole('alert').count(),
+            (await page.locator('.sky-restart').innerText()).toLowerCase().includes('restore access'),
+          ],
+          expected: [1, 0, 0, false],
+        })
+
+        await page.clock.fastForward(5000)
+        await started
+        await page.clock.fastForward(30000)
+        await page.evaluate(() => {
+          window.dispatchEvent(new Event('online'))
+        })
+        assert({
+          given: 'the first automatic check remains in flight through more timers and a network-online event',
+          should: 'keep one request in flight and never start authentication',
+          actual: [reads, authentications],
+          expected: [2, 0],
+        })
+        finish()
+        await slack.getByRole('button', { name: 'Check now', exact: true }).waitFor()
+        await page.waitForFunction(() => {
+          const row = [...document.querySelectorAll('.sky-set-row')].find((item) =>
+            item.textContent?.includes('Reconnecting…'),
+          )
+          return row && !(row.querySelector('button') as HTMLButtonElement)?.disabled
+        })
+        await page.clock.fastForward(4999)
+        assert({
+          given: 'an unsuccessful automatic check has just settled',
+          should: 'wait before the next check',
+          actual: reads,
+          expected: 2,
+        })
+        status = { installed: true, ok: true, workspace, team: 'Atlas', user: 'jane', displayName: 'Jane Doe' }
+        await page.clock.fastForward(1)
+        await slack.getByText('Connected', { exact: true }).waitFor()
+        await page.clock.fastForward(5000)
+        await page.getByText('Slack reconnecting…', { exact: true }).waitFor({ state: 'hidden' })
+        assert({
+          given: 'the network is available on the next silent check',
+          should: 'clear the row and sidebar warning without importing tokens or changing the title',
+          actual: [
+            reads,
+            authentications,
+            await slack.getByText('Reconnecting…', { exact: true }).count(),
+            await page.title(),
+          ],
+          expected: [3, 0, 0, 'sky · Connections'],
+        })
+
+        status = {
+          installed: true,
+          ok: false,
+          reason: 'network',
+          workspace,
+          error: 'Slack is temporarily unreachable.',
+        }
+        await slack.getByRole('button', { name: 'Check', exact: true }).click()
+        await slack.getByText('Reconnecting…', { exact: true }).waitFor()
+        status = {
+          installed: true,
+          ok: false,
+          reason: 'keychain',
+          workspace,
+          error: 'macOS is blocking access to saved credentials.',
+        }
+        await page.clock.fastForward(5000)
+        await slack.getByRole('button', { name: 'Restore access', exact: true }).waitFor()
+        const stoppedAt = reads
+        await page.clock.fastForward(60000)
+        assert({
+          given: 'a silent retry encounters an actual Keychain access failure',
+          should: 'stop automatic retries and wait for explicit recovery',
+          actual: [reads, authentications, await slack.getByText('Reconnecting…', { exact: true }).count()],
+          expected: [stoppedAt, 0, 0],
+        })
+        await page.setViewportSize({ width: 390, height: 844 })
+        assert({
+          given: 'reconnection and access failure on the Connections screen',
+          should: 'keep recovery usable on mobile and raise no browser errors',
+          actual: [
+            await slack.getByRole('button', { name: 'Restore access', exact: true }).isVisible(),
+            errors.filter((error) => !error.includes('503 (Service Unavailable)')),
+          ],
+          expected: [true, []],
+        })
+      },
+    )
+  },
+)
 
 test(
   { name: 'Slack stays paused during polling and recovers only on an explicit action', timeout: 60000 },
