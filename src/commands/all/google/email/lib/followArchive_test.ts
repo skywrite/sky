@@ -12,6 +12,7 @@ import { Instant, PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import { backfillArchivedFollows } from './backfillArchivedFollows.ts'
 import { archivedLabelName, retireGmailThread } from './followLabels.ts'
 import {
+  applyNowLabelSwaps,
   continueFollow,
   expireQuietFollows,
   persistNewFollow,
@@ -146,7 +147,7 @@ async function withArchive(
 test('closing saved history swaps labels together and leaves unsaved threads unmarked', async () => {
   await withArchive(async (h) => {
     h.threads.set('ff', [message('ff', 'a1', '2025-04-01T09:00:00Z', ['follow', 'now', 'INBOX', 'UNREAD'])])
-    await retireGmailThread({ client: h.client, threadId: 'ff', label: LABEL, saved: true })
+    await retireGmailThread({ client: h.client, threadId: 'ff', label: LABEL, saved: true, archive: true })
     assert({
       given: 'a saved thread carrying both entry labels',
       should: 'swap to Archived and preserve unread status',
@@ -155,7 +156,7 @@ test('closing saved history swaps labels together and leaves unsaved threads unm
     })
     assert({ given: 'one closure', should: 'make a single thread update', actual: h.writes.length, expected: 1 })
     h.threads.set('fe', [message('fe', 'a2', '2025-04-01T09:00:00Z', ['follow', 'INBOX'])])
-    await retireGmailThread({ client: h.client, threadId: 'fe', label: LABEL, saved: false })
+    await retireGmailThread({ client: h.client, threadId: 'fe', label: LABEL, saved: false, archive: true })
     assert({
       given: 'an unsaved thread',
       should: 'leave no false archive marker',
@@ -203,6 +204,27 @@ test('expiry archives only after Gmail succeeds, and retries a failed closure', 
   })
 })
 
+test('a watch that goes quiet closes without taking the thread out of the inbox', async () => {
+  await withArchive(async (h) => {
+    await h.save('atlas', savedFollow('ff', 'active'))
+    h.threads.set('ff', [message('ff', 'a1', '2025-04-01T09:00:00Z', ['follow', 'INBOX', 'UNREAD'])])
+    const sweep = await expireQuietFollows({
+      client: h.client,
+      entries: (await h.registry()).getActive(),
+      fallbackLabel: LABEL,
+      now: NOW,
+      output,
+      archiveDir: h.archiveDir,
+    })
+    assert({
+      given: 'a followed thread still in the inbox, quiet past its window',
+      should: 'close the follow and swap the label, leaving the thread in the inbox and unread',
+      actual: [sweep.expired.map((e) => e.fileName), h.threads.get('ff')?.[0].labelIds],
+      expected: [['atlas'], ['INBOX', 'UNREAD', 'archived']],
+    })
+  })
+})
+
 test('a first capture already past expiry receives the archive marker', async () => {
   await withArchive(async (h) => {
     h.threads.set('ff', [message('ff', 'a1', '2025-04-01T09:00:00Z', ['follow', 'INBOX'])])
@@ -230,13 +252,32 @@ test('a first capture already past expiry receives the archive marker', async ()
     })
     assert({
       given: 'a successful capture of an old thread',
-      should: 'persist it closed and label its history',
+      should: 'persist it closed, label its history, and leave it in the inbox',
       actual: [
         result.followed,
         (await h.registry()).findByThreadId('255', EMAIL)?.follow.status,
         h.threads.get('ff')?.[0].labelIds,
       ],
-      expected: [false, 'closed', ['archived']],
+      expected: [false, 'closed', ['INBOX', 'archived']],
+    })
+  })
+})
+
+test('the Now door trades its label without taking the thread out of the inbox', async () => {
+  await withArchive(async (h) => {
+    h.threads.set('ff', [message('ff', 'a1', '2025-04-22T11:30:00Z', ['now', 'INBOX', 'UNREAD'])])
+    const swapped = await applyNowLabelSwaps({
+      client: h.client,
+      threadIds: ['255'],
+      addLabelId: 'follow',
+      removeLabelId: 'now',
+      output,
+    })
+    assert({
+      given: 'a first capture through Sky/Follow/Now',
+      should: 'swap the sub-label for the bucket label and leave the thread in the inbox and unread',
+      actual: [swapped, h.threads.get('ff')?.[0].labelIds],
+      expected: [1, ['INBOX', 'UNREAD', 'follow']],
     })
   })
 })

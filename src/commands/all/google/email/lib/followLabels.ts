@@ -5,20 +5,25 @@ export function archivedLabelName(label: string): string {
   return label.endsWith('/Follow') ? `${label.slice(0, -'/Follow'.length)}/Archived` : `${label}/Archived`
 }
 
-/** Closing a saved watch leaves evidence in Gmail. Unsaved threads get no archive marker. */
+/**
+ * Closing a saved watch leaves evidence in Gmail. Unsaved threads get no archive marker.
+ * `archive` also takes the thread out of the inbox, and only inbox:close asks for it:
+ * the inbox is the owner's to-do list, so a watch closing on its own changes labels only.
+ */
 export async function retireGmailThread(opts: {
   client: GoogleClient
   threadId: string
   label: string
   saved: boolean
+  archive: boolean
 }): Promise<void> {
-  const { client, threadId, label, saved } = opts
+  const { client, threadId, label, saved, archive } = opts
   const labels = await listLabels(client)
   const retiringNames = new Set([label.toLowerCase(), `${label}/Now`.toLowerCase()])
   const removeLabelIds = labels.filter((l) => retiringNames.has(l.name.toLowerCase())).map((l) => l.id)
   const archived = saved ? await ensureLabel(client, archivedLabelName(label)) : undefined
   await modifyThread(client, threadId, {
     addLabelIds: archived ? [archived.id] : [],
-    removeLabelIds: [...removeLabelIds, 'INBOX'],
+    removeLabelIds: archive ? [...removeLabelIds, 'INBOX'] : removeLabelIds,
   })
 }

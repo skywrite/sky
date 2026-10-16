@@ -13,11 +13,11 @@ import type { FetchedThread } from './fetchUnsavedThreads.ts'
 import { archivedLabelName, retireGmailThread } from './followLabels.ts'
 
 // First-time follow creation, shared by follow:new and follow:sync, and the
-// Gmail label lifecycle around a follow (first-capture archiving, the Now
-// door's entry-label swap, expiry). Mirrors slack:follow:message's decline
-// rule: a thread already quiet past the expiry window is an archive, not
-// something to watch — its content is captured, but the follow is born closed
-// and the thread leaves the Sky/Follow bucket.
+// Gmail label lifecycle around a follow (the Now door's entry-label swap,
+// expiry). Labels only: the thread stays in the inbox throughout. Mirrors
+// slack:follow:message's decline rule: a thread already quiet past the expiry
+// window is an archive, not something to watch — its content is captured, but
+// the follow is born closed and the thread leaves the Sky/Follow bucket.
 
 export type PlannedFollow = {
   follow: Follow
@@ -118,10 +118,10 @@ export type PersistedFollow = { fileName: string; followed: boolean }
 
 /**
  * Write a planned follow to disk and, when it is born expired, retire the
- * thread in Gmail (drop the bucket label + INBOX) the way inbox:close does.
- * If that Gmail call fails the follow is written active instead: an
- * archived-but-still-labeled thread would look brand new to the registry and
- * re-capture on every sync.
+ * thread's labels in Gmail (bucket label off, archive marker on; the thread
+ * stays in the inbox). If that Gmail call fails the follow is written active
+ * instead: a closed follow whose thread still carries the label would look
+ * brand new to the registry and re-capture on every sync.
  */
 export async function persistNewFollow(opts: {
   client: GoogleClient
@@ -142,6 +142,7 @@ export async function persistNewFollow(opts: {
         threadId: threadIdFromDecimal(threadId),
         label: follow.ref.label,
         saved: follow.messages.length > 0,
+        archive: false,
       })
     } catch (err) {
       output.log(`  Warning: could not retire thread in Gmail (${(err as Error).message}) — following instead`)
@@ -164,67 +165,52 @@ export async function persistNewFollow(opts: {
 }
 
 /**
- * Which captured threads leave the inbox after a sync: first captures only.
- * A reply to a thread already followed is mail the owner has not read yet —
- * the capture records it, it does not stand in for it — so the thread stays
- * in the inbox until they archive it themselves. Failed threads stay so the
- * next sync retries them.
- */
-export function threadsToArchive(threads: FetchedThread[], firstCaptures: Set<string>): FetchedThread[] {
-  return threads.filter((t) => !t.failed && firstCaptures.has(t.threadId))
-}
-
-export type NowLabelSwap = { threadId: string; archive: boolean }
-
-/**
  * Which Now-door threads trade their entry label for the bucket label this
- * run. A first capture swaps and leaves the inbox in one call; a continuation
- * swaps only — its reply is unread mail (threadsToArchive's rule). A listed
- * thread that is saved but was not fetched swaps too: a Now label lingering
- * on a tracked thread (a hand-labeled bump, or a swap an earlier Gmail call
- * lost) must heal, or it outlives its follow and the whole thread re-captures
- * after close-out. Failed and still-unsaved threads keep the entry label so
- * the next sync retries them.
+ * run, as thread ids: every thread captured, first capture or reply alike. A
+ * listed thread that is saved but was not fetched swaps too: a Now label
+ * lingering on a tracked thread (a hand-labeled bump, or a swap an earlier
+ * Gmail call lost) must heal, or it outlives its follow and the whole thread
+ * re-captures after close-out. Failed and still-unsaved threads keep the
+ * entry label so the next sync retries them.
  */
 export function selectNowLabelSwaps(
   listed: { threadId: string; saved: boolean }[],
   fetched: FetchedThread[],
-  firstCaptures: Set<string>,
-): NowLabelSwap[] {
-  const swaps: NowLabelSwap[] = []
+): string[] {
+  const swaps: string[] = []
   const fetchedIds = new Set<string>()
   for (const thread of fetched) {
     fetchedIds.add(thread.threadId)
     if (thread.failed || thread.messages.length === 0) continue
-    swaps.push({ threadId: thread.threadId, archive: firstCaptures.has(thread.threadId) })
+    swaps.push(thread.threadId)
   }
   for (const thread of listed) {
     if (fetchedIds.has(thread.threadId) || !thread.saved) continue
-    swaps.push({ threadId: thread.threadId, archive: false })
+    swaps.push(thread.threadId)
   }
   return swaps
 }
 
 /**
  * Apply planned Now-door swaps in Gmail: add the bucket label, drop the entry
- * label — and INBOX with it on first captures. One thread's failure is logged
- * and left alone; it stays saved (the follow exists), and the next sync's
+ * label. The thread stays in the inbox. One thread's failure is logged and
+ * left alone; it stays saved (the follow exists), and the next sync's
  * lingering-label sweep retries the swap.
  */
 export async function applyNowLabelSwaps(opts: {
   client: GoogleClient
-  swaps: NowLabelSwap[]
+  threadIds: string[]
   addLabelId: string
   removeLabelId: string
   output: { log: (msg: string) => void }
 }): Promise<number> {
-  const { client, swaps, addLabelId, removeLabelId, output } = opts
+  const { client, threadIds, addLabelId, removeLabelId, output } = opts
   let swapped = 0
-  for (const swap of swaps) {
+  for (const threadId of threadIds) {
     try {
-      await modifyThread(client, threadIdFromDecimal(swap.threadId), {
+      await modifyThread(client, threadIdFromDecimal(threadId), {
         addLabelIds: [addLabelId],
-        removeLabelIds: swap.archive ? [removeLabelId, 'INBOX'] : [removeLabelId],
+        removeLabelIds: [removeLabelId],
       })
       swapped++
     } catch (err) {
@@ -327,11 +313,11 @@ export type ExpiredFollow = {
 export type ExpireSweepResult = { expired: ExpiredFollow[]; skipped: string[] }
 
 /**
- * Close every quiet follow the way inbox:close does: retire the thread in
- * Gmail first (bucket label + INBOX), then move the YAML to archive/. On a
- * Gmail failure the follow stays active for the next sync to retry — a YAML
- * may only leave active/ once the label is confirmed gone, or the
- * still-labeled thread would re-capture as brand new.
+ * Close every quiet follow: retire its labels in Gmail first (bucket label
+ * off, archive marker on; unlike inbox:close, the thread stays in the inbox),
+ * then move the YAML to archive/. On a Gmail failure the follow stays active
+ * for the next sync to retry — a YAML may only leave active/ once the label
+ * is confirmed gone, or the still-labeled thread would re-capture as brand new.
  */
 export async function expireQuietFollows(opts: {
   client: GoogleClient
@@ -357,6 +343,7 @@ export async function expireQuietFollows(opts: {
           threadId: threadIdFromDecimal(threadId),
           label,
           saved: follow.messages.length > 0,
+          archive: false,
         })
       } catch (err) {
         output.log(`  Warning: could not retire ${fileName} in Gmail (${(err as Error).message}) — will retry`)

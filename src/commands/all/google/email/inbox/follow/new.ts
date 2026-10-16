@@ -1,7 +1,7 @@
 import * as p from '@clack/prompts'
 import { Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
-import { AccountResolutionError, modifyThread, threadIdFromDecimal } from '#lib/google/mod.ts'
+import { AccountResolutionError } from '#lib/google/mod.ts'
 import type { GoogleClient } from '#lib/google/mod.ts'
 import { writeTextFile } from '#shared/fs/mod.ts'
 import EmailFollowRegistry from '#shared/models/Follow/EmailFollowRegistry.ts'
@@ -99,16 +99,8 @@ export default class GoogleEmailInboxFollowNewTask extends Command {
       },
       { tasks, output },
     )
-    const result = await this.createFollows(client, fetched, label, args.force, output, dirs)
-
-    // Archive from inbox; the Sky/Follow label stays so inbox:view shows the
-    // thread as saved.
-    const threadIds = fetched.threads
-      .filter((t) => !t.failed && !inbox.threads.find((listed) => listed.threadId === t.threadId)?.followFile)
-      .map((t) => t.threadId)
-    await this.archiveThreads(client, threadIds, output)
-
-    return result
+    // Threads stay in the inbox: archiving is the owner's call (see follow:sync).
+    return this.createFollows(client, fetched, label, args.force, output, dirs)
   }
 
   private async runSingleThread(
@@ -202,34 +194,8 @@ export default class GoogleEmailInboxFollowNewTask extends Command {
       },
       { tasks, output },
     )
-    const result = await this.createFollows(client, fetched, label, args.force, output, dirs)
-
-    // Archive from inbox; the Sky/Follow label stays
-    if (!selectedThread.followFile && fetched.threads.some((t) => !t.failed && t.messages.length > 0)) {
-      await this.archiveThreads(client, [selectedThread.threadId], output)
-    }
-
-    return result
-  }
-
-  /** Remove the INBOX label from each thread (decimal ids); label removal is close's job, not follow's. */
-  private async archiveThreads(
-    client: GoogleClient,
-    threadIds: string[],
-    output: { log: (msg: string) => void },
-  ): Promise<void> {
-    let archived = 0
-    for (const threadId of threadIds) {
-      try {
-        await modifyThread(client, threadIdFromDecimal(threadId), { removeLabelIds: ['INBOX'] })
-        archived++
-      } catch (err) {
-        output.log(`  Warning: archive failed: ${(err as Error).message}`)
-      }
-    }
-    if (archived > 0) {
-      output.log(`  Archived ${archived} thread(s) from inbox.`)
-    }
+    // The thread stays in the inbox, as in batch mode.
+    return this.createFollows(client, fetched, label, args.force, output, dirs)
   }
 
   private async createFollows(

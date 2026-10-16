@@ -1,6 +1,6 @@
 ---
 created: 2026-08-30
-updated: 2026-10-05
+updated: 2026-10-16
 ---
 
 # google:email
@@ -80,6 +80,11 @@ is saved and the watch has closed. Expiry, manual closure, and captures born
 expired swap the labels before archiving the follow record. Threads without
 saved history get no archive marker. Custom buckets use `<bucket>/Archived`;
 a bucket ending in `/Follow` uses its sibling `/Archived`.
+
+Sky never takes mail out of the inbox on its own. Captures, replies, and
+closed watches change labels only. The inbox is the owner's to-do list: a
+thread Sky just saved is often one they mean to talk through in chat. Only
+`google:email:inbox:close`, run by the owner, archives.
 
 Saved-message detection reads both active and archived records, keyed by
 account and thread id. Applying `Sky/Follow` or `Sky/Follow/Now` to an archived

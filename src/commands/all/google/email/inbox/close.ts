@@ -116,6 +116,7 @@ export default class GoogleEmailInboxCloseTask extends Command {
         threadId: thread.apiThreadId,
         label,
         saved: !!followEntry?.follow.messages.length,
+        archive: true,
       })
       output.log(`  Removed "${label}" label and archived ${thread.messages.length} message(s).`)
     } catch (err) {

@@ -3,7 +3,7 @@ import * as p from '@clack/prompts'
 import { Command, CommandPlatform, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { DIR_BASE } from '#config'
-import { AccountResolutionError, modifyThread, resolveLabel, threadIdFromDecimal } from '#lib/google/mod.ts'
+import { AccountResolutionError, resolveLabel } from '#lib/google/mod.ts'
 import type { GoogleClient } from '#lib/google/mod.ts'
 import openEditor from '#lib/shell/openEditor.ts'
 import { writeTextFile } from '#shared/fs/mod.ts'
@@ -12,7 +12,7 @@ import Follow from '#shared/models/Follow/mod.ts'
 import { fetchNow } from '#shared/nbfs/mod.ts'
 import { PlainDate, PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import { fetchUnsavedThreads } from '../../lib/fetchUnsavedThreads.ts'
-import type { FetchedThread, FetchUnsavedResult } from '../../lib/fetchUnsavedThreads.ts'
+import type { FetchUnsavedResult } from '../../lib/fetchUnsavedThreads.ts'
 import {
   applyNowLabelSwaps,
   continueFollow,
@@ -21,7 +21,6 @@ import {
   planThreadFollow,
   resumeLabeledFollows,
   selectNowLabelSwaps,
-  threadsToArchive,
 } from '../../lib/followLifecycle.ts'
 import { getInboxThreads, LISTING_DEPTH } from '../../lib/getInboxThreads.ts'
 import type { InboxThread, InboxThreadsResult } from '../../lib/getInboxThreads.ts'
@@ -77,7 +76,7 @@ type DoorOutcome = {
   bornExpired: number
   synced: SyncedThread[]
   closed: ClosedThread[]
-  /** Threads whose follow was created this run — what gets archived/swapped, and opened for tag review. */
+  /** Threads whose follow was created this run — what gets opened for tag review. */
   firstCaptures: Set<string>
 }
 
@@ -97,7 +96,7 @@ export default class GoogleEmailInboxFollowSyncTask extends Command {
       '    always reads "being tracked".',
       'Either way:',
       '  - Already-followed threads: appends each new message on its own date, updates follow file',
-      '  - Archives first captures from inbox; replies to followed threads stay in the inbox',
+      '  - Leaves every thread in the inbox; archiving is yours (google:email:inbox:close)',
       `  - Closes follows quiet past ${Follow.DEFAULT_MAX_INACTIVE}: Sky/Archived label added, follow YAML archived`,
       '  - Re-following an archived thread resumes its history and captures only new messages',
       'Designed to run on the heartbeat. Idempotent and non-interactive.',
@@ -250,22 +249,19 @@ export default class GoogleEmailInboxFollowSyncTask extends Command {
       const closed = [...nowDoor.closed, ...bucketDoor.closed]
 
       // ── Phase 4: Retire entry labels ───────────────────────────────────
-      // Bucket door: only threads followed for the first time this run leave
-      // the inbox. A reply to a thread already followed is mail the owner has
-      // not read yet — on the heartbeat this ran within minutes of arrival
-      // and pulled the reply out of the inbox before anyone saw it. It stays
-      // until they archive it; failed threads stay so the next sync retries.
-      await this.archiveFromInbox(client, threadsToArchive(bucketFetch.threads, bucketDoor.firstCaptures), output)
-
-      // Now door: captured threads trade the sub-label for the bucket label
-      // (first captures leave the inbox in the same call). A --pick run swaps
-      // only what it captured — triage must not sweep lingering labels.
+      // Captured threads stay in the inbox, first captures and replies alike.
+      // The inbox is the owner's to-do list: a thread Sky just saved is often
+      // one they mean to talk through in chat, so archiving it is their call
+      // (google:email:inbox:close). The bucket label stays as the watch.
+      // Now door: captured threads trade the sub-label for the bucket label.
+      // A --pick run swaps only what it captured — triage must not sweep
+      // lingering labels.
       if (nowInbox) {
-        const swaps = selectNowLabelSwaps(pick ? [] : nowInbox.threads, nowFetch.threads, nowDoor.firstCaptures)
-        if (swaps.length > 0) {
+        const threadIds = selectNowLabelSwaps(pick ? [] : nowInbox.threads, nowFetch.threads)
+        if (threadIds.length > 0) {
           const swapped = await applyNowLabelSwaps({
             client,
-            swaps,
+            threadIds,
             addLabelId: bucketListing.labelId,
             removeLabelId: nowInbox.labelId,
             output,
@@ -478,27 +474,5 @@ export default class GoogleEmailInboxFollowSyncTask extends Command {
 
     const threadId = selected as string
     return { threadId, door: doorByThread.get(threadId) ?? 'bucket' }
-  }
-
-  /** Remove the given threads from the inbox (the Sky/Follow label stays so inbox:view shows them as saved). */
-  private async archiveFromInbox(
-    client: GoogleClient,
-    threads: FetchedThread[],
-    output: { log: (msg: string) => void },
-  ): Promise<void> {
-    if (threads.length === 0) return
-
-    let archived = 0
-    for (const thread of threads) {
-      try {
-        await modifyThread(client, threadIdFromDecimal(thread.threadId), { removeLabelIds: ['INBOX'] })
-        archived++
-      } catch (err) {
-        output.log(`  Warning: archive failed: ${(err as Error).message}`)
-      }
-    }
-    if (archived > 0) {
-      output.log(`  Archived ${archived} thread(s) from inbox.`)
-    }
   }
 }
