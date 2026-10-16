@@ -99,6 +99,45 @@ test('small browser work runs without a plan and reports a handoff without inven
   })
 })
 
+test('a browser handoff brings the task window forward only when the plan waits for the person', async () => {
+  const order: string[] = []
+  const tracked = controller()
+  await tracked.update(samplePlan())
+  const tools = createTaskTools({
+    plan: tracked,
+    admit: async () => ({ kind: 'workflow', browser: true }),
+    runBrowser: async () => {
+      const answered = browserTaskHost.getStore()!.needsYou('Finish the example site’s sign-in in Brave.', async () => {
+        order.push(`shown while ${tracked.plan?.status}`)
+      })
+      while (tracked.plan?.status !== 'needs-you') await new Promise((resolve) => setTimeout(resolve, 1))
+      order.push('waiting')
+      tracked.answer(tracked.plan.attention!.id)
+      order.push(`continued: ${await answered}`)
+      return CommandResult.success({ report: 'Opened the example account page.' })
+    },
+  })
+  await tools.browser_task.execute!({ objective: 'Open the example account page.' }, call)
+  let shownUntracked = 0
+  const small = createTaskTools({
+    plan: controller(),
+    admit: async () => ({ kind: 'action', browser: true }),
+    runBrowser: async () => {
+      await browserTaskHost.getStore()!.needsYou('Finish the example site’s sign-in in Brave.', async () => {
+        shownUntracked++
+      })
+      return CommandResult.success({ report: 'Stopped for sign-in.' })
+    },
+  })
+  await small.browser_task.execute!({ objective: 'Open the example account page.' }, call)
+  assert({
+    given: 'a handoff inside a working plan, then one in a small task that ends instead of waiting',
+    should: 'show the window just before the plan waits, and never for a task that will close its window',
+    actual: [order, shownUntracked],
+    expected: [['shown while working', 'waiting', 'continued: true'], 0],
+  })
+})
+
 test('a requested file adjustment can update existing results while the browser plan stays paused', async () => {
   const destination = '/tmp/example/Done/Atlas/statement.pdf'
   const plan = new ChatPlanController({

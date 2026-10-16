@@ -59,7 +59,11 @@ const UNREADABLE = /capacity|context|too large|window/i
 
 const isTransient = (error: unknown): boolean => TRANSIENT.test(error instanceof Error ? error.message : String(error))
 
-async function withRetries<T>(run: () => Promise<T>, signal: AbortSignal | undefined, patience: number): Promise<T> {
+export async function withRetries<T>(
+  run: () => Promise<T>,
+  signal: AbortSignal | undefined,
+  patience: number,
+): Promise<T> {
   for (let attempt = 0; ; attempt++) {
     try {
       return await run()

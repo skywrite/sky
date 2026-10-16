@@ -15,6 +15,10 @@ interface ExtensionTab {
 // available to the model or evaluated on a website or pre-existing tab.
 interface ExtensionControls {
   debugger: { getTargets(): Promise<{ id: string; tabId?: number }[]> }
+  windows: {
+    get(id: number): Promise<{ state?: string }>
+    update(id: number, options: { focused?: boolean; state?: 'normal' }): Promise<unknown>
+  }
   tabs: {
     getCurrent(): Promise<ExtensionTab | undefined>
     get(id: number): Promise<ExtensionTab>
@@ -128,6 +132,15 @@ export async function backgroundTaskPage(context: BrowserContext, control: Page)
         const chrome = (globalThis as unknown as { chrome: ExtensionControls }).chrome
         if ((await chrome.tabs.get(id)).windowId !== windowId) throw new Error('The task tab was moved')
         // Tab activation keeps Chromium input responsive without focusing its window.
+        await chrome.tabs.update(id, { active: true })
+      }, owned),
+    showTaskWindow: () =>
+      control.evaluate(async ({ id, windowId }) => {
+        const chrome = (globalThis as unknown as { chrome: ExtensionControls }).chrome
+        // The person may have minimized the task window; focusing alone leaves it in the Dock.
+        if ((await chrome.windows.get(windowId)).state === 'minimized')
+          await chrome.windows.update(windowId, { state: 'normal' })
+        await chrome.windows.update(windowId, { focused: true })
         await chrome.tabs.update(id, { active: true })
       }, owned),
   }

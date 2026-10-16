@@ -125,7 +125,7 @@ export default class BrowserTaskCommand extends Command {
     output.log(
       colors.dim(
         existingBrowser
-          ? 'Sky uses your existing Brave sign-ins in its own task tab. Brave stays open when the task ends.'
+          ? 'Sky uses your Brave sign-ins in a window of its own and leaves your other windows alone. Brave stays open when the task ends.'
           : privateSignIn
             ? 'Sky opens a private browser for this task. Approve sign-in in the native dialog; the session closes when the task ends.'
             : 'Sky’s browser opens a tab of its own for this task; the window stays open after.',
@@ -196,18 +196,20 @@ export default class BrowserTaskCommand extends Command {
     }
 
     // The person is needed: say why, then wait at the terminal. Enter means
-    // they are done; no one at the keyboard means the task cannot go on.
-    const onNeedsYou = async (message: string): Promise<boolean> => {
+    // they are done; no one at the keyboard means the task cannot go on. The
+    // task's window comes forward only when someone will act in it.
+    const onNeedsYou = async (message: string, show?: () => Promise<void>): Promise<boolean> => {
       closeLine()
       output.log('')
       output.log(colors.bold('Sky needs you in the browser window:'))
       output.log(message)
       const host = browserTaskHost.getStore()
-      if (host) return host.needsYou(message)
+      if (host) return host.needsYou(message, show)
       if (!prompt.interactive) {
         output.log(colors.yellow('No one is at the keyboard to help, so the task stops here.'))
         return false
       }
+      await show?.()
       const done = await prompt.confirm({ message: 'Done — should Sky look again?', initial: true })
       return done === true
     }
@@ -250,10 +252,13 @@ export default class BrowserTaskCommand extends Command {
           ask: askWith(createTypeSafeClient({ secrets: context.secrets })),
           typingModel: language,
           adviserModel: language,
+          readerModel: language,
           taskDir: task.dir,
           filesDir: task.filesDir,
           onNeedsYou,
           privateSignIn,
+          // With the person's own Brave, a task works in a window of its own and never takes focus for a move.
+          background: true,
           onStep: (line) => output.log(colors.dim(line)),
           abortSignal: context.signal,
         })
@@ -267,7 +272,8 @@ export default class BrowserTaskCommand extends Command {
       }
       // The ending: the language model checks the files, saves them where
       // the task says, and writes the report. Without files there is
-      // nothing to check, and the loop's own account stands.
+      // nothing to check: the loop's own account stands, with the language
+      // model's reading of the page the task ended on.
       let report = jevResult.report
       if (jevResult.files.length > 0) {
         output.log('')
@@ -326,6 +332,7 @@ export default class BrowserTaskCommand extends Command {
         tools,
         onNeedsYou,
         privateSignIn,
+        background: true,
         onEvent,
         abortSignal: context.signal,
       })

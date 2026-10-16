@@ -985,3 +985,196 @@ test('four download links sharing one script address are four downloads, not one
     await cleanup()
   }
 })
+
+// A list taller than the window: one control in view, one far below it.
+const LONG_LIST = `### Page
+- Page URL: http://atlas.test/documents
+- Page Title: Atlas Brokerage
+- Viewport: 1280x900
+### Snapshot
+\`\`\`yaml
+- generic [ref=e1] [box=0,0,1280,900]:
+  - heading "Atlas Brokerage — Documents" [level=1] [ref=e2] [box=8,8,600,37]
+  - link "Tax year 2025" [ref=e3] [box=8,60,200,20]
+  - link "Tax year 2019" [ref=e4] [box=8,1400,200,20]
+\`\`\``
+
+test('a task that ends without files reports what the page it ended on shows', async () => {
+  const { root, filesDir, cleanup } = await fixture()
+  const snapshots: Record<string, unknown>[] = []
+  const reads: { goal: string; page: string; outcome: string }[] = []
+  try {
+    const result = await runJevTask({
+      objective: 'Open https://atlas.example/documents and tell me which tax years are listed.',
+      taskDir: root,
+      filesDir,
+      browser: {
+        callTool: async (name, args) => {
+          if (name === 'browser_snapshot') snapshots.push(args)
+          return text(name === 'browser_snapshot' ? DOCUMENTS : 'ok')
+        },
+        close: async () => {},
+      },
+      onNeedsYou: async () => false,
+      ask: async () => reply({ operation: pick('done'), ...quiet, done: { noul: 0.96 } }),
+      readPage: async ({ goal, page, outcome }) => {
+        reads.push({ goal, page, outcome })
+        return { text: 'Tax years listed: 2024 and 2025.', ms: 5 }
+      },
+    })
+    assert({
+      given: 'Jev judging a question about a page done, with nothing downloaded',
+      should: 'read the page it ended on once, without boxes, and report what it shows beside the moves',
+      actual: [
+        reads.length,
+        reads[0]?.page === DOCUMENTS,
+        reads[0]?.outcome,
+        snapshots.at(-1),
+        result.report.includes('What the page shows:\nTax years listed: 2024 and 2025.'),
+        result.report.includes('What happened:'),
+      ],
+      expected: [1, true, 'Jev judged the goal done (96%).', {}, true, true],
+    })
+  } finally {
+    await cleanup()
+  }
+})
+
+test('the page is read only for a task without files that was not stopped, and a failed reading is reported', async () => {
+  const run = async (scene: 'files' | 'stopped' | 'failed' | 'unanswered') => {
+    const { root, filesDir, cleanup } = await fixture()
+    let reads = 0
+    try {
+      if (scene === 'files') await writeFile(path.join(filesDir, 'statement-2025.pdf'), 'synthetic')
+      const result = await runJevTask({
+        objective: 'Open https://atlas.example/documents and tell me which tax years are listed.',
+        taskDir: root,
+        filesDir,
+        browser: {
+          // The final look is the only snapshot without boxes.
+          callTool: async (name, args) =>
+            scene === 'unanswered' && name === 'browser_snapshot' && !args.boxes
+              ? {
+                  content: [{ type: 'text', text: 'The browser stopped responding during browser_snapshot.' }],
+                  isError: true,
+                }
+              : text(name === 'browser_snapshot' ? DOCUMENTS : 'ok'),
+          close: async () => {},
+        },
+        onNeedsYou: async () => false,
+        ask: async () =>
+          scene === 'stopped'
+            ? reply({ operation: pick('ask_person'), ...quiet, needs_person: { noul: 0.97 } })
+            : reply({ operation: pick('done'), ...quiet, done: { noul: 0.96 } }),
+        readPage: async () => {
+          reads++
+          return { text: '', failed: 'The model could not be reached.', ms: 5 }
+        },
+      })
+      return {
+        reads,
+        outcome: result.outcome,
+        failure:
+          /could not be read: (The model could not be reached\.|the browser did not return it: The browser stopped responding)/.test(
+            result.report,
+          ),
+      }
+    } finally {
+      await cleanup()
+    }
+  }
+  assert({
+    given:
+      'a task that collected a file, one the person stopped, one whose reading failed, one whose page never came back',
+    should: 'leave the files to their own check, read nothing after a stop, and say when the page could not be read',
+    actual: [await run('files'), await run('stopped'), await run('failed'), await run('unanswered')],
+    expected: [
+      { reads: 0, outcome: 'done', failure: false },
+      { reads: 0, outcome: 'stopped', failure: false },
+      { reads: 1, outcome: 'done', failure: true },
+      { reads: 0, outcome: 'done', failure: true },
+    ],
+  })
+})
+
+test('a scroll that moves the content counts as progress, and the end of the page as a failed move', async () => {
+  const { root, filesDir, cleanup } = await fixture()
+  let wheels = 0
+  try {
+    const result = await runJevTask({
+      objective: 'Open https://atlas.example/documents and find the 2019 statement.',
+      taskDir: root,
+      filesDir,
+      browser: {
+        callTool: async (name) => {
+          if (name === 'browser_snapshot') return text(LONG_LIST)
+          if (name !== 'browser_mouse_wheel') return text('ok')
+          wheels++
+          return wheels <= 3
+            ? text('Scrolled a panel down 560 px. Take a fresh snapshot.')
+            : { content: [{ type: 'text', text: 'Nothing on the page scrolls further down.' }], isError: true }
+        },
+        close: async () => {},
+      },
+      onNeedsYou: async () => false,
+      ask: async () => reply({ operation: pick('scroll_down'), ...quiet }),
+    })
+    assert({
+      given: 'a panel that scrolls three times without changing the controls in view, then reaches its end',
+      should: 'keep going while scrolls move, say how far each went, and stop after three moves that change nothing',
+      actual: [
+        wheels,
+        result.outcome,
+        result.reason,
+        result.history.filter((line) => line.endsWith('scroll down — Scrolled a panel down 560 px.')).length,
+        result.history.filter((line) => line.endsWith('failed: Nothing on the page scrolls further down.')).length,
+      ],
+      expected: [6, 'blocked', `The page did not change after ${UNCHANGED_LIMIT} moves in a row.`, 3, 3],
+    })
+  } finally {
+    await cleanup()
+  }
+})
+
+test('the task window comes forward only when the person will act in it', async () => {
+  const run = async (privateSignIn: boolean, act: boolean) => {
+    const { root, filesDir, cleanup } = await fixture()
+    const calls: string[] = []
+    let offered = false
+    try {
+      await runJevTask({
+        objective: 'Open https://atlas.example and view my account.',
+        taskDir: root,
+        filesDir,
+        privateSignIn,
+        browser: {
+          callTool: async (name) => {
+            calls.push(name)
+            if (name === 'sign_in') return text(JSON.stringify({ status: 'needs_user' }))
+            return text(name === 'browser_snapshot' ? SIGN_IN : 'ok')
+          },
+          close: async () => {},
+        },
+        onNeedsYou: async (_message, show) => {
+          offered = show !== undefined
+          if (act) await show?.()
+          return false
+        },
+        ask: async () => reply({ operation: pick('ask_person'), ...quiet, needs_person: { noul: 0.98 } }),
+      })
+      return { offered, shown: calls.filter((name) => name === 'sky_show_browser').length }
+    } finally {
+      await cleanup()
+    }
+  }
+  assert({
+    given: 'a sign-in page in the private browser, with and without someone to act, and in the shared driver',
+    should: 'offer to show the window, show it only when asked to, and offer nothing the driver cannot do',
+    actual: [await run(true, true), await run(true, false), await run(false, true)],
+    expected: [
+      { offered: true, shown: 1 },
+      { offered: true, shown: 0 },
+      { offered: false, shown: 0 },
+    ],
+  })
+})

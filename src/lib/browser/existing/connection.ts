@@ -15,6 +15,8 @@ export interface ExistingBrowserConnection {
   protocol(page: Page): Promise<PageProtocol>
   /** Select only the owned task tab, preserving the foreground window. */
   activateTaskTab?(): Promise<void>
+  /** Bring the owned task window to the person, restoring it if they minimized it. */
+  showTaskWindow?(): Promise<void>
   close(): Promise<void>
 }
 
@@ -71,6 +73,7 @@ export async function connectExistingBrowser(
     const task = control ? await backgroundTaskPage(context, control) : { page: await context.newPage() }
     page = task.page
     closePages = 'close' in task ? task.close : undefined
+    await keepRendering(page)
     const ownedPage = page
     const ownedControl = control
     const connected = browser
@@ -80,7 +83,9 @@ export async function connectExistingBrowser(
       page,
       downloadDirectories: downloads.locations.map((location) => location.path),
       protocol: existingPageProtocol,
-      ...('activateTaskTab' in task ? { activateTaskTab: task.activateTaskTab } : {}),
+      ...('activateTaskTab' in task
+        ? { activateTaskTab: task.activateTaskTab, showTaskWindow: task.showTaskWindow }
+        : {}),
       close: async () => {
         // A background renderer can stop answering input and page-close calls.
         // Disconnect the relay even when that tab never acknowledges close.
@@ -109,11 +114,8 @@ export async function connectExistingBrowser(
   }
 }
 
-async function existingPageProtocol(page: Page): Promise<PageProtocol> {
-  // chrome.debugger forbids Target.attachToBrowserTarget, which newCDPSession
-  // requires. Use the already-attached tab session from the pinned in-process
-  // client. Sky owns Fetch interception here, including redirect checks and
-  // response streams; Playwright routing must not also consume these events.
+/** The tab session the pinned in-process client already holds for an owned page. */
+function attachedSession(page: Page): PageProtocol & { removeAllListeners(event: string): void } {
   const internal = page as unknown as {
     _connection: {
       toImpl(page: Page): {
@@ -121,7 +123,29 @@ async function existingPageProtocol(page: Page): Promise<PageProtocol> {
       }
     }
   }
-  const protocol = internal._connection.toImpl(page).delegate._mainFrameSession._client
+  return internal._connection.toImpl(page).delegate._mainFrameSession._client
+}
+
+async function existingPageProtocol(page: Page): Promise<PageProtocol> {
+  // chrome.debugger forbids Target.attachToBrowserTarget, which newCDPSession
+  // requires. Use the already-attached tab session from the pinned in-process
+  // client. Sky owns Fetch interception here, including redirect checks and
+  // response streams; Playwright routing must not also consume these events.
+  const protocol = attachedSession(page)
   protocol.removeAllListeners('Fetch.requestPaused')
   return protocol
+}
+
+/**
+ * A task window the person cannot see, a minimized one for instance, hides its
+ * page: no animation frames, so every click waits out Playwright's actionability
+ * check and fails. Playwright's extension relay connects without its usual page
+ * defaults, focus emulation among them. On for the owned task tab only, it keeps
+ * that page rendering while the person works elsewhere; their own tabs are never
+ * touched.
+ */
+async function keepRendering(page: Page): Promise<void> {
+  await attachedSession(page)
+    .send('Emulation.setFocusEmulationEnabled', { enabled: true })
+    .catch(() => {})
 }

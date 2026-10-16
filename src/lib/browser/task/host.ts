@@ -5,7 +5,8 @@ import type { PrivateBrowserRun } from '../signIn/run.ts'
 
 /** Web chat supplies a durable, visible handoff in place of the terminal prompt. */
 export const browserTaskHost = new AsyncLocalStorage<{
-  needsYou: (message: string) => Promise<boolean>
+  /** `show` brings the task's window to the front; call it only when the person will act there. */
+  needsYou: (message: string, show?: () => Promise<void>) => Promise<boolean>
   nativeSignIn?: <T>(run: () => Promise<T>) => Promise<T>
   signInFailed?: (message: string) => Promise<void>
   uploads?: { paths: string[]; origin: string }

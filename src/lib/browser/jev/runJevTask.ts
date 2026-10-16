@@ -12,6 +12,7 @@ import { withNativeSignIn } from '../task/host.ts'
 import { type Advice, type AdviceTrigger, advise, type AdviseOptions, type AdviseResult } from './advisor.ts'
 import { type AskJev, decide, type Decision, JevAnswerError, nextBest } from './decide.ts'
 import type { Operation } from './questions.ts'
+import { readPage, type ReadPageOptions, type ReadPageResult } from './reading.ts'
 import { type ActionRow, type ActionTable, buildActionTable, describeRow, fingerprint } from './table.ts'
 import { type FieldTextOptions, type FieldTextResult, fieldText } from './typeText.ts'
 
@@ -36,6 +37,8 @@ export const ANSWERED_LOOK_WAITS = [3, 5]
 /** Adviser calls per task, so a confused page cannot burn a budget. */
 export const MAX_ADVICE = 20
 const SCROLL_PX = 560
+/** The private browser's word for a scroll that moved something. */
+const SCROLLED = /^Scrolled /
 
 export type JevOutcome = 'done' | 'blocked' | 'stopped' | 'out_of_steps'
 
@@ -94,9 +97,17 @@ export interface JevTaskOptions {
   adviserModel?: ResolvedModel
   /** Test seam over advise */
   advise?: (options: AdviseOptions) => Promise<AdviseResult>
+  /** Reads the page a task ends on when it has no files; without one, the report is the moves alone */
+  readerModel?: ResolvedModel
+  /** Test seam over readPage */
+  readPage?: (options: ReadPageOptions) => Promise<ReadPageResult>
   taskDir: string
   filesDir: string
-  onNeedsYou: (message: string) => Promise<boolean>
+  /**
+   * The person is needed. `show` brings the task's window to the front; call
+   * it only when someone will act there. Resolves true once they are done.
+   */
+  onNeedsYou: (message: string, show?: () => Promise<void>) => Promise<boolean>
   onStep?: (line: string) => void
   maxSteps?: number
   abortSignal?: AbortSignal
@@ -104,6 +115,8 @@ export interface JevTaskOptions {
   /** Where Sky's browser lives; the default is ~/.sky/browser */
   browserRoot?: string
   privateSignIn?: boolean
+  /** Keep an existing-Brave task in its own window without focusing it for input. */
+  background?: boolean
   /** Test seam over the browser driver: a scripted session in place of the real one */
   browser?: BrowserSession
   /** Test seam over attaching to the driver, for the restart after a crash */
@@ -155,6 +168,7 @@ export async function runJevTask(options: JevTaskOptions): Promise<JevTaskResult
   const adviserModel = options.adviserModel
   const adviseWith = options.advise ?? advise
   const canAdvise = adviserModel !== undefined || options.advise !== undefined
+  const canRead = options.readerModel !== undefined || options.readPage !== undefined
 
   const traceFile = path.join(options.taskDir, 'trace.jsonl')
   let claim: DownloadClaim | undefined
@@ -166,6 +180,7 @@ export async function runJevTask(options: JevTaskOptions): Promise<JevTaskResult
           objective: options.objective,
           filesDir: options.filesDir,
           headless: options.headless,
+          background: options.background,
         },
         options.abortSignal,
       )
@@ -197,6 +212,9 @@ export async function runJevTask(options: JevTaskOptions): Promise<JevTaskResult
   }
   let outcome: JevOutcome = 'out_of_steps'
   let reason: string | undefined
+  /** The page the task ended on, for the reading, or why the browser did not return it */
+  let finalPage: string | undefined
+  let unreadPage: string | undefined
   const expectsDownload = /\bdownload/i.test(options.objective)
   /** The control whose click last produced a download — by what it is, since refs change with every snapshot */
   let downloadedFrom: string | undefined
@@ -261,6 +279,26 @@ export async function runJevTask(options: JevTaskOptions): Promise<JevTaskResult
     return result.output
   }
   const say = (line: string) => options.onStep?.(line)
+  // The private browser can bring the task's window forward for the person; the shared driver's window is theirs to find.
+  const show = options.privateSignIn
+    ? async () => {
+        await browser
+          .callTool('sky_show_browser', {}, { signal: options.abortSignal, timeoutMs: 30_000 })
+          .catch(() => undefined)
+      }
+    : undefined
+  /** A scroll that moved the content is progress even when the controls in view stay the same. */
+  let scrolled = false
+  const scroll = async (deltaY: number) => {
+    const result = await call('browser_mouse_wheel', { deltaX: 0, deltaY })
+    if (result.ok && SCROLLED.test(result.text)) scrolled = true
+    return result
+  }
+  /** How far a scroll went, and whether it reached the end, for the history the models read. */
+  const scrollNote = (result: { ok: boolean; text: string }): string =>
+    result.ok && SCROLLED.test(result.text)
+      ? ` — ${result.text.split('\n')[0].replace(/ Take a fresh snapshot\.$/, '')}`
+      : ''
 
   // A model may think while a SPA replaces its controls or completes a delayed
   // navigation. Never send an input using references from that older page.
@@ -379,7 +417,7 @@ export async function runJevTask(options: JevTaskOptions): Promise<JevTaskResult
         break
       case 'scroll_down':
         operation = 'scroll_down'
-        result = await call('browser_mouse_wheel', { deltaX: 0, deltaY: SCROLL_PX })
+        result = await scroll(SCROLL_PX)
         break
       default:
         result = await call('browser_wait_for', { time: 1 })
@@ -387,7 +425,7 @@ export async function runJevTask(options: JevTaskOptions): Promise<JevTaskResult
     steps.push({ step, operation, target: what, probability: 1, confidence: 1, ms: 0, note: `Adviser: ${why}` })
     remember(
       result.ok
-        ? `Step ${step}: adviser ${what}`
+        ? `Step ${step}: adviser ${what}${scrollNote(result)}`
         : `Step ${step}: adviser ${what} — failed: ${result.text.slice(0, 200)}`,
     )
     void trace({ kind: 'step', step, adviser: true, what, ok: result.ok })
@@ -441,8 +479,9 @@ export async function runJevTask(options: JevTaskOptions): Promise<JevTaskResult
       void trace({ kind: 'page', step, url: table.url, title: table.title, controls: table.rows.length })
       // A download is progress even when the page looks the same: a page
       // with several forms is downloaded from several times over.
-      const progressed = downloads.length > downloadsSeen
+      const progressed = downloads.length > downloadsSeen || scrolled
       downloadsSeen = downloads.length
+      scrolled = false
       const changed = print !== lastPrint || progressed
       if (steps.length > 0) steps[steps.length - 1].pageChanged = changed
       unchanged = changed ? 0 : unchanged + 1
@@ -636,7 +675,7 @@ export async function runJevTask(options: JevTaskOptions): Promise<JevTaskResult
             ? `Jev: needs you (${Math.round(decision.needsPerson * 100)}%)`
             : `Jev: asks first (risky ${Math.round(decision.risky * 100)}%)`,
         )
-        const continued = await options.onNeedsYou(message)
+        const continued = await options.onNeedsYou(message, show)
         if (!continued) {
           outcome = 'stopped'
           reason = 'You stopped the task.'
@@ -739,10 +778,10 @@ export async function runJevTask(options: JevTaskOptions): Promise<JevTaskResult
           })
           break
         case 'scroll_down':
-          result = await call('browser_mouse_wheel', { deltaX: 0, deltaY: SCROLL_PX })
+          result = await scroll(SCROLL_PX)
           break
         case 'scroll_up':
-          result = await call('browser_mouse_wheel', { deltaX: 0, deltaY: -SCROLL_PX })
+          result = await scroll(-SCROLL_PX)
           break
         case 'wait':
           result = await call('browser_wait_for', { time: 1 })
@@ -773,9 +812,24 @@ export async function runJevTask(options: JevTaskOptions): Promise<JevTaskResult
             .slice(0, 160)}`,
         )
         lastMoveFailed = result.text.slice(0, 400)
-      } else remember(`Step ${step}: ${what}`)
+      } else remember(`Step ${step}: ${what}${scrollNote(result)}`)
     }
     if (outcome === 'out_of_steps') reason = `The task used all ${maxSteps} steps.`
+    // Jev moves without reading. A task that ends without files may have asked
+    // what a page says: keep the page it ended on for one reading.
+    if (
+      canRead &&
+      outcome !== 'stopped' &&
+      !options.abortSignal?.aborted &&
+      (await filesIn(options.filesDir)).length === 0
+    ) {
+      const final = await call('browser_snapshot', {}).catch((error: unknown) => ({
+        ok: false,
+        text: error instanceof Error ? error.message : String(error),
+      }))
+      if (final.ok) finalPage = final.text
+      else unreadPage = `the browser did not return it: ${final.text.split('\n')[0]?.slice(0, 160)}`
+    }
   } finally {
     // The private worker releases the browser while retaining its profile and sign-ins.
     if (outcome === 'done' && !options.browser && !options.privateSignIn) await closeTab(browser as McpClient)
@@ -783,9 +837,22 @@ export async function runJevTask(options: JevTaskOptions): Promise<JevTaskResult
   }
 
   const files = await filesIn(options.filesDir)
+  let reading: Reading | undefined
+  if (finalPage !== undefined && files.length === 0) {
+    say('Reading the page it ended on')
+    const read = await (options.readPage ?? readPage)({
+      model: options.readerModel as ResolvedModel,
+      goal: options.objective,
+      page: finalPage,
+      outcome: reason ?? outcome,
+      abortSignal: options.abortSignal,
+    })
+    void trace({ kind: 'reading', ms: read.ms, chars: read.text.length, failed: read.failed })
+    reading = read.failed ? { failed: read.failed } : { text: read.text }
+  } else if (unreadPage !== undefined && files.length === 0) reading = { failed: unreadPage }
   void trace({ kind: 'end', outcome, reason, files })
   return {
-    report: report({ outcome, reason: reason ?? '', steps, history, files, downloads, usage }),
+    report: report({ outcome, reason: reason ?? '', steps, history, files, downloads, usage, reading }),
     outcome,
     reason,
     files,
@@ -797,7 +864,10 @@ export async function runJevTask(options: JevTaskOptions): Promise<JevTaskResult
   }
 }
 
-/** The closing words, written by code from the trace: no model writes them. */
+/** What the reasoning model found on the page the task ended on, or why it could not read it. */
+type Reading = { text: string } | { failed: string }
+
+/** The closing words, written by code from the trace; only a reading of the final page is the model's. */
 function report(input: {
   outcome: JevOutcome
   reason: string
@@ -806,6 +876,7 @@ function report(input: {
   files: string[]
   downloads: string[]
   usage: JevUsage
+  reading?: Reading
 }): string {
   const { outcome, reason, steps, history, files, usage } = input
   const head =
@@ -823,6 +894,10 @@ function report(input: {
     `${steps.length} moves, ${usage.jevRequests} Jev decisions at ${avg} ms each, ${usage.adviserCalls} adviser reading${usage.adviserCalls === 1 ? '' : 's'}, ${usage.typingCalls} typed field${usage.typingCalls === 1 ? '' : 's'}.`,
     '',
   ]
+  const { reading } = input
+  if (reading && 'text' in reading && reading.text) lines.push('What the page shows:', reading.text, '')
+  else if (reading && 'failed' in reading)
+    lines.push(`The page it ended on could not be read: ${reading.failed.slice(0, 200)}`, '')
   if (files.length > 0) {
     lines.push(
       'Files in the task folder:',

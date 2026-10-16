@@ -33,8 +33,10 @@ export interface BrowserTaskOptions {
   /**
    * The person is needed in the browser window. Resolves true once they say
    * they are done and Sky may look again, false when they stop the task.
+   * `show` brings the task's window to the front; call it only when someone
+   * will act there.
    */
-  onNeedsYou: (message: string) => Promise<boolean>
+  onNeedsYou: (message: string, show?: () => Promise<void>) => Promise<boolean>
   onEvent?: (event: ChatEngineEvent) => void
   maxSteps?: number
   abortSignal?: AbortSignal
@@ -84,6 +86,12 @@ export async function runBrowserTask(options: BrowserTaskOptions): Promise<Brows
         }
       : await attachBrowserDriver({ headless: options.headless, root: options.browserRoot })
   const { client, driver } = connection
+  // Only the private browser can bring its task window forward; the shared driver's window is the person's to find.
+  const show = async () => {
+    await client
+      .callTool('sky_show_browser', {}, { signal: options.abortSignal, timeoutMs: 30_000 })
+      .catch(() => undefined)
+  }
   let finished = false
   let signInFailure: string | undefined
   try {
@@ -106,7 +114,7 @@ export async function runBrowserTask(options: BrowserTaskOptions): Promise<Brows
       }),
       execute: async ({ message }) => {
         if (signInFailure) return { continued: false, note: signInFailure }
-        const continued = await options.onNeedsYou(message)
+        const continued = await options.onNeedsYou(message, privateBrowser ? show : undefined)
         return continued
           ? { continued: true, note: 'The person says they are done. Take a fresh snapshot before acting.' }
           : { continued: false, note: 'The person stopped the task. Report what was done and what remains.' }

@@ -45,8 +45,12 @@ export function createTaskTools(options: {
         let needsYou: string | undefined
         const result = await browserTaskHost.run(
           {
-            needsYou: async (message) => {
-              if (tracked) return plan.wait(message, 'browser', signal)
+            needsYou: async (message, show) => {
+              // The task's window comes forward only when the plan waits for the person to act in it.
+              if (tracked) {
+                await show?.()
+                return plan.wait(message, 'browser', signal)
+              }
               needsYou = message
               return false
             },

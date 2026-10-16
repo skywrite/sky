@@ -1,6 +1,6 @@
 ---
 created: 2026-09-25
-updated: 2026-10-08
+updated: 2026-10-13
 ---
 
 # Sky's browser
@@ -82,19 +82,36 @@ PDF collection, upload restrictions, redirect blocking, and cancellation without
 quitting the original browser. The installed extension and Brave must remain
 compatible; this adapter deliberately fails instead of falling back to a new profile.
 
-Before sending input, the worker activates its own task tab. LinkedIn imports
-open the connection in a separate Brave window in the same profile. Their input
-activates only the task tab with `chrome.tabs.update`, preserving the focused
-window. The official extension still focuses Brave once when it connects; Sky
-brings the task window forward again only for a verification handoff. The owned
-connection page supplies these host-only tab controls, and both owned tabs close
-on cleanup. Ungroup its owned tabs before closing them: closing the last grouped
+Before sending input, the worker activates its own task tab. Every browser task,
+`browser:task` from the terminal or chat as well as LinkedIn imports, opens the
+connection in a separate Brave window in the same profile. Its input activates
+only the task tab with `chrome.tabs.update`, preserving the focused window and
+the person's macOS Space. The official extension still focuses Brave once when it
+connects; Sky brings the task window forward again only when the person is about
+to act in it: a verification handoff, a terminal prompt, or a plan waiting in chat,
+restoring the window first if they minimized it. A small chat task that ends at the
+handoff never shows its window, since closing the task closes it. The owned connection page supplies these host-only tab
+controls, and both owned tabs close on cleanup. Ungroup its owned tabs before closing them: closing the last grouped
 tabs can preserve a saved group shortcut in Brave's bookmarks bar. The active
 tab-group API omits these closed groups; opt-in `SKY_BROWSER_UI_TESTS=1` coverage
 checks the synthetic browser's bookmarks bar through macOS Accessibility.
 Create the window before connecting: moving a connected tab group
-between windows can detach the debugger and end the relay. Other browser tasks
-retain their foreground behavior.
+between windows can detach the debugger and end the relay.
+
+A task window the person cannot see must keep rendering. A minimized window's
+page runs no animation frames, and every Playwright click, which waits for its
+target to hold still across frames, times out. Playwright turns on focus
+emulation for pages it opens, but its extension relay connects with `noDefaults`,
+which skips it; `existing/connection.ts` turns it on for the owned task tab only.
+See [2026-10-13-scroll-aim-and-background-windows](2026-10-13-scroll-aim-and-background-windows.md).
+
+`browser_mouse_wheel` scrolls from inside the page (`signIn/scroll.ts`) what a
+person's pointer in the middle of the window would scroll: the page itself, or
+the panel there that scrolls on its own, else the largest uncovered panel in
+view. It never scrolls a page a dialog has locked. Its result says how far the
+content moved, when it reached the end, and when nothing can move further, which
+is a failed move. Only a page that scrolls nothing by itself, or an embedded frame
+in the middle, still gets a mouse wheel there.
 
 With the official
 extension, a background tab can time out on a click and then leave Chromium's
@@ -435,7 +452,7 @@ accessibility snapshot instead of a page script:
    again, and applies the gates in code: done at 0.85 (a download goal requires
    a saved file; a repeated completion claim without one ends as blocked), the person at 0.85 or when
    Jev says so, a risky move asked first at 0.5, blocked after three unchanged
-   pages, sixty steps at most. The person is asked once per page: after they
+   pages (a scroll that moved the content counts as a change), sixty steps at most. The person is asked once per page: after they
    continue, the loop looks again, waits three seconds and looks once more
    if Jev still asks, and then runs Jev's next-best move on that page rather
    than ask the same thing again.
@@ -475,8 +492,14 @@ accessibility snapshot instead of a page script:
    starts it once more on the same page, the profile still holding the
    session, and the move that died counts as a failed move.
 
-Without files the closing report is written by code from the trace. Jev's
-decisions cost about a thousand tokens and a fraction of a second each; an
+Without files the closing report is written by code from the trace, with one
+model-written part: `reading.ts` gives the reasoning model the page the task
+ended on (its snapshot without references, at most 60,000 characters) and the
+report carries what that page shows for the goal, values as written, under
+"What the page shows". A task that asked what a page says otherwise returns only
+its moves. A stopped task is not read; a reading that fails, or a final page the
+browser does not return, is reported, never raised.
+Jev's decisions cost about a thousand tokens and a fraction of a second each; an
 adviser reading a few thousand tokens and a third of a second. Both ride
 the same usage log as every other model call.
 
@@ -561,6 +584,16 @@ shared browser, never the private task worker.
 
 ## Verified
 
+- 2026-10-13, live through the person's Brave, in a background task window,
+  on an analytics dashboard report whose table scrolls inside a panel:
+  scrolls moved the panel and reported its ends; the reading returned the
+  date range and the table's rows, and said which rows the page had not
+  loaded. Page reads took 0.2 to 0.6 s.
+- 2026-10-13, the official extension in a throwaway Brave profile, a
+  background task window minimized: a click landed in 93 ms with Sky's
+  focus emulation, timed out after 5 s without it; the new scroll moved the
+  page either way. A synthetic report panel scrolled after a click on its
+  header, where a wheel at the pointer had moved nothing.
 - 2026-10-02, the login lookup with fake providers and temp state: a lone
   matching item used and remembered; a website saved as the root domain
   taken, with a sibling subdomain, a lookalike, a suffix trick and a
@@ -612,6 +645,9 @@ shared browser, never the private task worker.
 
 ## Notes
 
+- 2026-10-13: tasks work in a background window, scroll what is in the
+  middle of the window, and read the page a Jev task ends on. See
+  [2026-10-13-scroll-aim-and-background-windows](2026-10-13-scroll-aim-and-background-windows.md).
 - 2026-09-30: a batch profile's login comes from a connected password
   manager first, the keychain second.
 - 2026-09-29: stored logins for batch profiles. The first integration's own

@@ -31,6 +31,7 @@ import { signInProblem } from './outcome.ts'
 import { acquireBrowserProfile, BrowserProfileError, BrowserSessionCookies, prepareBrowserProfile } from './profile.ts'
 import { LoginRedactor } from './redaction.ts'
 import { captureScriptedLogin } from './scriptedLogin.ts'
+import { scrollContent } from './scroll.ts'
 import { captureVerificationForm, verificationVisible } from './verification.ts'
 
 const target = z.string().regex(/^(?:f\d+)?e\d+$/)
@@ -92,7 +93,8 @@ const definitions = {
       .strict(),
   },
   browser_mouse_wheel: {
-    description: 'Scroll the page.',
+    description:
+      'Scroll what is in the middle of the window: the page, or the panel there that scrolls on its own. Positive deltaY scrolls down.',
     schema: z.object({ deltaX: z.number().min(-2000).max(2000), deltaY: z.number().min(-2000).max(2000) }).strict(),
   },
   browser_wait_for: {
@@ -748,6 +750,7 @@ export class PrivateBrowserSession {
     let signInOperation: SignInResult['operation'] = 'inspect'
     try {
       if (name === 'sky_show_browser') {
+        await this.options.attached?.showTaskWindow?.()
         await this.page.bringToFront()
         return result('The task browser is ready for your help.')
       }
@@ -901,9 +904,11 @@ export class PrivateBrowserSession {
         case 'browser_press_key':
           await this.page.keyboard.press(String(args.key))
           break
-        case 'browser_mouse_wheel':
-          await this.page.mouse.wheel(Number(args.deltaX), Number(args.deltaY))
-          break
+        case 'browser_mouse_wheel': {
+          const scrolled = await scrollContent(this.page, Number(args.deltaX), Number(args.deltaY))
+          if (scrolled.isError) return result(scrolled.text, true)
+          return await this.withDownloads(`${scrolled.text} Take a fresh snapshot.`)
+        }
         case 'browser_wait_for':
           if (typeof args.text === 'string')
             await this.page.getByText(args.text, { exact: false }).first().waitFor({ state: 'visible' })

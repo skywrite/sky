@@ -501,3 +501,67 @@ test('an unresponsive browser input ends its task page before recovery', { timeo
     500,
   ),
 )
+
+const said = (reply: McpToolResult) =>
+  reply.content.flatMap((part) => (part.type === 'text' && 'text' in part ? [part.text] : [])).join('\n')
+
+test(
+  'a scroll moves the panel in the middle of the window, not the header a click left the pointer on',
+  { timeout: 30000 },
+  async () =>
+    fixture(async (f) => {
+      await f.browser.callTool('browser_navigate', { url: 'https://atlas.example/report' })
+      await f.page.setViewportSize({ width: 1280, height: 800 })
+      await f.page.setContent(
+        '<style>html,body{margin:0;height:100%;overflow:hidden}</style><header style="height:80px"><button onclick="this.textContent=\'Dismissed\'">Dismiss</button></header><main style="height:calc(100% - 80px);overflow:auto"><div style="height:2000px">Atlas report</div></main>',
+      )
+      await f.page.getByRole('button').click()
+      const panel = () => f.page.locator('main').evaluate((main) => main.scrollTop)
+      const first = await f.browser.callTool('browser_mouse_wheel', { deltaX: 0, deltaY: 500 })
+      const afterFirst = await panel()
+      const last = await f.browser.callTool('browser_mouse_wheel', { deltaX: 0, deltaY: 2000 })
+      const afterLast = await panel()
+      const beyond = await f.browser.callTool('browser_mouse_wheel', { deltaX: 0, deltaY: 500 })
+      assert({
+        given: 'a report whose content scrolls inside a panel, after a click on its header',
+        should: 'scroll the panel, say when it reaches the bottom, and refuse to go further',
+        actual: [said(first), afterFirst, said(last), afterLast, beyond.isError, said(beyond)],
+        expected: [
+          'Scrolled a panel down 500 px. Take a fresh snapshot.',
+          500,
+          'Scrolled a panel down 780 px, to the bottom. Take a fresh snapshot.',
+          1280,
+          true,
+          'Nothing on the page scrolls further down.',
+        ],
+      })
+    }),
+)
+
+test('a scroll moves the page itself and leaves a page a dialog has locked alone', { timeout: 30000 }, async () =>
+  fixture(async (f) => {
+    await f.browser.callTool('browser_navigate', { url: 'https://atlas.example/statement' })
+    await f.page.setViewportSize({ width: 1280, height: 800 })
+    await f.page.setContent('<main style="height:3000px">Jane Doe</main>')
+    const page = await f.browser.callTool('browser_mouse_wheel', { deltaX: 0, deltaY: 500 })
+    const pageY = await f.page.evaluate(() => scrollY)
+    await f.page.evaluate(() => scrollTo(0, 0))
+    await f.page.setContent(
+      '<style>body{margin:0;overflow:hidden}</style><main style="height:3000px">Jane Doe</main><div role="dialog" style="position:fixed;inset:200px;background:white">Confirm the transfer</div>',
+    )
+    const locked = await f.browser.callTool('browser_mouse_wheel', { deltaX: 0, deltaY: 500 })
+    const lockedY = await f.page.evaluate(() => scrollY)
+    assert({
+      given: 'a long page, then the same page locked behind a dialog',
+      should: 'scroll the page itself, and never scroll a page the dialog locked',
+      actual: [
+        said(page),
+        pageY,
+        locked.isError,
+        said(locked).startsWith('Nothing on the page scrolls by itself'),
+        lockedY,
+      ],
+      expected: ['Scrolled the page down 500 px. Take a fresh snapshot.', 500, false, true, 0],
+    })
+  }),
+)

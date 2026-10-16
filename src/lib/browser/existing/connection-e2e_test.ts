@@ -28,9 +28,9 @@ interface SyntheticChrome {
     update(id: number, options: { title: string }): Promise<unknown>
   }
   windows: {
-    get(id: number): Promise<{ id: number; focused: boolean }>
+    get(id: number): Promise<{ id: number; focused: boolean; state?: string }>
     getAll(): Promise<{ id: number; focused: boolean }[]>
-    update(id: number, options: { focused: boolean }): Promise<unknown>
+    update(id: number, options: { focused?: boolean; state?: 'minimized' | 'normal' }): Promise<unknown>
   }
 }
 
@@ -661,8 +661,36 @@ test(
         ],
         expected: [true, false, false, false, 'Clicked', 'Atlas', { ...before, focused: false }],
       })
+      // A task window the person cannot see still takes input: Sky keeps its page rendering.
+      await control.evaluate(async () => {
+        const chrome = (globalThis as unknown as { chrome: SyntheticChrome }).chrome
+        await chrome.windows.update((await chrome.tabs.getCurrent()).windowId, { state: 'minimized' })
+      })
+      await background.page.getByRole('button').evaluate((button) => {
+        button.textContent = 'Click'
+      })
+      const hiddenClick = await task.callTool('browser_click', { target: clickRef })
+      assert({
+        given: 'the task window minimized while the person works in another window',
+        should: 'keep the task page rendering, so a click still lands instead of timing out',
+        actual: [
+          hiddenClick.isError,
+          await background.page.evaluate(() => document.visibilityState),
+          await background.page.getByRole('button').textContent(),
+        ],
+        expected: [false, 'visible', 'Clicked'],
+      })
       const toolNames = (await task.listTools()).map((tool) => tool.name)
       const shown = await task.callTool('sky_show_browser', {})
+      assert({
+        given: 'a verification handoff while the task window is minimized',
+        should: 'restore the window rather than leave it in the Dock',
+        actual: await control.evaluate(async () => {
+          const chrome = (globalThis as unknown as { chrome: SyntheticChrome }).chrome
+          return (await chrome.windows.get((await chrome.tabs.getCurrent()).windowId)).state
+        }),
+        expected: 'normal',
+      })
       assert({
         given: 'the import host requests a real verification handoff',
         should: 'show its owned window while keeping window controls out of model tools',
