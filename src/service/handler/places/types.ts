@@ -56,6 +56,8 @@ export interface PlaceSummary extends PlaceFields {
   /** Explicit parent first; otherwise the closest saved geography in the existing reference. */
   parentRef: string
   archived: boolean
+  /** The frontmatter `updated:` date; empty when the file has none. */
+  updated: string
   connections: number
 }
 export interface PlaceConnection {

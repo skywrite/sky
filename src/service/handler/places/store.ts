@@ -109,6 +109,7 @@ export function createPlacesStore(store: MarkdownStore, baseDir: string, dirs: s
         ref: placePath,
         parentRef: value.parent,
         archived: doc.yaml.archived === true,
+        updated: text(doc.yaml.updated),
         locationLabel: [value.subcity, value.city, value.region, value.country].filter(Boolean).join(', '),
         connections: backlinksOf(store, base, relative(file)).filter((item) => item.type !== 'place').length,
       }

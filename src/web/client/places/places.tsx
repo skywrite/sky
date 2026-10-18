@@ -122,7 +122,7 @@ export function PlacesMain({ route, navigate }: { route: string; navigate: (href
           .includes(query.trim().toLowerCase())
       )
     })
-    .sort((a, b) => a.name.localeCompare(b.name))
+    .sort((a, b) => b.updated.localeCompare(a.updated) || a.name.localeCompare(b.name))
   // Only narrow the sidebar: sending viewport matches back to the map would refit it on every pan.
   const inMapArea = view === 'map' && visibleIds !== null
   const shown = inMapArea ? filtered.filter((place) => visibleIds.has(place.id)) : filtered
