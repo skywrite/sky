@@ -1,6 +1,6 @@
 ---
 created: 2026-09-05
-updated: 2026-10-06
+updated: 2026-10-18
 ---
 
 # The service process
@@ -17,7 +17,12 @@ The service watches its own source (`reload.ts`) — everything under `src`
 that the server imports or starts with: `.ts`, `.tsx`, `.json`,
 `.graphql`, `.env`. Not the page's sources under `web/client`,
 which are built on request; not tests, docs, or fixtures. A change marks a
-restart pending. The process leaves only once nothing is held, after a
+restart pending only when the file's bytes differ from the hash the process
+took of them at start, or the file appeared or went away. An event that
+leaves the bytes alone — Tresorit stamping its file IDs, a `chmod`, a
+`touch` — does nothing
+([2026-10-18](2026-10-18-restarts-need-new-bytes.md)). The process leaves
+only once nothing is held, after a
 short grace so a response in flight lands — however long that takes, with
 a line in the log every half hour while it waits. The twelve-hour refresh
 and a descriptor table past 4,096 ask for a restart the same way, and so
@@ -91,4 +96,5 @@ still parses files locally and strips the same comments, and moves next.
 
 ## Notes
 
+- [2026-10-18 — restarts need new bytes](2026-10-18-restarts-need-new-bytes.md)
 - [2026-09-05 — reloads wait for idle](2026-09-05-reloads-wait-for-idle.md)

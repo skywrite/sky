@@ -1,12 +1,16 @@
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import * as path from 'node:path'
 import { assert, test } from '#test'
 import { hold } from './activity.ts'
 import { createReloadGate, isServerSource, RELOAD_EXIT_CODE } from './reload.ts'
 
-function harness(over: { remindMs?: number } = {}) {
+/** A root of '/nowhere' has nothing to compare with, so every reported change counts */
+function harness(over: { remindMs?: number; root?: string } = {}) {
   const codes: number[] = []
   const events: string[] = []
   const gate = createReloadGate({
-    root: '/nowhere',
+    root: over.root ?? '/nowhere',
     watch: false,
     exit: (code) => codes.push(code),
     log: {
@@ -21,6 +25,16 @@ function harness(over: { remindMs?: number } = {}) {
 }
 
 const settle = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+
+/** A source tree in a temp folder, written before the gate hashes it */
+function sourceTree(files: Record<string, string>): string {
+  const root = mkdtempSync(path.join(tmpdir(), 'sky-reload-'))
+  for (const [rel, text] of Object.entries(files)) {
+    mkdirSync(path.dirname(path.join(root, rel)), { recursive: true })
+    writeFileSync(path.join(root, rel), text)
+  }
+  return root
+}
 
 test({ name: 'reload - the server source calls for a restart; pages, tests, docs, and fixtures do not' }, async () => {
   assert({
@@ -134,6 +148,58 @@ test({ name: 'reload - a wait with no end in sight says so now and then, and nev
     expected: { whileHeld: { codes: [], reminded: true }, codes: [RELOAD_EXIT_CODE], last: 'reload' },
   })
   gate.close()
+})
+
+test({ name: 'reload - an event that leaves the bytes as they were does not restart' }, async () => {
+  const root = sourceTree({
+    'service/run.ts': 'export const run = 1\n',
+    'service/server.ts': 'export const server = 1\n',
+    'service/store.ts': 'export const store = 1\n',
+  })
+  const { gate, codes, events } = harness({ root })
+  // What a sync tool stamping its own file IDs looks like to the watcher
+  chmodSync(path.join(root, 'service/run.ts'), 0o600)
+  utimesSync(path.join(root, 'service/server.ts'), 1_700_000_000, 1_700_000_000)
+  writeFileSync(path.join(root, 'service/store.ts'), 'export const store = 1\n')
+  for (const file of ['service/run.ts', 'service/server.ts', 'service/store.ts']) gate.onChange(file)
+  await settle(30)
+  gate.close()
+  rmSync(root, { recursive: true, force: true })
+  assert({
+    given: 'a permissions change, a touch, and a save of the same bytes',
+    should: 'not mark a restart',
+    actual: { codes, events, pending: gate.status().pending },
+    expected: { codes: [], events: [], pending: null },
+  })
+})
+
+test({ name: 'reload - an edit, a new file, and a removed file restart, and only they are named' }, async () => {
+  const root = sourceTree({
+    'service/run.ts': 'export const run = 1\n',
+    'service/server.ts': 'export const server = 1\n',
+    'service/store.ts': 'export const store = 1\n',
+  })
+  const { gate, codes, events } = harness({ root })
+  writeFileSync(path.join(root, 'service/run.ts'), 'export const run = 2\n')
+  chmodSync(path.join(root, 'service/server.ts'), 0o600)
+  writeFileSync(path.join(root, 'service/added.ts'), 'export const added = 1\n')
+  rmSync(path.join(root, 'service/store.ts'))
+  for (const file of ['service/run.ts', 'service/server.ts', 'service/added.ts', 'service/store.ts']) {
+    gate.onChange(file)
+  }
+  await settle(30)
+  gate.close()
+  rmSync(root, { recursive: true, force: true })
+  assert({
+    given: 'one burst with an edit, a permissions change, a new file, and a deleted file',
+    should: 'restart once, naming the edited, added, and deleted files but not the one whose bytes stayed',
+    actual: { codes, events, files: gate.status().pending?.files },
+    expected: {
+      codes: [RELOAD_EXIT_CODE],
+      events: ['reload-pending', 'reload'],
+      files: ['service/run.ts', 'service/added.ts', 'service/store.ts'],
+    },
+  })
 })
 
 test({ name: 'reload - asked to restart now, it goes at once, held or not' }, async () => {

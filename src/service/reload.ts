@@ -12,7 +12,9 @@
  * person can say "now". Every start is a fresh spawn, so nothing leaks.
  */
 
-import { type FSWatcher, watch } from 'node:fs'
+import { createHash } from 'node:crypto'
+import { type FSWatcher, readdirSync, readFileSync, watch } from 'node:fs'
+import * as path from 'node:path'
 import { holding, onRelease } from './activity.ts'
 
 /** The launcher starts the service again on this code, and only this one. */
@@ -33,6 +35,49 @@ export function isServerSource(relPath: string): boolean {
   if (/_test\.tsx?$/.test(p)) return false
   if (p === '.env' || p.endsWith('/.env')) return true
   return /\.(ts|tsx|json|graphql)$/.test(p)
+}
+
+/**
+ * A hash of each server file's bytes, by its path under `root`: the code this
+ * process started with. A watch event only says a file's record changed —
+ * Tresorit stamping its `tresorit.fileId` attribute, a `chmod`, or a `touch`
+ * arrives as `change`, the same as a save — so a file counts as changed only
+ * when its bytes differ from these. Null when the root cannot be read: then
+ * there is nothing to compare with, and every reported change counts.
+ */
+function fingerprintSources(root: string): Map<string, string> | null {
+  const prints = new Map<string, string>()
+  const walk = (dir: string): void => {
+    for (const entry of readdirSync(path.join(root, dir), { withFileTypes: true })) {
+      const rel = dir ? `${dir}/${entry.name}` : entry.name
+      if (entry.isDirectory()) {
+        if (entry.name === 'node_modules') continue
+        try {
+          walk(rel)
+        } catch {
+          // A folder that cannot be read has no prints, so a change in it counts
+        }
+      } else if (entry.isFile() && isServerSource(rel)) {
+        const print = fingerprint(path.join(root, rel))
+        if (print) prints.set(rel, print)
+      }
+    }
+  }
+  try {
+    walk('')
+  } catch {
+    return null
+  }
+  return prints
+}
+
+/** A hash of the file's bytes, or null when there is no file to read */
+function fingerprint(file: string): string | null {
+  try {
+    return createHash('sha1').update(readFileSync(file)).digest('hex')
+  } catch {
+    return null
+  }
 }
 
 interface Log {
@@ -91,6 +136,11 @@ export function createReloadGate(options: ReloadGateOptions): ReloadGate {
   let grace: ReturnType<typeof setTimeout> | null = null
   let remind: ReturnType<typeof setInterval> | null = null
   let watcher: FSWatcher | null = null
+  const prints = fingerprintSources(root)
+
+  /** Whether a file's bytes differ from what it held at start: edited, added, or removed */
+  const edited = (file: string): boolean =>
+    prints === null || fingerprint(path.join(root, file)) !== (prints.get(file) ?? null)
 
   const leave = (why: string): void => {
     if (leaving) return
@@ -129,7 +179,7 @@ export function createReloadGate(options: ReloadGateOptions): ReloadGate {
     }, graceMs)
   }
 
-  const mark = (reason: string): void => {
+  const mark = (reason: string, files: string[] = []): void => {
     if (leaving) return
     if (!pending) {
       pending = { since: Date.now(), reasons: new Set(), files: new Set() }
@@ -148,8 +198,7 @@ export function createReloadGate(options: ReloadGateOptions): ReloadGate {
       }, remindMs)
     }
     pending.reasons.add(reason)
-    for (const file of changed) pending.files.add(file)
-    changed = new Set()
+    for (const file of files) pending.files.add(file)
     attempt()
   }
 
@@ -159,7 +208,9 @@ export function createReloadGate(options: ReloadGateOptions): ReloadGate {
     if (debounce) clearTimeout(debounce)
     debounce = setTimeout(() => {
       debounce = null
-      mark('source changed')
+      const edits = [...changed].filter(edited)
+      changed = new Set()
+      if (edits.length > 0) mark('source changed', edits)
     }, debounceMs)
   }
 
