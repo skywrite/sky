@@ -1046,58 +1046,38 @@ function MessageLine({
   )
 }
 
-function ChatsCard({
-  rows,
-  onOpenThread,
-  onOpenSaved,
-}: {
-  rows: DayChatRow[]
-  onOpenThread: (id: string) => void
-  onOpenSaved: (path: string) => void
-}) {
+/** An open chat's title opens its conversation; a closed chat's opens its document, with Continue chat beside it. */
+function ChatsCard({ rows, onOpenSaved }: { rows: DayChatRow[]; onOpenSaved: (path: string) => void }) {
   if (rows.length === 0) return null
   return (
     <Block head="Chats" mini={count(rows.length, 'chat')}>
-      {rows.map((row) => (
-        <div
-          className="sky-day-chat"
-          key={row.key}
-          data-depth={row.depth}
-          style={{ marginInlineStart: row.depth * 18 }}
-        >
-          <DocLine when={row.time} tag={chatState(row)}>
-            <span className="sky-day-chat-heading">
-              {row.path ? (
-                <a className="sky-day-chat-open" href={fileHref(row.path)}>
-                  {row.title}
-                </a>
-              ) : (
+      {rows.map((row) => {
+        const { target } = row
+        return (
+          <div
+            className="sky-day-chat"
+            key={row.key}
+            data-depth={row.depth}
+            style={{ marginInlineStart: row.depth * 18 }}
+          >
+            <DocLine when={row.time} tag={chatState(row)}>
+              <span className="sky-day-chat-heading">
                 <a
                   className="sky-day-chat-open"
-                  href={
-                    row.target.kind === 'live'
-                      ? `/thread/${encodeURIComponent(row.target.id)}`
-                      : fileHref(row.target.path)
-                  }
+                  href={target.kind === 'live' ? `/thread/${encodeURIComponent(target.id)}` : fileHref(target.path)}
                 >
                   {row.title}
                 </a>
-              )}
-              {row.path && (
-                <DayChatResume
-                  onClick={() =>
-                    row.target.kind === 'live' ? onOpenThread(row.target.id) : onOpenSaved(row.target.path)
-                  }
-                />
-              )}
-            </span>
-            <span className="sky-day-chat-meta">
-              {chatTurnCount(row)}
-              {row.parent && ` · from turn ${row.parent.turn} of ${row.parent.title}`}
-            </span>
-          </DocLine>
-        </div>
-      ))}
+                {target.kind === 'saved' && <DayChatResume onClick={() => onOpenSaved(target.path)} />}
+              </span>
+              <span className="sky-day-chat-meta">
+                {chatTurnCount(row)}
+                {row.parent && ` · from turn ${row.parent.turn} of ${row.parent.title}`}
+              </span>
+            </DocLine>
+          </div>
+        )
+      })}
     </Block>
   )
 }
@@ -1165,7 +1145,6 @@ export function DayView({
   importDialogOpen = false,
   chatNotice,
   onDismissChatNotice = () => {},
-  onOpen,
   onHelp,
   onOpenSaved = () => {},
   onOpenImport = () => {},
@@ -1191,7 +1170,6 @@ export function DayView({
   importDialogOpen?: boolean
   chatNotice?: ChatCloseNotice
   onDismissChatNotice?: (id: string) => void
-  onOpen: (id: string) => void
   onHelp?: (message: string) => Promise<void>
   /** A saved chat, by its notebook-relative path, opened to continue */
   onOpenSaved?: (chat: string) => void
@@ -1583,7 +1561,7 @@ export function DayView({
                       </Block>
                     )}
 
-                    <ChatsCard rows={chats} onOpenThread={onOpen} onOpenSaved={onOpenSaved} />
+                    <ChatsCard rows={chats} onOpenSaved={onOpenSaved} />
 
                     {(doneToday.length > 0 || entryComposer) && (
                       <Block head="Done today" mini={String(doneToday.length)}>
@@ -1657,8 +1635,6 @@ export function DayView({
             chats={view.chats}
             threads={threads}
             imports={imports}
-            onOpenThread={onOpen}
-            onOpenSaved={onOpenSaved}
             onOpenImport={onOpenImport}
             onImportMeeting={onImportMeeting}
             onKept={onKept}

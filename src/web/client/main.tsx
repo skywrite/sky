@@ -655,7 +655,6 @@ function Canvas() {
             importDialogOpen={Boolean(queue.pending || queue.again)}
             chatNotice={chatNotices[0]}
             onDismissChatNotice={dismissChatNotice}
-            onOpen={openThread}
             onHelp={helpWithItem}
             onOpenSaved={(chat) => void openSaved(chat)}
             onOpenImport={openImport}

@@ -246,26 +246,30 @@ test(
         const railParent = railChats.locator('.sky-dr-item')
         assert({
           given: 'one live continuation alongside two saved branches',
-          should: 'show and count only the live chat in the rail, keeping its document link',
+          should: 'show and count only the live chat in the rail, its title opening the conversation',
           actual: {
             titles: await railChats.locator('.sky-dr-open').allTextContents(),
             count: await railChats.locator('.sky-rail-count').textContent(),
             href: await railParent.getByRole('link', { name: 'Atlas continued', exact: true }).getAttribute('href'),
+            resume: await railParent.getByRole('button', { name: 'Continue chat', exact: true }).count(),
           },
-          expected: { titles: ['Atlas continued'], count: '1', href: `/explorer/${ROOT}` },
+          expected: { titles: ['Atlas continued'], count: '1', href: '/thread/live-parent', resume: 0 },
         })
         const mainParent = page.locator('.sky-day-chat').filter({ hasText: 'Atlas continued' }).first()
         assert({
           given: 'a saved chat with an active continuation',
-          should: 'keep its title linked to the document',
-          actual: await mainParent.getByRole('link', { name: 'Atlas continued', exact: true }).getAttribute('href'),
-          expected: `/explorer/${ROOT}`,
+          should: 'link its title to the open conversation, with no Continue chat beside it',
+          actual: {
+            href: await mainParent.getByRole('link', { name: 'Atlas continued', exact: true }).getAttribute('href'),
+            resume: await mainParent.getByRole('button', { name: 'Continue chat', exact: true }).count(),
+          },
+          expected: { href: '/thread/live-parent', resume: 0 },
         })
-        await railParent.getByRole('button', { name: 'Continue chat', exact: true }).click()
+        await railParent.getByRole('link', { name: 'Atlas continued', exact: true }).click()
         await page.waitForURL(`${origin}/thread/live-parent`)
         assert({
-          given: 'Continue chat in the rail on an already active conversation',
-          should: 'reuse its thread without opening another',
+          given: 'the title of an already active conversation clicked in the rail',
+          should: 'open its thread without opening another',
           actual: opened,
           expected: [LEAF],
         })

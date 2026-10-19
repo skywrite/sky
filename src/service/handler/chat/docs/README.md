@@ -1,6 +1,6 @@
 ---
 created: 2026-09-01
-updated: 2026-10-11
+updated: 2026-10-18
 ---
 
 # Chat over HTTP — a thread, its tuning, and the story of its context
@@ -469,8 +469,9 @@ a person can see and touch:
   finds the same thread. Its turns are on the page at once, its title is
   the saved one, the composer reads "Continue this chat…", and a branch
   from one of its replies is the retroactive case: a new chat from a
-  morning's conversation, this afternoon. The saved title itself opens the
-  notebook document, and the conversation header offers **Open document**.
+  morning's conversation, this afternoon. While the chat is open, its title
+  in the day lists opens the conversation; once closed, the title opens the
+  notebook document. The conversation header offers **Open document**.
   See the [day's document navigation](../../day/docs/2026-09-08-saved-chat-document-links.md).
 - **A name for the thread.** The fast model names the opening question
   alongside the reply; a branch uses its first own question. The header,

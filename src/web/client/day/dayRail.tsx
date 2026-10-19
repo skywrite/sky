@@ -7,7 +7,6 @@ import { meetingHref } from '../meetings/meetingPage.tsx'
 import { refusalOf } from '../settings/settingsBlocks.tsx'
 import { RailToggle } from '../shell/railToggle.tsx'
 import type { DayData, ThreadSummary } from './day.tsx'
-import { DayChatResume } from './dayChatResume.tsx'
 import { chatState, chatTurnCount, dayChatRows } from './dayChats.ts'
 
 /**
@@ -410,22 +409,11 @@ function ScheduleSection({
 }
 
 /**
- * Only the day's live chats belong in the rail. Keep their branch context
- * and any saved document links from the full hierarchy in the day record.
+ * Only the day's live chats belong in the rail, and each title opens its
+ * conversation, even when the chat already has a file. Keep their branch
+ * context from the full hierarchy in the day record.
  */
-function ChatsSection({
-  ymd,
-  chats,
-  threads,
-  onOpenThread,
-  onOpenSaved,
-}: {
-  ymd: string
-  chats: DayData['chats']
-  threads: ThreadSummary[]
-  onOpenThread: (id: string) => void
-  onOpenSaved: (chat: string) => void
-}) {
+function ChatsSection({ ymd, chats, threads }: { ymd: string; chats: DayData['chats']; threads: ThreadSummary[] }) {
   const rows = dayChatRows(ymd, chats, threads).filter((row) => row.target.kind === 'live')
   if (rows.length === 0) {
     return (
@@ -446,30 +434,15 @@ function ChatsSection({
         >
           <span className="sky-dr-time">{row.time}</span>
           <span className="sky-dr-chat-heading" style={{ paddingInlineStart: row.depth * 14 }}>
-            {row.path ? (
-              <a className="sky-dr-label sky-dr-open" title={row.title} href={fileHref(row.path)}>
-                {row.title}
-              </a>
-            ) : (
-              <a
-                className="sky-dr-label sky-dr-open"
-                title={row.title}
-                href={
-                  row.target.kind === 'live'
-                    ? `/thread/${encodeURIComponent(row.target.id)}`
-                    : fileHref(row.target.path)
-                }
-              >
-                {row.title}
-              </a>
-            )}
-            {row.path && (
-              <DayChatResume
-                onClick={() =>
-                  row.target.kind === 'live' ? onOpenThread(row.target.id) : onOpenSaved(row.target.path)
-                }
-              />
-            )}
+            <a
+              className="sky-dr-label sky-dr-open"
+              title={row.title}
+              href={
+                row.target.kind === 'live' ? `/thread/${encodeURIComponent(row.target.id)}` : fileHref(row.target.path)
+              }
+            >
+              {row.title}
+            </a>
           </span>
           <span className="sky-dr-mark">{chatState(row) ?? chatTurnCount(row)}</span>
           {row.parent && (
@@ -626,8 +599,6 @@ export function DayRail({
   chats,
   threads,
   imports,
-  onOpenThread,
-  onOpenSaved,
   onOpenImport,
   onImportMeeting,
   onKept,
@@ -640,9 +611,6 @@ export function DayRail({
   threads: ThreadSummary[]
   /** Imports, when the day is today */
   imports: ImportJob[]
-  onOpenThread: (id: string) => void
-  /** A saved chat, by its notebook-relative path, opened to continue */
-  onOpenSaved: (chat: string) => void
   onOpenImport: (id: string) => void
   onImportMeeting?: (files: File[], meeting: MeetingImport) => void
   /** Files the pad kept — the toast's words, and what Undo reverses */
@@ -658,7 +626,7 @@ export function DayRail({
       </div>
       <div className="sky-rail-body">
         <ScheduleSection schedule={schedule} ymd={ymd} onImportMeeting={onImportMeeting} />
-        <ChatsSection ymd={ymd} chats={chats} threads={threads} onOpenThread={onOpenThread} onOpenSaved={onOpenSaved} />
+        <ChatsSection ymd={ymd} chats={chats} threads={threads} />
         <WorkingSection imports={imports} onOpenImport={onOpenImport} />
       </div>
       <AttachmentsPad ymd={ymd} onKept={onKept} />

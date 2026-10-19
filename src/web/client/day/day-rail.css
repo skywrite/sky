@@ -80,7 +80,7 @@
   text-decoration: underline;
 }
 
-/* Chat titles link to documents when saved, or open the live conversation. */
+/* Chat titles open the live conversation. */
 .sky-dr-open {
   display: block;
   width: 100%;
@@ -108,10 +108,6 @@
 
 .sky-dr-chat-heading > .sky-dr-open {
   width: auto;
-}
-
-.sky-dr-chat-heading > .sky-action-icon {
-  flex-shrink: 0;
 }
 
 .sky-dr-mark {
