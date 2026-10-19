@@ -955,8 +955,11 @@ export default class ChatSession {
    */
   async end(opts: EndOptions): Promise<SaveChatReport | null> {
     const resume = this.resumeSession
-    // A resumed session with no new messages leaves its file untouched.
-    const wanted = opts.save && this.turns.length > this.inherited && (!resume || this.newMessages)
+    // A resumed session with no new messages leaves its file untouched, unless
+    // the file still lacks its summary: filed early for a branch, it gets the
+    // real end now, after a restart too, since the file itself says so.
+    const unfinished = opts.writeSummary === true && resume !== null && !resume.summarySection
+    const wanted = opts.save && this.turns.length > this.inherited && (!resume || this.newMessages || unfinished)
     if (!wanted) {
       await this.clearSnapshot()
       return null
@@ -971,7 +974,8 @@ export default class ChatSession {
    * File the conversation now and go on talking: what a branch asks of a
    * parent that has no file yet, since the branch's own file goes in the
    * folder beside its parent's. A light save — the pinned title, no tags,
-   * rel, summary, memory or profile work; those come at the real end — after which
+   * rel, summary, memory or profile work; those come at the real end, with
+   * or without another message — after which
    * the session writes back to that file like a resumed chat. Already filed,
    * it answers with where. Returns null when there is nothing to file.
    */

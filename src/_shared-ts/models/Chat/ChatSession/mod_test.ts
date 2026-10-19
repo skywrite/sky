@@ -1068,6 +1068,60 @@ test('ChatSession.fileNow - a parent with no file gets one and goes on talking i
   })
 })
 
+test('ChatSession.end - a chat filed for a branch gets its real end without another message, after a restart too', async () => {
+  const enricher: SaveEnricher = {
+    ...stubEnricher,
+    chooseTags: async () => 'Atlas/Planning',
+    writeSummary: async () => ({ by: 'Opus 5.5, High', text: '- Jane asked what to focus on.' }),
+  }
+  const end = { save: true, autoTag: true, writeSummary: true, enricher }
+  const finished = async (file: string) => {
+    const doc = await loadResumeSession(file)
+    return { summary: doc.summarySection?.text ?? null, tags: doc.tags }
+  }
+
+  const live = await makeSession()
+  await live.session.start()
+  await live.session.send('What should I focus on?')
+  live.session.pinTitle('Focus for the week')
+  const filed = (await live.session.fileNow())!
+  const light = await finished(filed.path)
+  const closed = await live.session.end(end)
+
+  // Rebuilt from its file, as a restart does: nothing in memory says it was filed early.
+  const other = await makeSession()
+  await other.session.start()
+  await other.session.send('What should I focus on?')
+  const otherFiled = (await other.session.fileNow())!
+  const restored = await makeSession({ resume: await loadResumeSession(otherFiled.path), timeDir: other.tmp })
+  const restoredClosed = await restored.session.end(end)
+
+  // A finished file closed again with nothing new said stays as it is.
+  const reopened = await makeSession({ resume: await loadResumeSession(filed.path), timeDir: live.tmp })
+  const reclosed = await reopened.session.end(end)
+
+  assert({
+    given: 'a chat filed lightly for a branch, then closed with no message after the filing, live and after a restart',
+    should: 'write its summary and tags into the same file, then leave the finished file alone on an empty close',
+    actual: {
+      light,
+      closedPath: closed?.path === filed.path,
+      closed: await finished(filed.path),
+      restoredPath: restoredClosed?.path === otherFiled.path,
+      restored: await finished(otherFiled.path),
+      reclosed,
+    },
+    expected: {
+      light: { summary: null, tags: [] },
+      closedPath: true,
+      closed: { summary: '- Jane asked what to focus on.', tags: ['Atlas/Planning'] },
+      restoredPath: true,
+      restored: { summary: '- Jane asked what to focus on.', tags: ['Atlas/Planning'] },
+      reclosed: null,
+    },
+  })
+})
+
 test('ChatSession - each turn logs the model, effort, and reading budget it ran under', async () => {
   const s = await makeSession()
   await s.session.start()

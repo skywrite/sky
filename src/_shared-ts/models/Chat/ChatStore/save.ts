@@ -304,8 +304,8 @@ export interface SaveChatInput {
   autoRel?: boolean
   /**
    * Write the `## Summary` section with the Thinking model when the save
-   * adds turns. Otherwise, or when the writer abstains or fails, the file's
-   * existing summary stays.
+   * adds turns or the file has none yet. Otherwise, or when the writer
+   * abstains or fails, the file's existing summary stays.
    */
   writeSummary?: boolean
   /** Record the chat as a day-file complete item (new chats only) */
@@ -400,7 +400,7 @@ export async function saveChat(input: SaveChatInput): Promise<SaveChatReport> {
   const wantSummary =
     input.writeSummary === true &&
     Boolean(enricher.writeSummary) &&
-    turns.length > (resume?.own.conversation.length ?? 0)
+    (turns.length > (resume?.own.conversation.length ?? 0) || (resume !== null && !resume.summarySection))
   const baseDir = path.dirname(timeDir)
 
   if (wantTags || wantRel || wantPlaces || wantDocumentRel || wantSummary) {

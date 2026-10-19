@@ -441,7 +441,10 @@ a person can see and touch:
   See [2026-09-07](2026-09-07-branching-after-an-interrupted-reply.md).
   When a branch is ended and saved, a parent that has no file yet is filed
   first, lightly (its pinned title, no tag, rel or memory work), and goes
-  on talking into that file; the branch then files beside it, in the
+  on talking into that file. It goes on its day's log then, since later
+  saves write back and never log. Its close finishes the save even with no
+  message after the filing: a resumed file without its summary is never
+  left as it is. The branch then files beside it, in the
   folder carrying the parent's name, holding only its own turns and its
   parent key. The rail lists a day's branches under the chat each left.
 - **Delete from here.** A question's options menu offers it, on the page

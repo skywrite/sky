@@ -2501,6 +2501,59 @@ test(
   },
 )
 
+test('chat route - a parent filed for its branch is on its day, and closing it with nothing new finishes its save', async () => {
+  const host = await testHost()
+  host.endDefaults = {
+    enricher: {
+      ...stubEnricher,
+      chooseTags: async () => 'Atlas/Planning',
+      writeSummary: async () => ({ by: 'Opus 5.5, High', text: '- Jane asked what to focus on.' }),
+    },
+    autoTag: true,
+    writeSummary: true,
+    logToDay: { category: 'Personal' },
+  }
+  // The branch starts after its parent, as on a real clock, so each chat has its own day line.
+  const make = host.createSession
+  host.createSession = (id, onEvent, prefs, ask, restore) =>
+    make(
+      id,
+      onEvent,
+      prefs,
+      ask,
+      restore?.parentId ? { ...restore, startTime: new PlainDateTime('2026-01-27 10:15') } : restore,
+    )
+  const app = appWith(host)
+  await (await send(app, 'http://localhost/chat/p1/messages', { message: 'What should I focus on today?' })).text()
+  const source = await getJson(app, 'http://localhost/chat/p1')
+  const made = await post(app, 'http://localhost/chat/p1/branch', source.branchPoints[1])
+  const { id: branchId, parent } = (await made.json()) as { id: string; parent: { chat: string } }
+  await (await send(app, `http://localhost/chat/${branchId}/messages`, { message: 'And the board prep?' })).text()
+  await (await post(app, `http://localhost/chat/${branchId}/end`, { save: true })).text()
+
+  const parentFile = path.join(path.dirname(host.tmp), parent.chat)
+  const dayPath = path.join(host.tmp, dayFile(TODAY))
+  const filed = await readTextFile(parentFile)
+  const entry = (await readDay(TODAY, host.tmp)).getCompleteItem('09:30 > AI Chat', 'Personal')
+  const closed = (await (await post(app, 'http://localhost/chat/p1/end', { save: true })).json()) as {
+    saved: SaveChatReport | null
+  }
+  const finished = await readTextFile(parentFile)
+
+  assert({
+    given: 'a parent filed early when its branch was saved, then closed with no message after the filing',
+    should: 'log the parent on its day when filed, then write its summary and tags into that file at close',
+    actual: {
+      filedWithSummary: filed.includes('## Summary'),
+      dayLine: entry ? path.resolve(path.dirname(dayPath), entry.path) === parentFile : false,
+      closedPath: closed.saved?.path === parentFile,
+      summary: finished.includes('- Jane asked what to focus on.'),
+      tags: finished.includes('tags: Atlas/Planning'),
+    },
+    expected: { filedWithSummary: false, dayLine: true, closedPath: true, summary: true, tags: true },
+  })
+})
+
 test('chat route - a failed exchange survives recovery and later branching uses the correct server turn', async () => {
   let calls = 0
   const host = await testHost({

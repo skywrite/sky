@@ -2043,7 +2043,8 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
     const release = hold('chat save')
     try {
       for (const ancestor of ancestors) {
-        const filed = await ancestor.session.fileNow()
+        // Filed early, but on its day now: a later save writes back to the file and never logs it.
+        const filed = await ancestor.session.fileNow({ logToDay: options.endDefaults?.logToDay })
         if (filed?.aborted) return c.json({ saved: filed })
         ancestor.updatedAt = ++tick
       }
