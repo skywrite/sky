@@ -82,13 +82,13 @@ type Result = {
 
 declare module '#commands/lib/core/CommandTypesRegistry.ts' {
   interface CommandTypesRegistry {
-    'slack:later:day': { params: Params; result: Result }
+    'slack:saved:day': { params: Params; result: Result }
   }
 }
 
-export default class SlackLaterDayTask extends Command {
+export default class SlackSavedDayTask extends Command {
   static override description: CommandDescription = {
-    name: 'slack:later:day',
+    name: 'slack:saved:day',
     description: 'Fetch Slack saved-for-later items for one day, and optionally capture them.',
     descriptionLong: [
       "Lists the in-progress items from Slack's Later tab whose origin message",
@@ -131,15 +131,15 @@ export default class SlackLaterDayTask extends Command {
       'their saved-for-later badge in Slack.',
     ],
     usage: [
-      'sky slack:later:day',
-      'sky slack:later:day --capture-all',
-      'sky slack:later:day --channel atlas --capture-all',
-      "sky slack:later:day --channel '#atlas-*' --capture-all",
-      'sky slack:later:day --sort-time',
-      'sky slack:later:day 2026-06-03 --capture-batch 10',
-      'sky slack:later:day 2026-06-03 --capture 1,3 --open',
-      'sky slack:later:day 2026-06-03 --open=3',
-      'sky slack:later:day 2026-06-03 --saved-on',
+      'sky slack:saved:day',
+      'sky slack:saved:day --capture-all',
+      'sky slack:saved:day --channel atlas --capture-all',
+      "sky slack:saved:day --channel '#atlas-*' --capture-all",
+      'sky slack:saved:day --sort-time',
+      'sky slack:saved:day 2026-06-03 --capture-batch 10',
+      'sky slack:saved:day 2026-06-03 --capture 1,3 --open',
+      'sky slack:saved:day 2026-06-03 --open=3',
+      'sky slack:saved:day 2026-06-03 --saved-on',
     ],
     params,
   }
@@ -305,7 +305,7 @@ export default class SlackLaterDayTask extends Command {
         output.log('')
         output.log(
           colors.dim(
-            `Re-run with: sky slack:later:day ${dayStr}${scope} --capture-batch 10   (or --capture-all, --capture 1,3)`,
+            `Re-run with: sky slack:saved:day ${dayStr}${scope} --capture-batch 10   (or --capture-all, --capture 1,3)`,
           ),
         )
       }

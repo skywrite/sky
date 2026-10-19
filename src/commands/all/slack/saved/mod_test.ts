@@ -11,13 +11,13 @@ import * as config from '#config'
 import * as nbfs from '#shared/nbfs/mod.ts'
 import { assert, test } from '#test'
 import { PlainDateTime, ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
-import SlackLaterDayTask from './day.ts'
+import SlackSavedDayTask from './day.ts'
 import * as capture from './lib/capture.ts'
 import * as list from './lib/list.ts'
-import SlackLaterTask from './mod.ts'
+import SlackSavedTask from './mod.ts'
 
-type Args = Parameters<SlackLaterTask['run']>[0]['args']
-type DayArgs = Parameters<SlackLaterDayTask['run']>[0]['args']
+type Args = Parameters<SlackSavedTask['run']>[0]['args']
+type DayArgs = Parameters<SlackSavedDayTask['run']>[0]['args']
 
 const item = (channel_name: string | undefined, second: number, channel_id = 'C0ATLAS'): AgentSlackLaterItem => ({
   channel_id,
@@ -36,8 +36,8 @@ const queue = () => [
 
 async function fixture(
   run: (state: {
-    invoke: (args?: Partial<Args>) => ReturnType<SlackLaterTask['run']>
-    invokeDay: (args?: Partial<DayArgs>) => ReturnType<SlackLaterDayTask['run']>
+    invoke: (args?: Partial<Args>) => ReturnType<SlackSavedTask['run']>
+    invokeDay: (args?: Partial<DayArgs>) => ReturnType<SlackSavedDayTask['run']>
     output: BufferedOutput
     captured: capture.LaterCaptureRow[]
     opened: capture.LaterCaptureRow[]
@@ -122,7 +122,7 @@ async function fixture(
   try {
     await run({
       invoke: (args = {}) =>
-        new SlackLaterTask().run({
+        new SlackSavedTask().run({
           args: {
             channel: undefined,
             sort: 'time',
@@ -139,7 +139,7 @@ async function fixture(
           rawArgs: { _: [] },
         }),
       invokeDay: (args = {}) =>
-        new SlackLaterDayTask().run({
+        new SlackSavedDayTask().run({
           args: {
             date: '2025-06-15',
             savedOn: false,
@@ -168,7 +168,7 @@ async function fixture(
   }
 }
 
-test('slack:later filters before the preview limit and keeps listing read-only', async () => {
+test('slack:saved filters before the preview limit and keeps listing read-only', async () => {
   await fixture(async ({ invoke, output, hydrated, captured, opened }) => {
     const result = await invoke({ channel: ' #Atlas ' })
     assert({
@@ -188,7 +188,7 @@ test('slack:later filters before the preview limit and keeps listing read-only',
       should: 'retain the channel in the re-run hint and leave Slack and the notebook untouched',
       actual: [
         output.hasLog('#general'),
-        output.hasLog("sky slack:later --channel '#atlas' --capture-batch 5"),
+        output.hasLog("sky slack:saved --channel '#atlas' --capture-batch 5"),
         captured,
         opened,
       ],
@@ -197,7 +197,7 @@ test('slack:later filters before the preview limit and keeps listing read-only',
   })
 })
 
-test('slack:later captures and opens only the oldest items from the selected channel', async () => {
+test('slack:saved captures and opens only the oldest items from the selected channel', async () => {
   await fixture(async ({ invoke, output, captured, opened }) => {
     const result = await invoke({ channel: 'atlas', captureBatch: 2, open: 'landed' })
     assert({
@@ -220,7 +220,7 @@ test('slack:later captures and opens only the oldest items from the selected cha
   })
 })
 
-test('slack:later read-only opening stays within the channel', async () => {
+test('slack:saved read-only opening stays within the channel', async () => {
   await fixture(async ({ invoke, captured, opened }) => {
     const result = await invoke({ channel: 'atlas', open: '10' })
     assert({
@@ -232,7 +232,7 @@ test('slack:later read-only opening stays within the channel', async () => {
   })
 })
 
-test('slack:later wildcard listing and capture stay within the matching conversations', async () => {
+test('slack:saved wildcard listing and capture stay within the matching conversations', async () => {
   const items = [
     item('general', 0, 'C0GENERAL'),
     item('old-atlas-api', 20, 'C0OLD'),
@@ -263,7 +263,7 @@ test('slack:later wildcard listing and capture stay within the matching conversa
   }, items)
 })
 
-test('slack:later never falls back to the global queue when a channel has no matches', async () => {
+test('slack:saved never falls back to the global queue when a channel has no matches', async () => {
   await fixture(async ({ invoke, output, captured, opened, hydrated }) => {
     const result = await invoke({ channel: 'atl', captureBatch: 5, open: 'landed', includeUnavailable: true })
     assert({
@@ -282,7 +282,7 @@ test('slack:later never falls back to the global queue when a channel has no mat
   })
 })
 
-test('slack:later accepts DM names and group-DM slugs like slack:later:day', async () => {
+test('slack:saved accepts DM names and group-DM slugs like slack:saved:day', async () => {
   const items = [item('Jane Doe', 30, 'D0JANE'), item('mpdm-jane--john-1', 40, 'C0GROUP'), item('general', 20)]
   await fixture(async ({ invoke, output, captured }) => {
     await invoke({ channel: 'Jane Doe' })
@@ -302,7 +302,7 @@ test('slack:later accepts DM names and group-DM slugs like slack:later:day', asy
   }, items)
 })
 
-test('slack:later rejects empty channel queries before fetching Slack', async () => {
+test('slack:saved rejects empty channel queries before fetching Slack', async () => {
   await fixture(async ({ invoke, fetchCalls }) => {
     for (const channel of ['', '   ', ' # ']) {
       const result = await invoke({ channel, captureBatch: 5 })
@@ -316,7 +316,7 @@ test('slack:later rejects empty channel queries before fetching Slack', async ()
   })
 })
 
-test('slack:later without a channel keeps the global queue count and capture ordering', async () => {
+test('slack:saved without a channel keeps the global queue count and capture ordering', async () => {
   await fixture(async ({ invoke, captured }) => {
     const result = await invoke({ captureBatch: 2, sort: undefined })
     assert({
@@ -328,7 +328,7 @@ test('slack:later without a channel keeps the global queue count and capture ord
   })
 })
 
-test('slack:later groups only with --sort channel, before limiting the preview or capture batch', async () => {
+test('slack:saved groups only with --sort channel, before limiting the preview or capture batch', async () => {
   await fixture(async ({ invoke, output, hydrated, captured, opened }) => {
     await invoke({ sort: 'channel' })
     const headers = output
@@ -348,7 +348,7 @@ test('slack:later groups only with --sort channel, before limiting the preview o
     assert({
       given: 'a listing sorted by channel',
       should: 'preserve that order in its re-run hint',
-      actual: output.hasLog('sky slack:later --sort channel --capture-batch 5'),
+      actual: output.hasLog('sky slack:saved --sort channel --capture-batch 5'),
       expected: true,
     })
     await invoke({ sort: 'channel', captureBatch: 2, open: 'landed' })
@@ -364,7 +364,7 @@ test('slack:later groups only with --sort channel, before limiting the preview o
   })
 })
 
-test('slack:later channel sorting opens channels before people and sorts group DMs by their displayed members', async () => {
+test('slack:saved channel sorting opens channels before people and sorts group DMs by their displayed members', async () => {
   const items = [
     item('Jane Doe', 10, 'D0JANE'),
     item('mpdm-zoe--john-1', 50, 'C0GROUP'),
@@ -387,7 +387,7 @@ test('slack:later channel sorting opens channels before people and sorts group D
   )
 })
 
-test('slack:later --sort time explicitly keeps a flat oldest-first listing', async () => {
+test('slack:saved --sort time explicitly keeps a flat oldest-first listing', async () => {
   await fixture(async ({ invoke, output, opened }) => {
     await invoke({ sort: 'time', open: '2' })
     assert({
@@ -399,7 +399,7 @@ test('slack:later --sort time explicitly keeps a flat oldest-first listing', asy
   })
 })
 
-test('slack:later rejects unknown sort modes before fetching Slack', async () => {
+test('slack:saved rejects unknown sort modes before fetching Slack', async () => {
   await fixture(async ({ invoke, fetchCalls }) => {
     const result = await invoke({ sort: 'unknown', captureBatch: 5 })
     assert({
@@ -412,7 +412,7 @@ test('slack:later rejects unknown sort modes before fetching Slack', async () =>
 })
 
 test('both Later commands accept the --capture-all CLI flag', async () => {
-  for (const command of [SlackLaterTask, SlackLaterDayTask]) {
+  for (const command of [SlackSavedTask, SlackSavedDayTask]) {
     const args = await transformTypedParamsArgs(command.description.params!, {
       _: [command.description.name!],
       'capture-all': true,
@@ -427,7 +427,7 @@ test('both Later commands accept the --capture-all CLI flag', async () => {
   }
 })
 
-test('slack:later --capture-all captures beyond the preview limit and skips unavailable items', async () => {
+test('slack:saved --capture-all captures beyond the preview limit and skips unavailable items', async () => {
   await fixture(async ({ invoke, hydrated, captured, opened, output }) => {
     const result = await invoke({ captureAll: true, open: 'landed' })
     assert({
@@ -447,7 +447,7 @@ test('slack:later --capture-all captures beyond the preview limit and skips unav
   })
 })
 
-test('slack:later:day --capture-all respects wildcard channels and the selected day', async () => {
+test('slack:saved:day --capture-all respects wildcard channels and the selected day', async () => {
   const previousDay = { ...item('atlas-api', 40, 'C0API'), ts: '1749913640.000100', date_saved: 1750000040 }
   const items = [
     ...Array.from({ length: 25 }, (_, i) => item('atlas-api', i, 'C0API')),
@@ -518,7 +518,7 @@ test('both Later commands leave an empty capture-all match alone', async () => {
   })
 })
 
-test('slack:later:day keeps explicit capture indexes and the former all spelling working', async () => {
+test('slack:saved:day keeps explicit capture indexes and the former all spelling working', async () => {
   await fixture(async ({ invokeDay, captured }) => {
     await invokeDay({ channel: 'atlas', capture: '1,3' })
     assert({

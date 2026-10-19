@@ -65,13 +65,13 @@ type Result = {
 
 declare module '#commands/lib/core/CommandTypesRegistry.ts' {
   interface CommandTypesRegistry {
-    'slack:later': { params: Params; result: Result }
+    'slack:saved': { params: Params; result: Result }
   }
 }
 
-export default class SlackLaterTask extends Command {
+export default class SlackSavedTask extends Command {
   static override description: CommandDescription = {
-    name: 'slack:later',
+    name: 'slack:saved',
     description: "List Slack's saved-for-later queue (oldest-first by default), and optionally capture items.",
     descriptionLong: [
       "Shows the head of Slack's Later tab — the first 20 available in-progress items,",
@@ -82,7 +82,7 @@ export default class SlackLaterTask extends Command {
       'alphabetically, with oldest messages first within each conversation.',
       'Listing, batch capture, and open all follow the selected sort order;',
       'grouping is applied before the listing limit. The header line carries',
-      'the full queue count. Listing is read-only; slack:later:day is the',
+      'the full queue count. Listing is read-only; slack:saved:day is the',
       'day-scoped view of the same queue.',
       'Unavailable channels are hidden by default; --include-unavailable shows',
       'them too, within the same listing limit. They remain in the queue.',
@@ -117,22 +117,22 @@ export default class SlackLaterTask extends Command {
       'runs, or use --capture-all to capture every fetched match at once.',
     ],
     usage: [
-      'sky slack:later',
-      'sky slack:later --all',
-      'sky slack:later --sort channel',
-      'sky slack:later --sort channel --all',
-      'sky slack:later --sort channel --capture-batch 5',
-      'sky slack:later --channel atlas',
-      "sky slack:later --channel '@Jane*'",
-      "sky slack:later --channel 'Jane Doe, John Roe'",
-      "sky slack:later --channel '#atlas-*' --all",
-      "sky slack:later --channel '#atlas-*' --capture-batch 5",
-      "sky slack:later --channel '#atlas-*' --capture-all",
-      'sky slack:later --channel atlas --capture-batch 5',
-      'sky slack:later --include-unavailable',
-      'sky slack:later --capture-batch 5',
-      'sky slack:later -n 5 --open',
-      'sky slack:later --open=3',
+      'sky slack:saved',
+      'sky slack:saved --all',
+      'sky slack:saved --sort channel',
+      'sky slack:saved --sort channel --all',
+      'sky slack:saved --sort channel --capture-batch 5',
+      'sky slack:saved --channel atlas',
+      "sky slack:saved --channel '@Jane*'",
+      "sky slack:saved --channel 'Jane Doe, John Roe'",
+      "sky slack:saved --channel '#atlas-*' --all",
+      "sky slack:saved --channel '#atlas-*' --capture-batch 5",
+      "sky slack:saved --channel '#atlas-*' --capture-all",
+      'sky slack:saved --channel atlas --capture-batch 5',
+      'sky slack:saved --include-unavailable',
+      'sky slack:saved --capture-batch 5',
+      'sky slack:saved -n 5 --open',
+      'sky slack:saved --open=3',
     ],
     params,
   }
@@ -280,7 +280,7 @@ export default class SlackLaterTask extends Command {
         const hint = sortByChannel ? 'captures the first 5 in this order' : 'captures the 5 oldest'
         output.log('')
         output.log(
-          colors.dim(`Re-run with: sky slack:later${scope}${order} --capture-batch 5   (${hint}; or --capture-all)`),
+          colors.dim(`Re-run with: sky slack:saved${scope}${order} --capture-batch 5   (${hint}; or --capture-all)`),
         )
       }
       return CommandResult.success({
