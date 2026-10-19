@@ -43,3 +43,24 @@ test('parseLaterList rejects malformed output', () => {
     expected: 0,
   })
 })
+
+test('parseLaterList keeps the split counts and the to-do fields', () => {
+  const parsed = parseLaterList(
+    JSON.stringify({
+      counts: { in_progress: 162, saved: 69, todo: 93, overdue: 2, total: 3853 },
+      items: [{ channel_id: 'C0ATLAS', ts: '1.1', item_type: 'message', todo_state: 'to_do', date_due: 500 }],
+    }),
+  )
+  assert({
+    given: 'the counts agent-slack reports since the split',
+    should: 'pass saved, todo and overdue through',
+    actual: parsed?.counts,
+    expected: { in_progress: 162, saved: 69, todo: 93, overdue: 2, total: 3853 },
+  })
+  assert({
+    given: 'an item with its pile and reminder',
+    should: 'keep todo_state and date_due',
+    actual: [parsed?.items[0]?.todo_state, parsed?.items[0]?.date_due],
+    expected: ['to_do', 500],
+  })
+})

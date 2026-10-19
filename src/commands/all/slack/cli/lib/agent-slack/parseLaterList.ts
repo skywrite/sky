@@ -28,6 +28,9 @@ export default function parseLaterList(stdout: string): AgentSlackLaterList | nu
     items,
     counts: {
       in_progress: num(countsRaw.in_progress),
+      saved: num(countsRaw.saved),
+      todo: num(countsRaw.todo),
+      overdue: num(countsRaw.overdue),
       total: num(countsRaw.total),
     },
   }

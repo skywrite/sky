@@ -11,7 +11,7 @@ import { captureLaterItems, openInSlack } from './lib/capture.ts'
 import { resolveLaterConversations } from './lib/conversations.ts'
 import {
   backfillMissingMessages,
-  fetchInProgressLater,
+  fetchSavedItems,
   laterCapturable,
   laterGroupKey,
   laterItemLink,
@@ -89,9 +89,9 @@ declare module '#commands/lib/core/CommandTypesRegistry.ts' {
 export default class SlackSavedDayTask extends Command {
   static override description: CommandDescription = {
     name: 'slack:saved:day',
-    description: 'Fetch Slack saved-for-later items for one day, and optionally capture them.',
+    description: "Fetch items from Slack's Saved section for one day, and optionally capture them.",
     descriptionLong: [
-      "Lists the in-progress items from Slack's Later tab whose origin message",
+      "Lists the items in Slack's Saved section whose origin message",
       'falls on the given notebook day (--saved-on matches the day you saved',
       'them instead), grouped by conversation — channels first, then people,',
       'alphabetical, each under its own header; --sort-time flattens back to',
@@ -114,7 +114,7 @@ export default class SlackSavedDayTask extends Command {
       'the follow expiry window archive without a follow. A thread captured',
       'before gets only its new replies, and an archived one that has come',
       'back to life is followed again. Summary, auto-tags, and auto-rel apply',
-      'either way, the item is then marked complete in Slack — the Later list',
+      'either way, the item is then marked complete in Slack — the Saved section',
       'stays the ledger of what remains — and captured files open in the',
       'editor when done.',
       '--capture-all captures every available item matching the day and channel',
@@ -128,7 +128,7 @@ export default class SlackSavedDayTask extends Command {
       'Slack — captured threads and already-captured skips alike, since those',
       'are the ones most likely still waiting on a reply. --open=N alone opens',
       'the first N matched read-only: nothing completes, so the items keep',
-      'their saved-for-later badge in Slack.',
+      'their Saved badge in Slack.',
     ],
     usage: [
       'sky slack:saved:day',
@@ -176,7 +176,7 @@ export default class SlackSavedDayTask extends Command {
       )
     }
     // --open wears two hats: bare with a capture run (open what lands), or
-    // --open=N alone (open the first N read-only — they keep their Later badge)
+    // --open=N alone (open the first N read-only — they keep their Saved badge)
     // Preserve the previous day-command spelling as a compatibility alias.
     const captureAll = args.captureAll || args.capture?.trim().toLowerCase() === 'all'
     const capturing = captureAll || args.capture !== undefined || args.captureBatch !== undefined
@@ -202,9 +202,11 @@ export default class SlackSavedDayTask extends Command {
     }
     const workspace = context.config.SLACK_WORKSPACE.replace(/\/$/, '')
 
-    const fetched = await fetchInProgressLater(args.limit)
+    const fetched = await fetchSavedItems('saved', args.limit)
     if ('error' in fetched) return CommandResult.fail(fetched.error)
     const { list } = fetched
+    // Slack counts the Saved section on its own since Later split; older CLIs report only the whole pile
+    const savedTotal = list.counts.saved ?? list.counts.in_progress
 
     // Notebook-day per item, via the same conversion slack:new uses to file
     // captures — so the listed day and the captured day can never disagree
@@ -233,10 +235,10 @@ export default class SlackSavedDayTask extends Command {
     const matched = onDay.filter((row) => selection.ids.has(row.item.channel_id))
 
     output.log(
-      `Saved-later items for ${dayStr} (${args.savedOn ? 'saved that day' : 'message day'}` +
+      `Saved items for ${dayStr} (${args.savedOn ? 'saved that day' : 'message day'}` +
         (channelQuery === undefined ? '' : `, only ${channelQuery}`) +
         `): ${colors.bold(String(matched.length))} matched of ${list.items.length} fetched` +
-        (list.counts.in_progress !== undefined ? colors.dim(` (${list.counts.in_progress} in progress total)`) : ''),
+        (savedTotal !== undefined ? colors.dim(` (${savedTotal} in Saved total)`) : ''),
     )
     for (const line of selection.lines) output.log(line)
     const stale = resolveStaleChannels(list.items)
@@ -278,7 +280,7 @@ export default class SlackSavedDayTask extends Command {
     }
 
     // Read-only triage: open the first N matched in Slack, capture nothing —
-    // items stay saved, so Slack's Later badge still marks them
+    // items stay saved, so Slack's Saved badge still marks them
     if (openCount !== undefined) {
       const toOpen = matched
         .filter((d) => laterCapturable(d.item))
@@ -288,7 +290,7 @@ export default class SlackSavedDayTask extends Command {
       return CommandResult.success({
         day: dayStr,
         fetched: list.items.length,
-        inProgressTotal: list.counts.in_progress,
+        inProgressTotal: savedTotal,
         matched: matched.length,
         captured: [],
         completed: 0,
@@ -312,7 +314,7 @@ export default class SlackSavedDayTask extends Command {
       return CommandResult.success({
         day: dayStr,
         fetched: list.items.length,
-        inProgressTotal: list.counts.in_progress,
+        inProgressTotal: savedTotal,
         matched: matched.length,
         captured: [],
         completed: 0,
@@ -380,7 +382,7 @@ export default class SlackSavedDayTask extends Command {
     return CommandResult.success({
       day: dayStr,
       fetched: list.items.length,
-      inProgressTotal: list.counts.in_progress,
+      inProgressTotal: savedTotal,
       matched: matched.length,
       captured: outcome.captured,
       completed: outcome.completed,

@@ -474,3 +474,30 @@ test('renderLaterRow marks saved thread replies, not thread parents', () => {
     expected: '   1. 09:30  #general  ↩ 3',
   })
 })
+
+test('renderLaterRow shows a reminder as a due badge, red once it has passed', () => {
+  const row = {
+    item: item({ channel_name: 'atlas' }),
+    timeLabel: '2026-06-15 12:00',
+    link: 'https://atlas.slack.com/archives/C0ATLAS/p1',
+  }
+  const upcoming =
+    stripAnsi(renderLaterRow({ ...row, dueLabel: '2026-06-16 09:00' }, 0, { hyperlinks: false }))[0] ?? ''
+  const overdue =
+    stripAnsi(renderLaterRow({ ...row, dueLabel: '2026-06-14 09:00', overdue: true }, 0, { hyperlinks: false }))[0] ??
+    ''
+  const plain = stripAnsi(renderLaterRow(row, 0, { hyperlinks: false }))[0] ?? ''
+  assert({
+    given: 'an upcoming reminder',
+    should: 'show its due time',
+    actual: upcoming.includes('due 2026-06-16 09:00'),
+    expected: true,
+  })
+  assert({
+    given: 'a passed reminder',
+    should: 'flag it',
+    actual: overdue.includes('! due 2026-06-14 09:00'),
+    expected: true,
+  })
+  assert({ given: 'no reminder', should: 'show no badge', actual: plain.includes('due '), expected: false })
+})

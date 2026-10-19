@@ -34,14 +34,30 @@ export type AgentSlackLaterItem = {
   channel_id: string
   channel_name?: string
   ts: string
+  /** `message` for a saved or to-do'd message; `reminder` for a to-do typed by hand in Slack */
+  item_type?: string
   state?: string
+  /** Which of Slack's piles holds the item: `saved` (the Saved section) or `to_do` (the To-dos tab), `completed` once done */
+  todo_state?: string
   /** Epoch seconds of the save action (agent-slack maps the API's date_created) */
   date_saved?: number
+  /** Epoch seconds of the to-do's reminder, when one is set */
+  date_due?: number
   /** thread_ts is set on every threaded message and equals ts only on the thread parent */
   message?: { content?: string; thread_ts?: string; reply_count?: number }
 }
 
 export type AgentSlackLaterList = {
   items: AgentSlackLaterItem[]
-  counts: { in_progress?: number; total?: number }
+  counts: {
+    /** Both piles together: everything not completed or archived */
+    in_progress?: number
+    /** The Saved section of Home */
+    saved?: number
+    /** The To-dos tab */
+    todo?: number
+    /** To-dos whose reminder has passed */
+    overdue?: number
+    total?: number
+  }
 }

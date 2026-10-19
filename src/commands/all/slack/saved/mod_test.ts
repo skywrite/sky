@@ -1,6 +1,6 @@
 import { spyOn } from 'bun:test'
 import stripAnsi from 'strip-ansi'
-import type { AgentSlackLaterItem } from '#commands/all/slack/cli/lib/agent-slack/types.ts'
+import type { AgentSlackLaterItem, AgentSlackLaterList } from '#commands/all/slack/cli/lib/agent-slack/types.ts'
 import { mpdmMemberHandles } from '#commands/all/slack/lib/mpdmMembers.ts'
 import * as names from '#commands/all/slack/lib/resolveNames.ts'
 import CommandContext from '#commands/lib/core/CommandContext.ts'
@@ -44,9 +44,11 @@ async function fixture(
     hydrated: capture.LaterCaptureRow[]
     displayed: capture.LaterCaptureRow[]
     fetchCalls: () => number
+    fetchViews: () => string[]
   }) => Promise<void>,
   items = queue(),
   memberNames = new Map<string, string[]>(),
+  counts: AgentSlackLaterList['counts'] = { in_progress: 100, saved: 100 },
 ) {
   const output = new BufferedOutput()
   const now = new ZonedDateTime('2025-06-15 12:00', 'UTC')
@@ -80,8 +82,8 @@ async function fixture(
       memberIds: kind === 'group' ? ['U0SELF', ...memberIds] : memberIds,
     })
   }
-  const fetch = spyOn(list, 'fetchInProgressLater').mockResolvedValue({
-    list: { items, counts: { in_progress: 100 } },
+  const fetch = spyOn(list, 'fetchSavedItems').mockResolvedValue({
+    list: { items, counts },
   })
   const spies = [
     fetch,
@@ -162,6 +164,7 @@ async function fixture(
       hydrated,
       displayed,
       fetchCalls: () => fetch.mock.calls.length,
+      fetchViews: () => fetch.mock.calls.map((call) => call[0]),
     })
   } finally {
     for (const spy of spies) spy.mockRestore()
@@ -406,7 +409,7 @@ test('slack:saved rejects unknown sort modes before fetching Slack', async () =>
       given: 'an unsupported sort mode on a capture run',
       should: 'fail with the supported options before fetching or capturing',
       actual: [result.failed, result.message, fetchCalls()],
-      expected: [true, 'Invalid --sort: unknown (use "time" or "channel")', 0],
+      expected: [true, 'Invalid --sort: unknown (use "time", "channel", or "due")', 0],
     })
   })
 })
@@ -667,4 +670,47 @@ test('both Later commands stop ambiguous exact names before any capture or open'
       expected: ['D0OTHER'],
     })
   }, items)
+})
+
+test('slack:saved asks agent-slack for the Saved pile, and slack:saved:day the same', async () => {
+  await fixture(async ({ invoke, invokeDay, fetchViews, output }) => {
+    await invoke()
+    await invokeDay()
+    assert({
+      given: 'the two Saved commands',
+      should: 'both fetch the saved view, never the to-dos',
+      actual: fetchViews(),
+      expected: ['saved', 'saved'],
+    })
+    assert({
+      given: 'the listing header',
+      should: 'name the pile and its total as Slack counts it',
+      actual: output.hasLog('(100 in Saved total)'),
+      expected: true,
+    })
+  })
+})
+
+test('slack:saved tells a first-time user how to put something in Saved', async () => {
+  await fixture(
+    async ({ invoke, output }) => {
+      const result = await invoke()
+      assert({
+        given: 'an empty Saved pile',
+        should: 'say how to mark a message in Slack and offer no capture hint',
+        actual: [
+          result.ok,
+          result.data?.pileTotal,
+          output.hasLog(
+            'Mark a message in Slack with "Add to saved" and it shows up here, ready to capture into your day.',
+          ),
+          output.hasLog('Re-run with'),
+        ],
+        expected: [true, 0, true, false],
+      })
+    },
+    [],
+    new Map(),
+    { in_progress: 0, saved: 0, todo: 0 },
+  )
 })

@@ -14,21 +14,29 @@ import { resolveChannelNames, resolveUsergroupNames, resolveUserNames } from '#c
 import hyperlink from '#lib/terminal/hyperlink.ts'
 import type { LaterConversation } from './conversations.ts'
 
-/** Fetch and parse the in-progress items from Slack's Later list. */
-export async function fetchInProgressLater(limit: number): Promise<{ list: AgentSlackLaterList } | { error: string }> {
-  const listResult = await runAgentSlack([
-    'later',
-    'list',
-    '--state',
-    'in_progress',
-    '--limit',
-    String(limit),
-    '--max-body-chars',
-    '300',
-  ])
+/** Slack's two piles since Later split: the Saved section of Home, and the To-dos tab. */
+export type SavedView = 'saved' | 'todo'
+
+/**
+ * Fetch and parse one pile through agent-slack's `later list`, which keeps
+ * Slack's old name for the whole feature. Both piles hold only in-progress
+ * items; completed and archived ones never come back here.
+ */
+export async function fetchSavedItems(
+  view: SavedView,
+  limit: number,
+  options: { dueWithin?: string } = {},
+): Promise<{ list: AgentSlackLaterList } | { error: string }> {
+  const listArgs = ['later', 'list', '--filter', view, '--limit', String(limit), '--max-body-chars', '300']
+  if (options.dueWithin !== undefined) listArgs.push('--due-within', options.dueWithin)
+  const listResult = await runAgentSlack(listArgs)
   if (!listResult.success) {
     const detail = listResult.stderr.trim() || listResult.stdout.trim()
-    const hint = detail.includes('invalid_auth') ? ' — credentials expired, run `sky slack:auth`' : ''
+    const hint = detail.includes('invalid_auth')
+      ? ' — credentials expired, run `sky slack:auth`'
+      : detail.includes("unknown option '--filter'")
+        ? ' — this agent-slack predates the Saved and To-dos split; update its checkout (git pull)'
+        : ''
     return { error: `agent-slack later list failed: ${detail}${hint}` }
   }
   const list = parseLaterList(listResult.stdout)
@@ -273,11 +281,18 @@ export function renderLaterLabel(
  * placeholder instead of a blank snippet.
  */
 export function renderLaterRow(
-  row: { item: AgentSlackLaterItem; timeLabel: string; link: string },
+  row: { item: AgentSlackLaterItem; timeLabel: string; link: string; dueLabel?: string; overdue?: boolean },
   index: number,
   context: LaterRowContext = {},
 ): string[] {
   const { item, timeLabel, link } = row
+  // A to-do's reminder: red once it has passed, since that is what the listing is for
+  const dueBadge =
+    row.dueLabel === undefined
+      ? ''
+      : row.overdue
+        ? colors.red(`  ! due ${row.dueLabel}`)
+        : colors.yellow(`  due ${row.dueLabel}`)
   const hyperlinks = context.hyperlinks ?? colors.isColorSupported
   const indent = context.indent ?? '  '
   const kind = laterConversationKind(item)
@@ -301,7 +316,7 @@ export function renderLaterRow(
   // The clickable link is the browser-client form; the piped url line keeps
   // the workspace permalink — the copy-pasteable, capture-parseable spelling
   const lines = [
-    `${indent}${colors.dim(`${String(index + 1).padStart(2)}.`)} ${colors.dim(hyperlinks ? hyperlink(timeLabel, laterBrowserLink(item)) : timeLabel)}${label}${threadBadge}${replyBadge}`,
+    `${indent}${colors.dim(`${String(index + 1).padStart(2)}.`)} ${colors.dim(hyperlinks ? hyperlink(timeLabel, laterBrowserLink(item)) : timeLabel)}${label}${dueBadge}${threadBadge}${replyBadge}`,
     `${indent}    ${snippet}`,
   ]
   if (!hyperlinks) lines.push(`${indent}    ${link}`)

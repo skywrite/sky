@@ -1,26 +1,6 @@
-import { setTimeout as delay } from 'node:timers/promises'
-import openEditor from 'open-editor'
-import colors from 'picocolors'
-import { formatSlackTimestamp } from '#commands/all/slack/lib/mod.ts'
-import { Command, CommandResult, Flag } from '#commands/mod.ts'
+import { Command, type CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
-import { captureLaterItems, openInSlack } from './lib/capture.ts'
-import { resolveLaterConversations } from './lib/conversations.ts'
-import {
-  backfillMissingMessages,
-  fetchInProgressLater,
-  laterCapturable,
-  laterGroupKey,
-  laterItemLink,
-  renderLaterLabel,
-  renderLaterRow,
-  resolveRowMentions,
-  resolveStaleChannels,
-} from './lib/list.ts'
-import { parseConversationQuery, selectConversations } from './lib/select.ts'
-
-/** Default preview size; --all shows every fetched matching item. */
-const MAX_LISTED = 20
+import { type PileResult, runPile } from './lib/pile.ts'
 
 const params = {
   channel: Flag.string(
@@ -45,47 +25,31 @@ const params = {
 
 type Params = InferParams<typeof params>
 
-/** Shell-quote names in re-run hints, including DM names with spaces or apostrophes. */
-const quoteArg = (value: string): string => (/^[\w.-]+$/.test(value) ? value : `'${value.replaceAll("'", "'\\''")}'`)
-
-type Result = {
-  fetched: number
-  inProgressTotal?: number
-  matched: number
-  captured: string[]
-  completed: number
-  /** Links whose saved message is gone from Slack (deleted) — skipped, still in the queue */
-  skipped: string[]
-  /** Items opened in Slack via --open */
-  opened: number
-  /** Items still in progress; with --channel, counts only matches in the fetched queue */
-  remaining: number
-  failures: string[]
-}
-
 declare module '#commands/lib/core/CommandTypesRegistry.ts' {
   interface CommandTypesRegistry {
-    'slack:saved': { params: Params; result: Result }
+    'slack:saved': { params: Params; result: PileResult }
   }
 }
 
 export default class SlackSavedTask extends Command {
   static override description: CommandDescription = {
     name: 'slack:saved',
-    description: "List Slack's saved-for-later queue (oldest-first by default), and optionally capture items.",
+    description: "List Slack's Saved section (oldest-first by default), and optionally capture items.",
     descriptionLong: [
-      "Shows the head of Slack's Later tab — the first 20 available in-progress items,",
+      "Shows the head of Slack's Saved section — the first 20 available items,",
       'oldest origin message first by default (--sort time), whatever the day.',
+      'Saved is the pile Slack keeps for context; the to-dos, the pile that',
+      'wants an action from you, are slack:todos.',
       '--all shows every fetched matching item; --limit controls how many items',
       'are fetched from Slack (default 600).',
       '--sort channel groups by conversation: channels first, then people,',
       'alphabetically, with oldest messages first within each conversation.',
       'Listing, batch capture, and open all follow the selected sort order;',
       'grouping is applied before the listing limit. The header line carries',
-      'the full queue count. Listing is read-only; slack:saved:day is the',
-      'day-scoped view of the same queue.',
+      'the full count of the Saved section. Listing is read-only; slack:saved:day is the',
+      'day-scoped view of the same pile.',
       'Unavailable channels are hidden by default; --include-unavailable shows',
-      'them too, within the same listing limit. They remain in the queue.',
+      'them too, within the same listing limit. They remain in the pile.',
       '--channel scopes listing, capture, and open identically: #name matches',
       'only channels; @person matches only one-to-one DMs. Comma-separated',
       'names match exactly those other group participants, in any order.',
@@ -110,7 +74,7 @@ export default class SlackSavedTask extends Command {
       'Slack — captured threads and already-captured skips alike, since those',
       'are the ones most likely still waiting on a reply. --open=N alone opens',
       'the first N read-only before any capturing: nothing completes, so the',
-      'items keep their saved-for-later badge in Slack.',
+      'items keep their Saved badge in Slack.',
       '',
       'Completed items drop off the list, so the same command run again takes',
       'the next N — drain the backlog a batch at a time, checking tags between',
@@ -137,213 +101,14 @@ export default class SlackSavedTask extends Command {
     params,
   }
 
-  async run({ args, context, tasks }: CommandArgs<Params>): Promise<CommandResult<Result>> {
-    const { output, systemNow } = context
-
-    const query = args.channel === undefined ? undefined : parseConversationQuery(args.channel)
-    if (args.channel !== undefined && !query) {
-      return CommandResult.fail(
-        `Invalid --channel: ${args.channel} (use #channel, @person, group participants, or an ID)`,
-      )
-    }
-    const channelQuery = query?.text
-    const sort = args.sort ?? 'time'
-    if (sort !== 'time' && sort !== 'channel') {
-      return CommandResult.fail(`Invalid --sort: ${sort} (use "time" or "channel")`)
-    }
-    const sortByChannel = sort === 'channel'
-
-    if (args.captureAll && args.captureBatch !== undefined) {
-      return CommandResult.fail('Use --capture-all or --capture-batch, not both')
-    }
-    if (args.captureBatch !== undefined && (!Number.isInteger(args.captureBatch) || args.captureBatch < 1)) {
-      return CommandResult.fail(
-        `Invalid --capture-batch: ${args.captureBatch} (use a whole number of items, 1 or more)`,
-      )
-    }
-    // --open wears two hats: bare with a capture run (open what lands), or
-    // --open=N alone (open the first N read-only — they keep their Later badge)
-    const capturing = args.captureAll || args.captureBatch !== undefined
-    const openBare = args.open === 'landed'
-    let openCount: number | undefined
-    if (args.open !== undefined && !openBare) {
-      openCount = Number(args.open)
-      if (!Number.isInteger(openCount) || openCount < 1) {
-        return CommandResult.fail(`Invalid --open: ${args.open} (bare --open with a capture run, or --open=N alone)`)
-      }
-      if (capturing) {
-        return CommandResult.fail('With a capture run, --open takes no count — bare --open opens what the run lands')
-      }
-    }
-    if (openBare && !capturing) {
-      return CommandResult.fail('Bare --open needs a capture run — use --open=N to open the first N without capturing')
-    }
-
-    if (!context.config.SLACK_WORKSPACE) {
-      return CommandResult.fail(
-        'No slack.workspace configured — permalinks need it. Set it via sky init or config.jsonc.',
-      )
-    }
-    const workspace = context.config.SLACK_WORKSPACE.replace(/\/$/, '')
-
-    const fetched = await fetchInProgressLater(args.limit)
-    if ('error' in fetched) return CommandResult.fail(fetched.error)
-    const { list } = fetched
-    const conversations = await resolveLaterConversations(list.items, workspace)
-    const selection = selectConversations(conversations, query)
-    if (selection.error) return CommandResult.fail(selection.error)
-
-    // Start chronologically; channel grouping retains time order within each conversation.
-    const queue = list.items
-      .filter((item) => selection.ids.has(item.channel_id))
-      .sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0))
-      .map((item) => ({
-        item,
-        timeLabel: formatSlackTimestamp(item.ts, systemNow.timezone),
-        link: laterItemLink(workspace, item),
-      }))
-    // Slack reports only a global total; a channel's count comes from this fetch.
-    const queueTotal = channelQuery === undefined ? (list.counts.in_progress ?? queue.length) : queue.length
-    const queueLabel = channelQuery === undefined ? 'in the queue' : `for ${channelQuery}`
-
-    output.log(
-      `Saved-later queue${channelQuery === undefined ? '' : ` (only ${channelQuery})`}: ` +
-        colors.bold(String(queue.length)) +
-        (channelQuery === undefined ? ' fetched' : ` matched of ${list.items.length} fetched`) +
-        (list.counts.in_progress !== undefined ? colors.dim(` (${list.counts.in_progress} in progress total)`) : ''),
+  async run({ args, context, tasks }: CommandArgs<Params>): Promise<CommandResult<PileResult>> {
+    return runPile(
+      { view: 'saved', command: 'slack:saved', noun: 'Saved', slackAction: 'Add to saved', defaultSort: 'time' },
+      args,
+      {
+        context,
+        tasks,
+      },
     )
-    for (const line of selection.lines) output.log(line)
-    if (sortByChannel) {
-      const keys = new Map<string, string>()
-      for (const { item } of queue) {
-        if (!keys.has(item.channel_id)) {
-          keys.set(item.channel_id, laterGroupKey(item, undefined, conversations.get(item.channel_id)))
-        }
-      }
-      queue.sort((a, b) => {
-        const keyA = keys.get(a.item.channel_id) ?? ''
-        const keyB = keys.get(b.item.channel_id) ?? ''
-        return keyA < keyB ? -1 : keyA > keyB ? 1 : 0
-      })
-    }
-    // Show enough to cover what a capture or open run is about to take
-    const stale = resolveStaleChannels(list.items)
-    const visible = args.includeUnavailable ? queue : queue.filter((d) => laterCapturable(d.item))
-    const hidden = queue.length - visible.length
-    if (hidden > 0) {
-      output.log(colors.dim(`  ${hidden} unavailable-channel items hidden — use --include-unavailable to show them`))
-    }
-    const shown =
-      args.all || args.captureAll
-        ? visible
-        : visible.slice(0, Math.max(MAX_LISTED, args.captureBatch ?? 0, openCount ?? 0))
-    await backfillMissingMessages(shown)
-    await resolveRowMentions(shown, workspace)
-    let headerGroup: string | undefined
-    for (const [index, d] of shown.entries()) {
-      if (sortByChannel && d.item.channel_id !== headerGroup) {
-        headerGroup = d.item.channel_id
-        output.log('')
-        output.log(`  ${renderLaterLabel(d.item, { stale, conversations })}`)
-      }
-      const rowContext = sortByChannel
-        ? { stale, conversations, omitLabel: true, indent: '    ' }
-        : { stale, conversations }
-      for (const line of renderLaterRow(d, index, rowContext)) output.log(line)
-    }
-    if (shown.length < visible.length) {
-      output.log(colors.dim(`  …and ${visible.length - shown.length} more — use --all to show every fetched match`))
-    }
-
-    // Read-only triage: open the first N capturable in Slack, capture nothing —
-    // items stay saved, so Slack's Later badge still marks them
-    if (openCount !== undefined) {
-      const toOpen = queue.filter((d) => laterCapturable(d.item)).slice(0, openCount)
-      await openInSlack(toOpen, output, { conversations })
-      return CommandResult.success({
-        fetched: list.items.length,
-        inProgressTotal: list.counts.in_progress,
-        matched: queue.length,
-        captured: [],
-        completed: 0,
-        skipped: [],
-        opened: toOpen.length,
-        remaining: queueTotal,
-        failures: [],
-      })
-    }
-
-    if (queue.length === 0 || !capturing) {
-      if (queue.some((d) => laterCapturable(d.item))) {
-        const scope = channelQuery === undefined ? '' : ` --channel ${quoteArg(channelQuery)}`
-        const order = sortByChannel ? ' --sort channel' : ''
-        const hint = sortByChannel ? 'captures the first 5 in this order' : 'captures the 5 oldest'
-        output.log('')
-        output.log(
-          colors.dim(`Re-run with: sky slack:saved${scope}${order} --capture-batch 5   (${hint}; or --capture-all)`),
-        )
-      }
-      return CommandResult.success({
-        fetched: list.items.length,
-        inProgressTotal: list.counts.in_progress,
-        matched: queue.length,
-        captured: [],
-        completed: 0,
-        skipped: [],
-        opened: 0,
-        remaining: queueTotal,
-        failures: [],
-      })
-    }
-
-    // Dead-id items would only fail the fetch, even when included in the listing
-    const capturable = queue.filter((d) => laterCapturable(d.item))
-    const picked = args.captureAll ? capturable : capturable.slice(0, args.captureBatch)
-    if (capturable.length < queue.length) {
-      output.log('')
-      output.log(
-        colors.dim(
-          `Skipping ${queue.length - capturable.length} unreachable (stale channel id) — complete those in Slack directly`,
-        ),
-      )
-    }
-    if (picked.length < capturable.length) {
-      output.log('')
-      const selection = sortByChannel ? `first ${picked.length}` : `${picked.length} oldest`
-      output.log(`Capturing the ${selection} of ${capturable.length} capturable`)
-    }
-
-    const outcome = await captureLaterItems(picked, { tasks, output })
-
-    const remaining = queueTotal - outcome.completed
-
-    output.log('')
-    output.log(`Captured ${outcome.captured.length}/${picked.length}; completed in Slack: ${outcome.completed}`)
-    for (const failure of outcome.failures) output.log(colors.red(`  ! ${failure}`))
-    for (const link of outcome.skipped) output.log(colors.dim(`  – ${link}: not found in Slack (deleted) — skipped`))
-    if (remaining > 0) {
-      const next =
-        args.captureBatch === undefined ? '' : ` — re-run for the next ${Math.min(args.captureBatch, remaining)}`
-      output.log(colors.dim(`${remaining} left ${queueLabel}${next}`))
-    }
-
-    if (outcome.openTargets.length > 0) {
-      openEditor(outcome.openTargets.map((file) => ({ file })))
-      await delay(500)
-    }
-    // Slack last, so the user lands there ready to respond
-    if (openBare) await openInSlack(outcome.openRows, output, { conversations })
-
-    return CommandResult.success({
-      fetched: list.items.length,
-      inProgressTotal: list.counts.in_progress,
-      matched: queue.length,
-      captured: outcome.captured,
-      completed: outcome.completed,
-      skipped: outcome.skipped,
-      opened: openBare ? outcome.openRows.length : 0,
-      remaining,
-      failures: outcome.failures,
-    })
   }
 }

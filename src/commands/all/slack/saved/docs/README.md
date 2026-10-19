@@ -1,11 +1,11 @@
 ---
 created: 2026-09-22
-updated: 2026-09-22
+updated: 2026-10-16
 ---
 
-# Later conversation selection
+# Saved and To-dos conversation selection
 
-Both Later commands resolve one record per conversation before selecting,
+slack:saved, slack:saved:day and slack:todos resolve one record per conversation before selecting,
 sorting, rendering, opening, or capturing. The day command resolves only the
 items in its day. Counts and ambiguity checks describe that fetched scope,
 not every conversation in the workspace.
