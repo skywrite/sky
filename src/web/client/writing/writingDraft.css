@@ -60,8 +60,12 @@
 .sky-writing-draft-edit .sky-writing-draft-actions {
   padding: 0;
 }
-.sky-writing-draft-textarea textarea {
-  font-size: var(--sky-content-font-size);
+.sky-writing-draft-editor.sky-journal-writer {
+  margin: 0;
+  background: var(--sky-bg);
+}
+.sky-writing-draft-editor.sky-journal-writer .sky-wysiwyg {
+  min-height: 160px;
   line-height: 1.65;
 }
 .sky-writing-draft-history {

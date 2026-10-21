@@ -1,7 +1,8 @@
 import { Button, Select, Textarea } from '@mantine/core'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { currentDraftVersion, type WritingDraft } from '#lib/writingVoice/draftTypes.ts'
 import { MAX_WRITING_CHARS } from '#lib/writingVoice/types.ts'
+import { MarkdownField } from '../editor/markdownEditor.tsx'
 import { renderStatic } from '../editor/wysiwyg/render.ts'
 import { RenderedHtml } from '../lib/renderedHtml.tsx'
 import { writingDraftDiffHtml } from './writingDraftDiff.ts'
@@ -78,7 +79,11 @@ export function WritingDraftEditor<T extends WritingDraft>({
       !(v.question && !v.answer),
   )
   const learningError = draft.versions.find((v) => v.learningError)?.learningError
+  // The editor reads its text once per mount: an edit that arrives from another frame or tab remounts it.
+  const written = useRef(edit?.text)
+  const [editorKey, setEditorKey] = useState(0)
   const remember = (value: Edit | null) => {
+    written.current = value?.text
     setEdit(value)
     try {
       if (value) localStorage.setItem(key, JSON.stringify(value))
@@ -91,7 +96,13 @@ export function WritingDraftEditor<T extends WritingDraft>({
   useEffect(() => {
     const sync = (event: Event) => {
       const changed = event instanceof StorageEvent ? event.key : (event as CustomEvent<string>).detail
-      if (changed === key) setEdit(savedEdit(key))
+      if (changed !== key) return
+      const next = savedEdit(key)
+      if (next?.text !== written.current) {
+        written.current = next?.text
+        setEditorKey((value) => value + 1)
+      }
+      setEdit(next)
     }
     window.addEventListener('storage', sync)
     window.addEventListener('sky-writing-edit', sync)
@@ -136,6 +147,9 @@ export function WritingDraftEditor<T extends WritingDraft>({
   }
   const save = (revision: number) =>
     void act({ action: 'edit', revision, text: edit!.text, explanation: edit!.explanation }, true)
+  const tooLong = !!edit && edit.text.length > MAX_WRITING_CHARS
+  // The editor can end the text with a newline; the edit keeps the ending its version had.
+  const ending = edit ? (draft.versions.find((v) => v.version === edit.revision) ?? current).text.match(/\n*$/)![0] : ''
 
   return (
     <section
@@ -158,17 +172,19 @@ export function WritingDraftEditor<T extends WritingDraft>({
       </header>
       {edit ? (
         <div className="sky-writing-draft-edit">
-          <Textarea
-            aria-label="Edit draft text"
-            className="sky-writing-draft-textarea"
-            autosize
-            minRows={7}
-            maxRows={28}
-            value={edit.text}
-            maxLength={MAX_WRITING_CHARS}
+          <MarkdownField
+            key={editorKey}
+            className="sky-writing-draft-editor"
+            initial={edit.text}
+            label="Edit draft text"
             disabled={busy}
-            onChange={(event) => remember({ ...edit, text: event.currentTarget.value })}
+            onChange={(text) => remember({ ...edit, text: text.replace(/\n*$/, ending) })}
           />
+          {tooLong && (
+            <p className="sky-writing-draft-conflict" role="status">
+              This draft is over {MAX_WRITING_CHARS.toLocaleString('en-US')} characters. Shorten it to save.
+            </p>
+          )}
           <Textarea
             label="Why I changed this (optional)"
             placeholder="What should Sky learn from this edit?"
@@ -191,7 +207,11 @@ export function WritingDraftEditor<T extends WritingDraft>({
               >
                 Compare with latest
               </Button>
-              <Button size="sm" disabled={busy || disabled || !edit.text.trim()} onClick={() => save(draft.revision)}>
+              <Button
+                size="sm"
+                disabled={busy || disabled || !edit.text.trim() || tooLong}
+                onClick={() => save(draft.revision)}
+              >
                 Use my edit over version {draft.revision}
               </Button>
             </div>
@@ -200,7 +220,7 @@ export function WritingDraftEditor<T extends WritingDraft>({
             <Button
               variant="primary"
               size="sm"
-              disabled={busy || disabled || !edit.text.trim() || edit.revision !== draft.revision}
+              disabled={busy || disabled || !edit.text.trim() || tooLong || edit.revision !== draft.revision}
               loading={busy}
               onClick={() => save(edit.revision)}
             >

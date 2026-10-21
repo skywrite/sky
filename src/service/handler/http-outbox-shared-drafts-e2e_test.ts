@@ -15,6 +15,7 @@ import { env } from '#shared/sys/mod.ts'
 import { assert, test } from '#test'
 import { EDITED_DRAFT, ORIGINAL_DRAFT, WARM_DRAFT, writingDraftTestHost } from './chat/draftsTestHelpers.ts'
 import { createTestHttpApp } from './httpTestHelpers.ts'
+import { retype } from './httpWysiwygE2eTestHelpers.ts'
 import { createWritingVoiceRoutes } from './settings/writingVoice.ts'
 
 test(
@@ -238,7 +239,7 @@ test(
         await page.screenshot({ path: path.join(unsavedShots, 'outbox-unsaved.png'), fullPage: true })
       }
       await card.getByRole('button', { name: 'Edit', exact: true }).click()
-      await card.getByLabel('Edit draft text').fill(EDITED_DRAFT)
+      await retype(card.getByLabel('Edit draft text', { exact: true }), 'with the launch team', 'by Friday')
       await card.getByLabel('Why I changed this (optional)').fill('Include the agreed review date.')
       assert({
         given: 'an unsaved edit in the shared Outbox editor',

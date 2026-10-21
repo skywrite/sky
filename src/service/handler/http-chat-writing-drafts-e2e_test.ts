@@ -18,7 +18,7 @@ import {
 } from './chat/draftsTestHelpers.ts'
 import { createChatRoutes } from './chat/mod.ts'
 import { createTestHttpApp } from './httpTestHelpers.ts'
-import { composerText, runWysiwygE2e } from './httpWysiwygE2eTestHelpers.ts'
+import { composerText, retype, runWysiwygE2e, selectWords } from './httpWysiwygE2eTestHelpers.ts'
 import { createWritingVoiceRoutes } from './settings/writingVoice.ts'
 
 test(
@@ -85,7 +85,7 @@ test(
           expected: [2, false, ORIGINAL_DRAFT, 0],
         })
         await draft.getByRole('button', { name: 'Edit', exact: true }).click()
-        await draft.getByLabel('Edit draft text', { exact: true }).fill(EDITED_DRAFT)
+        await retype(draft.getByLabel('Edit draft text', { exact: true }), 'with the launch team', 'by Friday')
         await draft.getByRole('button', { name: 'Save edit', exact: true }).click()
         await draft.getByText('The Atlas draft is ready. Please review it by Friday.', { exact: true }).waitFor()
         await page.reload()
@@ -152,13 +152,18 @@ test(
           expected: [2, 0, 0, 1],
         })
         await current.getByRole('button', { name: 'Edit', exact: true }).click()
+        const editor = current.getByLabel('Edit draft text', { exact: true })
         assert({
           given: 'Edit on a draft whose reply formatting changed',
-          should: 'edit the saved Ghostwriter record',
-          actual: await current.getByLabel('Edit draft text', { exact: true }).inputValue(),
-          expected: subject + WARM_DRAFT,
+          should: 'open the saved Ghostwriter record in the rich text editor, its underlined subject a heading',
+          actual: [
+            (await editor.innerText()).trim(),
+            await editor.getByRole('heading', { name: 'Atlas update', exact: true }).count(),
+          ],
+          expected: [`Atlas update\n\n${WARM_DRAFT}`, 1],
         })
-        await current.getByLabel('Edit draft text', { exact: true }).fill(subject + EDITED_DRAFT)
+        await retype(editor, 'I would appreciate your review by Friday.', 'Please review it by Friday.')
+        await retype(editor, 'Thanks for your help.', 'Thanks.')
         await current.getByRole('button', { name: 'Save edit', exact: true }).click()
         await current.getByText('The Atlas draft is ready. Please review it by Friday.', { exact: true }).waitFor()
         await page.reload()
@@ -404,7 +409,9 @@ test(
           })
         }
         await second.getByRole('button', { name: 'Edit', exact: true }).click()
-        await second.getByLabel('Edit draft text', { exact: true }).fill(EDITED_DRAFT)
+        const editor = second.getByLabel('Edit draft text', { exact: true })
+        await retype(editor, 'I would appreciate your review by Friday.', 'Please review it by Friday.')
+        await retype(editor, 'Thanks for your help.', 'Thanks.')
         await second.getByRole('button', { name: 'Save edit', exact: true }).click()
         await second.getByText('The Atlas draft is ready. Please review it by Friday.', { exact: true }).waitFor()
         await composer.fill('Show the current wording again.')
@@ -582,7 +589,7 @@ test(
       })
 
       await card.getByRole('button', { name: 'Edit', exact: true }).click()
-      await card.getByLabel('Edit draft text', { exact: true }).fill(EDITED_DRAFT)
+      await retype(card.getByLabel('Edit draft text', { exact: true }), 'with the launch team', 'by Friday')
       await card
         .getByLabel('Why I changed this (optional)', { exact: true })
         .fill('State the action and timing explicitly.')
@@ -669,19 +676,22 @@ test(
       }
       await card.getByRole('button', { name: 'Edit', exact: true }).click()
       const unsaved = `${WARM_DRAFT}\n\nMy unsaved closing.`
-      await card.getByLabel('Edit draft text', { exact: true }).fill(unsaved)
+      const editor = card.getByLabel('Edit draft text', { exact: true })
+      await selectWords(editor, 'Thanks for your help.', true)
+      await page.keyboard.press('Enter')
+      await page.keyboard.insertText('My unsaved closing.')
       const before = await host.writingDrafts.require(record.id)
       await host.writingDrafts.revise(record.id, before.revision, `${WARM_DRAFT}\n\nA newer revision.`, 'sky')
       await card
         .getByText('A newer version was saved while you were editing. Your text is still here.', { exact: true })
         .waitFor()
       await page.reload()
-      await card.getByLabel('Edit draft text', { exact: true }).waitFor()
+      await editor.waitFor()
       assert({
         given: 'a newer server revision and then a page reload during an edit',
         should: 'restore the owner’s unsaved text and refuse a stale save',
         actual: [
-          await card.getByLabel('Edit draft text', { exact: true }).inputValue(),
+          (await editor.innerText()).trim(),
           await card.getByRole('button', { name: 'Save edit', exact: true }).isDisabled(),
         ],
         expected: [unsaved, true],
@@ -699,11 +709,11 @@ test(
       })
       const reopenedId = ((await opened.json()) as { id: string }).id
       await page.goto(`${base}/thread/${reopenedId}`)
-      await card.getByLabel('Edit draft text', { exact: true }).waitFor()
+      await editor.waitFor()
       assert({
         given: 'the saved chat is reopened with a different runtime ID',
         should: 'restore the same draft’s unsaved edit by its stable identity',
-        actual: await card.getByLabel('Edit draft text', { exact: true }).inputValue(),
+        actual: (await editor.innerText()).trim(),
         expected: unsaved,
       })
       await card.getByRole('button', { name: 'Cancel', exact: true }).click()

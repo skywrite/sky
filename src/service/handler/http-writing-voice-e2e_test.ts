@@ -12,8 +12,9 @@ import { OutboxStore } from '#lib/outbox/store.ts'
 import { SAMPLE, sampleOutboxItem } from '#lib/writingVoice/testHelpers.ts'
 import { env } from '#shared/sys/mod.ts'
 import { assert, test } from '#test'
-import { EDITED_DRAFT, writingDraftTestHost } from './chat/draftsTestHelpers.ts'
+import { writingDraftTestHost } from './chat/draftsTestHelpers.ts'
 import { createTestHttpApp } from './httpTestHelpers.ts'
+import { retype } from './httpWysiwygE2eTestHelpers.ts'
 import { createWritingVoiceRoutes } from './settings/writingVoice.ts'
 
 const FIRST_REASON = 'Make the requested action explicit.'
@@ -104,7 +105,7 @@ test(
       await page.goto(`${base}/outbox?item=${item.id}`)
       const reply = page.locator('.sky-outbox-column .sky-writing-draft').first()
       await reply.getByRole('button', { name: 'Edit', exact: true }).click()
-      await reply.getByLabel('Edit draft text').fill(SAMPLE.revised)
+      await retype(reply.getByLabel('Edit draft text', { exact: true }), SAMPLE.original, SAMPLE.revised)
       await reply.getByRole('button', { name: 'Save edit', exact: true }).click()
       await page.getByRole('button', { name: FIRST_REASON, exact: true }).click()
       await page.getByText(`Learned: ${FIRST_REASON}`, { exact: true }).waitFor()
@@ -180,7 +181,7 @@ test(
       await page.goto(`${base}/thread/main`)
       const frame = page.locator('.sky-split-main .sky-writing-draft').first()
       await frame.getByRole('button', { name: 'Edit', exact: true }).click()
-      await frame.getByLabel('Edit draft text', { exact: true }).fill(EDITED_DRAFT)
+      await retype(frame.getByLabel('Edit draft text', { exact: true }), 'with the launch team', 'by Friday')
       await frame.getByRole('button', { name: 'Save edit', exact: true }).click()
       await page.getByRole('button', { name: 'Write my own', exact: true }).waitFor()
       const selected = await page.evaluate(() => {

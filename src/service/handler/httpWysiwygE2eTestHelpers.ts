@@ -318,6 +318,36 @@ export async function leafTexts(page: Page, selector: string): Promise<string[]>
   }, selector)
 }
 
+/** Selects words in a rich text editor as a drag over them would; `end` leaves the caret right after them instead. */
+export async function selectWords(editor: Locator, words: string, end = false) {
+  await editor.click()
+  await editor.evaluate(
+    (root, { words, end }) => {
+      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
+      for (let text = walker.nextNode() as Text | null; text; text = walker.nextNode() as Text | null) {
+        const at = text.data.indexOf(words)
+        if (at < 0) continue
+        const range = document.createRange()
+        range.setStart(text, at)
+        range.setEnd(text, at + words.length)
+        if (end) range.collapse(false)
+        const selection = document.getSelection()!
+        selection.removeAllRanges()
+        selection.addRange(range)
+        return
+      }
+      throw new Error(`The editor does not show "${words}"`)
+    },
+    { words, end },
+  )
+}
+
+/** Types over words in a rich text editor the way a person does: selects them, then types the replacement. */
+export async function retype(editor: Locator, words: string, replacement: string) {
+  await selectWords(editor, words)
+  await editor.page().keyboard.insertText(replacement)
+}
+
 /** What a chat composer holds, as a person reads it: paragraphs a blank line apart, no closing break. */
 export async function composerText(input: Locator): Promise<string> {
   return await input.evaluate((element) => (element as HTMLElement).innerText.replace(/\n+$/, ''))
