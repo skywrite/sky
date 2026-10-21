@@ -1,7 +1,7 @@
 import type { WritingDraftView } from '#lib/writingVoice/draftTypes.ts'
 import { assert, test } from '#test'
 import { escapeHtml } from '../editor/wysiwyg/html.ts'
-import { splitWritingDrafts, writingDraftDiffHtml } from './chatWritingDrafts.ts'
+import { splitWritingDrafts, writingDraftDiffHtml, writingDraftReplies } from './chatWritingDrafts.ts'
 
 const text = 'Hi Jane,\n\nPlease review **Atlas** by Friday.\n\nThanks.'
 const draft = {
@@ -67,6 +67,81 @@ test('draft frames recognize the same writing after Markdown presentation change
       expected: null,
     })
   }
+})
+
+test('a plain subject line presented as bold, italic or a heading still frames the draft', () => {
+  const saved = 'Atlas update\n\nPlease review **the plan** by Friday.\n\nThanks.'
+  const record = { ...draft, versions: [{ text: saved }] } as WritingDraftView
+  for (const subject of ['**Atlas update**', '*Atlas update*', '# Atlas update']) {
+    const displayed = saved.replace('Atlas update', subject)
+    assert({
+      given: `Ghostwriter's plain subject line quoted as ${subject}`,
+      should: 'link the quote to the editable record and retain its displayed wording',
+      actual: splitWritingDrafts(`Here is the draft.\n\n> ${displayed.replaceAll('\n', '\n> ')}`, [record])?.filter(
+        (part) => 'draftId' in part,
+      ),
+      expected: [{ draftId: record.id, text: displayed }],
+    })
+  }
+  for (const text of [
+    saved.replace('Atlas update', '**Atlas update**').replace('Friday', 'Monday'),
+    saved.replace('Atlas update', '**Atlas** update'),
+  ]) {
+    assert({
+      given: 'a bold subject over different wording, or a subject only partly bold',
+      should: 'remain ordinary quoted text',
+      actual: splitWritingDrafts(`> ${text.replaceAll('\n', '\n> ')}`, [record]),
+      expected: null,
+    })
+  }
+})
+
+test('the editor sits on the latest reply that shows the draft or changed it', () => {
+  const warmer = 'Hi Jane,\n\nI would appreciate your review of **Atlas** by Friday.\n\nThanks.'
+  const record = { ...draft, turn: 1, versions: [{ text }, { text: warmer }] } as WritingDraftView
+  const quoted = (words: string) => `Here is the message.\n\n> ${words.replaceAll('\n', '\n> ')}`
+  const turns = [
+    { role: 'user', content: 'Draft a note to Jane.' },
+    { role: 'assistant', content: quoted(text) },
+    { role: 'user', content: 'Make it warmer.' },
+    { role: 'assistant', content: 'Done. It reads warmer now.' },
+    { role: 'user', content: 'Who else should see it?' },
+    { role: 'assistant', content: 'Only Jane.' },
+  ] as const
+  const writer = (at: number, draftId: string, status: 'success' | 'error' = 'success') => ({
+    tool: 'me_voice',
+    at,
+    status,
+    output: { success: status === 'success', draftId },
+  })
+  const runs = [writer(1, 'f'.repeat(32)), writer(3, record.id)]
+  assert({
+    given: 'a revision whose reply does not quote the draft, then an unrelated reply',
+    should: 'move the editor to the reply that revised it and keep it there',
+    actual: writingDraftReplies([record], turns, runs, false).get(record.id),
+    expected: 3,
+  })
+  assert({
+    given: 'a later reply that quotes the current draft without revising it',
+    should: 'move the editor to that reply',
+    actual: writingDraftReplies(
+      [record],
+      [...turns.slice(0, 5), { role: 'assistant', content: quoted(warmer) }],
+      runs,
+      false,
+    ).get(record.id),
+    expected: 5,
+  })
+  assert({
+    given: 'a revision in the reply still being written, and a failed one',
+    should: 'leave the editor where it was until the reply finishes',
+    actual: [
+      writingDraftReplies([record], turns, [...runs, writer(5, record.id)], true).get(record.id),
+      writingDraftReplies([record], turns, [...runs, writer(5, record.id, 'error')], false).get(record.id),
+      writingDraftReplies([record], turns, [...runs, writer(5, record.id)], false).get(record.id),
+    ],
+    expected: [3, 3, 5],
+  })
 })
 
 test('legacy Slack draft rendering also finds the saved draft without treating code as editable', () => {

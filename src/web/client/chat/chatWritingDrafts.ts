@@ -3,17 +3,17 @@ import type { WritingDraftView } from '#lib/writingVoice/draftTypes.ts'
 import type { Node } from '../editor/wysiwyg/model.ts'
 import { contextFor, renderExport, renderStatic } from '../editor/wysiwyg/render.ts'
 import { serializeChildren } from '../editor/wysiwyg/serializer.ts'
+import type { Run, Turn } from './chat.tsx'
 import { legacySlackDraftMarkdown, parseChatMarkdown } from './chatMarkdown.ts'
 
 export type DraftReplyPart = { html: string } | { draftId: string; text: string }
 
 function draftMatchHtml(text: string): string {
-  // A writer's underlined subject is often presented as bold text in the review quote.
+  // A writer's subject line, underlined or plain, is often presented as bold text in the review quote.
   // Compare rendered markup, retaining the complete body, links, and literal code.
-  return renderStatic(legacySlackDraftMarkdown(text) ?? text).replace(
-    /^<h([1-6])>([\s\S]*?)<\/h\1>/,
-    '<p><strong>$2</strong></p>',
-  )
+  return renderStatic(legacySlackDraftMarkdown(text) ?? text)
+    .replace(/^<h([1-6])>([\s\S]*?)<\/h\1>/, '<p>$2</p>')
+    .replace(/^<p><(strong|em)>((?:(?!<\/?\1>)[\s\S])*?)<\/\1><\/p>/, '<p>$2</p>')
 }
 
 /** Match writer-owned text, never infer that an arbitrary quote is a draft. */
@@ -48,6 +48,36 @@ export function splitWritingDrafts(source: string, drafts: WritingDraftView[]): 
   }
   flush()
   return matched ? parts : null
+}
+
+/**
+ * The main reply holding each draft's editor: the latest that shows the draft or changed it through
+ * the writer, so the editor follows the conversation down even when that reply's quote is not
+ * recognized. A reply still being written keeps none until it finishes.
+ */
+export function writingDraftReplies(
+  drafts: WritingDraftView[],
+  turns: readonly Pick<Turn, 'role' | 'content'>[],
+  runs: readonly Pick<Run, 'tool' | 'at' | 'status' | 'output'>[],
+  writing: boolean,
+): Map<string, number> {
+  const replies = new Map<string, number>(drafts.map((draft) => [draft.id, draft.turn * 2 - 1]))
+  const finished = writing ? turns.length - 1 : Infinity
+  // Main replies keep their wording; the latest appearance owns the live editor.
+  for (let i = 0; i < Math.min(turns.length, finished); i++) {
+    if (turns[i]!.role !== 'assistant') continue
+    for (const part of splitWritingDrafts(turns[i]!.content, drafts) ?? []) {
+      if ('draftId' in part) replies.set(part.draftId, i)
+    }
+  }
+  for (const run of runs) {
+    if (run.tool !== 'me_voice' || run.status !== 'success' || run.at >= finished) continue
+    const id = (run.output as { draftId?: unknown } | undefined)?.draftId
+    if (typeof id !== 'string') continue
+    const at = replies.get(id)
+    if (at !== undefined && run.at > at) replies.set(id, run.at)
+  }
+  return replies
 }
 
 export async function writingDraftRequest(chatId: string, draftId: string, body: unknown): Promise<WritingDraftView> {

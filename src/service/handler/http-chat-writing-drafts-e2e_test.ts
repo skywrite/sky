@@ -211,6 +211,90 @@ test(
 )
 
 test(
+  {
+    name: 'the editor follows each revision to the newest reply, with a bolded plain subject or no quote at all',
+    timeout: 90000,
+  },
+  async (t) => {
+    const subject = 'Atlas update\n\n'
+    const SHORT_DRAFT = 'Hi Jane,\n\nPlease review the Atlas draft by Friday.\n\nThanks.'
+    let answered = 0
+    let host: ReturnType<typeof writingDraftTestHost>
+    await runWysiwygE2e(
+      t,
+      {
+        initialMarkdown: '# Mock drafting notebook\n',
+        tempPrefix: 'sky-draft-follows-',
+        day: true,
+        chat: (root) =>
+          (host = writingDraftTestHost(root, {
+            draft: (input) =>
+              subject +
+              (/shorter/i.test(input.instruction ?? '')
+                ? SHORT_DRAFT
+                : /warmer/i.test(input.instruction ?? '')
+                  ? WARM_DRAFT
+                  : ORIGINAL_DRAFT),
+            // Sky bolds the writer's plain subject line when it quotes a draft, and its third reply quotes nothing.
+            reply: (text) =>
+              ++answered === 3
+                ? 'Done. It is shorter now.'
+                : `Here is the message.\n\n> ${text.replace('Atlas update', '**Atlas update**').replaceAll('\n', '\n> ')}`,
+          })),
+      },
+      async ({ page, origin, errors }) => {
+        await page.setViewportSize({ width: 1440, height: 1100 })
+        const first = await page.request.post(`${origin}/chat/main/messages`, {
+          data: { message: 'Draft a message to Jane.', profile: 'test-thread-model', contextTokens: 0, saves: true },
+        })
+        if (!first.ok() || (await first.text()).includes('event: error')) throw new Error(await first.text())
+        await page.goto(`${origin}/thread/main`)
+        const main = page.locator('.sky-split-main')
+        const replies = main.locator('.sky-turn[data-speaker="Sky"]')
+        const editors = main.locator('.sky-writing-draft').getByRole('button', { name: 'Edit', exact: true })
+        const composer = main.getByRole('textbox', { name: 'Message sky…', exact: true })
+        await replies.nth(0).getByRole('button', { name: 'Edit', exact: true }).waitFor()
+        await composer.fill('Make this warmer.')
+        await composer.press('Enter')
+        await replies.nth(1).getByRole('button', { name: 'Edit', exact: true }).waitFor()
+        assert({
+          given: 'a revision Sky quotes with the plain subject line in bold',
+          should: 'frame both quotes and move the sole editor to the newer reply',
+          actual: [
+            await main.locator('.sky-writing-draft').count(),
+            await main.locator('.sky-body blockquote').count(),
+            await replies.nth(0).getByText('Earlier version', { exact: true }).count(),
+            await editors.count(),
+          ],
+          expected: [2, 0, 1, 1],
+        })
+        await composer.fill('Make it shorter.')
+        await composer.press('Enter')
+        await replies.nth(2).getByRole('button', { name: 'Edit', exact: true }).waitFor()
+        assert({
+          given: 'a revision whose reply does not quote the draft',
+          should: 'move the editor under that reply, holding the current words',
+          actual: [
+            await replies.nth(1).getByText('Earlier version', { exact: true }).count(),
+            await editors.count(),
+            await replies.nth(2).locator('.sky-writing-draft-body').innerText(),
+            await replies.nth(2).getByRole('button', { name: 'Versions · 3', exact: true }).count(),
+            errors,
+          ],
+          expected: [1, 1, subject + SHORT_DRAFT, 1, []],
+        })
+        const screenshots = env.get('SKY_DRAFT_SCREENSHOTS')
+        if (screenshots) {
+          await mkdir(screenshots, { recursive: true })
+          await page.screenshot({ path: path.join(screenshots, 'draft-follows.png'), fullPage: true })
+        }
+        await host!.writingDrafts.idle()
+      },
+    )
+  },
+)
+
+test(
   { name: 'a draft Sky revises before its reply ends shows as one frame holding both versions', timeout: 90000 },
   async (t) => {
     let host: ReturnType<typeof writingDraftTestHost>

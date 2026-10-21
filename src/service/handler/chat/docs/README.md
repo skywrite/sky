@@ -1,6 +1,6 @@
 ---
 created: 2026-09-01
-updated: 2026-10-18
+updated: 2026-10-21
 ---
 
 # Chat over HTTP — a thread, its tuning, and the story of its context
@@ -273,7 +273,9 @@ a person can see and touch:
   with Edit, Copy, Undo, previous versions, and **Work on this…**. The latter
   opens the response's existing reply thread, focused on the same draft ID.
   Main conversation revisions display the full draft in their response. Earlier
-  responses retain their original wording; the latest appearance owns the editor.
+  responses retain their original wording; the latest response that shows or revises
+  the draft owns the editor, so it moves down with the conversation even when Sky
+  restyles the quote or leaves it out.
   Thread revisions update that current frame in place; the transcript keeps its original text.
   Storage, learning, and conflict behavior belong to
   [writing voice](../../../../lib/writingVoice/docs/README.md#shared-drafts-in-chat-and-outbox).
