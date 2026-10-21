@@ -9,6 +9,7 @@ import { autoTagMessage } from '#lib/notebook/enrich/autoTag.ts'
 import { readOptional, withLock } from '#lib/outbox/files.ts'
 import openEditor from '#lib/shell/openEditor.ts'
 import slugify from '#lib/string/slugify.ts'
+import { AboutMeDocument } from '#shared/models/AboutMe/mod.ts'
 import JournalDocument from '#shared/models/Journal/document/mod.ts'
 import { JournalTypes } from '#shared/models/Journal/mod.ts'
 import TagSet from '#shared/models/TagSet/mod.ts'
@@ -72,6 +73,12 @@ export function recordingTypeMenu(observed: { name: string; count: number }[]) {
     ...menu,
     ...JournalTypes.filter((name) => name !== 'Misc' && !known.has(key(name))).map((name) => ({ name, count: 0 })),
   ]
+}
+
+/** The owner's first name from About me, so entry summaries say who spoke. */
+async function ownerName(file: string): Promise<string> {
+  const profile = await readOptional(file).catch(() => undefined)
+  return AboutMeDocument.fromMarkdown(profile ?? '').firstName
 }
 
 function validGroups(groups: EntryGroup[], count: number) {
@@ -146,6 +153,7 @@ export async function fileRecordedJournal(
                 sections,
                 capture.menu,
                 sections.reduce((sum, section) => sum + section.words, 0),
+                await ownerName(config.FILE_ABOUT_ME),
               )
               if (suggestion.error) throw new Error(suggestion.error)
               capture.suggested = mergeGroupsByType(validGroups(suggestion.groups, sections.length))
@@ -196,6 +204,7 @@ export async function fileRecordedJournal(
                 sections,
                 capture.selected,
                 sections.reduce((sum, section) => sum + section.words, 0),
+                await ownerName(config.FILE_ABOUT_ME),
               )
               if (grouped.error) throw new Error(grouped.error)
               capture.groups = mergeGroupsByType(
