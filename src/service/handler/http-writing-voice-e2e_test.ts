@@ -159,8 +159,10 @@ test(
       await page.getByRole('button', { name: 'Fold lessons into my rules', exact: true }).click()
       await page.getByText('2 lessons folded into your writing rules.', { exact: true }).waitFor()
       await page.reload()
-      await page.getByLabel('Your writing rules', { exact: true }).waitFor()
-      const rulesText = await page.getByLabel('Your writing rules', { exact: true }).inputValue()
+      // The rules box stays empty and disabled until the page has read the saved rules.
+      const rulesBox = page.getByLabel('Your writing rules', { exact: true })
+      await rulesBox.and(page.locator(':enabled')).waitFor()
+      const rulesText = await rulesBox.inputValue()
       assert({
         given: 'lessons taught from two surfaces and folded in by hand',
         should: 'hold both scoped lessons in the rules after reload, read none from the drafts, and keep both drafts',
