@@ -8,6 +8,7 @@ import {
   type TypeSafeClient,
 } from '@typesafe-ai/sdk'
 import { z } from 'zod'
+import { FILE_ABOUT_ME } from '#config'
 import type { CalendarEvent } from '#lib/google/calendar.ts'
 import { readJson, writeJson } from '#lib/jobs/files.ts'
 import type { SecretsProvider } from '#lib/secrets/SecretsProvider.ts'
@@ -210,7 +211,7 @@ export async function classifyDayEvents(events: CalendarEvent[], secrets: Secret
     dir: classificationDir(config.userDataDir),
     enabled: config.calendar?.classifyEvents === true,
     client: createTypeSafeClient({ secrets }),
-    owner: config.calendar?.classifyEvents === true ? await readCalendarOwnerContext(config.dir) : undefined,
+    owner: config.calendar?.classifyEvents === true ? await readCalendarOwnerContext(FILE_ABOUT_ME) : undefined,
     prepare: async () => {
       if (!(await secrets.get(TYPESAFE_SECRET.category, TYPESAFE_SECRET.name))) throw new Error(MISSING_TYPESAFE_KEY)
     },

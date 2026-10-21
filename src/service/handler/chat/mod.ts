@@ -331,7 +331,7 @@ export interface ChatRoutesOptions {
   endDefaults?: Omit<EndOptions, 'save'>
   /** Notebook time root — the day view lists the day's saved chats from it */
   timeDir: string
-  /** about-me.md — the day view tells the owner's threads from archival ones by it */
+  /** me/about.md — the day view tells the owner's threads from archival ones by it */
   aboutMePath?: string
 }
 

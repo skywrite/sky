@@ -10,10 +10,10 @@ import { isPublicProfileAddress, readProfilePage } from './profileLinks.ts'
 
 async function fixture() {
   const root = await mkdtemp(path.join(tmpdir(), 'sky-about-me-'))
-  const file = path.join(root, 'journal', 'about-me.md')
+  const file = path.join(root, 'me', 'about.md')
   const reads: string[] = []
   const host = createAboutMeHost(
-    { DIR_BASE: root, DIR_STATE: path.join(root, '.state') },
+    { FILE_ABOUT_ME: file, DIR_BASE: root, DIR_STATE: path.join(root, '.state') },
     {
       today: () => '2026-01-15',
       readPage: async (url) => {

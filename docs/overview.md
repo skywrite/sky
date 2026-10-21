@@ -1,6 +1,6 @@
 ---
 created: 2026-07-28
-updated: 2026-09-19
+updated: 2026-10-20
 ---
 
 # Overview
@@ -144,8 +144,9 @@ timezones, and the date types — is [its own document](nbfs.md).
   decisions/                       # decision records
   goals/                           # personal and professional goals
   ideas/                           # idea capture
-  journal/                         # about-me profile and question banks
+  journal/                         # question banks
   library/                         # evergreen reference notes, filed by topic
+  me/                              # About me profile and writing style
   orgs/                            # organizations
   people/                          # personal CRM
   places/                          # location hierarchy

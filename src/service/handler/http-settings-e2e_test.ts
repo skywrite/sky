@@ -22,7 +22,7 @@ test(
     const root = await mkdtemp(path.join(tmpdir(), 'sky-settings-browser-'))
     await mkdir(path.join(root, 'journal'))
     const host = createAboutMeHost(
-      { DIR_BASE: root, DIR_STATE: path.join(root, '.state') },
+      { FILE_ABOUT_ME: path.join(root, 'me', 'about.md'), DIR_BASE: root, DIR_STATE: path.join(root, '.state') },
       {
         readPage: async () => 'Jane Doe leads Atlas.',
         summarize: async (input) => ({

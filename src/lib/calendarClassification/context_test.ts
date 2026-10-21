@@ -6,20 +6,20 @@ import { readCalendarOwnerContext } from './context.ts'
 
 test('calendar context reads household facts from legacy and freeform profiles, and works without setup', async () => {
   const dir = await mkdtemp(path.join(tmpdir(), 'sky-calendar-owner-'))
-  const file = path.join(dir, 'journal', 'about-me.md')
+  const file = path.join(dir, 'me', 'about.md')
   try {
-    const empty = await readCalendarOwnerContext(dir)
+    const empty = await readCalendarOwnerContext(file)
     await mkdir(path.dirname(file))
     await writeFile(
       file,
       '# About Me - Jane Doe\n\n## Family\n\nPartner: Jordan. Children: Alex and Sam.\n\n## Professional\n\nCompany: Atlas.\n',
     )
-    const legacy = await readCalendarOwnerContext(dir)
+    const legacy = await readCalendarOwnerContext(file)
     await writeFile(
       file,
       '---\nname: Jane Doe\n---\n\nBuilds software at Atlas.\n\nMy children are Alex and Sam.\n\nLikes hiking.\n',
     )
-    const freeform = await readCalendarOwnerContext(dir)
+    const freeform = await readCalendarOwnerContext(file)
     assert({
       given: 'no profile, a section-based profile, and the settings editor’s freeform biography',
       should: 'include identity and family facts without unrelated biography or requiring setup',
@@ -37,7 +37,7 @@ test('calendar context reads household facts from legacy and freeform profiles, 
     assert({
       given: 'a family section containing an oversized paragraph followed by a complete relationship',
       should: 'keep complete facts within the context budget',
-      actual: await readCalendarOwnerContext(dir),
+      actual: await readCalendarOwnerContext(file),
       expected: { name: 'Jane Doe', family: 'Children: Alex and Sam.' },
     })
   } finally {

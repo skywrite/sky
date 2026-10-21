@@ -25,7 +25,7 @@ import { getReservedFieldDefinition, isReservedNamespace } from './variables.ts'
 // =============================================================================
 
 /**
- * Build default me context from journal/about-me.md
+ * Build default me context from me/about.md
  */
 function buildMeDefaults(): AboutMeDocument | undefined {
   try {

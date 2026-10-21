@@ -1,6 +1,6 @@
 ---
 created: 2026-08-30
-updated: 2026-10-14
+updated: 2026-10-20
 ---
 
 # Settings — the web's settings section
@@ -34,7 +34,7 @@ Pages:
   start by `useSettingsBoot`. The sidebar's quick toggle writes the
   same key. Text size is a page zoom.
 - **Me → About me** — `/settings/me`: a name, freeform profile, and optional
-  website/profile links. Saves use the existing `journal/about-me.md`, preserving
+  website/profile links. Saves use the existing `me/about.md`, preserving
   frontmatter and legacy sections; `name` and `sites` live in frontmatter. No
   separate profile store: voice, Outbox, prompt templates, and new text chat
   sessions consume this same document. Freeform profiles remain readable through

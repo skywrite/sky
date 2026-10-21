@@ -33,7 +33,7 @@ export interface DayRoutesOptions {
   markdownBaseDir: string
   /** Notebook time root — where a day's chats are filed */
   timeDir: string
-  /** about-me.md — the owner's names, for telling involved messages from archival ones */
+  /** me/about.md — the owner's names, for telling involved messages from archival ones */
   aboutMePath?: string
   /** Test seam — production reads the notebook clock */
   today?: () => PlainDate
@@ -42,7 +42,7 @@ export interface DayRoutesOptions {
   now?: () => ZonedDateTime
   /** Runs day:start and day:end for the page's buttons; without it the two routes stay off */
   commands?: DayCommands
-  /** Test seam — production reads about-me.md */
+  /** Test seam — production reads me/about.md */
   ownerNames?: string[]
   /** The owner's email addresses: each connected Google account and its Gmail aliases */
   ownerAddresses?: () => Promise<string[]>

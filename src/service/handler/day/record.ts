@@ -120,7 +120,7 @@ export interface DayRecordInput {
   ownerAddresses?: string[]
 }
 
-/** The owner as about-me.md names them — the same identity summary:day uses. */
+/** The owner as me/about.md names them — the same identity summary:day uses. */
 export async function loadOwnerNames(aboutMePath: string | undefined): Promise<string[]> {
   if (!aboutMePath) return []
   try {

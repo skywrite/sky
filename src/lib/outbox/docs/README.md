@@ -1,6 +1,6 @@
 ---
 created: 2026-09-06
-updated: 2026-09-22
+updated: 2026-10-20
 ---
 
 # Outbox — decisions prepared from saved conversations
@@ -21,7 +21,7 @@ Coverage is the existing captures, not every message in the connected accounts. 
 
 The screen never replaces an existing request ledger, even when its requests were previously resolved or archived: later replies must still be reconciled and can reopen an ask. Human review state and legacy items also bypass it. Missing history, an unidentified owner, or context exceeding the bounded input size uses the full reader rather than screening a truncated thread. Validated screen receipts live under `analysis/<conversation-hash>/screens/`; their fingerprints include all supplied evidence, policy, model selector, owner context, initiatives and local date, independently of the selected range. A screened result records zero extraction units and retains Jev's model, probabilities and duration in `requestAnalysis.screen`; it is a relevance judgment, not proof of an inventoried or resolved request. Source and item revision checks still gate publication.
 
-Check now accounts for individual requests before preparing one proposed reply per changed conversation, using the Outbox model profile in `model.ts`. Extraction inventories potential owner requests; reconciliation matches answers, withdrawals, and changed requirements to each ask. These passes receive the complete linked history in bounded portions and owner context from `journal/about-me.md`, independently of the selected range. Range selection then uses each request's actual origin time. An existing active review carries its outstanding requests across range changes. Thus widening from four hours to seven days can select more requests and conversations without enlarging the reading unit or diluting an overlapping request's context.
+Check now accounts for individual requests before preparing one proposed reply per changed conversation, using the Outbox model profile in `model.ts`. Extraction inventories potential owner requests; reconciliation matches answers, withdrawals, and changed requirements to each ask. These passes receive the complete linked history in bounded portions and owner context from `me/about.md`, independently of the selected range. Range selection then uses each request's actual origin time. An existing active review carries its outstanding requests across range changes. Thus widening from four hours to seven days can select more requests and conversations without enlarging the reading unit or diluting an overlapping request's context.
 
 An open or uncertain request is only a candidate. `requestAttention.ts` separately requires evidence that the owner personally owes a useful communication now: a direct ask, substantive participation in this exchange, an explicit promise to communicate, or a specific decision assigned through declared active project/workstream context. Following a channel, sharing an employer, or being able to help establishes no obligation. Unproven ownership stays out of review; it must never become a question about whether to volunteer, intervene, or nudge another person. A contingent approval waits until the other person's prerequisite arrives. The ledger retains these `none` and `waiting` assessments for later reconsideration.
 

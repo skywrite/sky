@@ -57,7 +57,7 @@ export interface ChatParent {
 let cachedUserLabel: string | undefined
 
 /**
- * The user's speaker label: their first name from journal/about-me.md.
+ * The user's speaker label: their first name from me/about.md.
  * Transcript headings carry this label on every user turn, so the name
  * lives in the notebook, never in this code. Falls back to 'User' when no
  * profile exists. The label is expected to be stable — turns written under

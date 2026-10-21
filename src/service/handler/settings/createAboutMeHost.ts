@@ -38,14 +38,14 @@ const summarize: Summarize = async (input, sources) => {
 }
 
 export function createAboutMeHost(
-  config: { DIR_BASE: string; DIR_STATE: string },
+  config: { FILE_ABOUT_ME: string; DIR_BASE: string; DIR_STATE: string },
   options: {
     today?: () => string
     readPage?: (url: string) => Promise<string>
     summarize?: Summarize
   } = {},
 ): AboutMeHost {
-  const file = path.join(config.DIR_BASE, 'journal', 'about-me.md')
+  const file = config.FILE_ABOUT_ME
   const lock = path.join(config.DIR_STATE, 'about-me', hash(config.DIR_BASE).slice(0, 16), 'write.lock')
   const today = options.today ?? (() => PlainDate.today().ymd)
   const document = async () => {

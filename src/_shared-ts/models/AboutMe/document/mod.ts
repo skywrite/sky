@@ -1,7 +1,7 @@
 import SectionDocument from '#shared/models/Markdown/SectionDocument/mod.ts'
 
 /**
- * Parsed profile data from journal/about-me.md.
+ * Parsed profile data from me/about.md.
  *
  * Used for prompt template variable substitution ({{me.firstName}}, etc.)
  * and AI personalization throughout the system.

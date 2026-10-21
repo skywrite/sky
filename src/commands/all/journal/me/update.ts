@@ -1,10 +1,9 @@
-import * as path from 'node:path'
 import { generateText } from 'ai'
 import { Prompt } from '#commands/lib/core/Prompt.ts'
 import { Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { aiModel } from '#shared/ai/models.ts'
-import { DIR_BASE } from '#shared/config.ts'
+import { FILE_ABOUT_ME } from '#shared/config.ts'
 import { exists, outputFile, readTextFile } from '#shared/fs/mod.ts'
 import { AboutMeDocument } from '#shared/models/AboutMe/mod.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
@@ -46,12 +45,6 @@ declare module '#commands/lib/core/CommandTypesRegistry.ts' {
     }
   }
 }
-
-// -----------------------------------------------------------------------------
-// Constants
-// -----------------------------------------------------------------------------
-
-const ABOUT_ME_PATH = path.join(DIR_BASE, 'journal', 'about-me.md')
 
 // -----------------------------------------------------------------------------
 // Helpers
@@ -171,7 +164,7 @@ export default class JournalMeUpdateTask extends Command {
     name: 'journal:me:update',
     description: 'Update your personal profile (About Me)',
     descriptionLong: [
-      'Creates and updates journal/about-me.md with:',
+      'Creates and updates me/about.md with:',
       'personal info (name, location), family description, professional details',
       '(company, title, description), and preferences (communication style,',
       'decision-making, technical context). Generates an AI bio summary.',
@@ -203,8 +196,8 @@ export default class JournalMeUpdateTask extends Command {
     let existing: Partial<ProfileData> = {}
     let updatedDate: PlainDate | undefined
 
-    if (await exists(ABOUT_ME_PATH)) {
-      const content = await readTextFile(ABOUT_ME_PATH)
+    if (await exists(FILE_ABOUT_ME)) {
+      const content = await readTextFile(FILE_ABOUT_ME)
       const doc = AboutMeDocument.fromMarkdown(content)
       existing = profileFromAboutMe(doc)
       updatedDate = doc.updated
@@ -336,20 +329,20 @@ export default class JournalMeUpdateTask extends Command {
 
     // Update the created date if file exists
     let finalMarkdown = markdown
-    if (await exists(ABOUT_ME_PATH)) {
-      const existingContent = await readTextFile(ABOUT_ME_PATH)
+    if (await exists(FILE_ABOUT_ME)) {
+      const existingContent = await readTextFile(FILE_ABOUT_ME)
       const existingDoc = AboutMeDocument.fromMarkdown(existingContent)
       const createdDate = existingDoc.created?.ymd || PlainDate.today().ymd
       finalMarkdown = markdown.replace(/^created: .+$/m, `created: ${createdDate}`)
     }
 
-    await outputFile(ABOUT_ME_PATH, finalMarkdown)
+    await outputFile(FILE_ABOUT_ME, finalMarkdown)
 
-    output.log(`Saved to ${ABOUT_ME_PATH}`)
+    output.log(`Saved to ${FILE_ABOUT_ME}`)
     output.log('')
     output.log('Generated bio:')
     output.log(data.bio)
 
-    return CommandResult.success({ filePath: ABOUT_ME_PATH, updated: true })
+    return CommandResult.success({ filePath: FILE_ABOUT_ME, updated: true })
   }
 }

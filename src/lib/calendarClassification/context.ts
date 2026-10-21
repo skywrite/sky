@@ -1,5 +1,4 @@
 import { readFile } from 'node:fs/promises'
-import * as path from 'node:path'
 import { AboutMeDocument } from '#shared/models/AboutMe/mod.ts'
 
 export type CalendarOwnerContext = {
@@ -8,8 +7,8 @@ export type CalendarOwnerContext = {
 }
 
 /** Read only identity and family context; the rest of the owner's biography is unrelated to sorting. */
-export async function readCalendarOwnerContext(notebookDir: string): Promise<CalendarOwnerContext> {
-  const text = await readFile(path.join(notebookDir, 'journal', 'about-me.md'), 'utf8').catch(() => '')
+export async function readCalendarOwnerContext(file: string): Promise<CalendarOwnerContext> {
+  const text = await readFile(file, 'utf8').catch(() => '')
   const profile = AboutMeDocument.fromMarkdown(text)
   const family =
     profile.family ||

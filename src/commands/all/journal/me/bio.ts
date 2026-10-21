@@ -1,18 +1,15 @@
-import * as path from 'node:path'
 import { Command, CommandResult } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription } from '#commands/mod.ts'
-import { DIR_BASE } from '#shared/config.ts'
+import { FILE_ABOUT_ME } from '#shared/config.ts'
 import { exists, readTextFile } from '#shared/fs/mod.ts'
 import { AboutMeDocument } from '#shared/models/AboutMe/mod.ts'
-
-const ABOUT_ME_PATH = path.join(DIR_BASE, 'journal', 'about-me.md')
 
 export default class JournalMeBioTask extends Command {
   static override description: CommandDescription = {
     name: 'journal:me:bio',
     description: 'Output bio from About Me profile (for prompt injection)',
     descriptionLong: [
-      'Reads the bio section from journal/about-me.md',
+      'Reads the bio section from me/about.md',
       'and outputs it. Useful for piping into prompts or other commands.',
     ],
     usage: [
@@ -24,11 +21,11 @@ export default class JournalMeBioTask extends Command {
   async run({ context }: CommandArgs): Promise<CommandResult<{ bio: string }>> {
     const { output } = context
 
-    if (!(await exists(ABOUT_ME_PATH))) {
+    if (!(await exists(FILE_ABOUT_ME))) {
       return CommandResult.fail('No profile found. Run `sky journal:me:update` first.')
     }
 
-    const content = await readTextFile(ABOUT_ME_PATH)
+    const content = await readTextFile(FILE_ABOUT_ME)
     const doc = AboutMeDocument.fromMarkdown(content)
     const bio = doc.bio
 

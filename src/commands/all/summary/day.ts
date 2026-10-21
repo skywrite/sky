@@ -162,7 +162,7 @@ export default class SummaryDayTask extends Command {
     const priceData = await gatherDayPriceData(day, <string>config.DIR_DATA)
 
     // Archival captures: message files the owner appears nowhere in — threads
-    // saved for reference, not activity. Identity comes from about-me.md, the
+    // saved for reference, not activity. Identity comes from me/about.md, the
     // same source as the prompt's {{me.*}} variables, plus every address the
     // owner's mail uses (connected Google accounts and their Gmail aliases);
     // without a name, nothing is marked and the summary reads as before.
