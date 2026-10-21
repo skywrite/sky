@@ -1,6 +1,7 @@
-import { Button, Textarea, TextInput } from '@mantine/core'
+import { Button, Input, TextInput } from '@mantine/core'
 import { useEffect, useState } from 'react'
 import type { AboutMeInput, AboutMeProfile, AboutMeSuggestion } from '../../../service/handler/settings/aboutMe.ts'
+import { MarkdownField } from '../editor/markdownEditor.tsx'
 import { Block, UNREACHABLE } from './settingsBlocks.tsx'
 
 interface Draft {
@@ -11,6 +12,9 @@ interface Draft {
 }
 let draft: Draft | null = null
 let learnedProfile: AboutMeSuggestion | null = null
+// Each suggestion mounts a fresh editor; the editor reads its text only when it mounts.
+let learnedVersion = 0
+const MAX_TEXT = 80_000
 const fields = (value: Draft): AboutMeInput => ({
   name: value.name,
   text: value.text,
@@ -19,6 +23,8 @@ const fields = (value: Draft): AboutMeInput => ({
 const changed = (value: Draft) =>
   JSON.stringify(fields(value)) !==
   JSON.stringify({ name: value.saved.name, text: value.saved.text, links: value.saved.links })
+// The editor ends a document typed from scratch with a newline; the profile is stored without one, as before.
+const body = (markdown: string) => markdown.replace(/\n+$/, '')
 const message = (error: unknown) => (error instanceof Error ? error.message : 'Something went wrong. Please try again.')
 
 async function request<T>(suffix: string, input?: unknown, method = 'PUT'): Promise<T> {
@@ -63,6 +69,8 @@ export function AboutMePane({ memoryNotes }: { memoryNotes: number }) {
   }
   const [loaded, setLoaded] = useState(false)
   const [conflict, setConflict] = useState(false)
+  // Replacing the profile text (a reload, a suggestion, a save) remounts the editor with it.
+  const [editorKey, setEditorKey] = useState(0)
   const update = (next: Draft) => {
     draft = next
     setValue(next)
@@ -72,6 +80,7 @@ export function AboutMePane({ memoryNotes }: { memoryNotes: number }) {
     try {
       const saved = await request<AboutMeProfile>('')
       if (!draft || replace || !changed(draft)) {
+        if (draft && draft.text !== saved.text) setEditorKey((key) => key + 1)
         draft = { saved, name: saved.name, text: saved.text, links: saved.links.length ? saved.links : [''] }
         setValue(draft)
         setConflict(false)
@@ -103,12 +112,14 @@ export function AboutMePane({ memoryNotes }: { memoryNotes: number }) {
       return true
     }
   })
+  const tooLong = value.text.length > MAX_TEXT
   const save = async () => {
     setBusy('save')
     setError('')
     setNotice('')
     try {
       const saved = await request<AboutMeProfile>('', { ...input, revision: value.saved.revision })
+      if (saved.text !== value.text) setEditorKey((key) => key + 1)
       update({ saved, name: saved.name, text: saved.text, links: saved.links.length ? saved.links : [''] })
       setNotice('Saved. Sky will use this context in new conversations.')
       setConflict(false)
@@ -124,7 +135,9 @@ export function AboutMePane({ memoryNotes }: { memoryNotes: number }) {
     setError('')
     setSuggestion(null)
     try {
-      setSuggestion(await request<AboutMeSuggestion>('/learn', input, 'POST'))
+      const learned = await request<AboutMeSuggestion>('/learn', input, 'POST')
+      learnedVersion += 1
+      setSuggestion(learned)
     } catch (problem) {
       setError(message(problem))
     } finally {
@@ -157,17 +170,22 @@ export function AboutMePane({ memoryNotes }: { memoryNotes: number }) {
             disabled={!!busy}
             onChange={(event) => update({ ...value, name: event.currentTarget.value })}
           />
-          <Textarea
-            label="About you"
-            placeholder="Start anywhere. What matters to you right now?"
-            value={value.text}
-            minRows={6}
-            maxRows={28}
-            autosize
-            maxLength={80_000}
-            disabled={!!busy}
-            onChange={(event) => update({ ...value, text: event.currentTarget.value })}
-          />
+          <Input.Wrapper label="About you" labelElement="div">
+            <MarkdownField
+              key={editorKey}
+              className="sky-set-profile-editor"
+              initial={value.text}
+              label="About you"
+              hint={value.text.trim() ? undefined : 'Start anywhere. What matters to you right now?'}
+              disabled={!!busy}
+              onChange={(text) => update({ ...value, text: body(text) })}
+            />
+          </Input.Wrapper>
+          {tooLong && (
+            <p className="sky-set-warn" role="status">
+              Your profile is over 80,000 characters. Shorten it to save.
+            </p>
+          )}
           <p className="sky-set-note">A few sentences are enough to begin. You can add more as life changes.</p>
         </div>
       </Block>
@@ -223,7 +241,7 @@ export function AboutMePane({ memoryNotes }: { memoryNotes: number }) {
           <Button
             variant="primary"
             loading={busy === 'learn'}
-            disabled={!!busy || !!invalidLink || !input.links.length || !loaded}
+            disabled={!!busy || !!invalidLink || tooLong || !input.links.length || !loaded}
             onClick={() => void learn()}
           >
             Learn about me
@@ -235,15 +253,15 @@ export function AboutMePane({ memoryNotes }: { memoryNotes: number }) {
       </Block>
       {suggestion && (
         <Block head="What Sky learned" note="Review this suggestion and make it your own.">
-          <Textarea
-            label="Suggested profile"
-            value={suggestion.text}
-            autosize
-            minRows={6}
-            maxRows={20}
-            maxLength={80_000}
-            onChange={(event) => setSuggestion({ ...suggestion, text: event.currentTarget.value })}
-          />
+          <Input.Wrapper label="Suggested profile" labelElement="div">
+            <MarkdownField
+              key={learnedVersion}
+              className="sky-set-profile-editor"
+              initial={suggestion.text}
+              label="Suggested profile"
+              onChange={(text) => setSuggestion({ ...suggestion, text: body(text) })}
+            />
+          </Input.Wrapper>
           <ul className="sky-set-sources">
             {suggestion.sources.map((source) => (
               <li key={source.url}>
@@ -269,6 +287,7 @@ export function AboutMePane({ memoryNotes }: { memoryNotes: number }) {
               variant="primary"
               onClick={() => {
                 update({ ...value, name: value.name || suggestion.name, text: suggestion.text })
+                setEditorKey((key) => key + 1)
                 setSuggestion(null)
                 setNotice('Suggestion added. Save your profile when you’re ready.')
               }}
@@ -283,7 +302,7 @@ export function AboutMePane({ memoryNotes }: { memoryNotes: number }) {
         <Button
           variant="primary"
           loading={busy === 'save'}
-          disabled={!!busy || !changed(value) || !!invalidLink || conflict || !loaded}
+          disabled={!!busy || !changed(value) || !!invalidLink || tooLong || conflict || !loaded}
           onClick={() => void save()}
         >
           Save about me

@@ -112,9 +112,9 @@
   display: grid;
   gap: 18px;
 }
-.sky-set-profile-fields .mantine-Textarea-input {
-  font-size: 18px;
-  line-height: 1.65;
+.sky-set-profile-editor.sky-journal-writer {
+  margin: 6px 0 0;
+  background: var(--mantine-color-default);
 }
 .sky-set-profile-links {
   display: grid;

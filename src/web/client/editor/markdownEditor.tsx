@@ -13,6 +13,40 @@ interface Draft extends Snapshot {
   base: string
 }
 
+const FORMATS: Array<[EditorFormat, string]> = [
+  ['bold', 'Bold'],
+  ['italic', 'Italic'],
+  ['bullets', 'List'],
+  ['undo', 'Undo'],
+]
+
+function FormatTools({
+  label,
+  editor,
+  disabled = false,
+}: {
+  label: string
+  editor: { current: EditorHandle | null }
+  disabled?: boolean
+}) {
+  return (
+    <div role="toolbar" aria-label={`${label} formatting`}>
+      {FORMATS.map(([command, title]) => (
+        <Button
+          key={command}
+          size="compact-sm"
+          aria-label={title}
+          disabled={disabled}
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={() => editor.current?.format(command)}
+        >
+          {title}
+        </Button>
+      ))}
+    </div>
+  )
+}
+
 async function request(
   apiPath: string,
   input?: { content: string; version: number; force: boolean },
@@ -234,28 +268,10 @@ export function MarkdownEditor({
       controls.current = null
     }
   }, [apiPath, draftKey])
-  const formats: Array<[EditorFormat, string]> = [
-    ['bold', 'Bold'],
-    ['italic', 'Italic'],
-    ['bullets', 'List'],
-    ['undo', 'Undo'],
-  ]
   return (
     <div className="sky-journal-writer">
       <div className="sky-journal-editor-tools">
-        <div role="toolbar" aria-label={`${label} formatting`}>
-          {formats.map(([command, title]) => (
-            <Button
-              key={command}
-              size="compact-sm"
-              aria-label={title}
-              onMouseDown={(event) => event.preventDefault()}
-              onClick={() => editor.current?.format(command)}
-            >
-              {title}
-            </Button>
-          ))}
-        </div>
+        <FormatTools label={label} editor={editor} />
         <span role="status">{status}</span>
       </div>
       <div className="sky-doc-body sky-wysiwyg" ref={root} role="textbox" aria-label={label} aria-multiline="true" />
@@ -288,6 +304,61 @@ export function MarkdownEditor({
           )}
         </div>
       )}
+    </div>
+  )
+}
+
+/**
+ * The same editor and toolbar as a form field: the page saves, so edits only report back.
+ * Content loads once per mount; give the field a new `key` to show replaced text.
+ */
+export function MarkdownField({
+  initial,
+  label,
+  hint,
+  disabled = false,
+  className,
+  onChange,
+}: {
+  key?: number
+  initial: string
+  label: string
+  hint?: string
+  disabled?: boolean
+  className?: string
+  onChange(content: string): void
+}) {
+  const root = useRef<HTMLDivElement>(null)
+  const editor = useRef<EditorHandle | null>(null)
+  const first = useRef(initial)
+  const notify = useRef(onChange)
+  notify.current = onChange
+  useEffect(() => {
+    const element = root.current
+    if (!element) return
+    editor.current = mountEditor(
+      element,
+      { apiPath: '', content: first.current, version: 0, local: true, hideFrontmatter: true, resolveImage: () => '' },
+      { onStatus: () => {}, onConflict: () => {}, onChange: (content) => notify.current(content) },
+    )
+    element.setAttribute('role', 'textbox')
+    element.setAttribute('aria-label', label)
+    element.setAttribute('aria-multiline', 'true')
+    return () => {
+      editor.current?.destroy()
+      editor.current = null
+    }
+  }, [label])
+  useEffect(() => {
+    root.current?.setAttribute('contenteditable', String(!disabled))
+  }, [disabled])
+  return (
+    <div className={className ? `sky-journal-writer ${className}` : 'sky-journal-writer'}>
+      <div className="sky-journal-editor-tools">
+        <FormatTools label={label} editor={editor} disabled={disabled} />
+        {hint && <span>{hint}</span>}
+      </div>
+      <div className="sky-doc-body sky-wysiwyg" ref={root} />
     </div>
   )
 }

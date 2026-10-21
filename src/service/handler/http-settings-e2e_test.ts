@@ -146,7 +146,8 @@ test(
       await page.getByRole('heading', { name: 'Appearance', exact: true }).waitFor()
       await nav.getByRole('button', { name: 'Me', exact: true }).click()
       await page.getByLabel('Your name', { exact: true }).fill('Jane Doe')
-      await page.getByLabel('About you', { exact: true }).fill('I build tools for small teams.')
+      await page.getByLabel('About you', { exact: true }).click()
+      await page.keyboard.insertText('I build tools for small teams.')
       await nav.getByRole('button', { name: 'Models', exact: true }).click()
       await page.getByRole('heading', { name: 'Models', exact: true }).waitFor()
       assert({
@@ -285,10 +286,11 @@ test(
         expected: false,
       })
       await nav.getByRole('button', { name: 'Me', exact: true }).click()
+      await page.waitForFunction(() => document.title === 'sky · About me')
       assert({
         given: 'a return to About me',
         should: 'keep the unsaved profile draft',
-        actual: await page.getByLabel('About you', { exact: true }).inputValue(),
+        actual: (await page.getByLabel('About you', { exact: true }).innerText()).trim(),
         expected: 'I build tools for small teams.',
       })
       await page.getByLabel('Profile link 1', { exact: true }).fill('https://example.com/about')
@@ -308,22 +310,29 @@ test(
       await page.getByText('Saved. Sky will use this context in new conversations.', { exact: true }).waitFor()
       await page.reload()
       await page.getByLabel('Your name', { exact: true }).waitFor()
+      await page.waitForFunction(() => document.title === 'sky · About me')
       assert({
         given: 'a saved profile after reload',
-        should: 'retain the profile and source link',
+        should: 'retain the profile as Markdown, show it formatted, and keep the source link',
         actual: [
-          await page.getByLabel('About you', { exact: true }).inputValue(),
+          (await host.read()).text,
+          (await page.getByLabel('About you', { exact: true }).innerText()).trim(),
+          await page.getByLabel('About you', { exact: true }).locator('a').count(),
           await page.getByLabel('Profile link 1', { exact: true }).inputValue(),
         ],
         expected: [
           'I build tools for small teams.\n\nI lead [Atlas](https://example.com/about).',
+          'I build tools for small teams.\n\nI lead Atlas.',
+          1,
           'https://example.com/about',
         ],
       })
       await capture('about-me-light')
       await page.getByLabel('Profile link 1', { exact: true }).scrollIntoViewIfNeeded()
       await capture('about-me-links-light')
-      await page.getByLabel('About you', { exact: true }).fill('My unsaved local edit.')
+      await page.getByLabel('About you', { exact: true }).click()
+      await page.keyboard.press('ControlOrMeta+A')
+      await page.keyboard.insertText('My unsaved local edit.')
       const saved = await host.read()
       await host.save({ ...saved, text: 'An edit from the notebook.' })
       await page.getByRole('button', { name: 'Save about me', exact: true }).click()
@@ -331,11 +340,18 @@ test(
       assert({
         given: 'a concurrent edit',
         should: 'keep both the local draft and the newer notebook content',
-        actual: [await page.getByLabel('About you', { exact: true }).inputValue(), (await host.read()).text],
+        actual: [(await page.getByLabel('About you', { exact: true }).innerText()).trim(), (await host.read()).text],
         expected: ['My unsaved local edit.', 'An edit from the notebook.'],
       })
       await page.getByRole('button', { name: 'Load saved profile', exact: true }).click()
       await page.getByRole('button', { name: 'Save about me', exact: true }).waitFor({ state: 'visible' })
+      await page.getByRole('button', { name: 'Load saved profile', exact: true }).waitFor({ state: 'detached' })
+      assert({
+        given: 'Load saved profile after a concurrent edit',
+        should: 'show the notebook version in the editor',
+        actual: (await page.getByLabel('About you', { exact: true }).innerText()).trim(),
+        expected: 'An edit from the notebook.',
+      })
       for (const [route, title] of [
         ['/settings/writing-voice', 'Writing style'],
         ['/settings/ai', 'Models'],
