@@ -11,7 +11,7 @@ export function numericValue(value: string | undefined): number | null {
 }
 
 /** Duration CSVs store a number in their declared unit, never an assumed unit. */
-function minutesPerUnit(unit = ''): number | null {
+export function minutesPerUnit(unit = ''): number | null {
   const normalized = unit.trim().toLowerCase()
   if (['', 'h', 'hr', 'hrs', 'hour', 'hours'].includes(normalized)) return 60
   if (['m', 'min', 'mins', 'minute', 'minutes'].includes(normalized)) return 1

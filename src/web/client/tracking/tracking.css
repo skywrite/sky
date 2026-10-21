@@ -250,13 +250,120 @@
 .sky-tracking-card .sky-tracking-hint {
   margin-top: 5px;
 }
-.sky-tracking-spark {
-  color: var(--sky-accent);
+/* Charts draw in CSS pixels: the plot measures its box, so text and marks keep their size on every card width. */
+.sky-tracking-plot {
+  position: relative;
   display: block;
   width: 100%;
-  height: 62px;
+  min-width: 0;
+}
+.sky-tracking-plot-compact {
   margin: 18px 0 14px;
+}
+.sky-tracking-spark,
+.sky-tracking-chart {
+  display: block;
+  width: 100%;
   overflow: visible;
+  touch-action: pan-y;
+}
+.sky-tracking-chart {
+  cursor: crosshair;
+  border-radius: 8px;
+  outline: none;
+}
+.sky-tracking-chart:focus-visible {
+  outline: 2px solid var(--sky-action-focus);
+  outline-offset: 6px;
+}
+.sky-tracking-chart text {
+  font-family: inherit;
+  font-size: 12px;
+  fill: var(--sky-dim);
+  font-variant-numeric: tabular-nums;
+  user-select: none;
+}
+.sky-tracking-grid {
+  stroke: var(--sky-border-soft);
+  stroke-width: 1;
+  shape-rendering: crispEdges;
+}
+.sky-tracking-wash stop {
+  stop-color: var(--sky-accent);
+}
+.sky-tracking-line {
+  fill: none;
+  stroke: var(--sky-accent);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+.sky-tracking-dot {
+  fill: var(--sky-accent);
+  stroke: var(--sky-bg);
+  stroke-width: 2;
+}
+.sky-tracking-bar {
+  fill: var(--sky-accent);
+  opacity: 0.7;
+}
+.sky-tracking-bar-hot {
+  opacity: 1;
+}
+.sky-tracking-guide {
+  stroke: var(--sky-dim);
+  stroke-width: 1;
+  opacity: 0.5;
+  shape-rendering: crispEdges;
+}
+.sky-tracking-halo {
+  fill: var(--sky-accent);
+  opacity: 0.16;
+}
+.sky-tracking-dot-hot {
+  fill: var(--sky-accent);
+  stroke: var(--sky-bg);
+  stroke-width: 2.5;
+}
+.sky-tracking-tip {
+  position: absolute;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 8px 11px;
+  border-radius: 10px;
+  background: var(--sky-text);
+  color: var(--sky-bg);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.16);
+  font-size: 13px;
+  line-height: 1.35;
+  white-space: nowrap;
+  pointer-events: none;
+  transform: translate(-50%, calc(-100% - 14px));
+}
+.sky-tracking-tip strong {
+  font-size: 15px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.sky-tracking-tip span {
+  opacity: 0.75;
+}
+.sky-tracking-tip-start {
+  transform: translate(-16px, calc(-100% - 14px));
+}
+.sky-tracking-tip-end {
+  transform: translate(calc(-100% + 16px), calc(-100% - 14px));
+}
+.sky-tracking-tip-below {
+  transform: translate(-50%, 16px);
+}
+.sky-tracking-tip-start.sky-tracking-tip-below {
+  transform: translate(-16px, 16px);
+}
+.sky-tracking-tip-end.sky-tracking-tip-below {
+  transform: translate(calc(-100% + 16px), 16px);
 }
 .sky-tracking-spark-empty {
   height: 94px;
@@ -359,18 +466,8 @@
   display: inline-block;
   width: 18px;
   height: 2px;
+  border-radius: 2px;
   background: var(--sky-accent);
-}
-.sky-tracking-chart {
-  height: auto;
-  width: 100%;
-  display: block;
-  overflow: visible;
-}
-.sky-tracking-chart text {
-  font-family: inherit;
-  fill: var(--sky-dim);
-  font-size: 11px;
 }
 .sky-tracking-chart-note {
   font-size: 13px;
@@ -971,12 +1068,6 @@
   }
   .sky-tracking-legend {
     display: none;
-  }
-  .sky-tracking-chart {
-    min-height: 175px;
-  }
-  .sky-tracking-chart text {
-    font-size: 15px;
   }
   .sky-tracking-chart-note {
     font-size: 12px;
