@@ -95,3 +95,35 @@ test('restoredModelPrefs - a saved budget converts at the ratio of the model the
     expected: ['default-opus-5.5', 540_900],
   })
 })
+
+test('restoredModelPrefs - a saved configuration keeps its name, or takes its profile’s name back', () => {
+  const unnamed = {
+    provider: 'openai',
+    model: 'gpt-6.1-sol',
+    contextWindow: 1_050_000,
+    options: { reasoningEffort: 'high', serviceTier: 'ultrafast' },
+  }
+  const ultrafast = { ...unnamed, label: 'GPT 6.1 Sol (Ultrafast)' }
+  const named = {
+    ...catalog,
+    resolve: (name: string) => {
+      if (name !== 'default-gpt-6.1-sol-ultrafast') throw new Error(`Unknown model profile: "${name}"`)
+      return { config: { ...ultrafast, options: { ...ultrafast.options, reasoningEffort: 'low' } } }
+    },
+  } as unknown as ChatSettingsHost
+  const kept = restoredModelPrefs({}, savedUnder('default-gpt-6.1-sol-ultrafast', 'default', ultrafast), catalog)
+  const renamed = restoredModelPrefs({}, savedUnder('default-gpt-6.1-sol-ultrafast', 'default', unnamed), named)
+  const standard = { ...unnamed, options: { reasoningEffort: 'high' } }
+  const different = restoredModelPrefs({}, savedUnder('default-gpt-6.1-sol-ultrafast', 'default', standard), named)
+  assert({
+    given: 'a saved configuration with its name, the same one saved without it, and one that runs differently',
+    should: 'keep the name, take the profile’s name back whatever the effort, and leave the different one unnamed',
+    actual: [
+      kept.modelConfig?.label,
+      renamed.modelConfig?.label,
+      renamed.modelConfig?.options,
+      different.modelConfig?.label,
+    ],
+    expected: ['GPT 6.1 Sol (Ultrafast)', 'GPT 6.1 Sol (Ultrafast)', unnamed.options, undefined],
+  })
+})

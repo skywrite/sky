@@ -7,6 +7,7 @@ import type { ChatSettingsHost, ThreadPrefs, ThreadRestore } from './mod.ts'
 const modelConfigSchema = z.object({
   provider: z.enum(['anthropic', 'openai', 'ollama', 'lm-studio', 'cerebras']),
   model: z.string().min(1),
+  label: z.string().optional(),
   baseUrl: z.string().optional(),
   contextWindow: z.number().int().positive().optional(),
   options: z.record(z.string(), z.json()).optional(),
@@ -46,18 +47,51 @@ function fromRestore(prefs: ThreadPrefs, restore: ThreadRestore, catalog: ChatSe
   const recovery = restore.resume?.recovery
   const host = recovery?.host
   const last = restore.state.contextLog.findLast((entry) => entry.settings)?.settings
+  const profile =
+    prefs.profile ??
+    (typeof host?.profile === 'string' ? host.profile : undefined) ??
+    last?.preset ??
+    (last && catalog?.profileFor?.(last.model, catalog.defaultModel))
   return {
     ...prefs,
     modelSettingsLocked:
       prefs.modelSettingsLocked === true || restore.state.conversation.length > 0 || !!restore.interrupted,
-    modelConfig: prefs.modelConfig ?? storedModelConfig(host?.modelConfig),
-    profile:
-      prefs.profile ??
-      (typeof host?.profile === 'string' ? host.profile : undefined) ??
-      last?.preset ??
-      (last && catalog?.profileFor?.(last.model, catalog.defaultModel)),
+    modelConfig: withProfileName(prefs.modelConfig ?? storedModelConfig(host?.modelConfig), profile, catalog),
+    profile,
     effort: prefs.effort ?? (isEffortOverride(host?.effort) ? host.effort : undefined) ?? last?.effort ?? 'default',
   }
+}
+
+/** What a configuration runs as, effort aside: effort is each thread's own choice. */
+const runsAs = (config: ModelProfile): string =>
+  JSON.stringify([
+    config.provider,
+    config.model,
+    config.baseUrl ?? null,
+    config.contextWindow ?? null,
+    Object.entries(config.options ?? {})
+      .filter(([key]) => key !== 'effort' && key !== 'reasoningEffort')
+      .sort(([a], [b]) => a.localeCompare(b)),
+  ])
+
+/**
+ * A configuration saved while restores dropped names comes back without one, and the
+ * picker shows the bare model: GPT 6.1 Sol for a chat on Sol Ultrafast. When the profile
+ * the chat ran as still runs the same way, the configuration takes that profile's name.
+ */
+function withProfileName(
+  config: ModelProfile | undefined,
+  profile: string | undefined,
+  catalog: ChatSettingsHost | undefined,
+): ModelProfile | undefined {
+  if (!config || config.label || !profile || !catalog) return config
+  let named: ModelProfile | undefined
+  try {
+    named = catalog.resolve(profile).config
+  } catch {
+    return config
+  }
+  return named?.label && runsAs(named) === runsAs(config) ? { ...config, label: named.label } : config
 }
 
 /**
