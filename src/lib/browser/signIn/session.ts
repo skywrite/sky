@@ -23,6 +23,7 @@ import type { CallOptions, McpToolDefinition, McpToolResult } from '../mcp/clien
 import type { BrowserUploads } from '../task/uploads.ts'
 import { unpackAppleExtension } from './applePasswords.ts'
 import { SignInBroker, type SignInResult } from './broker.ts'
+import { addEditableText, readBlocks } from './editableText.ts'
 import { captureSignInForm } from './form.ts'
 import { NativeApprovalError } from './nativeApproval.ts'
 import { NativeAuthentication, type NativeAuthenticationApproval } from './nativeAuthentication.ts'
@@ -867,7 +868,10 @@ export class PrivateBrowserSession {
           )
         }
         case 'browser_snapshot': {
-          const snapshot = await this.page.ariaSnapshot({ mode: 'ai', boxes: args.boxes === true })
+          const snapshot = await addEditableText(
+            await this.page.ariaSnapshot({ mode: 'ai', boxes: args.boxes === true }),
+            readBlocks(this.page),
+          )
           const viewport = await this.page.evaluate(() => ({ width: innerWidth, height: innerHeight }))
           return await this.withDownloads(
             `- Page URL: ${this.visibleUrl()}\n- Page Title: ${await this.page.title()}\n- Viewport: ${viewport.width}x${viewport.height}\n\n\`\`\`yaml\n${snapshot}\n\`\`\``,

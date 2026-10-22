@@ -622,7 +622,12 @@ export async function runJevTask(options: JevTaskOptions): Promise<JevTaskResult
           continue
         }
         outcome = 'done'
-        reason = `Jev judged the goal done (${Math.round(decision.done * 100)}%).`
+        // Jev's choice ends a run as surely as its judgment: on real downloads
+        // that worked, the judgment stayed under half. Say which one it was.
+        reason =
+          decision.done >= DONE_GATE
+            ? `Jev judged the goal done (${Math.round(decision.done * 100)}%).`
+            : `Jev chose done (${Math.round(decision.probability * 100)}%).`
         say(`Jev: done (${Math.round(Math.max(decision.done, decision.probability) * 100)}%)`)
         break
       }

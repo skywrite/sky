@@ -26,7 +26,9 @@ export function createTaskTools(options: {
         'Prefer connected email, calendar, Google document, file and research tools for their supported operations. ' +
         'Do not use this to search/read email, continue truncated tool results, or retry connected-account sign-in. ' +
         'A small browser task does not require a plan; create a live checklist only for delegated work with several meaningful outcomes. ' +
-        'Sky uses the selected browser connection. Give the objective and destination folder when collecting files.',
+        'Sky uses the selected browser connection. Give the objective and destination folder when collecting files. ' +
+        'To learn something from a page, put the person’s actual question in the objective, such as which issues it lists and how serious each is, and the browser answers it from the page. ' +
+        'Do not ask the browser to return a page’s full text.',
       inputSchema: z.object({
         objective: z.string().min(1).max(12_000),
         uploads: z.object({ paths: z.array(z.string().min(1)).min(1).max(50), origin: z.string().url() }).optional(),

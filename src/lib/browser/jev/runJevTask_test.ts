@@ -1178,3 +1178,28 @@ test('the task window comes forward only when the person will act in it', async 
     ],
   })
 })
+
+test('a run Jev ends by choosing done names the choice, not a judgment it did not make', async () => {
+  const { root, filesDir, cleanup } = await fixture()
+  try {
+    const result = await runJevTask({
+      objective: 'Open https://atlas.example/documents and tell me which tax years are listed.',
+      taskDir: root,
+      filesDir,
+      browser: {
+        callTool: async (name) => text(name === 'browser_snapshot' ? DOCUMENTS : 'ok'),
+        close: async () => {},
+      },
+      onNeedsYou: async () => false,
+      ask: async () => reply({ operation: pick('done', ['wait']), ...quiet }),
+    })
+    assert({
+      given: 'Jev choosing done at 90% while judging the goal done at 2%',
+      should: 'end the run done and say it was Jev’s choice, at the choice’s own odds',
+      actual: [result.outcome, result.report.split('\n')[0]],
+      expected: ['done', 'Done. Jev chose done (90%).'],
+    })
+  } finally {
+    await cleanup()
+  }
+})

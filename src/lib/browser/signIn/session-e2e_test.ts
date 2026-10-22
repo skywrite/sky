@@ -476,6 +476,40 @@ test('the action table uses the real browser viewport for visible controls', { t
   }),
 )
 
+test(
+  'snapshots carry an editor block’s words, and a search result the page draws can be clicked',
+  { timeout: 30000 },
+  async () =>
+    fixture(async (f) => {
+      await f.browser.callTool('browser_navigate', { url: 'https://atlas.example/documents' })
+      await f.page.setContent(
+        '<div role="textbox" contenteditable="true" placeholder="Heading 2">Atlas launch plan with <a href="https://atlas.example/roadmap">the Roadmap</a></div>' +
+          '<input role="combobox" aria-expanded="true" aria-controls="results" placeholder="Search actions…" value="Export">' +
+          '<div id="results" role="listbox"><div role="group" aria-label="More"><div role="option" onclick="this.textContent=\'Exported\'">Export</div></div></div>',
+      )
+      const look = async (args: Record<string, unknown>) =>
+        (await f.browser.callTool('browser_snapshot', args)).content
+          .flatMap((part) => (part.type === 'text' && 'text' in part ? [part.text] : []))
+          .join('\n')
+      const page = await look({})
+      const table = buildActionTable(await look({ boxes: true }))
+      const result = table.rows.find((row) => row.role === 'option')
+      const clicked = result ? await f.browser.callTool('browser_click', { target: result.ref }) : undefined
+      assert({
+        given: 'an editor block marked as a textbox, and an action menu whose results sit beside its search box',
+        should: 'show the block’s words in both snapshots, and list and click the drawn result',
+        actual: [
+          page.includes('- text: Atlas launch plan with the Roadmap'),
+          table.text.includes('Atlas launch plan with the Roadmap'),
+          result?.name,
+          clicked?.isError,
+          await f.page.locator('[role=option]').textContent(),
+        ],
+        expected: [true, true, 'Export', false, 'Exported'],
+      })
+    }),
+)
+
 test('an unresponsive browser input ends its task page before recovery', { timeout: 30000 }, async () =>
   fixture(
     async (f) => {

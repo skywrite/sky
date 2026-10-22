@@ -60,6 +60,7 @@ const CLICK_ROLES = new Set([
   'menuitem',
   'menuitemcheckbox',
   'menuitemradio',
+  'option',
   'tab',
   'switch',
   'slider',
@@ -177,7 +178,10 @@ export function buildActionTable(snapshot: string, viewport?: Viewport): ActionT
       }
       continue
     }
-    if (line.role === 'option' && lastCombobox) {
+    // A native dropdown's options are not drawn in the page, so they carry no
+    // reference: they are the dropdown's to choose. An option the page draws,
+    // a menu's search result or a custom list's entry, is clicked like a button.
+    if (line.role === 'option' && lastCombobox && !line.ref) {
       if (line.name !== undefined) {
         lastCombobox.row.options ??= []
         lastCombobox.row.options.push(line.name)

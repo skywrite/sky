@@ -451,11 +451,11 @@ function ExperimentalPane({ data, change }: { data: SettingsData; change: Return
       </Row>
       <Row
         label="Jev drives the browser"
-        sub="On by default. When Sky does a task in the browser, Jev picks each move from a table of what is on the page, in a fraction of a second, and your reasoning model reads the page when Jev is stuck, types into fields, checks the files, and writes the report. Needs your TypeSafe API key, under Connections. Off hands the browser to your reasoning model instead."
+        sub="Off by default: when Sky does a task in the browser, GPT 6.1 Sol (Ultrafast) reads the page and makes each move, or your reasoning model if you have no OpenAI key. On, Jev picks each move from a table of what is on the page, and your reasoning model reads the page when Jev is stuck, types into fields, checks the files, and writes the report. Needs your TypeSafe API key, under Connections."
       >
         <SegmentedControl
           aria-label="Jev drives the browser"
-          value={data.experimental.jevBrowser === false ? 'off' : 'on'}
+          value={data.experimental.jevBrowser === true ? 'on' : 'off'}
           onChange={(value) => {
             const jevBrowser = value === 'on'
             change('experimental.jevBrowser', String(jevBrowser), (current) => ({

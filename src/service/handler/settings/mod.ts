@@ -433,7 +433,7 @@ async function settingsData(host: SettingsHost): Promise<SettingsData> {
     experimental: {
       contextPreflight: config.experimental.contextPreflight === true,
       workstreams: config.experimental.workstreams === true,
-      jevBrowser: config.experimental.jevBrowser !== false,
+      jevBrowser: config.experimental.jevBrowser === true,
     },
   }
 }

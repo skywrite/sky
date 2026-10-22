@@ -15,21 +15,33 @@ import { runBrowserTask, WAIT_FOR_PERSON_TOOL } from '#lib/browser/task/runTask.
 import { createTaskDir } from '#lib/browser/task/taskDir.ts'
 import { prepareBrowserUploads } from '#lib/browser/task/uploads.ts'
 import { PasswordManagerSettingsStore } from '#lib/credentials/passwordManagers.ts'
-import { aiModel, getProfile, resolveProfile, roleProfile } from '#shared/ai/models.ts'
+import { aiModelByProfile, getProfile, resolveProfile, roleProfile } from '#shared/ai/models.ts'
 import { createTypeSafeClient } from '#shared/ai/typesafe/client.ts'
 import { readSkyConfigFile } from '#shared/config/loader.ts'
 import type { ChatEngineEvent } from '#shared/models/Chat/ChatEngine/mod.ts'
 import type { Attachment } from '#shared/models/Markdown/Document/attachment.ts'
+import { env } from '#shared/sys/mod.ts'
 import { createSaveFileTool, SAVE_FILE_TOOL } from './lib/saveFileTool.ts'
 
 // browser:task — Sky does something in a real browser window on the
 // person's behalf: opens sites, signs in with their help, finds things,
 // downloads and checks files. The design lives in lib/browser/docs.
 //
-// Two drivers. By default TypeSafe's Jev picks each move from a table of
-// the page, with the reasoning model reading, typing and finishing. With the
-// Experimental switch off, the reasoning model reads the page and calls
-// the browser tools itself.
+// Two drivers. By default a language model reads the page and calls the
+// browser tools itself. With the Experimental switch on, TypeSafe's Jev
+// picks each move from a table of the page instead, with the reasoning
+// model reading, typing and finishing.
+
+/**
+ * The model that drives the browser: GPT 6.1 Sol on OpenAI's Ultrafast tier,
+ * for speed, since a task waits on it at every move. Without an OpenAI key,
+ * the person's reasoning model drives instead.
+ */
+const BROWSER_PROFILE = 'default-gpt-6.1-sol-ultrafast'
+const browserModel = (): { profile: string; name: string } =>
+  env.get('OPENAI_API_KEY')
+    ? { profile: BROWSER_PROFILE, name: getProfile(BROWSER_PROFILE).label ?? BROWSER_PROFILE }
+    : { profile: roleProfile('reasoning'), name: 'your reasoning model' }
 
 /**
  * The Jev driver's language model: the person's reasoning role, one effort
@@ -131,14 +143,15 @@ export default class BrowserTaskCommand extends Command {
             : 'Sky’s browser opens a tab of its own for this task; the window stays open after.',
       ),
     )
-    // Jev drives unless the Experimental switch is set off; then the reasoning model does.
+    // Jev drives only when the Experimental switch is on.
     // File selection is a reasoning-driver operation; Jev's page-action table has no file chooser move.
-    const jev = !uploads && readSkyConfigFile()?.parsed.experimental?.jevBrowser !== false
+    const jev = !uploads && readSkyConfigFile()?.parsed.experimental?.jevBrowser === true
+    const driver = browserModel()
     output.log(
       colors.dim(
         jev
           ? 'Driver: Jev picks the moves; your reasoning model reads, types, and finishes.'
-          : 'Driver: your reasoning model reads the page and makes the moves.',
+          : `Driver: ${driver.name} reads the page and makes the moves.`,
       ),
     )
 
@@ -325,7 +338,7 @@ export default class BrowserTaskCommand extends Command {
       result = await runBrowserTask({
         objective,
         uploads,
-        model: aiModel('reasoning'),
+        model: aiModelByProfile(driver.profile),
         taskDir: task.dir,
         filesDir: task.filesDir,
         when: `${now.date} ${now.time}`,

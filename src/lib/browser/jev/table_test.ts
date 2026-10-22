@@ -138,3 +138,42 @@ test('rows describe themselves for Jev and pages fingerprint by their content', 
     expected: true,
   })
 })
+
+// Menus as Playwright draws them: a search box whose results sit in a list
+// beside it, a search box that owns its list, and a native dropdown.
+const MENUS = `- generic [ref=e1] [box=0,0,1280,900]:
+  - combobox "Search actions…" [expanded] [active] [ref=e2] [box=8,8,300,21]: Export
+  - listbox [ref=e3] [box=8,30,300,40]:
+    - group "More" [ref=e4] [box=8,30,300,40]:
+      - option "Export" [ref=e5] [box=8,30,300,18]
+      - option "Archive" [disabled] [ref=e6] [box=8,50,300,18]
+  - combobox "Move to" [expanded] [ref=e7] [box=8,100,300,21]:
+    - listbox [ref=e8] [box=8,122,300,36]:
+      - option "Atlas" [ref=e9] [box=8,122,300,18]
+      - option "Widget-V2" [selected] [ref=e10] [box=8,140,300,18]
+  - combobox "Year" [ref=e11] [box=8,200,60,19]:
+    - option "2024" [box=0,0,0,0]
+    - option "2025" [selected] [box=0,0,0,0]`
+
+test('options the page draws are clicked; a native dropdown keeps its own', () => {
+  const table = buildActionTable(MENUS)
+  assert({
+    given: 'search results beside their box, results owned by their box, and a native dropdown',
+    should: 'list each drawn option as a control to click, and the boxes holding no options as fields to type in',
+    actual: table.rows.map((row) => `${row.index}:${row.role}:${row.name}:${row.kind}`),
+    expected: [
+      '0:combobox:Search actions…:type',
+      '1:option:Export:click',
+      '2:combobox:Move to:type',
+      '3:option:Atlas:click',
+      '4:option:Widget-V2:click',
+      '5:combobox:Year:select',
+    ],
+  })
+  assert({
+    given: 'a chosen result and the native dropdown',
+    should: 'describe the result with its state, and keep the dropdown’s options and choice',
+    actual: [describeRow(table.rows[1]), describeRow(table.rows[4]), table.rows[5].options, table.rows[5].value],
+    expected: ['[1] option "Export"', '[4] option "Widget-V2" [selected]', ['2024', '2025'], '2025'],
+  })
+})

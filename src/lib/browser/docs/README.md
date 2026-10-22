@@ -1,6 +1,6 @@
 ---
 created: 2026-09-25
-updated: 2026-10-13
+updated: 2026-10-22
 ---
 
 # Sky's browser
@@ -18,6 +18,9 @@ for browser tasks, including LinkedIn Person imports. Mac tasks and tasks with a
 manager otherwise use the persistent Sky browser described below. Other platforms without saved
 password managers retain the existing shared browser. Unsupported sign-in steps and codes unavailable in the approved login pause for the
 person; Enter means "done, look again". Nothing on a web page is an instruction.
+
+By default GPT 6.1 Sol, on OpenAI's Ultrafast tier, reads the page and makes the moves.
+Without an OpenAI key, the person's reasoning model does. Jev drives only behind the Experimental switch, below.
 
 ## Existing Brave
 
@@ -112,6 +115,13 @@ view. It never scrolls a page a dialog has locked. Its result says how far the
 content moved, when it reached the end, and when nothing can move further, which
 is a failed move. Only a page that scrolls nothing by itself, or an embedded frame
 in the middle, still gets a mouse wheel there.
+
+`browser_snapshot` puts back the words Playwright's snapshot leaves out.
+Playwright keeps a form field's value but drops the text inside any other textbox,
+and a document editor marks each heading, paragraph and table cell as one.
+Before this, a document read as placeholders such as "Heading 2" and its links, with none of the words.
+`signIn/editableText.ts` reads each such block's text through its reference and adds it as a text line under it.
+The legacy shared driver's snapshot is Playwright's own and still lacks those words.
 
 With the official
 extension, a background tab can time out on a click and then leave Chromium's
@@ -429,15 +439,18 @@ The legacy shared-browser path, retained on other platforms without a configured
 
 ## The Jev driver
 
-The default. With the Experimental switch "Jev drives the browser" off, the
-command hands the browser to the reasoning model instead. Jev's loop lives
-in `lib/browser/jev/`. Code owns the loop and
+Off by default, behind the Experimental switch "Jev drives the browser".
+It was the default until 2026-10-22. On real sites the adviser model made most of the moves anyway,
+and on a long page Jev scrolled one decision at a time and read only what was still loaded at the end.
+Jev's loop lives in `lib/browser/jev/`. Code owns the loop and
 TypeSafe's Jev picks each move, jev-ultrafast's shape drawn from the
 accessibility snapshot instead of a page script:
 
 1. `table.ts` turns a snapshot with bounding boxes into a numbered table of
    the controls in view: role, label, value, the text beside it, a
-   dropdown's options. Private-worker snapshots include the actual viewport;
+   dropdown's options. An option the page draws, such as a menu's search result, is a control to click;
+   only a native dropdown's options, which carry no reference, are chosen with select.
+   Private-worker snapshots include the actual viewport;
    an existing browser window must not inherit the driver's default dimensions,
    which can silently discard visible document controls. Frames come along; disabled and off-screen controls
    do not. A field that reads like a password or a code is marked secret.
@@ -449,13 +462,15 @@ accessibility snapshot instead of a page script:
 3. `decide.ts` checks the answers before anything runs: an option that was
    offered, probabilities that sum to one, a choice that is the most likely.
 4. `runJevTask.ts` makes the move through the same browser server, looks
-   again, and applies the gates in code: done at 0.85 (a download goal requires
+   again, and applies the gates in code: done when Jev chooses it or judges the goal done at 0.85 (a download goal requires
    a saved file; a repeated completion claim without one ends as blocked), the person at 0.85 or when
    Jev says so, a risky move asked first at 0.5, blocked after three unchanged
    pages (a scroll that moved the content counts as a change), sixty steps at most. The person is asked once per page: after they
    continue, the loop looks again, waits three seconds and looks once more
    if Jev still asks, and then runs Jev's next-best move on that page rather
    than ask the same thing again.
+   The done judgment cannot be the only gate: on real downloads that worked, it stayed between 23% and 40%.
+   The report says whether Jev's choice or its judgment ended the run.
 5. `typeText.ts`: Jev cannot write, so the reasoning model, at medium
    effort, writes a field's text
    from the task and the page, once per field. Secret fields are never typed.
@@ -645,6 +660,8 @@ shared browser, never the private task worker.
 
 ## Notes
 
+- 2026-10-22: GPT 6.1 Sol (Ultrafast) drives by default, Jev only behind the Experimental switch.
+  Snapshots carry the words in editor blocks, and options a page draws can be clicked.
 - 2026-10-13: tasks work in a background window, scroll what is in the
   middle of the window, and read the page a Jev task ends on. See
   [2026-10-13-scroll-aim-and-background-windows](2026-10-13-scroll-aim-and-background-windows.md).
