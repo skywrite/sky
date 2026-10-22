@@ -808,7 +808,11 @@ export function ConnectionsPane({ navigate }: { navigate: (to: string) => void }
       <Block head="Services">
         {PROVIDER_KEY_ORDER.map((provider) => (
           <Row key={provider} label={PROVIDER_KEY_PAGES[provider].name} sub={PROVIDER_KEY_PAGES[provider].row}>
-            <Button size="compact-sm" onClick={() => navigate(connectionHref(provider))}>
+            <Button
+              size="compact-sm"
+              aria-label={`Manage ${PROVIDER_KEY_PAGES[provider].name} key`}
+              onClick={() => navigate(connectionHref(provider))}
+            >
               Manage key
             </Button>
           </Row>
