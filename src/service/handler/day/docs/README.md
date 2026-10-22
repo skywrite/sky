@@ -1,6 +1,6 @@
 ---
 created: 2026-09-03
-updated: 2026-10-18
+updated: 2026-10-21
 ---
 
 # The day's items, the day's rail, and the day's files
@@ -351,8 +351,10 @@ scrolls; its foot is anchored.
 - **Working** — import jobs in hand: running, waiting for the person, or
   stopped where a start could pick them up, with Review or Open. A filed
   import is on the day already and leaves the rail; a file sky refused was
-  never work and never shows. The sidebar lists neither threads nor
-  imports; the rail is where a day's chats and work show.
+  never work and never shows. The sidebar lists no threads, and of imports
+  only those waiting for the person, on every page but their own, so a
+  question is seen wherever the person is. The rail is where a day's chats
+  and work show.
 - **File Attachments** — the drop pad, anchored at the foot, with the
   count of what the day keeps in its heading and Browse beside it. The pad
   lists nothing; Browse opens the day's files as a page (below).

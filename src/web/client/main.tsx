@@ -16,7 +16,7 @@ import { useItemHelpChat } from './day/dayItemHelp.tsx'
 import { DocView, explorerFileOf, fileHref, Tree } from './explorer/explorer.tsx'
 import { ExtensionNavLinks, ExtensionPageMain, extensionRouteOf } from './extensions/extensions.tsx'
 import { useDocumentNotices } from './import/documentImport.tsx'
-import { ImportDialog, ImportMain, useFileDrop, useImportQueue, useImports } from './import/import.tsx'
+import { ImportDialog, ImportMain, ImportsWaiting, useFileDrop, useImportQueue, useImports } from './import/import.tsx'
 import { JournalMain } from './journal/journal.tsx'
 import { journalRouteOf } from './journal/journalRoutes.ts'
 import { MeetingMain, meetingRouteOf } from './meetings/meetingPage.tsx'
@@ -156,6 +156,8 @@ function Canvas() {
   const [chatNotices, setChatNotices] = useState<ChatCloseNotice[]>([])
   const dismissChatNotice = useCallback((id: string) => setChatNotices((prev) => prev.filter((n) => n.id !== id)), [])
   const importRows = imports.filter((j) => j.state !== 'cancelled')
+  // An import waiting on the person shows in the sidebar on every page but its own.
+  const waitingImports = importRows.filter((job) => job.state === 'needs-you' && job.id !== importId)
 
   const chat = useChat(threadId ?? '')
   const currentChat = chat.state.id === threadId ? chat.state : null
@@ -241,7 +243,8 @@ function Canvas() {
     weekTitle,
     settingsSection,
   ])
-  const isToday = dayYmd === null
+  // Today's page at its own date is today too: its rail shows the imports in hand.
+  const isToday = dayYmd === null || dayYmd === day?.today.ymd
   const others = threads.filter((t) => !t.id.startsWith('day-'))
   const showDateNav =
     journalRoute !== null || onDayPage || isWeek || isStreaks || filesRoute !== null || meetingRoute !== null
@@ -261,17 +264,22 @@ function Canvas() {
   // A file the rail's pad kept with the day: the toast holds Undo for a moment.
   const [kept, setKept] = useState<Kept[]>([])
   const [importGeneration, setImportGeneration] = useState(0)
-  const queue = useImportQueue((job) => {
-    importStarted(job)
-    documentNotices.started(job)
-    setImportGeneration((generation) => generation + 1)
-    if (!isAttachmentNote(job.readback.source, job.fields?.kind)) openImport(job.id)
-    else {
-      const targetDay = job.fields?.when.slice(0, 10)
-      if ((onDayPage || filesRoute) && targetDay && targetDay !== (activeDayYmd ?? day?.today.ymd))
-        navigate(`/${targetDay}`)
-    }
-  }, activeDayYmd ?? day?.today.ymd)
+  const queue = useImportQueue(
+    (job) => {
+      importStarted(job)
+      documentNotices.started(job)
+      setImportGeneration((generation) => generation + 1)
+      if (!isAttachmentNote(job.readback.source, job.fields?.kind)) openImport(job.id)
+      else {
+        const targetDay = job.fields?.when.slice(0, 10)
+        if ((onDayPage || filesRoute) && targetDay && targetDay !== (activeDayYmd ?? day?.today.ymd))
+          navigate(`/${targetDay}`)
+      }
+    },
+    activeDayYmd ?? day?.today.ymd,
+    // The file is importing already: its import, which says why it opened in place of a new one.
+    (job) => navigate(`/import/${job.id}?dropped`),
+  )
   const drop = useFileDrop(onDayPage, queue.take, queue.takeText)
   const undoKept = () => {
     const held = kept
@@ -339,7 +347,7 @@ function Canvas() {
         onClick={() => setMenu((open) => !open)}
       >
         {menu ? '×' : '≡'}
-        {!menu && thisWeek?.due && <span className="sky-menu-dot" />}
+        {!menu && (thisWeek?.due || waitingImports.length > 0) && <span className="sky-menu-dot" />}
       </button>
       {menu && <div className="sky-scrim" onClick={() => setMenu(false)} />}
       <nav className="sky-side" data-open={menu}>
@@ -349,6 +357,7 @@ function Canvas() {
             <ClockAmbient snap={clock} active={isClock} onOpen={() => navigate('/clock')} />
           </div>
           <RestartPending />
+          <ImportsWaiting jobs={waitingImports} onOpen={openImport} />
           {explorerFile !== null ? (
             <>
               <button type="button" className="sky-thread" onClick={() => navigate('/')}>
@@ -618,6 +627,7 @@ function Canvas() {
               id={importId}
               back={{ label: 'Today', onClick: () => navigate('/') }}
               onStartAgain={queue.startAgain}
+              droppedAgain={new URLSearchParams(search).has('dropped')}
             />
           </Fragment>
         ) : threadId ? (

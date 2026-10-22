@@ -278,7 +278,7 @@ export function uploadImport(
   onProgress: (fraction: number) => void,
   text?: string,
   day?: string,
-): Promise<{ job: ImportJob; options: ImportOptions }> {
+): Promise<{ job: ImportJob; options: ImportOptions } | { existing: ImportJob }> {
   return new Promise((resolve, reject) => {
     const form = new FormData()
     for (const file of files) {
@@ -294,9 +294,16 @@ export function uploadImport(
     }
     xhr.onload = () => {
       try {
-        const body = JSON.parse(xhr.responseText) as { job?: ImportJob; options?: ImportOptions; message?: string }
-        if (xhr.status >= 200 && xhr.status < 300 && body.job && body.options)
-          resolve({ job: body.job, options: body.options })
+        const body = JSON.parse(xhr.responseText) as {
+          job?: ImportJob
+          options?: ImportOptions
+          existing?: ImportJob
+          message?: string
+        }
+        const ok = xhr.status >= 200 && xhr.status < 300
+        // The file is importing already: nothing was staged, and the import that has it comes back instead.
+        if (ok && body.existing) resolve({ existing: body.existing })
+        else if (ok && body.job && body.options) resolve({ job: body.job, options: body.options })
         else reject(new Error(body.message ?? `Upload failed (${xhr.status})`))
       } catch {
         reject(new Error('Upload failed'))
@@ -658,7 +665,12 @@ interface Pending extends QueuedImport {
  * Each drop's images stay together as one message or note; CAF audio turns form one conversation. Other files
  * are uploaded and confirmed one at a time, then the next import comes up.
  */
-export function useImportQueue(onStarted: (job: ImportJob) => void, day?: string) {
+export function useImportQueue(
+  onStarted: (job: ImportJob) => void,
+  day: string | undefined,
+  /** A file dropped while its import runs or waits on the person: that import, opened in place of a second */
+  onExisting: (job: ImportJob) => void,
+) {
   const [queue, setQueue] = useState<QueuedImport[]>([])
   const [pending, setPending] = useState<Pending | null>(null)
   const [again, setAgain] = useState<ImportJob | null>(null)
@@ -726,8 +738,15 @@ export function useImportQueue(onStarted: (job: ImportJob) => void, day?: string
             return
           }
         }
-        const { job, options } = await uploadImport(files, (fraction) => patch((p) => ({ ...p, fraction })), text, day)
-        patch((p) => ({ ...p, fraction: 1, job, options }))
+        const uploaded = await uploadImport(files, (fraction) => patch((p) => ({ ...p, fraction })), text, day)
+        if ('existing' in uploaded) {
+          if (pendingKey.current !== key) return
+          pendingKey.current = null
+          setPending(null)
+          onExisting(uploaded.existing)
+          return
+        }
+        patch((p) => ({ ...p, fraction: 1, job: uploaded.job, options: uploaded.options }))
       })
       .catch((err: Error) => patch((p) => ({ ...p, error: err.message })))
   }, [queue, pending, again])
@@ -1697,6 +1716,33 @@ export function ImportRow({ job, onOpen }: { job: ImportJob; onOpen: (id: string
         <Button onClick={() => onOpen(job.id)}>Open</Button>
       )}
     </div>
+  )
+}
+
+/**
+ * Imports waiting on the person, in the sidebar on every page. Today's rail alone was too easy to miss: a
+ * question asked where no one looked waited for hours, and the file was dropped again.
+ */
+export function ImportsWaiting({ jobs, onOpen }: { jobs: ImportJob[]; onOpen: (id: string) => void }) {
+  return (
+    <>
+      {jobs.map((job) => (
+        <div key={job.id} className="sky-restart">
+          <div role="status">
+            <div className="sky-restart-label">{job.title}</div>
+            <div className="sky-restart-waiting">{job.line ?? importStateWord(job)}</div>
+          </div>
+          <Button
+            variant="primary-quiet"
+            size="compact-sm"
+            aria-label={`Review ${job.title}`}
+            onClick={() => onOpen(job.id)}
+          >
+            Review
+          </Button>
+        </div>
+      ))}
+    </>
   )
 }
 
@@ -2867,14 +2913,25 @@ function FiledDoc({ file }: { file: string }) {
   )
 }
 
+/** Why a drop opened this import: what was dropped, by a name the person knows, and what happened instead. */
+function droppedAgainLine(job: ImportJob): string {
+  const files = job.files ?? [job.file]
+  const what = job.readback.source === 'selection' ? 'this text' : files.length > 1 ? 'these files' : files[0].name
+  const was = files.length > 1 ? 'They were' : 'It was'
+  return `You dropped ${what} again. ${was} already importing, so Sky opened this import instead of starting a second one.`
+}
+
 export function ImportMain({
   id,
   back,
   onStartAgain,
+  droppedAgain = false,
 }: {
   id: string
   back: { label: string; onClick: () => void }
   onStartAgain: (job: ImportJob) => void
+  /** Its file was dropped again, and the page came here in place of a second import */
+  droppedAgain?: boolean
 }) {
   const { job, events, missing, refresh } = useImportFeed(id)
   useEffect(() => {
@@ -3001,6 +3058,11 @@ export function ImportMain({
       </header>
       <div className="sky-scroll" ref={scrollRef}>
         <div className="sky-col" style={{ gap: 26 }}>
+          {droppedAgain && job && (
+            <div className="sky-lead" role="status">
+              {droppedAgainLine(job)}
+            </div>
+          )}
           {job && steps && <Ladder steps={steps} />}
           {job && !job.readback.refusal && (job.state !== 'done' || job.linkError) && <ImportLinks job={job} />}
           {job?.state === 'new' && (

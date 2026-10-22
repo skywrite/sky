@@ -299,6 +299,14 @@ export class JobStore {
     return this.records.get(id)
   }
 
+  /** The import running a file or waiting on the person about it, by the file's run key. */
+  live(runKey: string): ImportJob | undefined {
+    for (const { job } of this.records.values()) {
+      if (job.runKey === runKey && (job.state === 'running' || job.state === 'needs-you')) return job
+    }
+    return undefined
+  }
+
   /** Newest activity first. */
   async list(): Promise<ImportJob[]> {
     await Promise.all([...this.records.values()].map((record) => this.waitForState(record)))

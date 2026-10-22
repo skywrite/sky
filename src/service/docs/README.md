@@ -1,6 +1,6 @@
 ---
 created: 2026-09-05
-updated: 2026-10-18
+updated: 2026-10-21
 ---
 
 # The service process
@@ -96,5 +96,6 @@ still parses files locally and strips the same comments, and moves next.
 
 ## Notes
 
+- [2026-10-21 — a cancelled import kept its hold](../handler/import/docs/2026-10-21-a-cancelled-run-kept-its-hold.md)
 - [2026-10-18 — restarts need new bytes](2026-10-18-restarts-need-new-bytes.md)
 - [2026-09-05 — reloads wait for idle](2026-09-05-reloads-wait-for-idle.md)

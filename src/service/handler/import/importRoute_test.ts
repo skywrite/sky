@@ -7,6 +7,7 @@ import { readAudioHeader } from '#lib/media/readAudioHeader.ts'
 import { makeTempDir } from '#shared/fs/mod.ts'
 import { assert, test } from '#test'
 import { CAF_TEST_HEADER } from '../../../test/audioFixtures.ts'
+import { holding, onRelease } from '../../activity.ts'
 import { createTestHttpApp } from '../httpTestHelpers.ts'
 import type { ImportEvent, ImportJob, ImportRoutesOptions, RunOutcome } from './mod.ts'
 import { createImportRoutes } from './mod.ts'
@@ -1109,6 +1110,86 @@ test('cancel answers the parked question with nothing, remove forgets the job', 
       dirLeft,
     ],
     expected: [409, 'cancelled', 200, 404, false],
+  })
+})
+
+test('a running import holds restarts under its file name until its run ends', async () => {
+  const w = await world()
+  w.script.ask = ['text']
+  const app = createTestHttpApp([path.join(w.notebook, 'time')], { imports: w.options })
+  const { job } = (await (await app.request('/import', { method: 'POST', body: upload('atlas.vtt', VTT) })).json()) as {
+    job: ImportJob
+  }
+  const label = `file import: ${job.file.name}`
+  await postJson(app, `/import/${job.id}/start`, { kind: 'meeting', when: '2026-01-27 09:31' })
+  await events(await app.request(`/import/${job.id}/events`), (e) => e.type === 'prompt')
+  const during = holding().filter((held) => held === label)
+  const released = new Promise<void>((resolve) => {
+    const stop = onRelease(() => {
+      if (holding().includes(label)) return
+      stop()
+      resolve()
+    })
+  })
+  await postJson(app, `/import/${job.id}/cancel`, {})
+  await released
+  assert({
+    given: 'an import waiting on a question, then cancelled',
+    should: 'hold restarts under its file name, and let go once the run ends',
+    actual: { during, after: holding().filter((held) => held === label) },
+    expected: { during: [label], after: [] },
+  })
+})
+
+test('a file dropped again while its import waits opens that import, and stages nothing', async () => {
+  const w = await world()
+  w.script.ask = ['text']
+  const app = createTestHttpApp([path.join(w.notebook, 'time')], { imports: w.options })
+  const { job } = (await (
+    await app.request('/import', { method: 'POST', body: upload('roadmap.vtt', VTT) })
+  ).json()) as {
+    job: ImportJob
+  }
+  await postJson(app, `/import/${job.id}/start`, { kind: 'meeting', when: '2026-01-27 09:31' })
+  await events(await app.request(`/import/${job.id}/events`), (e) => e.type === 'prompt')
+  const again = await app.request('/import', { method: 'POST', body: upload('roadmap.vtt', VTT) })
+  const body = (await again.json()) as { job?: ImportJob; existing?: ImportJob }
+  const staged = await readdir(w.dir)
+  await postJson(app, `/import/${job.id}/cancel`, {})
+  assert({
+    given: 'a file dropped again while its first import waits on a question',
+    should: 'answer with that import, and stage no second one',
+    actual: { status: again.status, existing: body.existing?.id, job: body.job, staged },
+    expected: { status: 200, existing: job.id, job: undefined, staged: [job.id] },
+  })
+})
+
+test('two uploads of one file start one at a time', async () => {
+  const w = await world()
+  w.script.ask = ['text']
+  const app = createTestHttpApp([path.join(w.notebook, 'time')], { imports: w.options })
+  const uploadBudget = async () =>
+    (
+      (await (await app.request('/import', { method: 'POST', body: upload('budget.vtt', VTT) })).json()) as {
+        job: ImportJob
+      }
+    ).job
+  const first = await uploadBudget()
+  const second = await uploadBudget()
+  await postJson(app, `/import/${first.id}/start`, { kind: 'meeting', when: '2026-01-27 09:31' })
+  await events(await app.request(`/import/${first.id}/events`), (e) => e.type === 'prompt')
+  const refused = await postJson(app, `/import/${second.id}/start`, { kind: 'meeting', when: '2026-01-27 09:31' })
+  const { message } = (await refused.json()) as { message: string }
+  await postJson(app, `/import/${first.id}/cancel`, {})
+  assert({
+    given: 'two uploads of one file, the first started and waiting on a question',
+    should: 'refuse to start the second, naming the import that has the file',
+    actual: { status: refused.status, message, runs: w.runs.length },
+    expected: {
+      status: 409,
+      message: 'This file is already importing as budget. Finish or cancel that import first.',
+      runs: 1,
+    },
   })
 })
 

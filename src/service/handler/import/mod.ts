@@ -403,6 +403,13 @@ export function createImportRoutes(options: ImportRoutesOptions): Hono {
               ...(audioConversation ? { paths: files.map((item) => path.join(dir, item.name)) } : {}),
             })
             .catch(() => null)
+    // One run per file: a second would share the first one's run record, and both would file it. The file
+    // dropped again while its import runs or waits opens that import, and this upload is let go.
+    const existing = kept ? store.live(kept.key) : undefined
+    if (existing) {
+      await rm(dir, { recursive: true, force: true })
+      return c.json({ existing: summarize(existing) })
+    }
     const job: ImportJob = {
       id,
       file,
@@ -605,6 +612,14 @@ export function createImportRoutes(options: ImportRoutesOptions): Hono {
     // Destination validation can yield while another Start begins this same job.
     if (['running', 'needs-you', 'done'].includes(job.state))
       return c.json({ message: 'This import has already started.' }, 409)
+    // One run per file, as at upload: two uploads of it staged before either started still start one at a time.
+    const existing = job.runKey ? store.live(job.runKey) : undefined
+    if (existing) {
+      return c.json(
+        { message: `This file is already importing as ${existing.title}. Finish or cancel that import first.` },
+        409,
+      )
+    }
 
     if (body?.fileOrder !== undefined) {
       const order: unknown = body.fileOrder
@@ -647,7 +662,8 @@ export function createImportRoutes(options: ImportRoutesOptions): Hono {
     job.line = 'Starting…'
     record.events = record.events.filter((e) => e.type === 'listen' || e.type === 'opening' || e.type === 'calendar')
     await store.setState(record, 'running')
-    const release = hold('import')
+    // Named by its file: a restart waiting on the run says which one, even once its row is gone.
+    const release = hold(`file import: ${job.file.name}`)
 
     const abort = new AbortController()
     record.abort = abort

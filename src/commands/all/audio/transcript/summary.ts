@@ -420,10 +420,14 @@ export default class AudioTranscriptSummaryTask extends Command {
           streamed += delta
           output.write(delta)
         }
+        // A cancel ends the stream quietly, with whatever had arrived: not a
+        // write-up to keep, or a rerun would pick the stub up as finished.
+        if (context.signal?.aborted) return CommandResult.fail('Cancelled')
         if (streamError !== undefined) throw streamError
         output.write('\n')
         summary = streamed
       } catch (err) {
+        if (context.signal?.aborted) return CommandResult.fail('Cancelled')
         const error = (streamError ?? err) as Error
         output.error(`AI Error: ${error.message}`)
         await logAIError({ source: 'audio:transcript:summary', stage: 'summary', message: error.message })
@@ -521,6 +525,8 @@ export default class AudioTranscriptSummaryTask extends Command {
           extractedWho = Array.isArray(extracted.who) ? extracted.who : []
         }
       } catch (err) {
+        // A cancel is not a failed extraction: the defaults below would be kept as this file's fields.
+        if (context.signal?.aborted) return CommandResult.fail('Cancelled')
         output.log(colors.yellow('Metadata extraction failed — continuing with defaults'))
         log.warn('metadata extraction failed', { error: err, raw: extractRaw })
         await logAIError({

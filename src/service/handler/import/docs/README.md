@@ -1,6 +1,6 @@
 ---
 created: 2026-09-01
-updated: 2026-10-11
+updated: 2026-10-21
 ---
 
 # Meeting from a file — the import
@@ -221,12 +221,12 @@ record itself is the transcript pipeline's: see
 
 | Route | Does |
 | --- | --- |
-| `POST /import` | multipart `file` (+ `lastModified`), repeated in matching order for an image or CAF group → one job, read back; optional `day` selects a document or image note's work day; or a `text` field alone for a dragged text |
+| `POST /import` | multipart `file` (+ `lastModified`), repeated in matching order for an image or CAF group → one job, read back; optional `day` selects a document or image note's work day; or a `text` field alone for a dragged text; a file whose import runs or waits on the person gets that import back as `existing`, with nothing staged |
 | `GET /import` | the rows for the Running block |
 | `GET /import/audio-conversations?day=YYYY-MM-DD` | eligible saved audio conversations, with participants and a last-turn preview |
 | `GET /import/:id` | one job, plus the journal types the dialog offers |
 | `GET /import/:id/events` | SSE: every event so far, then live until the job settles |
-| `POST /import/:id/start` | `{kind, when, whenStated?, dayStated?, category?, journalType?, fresh?, summary?, body?, tags?, fileOrder?, audioSpeakers?, to?, appendTo?}` — runs the door command; document notes require `summary`, accept a range in `when`, and accept semicolon-separated `tags`; `fileOrder` is the CAF group's complete ordered list of staged names, `audioSpeakers` who speaks in each by staged name, and `to` who a single new clip is to; `appendTo` selects a saved audio conversation; `fresh` starts a transcript pipeline over |
+| `POST /import/:id/start` | `{kind, when, whenStated?, dayStated?, category?, journalType?, fresh?, summary?, body?, tags?, fileOrder?, audioSpeakers?, to?, appendTo?}` — runs the door command; document notes require `summary`, accept a range in `when`, and accept semicolon-separated `tags`; `fileOrder` is the CAF group's complete ordered list of staged names, `audioSpeakers` who speaks in each by staged name, and `to` who a single new clip is to; `appendTo` selects a saved audio conversation; `fresh` starts a transcript pipeline over; refused while another import of the same file runs |
 | `POST /import/:id/answer` | `{promptId, answer}` |
 | `POST /import/:id/cancel`, `/remove` | abandon the run; forget the job and its file |
 | `POST /import/:id/undo` | undo an audio addition while its completed import and unchanged saved result remain available |
@@ -262,6 +262,10 @@ through `ConsoleOutput`; the route here reads the runner's stream and
 relays each event to the page. Command-name maps are gone: the ladder is
 the command's own plan.
 
+A cancel answers the open question null, and any question asked after it
+null at once, so a cancelled run always ends. Until it does, the run holds
+restarts under its file's name (`file import: atlas.vtt`).
+
 ## The seams underneath
 
 - `commands/lib/output/OutputHandler.ts` — `plan`, `stage`, `tick` beside
@@ -275,6 +279,9 @@ the command's own plan.
 
 ## Narrative
 
+- `2026-10-21-a-cancelled-run-kept-its-hold.md` — a run cancelled and
+  removed waited on a question no page would ask, and its hold kept a
+  restart waiting; why a cancel now always ends the run.
 - `2026-09-24-an-event-from-a-voice-memo.md` — the event door takes
   `--from-voice-memo` as the meeting door does; `--from-audio` stays as
   its alias.
@@ -298,6 +305,14 @@ cap, or a screenshot over the vision model's, is refused before its bytes
 go up, in the read-back's own sentence.
 Keeping a file with the day as it is — a PDF, a Zoom video, anything — is
 the Files pad's job, never this dialog's: `../../day/docs/README.md`.
+
+One run per file. The same file dropped while its import runs or waits on
+the person opens that import, with a line saying why, and nothing new is
+staged; a second upload staged before either started cannot start until
+the first ends. Two runs of one file share its run record, and both could
+file it ([2026-10-21](2026-10-21-a-cancelled-run-kept-its-hold.md)).
+An import waiting on the person also shows in the sidebar on every page,
+with Review, so its question is not left where no one looks.
 
 Text dragged onto the day comes through the same dialog, which asks what
 it is. The page takes a drag carrying `text/plain` and no `text/uri-list`,

@@ -28,7 +28,7 @@ import CommandService from './CommandService.ts'
  * A question arrives as a `prompt` event carrying its own `reply`; the
  * command's await resolves when the host calls it. Stopping the loop early
  * cancels the run: the command's signal fires and every open question is
- * answered null, so it winds down at its next check.
+ * answered null, as is any it asks after, so it winds down at its next check.
  */
 
 export interface PromptEvent {
@@ -51,15 +51,19 @@ export interface RunOptions {
   signal?: AbortSignal
 }
 
-/** Questions become events with a reply; a cancel answers every open one with null. */
+/** Questions become events with a reply; a cancel answers every open one with null, and every later one at once. */
 export class EventPrompter implements Prompter {
   readonly interactive = true
   private readonly pending = new Map<string, (answer: unknown) => void>()
   private counter = 0
+  private cancelled = false
 
   constructor(private readonly push: (event: PromptEvent) => void) {}
 
   private ask<T>(request: PromptRequest): Promise<T | null> {
+    // Asked on the way out of a cancelled run: no one is left to answer, and
+    // a wait would hold the run, and the host's restart, open for good.
+    if (this.cancelled) return Promise.resolve(null)
     const id = `p${++this.counter}`
     return new Promise<T | null>((resolve) => {
       const reply = (answer: unknown) => {
@@ -99,6 +103,7 @@ export class EventPrompter implements Prompter {
   }
 
   cancel(): void {
+    this.cancelled = true
     // A reply removes its own entry; deleting the visited entry mid-iteration is safe on a Map.
     for (const reply of this.pending.values()) reply(null)
   }

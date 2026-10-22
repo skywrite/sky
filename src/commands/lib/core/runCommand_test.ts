@@ -1,7 +1,7 @@
 import * as config from '#config'
 import { assert, test } from '#test'
 import CommandContext from './CommandContext.ts'
-import { runCommand, type RunEvent } from './runCommand.ts'
+import { EventPrompter, type PromptEvent, runCommand, type RunEvent } from './runCommand.ts'
 
 /** Drive a run: reply to each question with `answer`, collect everything else. */
 async function drive(answer: unknown, stopAtPrompt = false) {
@@ -101,5 +101,18 @@ test('runCommand: the host signal reaches the command', async () => {
     should: 'answer it null so the command fails as cancelled at the read step',
     actual: [step.value.status, step.value.message, reached],
     expected: ['fail', 'Cancelled', 'read'],
+  })
+})
+
+test('runCommand: a question asked after a cancel is answered null at once', async () => {
+  const asked: PromptEvent[] = []
+  const prompter = new EventPrompter((event) => asked.push(event))
+  prompter.cancel()
+  const answer = await prompter.text({ message: 'Any corrections?' })
+  assert({
+    given: 'a question a cancelled command asks on its way out',
+    should: 'answer it null without asking, so the run can end',
+    actual: { answer, asked: asked.length },
+    expected: { answer: null, asked: 0 },
   })
 })

@@ -18,7 +18,6 @@ const POLL_MS = 5000
 const ACTIVITY_LABELS: Record<string, string> = {
   boot: 'startup',
   heartbeat: 'background checks',
-  import: 'file import',
   'chat turn': 'chat reply',
   voice: 'voice conversation',
 }

@@ -1,6 +1,6 @@
 ---
 created: 2026-09-02
-updated: 2026-10-11
+updated: 2026-10-21
 ---
 
 # The transcript pipeline
@@ -192,6 +192,10 @@ and a rerun of the same file picks up where the last one stopped.
   and the renames, which a rerun applies to the words again), `questions` (the clarifying questions asked after the
   check, and the write-up with the answers folded in), and `filed` (the
   document on disk, with the action items still to accept). Each carries the notebook time it was kept at.
+- **A cancel keeps nothing.** The model library ends a cancelled stream
+  quietly, with whatever text had arrived and no error, so a stage checks
+  the signal before it keeps its result. A stage a cancel cut short is
+  redone by the rerun, never reused as finished.
 - **What a rerun skips and what it still asks.** The transcription, the
   analysis and the two write-up calls are skipped when kept. The names
   review is skipped only when a person answered it; a review nobody was
@@ -219,6 +223,9 @@ Start runs the same command, which finds the record on its own.
 
 ## Narrative
 
+- `service/handler/import/docs/2026-10-21-a-cancelled-run-kept-its-hold.md`
+  — a cancelled run went on into the write-up, kept an empty one as
+  finished, then waited on a question no page would ask.
 - `2026-09-26-a-name-fixed-at-the-check.md` — a name corrected at the
   write-up check changed rel and nothing else; how the fix now reaches the
   transcript, the write-up, and the glossary.
