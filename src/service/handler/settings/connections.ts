@@ -34,6 +34,7 @@ import { createLogin, createSecret, updateEntry } from '#lib/secrets/marshal.ts'
 import type { SecretsProvider } from '#lib/secrets/SecretsProvider.ts'
 import type { EntityType, IndexEntry, SecretEntry } from '#lib/secrets/types.ts'
 import { TYPESAFE_SECRET } from '#shared/ai/typesafe/client.ts'
+import { createProviderKeyRoutes, type ProviderKeysHost } from './providerKeys.ts'
 import { secretFieldError, type SecretField } from './secretValidation.ts'
 
 export { SECRET_CATEGORY, SECRET_NAME } from './secretValidation.ts'
@@ -217,6 +218,8 @@ export interface ConnectionsHost {
     key: (key: string) => Promise<{ ok: true } | { ok: false; message: string }>
     disconnect: () => Promise<void>
   }
+  /** The model providers' keys — Anthropic, OpenAI, Cerebras — under Services; absent in tests that leave them out */
+  keys?: ProviderKeysHost
 }
 
 /**
@@ -571,6 +574,9 @@ export function createConnectionsRoutes(host: ConnectionsHost): Hono {
       return c.json(message(err), 500)
     }
   })
+
+  // The model providers' keys, each checked with its provider before it is stored.
+  if (host.keys) app.route('/keys', createProviderKeyRoutes(host.keys))
 
   // One entry into the keychain — a key, a token, a login.
   app.post('/secret', async (c) => {

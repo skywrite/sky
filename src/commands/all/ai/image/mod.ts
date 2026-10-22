@@ -10,9 +10,10 @@ import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod
 import { DIR_OUTPUT } from '#config'
 import { slugify } from '#lib/string/mod.ts'
 import { logAIError } from '#shared/ai/errorLog.ts'
+import { hasKey } from '#shared/ai/keychainAuthFetch.ts'
+import { OPENAI_SECRET } from '#shared/ai/llm/openaiProvider.ts'
 import { exists } from '#shared/fs/mod.ts'
 import { actionKindRel } from '#shared/nbfs/mod.ts'
-import { env } from '#shared/sys/mod.ts'
 import { writeImageArtifact } from './lib/artifact.ts'
 import type { AttemptSummary } from './lib/attempts.ts'
 import { validateDrawingSize } from './lib/drawingSize.ts'
@@ -177,9 +178,9 @@ export default class AiImageTask extends Command {
     if (!prompt) {
       return CommandResult.fail('Provide a prompt, e.g. sky ai:image "A watercolor poster of a lighthouse at dawn"')
     }
-    if (!env.get('OPENAI_API_KEY')) {
+    if (!(await hasKey(context.secrets, OPENAI_SECRET))) {
       return CommandResult.fail(
-        'OPENAI_API_KEY is not set — ai:image uses OpenAI for planning, review and image generation.',
+        'No OpenAI API key — ai:image uses OpenAI for planning, review and image generation. Add one under Settings › Connections › OpenAI.',
       )
     }
 

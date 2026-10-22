@@ -9,6 +9,8 @@ import { DIR_AI_MEMORY, DIR_CODE } from '#config'
 import * as notebookConfig from '#config'
 import { isCommandAvailable } from '#lib/sys/mod.ts'
 import { createWritingLessons } from '#lib/writingVoice/runtime.ts'
+import { hasKey } from '#shared/ai/keychainAuthFetch.ts'
+import { PROVIDER_KEYS, type ProviderKeyId } from '#shared/ai/llm/providerKeys.ts'
 import { KNOWN_PROVIDERS, PROFILES, ROLES } from '#shared/ai/models.ts'
 import { loadSkyConfig, readSkyConfigFile, SKY_CONFIG_PATH } from '#shared/config/loader.ts'
 import { removeConfigValue, setConfigValue } from '#shared/config/write.ts'
@@ -56,6 +58,10 @@ export function createSettingsHost(): SettingsRoutesOptions {
       file: readSkyConfigFile(),
       env: process.env,
     }),
+    hasProviderKey: (provider) =>
+      provider in PROVIDER_KEYS
+        ? hasKey(connections.secrets, PROVIDER_KEYS[provider as ProviderKeyId].secret)
+        : Promise.resolve(false),
     voices: () => ({ current: preferredVoice(), researcherCurrent: preferredResearcherVoice(), groups: VOICE_GROUPS }),
     models: (): ModelRow[] =>
       Object.entries(ROLES).map(([role, profileName]) => {

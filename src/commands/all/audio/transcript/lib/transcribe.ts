@@ -1,4 +1,5 @@
 import OpenAI, { toFile } from 'openai'
+import { openaiKey } from '#shared/ai/llm/openaiProvider.ts'
 
 /**
  * One transcription call, streamed when the model allows it. The deltas
@@ -28,7 +29,7 @@ export async function transcribeWithOpenAI(
   fileName: string,
   options: TranscribeOptions = {},
 ): Promise<Transcription> {
-  const client = new OpenAI()
+  const client = new OpenAI({ apiKey: await openaiKey() })
   const audioFile = await toFile(audioData, fileName)
   const keywords = options.keywords ?? []
   const shared = {

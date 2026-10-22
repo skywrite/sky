@@ -1,6 +1,6 @@
 ---
 created: 2026-08-30
-updated: 2026-10-20
+updated: 2026-10-22
 ---
 
 # Settings — the web's settings section
@@ -143,6 +143,13 @@ Pages:
   Google setup and Connections link here; the former `/settings/credentials/typesafe`
   link remains supported. See
   `_shared-ts/ai/docs/2026-09-17-typesafe-jev.md`.
+- **Connections → Anthropic, OpenAI, Cerebras** — `/settings/connections/<provider>`
+  (`providerKeys.ts`, routes under `/keys/<provider>`): the model providers'
+  keys, set up the way TypeSafe's is. A pasted key is checked by listing the
+  provider's models and stored as `<provider>/main` only when accepted; every
+  visit checks again, so the row reads Connected, Refused or Not set. A key
+  still in `src/.env` reads as such until one is saved here. Where Sky reads
+  these keys: [Providers and their keys](../../../../_shared-ts/ai/docs/README.md#providers-and-their-keys).
 - **Extensions** — `/settings/extensions`: the installed extensions, each
   with its version, author, categories, or why it did not load, a switch,
   and Reload. An extension with a settings screen opens at

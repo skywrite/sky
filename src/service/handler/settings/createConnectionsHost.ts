@@ -62,6 +62,7 @@ import {
   type TypeSafeStatus,
 } from './connections.ts'
 import { PROVIDER_LABEL } from './mod.ts'
+import { createProviderKeysHost } from './providerKeys.ts'
 
 /** A finished sign-in stays askable this long. */
 const CONNECT_KEEP_MS = 10 * 60 * 1000
@@ -388,5 +389,6 @@ export function createConnectionsHost(): ConnectionsHost {
     slack: { status: slackStatus, reconnect: slackReconnect, pause: (workspace) => slackConnection.pause(workspace) },
     beeper: beeperConnection(secrets, BEEPER_SYNC_STATE, runCheck),
     typesafe: typesafeConnection(secrets),
+    keys: createProviderKeysHost(secrets),
   }
 }

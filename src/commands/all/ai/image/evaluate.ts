@@ -3,7 +3,8 @@ import * as os from 'node:os'
 import * as path from 'node:path'
 import { Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
-import { env } from '#shared/sys/mod.ts'
+import { hasKey } from '#shared/ai/keychainAuthFetch.ts'
+import { OPENAI_SECRET } from '#shared/ai/llm/openaiProvider.ts'
 import { prepareImageEdit } from './lib/edit.ts'
 import { imageEvaluationCases, runImageEvaluations } from './lib/evaluation/mod.ts'
 import type { ImageEvaluationDefinition, ImageEvaluationReport } from './lib/evaluation/mod.ts'
@@ -80,9 +81,9 @@ export default class AiImageEvaluate extends Command {
       return CommandResult.fail('--attempts must be an integer between 1 and 5.')
     if (!Number.isFinite(minutes) || minutes < 1 || minutes > 120)
       return CommandResult.fail('--budgetMinutes must be between 1 and 120.')
-    if (!env.get('OPENAI_API_KEY'))
+    if (!(await hasKey(context.secrets, OPENAI_SECRET)))
       return CommandResult.fail(
-        'Set OPENAI_API_KEY to run paid image evaluations. Use --list to inspect the cases without an API key.',
+        'Add an OpenAI API key under Settings › Connections › OpenAI to run paid image evaluations. Use --list to inspect the cases without an API key.',
       )
     try {
       const parent = args.out

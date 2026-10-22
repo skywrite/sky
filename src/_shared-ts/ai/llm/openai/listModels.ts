@@ -1,13 +1,10 @@
-import { env } from '#shared/sys/mod.ts'
+import { openaiKey } from '../openaiProvider.ts'
 
 /**
  * List available OpenAI models via direct HTTP API call
  */
 export async function listModels(apiKey?: string): Promise<string[]> {
-  const key = apiKey || env.get('OPENAI_API_KEY')
-  if (!key) {
-    throw new Error('OPENAI_API_KEY environment variable not set')
-  }
+  const key = apiKey || (await openaiKey())
 
   const response = await fetch('https://api.openai.com/v1/models', {
     headers: {

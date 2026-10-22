@@ -9,17 +9,17 @@ import { keychainAuthFetch } from '#shared/ai/keychainAuthFetch.ts'
  * Cerebras speaks the OpenAI chat-completions dialect, so the provider is the
  * OpenAI one pointed at their host — models come from `.chat(id)`, never the
  * Responses API, which Cerebras does not serve. The API key lives in the OS
- * keychain (`sky secrets:set cerebras main`), not in the environment, and is
- * read on the first request by the shared keychain fetch (../keychainAuthFetch.ts):
- * a missing key fails on the first call with the command that fixes it, and
- * storing the key needs no restart.
+ * keychain (Settings › Connections › Cerebras, or `sky secrets:set cerebras main`),
+ * not in the environment, and is read on the first request by the shared
+ * keychain fetch (../keychainAuthFetch.ts): a missing key fails on the first
+ * call with where to add it, and storing the key needs no restart.
  */
 export const CEREBRAS_BASE_URL = 'https://api.cerebras.ai/v1'
 export const CEREBRAS_SECRET = { category: 'cerebras', name: 'main' } as const
 
 export const MISSING_CEREBRAS_KEY =
-  `No Cerebras API key in the keychain — run \`sky secrets:set ${CEREBRAS_SECRET.category} ${CEREBRAS_SECRET.name}\` ` +
-  'and store the key from cloud.cerebras.ai as a secret.'
+  'No Cerebras API key. Add one under Settings › Connections › Cerebras, or run ' +
+  `\`sky secrets:set ${CEREBRAS_SECRET.category} ${CEREBRAS_SECRET.name}\`.`
 
 export function createCerebrasProvider(options: { secrets: SecretsProvider; fetch?: typeof fetch }): OpenAIProvider {
   return createOpenAI({

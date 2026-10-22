@@ -5,13 +5,15 @@
  * page opens in a tab, and Sky's service receives the redirect on this
  * machine. Slack checks saved access silently and offers deliberate recovery.
  * Beeper Desktop approves Sky on its own page, opened from here. API keys
- * belong to their integrations; TypeSafe validates its key before storage.
+ * belong to their integrations; TypeSafe validates its key before storage,
+ * and so do the model providers under Services (settingsProviderKeys.tsx).
  */
 
 import { Button, PasswordInput, TextInput } from '@mantine/core'
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
 import { Block, mono, refusalOf, Row, UNREACHABLE } from './settingsBlocks.tsx'
 import { ConnectionPage } from './settingsConnectionPage.tsx'
+import { PROVIDER_KEY_ORDER, PROVIDER_KEY_PAGES } from './settingsProviderKeys.tsx'
 import { connectionHref } from './settingsRoutes.ts'
 
 // ── What the service answers (mirrors handler/settings/connections.ts) ──
@@ -804,6 +806,13 @@ export function ConnectionsPane({ navigate }: { navigate: (to: string) => void }
       )}
       {data && <AccountsBlock data={data} navigate={navigate} />}
       <Block head="Services">
+        {PROVIDER_KEY_ORDER.map((provider) => (
+          <Row key={provider} label={PROVIDER_KEY_PAGES[provider].name} sub={PROVIDER_KEY_PAGES[provider].row}>
+            <Button size="compact-sm" onClick={() => navigate(connectionHref(provider))}>
+              Manage key
+            </Button>
+          </Row>
+        ))}
         <Row label="TypeSafe" sub="Jev’s decision model. Configure its API key." last>
           <Button size="compact-sm" onClick={() => navigate(connectionHref('typesafe'))}>
             Manage key

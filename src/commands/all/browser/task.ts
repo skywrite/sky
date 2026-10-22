@@ -15,12 +15,14 @@ import { runBrowserTask, WAIT_FOR_PERSON_TOOL } from '#lib/browser/task/runTask.
 import { createTaskDir } from '#lib/browser/task/taskDir.ts'
 import { prepareBrowserUploads } from '#lib/browser/task/uploads.ts'
 import { PasswordManagerSettingsStore } from '#lib/credentials/passwordManagers.ts'
+import type { SecretsProvider } from '#lib/secrets/SecretsProvider.ts'
+import { hasKey } from '#shared/ai/keychainAuthFetch.ts'
+import { OPENAI_SECRET } from '#shared/ai/llm/openaiProvider.ts'
 import { aiModelByProfile, getProfile, resolveProfile, roleProfile } from '#shared/ai/models.ts'
 import { createTypeSafeClient } from '#shared/ai/typesafe/client.ts'
 import { readSkyConfigFile } from '#shared/config/loader.ts'
 import type { ChatEngineEvent } from '#shared/models/Chat/ChatEngine/mod.ts'
 import type { Attachment } from '#shared/models/Markdown/Document/attachment.ts'
-import { env } from '#shared/sys/mod.ts'
 import { createSaveFileTool, SAVE_FILE_TOOL } from './lib/saveFileTool.ts'
 
 // browser:task — Sky does something in a real browser window on the
@@ -38,8 +40,8 @@ import { createSaveFileTool, SAVE_FILE_TOOL } from './lib/saveFileTool.ts'
  * the person's reasoning model drives instead.
  */
 const BROWSER_PROFILE = 'default-gpt-6.1-sol-ultrafast'
-const browserModel = (): { profile: string; name: string } =>
-  env.get('OPENAI_API_KEY')
+const browserModel = async (secrets: SecretsProvider): Promise<{ profile: string; name: string }> =>
+  (await hasKey(secrets, OPENAI_SECRET))
     ? { profile: BROWSER_PROFILE, name: getProfile(BROWSER_PROFILE).label ?? BROWSER_PROFILE }
     : { profile: roleProfile('reasoning'), name: 'your reasoning model' }
 
@@ -146,7 +148,7 @@ export default class BrowserTaskCommand extends Command {
     // Jev drives only when the Experimental switch is on.
     // File selection is a reasoning-driver operation; Jev's page-action table has no file chooser move.
     const jev = !uploads && readSkyConfigFile()?.parsed.experimental?.jevBrowser === true
-    const driver = browserModel()
+    const driver = await browserModel(context.secrets)
     output.log(
       colors.dim(
         jev

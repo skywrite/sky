@@ -1,6 +1,6 @@
 ---
 created: 2026-09-01
-updated: 2026-10-11
+updated: 2026-10-22
 ---
 
 # Model registry — roles, profiles, providers
@@ -81,12 +81,23 @@ and its [2026-10-04](../../models/Chat/ChatContext/docs/2026-10-04-admission-by-
 
 ## Providers and their keys
 
-- `anthropic` and `openai` read their keys from the environment
-  (`src/.env`, loaded by both launchers).
+- `anthropic` and `openai` read their keys from the OS keychain entries
+  `anthropic/main` and `openai/main`, saved under Settings → Connections →
+  Services, and fall back to `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` from
+  `src/.env` (loaded by both launchers) when the keychain holds none. The
+  keychain is asked only when the secrets index lists the entry, so a Mac
+  whose keys live in `src/.env` never waits on it. Every reader goes through
+  `keychainAuthFetch.ts`: the AI SDK providers, the `openai` package's
+  clients for voice, transcription and images (`openaiKey()`), and the
+  presence checks (`hasKey`). A reader that skips it disagrees with the
+  Settings page about which key Sky uses.
 - `cerebras` (`llm/cerebrasProvider.ts`) reads its key from the OS keychain
   entry `cerebras/main` on the first request and holds it for the process
   (`keychainAuthFetch.ts`, the fetch that signs with a keychain key).
-  Store it with `sky secrets:set cerebras main`; no restart needed. It is
+  Store it under Settings → Connections → Cerebras or with
+  `sky secrets:set cerebras main`. Saving or removing any of these keys in
+  Settings calls `forgetKey`, so the running service signs its next request
+  with the change; no restart needed. It is
   the OpenAI provider pointed at `api.cerebras.ai` through `.chat()`, since
   Cerebras serves chat completions only. Its model is wrapped in
   `llm/singleSystemMessage.ts`: the host takes one system message, first,

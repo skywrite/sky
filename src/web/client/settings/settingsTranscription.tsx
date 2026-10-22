@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import type { MacWhisperModels, TranscriptionSettings } from '#commands/all/audio/transcript/lib/models.ts'
 import { saveSetting } from './settings.tsx'
 import { Block, mono, Row } from './settingsBlocks.tsx'
+import { connectionHref } from './settingsRoutes.ts'
 
 export function TranscriptionPane({
   settings,
@@ -195,6 +196,10 @@ export function TranscriptionPane({
             sub={
               selected.configured ? (
                 'Available to the Sky service.'
+              ) : selected.provider === 'openai' ? (
+                <>
+                  Add your OpenAI API key under <a href={connectionHref('openai')}>Connections › OpenAI</a>.
+                </>
               ) : (
                 <>
                   Add <code>{selected.apiKeyEnv}</code> to Sky’s <code>src/.env</code> file, then restart the service.

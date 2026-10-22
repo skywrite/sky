@@ -1,13 +1,10 @@
-import { env } from '#shared/sys/mod.ts'
+import { anthropicKey } from '../anthropicProvider.ts'
 
 /**
  * List available Claude/Anthropic models via direct HTTP API call
  */
 export async function listModels(apiKey?: string): Promise<string[]> {
-  const key = apiKey || env.get('ANTHROPIC_API_KEY')
-  if (!key) {
-    throw new Error('ANTHROPIC_API_KEY environment variable not set')
-  }
+  const key = apiKey || (await anthropicKey())
 
   const response = await fetch('https://api.anthropic.com/v1/models', {
     headers: {

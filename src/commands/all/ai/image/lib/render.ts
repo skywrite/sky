@@ -1,5 +1,6 @@
 import OpenAI, { toFile } from 'openai'
 import sharp from 'sharp'
+import { openaiKey } from '#shared/ai/llm/openaiProvider.ts'
 import { runImageStage } from './failure.ts'
 import { finishImageEdit } from './finish.ts'
 import type { ImageReviewSummary } from './finish.ts'
@@ -50,10 +51,11 @@ export interface RenderedImage {
 /** Both endpoints return PNG bytes; reference uploads must carry a filename and MIME type. */
 export async function renderImages(
   request: ImageRenderRequest,
-  client = new OpenAI(),
+  client?: OpenAI,
   reviewer: typeof reviewImageEdit = reviewImageEdit,
 ): Promise<RenderedImage[]> {
   request.signal?.throwIfAborted()
+  const api = client ?? new OpenAI({ apiKey: await openaiKey() })
   let refs = [...request.refs]
   let prompt = request.prompt
   let background = request.background
@@ -107,7 +109,7 @@ export async function renderImages(
   const options = { signal: request.signal }
   const response = await runImageStage(refs.length ? 'image:edit' : 'image:generate', async () =>
     refs.length
-      ? await client.images.edit(
+      ? await api.images.edit(
           {
             ...params,
             // The AI SDK image adapter converts inputs to unnamed Blobs.
@@ -127,7 +129,7 @@ export async function renderImages(
           },
           options,
         )
-      : await client.images.generate(params, options),
+      : await api.images.generate(params, options),
   )
   const images: RenderedImage[] = []
   for (const image of response.data ?? []) {

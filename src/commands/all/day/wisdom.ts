@@ -1,7 +1,7 @@
-import { openai } from '@ai-sdk/openai'
 import { generateText } from 'ai'
 import { Command, CommandResult } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription } from '#commands/mod.ts'
+import { openai } from '#shared/ai/llm/openaiProvider.ts'
 
 // -----------------------------------------------------------------------------
 // Categories & Prompts

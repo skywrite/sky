@@ -294,6 +294,8 @@ export interface SettingsHost {
   >
   /** The providers a configuration may name */
   providers: () => string[]
+  /** Whether a provider's key is saved under Connections — beside one in src/.env; absent in tests that leave it out */
+  hasProviderKey?: (provider: string) => Promise<boolean>
   /** Writes ai.profiles.<name> into the file */
   writeProfile: (name: string, profile: ProfileInput) => Promise<void>
   /** Removes ai.profiles.<name> from the file */
@@ -406,10 +408,14 @@ async function settingsData(host: SettingsHost): Promise<SettingsData> {
     theme: config.web.theme ?? 'system',
     transcription: {
       value: transcriptionModelValue(config.ai.models.transcription),
-      choices: TRANSCRIPTION_MODELS.map((model) => ({
-        ...model,
-        configured: model.apiKeyEnv ? Boolean(snapshot.env[model.apiKeyEnv]) : false,
-      })),
+      choices: await Promise.all(
+        TRANSCRIPTION_MODELS.map(async (model) => ({
+          ...model,
+          configured: model.apiKeyEnv
+            ? Boolean(snapshot.env[model.apiKeyEnv]) || (await host.hasProviderKey?.(model.provider)) === true
+            : false,
+        })),
+      ),
     },
     calendar: { classifyEvents: config.calendar?.classifyEvents === true },
     google: { accountCategories: { ...config.google?.accountCategories } },

@@ -43,6 +43,7 @@ import {
   type VoiceClock,
   voiceSessionConfig,
 } from '#commands/lib/voice/sessionConfig.ts'
+import { openaiKey } from '#shared/ai/llm/openaiProvider.ts'
 import type * as ConfigModule from '#shared/config.ts'
 import { renderTemplate } from '#shared/prompts/mod.ts'
 import { createVoiceCommandTools } from './commandTools.ts'
@@ -130,9 +131,7 @@ export function createVoiceHost(config: typeof ConfigModule, env: Record<string,
   }
 
   const mint: ClientSecretMinter = async (session) => {
-    const apiKey = env.OPENAI_API_KEY
-    if (!apiKey) throw new Error('OPENAI_API_KEY is not set — the voice session needs it.')
-    const secret = await new OpenAI({ apiKey }).realtime.clientSecrets.create({
+    const secret = await new OpenAI({ apiKey: await openaiKey() }).realtime.clientSecrets.create({
       expires_after: { anchor: 'created_at', seconds: SECRET_TTL_SECONDS },
       session,
     })
