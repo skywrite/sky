@@ -15,18 +15,19 @@ const CHAT_DIR = path.posix.join('time', dayAIChatsDir(DAY))
 const ROOT = `${CHAT_DIR}/09-00_Atlas-planning.md`
 const BRANCH = `${CHAT_DIR}/09-00_Atlas-planning/10-00_Board-outline.md`
 const LEAF = `${CHAT_DIR}/09-00_Atlas-planning/10-00_Board-outline/11-00_Budget [questions].md`
-const VIDEO = path.posix.join('time', dayDir(DAY), 'actions/videos/Loom_Atlas.md')
+const VIDEO = path.posix.join('time', dayDir(DAY), 'actions/videos/Zoom Clip_Atlas.md')
+const VIDEO_URL = `/explorer/${VIDEO.split('/').map(encodeURIComponent).join('/')}`
 const EARLIER = new PlainDate('2026-01-26')
 const EARLIER_CHAT = path.posix.join('time', dayAIChatsDir(EARLIER), '09-00_Atlas-kickoff.md')
 const VIDEO_MD = `---
 from: Jane Doe
 to: Atlas Team
 when: 2026-01-27 15:00 - 15:10
-medium: Loom
+medium: Zoom Clip
 summary: Atlas launch walkthrough
 ---
 
-# Loom
+# Zoom Clip
 
 ## Summary
 
@@ -63,7 +64,21 @@ test(
     await runWysiwygE2e(
       t,
       {
-        initialMarkdown: `---\ndate: ${DAY.ymd}\n---\n\n# **${DAY.ymd}**\n\n## Professional Todos\n\n-\n`,
+        initialMarkdown: `---
+date: ${DAY.ymd}
+---
+
+# **${DAY.ymd}**
+
+## Professional Todos
+
+-
+
+## Professional Complete
+
+- 15:00 > Jane Doe to Atlas Team Zoom Clip -> [Atlas launch walkthrough](actions/videos/Zoom Clip_Atlas.md)
+- 16:00 > Garden -> Planted the beds
+`,
         tempPrefix: 'day-record-',
         file: path.posix.join('time', dayFile(DAY)),
         day: true,
@@ -168,10 +183,17 @@ test(
         })
         const videoLink = page.getByRole('link', { name: 'Atlas launch walkthrough', exact: true })
         assert({
-          given: 'a saved video headed only Loom',
+          given: 'a saved video headed only Zoom Clip',
           should: 'show its summary and link to the video record from the main day column',
           actual: await videoLink.getAttribute('href'),
-          expected: `/explorer/${VIDEO}`,
+          expected: VIDEO_URL,
+        })
+        const done = page.locator('.sky-block').filter({ has: page.locator('.sky-bhead', { hasText: 'Done today' }) })
+        assert({
+          given: 'the video’s legacy capture log with a space in its link destination',
+          should: 'hide the capture log from Done today without hiding an ordinary activity with an arrow',
+          actual: await done.locator('.sky-done-text').allTextContents(),
+          expected: ['Garden -> Planted the beds'],
         })
 
         const leafUrl = `/explorer/${LEAF.split('/').map(encodeURIComponent).join('/')}`
@@ -292,13 +314,19 @@ test(
         })
 
         await videoLink.click()
-        await page.waitForURL(`${origin}/explorer/${VIDEO}`)
+        await page.waitForURL(`${origin}${VIDEO_URL}`)
         await writeFile(
           path.join(path.dirname(file), 'actions/videos/Loom_followup.md'),
           VIDEO_MD.replace('Atlas launch walkthrough', 'Atlas follow-up'),
         )
         await page.goBack()
         await page.getByRole('link', { name: 'Atlas follow-up', exact: true }).waitFor({ state: 'visible' })
+        assert({
+          given: 'returning to the day after opening a video',
+          should: 'keep the legacy capture out of Done today after the record refreshes',
+          actual: await done.locator('.sky-done-text').allTextContents(),
+          expected: ['Garden -> Planted the beds'],
+        })
 
         await page.setViewportSize({ width: 430, height: 900 })
         assert({

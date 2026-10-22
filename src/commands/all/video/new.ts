@@ -266,7 +266,7 @@ export default class VideoNewTask extends Command {
     if (entryWho) {
       dayItemParts.push(entryWho)
     }
-    dayItemParts.push(mediumValue, '->', `[${summary || ''}](${filePath})`)
+    dayItemParts.push(mediumValue, '->', `[${summary || ''}](<${filePath}>)`)
     const dayItem = dayItemParts.join(' ')
     await writeDayItems(whenDate, category, dayItem)
 

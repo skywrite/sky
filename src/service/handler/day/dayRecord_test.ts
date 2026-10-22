@@ -1,6 +1,6 @@
 import { mkdir, writeFile } from 'node:fs/promises'
 import * as path from 'node:path'
-import { makeTempDir } from '#shared/fs/mod.ts'
+import { makeTempDir, readTextFile } from '#shared/fs/mod.ts'
 import { dayDir, dayFile } from '#shared/nbfs/mod.ts'
 import { assert, test } from '#test'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
@@ -479,6 +479,57 @@ The recording walks through the launch checklist and next steps.
       },
     ],
   })
+})
+
+test('day record does not repeat video capture logs with spaces in Done', async () => {
+  const { base, timeDir, dayDirPath } = await notebook()
+  const relativePath = 'actions/videos/Zoom Clip_Jane-Doe_Atlas-review.md'
+  await mkdir(path.join(dayDirPath, 'actions', 'videos'))
+  await writeFile(
+    path.join(dayDirPath, relativePath),
+    `---
+from: Jane Doe
+to: Alex Atlas
+when: 2026-01-27 09:30
+medium: Zoom Clip
+summary: Atlas review
+---
+
+# Zoom Clip
+
+The recording reviews the Atlas launch checklist and next steps.
+`,
+  )
+  const activities = [
+    'Garden -> Planted the beds',
+    'Reviewed -> [Atlas guide](guides/Atlas guide.md)',
+    `Wrote instructions -> \`[Atlas review](${relativePath})\``,
+  ]
+  for (const capture of [
+    `Jane Doe to Alex Atlas Zoom Clip -> [Atlas review](${relativePath})`,
+    `~~Jane Doe to Alex Atlas Zoom Clip -> [Atlas review](${relativePath})~~`,
+    `Jane Doe to Alex Atlas Zoom Clip -> [Atlas review](<${relativePath}>)`,
+    `Jane Doe to Alex Atlas Zoom Clip -> [Atlas review](${relativePath.replaceAll(' ', '%20')})`,
+  ]) {
+    const dayPath = path.join(timeDir, dayFile(TODAY))
+    const markdown = `# ${TODAY.ymd}\n\n## Professional Complete\n\n- 09:30 > ${capture}\n${activities.map((text) => `- ${text}`).join('\n')}\n`
+    await writeFile(dayPath, markdown)
+    const record = await buildDayRecord({ day: TODAY, timeDir, dayDirPath, markdownBaseDir: base, ownerNames: OWNER })
+    assert({
+      given: `a saved video and its capture log: ${capture}`,
+      should: 'show the video once, retain ordinary activities, and leave the day file unchanged',
+      actual: {
+        videos: record.videos.map(({ title, path }) => ({ title, path })),
+        done: record.done.map((item) => item.text),
+        markdown: await readTextFile(dayPath),
+      },
+      expected: {
+        videos: [{ title: 'Atlas review', path: path.join('time', dayDir(TODAY), relativePath) }],
+        done: activities,
+        markdown,
+      },
+    })
+  }
 })
 
 test('day record includes saved events once, in time order, with participants and locations', async () => {

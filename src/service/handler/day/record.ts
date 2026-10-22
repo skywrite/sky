@@ -173,9 +173,11 @@ function parseItem(raw: string, category: string | null, list: string): DayItem 
  * arrow on its own must not hide a manually completed activity.
  */
 function isCaptureLog(item: DayItem): boolean {
+  // Older captures left spaces in their destinations, so Markdown sees text instead of a link.
+  const linkedPath = item.link?.path ?? item.text.match(/\s->\s+\[[^\]\r\n]*\]\(([^)\r\n]+\.md)\)$/)?.[1]
   return (
     parseMeetingEntry(item.raw) !== null ||
-    (item.link?.path.startsWith(`${ACTIONS_DIR}/`) ?? false) ||
+    (linkedPath?.startsWith(`${ACTIONS_DIR}/`) ?? false) ||
     /^(?:Notebook|(?:projects|streaks|ideas|decisions)\/.+?)\s+->\s/.test(item.text)
   )
 }
