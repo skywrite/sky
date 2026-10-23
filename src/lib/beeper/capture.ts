@@ -18,11 +18,25 @@ import { beeperText } from './text.ts'
  * The capture: Beeper's chats become the notebook's saved messages, one file
  * per chat per day, in the shape the Gmail capture already writes. Each run
  * asks Beeper which chats moved since the last run, pulls the messages after
- * each chat's cursor, and appends them to the day's file. Your own messages
+ * what each chat has shown, and appends them to the day's file. Your own messages
  * are saved too, so Outbox can see when you answered.
  */
 
 export type BeeperSource = Pick<BeeperClient, 'accounts' | 'searchChats' | 'messages' | 'downloadAsset'>
+
+/**
+ * What a source beside Beeper knows about a handle — a number or an address.
+ * lib/macMessages answers from this Mac's Contacts and Messages, for the one
+ * network whose names Beeper's API leaves out, iMessage.
+ */
+export type SenderNames = {
+  /**
+   * What is known about a handle: a name, whether the phone files the sender
+   * as known, and where the name came from — `notebook` for one of the
+   * person's own records, which outranks the messenger's name.
+   */
+  resolve(handle: string): { name: string | null; known: boolean | null; source?: 'notebook' | 'contacts' } | null
+}
 
 export type BeeperSyncOptions = {
   client: BeeperSource
@@ -40,6 +54,18 @@ export type BeeperSyncOptions = {
   chatLimit?: number
   messageLimit?: number
   attachmentLimit?: number
+  /** Names for the people Beeper shows by number or address alone */
+  names?: SenderNames
+  /** The notebook owner's name, for an account Beeper carries without one (iMessage) */
+  ownerName?: string
+  /**
+   * The words of a voice note Beeper hands over without a transcription: the
+   * sync command passes Sky's transcription provider. Nothing waits on the
+   * person; a voice note that cannot be transcribed is listed by file name.
+   */
+  transcribe?: (audio: Uint8Array, fileName: string) => Promise<string>
+  /** How long a saved voice note runs, in seconds, for its heading; null when unknown */
+  duration?: (file: string) => Promise<number | null>
   category?: string
   dryRun?: boolean
   log?: (line: string) => void
@@ -108,7 +134,8 @@ const ChatStateSchema = z.object({
   network: z.string().default(''),
   /** The person said Save on a held chat: its sender counts as known from then on */
   known: z.boolean().optional(),
-  cursor: z.string().optional(),
+  /** The instant of the newest message the chat has shown; the next run looks from an hour before it */
+  newest: z.string().optional(),
   seen: z.array(z.string()).default([]),
   /** Day → the file that day, as `time/...` path. */
   files: z.record(z.string(), z.string()).default({}),
@@ -201,17 +228,52 @@ function nameless(name: string, person: BeeperUser | undefined): boolean {
   return same(person?.phoneNumber) || same(person?.username) || same(person?.email)
 }
 
+/** The other side of a one-to-one chat. */
+function otherSide(chat: BeeperChat, account: BeeperAccount | undefined): BeeperUser | undefined {
+  return chat.participants?.items.find((person) => !person.isSelf && person.id !== account?.user?.id)
+}
+
+/** What this Mac knows about someone Beeper shows by number or address alone. */
+function lookedUp(person: BeeperUser | undefined, names: SenderNames | undefined) {
+  const handle = person?.phoneNumber?.trim() || person?.email?.trim()
+  return handle && names ? names.resolve(handle) : null
+}
+
+/** The name the notebook files this person under, when one of their records carries the handle */
+function notebookName(person: BeeperUser | undefined, names: SenderNames | undefined): string | undefined {
+  const found = lookedUp(person, names)
+  return found?.source === 'notebook' && found.name ? found.name : undefined
+}
+
 /**
- * The other side of a one-to-one chat when the contacts have no name for
- * them — as Beeper shows them, a number or a handle — or null when the chat
- * is a group or the person is named.
+ * The other side of a one-to-one chat when nobody has a name for them — not
+ * Beeper's contacts, not this Mac's, and the phone never filed them as known
+ * — as Beeper shows them, a number or a handle; or null when the chat is a
+ * group or the person is named.
  */
-export function unknownSender(chat: BeeperChat, account: BeeperAccount | undefined): string | null {
+export function unknownSender(
+  chat: BeeperChat,
+  account: BeeperAccount | undefined,
+  names?: SenderNames,
+): string | null {
   if (chat.type === 'group') return null
-  const other = chat.participants?.items.find((person) => !person.isSelf && person.id !== account?.user?.id)
+  const other = otherSide(chat, account)
   const name = other?.fullName?.trim() || chat.title.trim()
   if (!nameless(name, other)) return null
+  const mac = lookedUp(other, names)
+  if (mac?.name || mac?.known) return null
   return name || other?.phoneNumber?.trim() || other?.username?.trim() || other?.email?.trim() || chat.id
+}
+
+/** The chat as the log and the page name it: the person's name when one is known, else Beeper's title. */
+export function chatLabel(chat: BeeperChat, account: BeeperAccount | undefined, names?: SenderNames): string {
+  if (chat.type === 'single') {
+    const other = otherSide(chat, account)
+    const own = notebookName(other, names)
+    if (own) return own
+    if (nameless(chat.title, other)) return lookedUp(other, names)?.name || chat.title || chat.id
+  }
+  return chat.title || chat.id
 }
 
 /**
@@ -267,21 +329,38 @@ function keep(message: BeeperMessage): boolean {
   return Boolean(message.text?.trim()) || Boolean(message.attachments?.length)
 }
 
-function selfName(account: BeeperAccount | undefined): string {
-  return account?.user?.fullName?.trim() || account?.user?.username?.trim() || 'Me'
+function selfName(account: BeeperAccount | undefined, ownerName?: string): string {
+  return account?.user?.fullName?.trim() || account?.user?.username?.trim() || ownerName?.trim() || 'Me'
 }
 
-function counterpart(chat: BeeperChat, account: BeeperAccount | undefined): string {
-  const other = chat.participants?.items.find((person) => !person.isSelf && person.id !== account?.user?.id)
-  return other?.fullName?.trim() || other?.username?.trim() || chat.title || 'Unknown'
+function counterpart(chat: BeeperChat, account: BeeperAccount | undefined, names?: SenderNames): string {
+  const other = otherSide(chat, account)
+  return (
+    notebookName(other, names) ||
+    other?.fullName?.trim() ||
+    lookedUp(other, names)?.name ||
+    other?.username?.trim() ||
+    chat.title ||
+    'Unknown'
+  )
 }
 
-function senderOf(message: BeeperMessage, chat: BeeperChat, account: BeeperAccount | undefined): string {
-  if (message.isSender) return selfName(account)
+function senderOf(
+  message: BeeperMessage,
+  chat: BeeperChat,
+  account: BeeperAccount | undefined,
+  names?: SenderNames,
+  ownerName?: string,
+): string {
+  if (message.isSender) return selfName(account, ownerName)
+  const person =
+    chat.participants?.items.find((candidate) => candidate.id === message.senderID) ??
+    (chat.type === 'single' ? otherSide(chat, account) : undefined)
+  const own = notebookName(person, names)
+  if (own) return own
   const named = message.senderName?.trim()
-  if (named) return named
-  const person = chat.participants?.items.find((candidate) => candidate.id === message.senderID)
-  return person?.fullName?.trim() || person?.username?.trim() || 'Unknown'
+  if (named && !nameless(named, person)) return named
+  return lookedUp(person, names)?.name || named || person?.fullName?.trim() || person?.username?.trim() || 'Unknown'
 }
 
 function attachmentKind(attachment: BeeperAttachment): string {
@@ -314,10 +393,28 @@ type Section = {
   lines: string[]
   attachments: Attachment[]
   fallback: string
+  /** The words of a voice note, which name a message that has no text of its own */
+  transcript?: string
+  /** The message is a voice note; its length when known */
+  voice?: { seconds: number | null }
 }
 
+/** Seconds as m:ss, or h:mm:ss past the hour */
+function clock(seconds: number): string {
+  const whole = Math.round(seconds)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  const h = Math.floor(whole / 3600)
+  const m = Math.floor((whole % 3600) / 60)
+  const s = whole % 60
+  return h ? `${h}:${pad(m)}:${pad(s)}` : `${m}:${pad(s)}`
+}
+
+/** The message heading; a voice note says so after the name, with its length when known */
 function heading(section: Section): string {
-  return `## ${section.when.date} ${section.when.time} - **${section.sender}**`
+  const voice = section.voice
+    ? ` (voice note${section.voice.seconds !== null ? `, ${clock(section.voice.seconds)}` : ''})`
+    : ''
+  return `## ${section.when.date} ${section.when.time} - **${section.sender}**${voice}`
 }
 
 function signature(section: Section): string {
@@ -351,45 +448,62 @@ async function activeChats(
   }
 }
 
-/** Messages after the chat's cursor; on first contact, the newest back to the boundary. */
+/** How far behind the newest message a chat has shown a run looks again, for messages that arrive out of order */
+const LOOK_BACK_MS = 3_600_000
+
+/**
+ * The chat's messages newer than the floor — the boundary on first contact,
+ * else an hour before the newest message the chat has shown — read
+ * newest-first: the first page, then older pages while a page is still
+ * entirely newer than the floor. Beeper's iMessage bridge answers no older
+ * page and reads an `after` cursor as the start of history
+ * (docs/2026-10-20-beeper-pages-imessage-only-forward.md), so the walk never
+ * asks for `after`; `unreached` says an older page was still needed and refused.
+ */
 async function newMessages(
   client: BeeperSource,
   chat: BeeperChat,
   chatState: ChatState,
   boundaryMs: number,
   limit: number,
-): Promise<{ messages: BeeperMessage[]; cursor?: string }> {
+): Promise<{ messages: BeeperMessage[]; unreached: boolean }> {
+  const mark = chatState.newest ? instantMs(chatState.newest) : null
+  const floorMs = mark === null ? boundaryMs : Math.max(boundaryMs, mark - LOOK_BACK_MS)
   const collected: BeeperMessage[] = []
-  if (chatState.cursor) {
-    let cursor = chatState.cursor
-    let newest = chatState.cursor
-    for (;;) {
-      const page = await client.messages(chat.id, { cursor, direction: 'after' })
-      collected.push(...page.items)
-      if (page.items.length && page.newestCursor) newest = page.newestCursor
-      if (!page.hasMore || !page.newestCursor || !page.items.length || collected.length >= limit) break
-      cursor = page.newestCursor
+  let page = await client.messages(chat.id)
+  for (;;) {
+    let reachedFloor = false
+    for (const message of page.items) {
+      const at = instantMs(message.timestamp)
+      if (at !== null && at < floorMs) reachedFloor = true
+      else collected.push(message)
     }
-    return { messages: collected, cursor: newest }
+    if (reachedFloor || !page.hasMore || !page.oldestCursor || collected.length >= limit) {
+      return { messages: collected, unreached: false }
+    }
+    const older = await client.messages(chat.id, { cursor: page.oldestCursor, direction: 'before' })
+    if (!older.items.length) return { messages: collected, unreached: true }
+    page = older
   }
-  const first = await client.messages(chat.id)
-  collected.push(...first.items)
-  let cursor = first.oldestCursor
-  let more = first.hasMore
-  const oldest = () => Math.min(...collected.map((message) => instantMs(message.timestamp) ?? Number.MAX_SAFE_INTEGER))
-  while (more && cursor && collected.length < limit && (collected.length === 0 || oldest() >= boundaryMs)) {
-    const page = await client.messages(chat.id, { cursor, direction: 'before' })
-    if (!page.items.length) break
-    collected.push(...page.items)
-    cursor = page.oldestCursor
-    more = page.hasMore
+}
+
+/** The newest instant among the messages and the one the chat already kept */
+function newestInstant(messages: BeeperMessage[], kept?: string): string | undefined {
+  let best = kept
+  let bestMs = kept ? instantMs(kept) : null
+  for (const message of messages) {
+    const at = instantMs(message.timestamp)
+    if (at !== null && (bestMs === null || at > bestMs)) {
+      best = message.timestamp
+      bestMs = at
+    }
   }
-  return { messages: collected, ...(first.newestCursor ? { cursor: first.newestCursor } : {}) }
+  return best
 }
 
 export async function syncBeeper(options: BeeperSyncOptions): Promise<BeeperSyncResult> {
   const log = options.log ?? (() => {})
-  const backfillDays = options.backfillDays ?? 30
+  const backfillDays = options.backfillDays ?? 7
   const chatLimit = options.chatLimit ?? 100
   const messageLimit = options.messageLimit ?? 500
   const attachmentLimit = options.attachmentLimit ?? 20
@@ -445,8 +559,8 @@ export async function syncBeeper(options: BeeperSyncOptions): Promise<BeeperSync
   const chats = await activeChats(options.client, Instant.fromEpochMilliseconds(sinceMs).toString(), chatLimit)
   result.complete = chats.complete
   for (const chat of chats.items) {
-    const label = chat.title || chat.id
     const account = accounts.get(chat.accountID)
+    const label = chatLabel(chat, account, options.names)
     const verdict = judgeChat(chat, account, state.accounts[chat.accountID])
     if (!verdict.save) {
       if (!verdict.quiet) result.skipped.push({ chat: label, reason: verdict.reason })
@@ -455,6 +569,10 @@ export async function syncBeeper(options: BeeperSyncOptions): Promise<BeeperSync
     const chatState: ChatState = state.chats[chat.id] ?? { title: '', network: '', seen: [], files: {} }
     const network = chat.network.trim() || account?.network?.trim() || 'Beeper'
     const fetched = await newMessages(options.client, chat, chatState, boundaryMs, messageLimit)
+    const newest = newestInstant(fetched.messages, chatState.newest)
+    if (fetched.unreached) {
+      result.notes.push(`${label}: Beeper gave no older page; messages before the oldest shown were not reached.`)
+    }
     const seen = new Set(chatState.seen)
     const fresh = fetched.messages
       .filter(keep)
@@ -465,9 +583,9 @@ export async function syncBeeper(options: BeeperSyncOptions): Promise<BeeperSync
     result.chats += 1
 
     // Someone with no name in the contacts, never answered: held for a look,
-    // nothing written, no cursor kept — so a Save later pulls the whole month.
+    // nothing written, nothing kept — so a Save later pulls the whole window.
     const rule = state.accounts[chat.accountID]
-    const who = rule?.holdUnknown && !chatState.known ? unknownSender(chat, account) : null
+    const who = rule?.holdUnknown && !chatState.known ? unknownSender(chat, account, options.names) : null
     if (who && !fetched.messages.some((message) => message.isSender)) {
       const newest = fresh.at(-1)?.message ?? fetched.messages.find(keep)
       if (newest) {
@@ -494,7 +612,7 @@ export async function syncBeeper(options: BeeperSyncOptions): Promise<BeeperSync
           ...chatState,
           title: chat.title,
           network,
-          ...(fetched.cursor ? { cursor: fetched.cursor } : {}),
+          ...(newest ? { newest } : {}),
         }
         await saveState(options.stateFile, state)
       }
@@ -508,7 +626,7 @@ export async function syncBeeper(options: BeeperSyncOptions): Promise<BeeperSync
       const when = await localTime(message.timestamp)
       const section: Section = {
         when,
-        sender: senderOf(message, chat, account),
+        sender: senderOf(message, chat, account, options.names, options.ownerName),
         text: beeperText(message.text),
         lines: [],
         attachments: [],
@@ -517,8 +635,7 @@ export async function syncBeeper(options: BeeperSyncOptions): Promise<BeeperSync
       for (const attachment of message.attachments ?? []) {
         const kind = attachmentKind(attachment)
         section.fallback = kind
-        const transcript = attachment.transcription?.transcription?.trim()
-        if (attachment.isVoiceNote && transcript) section.lines.push(`🎤 ${transcript}`)
+        let transcript = attachment.transcription?.transcription?.trim() || undefined
         const name = attachment.fileName?.trim() || `${kind.toLowerCase().replace(/\s+/g, '-')}`
         let saved: string | undefined
         const skip =
@@ -528,17 +645,45 @@ export async function syncBeeper(options: BeeperSyncOptions): Promise<BeeperSync
           savedAttachments >= attachmentLimit ||
           (attachment.fileSize ?? 0) > MAX_ATTACHMENT_BYTES
         if (!skip) {
+          let data: Buffer | undefined
           try {
-            saved = await saveAttachment(options, attachment, name, when.plainDate, network)
+            data = await loadAttachment(options, attachment)
+            if (data) saved = await saveAttachment(options, data, name, when.plainDate, network)
             if (saved) savedAttachments += 1
           } catch (error) {
             result.notes.push(
               `${label}: ${name} could not be saved (${error instanceof Error ? error.message : 'unknown error'}).`,
             )
           }
+          // A voice note Beeper hands over without words: Sky's own provider listens
+          if (data && attachment.isVoiceNote && !transcript && options.transcribe) {
+            try {
+              transcript = (await options.transcribe(data, name)).trim() || undefined
+            } catch (error) {
+              result.notes.push(
+                `${label}: ${name} could not be transcribed (${error instanceof Error ? error.message : 'unknown error'}).`,
+              )
+            }
+          }
         }
         if (saved) section.attachments.push({ file: saved })
-        if (!(attachment.isVoiceNote && transcript)) section.lines.push(`📎 ${saved ?? name}`)
+        if (attachment.isVoiceNote) {
+          let seconds: number | null = null
+          if (saved && options.duration) {
+            try {
+              seconds = await options.duration(
+                path.join(options.attachmentsDir, dayAttachmentsDir(when.plainDate), saved),
+              )
+            } catch {
+              // No way to measure it: the heading says voice note without a length
+            }
+          }
+          section.voice ??= { seconds }
+        }
+        if (attachment.isVoiceNote && transcript) {
+          section.lines.push(`🎤 ${transcript}`)
+          section.transcript ??= transcript
+        } else section.lines.push(`📎 ${saved ?? name}`)
       }
       const list = days.get(when.date) ?? []
       list.push(section)
@@ -549,7 +694,13 @@ export async function syncBeeper(options: BeeperSyncOptions): Promise<BeeperSync
       const day = PlainDate.fromString(date)
       const existing = chatState.files[date]
       const single = chat.type === 'single'
-      const who = single ? firstName(counterpart(chat, account)) : chat.title || 'Group'
+      const person = single ? counterpart(chat, account, options.names) : ''
+      // A first name names the file; a number stays whole, since its first "word" would be the country code
+      const who = single
+        ? nameless(person, otherSide(chat, account))
+          ? person
+          : firstName(person)
+        : chat.title || 'Group'
       if (existing && (await exists(path.join(notebookDir, existing)))) {
         const file = path.join(notebookDir, existing)
         const doc = MessageDocument.fromMarkdown(await readTextFile(file))
@@ -566,9 +717,9 @@ export async function syncBeeper(options: BeeperSyncOptions): Promise<BeeperSync
         continue
       }
       const first = sections[0]
-      const from = single ? counterpart(chat, account) : first.sender
-      const to = single ? selfName(account) : chat.title || 'Group'
-      const summary = summarize(first.text, first.fallback)
+      const from = single ? person : first.sender
+      const to = single ? selfName(account, options.ownerName) : chat.title || 'Group'
+      const summary = summarize(first.text || first.transcript || '', first.fallback)
       const previousPath = Object.entries(chatState.files)
         .filter(([other]) => other < date)
         .sort(([a], [b]) => b.localeCompare(a))[0]?.[1]
@@ -615,7 +766,8 @@ export async function syncBeeper(options: BeeperSyncOptions): Promise<BeeperSync
         // The capture may land on a day that has no day file yet
         await ensureDay(day, options.timeDir)
         let dayDoc = await readDay(day, options.timeDir)
-        dayDoc = dayDoc.setCompleteItem(`${first.when.time} > ${who} ${network}`, `[${summary}](${rel})`, {
+        const entry = first.voice && !first.text ? `Voice note: ${summary}` : summary
+        dayDoc = dayDoc.setCompleteItem(`${first.when.time} > ${who} ${network}`, `[${entry}](${rel})`, {
           time: first.when.time,
           category,
         })
@@ -633,7 +785,7 @@ export async function syncBeeper(options: BeeperSyncOptions): Promise<BeeperSync
         title: chat.title,
         network,
         ...(chatState.known ? { known: true } : {}),
-        ...(fetched.cursor ? { cursor: fetched.cursor } : {}),
+        ...(newest ? { newest } : {}),
         seen: ids.slice(-SEEN_LIMIT),
         files: chatState.files,
       }
@@ -657,13 +809,8 @@ export async function syncBeeper(options: BeeperSyncOptions): Promise<BeeperSync
 }
 
 /** Copy one attachment into the day's attachments folder; the saved name, or nothing when Beeper has no file. */
-async function saveAttachment(
-  options: BeeperSyncOptions,
-  attachment: BeeperAttachment,
-  name: string,
-  day: PlainDate,
-  network: string,
-): Promise<string | undefined> {
+/** The attachment's bytes: Beeper's own file when it names one, else what Beeper downloads on request. */
+async function loadAttachment(options: BeeperSyncOptions, attachment: BeeperAttachment): Promise<Buffer | undefined> {
   let source = attachment.srcURL
   if (!source || !source.startsWith('file:')) {
     const reference = attachment.id ?? source
@@ -674,7 +821,16 @@ async function saveAttachment(
   }
   if (!source) return undefined
   const data = await readFile(source.startsWith('file:') ? new URL(source) : source)
-  if (data.byteLength > MAX_ATTACHMENT_BYTES) return undefined
+  return data.byteLength > MAX_ATTACHMENT_BYTES ? undefined : data
+}
+
+async function saveAttachment(
+  options: BeeperSyncOptions,
+  data: Buffer,
+  name: string,
+  day: PlainDate,
+  network: string,
+): Promise<string | undefined> {
   const ext = path.extname(name)
   const stem = name.slice(0, ext ? -ext.length : undefined)
   const attachDir = path.join(options.attachmentsDir, dayAttachmentsDir(day))

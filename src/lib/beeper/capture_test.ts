@@ -8,9 +8,15 @@ import { dayAttachmentsDir, dayDir, dayFile, writeDay } from '#shared/nbfs/mod.t
 import { assert, test } from '#test'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import { type BeeperSource, loadBeeperSyncState, markKnown, syncBeeper } from './capture.ts'
-import type { BeeperChat, BeeperMessage, ChatSearch } from './client.ts'
+import type { BeeperAccount, BeeperChat, BeeperMessage, ChatSearch } from './client.ts'
 
-type World = { chats: BeeperChat[]; messages: Record<string, BeeperMessage[]>; asset: string }
+type World = {
+  chats: BeeperChat[]
+  messages: Record<string, BeeperMessage[]>
+  asset: string
+  /** Accounts beside the WhatsApp and Slack ones every world has */
+  accounts?: BeeperAccount[]
+}
 
 /** Beeper as the sync sees it: chats by last activity, messages by cursor, one downloadable file. */
 function beeperWith(world: World): BeeperSource & { calls: string[] } {
@@ -34,6 +40,7 @@ function beeperWith(world: World): BeeperSource & { calls: string[] } {
         user: { id: 'me2' },
         bridge: { id: 'slackgo', type: 'slackgo' },
       },
+      ...(world.accounts ?? []),
     ],
     searchChats: async (params: ChatSearch = {}) => {
       calls.push(`search after ${params.lastActivityAfter}`)
@@ -236,7 +243,7 @@ test('beeper capture - chats land as one saved message per chat per day, then gr
         saved,
         first.notes,
         day10Text.includes('09:12 > Maya WhatsApp -> ['),
-        [state.lastSync, state.chats.c1?.cursor, state.chats.c1?.seen, Object.keys(state.chats.c1?.files ?? {})],
+        [state.lastSync, state.chats.c1?.newest, state.chats.c1?.seen, Object.keys(state.chats.c1?.files ?? {})],
       ],
       expected: [
         [4, 3, []],
@@ -271,7 +278,12 @@ test('beeper capture - chats land as one saved message per chat per day, then gr
         ['2026-03-11_WhatsApp_budget.png'],
         [],
         true,
-        ['2026-03-11T13:00:00Z', '0005', ['c1-0001', 'c1-0002', 'c1-0003'], ['2026-03-10', '2026-03-11']],
+        [
+          '2026-03-11T13:00:00Z',
+          '2026-03-11T08:07:00Z',
+          ['c1-0001', 'c1-0002', 'c1-0003'],
+          ['2026-03-10', '2026-03-11'],
+        ],
       ],
     })
 
@@ -302,7 +314,7 @@ test('beeper capture - chats land as one saved message per chat per day, then gr
     assert({
       given: 'one new message in a chat already saved today, then nothing new',
       should:
-        're-list recent chats with some overlap, append after the cursor without a new file, and leave the file alone afterwards',
+        're-list recent chats with some overlap, append what is new without a new file, and leave the file alone afterwards',
       actual: [
         client.calls,
         [second.chats, second.messages, second.files, (await messagesOf('2026-03-11')).length],
@@ -311,7 +323,7 @@ test('beeper capture - chats land as one saved message per chat per day, then gr
         [third.chats, third.messages, third.files.length, again === grown],
       ],
       expected: [
-        ['search after 2026-03-11T07:00:00Z', 'messages c1 after 0005', 'messages c2 after 0001'],
+        ['search after 2026-03-11T07:00:00Z', 'messages c1 first', 'messages c2 first'],
         [2, 1, ['2026-03-11/actions/messages/' + day11Files.find((f) => f.includes('Maya'))!], 2],
         true,
         [{ file: '2026-03-11_WhatsApp_budget.png' }],
@@ -518,14 +530,14 @@ test('beeper capture - a text from someone with no name in the contacts is held,
     assert({
       given: 'a named contact, a bare number that only ever wrote in, and a handle the person answered',
       should:
-        'save the contact and the answered handle, hold the bare number with no file and no cursor, then save it once marked known',
+        'save the contact and the answered handle, hold the bare number with no file and nothing kept, then save it once marked known',
       actual: [
         [first.chats, first.messages, first.held],
         heldAfterFirst,
         c6AfterFirst,
         filesAfterFirst.map((f) => f.replace(/^\d{2}-\d{2}_whatsapp_/, '').replace(/_[^_]*\.md$/, '')),
         [second.chats, second.messages, second.held, Object.keys(afterSecond.held)],
-        [afterSecond.chats.c6?.known, Boolean(afterSecond.chats.c6?.cursor)],
+        [afterSecond.chats.c6?.known, Boolean(afterSecond.chats.c6?.newest)],
         filesAfterSecond.length,
       ],
       expected: [
@@ -549,4 +561,349 @@ test('beeper capture - a text from someone with no name in the contacts is held,
   } finally {
     await rm(root, { recursive: true, force: true })
   }
+})
+
+test('beeper capture - names from this Mac: a number Contacts know is saved under its name, one the phone filed as known is saved, the rest is held', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'sky-beeper-mac-names-'))
+  const timeDir = path.join(root, 'time')
+  const attachmentsDir = path.join(root, 'attachments')
+  const stateFile = path.join(root, 'state', 'beeper', 'sync.json')
+  // Beeper's iMessage: the chat and its participants carry numbers and nothing else
+  const text = (id: string, number: string, shown: string): BeeperChat => ({
+    id,
+    accountID: 'imessage',
+    network: 'iMessage',
+    title: shown,
+    type: 'single',
+    participants: {
+      items: [
+        { id: `${id}-p`, phoneNumber: number },
+        { id: 'me3', phoneNumber: '+15550100001', isSelf: true },
+      ],
+    },
+    lastActivity: '2026-03-11T09:00:00Z',
+  })
+  const world: World = {
+    asset: '',
+    accounts: [
+      {
+        accountID: 'imessage',
+        network: 'iMessage',
+        status: 'connected',
+        user: { id: 'me3', phoneNumber: '+15550100001', isSelf: true },
+        bridge: { id: 'local-imessage', type: 'imessage' },
+      },
+    ],
+    chats: [
+      text('i1', '+15550102277', '+1 (555) 010-2277'),
+      text('i2', '+15550103000', '+1 (555) 010-3000'),
+      text('i3', '+15550109999', '+1 (555) 010-9999'),
+    ],
+    messages: {
+      i1: [
+        message('i1', '0001', '2026-03-11T08:50:00Z', 'Lunch Thursday?', {
+          accountID: 'imessage',
+          senderID: 'i1-p',
+          senderName: '+1 (555) 010-2277',
+        }),
+        message('i1', '0002', '2026-03-11T08:55:00Z', 'Yes, noon works.', {
+          accountID: 'imessage',
+          isSender: true,
+          senderID: 'me3',
+          senderName: '+1 (555) 010-0001',
+        }),
+      ],
+      i2: [
+        message('i2', '0001', '2026-03-11T08:58:00Z', 'Your table is ready.', {
+          accountID: 'imessage',
+          senderID: 'i2-p',
+          senderName: '+1 (555) 010-3000',
+        }),
+      ],
+      i3: [
+        message('i3', '0001', '2026-03-11T09:00:00Z', 'Hi, this is Dana with the Atlas campaign.', {
+          accountID: 'imessage',
+          senderID: 'i3-p',
+          senderName: '+1 (555) 010-9999',
+        }),
+      ],
+    },
+  }
+  // This Mac: one number has a contact card, one the phone treats as known without a card
+  const mac: Record<string, { name: string | null; known: boolean | null }> = {
+    '+15550102277': { name: 'Maya Okafor', known: true },
+    '+15550103000': { name: null, known: true },
+  }
+  const names = { resolve: (handle: string) => mac[handle] ?? null }
+  await mkdir(path.dirname(stateFile), { recursive: true })
+  await writeFile(
+    stateFile,
+    JSON.stringify({
+      version: 1,
+      chats: {},
+      accounts: { imessage: { network: 'iMessage', save: true, groups: false, holdUnknown: true, chosen: true } },
+    }),
+  )
+  try {
+    const result = await syncBeeper({
+      timeDir,
+      attachmentsDir,
+      stateFile,
+      timezone: 'UTC',
+      dayTimezone: async () => 'UTC',
+      client: beeperWith(world),
+      names,
+      ownerName: 'Jane Doe',
+      now: '2026-03-11T13:00:00Z',
+    })
+    const after = await loadBeeperSyncState(stateFile)
+    const dir = path.join(timeDir, dayDir(PlainDate.fromString('2026-03-11')), 'actions', 'messages')
+    const files = (await readdir(dir)).sort()
+    const maya = MessageDocument.fromMarkdown(
+      await readTextFile(
+        path.join(
+          dir,
+          files.find((f) => f.includes('Maya'))!,
+        ),
+      ),
+    )
+    assert({
+      given: 'iMessage chats that Beeper shows by number alone, with this Mac naming one and vouching for another',
+      should:
+        'save the named one under the contact’s name with the owner on the other side, save the vouched-for number whole, and hold the stranger',
+      actual: [
+        [result.chats, result.messages, result.held],
+        files.map((f) => f.replace(/^\d{2}-\d{2}_imessage_/, '').replace(/_[^_]*\.md$/, '')),
+        [maya.yaml.from, maya.yaml.to],
+        [...maya.markdown.matchAll(/- \*\*(.+?)\*\*/g)].map((m) => m[1]),
+        Object.keys(after.held),
+      ],
+      expected: [
+        [3, 3, [{ chat: '+1 (555) 010-9999', network: 'iMessage' }]],
+        ['Maya', '1-555-010-3000'],
+        ['Maya Okafor', 'Jane Doe'],
+        ['Maya Okafor', 'Jane Doe'],
+        ['i3'],
+      ],
+    })
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('beeper capture - a voice note without words from Beeper is transcribed by Sky, and the words name the message', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'sky-beeper-voice-'))
+  const timeDir = path.join(root, 'time')
+  const attachmentsDir = path.join(root, 'attachments')
+  const stateFile = path.join(root, 'state', 'beeper', 'sync.json')
+  const asset = path.join(root, 'beeper-cache', 'voice.m4a')
+  await mkdir(path.dirname(asset), { recursive: true })
+  await writeFile(asset, new Uint8Array([1, 2, 3, 4]))
+  const world: World = {
+    asset,
+    chats: [
+      {
+        id: 'c1',
+        accountID: 'whatsapp',
+        network: 'WhatsApp',
+        title: 'Maya Okafor',
+        type: 'single',
+        lastActivity: '2026-03-11T09:00:00Z',
+        participants: { items: [{ id: 'u1', fullName: 'Maya Okafor' }] },
+      },
+    ],
+    messages: {
+      c1: [
+        message('c1', '0001', '2026-03-11T08:05:00Z', '', {
+          attachments: [{ id: 'mxc://atlas/2', type: 'audio', isVoiceNote: true, fileName: 'voice.m4a' }],
+        }),
+        message('c1', '0002', '2026-03-11T08:06:00Z', '', {
+          attachments: [{ id: 'mxc://atlas/3', type: 'audio', isVoiceNote: true, fileName: 'voice2.m4a' }],
+        }),
+        message('c1', '0003', '2026-03-11T08:07:00Z', 'and the photo', {
+          attachments: [{ id: 'mxc://atlas/4', type: 'img', fileName: 'site.png' }],
+        }),
+        message('c1', '0004', '2026-03-11T08:08:00Z', '', {
+          attachments: [
+            {
+              id: 'mxc://atlas/5',
+              type: 'audio',
+              isVoiceNote: true,
+              fileName: 'voice3.m4a',
+              transcription: { transcription: 'Beeper heard this one' },
+            },
+          ],
+        }),
+      ],
+    },
+  }
+  await writeDay(DayDocument.createPastDay(PlainDate.fromString('2026-03-11')), timeDir)
+  await mkdir(path.dirname(stateFile), { recursive: true })
+  await writeFile(
+    stateFile,
+    JSON.stringify({
+      version: 1,
+      chats: {},
+      accounts: { whatsapp: { network: 'WhatsApp', save: true, groups: true, holdUnknown: false, chosen: true } },
+    }),
+  )
+  const heard: string[] = []
+  const result = await syncBeeper({
+    client: beeperWith(world),
+    timeDir,
+    attachmentsDir,
+    stateFile,
+    timezone: 'UTC',
+    dayTimezone: async () => 'UTC',
+    now: '2026-03-11T10:00:00Z',
+    transcribe: async (audio, fileName) => {
+      heard.push(`${fileName}:${audio.byteLength}`)
+      if (fileName === 'voice2.m4a') throw new Error('MacWhisper is not installed')
+      return 'Running late, start the kickoff without me'
+    },
+    duration: async () => 4,
+  })
+  const dir = path.join(timeDir, dayDir(PlainDate.fromString('2026-03-11')), 'actions', 'messages')
+  const [file] = (await readdir(dir)).sort()
+  const text = await Bun.file(path.join(dir, file)).text()
+  const dayText = await readTextFile(path.join(timeDir, dayFile(PlainDate.fromString('2026-03-11'))))
+  assert({
+    given: 'three voice notes — one Beeper never transcribed, one Sky cannot, one Beeper did — and a photo',
+    should:
+      'listen only where Beeper left no words, write the words inline, say voice note and its length after the name, name the file by the words, start the day line with Voice note, and list the failed one by file',
+    actual: [
+      heard,
+      file,
+      (text.match(/\*\* \(voice note, 0:04\)$/gm) ?? []).length,
+      /- \*\*Maya Okafor\*\*\n\nand the photo/.test(text),
+      dayText.includes(
+        '08:05 > Maya WhatsApp -> [Voice note: Running late, start the kickoff without me](actions/messages/',
+      ),
+      /^summary: Running late, start the kickoff without me$/m.test(text),
+      text.includes('🎤 Running late, start the kickoff without me'),
+      text.includes('🎤 Beeper heard this one'),
+      /📎 .*voice2\.m4a/.test(text),
+      /📎 .*site\.png/.test(text),
+      result.notes.filter((note) => note.includes('could not be transcribed')).length,
+      result.notes.some((note) => note.includes('MacWhisper is not installed')),
+    ],
+    expected: [
+      ['voice.m4a:4', 'voice2.m4a:4'],
+      '08-05_whatsapp_Maya_Running-late-start-the-kickoff.md',
+      3,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      1,
+      true,
+    ],
+  })
+  await rm(root, { recursive: true, force: true })
+})
+
+test('beeper capture - a sender whose number a people record carries is filed under the record’s name on any network', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'sky-beeper-people-'))
+  const timeDir = path.join(root, 'time')
+  const attachmentsDir = path.join(root, 'attachments')
+  const stateFile = path.join(root, 'state', 'beeper', 'sync.json')
+  const world: World = {
+    asset: path.join(root, 'none.png'),
+    chats: [
+      {
+        id: 'c1',
+        accountID: 'whatsapp',
+        network: 'WhatsApp',
+        title: 'Maya O.',
+        type: 'single',
+        lastActivity: '2026-03-11T09:00:00Z',
+        participants: { items: [{ id: 'u1', fullName: 'Maya O.', phoneNumber: '+1 (555) 010-2277' }] },
+      },
+      {
+        id: 'g1',
+        accountID: 'whatsapp',
+        network: 'WhatsApp',
+        title: 'Atlas launch team',
+        type: 'group',
+        lastActivity: '2026-03-11T09:30:00Z',
+        participants: {
+          items: [
+            { id: 'u1', fullName: 'Maya O.', phoneNumber: '+1 (555) 010-2277' },
+            { id: 'u2', fullName: 'Sam Lee', phoneNumber: '+1 (555) 010-3000' },
+          ],
+        },
+      },
+    ],
+    messages: {
+      c1: [message('c1', '0001', '2026-03-11T08:05:00Z', 'Landed', { senderName: 'Maya O.' })],
+      g1: [
+        message('g1', '0001', '2026-03-11T09:20:00Z', 'Kickoff at 3', { senderName: 'Maya O.' }),
+        message('g1', '0002', '2026-03-11T09:25:00Z', 'On it', { senderName: 'Sam Lee', senderID: 'u2' }),
+      ],
+    },
+  }
+  await writeDay(DayDocument.createPastDay(PlainDate.fromString('2026-03-11')), timeDir)
+  await mkdir(path.dirname(stateFile), { recursive: true })
+  await writeFile(
+    stateFile,
+    JSON.stringify({
+      version: 1,
+      chats: {},
+      accounts: { whatsapp: { network: 'WhatsApp', save: true, groups: true, holdUnknown: false, chosen: true } },
+    }),
+  )
+  await syncBeeper({
+    client: beeperWith(world),
+    timeDir,
+    attachmentsDir,
+    stateFile,
+    timezone: 'UTC',
+    dayTimezone: async () => 'UTC',
+    now: '2026-03-11T10:00:00Z',
+    names: {
+      resolve: (handle) =>
+        handle.replace(/\D/g, '').endsWith('5550102277')
+          ? { name: 'Maya Okafor', known: true, source: 'notebook' }
+          : null,
+    },
+  })
+  const dir = path.join(timeDir, dayDir(PlainDate.fromString('2026-03-11')), 'actions', 'messages')
+  const files = (await readdir(dir)).sort()
+  const single = await readTextFile(
+    path.join(
+      dir,
+      files.find((f) => f.includes('Maya'))!,
+    ),
+  )
+  const group = await readTextFile(
+    path.join(
+      dir,
+      files.find((f) => f.includes('Atlas'))!,
+    ),
+  )
+  assert({
+    given: 'a WhatsApp chat and a group where Beeper calls her Maya O., and a people record carrying her number',
+    should:
+      'name the file, from: and every heading of hers by the record, and leave the other sender as Beeper names him',
+    actual: [
+      files,
+      /^from: Maya Okafor$/m.test(single),
+      single.includes('- **Maya Okafor**'),
+      group.includes('- **Maya Okafor**'),
+      group.includes('- **Sam Lee**'),
+      group.includes('Maya O.'),
+    ],
+    expected: [
+      ['08-05_whatsapp_Maya_Landed.md', '09-20_whatsapp_Atlas-launch-team_Kickoff-at-3.md'],
+      true,
+      true,
+      true,
+      true,
+      false,
+    ],
+  })
+  await rm(root, { recursive: true, force: true })
 })

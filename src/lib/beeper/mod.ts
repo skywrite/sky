@@ -35,6 +35,7 @@ export { beeperText, decodeEntities } from './text.ts'
 export {
   AccountRuleSchema,
   BeeperSyncStateSchema,
+  chatLabel,
   HeldChatSchema,
   isSlackAccount,
   judgeChat,
@@ -55,6 +56,8 @@ export type {
   ChatVerdict,
   HeldChat,
   LastRun,
+  SenderNames,
 } from './capture.ts'
 export { previewBeeper } from './preview.ts'
+export { notebookSenderNames } from './senders.ts'
 export type { BeeperPreview, BeeperPreviewSource, PreviewPile, PreviewRow } from './preview.ts'

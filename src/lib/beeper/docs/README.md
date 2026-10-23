@@ -1,6 +1,6 @@
 ---
 created: 2026-09-16
-updated: 2026-09-22
+updated: 2026-10-20
 ---
 
 # Beeper — every chat on this Mac, saved as messages
@@ -27,6 +27,8 @@ composer. Nothing here reaches the network: the app answers on
 - `text.ts` — Matrix HTML folded back into markdown. Plain text passes
   through untouched.
 - `capture.ts` — the sync, below.
+- `../macMessages/` — names for the senders Beeper shows by number alone,
+  from this Mac's Contacts and Messages; the capture takes it as `names`.
 
 Commands: `sky beeper:auth` (connect, `--status`, `--token`, `--remove`)
 and `sky beeper:inbox:sync` (the capture; `--days` bounds the first run).
@@ -35,10 +37,12 @@ button and shows the networks Beeper carries.
 
 ## The capture
 
-Every five minutes the service heartbeat runs `beeper:inbox:sync`. The run
-asks Beeper which chats in the primary inbox moved since the last run, pulls
-each chat's messages after the chat's saved cursor, and writes them into the
-notebook:
+Every minute the service heartbeat runs `beeper:inbox:sync`, so a message
+the person sends is in the notebook within the minute. The run asks Beeper
+which chats in the primary inbox moved since the last run, reads each such
+chat newest-first down to what it has already shown (never `after` a cursor:
+the 2026-10-20 note on iMessage paging), and writes the new messages into
+the notebook:
 
 - One file per chat per day under the day's `actions/messages/`, named
   `HH-MM_<network>_<who>_<summary>.md`, the same shape Gmail captures use:
@@ -51,8 +55,19 @@ notebook:
 - Your own messages are saved with the rest, under your account's display
   name, so Outbox can see when you answered.
 - Photos, files and voice notes are copied into the day's attachments
-  folder and listed in the file; a voice note with a transcription keeps
-  the transcript inline. Stickers and GIFs are named, not copied.
+  folder and listed in the file. A voice note says so in its heading, after
+  the name, with its length when ffprobe can measure the copy —
+  `**Maya Okafor** (voice note, 0:42)` — and its day line starts with
+  "Voice note:". It keeps its words inline:
+  Beeper's transcription when it offers one (WhatsApp does), else the
+  provider chosen under Settings → AI → Audio transcription listens to the
+  copy during the sync, so nothing waits on the person; a voice note that
+  could not be transcribed is listed by file name and the run says why. The
+  words also name a message that has no text of its own. Stickers and GIFs
+  are named, not copied. For iMessage, Beeper points at the Mac's own
+  Messages library for every photo and voice note, which the service can
+  read only with the Full Disk Access grant that names the senders
+  (`../macMessages/docs/README.md`).
 - The day file gets a Complete entry per new file, the way Slack captures
   add one. A day with no day file yet keeps the capture without an entry.
 
@@ -96,11 +111,27 @@ preview marks such chats `held: unknown sender`; it cannot see who wrote,
 so a chat the person answered reads as held there and is saved by the
 check.
 
+Who a sender is, on every network, is settled in one order (`senders.ts`):
+the notebook's own people records first, by the number or address their
+`email:` and `phone:` fields carry — that name is the one the notebook uses
+for the person, whatever the phone calls them, and it outranks the name the
+messenger shows; then this Mac's Contacts and Messages (`lib/macMessages/`),
+whose cards can also lead to a record through an address they share with it;
+then the messenger's own name; then the handle. iMessage is the one network
+Beeper shows by number alone — no name on a participant, no contacts for the
+account (the 2026-10-20 note below) — so for it the lookup is the only
+source of names: a number Contacts can name, or one the phone itself files
+as known, is not unknown, and the name goes on the file, the headings and
+`from:`. The owner's side comes from `me/about.md`. Without the
+lookup — the service lacking Full Disk Access — every iMessage sender would
+be held, and the network's card says so.
+
 State lives in `state/beeper/sync.json`: the last run's instant, the rules
 above, the held chats, the last run itself (counts, what it left out and
-why, which networks were off) for the page, and per chat its cursor, the
+why, which networks were off) for the page, and per chat the instant of the
+newest message it has shown (the next run looks from an hour before it), the
 ids of recent messages (so a re-run never writes a message twice), `known`
-once the person said Save, and the day → file map. The first run reaches back thirty days; a chat limit per run
+once the person said Save, and the day → file map. The first run reaches back seven days (2026-10-20: a month of old texts was too much; `--days` widens it); a chat limit per run
 leaves the rest for the next tick.
 
 ## Outbox
@@ -131,5 +162,7 @@ Beeper brings the app forward on the chat.
 
 ## Notes
 
+- [2026-10-20 — Beeper pages iMessage only forward](2026-10-20-beeper-pages-imessage-only-forward.md).
+- [2026-10-20 — iMessage names come from the Mac](2026-10-20-imessage-names-come-from-the-mac.md).
 - [2026-09-22 — Each network has a switch](2026-09-22-each-network-has-a-switch.md).
 - [2026-09-16 — Beeper brings the other chats in](2026-09-16-beeper-brings-the-other-chats-in.md).

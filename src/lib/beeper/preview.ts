@@ -1,5 +1,12 @@
 import { Instant } from '#universal/dates/nbdt/mod.ts'
-import { type BeeperSyncState, judgeChat, reconcileAccountRules, unknownSender } from './capture.ts'
+import {
+  type BeeperSyncState,
+  chatLabel,
+  judgeChat,
+  reconcileAccountRules,
+  type SenderNames,
+  unknownSender,
+} from './capture.ts'
 import type { BeeperAccount, BeeperChat, BeeperClient, ChatSearch } from './client.ts'
 
 /**
@@ -37,6 +44,8 @@ export async function previewBeeper(options: {
   /** When the preview runs, as an ISO instant. */
   now: string
   backfillDays?: number
+  /** Names for the people Beeper shows by number alone — see lib/macMessages */
+  names?: SenderNames
 }): Promise<BeeperPreview> {
   const since = Instant.fromEpochMilliseconds(
     Instant.from(options.now).epochMilliseconds - (options.backfillDays ?? 30) * 86_400_000,
@@ -55,7 +64,8 @@ export async function previewBeeper(options: {
       limit: PER_PILE,
     })
     if (page.hasMore) complete = false
-    for (const chat of page.items) rows.push(row(chat, pile, accounts.get(chat.accountID), options.state))
+    for (const chat of page.items)
+      rows.push(row(chat, pile, accounts.get(chat.accountID), options.state, options.names))
   }
   return { rows, complete }
 }
@@ -65,14 +75,15 @@ function row(
   pile: PreviewPile,
   account: BeeperAccount | undefined,
   state: BeeperSyncState,
+  names?: SenderNames,
 ): PreviewRow {
   const rule = state.accounts[chat.accountID]
   let verdict = judgeChat(chat, account, rule)
   // The capture also asks whether the person ever wrote there; the preview cannot without the messages.
-  if (verdict.save && rule?.holdUnknown && !state.chats[chat.id]?.known && unknownSender(chat, account))
+  if (verdict.save && rule?.holdUnknown && !state.chats[chat.id]?.known && unknownSender(chat, account, names))
     verdict = { save: false, reason: 'held: unknown sender' }
   return {
-    chat: chat.title || chat.id,
+    chat: chatLabel(chat, account, names),
     network: chat.network.trim() || account?.network?.trim() || 'Beeper',
     group: chat.type === 'group',
     pile,

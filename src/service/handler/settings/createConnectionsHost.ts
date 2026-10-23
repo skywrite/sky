@@ -29,6 +29,7 @@ import {
   saveBeeperGrant,
   saveBeeperSyncState,
   startBeeperSignIn,
+  notebookSenderNames,
 } from '#lib/beeper/mod.ts'
 import {
   buildAuthUrl,
@@ -45,7 +46,7 @@ import {
   startLoopback,
 } from '#lib/google/mod.ts'
 import type { CloudSetupRun } from '#lib/google/mod.ts'
-import { macMessagesStatus } from '#lib/macMessages/mod.ts'
+import { macMessagesStatus, openMacSenderLookup } from '#lib/macMessages/mod.ts'
 import { KeychainSecretsProvider } from '#lib/secrets/KeychainSecretsProvider.ts'
 import { createSecret, updateEntry } from '#lib/secrets/marshal.ts'
 import type { SecretsProvider } from '#lib/secrets/SecretsProvider.ts'
@@ -58,6 +59,7 @@ import {
   TYPESAFE_SECRET,
 } from '#shared/ai/typesafe/client.ts'
 import { loadSkyConfig, slackForYou } from '#shared/config/loader.ts'
+import PeopleStore from '#shared/models/Store/PeopleStore/mod.ts'
 import {
   type BeeperAccountRow,
   type BeeperConnectState,
@@ -331,7 +333,15 @@ function beeperConnection(
       const client = await ready()
       if (!client) return null
       const state = await loadBeeperSyncState(stateFile)
-      const preview = await previewBeeper({ client, state, now: new Date().toISOString() })
+      const preview = await previewBeeper({
+        client,
+        state,
+        now: new Date().toISOString(),
+        names: notebookSenderNames(
+          await PeopleStore.build([notebookConfig.DIR_PEOPLE, notebookConfig.DIR_PEOPLE_OLD]).catch(() => null),
+          await openMacSenderLookup(),
+        ),
+      })
       await saveBeeperSyncState(stateFile, state)
       return preview
     },

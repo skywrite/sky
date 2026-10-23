@@ -106,3 +106,63 @@ test('beeper preview - every pile, every chat, with the capture’s verdict and 
     ],
   })
 })
+
+test('beeper preview - a name from this Mac stands in for the number Beeper shows, and a number the phone knows is not held', async () => {
+  const number = (id: string, phone: string, shown: string) =>
+    chat({
+      id,
+      accountID: 'imessage',
+      network: 'iMessage',
+      title: shown,
+      participants: { items: [{ id: `${id}-p`, phoneNumber: phone }] },
+    })
+  const client = {
+    accounts: async () => [
+      { accountID: 'imessage', network: 'iMessage', bridge: { id: 'local-imessage', type: 'imessage' } },
+    ],
+    searchChats: async (params: ChatSearch = {}) => ({
+      items:
+        params.inbox === 'primary'
+          ? [
+              number('m1', '+15550102277', '+1 (555) 010-2277'),
+              number('m2', '+15550103000', '+1 (555) 010-3000'),
+              number('m3', '+15550109999', '+1 (555) 010-9999'),
+            ]
+          : [],
+      hasMore: false,
+    }),
+  }
+  const mac: Record<string, { name: string | null; known: boolean | null }> = {
+    '+15550102277': { name: 'Maya Okafor', known: true },
+    '+15550103000': { name: null, known: true },
+  }
+  const state: BeeperSyncState = {
+    version: 1,
+    chats: {},
+    held: {},
+    accounts: { imessage: { network: 'iMessage', save: true, groups: false, holdUnknown: true, chosen: true } },
+  }
+  const preview = await previewBeeper({
+    client,
+    state,
+    now: '2026-03-11T13:00:00Z',
+    names: { resolve: (handle) => mac[handle] ?? null },
+  })
+  assert({
+    given: 'three iMessage chats shown by number, one with a contact card on this Mac, one the phone treats as known',
+    should: 'show the contact’s name, save both of those, and hold the stranger',
+    actual: preview.rows,
+    expected: [
+      { chat: 'Maya Okafor', network: 'iMessage', group: false, pile: 'primary', save: true },
+      { chat: '+1 (555) 010-3000', network: 'iMessage', group: false, pile: 'primary', save: true },
+      {
+        chat: '+1 (555) 010-9999',
+        network: 'iMessage',
+        group: false,
+        pile: 'primary',
+        save: false,
+        reason: 'held: unknown sender',
+      },
+    ],
+  })
+})
