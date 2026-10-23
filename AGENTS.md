@@ -122,6 +122,15 @@ It's fine to use a real value transiently to **verify** behavior (run the comman
 
 **Mandatory before every commit:** grep the staged diff for every real name/value you encountered during the session (`git diff --staged | grep -i "<name>"`). If you explored the notebook at all, assume leakage until the grep proves otherwise.
 
+## Documentation Readability
+
+Apply these guidelines to all documentation, including READMEs, design notes, and `AGENTS.md`.
+Wrap prose at roughly 120 characters per source line, splitting long sentences across lines as needed.
+Prefer starting each sentence on a new line so edits stay easy to review in diffs.
+
+Keep each paragraph focused on one thought, and split long paragraphs where the subject changes.
+Treat these as readability guidelines; keep code, tables, URLs, and syntax intact when wrapping would damage them.
+
 ## Subsystem Docs — Design Notes & Problem Logs
 
 Non-obvious design context lives next to the code that owns it, in a `docs/` folder beside the module (index: `git ls-files '*docs/*.md'`). Before non-trivial work in a subsystem, check for one and read its README.
