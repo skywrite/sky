@@ -4,6 +4,7 @@ import { Collection } from '#shared/models/Markdown/mod.ts'
 import PersonDocument from '#shared/models/Person/mod.ts'
 import { normalizeName } from '../normalize.ts'
 import type { StoreError, StoreWarning } from '../types.ts'
+import { handleKey, recordHandleKeys } from './handles.ts'
 
 /**
  * Store for Person documents with name-based lookup.
@@ -19,6 +20,9 @@ export default class PeopleStore {
 
   /** File path → Person (for findByPath) */
   private byPath: Map<string, PersonDocument> = new Map()
+
+  /** Handle key (a number's digits, an address lower-cased) → { person, path }, from `email:` and `phone:` */
+  private byHandle: Map<string, { value: PersonDocument; path: string }> = new Map()
 
   /** Errors encountered during build */
   private _errors: StoreError[] = []
@@ -74,6 +78,11 @@ export default class PeopleStore {
             }
           }
 
+          // Index by the handles the record carries
+          for (const key of recordHandleKeys(person.email, person.phone)) {
+            store.byHandle.set(key, { value: person, path: entry.path })
+          }
+
           // Also index by alt name if present
           if (person.alt) {
             const normalized = normalizeName(person.alt)
@@ -117,6 +126,10 @@ export default class PeopleStore {
       }
     }
 
+    for (const key of recordHandleKeys(person.email, person.phone)) {
+      this.byHandle.set(key, { value: person, path: filePath })
+    }
+
     // Also index by alt name
     if (person.alt) {
       const normalized = normalizeName(person.alt)
@@ -133,6 +146,9 @@ export default class PeopleStore {
     const existing = this.byPath.get(filePath)
     if (!existing) return
 
+    for (const [key, entry] of this.byHandle) {
+      if (entry.path === filePath) this.byHandle.delete(key)
+    }
     // Remove all name index entries pointing to this path
     for (const [key, entry] of this.byName) {
       if (entry.path === filePath) {
@@ -147,6 +163,12 @@ export default class PeopleStore {
    * Find a person by name (case-insensitive).
    * Returns both the person and their file path.
    */
+  /** The person whose record carries this phone number or email address, however it is written */
+  findByHandle(handle: string): { value: PersonDocument; path: string } | undefined {
+    const key = handleKey(handle)
+    return key ? this.byHandle.get(key) : undefined
+  }
+
   find(name: string): { value: PersonDocument; path: string } | undefined {
     return this.byName.get(normalizeName(name))
   }

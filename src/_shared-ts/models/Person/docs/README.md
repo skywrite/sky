@@ -1,6 +1,6 @@
 ---
 created: 2026-08-29
-updated: 2026-10-11
+updated: 2026-10-20
 ---
 
 # Person profiles — what the AI may write, and how it must read
@@ -60,6 +60,7 @@ Frontmatter, then `# Name`, then `##` sections.
 | Lead prose under `# Name`, `###` sub-sections, dated or one-off sections | hand | Nothing. Passes through verbatim. |
 | `location`, `title`, `org` | hand + AI | Fill when empty. Never overwrite. |
 | `sites:` | hand + AI | Add a URL, deduped. |
+| `email:`, `phone:` | hand | Nothing. A value, a list, or `personal:` and `business:` lines holding either. Captures match a sender's address or number against them, so a message from that number is filed under this record's name on every network (`lib/beeper/senders.ts`). |
 | `name:` list | hand + AI | Move a name to index 0 on explicit "goes by" evidence. Drop nothing. |
 | `updated:` | AI | Stamped with today when any op applies. |
 

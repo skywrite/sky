@@ -56,6 +56,11 @@ export default class Person {
     return this.doc.email
   }
 
+  /** Phone numbers as written in the record: a value, a list, or personal/business lines */
+  get phone(): unknown {
+    return this.doc.phone
+  }
+
   get title(): string | undefined {
     return this.doc.title
   }

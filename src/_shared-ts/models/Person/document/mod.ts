@@ -74,6 +74,14 @@ export default class PersonDocument extends Document {
     )
   }
 
+  /**
+   * Phone numbers, one or several: a value, a list, or `personal:` and
+   * `business:` lines holding either — the shape `email:` takes.
+   */
+  get phone(): unknown {
+    return this.yaml['phone']
+  }
+
   get title(): string | undefined {
     return this.yaml['title'] as string | undefined
   }
@@ -236,6 +244,7 @@ export default class PersonDocument extends Document {
     'orgs',
     'title',
     'email',
+    'phone',
     'sites',
     'created',
     'updated',
