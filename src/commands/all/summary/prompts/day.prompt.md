@@ -1,6 +1,6 @@
 ---
 created: 2026-01-03
-updated: 2026-10-10
+updated: 2026-10-22
 description: Daily Summary generator - facts-first mirror of the day
 ---
 
@@ -42,7 +42,7 @@ The day's evidence stream, in time order:
 - `ai-chats/` - AI working sessions (reading rules below)
 - `notes/`, `docs/`, `videos/` - notes taken, documents drafted, recordings made
 - `events/` - calendar-sourced records (earnings calls, conferences, personal events): `what:`/`who:`/`when:` frontmatter. A session can appear both here and in `meetings/` - treat title/time twins as ONE session, preferring the meeting's actual `when:` range over the event's scheduled one
-- `recaps/` - generated daily digests of {{me.firstName}}'s activity in connected apps (GitHub, Claude Code, MyFitnessPal): itemized commits, PRs, reviews, coding sessions, logged meals and exercise. `app:` frontmatter names the app; `when:` spans first→last event and is never hours worked (rules below)
+- `recaps/` - generated daily digests of {{me.firstName}}'s activity in connected apps (GitHub, Claude Code, MyFitnessPal): itemized commits, PRs, reviews, coding sessions, logged meals and exercise. `app:` frontmatter names the app; `when:` spans first→last event and is never hours worked (rules below). The Slack recap (`app: slack`) is the exception: it digests every Slack channel he is a member of - the room he was in, not his activity - with a Channels block, What moved, Asked of you and Where things stand sections, every line tagged `[#channel HH:MM]`; lines starting `You:` are his own messages (rules below)
 
 Some `messages/` files carry an `ARCHIVAL` marker in their path comment, after the date stamp (`<!-- <date> | ARCHIVAL | ... -->`): threads {{me.firstName}} saved for reference but did not participate in - he appears nowhere in them. They are filed material, not his activity (rules below).
 
@@ -198,6 +198,15 @@ Transcripts of {{me.firstName}} working with an AI tool. The messages sit under 
 
 ---
 
+## Channels
+
+[Only when a Slack recap is among the inputs; omit the section otherwise. Carry its Channels block over: one line per channel where something of consequence moved, busiest first, with its message count, then the closing line rolling up the quiet channels with their counts. Every channel the recap lists appears once: on its own line or in the rollup.]
+
+- **[#channel]** ([N]): [What moved, in one line]
+- *Quiet: [#channel (N), #channel (N), ...]*
+
+---
+
 ## Asset Prices
 
 [Include whenever price data is in the header; omit otherwise.]
@@ -227,9 +236,9 @@ Every line must trace to something in the input. If you cannot point at the file
 
 The opening story and each Meaningful Moment use real Markdown links to the supporting day files, with short labels such as `[meeting 10:00](<actions/meetings/10-00_Atlas-Planning.md>)` or `[journal](<journal/morning.md>)`. Put links at the end of the sentence or paragraph they support, including every file needed to support its claims. Headline and moment titles rest on the linked prose beneath them. Facts provided directly in the input header, such as location or health measurements, need no file link.
 
-Use the exact supplied file paths, relative to `summary.md`. The input header identifies the summary directory relative to `time/`; day-file path comments use that same base. Remove that directory prefix to get a same-day link, preserving the remaining filename and case. Use angle brackets around link destinations so spaces work. Never invent a filename or link to a background file as evidence of today's activity.
+Use the exact supplied file paths, relative to `summary.md`. The input header identifies the summary directory relative to `time/`; day-file path comments use that same base. Remove that directory prefix to get a same-day link, preserving the remaining filename and case. Use angle brackets around link destinations so spaces work. Never invent a filename or link to a background file as evidence of today's activity. The Slack recap is a day file and links like any other.
 
-In the detailed record, every bullet ends with a source tag in square brackets, and every table row has a Source column: the medium of the file the line rests on and its time - `[slack 13:05]`, `[email 15:01]`, `[meeting 10:00]`, `[chat 14:38]`, `[recap]`, `[journal]`, `[day]`, `[tracking]`. The time is the file's HH-MM prefix or its `when:` start; omit it when the file has none. One tag per line, the file that best supports it. A line you cannot tag is a line you cannot write. Sections built from the header (Health, Asset Prices) and sections that already name their file (Time, Archival) carry no tags.
+In the detailed record, every bullet ends with a source tag in square brackets, and every table row has a Source column: the medium of the file the line rests on and its time - `[slack 13:05]`, `[email 15:01]`, `[meeting 10:00]`, `[chat 14:38]`, `[recap]`, `[journal]`, `[day]`, `[tracking]`. A line resting on the Slack recap carries the recap line's own tag, the channel and time, in place of the medium: `[#release 13:05]`. The time is the file's HH-MM prefix or its `when:` start; omit it when the file has none. One tag per line, the file that best supports it. A line you cannot tag is a line you cannot write. Sections built from the header (Health, Asset Prices) and sections that already name their file (Time, Archival, Channels) carry no tags.
 
 ### Recognition before inventory
 
@@ -297,6 +306,14 @@ An ARCHIVAL-marked message is something {{me.firstName}} filed, not something he
 - Promises inside them are between third parties: not Commitments Made, not Waiting On
 - List each under `## Archival` as one line; use their content freely as background, and let a genuinely noteworthy development in one surface as a Signal - attributed as observed, never as his doing
 
+### The Slack recap is the room, not the day
+
+The Slack recap digests every channel {{me.firstName}} is a member of; he read it, or could have, and mostly did not write in it:
+
+- A recap line follows the ARCHIVAL rules: never Done, its promises are between third parties, and its time is someone else's clock. A line starting `You:` is his own message and his activity: Done, Commitments Made, Waiting On and Rhythm all apply.
+- A thread he took part in usually also arrives as a capture in `messages/`. Report it once, from the capture, with the capture's tag.
+- The recap's Channels block feeds `## Channels`. Its Asked of you lines are open loops: a Signal or a Where Things Stand line when they matter, never a Commitment. A genuinely noteworthy development may surface as a Signal, attributed as observed; the matters it names belong in Where Things Stand like any other.
+
 ### Recaps - work witnessed in connected apps
 
 A recap (`actions/recaps/`) is generated evidence of {{me.firstName}}'s activity in an external app - commits, PRs, reviews, coding sessions. The app holds the substance; the recap is its daily digest.
@@ -350,7 +367,7 @@ A matter is anything a future question will be about: a deal, a person's situati
 
 ### Length
 
-Keep the opening easy to read: a headline of at most 12 words, a story of at most 70 words, and moments of at most 50 words each with titles of at most 10 words. Source labels and destinations do not count toward these limits. The detailed record typically takes another 40-80 lines. A heavy day earns more detail below, a quiet day less - never pad empty sections.
+Keep the opening easy to read: a headline of at most 12 words, a story of at most 70 words, and moments of at most 50 words each with titles of at most 10 words. Source labels and destinations do not count toward these limits. The detailed record typically takes another 40-80 lines, plus a Channels section on days with a Slack recap. A heavy day earns more detail below, a quiet day less - never pad empty sections.
 
 Before returning, reread just the opening. Remove activity counts, lists disguised as sentences, and details that belong below. Check the word limits. The reader should remember a few things, not have to unpack an abbreviated report.
 
@@ -477,6 +494,14 @@ You sent Northwind its completed security questionnaire, clearing the last open 
 
 ---
 
+## Channels
+
+- **#platform** (41): the staging outage traced to the cache rollout, rolled back by 15:10
+- **#sales** (12): Quantum Labs asked for a security review before their pilot starts
+- *Quiet: #design (4), #team-survey (3), #ops-alerts (2)*
+
+---
+
 ## Asset Prices
 
 | Asset | Price |
@@ -492,4 +517,5 @@ You sent Northwind its completed security questionnaire, clearing the last open 
 - Mobile redesign — decided: Concept C, cost estimate pending from Maria
 - Northwind pilot — moved: questionnaire answered, three case studies promised by end of January
 - Infrastructure budget — decided: reserved instances, $12k a month expected
+- Staging outage — closed: the cache rollout rolled back by 15:10, root cause with the platform team
 ```

@@ -1,6 +1,6 @@
 ---
 created: 2026-09-27
-updated: 2026-09-30
+updated: 2026-10-20
 ---
 
 # Summaries
@@ -22,13 +22,19 @@ The detailed sections follow: Done (Strategic / Operational / Health / Personal,
 
 A closing **Where Things Stand** section is the day's index: one line per matter the day touched, with its state at day's end. Search lands on that line, and the weekly summary follows a matter across the days it appears in.
 
+## The Slack recap
+
+Slack channels reach the summary through the Slack recap, `actions/recaps/<time>_slack.md`, which `recap:slack` writes from the channel cache with Opus 5.5 at high effort ([recap notes](../../recap/docs/README.md)): every channel the owner is a member of, digested into a Channels block, What moved, Asked of you and Where things stand, each line tagged with its channel and time. The service writes it once the next day has started; `summary:day` writes it first when a day with channel messages has none, and `--dry-run` only says so. To the prompt the recap is the room the owner was in: a line in it is filed material unless it starts with `You:`, its Channels block becomes the summary's `## Channels` section, and the matters go to Where Things Stand. The raw channel files never reach the summary.
+
+The reading budget is 750k of the model's tokens, fitted to the profile's window. The text is measured at four characters a token and restated through the model's learned ratio (`_shared-ts/ai/tokenRatio.ts`); over budget, the command refuses rather than trims.
+
 ## Streaks
 
 The day file's Streaks list carries a running count in each item. The count depends on earlier days, so it never enters the summary. `lib/streaks.ts` reads the list and hands the model one Health row, completion only: `done: morning pages, no sugar; not done: inbox zero`. The prompt forbids streaks anywhere else, including Not Done.
 
 ## Pieces
 
-- `day.ts` gathers the day (`lib/gatherDayDocs.ts`), builds the entity background, writes the prompt header (location, prices, health, streaks), calls the model, and writes the file with a `SUMMARY-CONTEXT` record (`lib/contextRecord.ts`) of what the model read.
+- `day.ts` gathers the day (`lib/gatherDayDocs.ts`), writing the Slack recap first when it is missing (`recap:slack`), builds the entity background, writes the prompt header (location, prices, health, streaks), calls the model, and writes the file with a `SUMMARY-CONTEXT` record (`lib/contextRecord.ts`) of what the model read.
 - `prompts/day.prompt.md` is the contract with the model. `prompts/week.prompt.md` reads the dailies by section name, so a section rename lands in both.
 - `--dry-run` prints the prompts without calling the model; `--stdout` prints the summary without writing it.
 

@@ -1,13 +1,16 @@
 import * as path from 'node:path'
 import { generateText } from 'ai'
+import { findRecapFile } from '#commands/all/recap/lib/writeRecapFile.ts'
+import { hasNotebookDay } from '#commands/all/slack/pull/lib/dayView.ts'
 import { aiEffortFlag } from '#commands/lib/aiParams.ts'
 import { Command, CommandResult, dayNoFutureArg, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
-import { DIR_OUTPUT } from '#config'
+import { DIR_OUTPUT, DIR_STATE_SLACK_DAYS } from '#config'
 import { listOwnAddresses } from '#lib/google/ownAddresses.ts'
 import openEditor from '#lib/shell/openEditor.ts'
 import { logAIError } from '#shared/ai/errorLog.ts'
-import { aiModelByProfile, getProfile } from '#shared/ai/models.ts'
+import { aiModelByProfile, getProfile, type ModelProfile } from '#shared/ai/models.ts'
+import { ratioFor } from '#shared/ai/tokenRatio.ts'
 import { exists, readTextFile, writeTextFile } from '#shared/fs/mod.ts'
 import { AboutMeDocument } from '#shared/models/AboutMe/mod.ts'
 import { estimateTokens } from '#shared/models/AI/ContextAssembler/mod.ts'
@@ -20,6 +23,7 @@ import { dayDir, isActionPath } from '#shared/nbfs/mod.ts'
 import { readPromptFile } from '#shared/prompts/load.ts'
 import { renderPromptFile } from '#shared/prompts/mod.ts'
 import { stringify } from '#shared/yaml/mod.ts'
+import { estimatedTokens, fitBudget, modelTokens } from '#universal/ai/readingBudget.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import { gatherHealthData, type HealthData } from './_health.ts'
 import { type DayPriceData, gatherDayPriceData } from './_prices.ts'
@@ -29,9 +33,11 @@ import { type StreakCompletion, streakCompletion, streakRow } from './lib/streak
 
 const PROMPT_FILE = new URL('./prompts/day.prompt.md', import.meta.url).pathname
 
-// Hard ceiling for the day's complete record. Over-budget contexts refuse
-// to generate instead of trimming the day's documents.
-const CONTEXT_BUDGET_TOKENS = 400_000
+// The reading budget, in the model's tokens: the day's complete record,
+// the Slack recap included, in one request. A profile whose window is
+// smaller takes the highest stop that fits (universal/ai/readingBudget.ts).
+// Over budget, the day refuses to generate instead of trimming.
+const READING_BUDGET_TOKENS = 750_000
 
 // Follow previous: links two hops back — enough to read a reply in thread
 // context without dragging in a week-old tail.
@@ -68,7 +74,8 @@ export default class SummaryDayTask extends Command {
     descriptionLong: [
       'Creates a summary.md file in the day directory: the day compressed once, for reading tomorrow and for search later.',
       'Opens with a recognizable headline, a short story, and Meaningful Moments linked to original day files, generated alongside the detailed record.',
-      'Detailed sections: Done, Not Done, Commitments Made, Waiting On, Time, Health, Signals, Insights, Archival, Asset Prices - every line names its source file.',
+      'Detailed sections: Done, Not Done, Commitments Made, Waiting On, Time, Health, Signals, Insights, Archival, Channels, Asset Prices - every line names its source file.',
+      'Slack channels reach it through the Slack recap that recap:slack writes from the channel cache; a day with channel messages but no recap gets one written first. Channels lists what moved where.',
       'The day is self-contained: nothing in it depends on another day. A closing Where Things Stand section names what the day touched and where each stood.',
     ],
     usage: [
@@ -117,14 +124,33 @@ export default class SummaryDayTask extends Command {
 
     // Resolve the profile up front — a bad -m should fail before any work,
     // and the resolved model id gets stamped into the output frontmatter.
-    let modelId: string
+    let profile: ModelProfile
     try {
-      modelId = getProfile(model).model
+      profile = getProfile(model)
     } catch (err) {
       return CommandResult.fail((err as Error).message)
     }
+    const modelId = profile.model
+    // The budget and every count shown are the model's tokens; the text is
+    // measured at four characters a token and restated through the ratio
+    // learned for the model.
+    const budget = fitBudget(READING_BUDGET_TOKENS, profile.contextWindow)
+    const ratio = ratioFor(modelId)
 
     output.log(`Generating Daily Summary for ${day.ymd}...`)
+
+    // The Slack recap: the day's channels digested by recap:slack. The
+    // service writes it once the next day has started; a day summarized
+    // before that, or on a machine that missed it, gets it written first.
+    if (!(await findRecapFile(day, 'slack', timeDir)) && (await hasNotebookDay(DIR_STATE_SLACK_DAYS, day.ymd))) {
+      if (dryRun) {
+        output.log(`Slack recap missing: run sky recap:slack ${day.ymd} first for the full input`)
+      } else {
+        output.log('Writing the Slack recap first...')
+        const recap = await tasks.run('recap:slack', { day, noEditor: true })
+        if (recap.status !== 'success') return CommandResult.fail(`Slack recap failed: ${recap.message}`)
+      }
+    }
 
     // 1. Gather the day's documents in reading order: journals first, actions
     // chronologically, day.md last — HTML comments stripped, summary.md excluded.
@@ -211,7 +237,7 @@ export default class SummaryDayTask extends Command {
       }),
     ]
     const collatedMarkdown = sections.filter((s) => s.length > 0).join('\n\n')
-    const contextTokens = estimateTokens(collatedMarkdown)
+    const contextTokens = modelTokens(estimateTokens(collatedMarkdown), ratio)
 
     // 5. Extract rel for output file metadata — alphabetical within each type group
     const byName = (a: string, b: string) => a.localeCompare(b)
@@ -238,7 +264,7 @@ export default class SummaryDayTask extends Command {
     output.log(`  - People: ${collection.people.length}`)
     output.log(`  - Projects: ${collection.projects.length}`)
     output.log(
-      `Context: ${docs.length + background.length} docs, ~${Math.round(contextTokens / 1000)}k tokens (budget ${CONTEXT_BUDGET_TOKENS / 1000}k)`,
+      `Context: ${docs.length + background.length} docs, ~${Math.round(contextTokens / 1000)}k tokens (budget ${Math.round(budget / 1000)}k)`,
     )
 
     if (dryRun) {
@@ -250,9 +276,9 @@ export default class SummaryDayTask extends Command {
     }
 
     // 8. Hard fail over budget — never generate from a trimmed day
-    if (contextTokens > CONTEXT_BUDGET_TOKENS) {
+    if (contextTokens > budget) {
       return CommandResult.fail(
-        `Day context is ~${Math.round(contextTokens / 1000)}k tokens, over the ${CONTEXT_BUDGET_TOKENS / 1000}k budget. ` +
+        `Day context is ~${Math.round(contextTokens / 1000)}k tokens, over the ${Math.round(budget / 1000)}k budget. ` +
           'Refusing to generate from a partial day — inspect with --dry-run to find the outlier.',
       )
     }
@@ -307,9 +333,11 @@ export default class SummaryDayTask extends Command {
       [skipped.yamlError, 'yamlError'],
       [skipped.unreadable, 'unreadable'],
     ]
+    // The record counts as the pipeline measures, four characters a token,
+    // the budget restated to match.
     outputContent += serializeSummaryContext({
       scope: 'day',
-      budget: CONTEXT_BUDGET_TOKENS,
+      budget: estimatedTokens(budget, ratio),
       kept: [
         ...background.map((b) => ({
           path: relPath(b.path),
