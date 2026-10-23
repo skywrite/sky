@@ -188,13 +188,45 @@ test(
             const keyboardGrip = page.getByRole('button', { name: 'Reorder Review the Atlas proposal', exact: true })
             await page.getByRole('button', { name: 'Organize', exact: true }).click()
             await keyboardGrip.focus()
-            const keyboardSave = page.waitForResponse((response) => response.url().endsWith('/item/organize/reorder'))
-            await keyboardGrip.press('ArrowUp')
-            await keyboardSave
-            // The arrow keys keep their grip, so the next press moves the same row again.
-            await page.waitForFunction(
-              () => document.activeElement?.getAttribute('aria-label') === 'Reorder Review the Atlas proposal',
-            )
+            const keyboard = await context.newCDPSession(page)
+            await keyboard.send('Emulation.setCPUThrottlingRate', { rate: 6 })
+            try {
+              for (const [key, first] of [
+                ['ArrowUp', 'Review the Atlas proposal'],
+                ['ArrowDown', 'Outline the next release'],
+                ['ArrowUp', 'Review the Atlas proposal'],
+              ] as const) {
+                const keyboardSave = page.waitForResponse((response) =>
+                  response.url().endsWith('/item/organize/reorder'),
+                )
+                // Use the retained focus: locator.press would refocus the grip and hide a broken keyboard sequence.
+                await page.keyboard.press(key)
+                assert({
+                  given: 'successive arrow keys on a slower device',
+                  should: 'save each move successfully',
+                  actual: (await keyboardSave).status(),
+                  expected: 200,
+                })
+                await page.waitForFunction(
+                  () => document.activeElement?.getAttribute('aria-label') === 'Reorder Review the Atlas proposal',
+                )
+                assert({
+                  given: 'a saved keyboard move',
+                  should: 'move the same task and keep the day title',
+                  actual: {
+                    first: await page
+                      .locator('[data-organize-list="Professional Todos"] .sky-ptext')
+                      .first()
+                      .innerText(),
+                    title: await page.title(),
+                  },
+                  expected: { first, title: 'sky · Tuesday, January 27, 2026 · Day record' },
+                })
+              }
+            } finally {
+              await keyboard.send('Emulation.setCPUThrottlingRate', { rate: 1 })
+              await keyboard.detach()
+            }
             await page.getByRole('combobox', { name: 'Commitment order', exact: true }).selectOption('manual')
             await page.getByRole('button', { name: 'Reorder Check in with Jane Doe', exact: true }).waitFor()
             await page.locator('.sky-organize-toast').getByRole('button', { name: 'Undo', exact: true }).click()

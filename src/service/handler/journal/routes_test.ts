@@ -108,6 +108,10 @@ test('failed AI preparation leaves the regular questions usable and never create
 })
 
 test('a repeated operation request starts one producer while unrelated writing proceeds', async () => {
+  let markStarted!: () => void
+  const started = new Promise<void>((resolve) => {
+    markStarted = resolve
+  })
   let release!: () => void
   const ready = new Promise<void>((resolve) => {
     release = resolve
@@ -117,6 +121,8 @@ test('a repeated operation request starts one producer while unrelated writing p
     async (request) => {
       await request(`${DAY}/start`, {})
       const first = await request(`${DAY}/operation`, { id: 'one-operation', action: 'prepare' })
+      // Acceptance reserves the operation; the producer starts after its asynchronous reads.
+      await started
       const repeat = await request(`${DAY}/operation`, { id: 'one-operation', action: 'prepare' })
       const other = await request(`${DAY}/operation`, { id: 'other-operation', action: 'prepare' })
       const written = await request(`${DAY}/topics/health/answers/q1`, { content: 'Rested.', version: 0 }, 'PUT')
@@ -136,6 +142,7 @@ test('a repeated operation request starts one producer while unrelated writing p
       ...ai,
       prepare: async () => {
         calls++
+        markStarted()
         await ready
         return []
       },

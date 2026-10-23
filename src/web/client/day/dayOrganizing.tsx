@@ -76,7 +76,7 @@ export function useDayOrganizing(
   const landed = useRef<Promise<void>>(Promise.resolve())
   const frame = useRef(0)
   const requestId = useRef<{ payload: string; id: string } | null>(null)
-  const focusAfterSave = useRef<string | null>(null)
+  const focusAfterSave = useRef<{ key: string; scope: string } | null>(null)
   const items = allItems(day)
   const endDrag = () => {
     drag.current = null
@@ -95,6 +95,17 @@ export function useDayOrganizing(
     lift.current?.remove()
     lift.current = null
   }, [sorting])
+  // Saving removes the grips while busy. Restore keyboard focus after React commits their replacements.
+  useLayoutEffect(() => {
+    if (busy || !focusAfterSave.current) return
+    const target = focusAfterSave.current
+    focusAfterSave.current = null
+    if (target.scope !== scope) return
+    const row = [...document.querySelectorAll<HTMLElement>('[data-organize-key]')].find(
+      (node) => node.dataset.organizeKey === target.key,
+    )
+    row?.querySelector<HTMLButtonElement>('[data-sort-grip]')?.focus({ preventScroll: true })
+  }, [busy, day, scope])
   useEffect(() => {
     setActive(false)
     setSelected(new Map())
@@ -104,6 +115,7 @@ export function useDayOrganizing(
     setDatePicker(false)
     pending.current = false
     requestId.current = null
+    focusAfterSave.current = null
     cancelDrag()
     return () => {
       endDrag()
@@ -164,15 +176,6 @@ export function useDayOrganizing(
       setSorting(null)
       dismissOtherUndo()
       setUndo(result)
-      if (route === 'reorder' && focusAfterSave.current) {
-        const key = focusAfterSave.current
-        requestAnimationFrame(() => {
-          const row = [...document.querySelectorAll<HTMLElement>('[data-organize-key]')].find(
-            (node) => node.dataset.organizeKey === key,
-          )
-          row?.querySelector<HTMLButtonElement>('[data-sort-grip]')?.focus({ preventScroll: true })
-        })
-      }
       if (route === 'move') {
         setActive(false)
         setSelected(new Map())
@@ -214,12 +217,15 @@ export function useDayOrganizing(
     ordered.splice(ordered.findIndex((row) => dayItemKey(row) === dayItemKey(neighbor)) + (after ? 1 : 0), 0, item)
     if (ordered.every((row, index) => dayItemKey(row) === dayItemKey(rows[index]))) return
     focusAfterSave.current = keys
-      ? dayItemKey({
-          ...item,
-          occurrence: ordered
-            .slice(0, ordered.indexOf(item))
-            .filter((row) => row.raw.split(/\r?\n/)[0] === item.raw.split(/\r?\n/)[0]).length,
-        })
+      ? {
+          scope,
+          key: dayItemKey({
+            ...item,
+            occurrence: ordered
+              .slice(0, ordered.indexOf(item))
+              .filter((row) => row.raw.split(/\r?\n/)[0] === item.raw.split(/\r?\n/)[0]).length,
+          }),
+        }
       : null
     return save('reorder', { list: item.list, items: ordered.map(address) })
   }
