@@ -1,5 +1,35 @@
 import { assert, test } from '#test'
-import { openSlots } from './enrichRecap.ts'
+import enrichRecap, { openSlots } from './enrichRecap.ts'
+
+test('comprehensive recap regeneration adds all topics and refs while retaining curation', async () => {
+  const calls: boolean[] = []
+  const tags = ['Work/Engineering', 'Work/Finance', 'Work/Support', 'Work/Planning']
+  const rel = ['projects/Atlas', 'projects/Beacon', 'Acme Corp', 'Jane Doe']
+  const actual = await enrichRecap(
+    { app: 'slack', what: 'Channel activity', body: 'Synthetic channel summaries.', kind: 'daily Slack recap' },
+    { tags: 'Work/Curated', rel: ['projects/Curated'] },
+    { comprehensive: true },
+    {
+      tag: async (_input, opts) => {
+        calls.push(opts.comprehensive === true)
+        return tags.join('; ')
+      },
+      rel: async (_input, opts) => {
+        calls.push(opts.comprehensive === true)
+        return rel
+      },
+    },
+  )
+  assert({
+    given: 'four proposed tags and refs alongside existing curation on a regenerated recap',
+    should: 'retain everything and request comprehensive classification for both slots',
+    actual: { actual, calls },
+    expected: {
+      actual: { tags: ['Work/Curated', ...tags].join('; '), rel: ['projects/Curated', ...rel] },
+      calls: [true, true],
+    },
+  })
+})
 
 test('openSlots fills only absence and honors the escape flags', () => {
   assert({

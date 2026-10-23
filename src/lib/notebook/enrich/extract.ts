@@ -20,6 +20,8 @@ export type ExtractRequest = {
   /** Who or where the conversation is with (`to:` frontmatter) */
   to?: string
   from?: string
+  /** Whole-day digests include every substantive subject, without a count limit. */
+  comprehensive?: boolean
 }
 
 export type ExtractedSubjects = {
@@ -80,9 +82,15 @@ export function buildExtractInstructions(req: ExtractRequest): string {
     `You list the subjects an archived ${kind} is about, for notebook cross-references.`,
     '',
     'Rules:',
-    `- For people, organizations and projects, list only the one to three subjects the ${kind} is fundamentally about. A passing name-drop or greeting is never a subject.`,
-    `- Discover place candidates separately: collect up to ${MAX_PER_KIND} places discussed in any substantive section. Do not use the entry’s main topic or the final relationship limit to discard place candidates; a later selection pass decides which links to keep.`,
-    `- When the ${kind} is about an explicitly named project or initiative, use that name rather than its participating companies. Do not invent a project name from a work description. Work on a physical venue without an explicit project name should identify the venue itself.`,
+    req.comprehensive
+      ? '- List every person, organization and named project substantively discussed in any section. There is no subject-count limit. A passing name-drop or greeting is never a subject.'
+      : `- For people, organizations and projects, list only the one to three subjects the ${kind} is fundamentally about. A passing name-drop or greeting is never a subject.`,
+    req.comprehensive
+      ? '- Collect every place discussed substantively, with no count limit. A later selection pass assesses relevance.'
+      : `- Discover place candidates separately: collect up to ${MAX_PER_KIND} places discussed in any substantive section. Do not use the entry’s main topic or the final relationship limit to discard place candidates; a later selection pass decides which links to keep.`,
+    req.comprehensive
+      ? '- Include named projects and their organizations when both are substantively discussed. Never invent a project name from a work description or venue name.'
+      : `- When the ${kind} is about an explicitly named project or initiative, use that name rather than its participating companies. Do not invent a project name from a work description. Work on a physical venue without an explicit project name should identify the venue itself.`,
     '- Only concrete named entities qualify: a person, a company, a named project, or a geographic place. General topics and product categories are not subjects.',
     '- Places qualify when their politics, travel, conditions, or the place itself are a substantive topic. An incidental address, event setting, or a country inside a company name is not a place subject.',
     '- A comparison of named countries’ market economics, adoption or launch viability supplies place candidates even inside a broader business discussion. Distinguish those concrete comparisons from bare market names, campaign labels or budget line items.',
@@ -110,7 +118,7 @@ export function buildExtractPrompt(req: ExtractRequest): string {
     `From: ${req.from ?? '-'}`,
     `Summary: ${req.summary ?? '-'}`,
     '',
-    truncate(req.body.trim(), MAX_TRANSCRIPT_CHARS),
+    req.comprehensive ? req.body.trim() : truncate(req.body.trim(), MAX_TRANSCRIPT_CHARS),
     '</document>',
     '',
     'List the subjects now.',
@@ -127,7 +135,10 @@ export async function extractSubjects(req: ExtractRequest, role: Role): Promise<
       instructions: buildExtractInstructions(req),
       prompt: buildExtractPrompt(req),
     })
-    const clean = (values: string[]) => [...new Set(values.map((v) => v.trim()).filter(Boolean))].slice(0, MAX_PER_KIND)
+    const clean = (values: string[]) => {
+      const unique = [...new Set(values.map((v) => v.trim()).filter(Boolean))]
+      return req.comprehensive ? unique : unique.slice(0, MAX_PER_KIND)
+    }
     return {
       subjects: {
         people: clean(output.people),
@@ -166,35 +177,35 @@ export function groundedPlaces(
   req: ExtractRequest,
   nonPlaceNames: string[] = [],
 ): ExtractedSubjects['places'] {
-  const source = `${req.summary ?? ''}\n${truncate(req.body.trim(), MAX_TRANSCRIPT_CHARS)}`
+  const body = req.comprehensive ? req.body.trim() : truncate(req.body.trim(), MAX_TRANSCRIPT_CHARS)
+  const source = `${req.summary ?? ''}\n${body}`
   const namedEntities = nonPlaceNames.map(normalizeEvidenceName).sort((a, b) => b.length - a.length)
   const normalizedSource = ` ${normalizeEvidenceName(source)} `
   let unformattedSource: string | undefined
   const seen = new Set<string>()
-  return places
-    .filter((place) => {
-      if (!place.quote.trim()) return false
-      if (!source.includes(place.quote)) {
-        unformattedSource ??= evidenceText(source)
-        const quoteText = evidenceText(place.quote)
-        if (!quoteText || !unformattedSource.includes(quoteText)) return false
-      }
-      const quote = ` ${normalizeEvidenceName(place.quote)} `
-      const names = [place.name, ...(place.context ?? [])].map(normalizeEvidenceName)
-      if (names.some((name) => !name || !quote.includes(` ${name} `))) return false
-      // A country embedded in an extracted institution's name needs an
-      // independent geographic occurrence; regulatory context cannot supply it.
-      let independent = normalizedSource
-      for (const entity of namedEntities) {
-        if (entity === names[0] || !` ${entity} `.includes(` ${names[0]} `)) continue
-        const phrase = ` ${entity} `
-        while (independent.includes(phrase)) independent = independent.replaceAll(phrase, ' ')
-      }
-      if (!independent.includes(` ${names[0]} `)) return false
-      const key = JSON.stringify([names, place.kind])
-      if (seen.has(key)) return false
-      seen.add(key)
-      return true
-    })
-    .slice(0, MAX_PER_KIND)
+  const grounded = places.filter((place) => {
+    if (!place.quote.trim()) return false
+    if (!source.includes(place.quote)) {
+      unformattedSource ??= evidenceText(source)
+      const quoteText = evidenceText(place.quote)
+      if (!quoteText || !unformattedSource.includes(quoteText)) return false
+    }
+    const quote = ` ${normalizeEvidenceName(place.quote)} `
+    const names = [place.name, ...(place.context ?? [])].map(normalizeEvidenceName)
+    if (names.some((name) => !name || !quote.includes(` ${name} `))) return false
+    // A country embedded in an extracted institution's name needs an
+    // independent geographic occurrence; regulatory context cannot supply it.
+    let independent = normalizedSource
+    for (const entity of namedEntities) {
+      if (entity === names[0] || !` ${entity} `.includes(` ${names[0]} `)) continue
+      const phrase = ` ${entity} `
+      while (independent.includes(phrase)) independent = independent.replaceAll(phrase, ' ')
+    }
+    if (!independent.includes(` ${names[0]} `)) return false
+    const key = JSON.stringify([names, place.kind])
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+  return req.comprehensive ? grounded : grounded.slice(0, MAX_PER_KIND)
 }

@@ -1,12 +1,12 @@
 ---
 created: 2026-10-19
-updated: 2026-10-20
+updated: 2026-10-23
 ---
 
 # Slack channel cache
 
-`sky slack:pull` keeps a cache of every message in every Slack channel the
-owner is a member of. The cache lives in the state area, never in the
+`sky slack:pull` keeps a cache of every message in the owner's unmuted Slack
+channels. The cache lives in the state area, never in the
 notebook: `state/slack/days/<YYYY-MM-DD>/<channel>.md`, one file per channel
 and UTC day, and `state/slack/channels.yaml`, the roster of joined channels
 with Sky's cursor into each. The Slack recap (`recap:slack`), the chat tools
@@ -93,7 +93,12 @@ through `lib/status.ts` (`describeSlackChannels`): every joined channel,
 how many of its messages the cache holds, when its newest one was posted, and
 whether it is muted. A mute goes in `rules.yaml`, its own file, because the
 pull rewrites the roster from memory while it runs and would lose a change
-made to it meanwhile. The pull skips a muted channel but still moves its
+made to it meanwhile.
+The pull combines these choices with Slack's live `users.prefs.get` notification preferences: a mute in either place
+excludes the channel, and an unavailable preference read stops the pull rather than enabling muted channels.
+The recap checks the same preferences and filters previously cached messages and their earlier threads before building
+model input; muting does not delete the existing cache.
+The pull skips a muted channel but still moves its
 cursor to the channel's newest message, so switching it back on resumes from
 now rather than refilling the muted weeks. Each full pull (not one narrowed
 by `--channel` or `--max`) is recorded in the roster's `runs`, newest first

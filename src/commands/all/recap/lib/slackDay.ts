@@ -44,8 +44,12 @@ export interface SlackDayDocs {
  * never ship, and a root older than the cache with no earlier replies adds
  * nothing.
  */
-export default async function gatherSlackDay(input: { root: string; day: string }): Promise<SlackDayDocs> {
-  const views = await readNotebookDay(input.root, input.day)
+export default async function gatherSlackDay(input: {
+  root: string
+  day: string
+  muted?: ReadonlySet<string>
+}): Promise<SlackDayDocs> {
+  const views = await readNotebookDay(input.root, input.day, input.muted)
   const channels = views.map(
     (view): SlackDocEntry => ({
       doc: channelDocument(view, input.day),

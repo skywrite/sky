@@ -40,6 +40,8 @@ export type SelectRequest = {
   from?: string
   /** Other entity candidates remain context while only place additions are requested. */
   placesOnly?: boolean
+  /** Whole-day digests include every substantive relationship, without a count limit. */
+  comprehensive?: boolean
   candidates: RelCandidate[]
   /** This conversation's past (summary → rel) pairs — demonstrations of the owner's selectivity */
   exemplars: Exemplar[]
@@ -52,11 +54,16 @@ export type SelectOutcome = {
 
 // Asked for, not schema-enforced — an over-long reply must not become no reply
 // at all. validateSelection caps it. See the note in classify.ts.
-const schema = z.object({
-  rel: z
-    .array(z.string())
-    .describe(`0-${MAX_SELECTED} candidate refs copied verbatim. Empty when nothing deserves a cross-reference.`),
-})
+const schemaFor = (comprehensive = false) =>
+  z.object({
+    rel: z
+      .array(z.string())
+      .describe(
+        comprehensive
+          ? 'All substantive candidate refs copied verbatim, with no count limit. Empty when none apply.'
+          : `0-${MAX_SELECTED} candidate refs copied verbatim. Empty when nothing deserves a cross-reference.`,
+      ),
+  })
 
 const placeJudgmentSchema = z.object({
   ref: z.string().describe('A places/ candidate reference, copied verbatim'),
@@ -104,8 +111,12 @@ export function buildSelectInstructions(req: SelectRequest): string {
     `You choose which entities an archived ${kind} should be cross-referenced under in a personal notebook.`,
     '',
     'Rules:',
-    `- Choose ONLY from the candidates below, copied verbatim. Choose 0-${MAX_SELECTED}.`,
-    `- The notebook links a ${kind} to the entity its owner would later look it up under — not to everything discussed. One is typical, two occasionally, none when nothing deserves it.`,
+    req.comprehensive
+      ? '- Choose ONLY from the candidates below, copied verbatim. Include every substantively discussed entity; there is no relationship-count limit.'
+      : `- Choose ONLY from the candidates below, copied verbatim. Choose 0-${MAX_SELECTED}.`,
+    req.comprehensive
+      ? '- Assess every section of the document. Prior history alone does not justify a link; each selected entity must be substantively discussed here.'
+      : `- The notebook links a ${kind} to the entity its owner would later look it up under — not to everything discussed. One is typical, two occasionally, none when nothing deserves it.`,
     `- Candidates that are both named in the ${kind} and carry prior precedent are the strongest signals.`,
     '- Places have two retrieval purposes: discussions about a place and accounts or plans for travel to a named destination. Either qualifies under the place assessment below.',
     '- The candidates are suggestions, not established subjects. The actual subject may be missing from the list. Never choose a place merely because it is the only available candidate.',
@@ -116,7 +127,9 @@ export function buildSelectInstructions(req: SelectRequest): string {
   ]
   if (req.placesOnly) {
     parts.push(
-      '- This request adds only place relationships. Other entity candidates explain the entry’s subject but do not consume the two place slots. Your subject and destination judgments are the additions: mark at most two places with these roles in total, or none if no place qualifies.',
+      req.comprehensive
+        ? '- This request adds only place relationships. Mark every qualifying subject or destination, with no count limit.'
+        : '- This request adds only place relationships. Other entity candidates explain the entry’s subject but do not consume the two place slots. Your subject and destination judgments are the additions: mark at most two places with these roles in total, or none if no place qualifies.',
     )
   }
   if (req.candidates.some((c) => c.ref.startsWith('places/'))) {
@@ -159,7 +172,7 @@ export function buildSelectPrompt(req: SelectRequest): string {
     `From: ${req.from ?? '-'}`,
     `Summary: ${req.summary ?? '-'}`,
     '',
-    truncate(req.body.trim(), MAX_TRANSCRIPT_CHARS),
+    req.comprehensive ? req.body.trim() : truncate(req.body.trim(), MAX_TRANSCRIPT_CHARS),
     '</document>',
     '',
     'Choose the cross-references now.',
@@ -167,14 +180,18 @@ export function buildSelectPrompt(req: SelectRequest): string {
 }
 
 /** Keep only verbatim candidate members, deduped and capped. */
-export function validateSelection(raw: string[], candidates: RelCandidate[]): string[] {
+export function validateSelection(
+  raw: string[],
+  candidates: RelCandidate[],
+  max: number | null = MAX_SELECTED,
+): string[] {
   const byNorm = new Map(candidates.map((c) => [normalizeEntityName(c.ref), c.ref]))
   const out: string[] = []
   for (const entry of raw) {
     const ref = byNorm.get(normalizeEntityName(entry))
     if (ref && !out.includes(ref)) out.push(ref)
   }
-  return out.slice(0, MAX_SELECTED)
+  return max === null ? out : out.slice(0, max)
 }
 
 /** Places need a unique subject or destination judgment and the original grounded mention. */
@@ -183,7 +200,7 @@ export function validatePlaceSelection(raw: string[], judgments: PlaceJudgment[]
   // A place-only request has one authoritative decision per place, not a second
   // rel list that can contradict those decisions or spend slots on other entities.
   const selected = req.placesOnly ? judgments.filter(qualifiesForPlaceLink).map((j) => j.ref) : raw
-  return validateSelection(selected, eligible).filter((ref) => {
+  return validateSelection(selected, eligible, req.comprehensive ? null : undefined).filter((ref) => {
     if (!ref.startsWith('places/')) return true
     const matches = judgments.filter((j) => normalizeEntityName(j.ref) === normalizeEntityName(ref))
     const judgment = matches[0]
@@ -192,8 +209,11 @@ export function validatePlaceSelection(raw: string[], judgments: PlaceJudgment[]
     // Reuse extraction evidence. Asking the selector to quote it again adds
     // transcription/formatting failures without proving semantic relevance.
     return (
-      groundedPlaces(mentions, { body: truncate(req.body.trim(), MAX_TRANSCRIPT_CHARS), summary: req.summary }).length >
-      0
+      groundedPlaces(mentions, {
+        body: req.comprehensive ? req.body.trim() : truncate(req.body.trim(), MAX_TRANSCRIPT_CHARS),
+        summary: req.summary,
+        comprehensive: req.comprehensive,
+      }).length > 0
     )
   })
 }
@@ -257,6 +277,7 @@ async function selectOnce(
   services: SelectServices,
 ): Promise<SelectOutcome> {
   try {
+    const schema = schemaFor(req.comprehensive)
     const judgments = buildPlaceJudgmentsSchema(req.candidates)
     const selectionSchema = req.placesOnly ? judgments : hasPlaces ? judgments.extend(schema.shape) : schema
     const object = await services.ask(
@@ -267,10 +288,14 @@ async function selectOnce(
       ? Object.entries(judgments.parse(object).places).map(([ref, judgment]) => ({ ref, ...judgment }))
       : []
     const rel = req.placesOnly ? [] : schema.parse(object).rel
-    if (rel.length > 0 && validateSelection(rel, req.candidates).length === 0) {
+    if (rel.length > 0 && validateSelection(rel, req.candidates, req.comprehensive ? null : undefined).length === 0) {
       return { rel: [], error: `Named no candidate: ${truncate(JSON.stringify(rel), MAX_LOGGED_ANSWER_CHARS, '…')}` }
     }
-    return { rel: hasPlaces ? validatePlaceSelection(rel, places, req) : validateSelection(rel, req.candidates) }
+    return {
+      rel: hasPlaces
+        ? validatePlaceSelection(rel, places, req)
+        : validateSelection(rel, req.candidates, req.comprehensive ? null : undefined),
+    }
   } catch (err) {
     return { rel: [], error: failureOf(err) }
   }

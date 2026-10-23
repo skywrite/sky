@@ -1,6 +1,45 @@
 import { assert, test } from '#test'
 import { mergeRel, proposeRel, selectionEvidence, subsetOf, textWindows, unionSubjects } from './autoRel.ts'
 import { normalizeEntityName } from './resolve.ts'
+import { selectRel } from './select.ts'
+
+test('comprehensive rel reads past twelve windows and retains more than twelve subjects and two links', async () => {
+  const refs = Array.from({ length: 20 }, (_, i) => `Atlas Partner ${String(i).padStart(2, '0')}`)
+  const body = 'Opening context. '.repeat(6500) + refs.join('\n')
+  let selectedBody = ''
+  let comprehensiveExtraction = true
+  const proposal = await proposeRel(
+    { body },
+    { mediums: ['recap'], comprehensive: true },
+    {
+      buildIndex: async () => ({
+        candidates: refs.map((ref) => ({ ref, kind: 'org' as const, norm: normalizeEntityName(ref) })),
+        canResolve: (ref) => refs.includes(ref),
+      }),
+      fetchScores: async () => new Map(),
+      loadCorpus: async () => ({ records: [] }),
+      extract: async (req) => {
+        comprehensiveExtraction &&= req.comprehensive === true
+        return {
+          subjects: { people: [], orgs: refs.filter((ref) => req.body.includes(ref)), projects: [], places: [] },
+        }
+      },
+      select: async (req, role) => {
+        selectedBody = req.body
+        return selectRel(req, role, {
+          ask: async () => ({ rel: [...refs, refs[0], 'Invented Partner'] }),
+          report: async () => {},
+        })
+      },
+    },
+  )
+  assert({
+    given: 'a whole-day digest whose twenty subjects occur after the ordinary extraction budget',
+    should: 'read the complete text and retain every real link exactly once',
+    actual: { rel: proposal.rel, whole: selectedBody === body, comprehensiveExtraction },
+    expected: { rel: refs, whole: true, comprehensiveExtraction: true },
+  })
+})
 
 test('mergeRel keeps existing refs first and verbatim', () => {
   assert({

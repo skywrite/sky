@@ -2,7 +2,7 @@
 name: recap-slack
 schema: 0.1.0
 created: 2026-10-20
-updated: 2026-10-20
+updated: 2026-10-23
 description: Digest one notebook day of Slack channel traffic into the day's Slack recap
 ---
 
@@ -24,8 +24,10 @@ Messages whose heading names **{{me.firstName}}** are his. Everything else is ot
 ```markdown
 ## Channels
 
-- **[#channel]** ([N]): [What moved, in one line]
-- *Quiet: [#channel (N), #channel (N), ...]*
+### #channel
+*[N] messages*
+
+[Factual activity summary: a short paragraph for one topic, or separate bullets for distinct topics]
 
 ## What moved
 
@@ -40,9 +42,18 @@ Messages whose heading names **{{me.firstName}}** are his. Everything else is ot
 - [Matter] — [state]: [where it stands, one clause]
 ```
 
-**Channels**: one line per channel where something of consequence moved, busiest first, with the channel's message count from the file. Then one closing line rolling up the quiet channels — routine traffic, bot output, or only a few messages — each with its count. Every CHANNEL file appears exactly once: on its own line or in the rollup.
+**Channels**: every CHANNEL file gets its own `### #channel` heading, sorted alphabetically by channel name,
+ignoring case.
+Put the message count from the file on its own italic line beneath the heading (`*1 message*` or `*12 messages*`),
+then a blank line before the activity summary.
+Use a short paragraph for a single topic, or a separate bullet for each distinct topic when there are several.
 
-**What moved**: the day's developments across the channels — decisions, incidents, deliveries, disagreements, announcements, questions that got answers — one fact per bullet, under 25 words, each ending with its tag. Lead a decision with `Decided:`. Lead a message {{me.firstName}} wrote with `You:`. A thread that ran all day is one or two bullets, not a transcript. Omit what is routine.
+Cover each distinct topic, event, question and outcome; use multiple sentences when needed, and compress repeated messages.
+Include routine exchanges, bot-generated activity and channels with a single message, describing what actually happened.
+Never omit a channel or its activity because of volume or perceived importance, or group channels into a rollup.
+Labels such as "quiet", "routine traffic", "bot output" or "nothing noteworthy" cannot replace an activity summary.
+
+**What moved**: the day's developments across the channels — decisions, incidents, deliveries, disagreements, announcements, questions that got answers — one fact per bullet, under 25 words, each ending with its tag. Lead a decision with `Decided:`. Lead a message {{me.firstName}} wrote with `You:`. A thread that ran all day is one or two bullets, not a transcript.
 
 **Asked of you**: explicit asks, questions, mentions and requests addressed to {{me.firstName}} that the day's messages do not show him answering. Only stated asks. Omit the section when there are none.
 

@@ -1,7 +1,7 @@
 ---
 schema: 0.2.0
 created: 2026-01-24
-updated: 2026-10-20
+updated: 2026-10-23
 description: Weekly Summary generator - the week's record at altitude, synthesized from its Daily Summaries
 ---
 
@@ -55,7 +55,10 @@ Each delimited `<!-- START DAILY SUMMARY: date (day) -->`. Every daily is itself
 - **Signals** — that day's noteworthy observations
 - **Insights** — what the day taught: Sky's synthesis, each with its source
 - **Archival** — threads he FILED without participating: reference material, not his activity. Never roll these up; at most a genuinely week-significant development in one may inform a Signal, attributed as observed, never as his doing.
-- **Channels** — what moved in each Slack channel that day, with message counts, the quiet ones rolled up: the room he was in, not his activity. Context for a matter's state; never Done, never a commitment.
+- **Channels** — an activity summary for every Slack channel included in the day's recap, under alphabetical
+  `### #channel` headings with message counts, including routine exchanges and bot-generated activity:
+  the room he was in, not his activity.
+  Context for a matter's state; never Done, never a commitment.
 - **Asset Prices** — that day's snapshot
 - **Where Things Stand** — each matter's state at the end of that day
 

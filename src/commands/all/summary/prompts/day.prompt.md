@@ -1,6 +1,6 @@
 ---
 created: 2026-01-03
-updated: 2026-10-22
+updated: 2026-10-23
 description: Daily Summary generator - facts-first mirror of the day
 ---
 
@@ -200,10 +200,22 @@ Transcripts of {{me.firstName}} working with an AI tool. The messages sit under 
 
 ## Channels
 
-[Only when a Slack recap is among the inputs; omit the section otherwise. Carry its Channels block over: one line per channel where something of consequence moved, busiest first, with its message count, then the closing line rolling up the quiet channels with their counts. Every channel the recap lists appears once: on its own line or in the rollup.]
+[Only when a Slack recap is among the inputs; omit the section otherwise.
+Carry its entire Channels block over: every channel gets its own `### #channel` heading, sorted alphabetically by
+channel name, ignoring case.
+Keep its message count on its own italic line beneath the heading (`*1 message*` or `*12 messages*`), then a blank line
+before the activity summary.
+Use a short paragraph for a single topic, or a separate bullet for each distinct topic when there are several.
 
-- **[#channel]** ([N]): [What moved, in one line]
-- *Quiet: [#channel (N), #channel (N), ...]*
+Preserve the topics, events, questions and outcomes in each summary, including routine exchanges, bot-generated activity
+and channels with a single message.
+Never drop a channel or its activity because of volume or perceived importance, replace its summary with a generic label,
+or group channels into a rollup.]
+
+### #channel
+*[N] messages*
+
+[Factual activity summary: a short paragraph for one topic, or separate bullets for distinct topics]
 
 ---
 
@@ -308,7 +320,7 @@ An ARCHIVAL-marked message is something {{me.firstName}} filed, not something he
 
 ### The Slack recap is the room, not the day
 
-The Slack recap digests every channel {{me.firstName}} is a member of; he read it, or could have, and mostly did not write in it:
+The Slack recap digests {{me.firstName}}'s unmuted channels; he read it, or could have, and mostly did not write in it:
 
 - A recap line follows the ARCHIVAL rules: never Done, its promises are between third parties, and its time is someone else's clock. A line starting `You:` is his own message and his activity: Done, Commitments Made, Waiting On and Rhythm all apply.
 - A thread he took part in usually also arrives as a capture in `messages/`. Report it once, from the capture, with the capture's tag.
@@ -496,9 +508,30 @@ You sent Northwind its completed security questionnaire, clearing the last open 
 
 ## Channels
 
-- **#platform** (41): the staging outage traced to the cache rollout, rolled back by 15:10
-- **#sales** (12): Quantum Labs asked for a security review before their pilot starts
-- *Quiet: #design (4), #team-survey (3), #ops-alerts (2)*
+### #design
+*4 messages*
+
+Reviewed the revised onboarding flow and requested clearer button labels.
+
+### #ops-alerts
+*2 messages*
+
+Automated checks reported successful backups and a completed certificate renewal.
+
+### #platform
+*41 messages*
+
+The staging outage traced to the cache rollout, rolled back by 15:10.
+
+### #sales
+*12 messages*
+
+Quantum Labs asked for a security review before their pilot starts.
+
+### #team-survey
+*3 messages*
+
+Shared the survey link and reminded the team that responses close Friday.
 
 ---
 

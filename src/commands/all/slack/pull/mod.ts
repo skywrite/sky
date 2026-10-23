@@ -13,10 +13,10 @@ import { withProcessLock } from '#lib/jobs/files.ts'
 import { Instant, instantNow } from '#universal/dates/nbdt/mod.ts'
 import { appendChannelDay, channelDayPath, channelFileName } from './lib/cache.ts'
 import { createClock } from './lib/clock.ts'
+import { readEffectiveSlackRules } from './lib/mutes.ts'
 import { createNameResolver } from './lib/names.ts'
 import { PULL_DEFAULTS, pullChannels, type PullHost, type PullResult } from './lib/pull.ts'
 import { readRoster, writeRoster, type Roster } from './lib/roster.ts'
-import { readRules } from './lib/rules.ts'
 import { listChannelHistory, listJoinedConversations, listThread } from './lib/slack.ts'
 
 const params = {
@@ -38,7 +38,7 @@ declare module '#commands/lib/core/CommandTypesRegistry.ts' {
 export default class SlackPullTask extends Command {
   static override description: CommandDescription = {
     name: 'slack:pull',
-    description: 'Pull every new message from every Slack channel you are in into the channel cache.',
+    description: 'Pull every new message from your unmuted Slack channels into the channel cache.',
     descriptionLong: [
       'Reads each joined channel since the last pull and writes the messages,',
       'thread replies included, to the channel cache: one file per channel',
@@ -59,7 +59,8 @@ export default class SlackPullTask extends Command {
       'day the whole backfill window. Replies to threads older than that are',
       'not noticed. Joins, leaves and topic changes are left out. Direct',
       'messages and group messages are not channels and are not pulled. A',
-      'channel switched off under Settings › Connections › Slack is left out.',
+      'channel muted in Slack or switched off under Settings › Connections ›',
+      'Slack is left out.',
       '',
       '--channel pulls one channel; --max stops after that many channels,',
       'most recently active first. The service runs a pull every five',
@@ -122,7 +123,7 @@ export default class SlackPullTask extends Command {
         return roster
       },
       writeRoster: (updated) => writeRoster(FILE_STATE_SLACK_CHANNELS, updated),
-      readRules: () => readRules(FILE_STATE_SLACK_RULES),
+      readRules: () => readEffectiveSlackRules(FILE_STATE_SLACK_RULES, workspace),
       append: (channel, day, entries) =>
         appendChannelDay(
           channelDayPath(DIR_STATE_SLACK_DAYS, day, channelFileName(channel, roster.channels)),
@@ -138,7 +139,7 @@ export default class SlackPullTask extends Command {
     if (args.channel && result.pulled.length === 0 && result.unchanged === 0 && result.errors.length === 0) {
       return CommandResult.fail(
         result.muted > 0
-          ? `${args.channel} is muted: nothing from it is kept. Switch it on under Settings › Connections › Slack.`
+          ? `${args.channel} is muted: no messages were pulled. Check its mute in Slack and its switch under Settings › Connections › Slack.`
           : `No joined channel matches ${args.channel}. Names match exactly, with or without #; ids work too.`,
       )
     }

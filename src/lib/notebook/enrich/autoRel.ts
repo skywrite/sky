@@ -43,12 +43,17 @@ function sliceWhole(text: string, start: number, end: number): string {
 }
 
 /** Overlapping windows covering the whole text, each within the extractor's budget. */
-export function textWindows(text: string, size = MAX_TRANSCRIPT_CHARS, overlap = WINDOW_OVERLAP_CHARS): string[] {
+export function textWindows(
+  text: string,
+  size = MAX_TRANSCRIPT_CHARS,
+  overlap = WINDOW_OVERLAP_CHARS,
+  maxWindows: number | null = MAX_WINDOWS,
+): string[] {
   const body = text.trim()
   if (body.length <= size) return [body]
   const windows: string[] = []
   let start = 0
-  while (start < body.length && windows.length < MAX_WINDOWS) {
+  while (start < body.length && (maxWindows === null || windows.length < maxWindows)) {
     windows.push(sliceWhole(body, start, start + size))
     if (start + size >= body.length) break
     start += size - overlap
@@ -57,7 +62,10 @@ export function textWindows(text: string, size = MAX_TRANSCRIPT_CHARS, overlap =
 }
 
 /** One subject list from every window's: deduped by spelling, first spelling kept, places by name and kind. */
-export function unionSubjects(outcomes: ExtractedSubjects[]): ExtractedSubjects {
+export function unionSubjects(
+  outcomes: ExtractedSubjects[],
+  max: number | null = MAX_UNION_PER_KIND,
+): ExtractedSubjects {
   const dedupe = (lists: string[][]) => {
     const seen = new Set<string>()
     const out: string[] = []
@@ -67,7 +75,7 @@ export function unionSubjects(outcomes: ExtractedSubjects[]): ExtractedSubjects 
       seen.add(key)
       out.push(value.trim())
     }
-    return out.slice(0, MAX_UNION_PER_KIND)
+    return max === null ? out : out.slice(0, max)
   }
   const places: ExtractedSubjects['places'] = []
   const seenPlaces = new Set<string>()
@@ -81,7 +89,7 @@ export function unionSubjects(outcomes: ExtractedSubjects[]): ExtractedSubjects 
     people: dedupe(outcomes.map((o) => o.people)),
     orgs: dedupe(outcomes.map((o) => o.orgs)),
     projects: dedupe(outcomes.map((o) => o.projects)),
-    places: places.slice(0, MAX_UNION_PER_KIND),
+    places: max === null ? places : places.slice(0, max),
   }
 }
 
@@ -150,6 +158,8 @@ export type AutoRelInput = {
 export interface AutoRelOptions {
   mediums: string[]
   kind?: string
+  /** Whole-day digests read every section and retain all substantive relationships. */
+  comprehensive?: boolean
   /** Saved chats can append newly discussed places while preserving their other entity links. */
   placesOnly?: boolean
   /**
@@ -255,19 +265,31 @@ export async function proposeRel(
       .slice(-MAX_EXEMPLARS)
       .map((r) => ({ summary: r.summary ?? '(no summary)', rel: r.rel }))
 
-    const request = { body: input.body, summary: input.summary, kind: opts.kind, to: input.to, from: input.from }
+    const request = {
+      body: input.body,
+      summary: input.summary,
+      kind: opts.kind,
+      to: input.to,
+      from: input.from,
+      comprehensive: opts.comprehensive,
+    }
     // Every window of the text is read. The extractor grounds each window's
     // places against the window that quoted them, so the union needs no
     // second grounding pass; one failed window loses its evidence, not the save.
     const outcomes = await Promise.all(
-      textWindows(input.body).map((body) => services.extract({ ...request, body }, opts.extractRole ?? 'fast')),
+      textWindows(input.body, MAX_TRANSCRIPT_CHARS, WINDOW_OVERLAP_CHARS, opts.comprehensive ? null : undefined).map(
+        (body) => services.extract({ ...request, body }, opts.extractRole ?? 'fast'),
+      ),
     )
     const failures = outcomes.filter((o) => o.error)
     if (failures.length === outcomes.length) return { rel: [], unresolvedPlaces: [], error: failures[0]!.error }
-    const subjects = unionSubjects(outcomes.filter((o) => !o.error).map((o) => o.subjects))
+    const subjects = unionSubjects(
+      outcomes.filter((o) => !o.error).map((o) => o.subjects),
+      opts.comprehensive ? null : undefined,
+    )
     const places = subjects.places
     const resolved = resolveSubjects({ ...subjects, places }, index, scores, {
-      projectStatuses: ['open'],
+      projectStatuses: opts.comprehensive ? undefined : ['open'],
       contextNames: new Set((input.contextNames ?? []).map(normalizeEntityName)),
     })
     const parties = partyExclusionSet([input.from, input.to], { index, scores })
@@ -320,23 +342,26 @@ export async function proposeRel(
 
     const selection = await services.select(
       {
-        body: selectionEvidence(input.body, [
-          ...subjects.people,
-          ...subjects.orgs,
-          ...subjects.projects,
-          ...places.map((p) => p.quote),
-        ]),
+        body: opts.comprehensive
+          ? input.body
+          : selectionEvidence(input.body, [
+              ...subjects.people,
+              ...subjects.orgs,
+              ...subjects.projects,
+              ...places.map((p) => p.quote),
+            ]),
         summary: input.summary,
         kind: opts.kind,
         to: input.to,
         from: input.from,
         placesOnly: opts.placesOnly,
+        comprehensive: opts.comprehensive,
         candidates,
         exemplars,
       },
       'balanced',
     )
-    const rel = validateSelection(selection.rel, candidates).filter(
+    const rel = validateSelection(selection.rel, candidates, opts.comprehensive ? null : undefined).filter(
       (ref) => !opts.placesOnly || ref.startsWith('places/'),
     )
     return {

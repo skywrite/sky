@@ -5,7 +5,7 @@ import gatherSlackDay, { dropCapturedThreads, type SlackDocEntry } from './slack
 
 const header = (channel: string, day: string) => ({
   channel,
-  channelId: 'C0ATLAS0001',
+  channelId: channel === 'beacon' ? 'C0BEACON001' : 'C0ATLAS0001',
   workspace: 'https://atlas.slack.com',
   day,
 })
@@ -81,6 +81,28 @@ async function cache(): Promise<string> {
   ])
   return root
 }
+
+test('muted cached channels contribute neither messages nor earlier threads to a recap', async () => {
+  const root = await cache()
+  const filtered = await gatherSlackDay({ root, day: '2025-10-10', muted: new Set(['C0ATLAS0001']) })
+  const empty = await gatherSlackDay({ root, day: '2025-10-10', muted: new Set(['C0ATLAS0001', 'C0BEACON001']) })
+  assert({
+    given: 'a cached channel with active threads muted after its messages were saved',
+    should: 'read only the unmuted channel, and produce no recap input when all are muted',
+    actual: {
+      channels: filtered.channels.map((entry) => entry.doc.yaml['channel']),
+      messages: filtered.messages,
+      threads: filtered.threads.length,
+      empty,
+    },
+    expected: {
+      channels: ['#beacon'],
+      messages: 1,
+      threads: 0,
+      empty: { channels: [], threads: [], messages: 0 },
+    },
+  })
+})
 
 test("gatherSlackDay ships the day's channels and the earlier part of the threads they reply to", async () => {
   const root = await cache()

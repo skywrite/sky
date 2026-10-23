@@ -7,6 +7,26 @@ const MENU = [
   { tag: 'Hobby/Music', count: 2 },
 ]
 
+test('comprehensive tagging retains every valid topic and reads beyond the ordinary excerpt', () => {
+  const tags = Array.from({ length: 10 }, (_, i) => `Work/Topic-${i}`)
+  const req = {
+    body: 'Opening. '.repeat(2000) + 'Final channel covers the Atlas launch.',
+    comprehensive: true,
+    menu: tags.map((tag) => ({ tag, count: 1 })),
+    tagHistory: [],
+  }
+  assert({
+    given: 'a long recap with ten applicable tags, a duplicate, and a model-invented tag',
+    should: 'keep all ten real tags and expose the final channel to classification',
+    actual: {
+      result: validateTags([...tags, tags[0], 'Invented/Tag'], new Set(tags), null),
+      seesEnd: buildPrompt(req).includes('Final channel covers the Atlas launch.'),
+      uncapped: buildInstructions(req).includes('There is no tag-count limit.'),
+    },
+    expected: { result: { tags, invented: 1 }, seesEnd: true, uncapped: true },
+  })
+})
+
 test('validateTags drops non-menu tags and counts them', () => {
   const result = validateTags(['Work/Eng', 'Work/Engineering'], new Set(MENU.map((m) => m.tag)))
   assert({

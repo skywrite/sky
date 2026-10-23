@@ -1,9 +1,10 @@
 import { generateText } from 'ai'
 import { hasNotebookDay } from '#commands/all/slack/pull/lib/dayView.ts'
+import { readEffectiveSlackRules } from '#commands/all/slack/pull/lib/mutes.ts'
 import { aiEffortFlag } from '#commands/lib/aiParams.ts'
 import { Command, CommandResult, dayYesterdayArg, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
-import { DIR_STATE_SLACK_DAYS } from '#config'
+import { DIR_STATE_SLACK_DAYS, FILE_STATE_SLACK_RULES, SLACK_WORKSPACE } from '#config'
 import enrichRecap from '#lib/notebook/enrich/enrichRecap.ts'
 import readRecapCuration from '#lib/notebook/recap/readRecapCuration.ts'
 import openEditor from '#lib/shell/openEditor.ts'
@@ -86,9 +87,9 @@ export default class RecapSlackTask extends Command {
     name: 'recap:slack',
     description: `Recap the day's Slack channels into ${actionKindRel('recap')}/`,
     descriptionLong: [
-      'Digests every Slack channel you are a member of, for one notebook day,',
-      'into one recap doc: what moved per channel with message counts, the',
-      'quiet channels rolled up, what was asked of you, and where each matter',
+      'Digests your unmuted Slack channels for one notebook day,',
+      'into one recap doc: activity in every channel with message counts,',
+      'what was asked of you, and where each matter',
       'stood, every line tagged with its channel and time.',
       '',
       'The day is assembled from the channel cache sky slack:pull keeps, by',
@@ -125,6 +126,13 @@ export default class RecapSlackTask extends Command {
     const nothing = (day: PlainDate): CommandResult<Result> =>
       CommandResult.success({ outcome: 'nothing', day: day.ymd, channels: 0, messages: 0, threads: 0 })
 
+    let muted: Set<string>
+    try {
+      muted = new Set((await readEffectiveSlackRules(FILE_STATE_SLACK_RULES, SLACK_WORKSPACE)).muted)
+    } catch (error) {
+      return CommandResult.fail(error instanceof Error ? error.message : String(error))
+    }
+
     let day = args.day
     if (args.whenDue) {
       const candidates = Array.from({ length: DUE_LOOKBACK_DAYS }, (_, back) => args.day.addDays(-back))
@@ -132,14 +140,14 @@ export default class RecapSlackTask extends Command {
         candidates,
         started: (date) => hasStarted(date, timeDir),
         hasRecap: async (date) => (await findRecapFile(date, SLACK_APP, timeDir)) !== null,
-        hasMessages: (date) => hasNotebookDay(root, date.ymd),
+        hasMessages: (date) => hasNotebookDay(root, date.ymd, muted),
       })
       if (!due) return nothing(args.day)
       day = due
     }
 
     output.log(`Recapping Slack channels for ${day.ymd}...`)
-    const docs = await gatherSlackDay({ root, day: day.ymd })
+    const docs = await gatherSlackDay({ root, day: day.ymd, muted })
     if (docs.channels.length === 0 || !docs.span) {
       output.log(`No Slack channel messages for ${day.ymd}.`)
       return nothing(day)
@@ -212,7 +220,7 @@ export default class RecapSlackTask extends Command {
     const curated = await enrichRecap(
       { app: SLACK_APP, what: SLACK_WHAT, body, kind: KIND },
       { rel: relList?.length ? relList : curation.rel, tags: curation.tags },
-      { noAutoTag: args.noAutoTag, noAutoRel: args.noAutoRel, log: (line) => output.log(line) },
+      { comprehensive: true, noAutoTag: args.noAutoTag, noAutoRel: args.noAutoRel, log: (line) => output.log(line) },
     )
 
     const doc = RecapDocument.create({

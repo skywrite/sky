@@ -40,15 +40,21 @@ export function utcDaysOf(day: string): string[] {
  * carries its notebook day on its heading, so the view reads the UTC days
  * the notebook day can reach and keeps the messages stamped with it.
  */
-export async function readNotebookDay(root: string, day: string): Promise<ChannelDayView[]> {
+export async function readNotebookDay(
+  root: string,
+  day: string,
+  muted: ReadonlySet<string> = new Set(),
+): Promise<ChannelDayView[]> {
   const views = new Map<string, ChannelDayView>()
   for (const utcDay of utcDaysOf(day)) {
     for (const fileName of await listChannelFiles(path.join(root, utcDay))) {
       const content = await readOptional(channelDayPath(root, utcDay, fileName))
       if (content === undefined) continue
+      const identity = channelOf(content, fileName)
+      if (identity.channelId && muted.has(identity.channelId)) continue
       const messages = parseChannelDay(content).filter((message) => message.timestamp.startsWith(day))
       if (messages.length === 0) continue
-      const view = views.get(fileName) ?? { fileName, ...channelOf(content, fileName), messages: [] }
+      const view = views.get(fileName) ?? { fileName, ...identity, messages: [] }
       view.messages.push(...messages)
       views.set(fileName, view)
     }
@@ -58,8 +64,8 @@ export async function readNotebookDay(root: string, day: string): Promise<Channe
 }
 
 /** Whether a notebook day has any channel message at all. */
-export async function hasNotebookDay(root: string, day: string): Promise<boolean> {
-  return (await readNotebookDay(root, day)).length > 0
+export async function hasNotebookDay(root: string, day: string, muted?: ReadonlySet<string>): Promise<boolean> {
+  return (await readNotebookDay(root, day, muted)).length > 0
 }
 
 async function listChannelFiles(dir: string): Promise<string[]> {
