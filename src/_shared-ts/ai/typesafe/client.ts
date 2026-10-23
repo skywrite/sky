@@ -25,6 +25,17 @@ import { keychainAuthFetch } from '#shared/ai/keychainAuthFetch.ts'
 export const TYPESAFE_BASE_URL = 'https://api.typesafe.ai'
 export const TYPESAFE_SECRET = { category: 'typesafe', name: 'main' } as const
 
+/**
+ * The Jev release every question goes to, named outright. TypeSafe's
+ * aliases (`jev-latest`, `jev-preview`) move the day a release ships, and
+ * every gate in Sky — the preflight skip lines, task admission, the outbox
+ * screen, calendar classification, the recording category, the browser
+ * loop's done/person/risky gates — was measured on this release; an alias
+ * would retune them all silently. Move the pin on purpose: replay recorded
+ * verdicts against the new release first, then change this one line.
+ */
+export const JEV_MODEL = 'jev-1.13.0'
+
 export const MISSING_TYPESAFE_KEY =
   'No TypeSafe API key in the keychain — add it under Settings → Connections, ' +
   `or run \`sky secrets:set ${TYPESAFE_SECRET.category} ${TYPESAFE_SECRET.name}\` with the key from console.typesafe.ai.`
@@ -32,12 +43,13 @@ export const MISSING_TYPESAFE_KEY =
 /** Per attempt. Jev answers in well under a second; a page must not hang on a host that does not. */
 const TIMEOUT_MS = 10_000
 
-/** A client keyed from the keychain. Builds at once; the key is read on the first request. */
+/** A client keyed from the keychain, asking `JEV_MODEL`. Builds at once; the key is read on the first request. */
 export function createTypeSafeClient(options: { secrets: SecretsProvider; fetch?: typeof fetch }): TypeSafeClient {
   return new TypeSafeClient({
     // The SDK insists on a key at construction; the real one rides in on the fetch.
     apiKey: 'keychain',
     baseURL: TYPESAFE_BASE_URL,
+    defaultModel: JEV_MODEL,
     fetch: keychainAuthFetch(options.secrets, TYPESAFE_SECRET, MISSING_TYPESAFE_KEY, options.fetch),
     logLevel: 'off',
     timeout: TIMEOUT_MS,

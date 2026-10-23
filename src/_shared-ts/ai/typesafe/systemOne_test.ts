@@ -3,7 +3,7 @@ import { createSecret } from '#lib/secrets/marshal.ts'
 import { TestSecretsProvider } from '#lib/secrets/TestSecretsProvider.ts'
 import { type AIUsageRecord, runWithUsageSource } from '#shared/ai/usageLog.ts'
 import { assert, test } from '#test'
-import { createTypeSafeClient } from './client.ts'
+import { createTypeSafeClient, JEV_MODEL } from './client.ts'
 import { askTypeSafe } from './systemOne.ts'
 
 const ANSWER = JSON.stringify({
@@ -31,7 +31,8 @@ test('askTypeSafe asks with the keychain key and records the request in the usag
   const { ts: _ts, ...record } = records[0]
   assert({
     given: 'one yes/no question over a keychain client',
-    should: 'post it signed to the systemone endpoint, answer typed, and log the model and input tokens under typesafe',
+    should:
+      'post it signed to the systemone endpoint naming the pinned release, answer typed, and log the model and input tokens under typesafe',
     actual: [
       calls[0]?.url,
       calls[0]?.auth,
@@ -46,7 +47,7 @@ test('askTypeSafe asks with the keychain key and records the request in the usag
       {
         state: 'Is this short?',
         questions: { short: { type: 'noul', instructions: 'Is `state` short?' } },
-        model: 'jev-latest',
+        model: JEV_MODEL,
       },
       0.93,
       1,

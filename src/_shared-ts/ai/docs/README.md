@@ -120,7 +120,10 @@ site cannot be pointed at it. Its key is the keychain entry
 accepted it, or blind with `sky secrets:set typesafe main`, and read on
 the first request through the same keychain fetch as Cerebras. A caller
 builds its client there and asks through `typesafe/systemOne.ts`, which
-records each request in the usage log under provider `typesafe`. The
+records each request in the usage log under provider `typesafe`. Every
+question names the release in `JEV_MODEL`, never an alias: TypeSafe's
+aliases move the day a release ships, and every gate in Sky was measured
+on the pinned release, so the pin moves on purpose, after a replay. The
 first caller is the web chat's experimental preflight; see the
 [2026-09-17](2026-09-17-typesafe-jev.md) note.
 The [Outbox conversation screen](../../../lib/outbox/docs/README.md#finding-responses-and-decisions)
