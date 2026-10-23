@@ -234,11 +234,14 @@ export default async function run() {
   // and the tick counter resets with every service restart, so a shorter fuse
   // actually fires on edit-heavy days.
   const EMAIL_SYNC_TICKS = 15
-  // 5 minutes: a steady-state Beeper sync with nothing new is one local chat
-  // search and no AI calls; the desktop app answers from its own database.
-  const BEEPER_SYNC_TICKS = 5
-  // 5 minutes, the same cadence as Beeper: a steady-state Slack pull is one
-  // call to find the channels with anything new, then reads of those alone.
+  // Every minute: a steady-state Beeper sync with nothing new is one local
+  // chat search and a page per chat that moved, no AI calls; the desktop app
+  // answers from its own database. A message the person sends is in the
+  // notebook within the minute — and the tick counter restarts with the
+  // service, so a longer fuse rarely burned down on edit-heavy days.
+  const BEEPER_SYNC_TICKS = 1
+  // 5 minutes: a steady-state Slack pull is one call to find the channels
+  // with anything new, then reads of those alone.
   const SLACK_PULL_TICKS = 5
   const SLEEP_IDLE_MS = 3 * 3_600_000 // 3 hours
   let heartbeatRunning = false
