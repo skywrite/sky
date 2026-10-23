@@ -27,7 +27,7 @@ type ExecutableTool = { execute: (input: Payload) => Promise<Payload> }
 async function withTools(
   run: (fixture: {
     chat: Record<string, ExecutableTool>
-    call: (name: string, input: Payload) => Promise<Payload>
+    call: (name: string, input: Payload, delegationId?: string) => Promise<Payload>
     policy: (name: string, input: Payload) => Promise<unknown>
     card: (name: string, input: Payload) => Promise<string>
     created: CalendarFields[]
@@ -121,11 +121,17 @@ async function withTools(
           },
         }),
       )
-      const call = async (name: string, input: Payload): Promise<Payload> => {
+      let callSequence = 0
+      const call = async (name: string, input: Payload, delegationId = 'request'): Promise<Payload> => {
         const response = await app.request('http://localhost/voice/calendar-test/tools', {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ name, arguments: JSON.stringify(input) }),
+          body: JSON.stringify({
+            name,
+            arguments: JSON.stringify(input),
+            delegationId,
+            callId: `calendar-call-${++callSequence}`,
+          }),
         })
         const { output } = (await response.json()) as { output: string }
         try {
@@ -313,6 +319,13 @@ test('solo updates skip confirmation but removing the last guest still requires 
       expected: ['user-approval', true, 0],
     })
     await call('cancel_action', { approvalId: parked.approvalId })
+    const declined = await call('calendar_update', { send: removed.draftId })
+    assert({
+      given: 'the same delegation retries a declined calendar tool',
+      should: 'keep the cancellation in force without saving',
+      actual: [declined.message, saved.length],
+      expected: ['The user declined this tool. Do not request it again in this turn.', 0],
+    })
     state.event.fields.guests = []
     const solo = await scheduler.reviewUpdate({
       event: state.event.ref,
@@ -320,7 +333,7 @@ test('solo updates skip confirmation but removing the last guest still requires 
       fields: { ...state.event.fields, time: '16:00' },
     })
     const decision = await policy('calendar_update', { send: solo.draftId })
-    const result = await call('calendar_update', { send: solo.draftId })
+    const result = await call('calendar_update', { send: solo.draftId }, 'solo-revision')
     assert({
       given: 'a requested time change to an existing solo block',
       should: 'save directly without another confirmation',
@@ -441,13 +454,17 @@ test('voice resolves an existing event, cancels a draft and approves revised bef
     await call('cancel_action', { approvalId: parked.approvalId })
     const cancelled = await call('confirm_action', { approvalId: parked.approvalId })
     state.parsed.changes = { time: '17:00', title: 'Atlas planning', duration: 45 }
-    const revised = await call('calendar_update', {
-      ...request,
-      request: 'Move Atlas to 5pm, rename it Atlas planning and make it 45 minutes',
-    })
-    const approval = await call('calendar_update', { send: revised.draftId })
-    const updated = await call('confirm_action', { approvalId: approval.approvalId })
-    const receipt = await call('calendar_update', { status: revised.draftId })
+    const revised = await call(
+      'calendar_update',
+      {
+        ...request,
+        request: 'Move Atlas to 5pm, rename it Atlas planning and make it 45 minutes',
+      },
+      'revised-request',
+    )
+    const approval = await call('calendar_update', { send: revised.draftId }, 'revised-request')
+    const updated = await call('confirm_action', { approvalId: approval.approvalId }, 'revised-request')
+    const receipt = await call('calendar_update', { status: revised.draftId }, 'revised-request')
     assert({
       given: 'a cancelled approval followed by a revised request and a yes',
       should: 'save only the revised existing event and preserve its conference',
