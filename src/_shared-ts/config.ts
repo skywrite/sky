@@ -51,6 +51,11 @@ export const DIR_STATE_FOLLOW_EMAIL_ARCHIVE = path.join(DIR_STATE, 'follow', 'em
 export const DIR_STATE_FOLLOW_SLACK_ACTIVE = path.join(DIR_STATE, 'follow', 'slack', 'active')
 export const DIR_STATE_FOLLOW_SLACK_ARCHIVE = path.join(DIR_STATE, 'follow', 'slack', 'archive')
 export const DIR_STATE_FOLLOW_SLACK_CHANNELS = path.join(DIR_STATE, 'follow', 'slack', 'channels')
+/** The Slack channel cache: one file per joined channel and day, plus the roster with Sky's cursor per channel */
+export const DIR_STATE_SLACK_DAYS = path.join(DIR_STATE, 'slack', 'days')
+export const FILE_STATE_SLACK_CHANNELS = path.join(DIR_STATE, 'slack', 'channels.yaml')
+/** The person's choices about the Slack pull (muted channels), kept apart from the roster the pull rewrites */
+export const FILE_STATE_SLACK_RULES = path.join(DIR_STATE, 'slack', 'rules.yaml')
 export const DIR_TMP_USER = path.join(DIR_USER_DATA, 'tmp')
 
 export const DIR_CODE_SRC = path.join(DIR_CODE, 'src')

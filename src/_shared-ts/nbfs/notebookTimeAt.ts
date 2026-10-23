@@ -12,6 +12,24 @@ import readDay from './readDay.ts'
 // stretch with no started day files under its own calendar day instead.
 const LOOKBACK_DAYS = 7
 
+export interface NotebookTimeAtOptions extends ConvertToNotebookTimezoneOptions {
+  /**
+   * The day file for a date, or undefined when there is none. A caller
+   * stamping many moments hands in a reader that remembers what it read;
+   * the default reads the file each time.
+   */
+  dayAt?: (date: PlainDate) => Promise<DayDocument | undefined>
+}
+
+async function readDayOrNone(date: PlainDate, timeDir: string): Promise<DayDocument | undefined> {
+  try {
+    return await readDay(date, timeDir)
+  } catch {
+    // No day file there, or one that cannot be read
+    return undefined
+  }
+}
+
 /**
  * The notebook time at a moment: the day that was open then — the last one
  * started at or before it — and the time on that day in its zone, with hours
@@ -25,13 +43,14 @@ const LOOKBACK_DAYS = 7
  */
 export default async function notebookTimeAt(
   when: string | Date,
-  options: ConvertToNotebookTimezoneOptions = {},
+  options: NotebookTimeAtOptions = {},
 ): Promise<PlainDateTime> {
   const { timeDir = DIR_TIME, systemTimezone = currentTimezoneIANA() } = options
+  const dayAt = options.dayAt ?? ((date: PlainDate) => readDayOrNone(date, timeDir))
   const moment = toSystemZoned(when, systemTimezone)
-  if (typeof moment === 'string') return convertToNotebookTimezone(when, options)
-  const open = await openDayAt(moment, timeDir)
-  if (!open) return convertToNotebookTimezone(when, options)
+  if (typeof moment === 'string') return convertToNotebookTimezone(when, { timeDir, systemTimezone })
+  const open = await openDayAt(moment, dayAt)
+  if (!open) return convertToNotebookTimezone(when, { timeDir, systemTimezone })
 
   const local = moment.inTimeZone(open.timezone)
   const [hours, minutes] = local.time.split(':').map(Number)
@@ -40,18 +59,17 @@ export default async function notebookTimeAt(
 }
 
 /** The last day started at or before the moment, within the lookback. */
-async function openDayAt(moment: ZonedDateTime, timeDir: string): Promise<DayDocument | undefined> {
+async function openDayAt(
+  moment: ZonedDateTime,
+  dayAt: (date: PlainDate) => Promise<DayDocument | undefined>,
+): Promise<DayDocument | undefined> {
   // From the day after: a day kept in a zone ahead of the system's can start
   // before the system's midnight.
   const from = moment.plainDateTime.plainDate.addDays(1)
   for (let back = 0; back <= LOOKBACK_DAYS + 1; back++) {
-    try {
-      const day = await readDay(from.addDays(-back), timeDir)
-      const started = day.started
-      if (started && started.epochMilliseconds <= moment.epochMilliseconds) return day
-    } catch {
-      // No day file there, or one that cannot be read
-    }
+    const day = await dayAt(from.addDays(-back))
+    const started = day?.started
+    if (started && started.epochMilliseconds <= moment.epochMilliseconds) return day
   }
   return undefined
 }

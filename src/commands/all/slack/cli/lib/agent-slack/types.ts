@@ -18,10 +18,26 @@ export type AgentSlackFile = {
 export type AgentSlackMessage = {
   channel_id: string
   ts: string
+  /** The thread's root ts: equal to ts on a root with replies, different on a reply */
   thread_ts?: string
-  author?: { user_id?: string }
+  /** ts of the newest reply, on a thread's root */
+  latest_reply?: string
+  /** Slack's message subtype (bot_message, thread_broadcast, channel_join, …), when set */
+  subtype?: string
+  author?: { user_id?: string; bot_id?: string }
   content?: string
   files?: AgentSlackFile[]
+}
+
+/** One joined conversation from `channel list --via-counts --counts-only` */
+export type AgentSlackConversationCount = {
+  id: string
+  type: 'channel' | 'mpim' | 'im'
+  /** ts of the newest channel message; thread replies do not move it */
+  latest?: string
+  last_read?: string
+  has_unreads?: boolean
+  mention_count?: number
 }
 
 export type AgentSlackUser = {

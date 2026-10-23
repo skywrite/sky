@@ -237,6 +237,9 @@ export default async function run() {
   // 5 minutes: a steady-state Beeper sync with nothing new is one local chat
   // search and no AI calls; the desktop app answers from its own database.
   const BEEPER_SYNC_TICKS = 5
+  // 5 minutes, the same cadence as Beeper: a steady-state Slack pull is one
+  // call to find the channels with anything new, then reads of those alone.
+  const SLACK_PULL_TICKS = 5
   const SLEEP_IDLE_MS = 3 * 3_600_000 // 3 hours
   let heartbeatRunning = false
   let heartbeatTick = 0
@@ -436,6 +439,36 @@ export default async function run() {
           }
           for (const note of synced.data.notes) {
             logHeartbeat.info('Beeper sync: {note}', { event: 'beeper-sync-note', note })
+          }
+        }
+      }
+
+      // Slack channel cache: every channel the owner is in, into the state
+      // area. Skipped without a workspace; the command's own lock keeps a
+      // pull started by hand and this one apart.
+      if (heartbeatTick % SLACK_PULL_TICKS === 0 && config.SLACK_WORKSPACE) {
+        release.update('Slack channel pull')
+        const pulled = await commandService.run('slack:pull', {})
+        if (pulled.status !== 'success') {
+          logHeartbeat.error('Slack pull failed: {message}', { event: 'slack-pull-failed', message: pulled.message })
+        } else if (pulled.data) {
+          const added = pulled.data.pulled.reduce((sum, channel) => sum + channel.added, 0)
+          const threads = pulled.data.pulled.reduce((sum, channel) => sum + channel.threads, 0)
+          tick.set({ slackChannelsRead: pulled.data.pulled.length, slackMessages: added })
+          if (added > 0) {
+            logHeartbeat.info('Slack pull: {messages} message(s) in {channels} channel(s), {threads} thread(s)', {
+              event: 'slack-pulled',
+              messages: added,
+              channels: pulled.data.pulled.filter((channel) => channel.added > 0).length,
+              threads,
+            })
+          }
+          if (pulled.data.errors.length > 0) {
+            logHeartbeat.error('Slack pull: {count} channel(s) failed: {message}', {
+              event: 'slack-pull-errors',
+              count: pulled.data.errors.length,
+              message: pulled.data.errors[0].message,
+            })
           }
         }
       }

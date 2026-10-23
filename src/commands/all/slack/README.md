@@ -1,6 +1,6 @@
 ---
 created: 2026-01-18
-updated: 2026-10-14
+updated: 2026-10-20
 ---
 
 # Slack Tasks
@@ -8,6 +8,16 @@ updated: 2026-10-14
 Run `nb cli:commands | grep slack` to see all available Slack commands.
 
 Saved message boundaries and layout compatibility are owned by the [Slack conversation parser](../../../_shared-ts/models/Message/slack/docs/README.md).
+
+## Channel cache
+
+`sky slack:pull` reads every joined channel since Sky's own cursor and writes
+the messages, thread replies included, to one file per channel and day under
+`state/slack/days/`. The service heartbeat runs it every five minutes, and
+Settings › Connections › Slack shows the checks, the channels and their mutes.
+`sky recap:slack` digests a notebook day of it into the day's Slack recap,
+which the day summary reads ([recap docs](../recap/docs/README.md)). Layout,
+clocks and cursor rules: [pull/docs/README.md](pull/docs/README.md).
 
 ## Authentication and background checks
 
