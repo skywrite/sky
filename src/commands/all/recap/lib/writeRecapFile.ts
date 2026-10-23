@@ -5,6 +5,11 @@ import { outputFile, readDir } from '#shared/fs/mod.ts'
 import { dayActionDir } from '#shared/nbfs/mod.ts'
 import type { PlainDate } from '#universal/dates/nbdt/mod.ts'
 
+/** The day's recap for an app, whatever its time prefix, or null when there is none. */
+export async function findRecapFile(day: PlainDate, app: string, timeDir = DIR_TIME): Promise<string | null> {
+  return findExisting(path.join(timeDir, dayActionDir('recap', day)), app)
+}
+
 async function findExisting(dir: string, app: string): Promise<string | null> {
   try {
     for await (const entry of readDir(dir)) {

@@ -36,18 +36,21 @@ export default function createDayLabeler(today: PlainDate): (path: string) => st
       return daysPast <= 7 ? `${stamp} (last week)` : stamp
     }
     if (info.kind !== 'day') return undefined
-    const date = info.date
-
-    // Round rather than floor: both sides are local midnight, so a DST shift
-    // otherwise stretches a whole-day gap to 25 hours and skews the count.
-    const daysSince = Math.round((todayMs - date.toDate().getTime()) / MS_PER_DAY)
-    const stamp = `${date.ymd} ${date.dayShort}`
-
-    // TODAY is shouted because it is the anchor the model most often loses.
-    if (daysSince === 0) return `${stamp} (TODAY)`
-    if (daysSince === 1) return `${stamp} (yesterday)`
-    if (daysSince > 1 && daysSince < 7) return `${stamp} (${daysSince} days ago)`
-    if (daysSince < 0) return `${stamp} (future)`
-    return stamp
+    return dayStamp(info.date, today)
   }
+}
+
+/** A dated document's stamp relative to `today`: `2026-05-14 Thu (TODAY)`, `(yesterday)`, `(3 days ago)`, `(future)`, or the bare date a week or more back. */
+export function dayStamp(date: PlainDate, today: PlainDate): string {
+  // Round rather than floor: both sides are local midnight, so a DST shift
+  // otherwise stretches a whole-day gap to 25 hours and skews the count.
+  const daysSince = Math.round((today.toDate().getTime() - date.toDate().getTime()) / MS_PER_DAY)
+  const stamp = `${date.ymd} ${date.dayShort}`
+
+  // TODAY is shouted because it is the anchor the model most often loses.
+  if (daysSince === 0) return `${stamp} (TODAY)`
+  if (daysSince === 1) return `${stamp} (yesterday)`
+  if (daysSince > 1 && daysSince < 7) return `${stamp} (${daysSince} days ago)`
+  if (daysSince < 0) return `${stamp} (future)`
+  return stamp
 }

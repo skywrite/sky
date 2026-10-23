@@ -1,6 +1,6 @@
 ---
 created: 2026-09-01
-updated: 2026-09-07
+updated: 2026-10-20
 ---
 
 # Recap commands
@@ -79,6 +79,41 @@ The pure fold, clamp, and render live in `lib/github.ts` and are tested
 without GitHub. `lib/githubFetch.ts` holds every `gh` call.
 
 Narrative: [2026-09-01 — commits found without the event feed](2026-09-01-github-commits-without-the-event-feed.md).
+
+## Slack channels — recap:slack
+
+`recap:slack <day>` digests one notebook day of every Slack channel the
+owner is a member of into a recap under `actions/recaps/`, `app: slack`. It
+is the room the owner was in, not his activity, and the day summary reads
+it that way ([summary notes](../../summary/docs/README.md)). Its rules:
+
+- **The day is the notebook's.** `lib/slackDay.ts` assembles it through the
+  channel cache's day view ([pull notes](../../slack/pull/docs/README.md)):
+  one document per channel, and for every thread replied to that day whose
+  root sits on an earlier day, the root with the replies before the day.
+  Replies after the day never ship.
+- **A captured thread stays with its capture.** A thread the owner took
+  part in is in the day directory; its captures carry the cache's anchor
+  ids and a `link:` naming the message captured from, the root or a reply
+  whose link carries the root's ts, which is how a thread captured over
+  several days names its root on the later days. `dropCapturedThreads`
+  leaves those threads to the capture, so the model reads one conversation
+  once.
+- **Opus 5.5 at high effort writes it**, under a 750k reading budget in the
+  model's tokens, the fit and ratio the day summary uses; over budget it
+  refuses rather than trims. The model writes the Channels block (one line
+  per channel with its count, the quiet ones rolled up), What moved, Asked
+  of you and Where things stand, every line tagged `[#channel HH:MM]` on
+  the notebook clock. The title and counts line are the command's.
+- **Once the next day has started.** The service runs `recap:slack
+  --when-due` with its Slack passes: the newest of the last three days whose
+  successor has a start stamp, that has channel messages and no recap yet.
+  `summary:day` writes the recap first when a day with channel messages
+  lacks one, so a batch of summaries never runs without Slack. The check
+  does not know a cache rebuild is in progress: after one, re-run the days
+  it may have recapped from half-written files.
+- Re-running replaces the recap and keeps curated tags and rel, like every
+  recap.
 
 ## Recaps tag and rel themselves
 

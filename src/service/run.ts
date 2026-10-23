@@ -498,6 +498,23 @@ export default async function run() {
             })
           }
         }
+        // Yesterday's Slack recap, once today has started: the channel digest
+        // the day summary reads. The command answers 'nothing' until a day is due.
+        release.update('Slack recap')
+        const recapped = await commandService.run('recap:slack', { whenDue: true, noEditor: true })
+        if (recapped.status !== 'success') {
+          logHeartbeat.error('Slack recap failed: {message}', {
+            event: 'slack-recap-failed',
+            message: recapped.message,
+          })
+        } else if (recapped.data?.outcome === 'recapped') {
+          logHeartbeat.info('Slack recap: {day} from {channels} channel(s), {messages} message(s)', {
+            event: 'slack-recapped',
+            day: recapped.data.day,
+            channels: recapped.data.channels,
+            messages: recapped.data.messages,
+          })
+        }
       }
 
       // Only follow capture holds the service. The scheduled pass owns its
