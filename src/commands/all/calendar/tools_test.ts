@@ -17,7 +17,7 @@ import { UPDATE_EVENT, withUpdateFixture } from '#lib/calendarScheduler/test/upd
 import type { CalendarFields } from '#lib/calendarScheduler/types.ts'
 import { approvalCard } from '#service/handler/chat/approvalCard.ts'
 import { createMeetingRoutes } from '#service/handler/meetings/mod.ts'
-import { createVoiceCommandTools } from '#service/handler/voice/commandTools.ts'
+import { voiceChatTools } from '#service/handler/voice/chatTools.ts'
 import { createVoiceRoutes } from '#service/handler/voice/mod.ts'
 import { assert, test } from '#test'
 
@@ -90,16 +90,33 @@ async function withTools(
     try {
       const chat = (await createNotebookTools(tasks)) as Record<string, ExecutableTool>
       const policies = createToolApprovalConfig({ context })
-      const voices = createVoiceCommandTools(await discoverAIChatTools(), tasks)
+      const { tools: voices } = await voiceChatTools(
+        {
+          build: async () => ({
+            tools: chat,
+            toolApproval: policies,
+            systemInstructions: '',
+            prepareApproval: async (name, input) => ({
+              summary: (await approvalCard(name, input, getApprovalFormatter(name), context)).join('\n'),
+              approve: async () => {},
+            }),
+          }),
+          record: () => {},
+          persist: async () => {},
+          close: async () => {},
+        },
+        [],
+        new AbortController().signal,
+      )
       app.route(
         '/voice',
         createVoiceRoutes({
           createThread: async () => ({
-            session: { type: 'realtime', model: 'mock-model' },
-            opening: '',
+            session: { model: 'mock-model' },
+            greeting: '',
             tools: voices,
           }),
-          mint: async () => {
+          connect: async () => {
             throw new Error('Tests never open a real voice connection.')
           },
         }),

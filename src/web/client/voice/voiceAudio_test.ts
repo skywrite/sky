@@ -71,8 +71,7 @@ function playback() {
 
 function harness() {
   const sky = playback()
-  const sonny = playback()
-  const elements = { sky, sonny }
+  const elements = { sky }
   const context = new Context()
   const motion = new VoiceAudioLevels((speaker) => elements[speaker].element as HTMLAudioElement, {
     createContext: () => context as unknown as AudioContext,
@@ -86,7 +85,7 @@ function harness() {
     for (const analyser of context.analysers) analyser.amplitude = 0.15
     for (let i = 0; i < 12; i++) frame()
   }
-  return { motion, context, sky, sonny, frame, voiced }
+  return { motion, context, sky, frame, voiced }
 }
 
 test('audio motion follows independent remote output and never changes audible playback routing', async () => {
@@ -104,20 +103,18 @@ test('audio motion follows independent remote output and never changes audible p
   for (let i = 0; i < 12; i++) h.frame()
   const levels = h.motion.sample()
   assert({
-    given: 'Sky has audio while Sonny has silent samples',
-    should: 'animate only Sky and keep both HTML output devices untouched without an extra audio route',
+    given: 'Sky has received audio',
+    should: 'animate Sky and keep the HTML output device untouched without an extra audio route',
     actual: {
       sky: levels.sky > 0.5,
-      sonny: levels.sonny,
-      devices: [h.sky.element.sinkId, h.sonny.element.sinkId],
-      changedElements: [h.sky.element.paused, h.sky.element.muted, h.sonny.element.paused, h.sonny.element.muted],
+      devices: [h.sky.element.sinkId],
+      changedElements: [h.sky.element.paused, h.sky.element.muted],
       extraPlayback: h.context.sources.some((source) => source.connections.includes(h.context.destination)),
     },
     expected: {
       sky: true,
-      sonny: 0,
-      devices: ['speaker-1', 'speaker-1'],
-      changedElements: [false, false, false, false],
+      devices: ['speaker-1'],
+      changedElements: [false, false],
       extraPlayback: false,
     },
   })
@@ -139,7 +136,7 @@ test('audio motion follows independent remote output and never changes audible p
       contexts: 1,
       streamRetained: true,
       paused: false,
-      levels: { sky: 0, sonny: 0 },
+      levels: { sky: 0 },
     },
   })
 })
@@ -193,7 +190,7 @@ for (const gate of ['muted', 'paused', 'ended', 'volume', 'track-muted', 'track-
   })
 }
 
-test('replacing or detaching a stream discards its samples without disturbing the other speaker', async () => {
+test('replacing or detaching a stream discards its samples', async () => {
   const h = harness()
   await h.motion.start()
   h.voiced()
@@ -203,23 +200,22 @@ test('replacing or detaching a stream discards its samples without disturbing th
   h.frame()
   assert({
     given: 'a new remote stream replaces the speaking stream',
-    should: 'detach the previous source, clear its energy, and continue sampling the other speaker',
+    should: 'detach the previous source, clear its energy,',
     actual: {
       oldDisconnected: oldSource.disconnected,
       connectedNew: h.context.streams.at(-1) === newPlayback.stream,
       sky: h.motion.sample().sky,
-      sonny: h.motion.sample().sonny > 0,
     },
-    expected: { oldDisconnected: true, connectedNew: true, sky: 0, sonny: true },
+    expected: { oldDisconnected: true, connectedNew: true, sky: 0 },
   })
   const newSource = h.context.sources.at(-1)!
   h.sky.element.srcObject = null
   h.frame()
   assert({
     given: 'the replacement stream is detached',
-    should: 'disconnect its analysis while the other speaker remains active',
-    actual: { disconnected: newSource.disconnected, sky: h.motion.sample().sky, sonny: h.motion.sample().sonny > 0 },
-    expected: { disconnected: true, sky: 0, sonny: true },
+    should: 'disconnect its analysis',
+    actual: { disconnected: newSource.disconnected, sky: h.motion.sample().sky },
+    expected: { disconnected: true, sky: 0 },
   })
   h.motion.stop()
 })
@@ -227,17 +223,18 @@ test('replacing or detaching a stream discards its samples without disturbing th
 test('voice energy accounts for output volume and ignores the noise floor', async () => {
   const h = harness()
   await h.motion.start()
-  h.sky.element.volume = 0.25
   h.voiced()
-  const levels = h.motion.sample()
-  const relative = Math.abs(levels.sky / levels.sonny - 0.25) < 0.001
+  const full = h.motion.sample().sky
+  h.sky.element.volume = 0.25
+  for (let i = 0; i < 120; i++) h.frame()
+  const relative = Math.abs(h.motion.sample().sky / full - 0.25) < 0.002
   for (const analyser of h.context.analysers) analyser.amplitude = 0.003
   for (let i = 0; i < 60; i++) h.frame()
   assert({
     given: 'the same speech at quarter volume and then quiet background samples',
     should: 'scale visual energy with audible volume and settle below the noise floor',
     actual: { relative, levels: h.motion.sample() },
-    expected: { relative: true, levels: { sky: 0, sonny: 0 } },
+    expected: { relative: true, levels: { sky: 0 } },
   })
   h.motion.stop()
 })

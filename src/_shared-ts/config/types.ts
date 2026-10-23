@@ -52,8 +52,6 @@ export interface SkyConfig {
   voice: {
     /** The voice Sky uses in browser calls; unset means the built-in default. */
     voice?: string
-    /** The separate notebook researcher's voice on Talk; unset means ash. */
-    researcherVoice?: string
   }
   /** Features still taking shape — the Experimental page's switches. */
   experimental: {

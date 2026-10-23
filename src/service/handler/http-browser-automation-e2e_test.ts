@@ -44,7 +44,7 @@ test(
         experimental: { workstreams: false },
         transcription: { value: 'openai/gpt-transcribe', choices: [] },
         calendar: { classifyEvents: false },
-        voice: { current: 'marin', researcherCurrent: 'ash', groups: { female: ['marin'], male: ['ash'] } },
+        voice: { current: 'marin', groups: { female: ['marin'], male: ['ash'] } },
         models: [],
         profiles: [],
         providers: [],

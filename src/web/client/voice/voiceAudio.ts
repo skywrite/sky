@@ -4,7 +4,7 @@ interface VoiceAudioDependencies {
   createContext(): AudioContext
 }
 
-const SPEAKERS: Speaker[] = ['sky', 'sonny']
+const SPEAKERS: Speaker[] = ['sky']
 
 interface AudioBinding {
   stream: MediaStream
@@ -23,7 +23,7 @@ export class VoiceAudioLevels {
   private starting: Promise<void> | null = null
   private lastTime: number | null = null
   private bindings: Partial<Record<Speaker, AudioBinding>> = {}
-  private levels: Record<Speaker, number> = { sky: 0, sonny: 0 }
+  private levels: Record<Speaker, number> = { sky: 0 }
   private dependencies: VoiceAudioDependencies
   error: string | null = null
 

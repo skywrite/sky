@@ -41,7 +41,7 @@ test(
       theme: 'light',
       experimental: { contextPreflight: false, workstreams: false },
       textSize: 'default',
-      voice: { current: 'marin', researcherCurrent: 'ash', groups: { male: ['ash'], female: ['marin'] } },
+      voice: { current: 'marin', groups: { male: ['ash'], female: ['marin'] } },
       models: [{ role: 'reasoning', label: 'Thinking', value: 'Sample model', profile: 'sample' }],
       profiles: [{ name: 'sample', provider: 'ollama', model: 'sample-model', builtin: true, roles: ['Thinking'] }],
       writingVoice: { profile: 'sample', choices: [{ value: 'sample', label: 'Sample model' }] },
@@ -366,6 +366,17 @@ test(
       ]) {
         await page.goto(`${base}${route}`)
         await page.getByRole('heading', { name: title, exact: true }).waitFor()
+        if (route === '/settings/voice') {
+          await page.waitForFunction(() => document.title === 'sky · Voice')
+          await nav.getByRole('button', { name: 'Models', exact: true }).click()
+          await page.getByRole('heading', { name: 'Models', exact: true }).waitFor()
+          await page.goBack()
+          await page.waitForFunction(() => document.title === 'sky · Voice')
+          await page.goForward()
+          await page.getByRole('heading', { name: 'Models', exact: true }).waitFor()
+          await nav.getByRole('button', { name: 'Voice', exact: true }).click()
+          await page.waitForFunction(() => document.title === 'sky · Voice')
+        }
       }
       await returnToday()
       assert({

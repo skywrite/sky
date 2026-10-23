@@ -1,40 +1,38 @@
 import { afterEach } from 'bun:test'
-import type { RealtimeFunctionTool, RealtimeSessionCreateRequest } from 'openai/resources/realtime/realtime'
+import type { FunctionTool, MediaSessionConfig } from 'openai/resources/live/live'
 import { makeTempDir } from '#shared/fs/mod.ts'
 import { assert, test } from '#test'
 import { holding, touch } from '../../activity.ts'
 import { createTestHttpApp } from '../httpTestHelpers.ts'
 import type { VoiceRoutesOptions, VoiceThread } from './mod.ts'
 
-// The routes are what is under test: the thread factory and the secret
-// minter are scripted, and the tools are stubs that report their input.
+// The routes are what is under test: the thread factory and the SDP
+// connector are scripted, and the tools are stubs that report their input.
 
-const ECHO: RealtimeFunctionTool = { type: 'function', name: 'echo', parameters: { type: 'object' } }
-const BOOM: RealtimeFunctionTool = { type: 'function', name: 'boom', parameters: { type: 'object' } }
+const ECHO: FunctionTool = { type: 'function', name: 'echo', parameters: { type: 'object' } }
+const BOOM: FunctionTool = { type: 'function', name: 'boom', parameters: { type: 'object' } }
 
-const SESSION: RealtimeSessionCreateRequest = {
-  type: 'realtime',
-  model: 'gpt-realtime-2.1',
+const SESSION: MediaSessionConfig = {
+  model: 'gpt-live-1',
   instructions: 'You are Sky. Speak naturally.',
   audio: { output: { voice: 'marin' } },
-  tools: [ECHO, BOOM],
+  delegation: { type: 'responses', responses: { model: 'gpt-6.1-sol', tools: [ECHO, BOOM] } },
 }
 
-const AUDITION: RealtimeSessionCreateRequest = {
-  type: 'realtime',
-  model: 'gpt-realtime-2.1',
+const AUDITION: MediaSessionConfig = {
+  model: 'gpt-live-1',
   audio: { output: { voice: 'ash' } },
 }
 
 function hostWith(
-  mint: VoiceRoutesOptions['mint'] = () => Promise.resolve({ value: 'ek_test', expiresAt: 1700000060 }),
+  connect: VoiceRoutesOptions['connect'] = () => Promise.resolve({ sessionId: 'live_test', sdp: 'test-answer' }),
 ) {
   const created: string[] = []
-  const minted: RealtimeSessionCreateRequest[] = []
+  const connected: MediaSessionConfig[] = []
   const prepared: Array<[string, string]> = []
   const thread: VoiceThread = {
     session: SESSION,
-    opening: 'Say hello.',
+    greeting: 'Hey.',
     tools: new Map([
       [
         'echo',
@@ -48,9 +46,9 @@ function hostWith(
       created.push(id)
       return Promise.resolve(thread)
     },
-    mint: (session) => {
-      minted.push(session)
-      return mint(session)
+    connect: (session, sdp, signal) => {
+      connected.push(session)
+      return connect(session, sdp, signal)
     },
     audition: {
       describe: () =>
@@ -58,7 +56,7 @@ function hostWith(
           passage: 'Hey Jane, ready when you are.',
           groups: { male: ['ash'], female: ['sage'] },
           current: 'ash',
-          model: 'gpt-realtime-2.1',
+          model: 'gpt-live-1',
         }),
       prepare: (voice, passage) => {
         prepared.push([voice, passage])
@@ -67,7 +65,7 @@ function hostWith(
       },
     },
   }
-  return { host, created, minted, prepared }
+  return { host, created, connected, prepared }
 }
 
 async function appWith(host: VoiceRoutesOptions) {
@@ -89,6 +87,7 @@ afterEach(async () => {
 })
 
 function post(app: App, url: string, body?: unknown): Promise<Response> {
+  if (url.endsWith('/session')) body = { sdp: 'v=0\r\nmock-offer', ...(body as Record<string, unknown>) }
   const call = /^\/voice\/([^/]+)\/(?:session|tools)$/.exec(url)
   if (call) {
     if (!calls.has(app)) calls.set(app, new Set())
@@ -103,98 +102,83 @@ function post(app: App, url: string, body?: unknown): Promise<Response> {
   )
 }
 
-test({ name: 'voice route - a session mints a secret around the thread configuration' }, async () => {
-  const { host, created, minted } = hostWith()
+test({ name: 'voice route - a session connects an SDP answer for the trusted thread configuration' }, async () => {
+  const { host, created, connected } = hostWith()
   const app = await appWith(host)
 
   const response = await post(app, '/voice/t1/session')
   assert({
     given: 'a first session request',
-    should: 'answer with the secret and what the browser needs to open',
+    should: 'answer with the SDP and what the browser needs to open',
     actual: [response.status, await response.json()],
     expected: [
       200,
       {
-        clientSecret: 'ek_test',
-        expiresAt: 1700000060,
-        model: 'gpt-realtime-2.1',
+        sessionId: 'live_test',
+        sdp: 'test-answer',
+        model: 'gpt-live-1',
         voice: 'marin',
-        opening: 'Say hello.',
-        instructions: 'You are Sky. Speak naturally.',
+        opening: 'The audio is ready. Immediately greet the user by saying exactly \"Hey.\", then pause and listen.',
         tools: ['echo', 'boom'],
+        serverTools: false,
       },
     ],
   })
   assert({
-    given: 'the mint',
+    given: 'the connect',
     should: 'receive the thread session configuration as is',
-    actual: minted[0] === SESSION,
+    actual: connected[0] === SESSION,
     expected: true,
   })
 
   await post(app, '/voice/t1/session')
   assert({
     given: 'a second session request on the same thread',
-    should: 'mint again without building a second thread',
-    actual: [created, minted.length],
+    should: 'connect again without building a second thread',
+    actual: [created, connected.length],
     expected: [['t1'], 2],
   })
 })
 
-test({ name: 'voice route - a mint failure is reported, not thrown' }, async () => {
+test({ name: 'voice route - a connect failure is reported, not thrown' }, async () => {
   const { host } = hostWith(() => Promise.reject(new Error('OPENAI_API_KEY is not set')))
   const app = await appWith(host)
   const response = await post(app, '/voice/t1/session')
   assert({
-    given: 'a minter that fails',
+    given: 'a connector that fails',
     should: 'answer 502 with its message',
     actual: [response.status, await response.json()],
     expected: [502, { message: 'OPENAI_API_KEY is not set' }],
   })
 })
 
-test('voice route - host and researcher receive distinct secrets with their own voices', async () => {
-  const { host, minted } = hostWith((session) =>
-    Promise.resolve({
-      value: session.audio?.output?.voice === 'marin' ? 'ek_host' : 'ek_researcher',
-      expiresAt: 1700000060,
-    }),
-  )
-  const create = host.createThread
-  host.createThread = async (id) => ({
-    ...(await create(id)),
-    session: { ...SESSION, audio: { output: { voice: 'marin' } } },
-    researcher: {
-      name: 'Sonny',
-      session: {
-        ...SESSION,
-        instructions: 'Speak supported research findings.',
-        audio: { output: { voice: 'ash' } },
-        tools: [],
-      },
-    },
-  })
+test('voice route - startup history fits Live even when characters need several UTF-8 bytes', async () => {
+  const { host, connected, created } = hostWith()
   const app = await appWith(host)
-  const response = await post(app, '/voice/duet/session')
-  const data = await response.json()
+  const response = await post(app, '/voice/history/session', {
+    context: 'Earlier context.\n' + '語🙂'.repeat(8000) + '\nUser: Continue Atlas.',
+  })
+  const part = connected[0].input?.[0].content[0]
+  const text = part && 'text' in part ? part.text : ''
   assert({
-    given: 'a thread with Sky and Sonny with their separate voices',
-    should: 'mint both sessions and return the speaking-only researcher configuration to the browser',
-    actual: [response.status, data.clientSecret, data.voice, data.researcher, minted.length],
-    expected: [
-      200,
-      'ek_host',
-      'marin',
-      {
-        clientSecret: 'ek_researcher',
-        expiresAt: 1700000060,
-        model: 'gpt-realtime-2.1',
-        voice: 'ash',
-        name: 'Sonny',
-        instructions: 'Speak supported research findings.',
-      },
-      2,
+    given: 'a long Unicode chat switches to voice',
+    should: 'keep the recent history within the startup limit without splitting a character',
+    actual: [
+      response.status,
+      new TextEncoder().encode(text).length < 8192,
+      text.endsWith('User: Continue Atlas.'),
+      text.includes('�'),
+      text.includes('[Earlier chat omitted'),
     ],
+    expected: [200, true, true, false, true],
+  })
+  const malformed = await post(app, '/voice/invalid/session', { sdp: 'invalid' })
+  const oversized = await post(app, '/voice/oversized/session', { context: 'x'.repeat(60_201) })
+  assert({
+    given: 'invalid SDP or an oversized request',
+    should: 'reject it before building a thread or contacting OpenAI',
+    actual: [malformed.status, oversized.status, created, connected.length],
+    expected: [400, 400, ['history'], 1],
   })
 })
 
@@ -253,7 +237,7 @@ test('voice route - ending a call aborts research and rejects late tool calls', 
   assert({
     given: 'the user explicitly starts another call on the same page',
     should: 'allow a new session after the previous call ended',
-    actual: (await post(app, '/voice/duet/session')).status,
+    actual: (await post(app, '/voice/duet-next/session')).status,
     expected: 200,
   })
 })
@@ -282,7 +266,7 @@ test('voice route - end during startup prevents a late session from becoming liv
   const late = await connecting
   assert({
     given: 'a cancelled call whose initial context finishes loading afterward',
-    should: 'return an ended session instead of minting a call',
+    should: 'return an ended session instead of connecting a call',
     actual: late.status,
     expected: 410,
   })
@@ -366,60 +350,68 @@ test('voice route - ending during tool-triggered thread reconstruction returns a
   })
 })
 
-test({ name: 'voice route - the audition describes itself and mints a speaking-only session per voice' }, async () => {
-  const { host, minted, prepared } = hostWith()
-  const app = await appWith(host)
+test(
+  { name: 'voice route - the audition describes itself and connects a speaking-only session per voice' },
+  async () => {
+    const { host, connected, prepared } = hostWith()
+    const app = await appWith(host)
 
-  const info = await app.request('/voice/_api/audition')
-  assert({
-    given: 'the audition',
-    should: 'give the page its passage, groups, and current voice',
-    actual: [info.status, await info.json()],
-    expected: [
-      200,
-      {
-        passage: 'Hey Jane, ready when you are.',
-        groups: { male: ['ash'], female: ['sage'] },
-        current: 'ash',
-        model: 'gpt-realtime-2.1',
-      },
-    ],
-  })
+    const info = await app.request('/voice/_api/audition')
+    assert({
+      given: 'the audition',
+      should: 'give the page its passage, groups, and current voice',
+      actual: [info.status, await info.json()],
+      expected: [
+        200,
+        {
+          passage: 'Hey Jane, ready when you are.',
+          groups: { male: ['ash'], female: ['sage'] },
+          current: 'ash',
+          model: 'gpt-live-1',
+        },
+      ],
+    })
 
-  const own = await post(app, '/voice/_api/audition/session', { voice: 'sage', passage: '  Hello there.  ' })
-  assert({
-    given: 'a voice and a passage',
-    should: 'prepare that voice with the trimmed passage and mint its session',
-    actual: [own.status, await own.json(), prepared.at(-1), minted.at(-1) === AUDITION],
-    expected: [
-      200,
-      { clientSecret: 'ek_test', expiresAt: 1700000060, voice: 'sage', opening: 'Say: Hello there.' },
-      ['sage', 'Hello there.'],
-      true,
-    ],
-  })
+    const own = await post(app, '/voice/_api/audition/session', { voice: 'sage', passage: '  Hello there.  ' })
+    assert({
+      given: 'a voice and a passage',
+      should: 'prepare that voice with the trimmed passage and connect its session',
+      actual: [own.status, await own.json(), prepared.at(-1), connected.at(-1) === AUDITION],
+      expected: [
+        200,
+        { sessionId: 'live_test', sdp: 'test-answer', voice: 'sage', opening: 'Say: Hello there.' },
+        ['sage', 'Hello there.'],
+        true,
+      ],
+    })
 
-  await post(app, '/voice/_api/audition/session', { voice: 'ash', passage: '   ' })
-  assert({
-    given: 'a blank passage',
-    should: 'fall back to the default one',
-    actual: prepared.at(-1),
-    expected: ['ash', 'Hey Jane, ready when you are.'],
-  })
+    await post(app, '/voice/_api/audition/session', { voice: 'ash', passage: '   ' })
+    assert({
+      given: 'a blank passage',
+      should: 'fall back to the default one',
+      actual: prepared.at(-1),
+      expected: ['ash', 'Hey Jane, ready when you are.'],
+    })
 
-  const unknown = await post(app, '/voice/_api/audition/session', { voice: 'nope' })
-  const nameless = await post(app, '/voice/_api/audition/session', {})
-  assert({
-    given: 'a voice that does not exist, or none',
-    should: 'be 400 either way',
-    actual: [unknown.status, nameless.status],
-    expected: [400, 400],
-  })
+    const unknown = await post(app, '/voice/_api/audition/session', { voice: 'nope' })
+    const nameless = await post(app, '/voice/_api/audition/session', {})
+    assert({
+      given: 'a voice that does not exist, or none',
+      should: 'be 400 either way',
+      actual: [unknown.status, nameless.status],
+      expected: [400, 400],
+    })
 
-  // A thread named "audition" is still a thread: _api keeps the two apart.
-  const thread = await post(app, '/voice/audition/session')
-  assert({ given: 'a thread called audition', should: 'mint a thread session', actual: thread.status, expected: 200 })
-})
+    // A thread named "audition" is still a thread: _api keeps the two apart.
+    const thread = await post(app, '/voice/audition/session')
+    assert({
+      given: 'a thread called audition',
+      should: 'connect a thread session',
+      actual: thread.status,
+      expected: 200,
+    })
+  },
+)
 
 test({ name: 'voice route - without an audition host the audition is not served' }, async () => {
   const { host } = hostWith()

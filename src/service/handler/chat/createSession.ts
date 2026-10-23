@@ -13,6 +13,7 @@ import { generateText, tool } from 'ai'
 import { z } from 'zod'
 import { gatherContext } from '#commands/all/ai/_lib/gatherContext.ts'
 import { harvestFileRefs, SessionBlessings } from '#commands/all/ai/chat/lib/approvals.ts'
+import { calendarDraftRefusal } from '#commands/lib/chat/calendarScheduling.ts'
 import { FileGrants } from '#commands/lib/chat/fileGrants.ts'
 import { createChatFileTools } from '#commands/lib/chat/localFileTools.ts'
 import {
@@ -74,6 +75,7 @@ import { chatFileContext } from './files.ts'
 import { prepareChatImageResult } from './images.ts'
 import { interruptedOf } from './interrupted.ts'
 import type {
+  AskApproval,
   ChatRoutesOptions,
   ChatSessionFactory,
   ChatSettingsHost,
@@ -390,6 +392,42 @@ export function createChatHost(config: typeof ConfigModule, env: Record<string, 
       systemTimezone: context.systemNow.timezone,
     }
 
+    // Both transports review persisted arguments and retain the same file grants.
+    const prepareApproval = async (toolName: string, raw: Record<string, unknown>, signal?: AbortSignal) => {
+      const input = withoutBlankStrings(raw)
+      const sessionKey = getApprovalSessionKey(toolName)?.(input)
+      const calendar =
+        toolName === 'calendar_schedule' && input.send
+          ? await calendarApprovalPrompt(
+              input,
+              new CalendarSchedulerClient(`http://localhost:${context.config.PORT_SERVER}`),
+            )
+          : undefined
+      const refused =
+        calendar &&
+        calendarDraftRefusal(
+          runs(),
+          calendar.calendar.map((draft) => draft.id),
+        )
+      if (refused) throw new Error(refused)
+      const lines = calendar?.lines ?? (await approvalCard(toolName, input, getApprovalFormatter(toolName), context))
+      signal?.throwIfAborted()
+      const card: Parameters<AskApproval>[0] = {
+        toolName,
+        lines,
+        ...(calendar ? { calendar: calendar.calendar, revision: 0 } : {}),
+      }
+      return {
+        card,
+        revise: calendar?.revise,
+        approve: async () => {
+          signal?.throwIfAborted()
+          if (sessionKey)
+            await blessed.grant(sessionKey, { via: 'allowed', source: sourceChatHref(id) }).catch(noteGrantFailure)
+        },
+      }
+    }
+
     return new ChatSession({
       today,
       startTime,
@@ -437,6 +475,10 @@ export function createChatHost(config: typeof ConfigModule, env: Record<string, 
         const { onExternalFiles, onAttachments, onImages } = hooks
         const unsaved = () => unsavedDrafts(hooks.writingDrafts?.list() ?? [])
         return {
+          prepareApproval: async (name, input, signal) => {
+            const prepared = await prepareApproval(name, input, signal)
+            return { summary: prepared.card.lines.join('\n'), approve: prepared.approve }
+          },
           instructions: [
             PLAN_INSTRUCTIONS,
             plan?.plan
@@ -513,22 +555,9 @@ export function createChatHost(config: typeof ConfigModule, env: Record<string, 
       // person's, from the page. A go on a call scoped to a file stands for
       // the file, in every chat.
       approvalHandler: async ({ toolName, input: raw, abortSignal }) => {
-        // The card and the key read the call as the command will: blanks dropped.
-        const input = withoutBlankStrings(raw as Record<string, unknown>)
-        if (toolName === 'calendar_schedule' && input.send) {
-          const card = await calendarApprovalPrompt(
-            input,
-            new CalendarSchedulerClient(`http://localhost:${context.config.PORT_SERVER}`),
-          )
-          abortSignal?.throwIfAborted()
-          return ask({ toolName, lines: card.lines, calendar: card.calendar, revision: 0 }, card.revise)
-        }
-        const sessionKey = getApprovalSessionKey(toolName)?.(input)
-        const lines = await approvalCard(toolName, input, getApprovalFormatter(toolName), context)
-        abortSignal?.throwIfAborted()
-        const decision = await ask({ toolName, lines })
-        if (decision.approved && sessionKey)
-          await blessed.grant(sessionKey, { via: 'allowed', source: sourceChatHref(id) }).catch(noteGrantFailure)
+        const prepared = await prepareApproval(toolName, raw as Record<string, unknown>, abortSignal)
+        const decision = await ask(prepared.card, prepared.revise)
+        if (decision.approved) await prepared.approve()
         return decision
       },
       autosavePath: snapshotPath(id, startTime),

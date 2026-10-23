@@ -57,6 +57,7 @@ import { type PlainDateTime, ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
 import { hold } from '../../activity.ts'
 import { explorerHref } from '../explorer/mod.ts'
 import { profileLabel, PROVIDER_LABEL } from '../settings/mod.ts'
+import type { VoiceChatAccess, VoiceChatOpener } from '../voice/chatTools.ts'
 import { branchPoints } from './branchPoint.ts'
 import { recoverCalendarApprovals, restoreAnsweredApprovals, type ReviseCalendarApproval } from './calendarApproval.ts'
 import { callSubject } from './callSubject.ts'
@@ -658,13 +659,14 @@ function titleOf(thread: Thread): string | null {
   )
 }
 
-export function createChatRoutes(options: ChatRoutesOptions): Hono {
+export function createChatRoutes(options: ChatRoutesOptions): Hono & { openVoice: VoiceChatOpener } {
   const threads = new Map<string, Thread>()
   // Parent keys are written relative to the notebook root, the time directory's parent.
   const baseDir = path.dirname(options.timeDir)
   const opening = new Map<string, Promise<Thread>>()
   // Reserve a turn before awaiting restoration or construction, including its settings.
   const accepting = new Set<string>()
+  const voicePositions = new Map<string, number>()
   const draining = new Set<string>()
   const activeTurns = new Map<string, AbortController>()
   // Tuning chosen before a thread's first message — applied when it is built.
@@ -692,7 +694,7 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
         queue: restore?.queued ?? restore?.resume?.recovery?.host?.queued,
         delivered: restore?.deliveredInstructions ?? restore?.resume?.recovery?.host?.deliveredInstructions,
         runs: () => threads.get(id)?.runs ?? [],
-        at: () => threads.get(id)?.session.turns.length ?? 0,
+        at: () => voicePositions.get(id) ?? threads.get(id)?.session.turns.length ?? 0,
         changed: async () => {
           const thread = threads.get(id)
           if (!thread) return
@@ -741,7 +743,7 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
             const thread = threads.get(id)
             if (!thread) return
             if (event.type === 'tool-execution-start' || event.type === 'tool-execution-end') {
-              const run = recordToolExecution(thread.runs, thread.session.turns.length, event)
+              const run = recordToolExecution(thread.runs, voicePositions.get(id) ?? thread.session.turns.length, event)
               thread.updatedAt = ++tick
               thread.sink?.({ type: 'tool-updated', run })
               void thread.session.snapshot()
@@ -1578,7 +1580,8 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
       interrupted: thread.interrupted,
       documents: thread.session.paths.length,
       kept: keptOf(thread),
-      busy: thread.busy,
+      busy: thread.busy || voicePositions.has(id),
+      voice: voicePositions.has(id),
       plan: thread.plan.plan,
       queued: thread.plan.queue,
       pending: [...thread.pending.values()].map(({ id: approvalId, toolName, lines, calendar, revision }) => ({
@@ -2069,5 +2072,115 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono {
     }
   })
 
-  return app
+  const openVoice: VoiceChatOpener = async (request, signal) => {
+    await restored
+    signal.throwIfAborted()
+    const { id, after, ...prefs } = request
+    const host = options.settings
+    if (
+      !host ||
+      typeof id !== 'string' ||
+      !/^[\w-]{1,256}$/.test(id) ||
+      !Number.isSafeInteger(after) ||
+      after < 0 ||
+      after % 2 !== 0 ||
+      typeof prefs.profile !== 'string' ||
+      !isEffortOverride(prefs.effort) ||
+      !Number.isSafeInteger(prefs.contextTokens) ||
+      prefs.contextTokens < 0 ||
+      typeof prefs.saves !== 'boolean'
+    )
+      throw new Error('Voice needs this chat’s current position and settings. Reload the page.')
+    if (accepting.has(id) || threads.get(id)?.busy) throw new Error('A turn is already running on this chat.')
+    if (modelSettingsConflict(id, prefs)) throw new Error(MODEL_SETTINGS_LOCKED)
+    const current = settingsOf(id)
+    const chosen = current?.modelSettingsLocked ? undefined : host.resolve(prefs.profile, prefs.effort)
+    if (chosen && fitBudget(prefs.contextTokens, chosen.contextWindow) !== prefs.contextTokens)
+      throw new Error('The reading budget exceeds this model’s limit.')
+    accepting.add(id)
+    let closed = false
+    const release = () => {
+      if (closed) return
+      closed = true
+      accepting.delete(id)
+      voicePositions.delete(id)
+    }
+    try {
+      if (!threads.has(id) && after !== 0)
+        throw new Error('This chat could not be restored. Reload it before starting voice.')
+      if (!threads.has(id)) pending.set(id, prefs)
+      const thread = await open(id)
+      signal.throwIfAborted()
+      if (thread.session.turns.length !== after || thread.busy)
+        throw new Error('This chat changed. Reload it before starting voice.')
+      if (chosen) {
+        thread.session.setModel(chosen.model, chosen.profile, chosen.tokenRatio)
+        thread.modelConfig = chosen.config ? structuredClone(chosen.config) : undefined
+        thread.profile = prefs.profile
+        thread.effort = prefs.effort
+        thread.session.setContextTokens(prefs.contextTokens)
+      }
+      thread.saves = prefs.saves
+      voicePositions.set(id, after + 1)
+      thread.busy = true
+      const firstRun = thread.runs.length
+      const images: Parameters<typeof thread.session.conversationTools>[1] = []
+      let toolLifetime = new AbortController()
+      let closing: Promise<void> | undefined
+      activeTurns.set(id, toolLifetime)
+      const position = (spoken: Parameters<VoiceChatAccess['build']>[0]) =>
+        after + Math.max(1, voiceConversation(spoken).findLastIndex((turn) => turn.role === 'user') + 1)
+      return {
+        get signal() {
+          return AbortSignal.any([signal, toolLifetime.signal])
+        },
+        build: async (spoken) => {
+          signal.throwIfAborted()
+          if (toolLifetime.signal.aborted) {
+            toolLifetime = new AbortController()
+            activeTurns.set(id, toolLifetime)
+          }
+          const conversation = [...thread.session.turns, ...voiceConversation(spoken)]
+          voicePositions.set(id, position(spoken))
+          for (const turn of spoken) if (turn.who === 'you') options.onMessage?.(id, turn.text)
+          if (spoken.some((turn) => turn.who === 'you')) {
+            thread.modelSettingsLocked = true
+            await thread.session.checkpointVoice(after, voiceConversation(spoken))
+          }
+          return thread.session.conversationTools(conversation, images)
+        },
+        record: (event, spoken) => {
+          recordToolExecution(thread.runs, position(spoken), event)
+          thread.updatedAt = ++tick
+        },
+        persist: () => thread.session.snapshot(),
+        close: () =>
+          (closing ??= (async () => {
+            if (closed) return
+            try {
+              const runs = thread.runs.slice(firstRun)
+              if (runs.length || images.length)
+                await thread.session.keepToolResults(JSON.stringify({ runs, images }), images)
+              await thread.session.recoverVoiceCheckpoint()
+            } finally {
+              try {
+                await thread.plan.holdInstructions()
+                if (thread.plan.plan?.status === 'working' || thread.plan.plan?.status === 'needs-you')
+                  await thread.plan.pause('Voice ended. Resume the plan when you are ready to continue.')
+              } finally {
+                thread.busy = false
+                thread.state = thread.session.turns.length ? 'done' : 'new'
+                thread.updatedAt = ++tick
+                activeTurns.delete(id)
+                release()
+              }
+            }
+          })()),
+      }
+    } catch (error) {
+      release()
+      throw error
+    }
+  }
+  return Object.assign(app, { openVoice })
 }

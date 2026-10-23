@@ -2681,7 +2681,7 @@ export function ChatMain({
         )}
       </header>
 
-      {state.plan && !voiceMode && (
+      {state.plan && (
         <ChatPlanBar
           plan={state.plan}
           busy={busy}
@@ -2788,7 +2788,7 @@ export function ChatMain({
             }
           />
         </div>
-        {planOpen && state.plan && !voiceMode && (
+        {planOpen && state.plan && (
           <ChatPlanPanel
             id={state.id}
             plan={state.plan}
@@ -2845,7 +2845,6 @@ export function ChatMain({
         ))}
       </div>
       <audio ref={call.voice.audioRef} autoPlay />
-      <audio ref={call.voice.sonnyAudioRef} autoPlay />
     </div>
   )
 }

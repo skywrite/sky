@@ -104,7 +104,7 @@ test(
       theme: 'light',
       experimental: { contextPreflight: false, workstreams: false },
       textSize: 'default',
-      voice: { current: 'marin', researcherCurrent: 'ash', groups: { male: ['ash'], female: ['marin'] } },
+      voice: { current: 'marin', groups: { male: ['ash'], female: ['marin'] } },
       models: [],
       profiles: [],
       writingVoice: { profile: 'sample', choices: [] },

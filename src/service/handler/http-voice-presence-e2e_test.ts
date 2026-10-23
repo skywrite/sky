@@ -1,6 +1,8 @@
 import type { Page } from 'playwright'
 import { assert, test } from '#test'
-import { CALLS_URL, type VoiceEvent, type VoiceTurn } from '../../web/client/voice/voiceController.ts'
+import type { ChatPlan } from '#universal/ai/chatPlan.ts'
+import { type VoiceEvent, type VoiceTurn } from '../../web/client/voice/voiceController.ts'
+import { samplePlan } from './chat/planTestHelpers.ts'
 import { voiceConversation } from './chat/voiceTranscript.ts'
 import { composerText, runWysiwygE2e } from './httpWysiwygE2eTestHelpers.ts'
 
@@ -21,11 +23,11 @@ async function mockMedia(page: Page) {
       ready: 0,
       microphones: [],
       connect: () => {
-        for (const peer of peers.slice(-2)) peer.connect()
+        for (const peer of peers.slice(-1)) peer.connect()
       },
-      emit: (event) => peers.at(-2)!.channel.emit(event),
+      emit: (event) => peers.at(-1)!.channel.emit(event),
       fail: () => {
-        const peer = peers.at(-2)!
+        const peer = peers.at(-1)!
         peer.connectionState = 'failed'
         peer.onconnectionstatechange?.()
       },
@@ -53,7 +55,9 @@ async function mockMedia(page: Page) {
       onmessage?: (message: { data: string }) => void
       onopen?: () => void
       onclose?: () => void
-      send(_value: string) {}
+      send(value: string) {
+        if (JSON.parse(value).type === 'session.close') queueMicrotask(() => this.emit({ type: 'session.closed' }))
+      }
       close() {
         this.readyState = 'closed'
         this.onclose?.()
@@ -65,6 +69,11 @@ async function mockMedia(page: Page) {
     class Peer {
       channel = new Channel()
       connectionState = 'new'
+      iceGatheringState = 'complete'
+      localDescription = { type: 'offer', sdp: 'v=0\r\nmock-offer' }
+      getStats() {
+        return Promise.resolve(new Map())
+      }
       ontrack?: (event: { streams: MediaStream[] }) => void
       onconnectionstatechange?: () => void
       constructor() {
@@ -89,7 +98,7 @@ async function mockMedia(page: Page) {
         this.connectionState = 'connected'
         this.channel.readyState = 'open'
         this.channel.onopen?.()
-        this.channel.emit({ type: 'session.created' })
+        this.channel.emit({ type: 'session.started' })
         this.ontrack?.({ streams: [context.createMediaStreamDestination().stream] })
       }
       close() {
@@ -105,12 +114,8 @@ async function speak(page: Page, question: string, answer: string) {
   await page.evaluate(
     ({ question, answer }) => {
       const { emit } = (window as unknown as { mockVoice: BrowserVoice }).mockVoice
-      emit({ type: 'conversation.item.input_audio_transcription.completed', transcript: question })
-      emit({ type: 'response.created', response: { id: 'mock-response' } })
-      emit({ type: 'output_audio_buffer.started', response_id: 'mock-response' })
-      emit({ type: 'response.output_audio_transcript.delta', delta: answer, response_id: 'mock-response' })
-      emit({ type: 'response.done', response: { id: 'mock-response', status: 'completed' } })
-      emit({ type: 'output_audio_buffer.stopped', response_id: 'mock-response' })
+      emit({ type: 'session.input_transcript.delta', delta: question, start_ms: 1000, end_ms: 1800 })
+      emit({ type: 'session.output_transcript.delta', delta: answer, start_ms: 2000, end_ms: 3000 })
     },
     { question, answer },
   )
@@ -134,6 +139,8 @@ test(
         const external: string[] = []
         const retiredAssets: string[] = []
         let refuse = false
+        let plan: ChatPlan | null = null
+        const handoffActions: unknown[] = []
         const failure = 'The test service could not keep the conversation. Try again.'
         await mockMedia(page)
         page.on('request', (request) => {
@@ -142,7 +149,6 @@ test(
         })
         await page.route('**/*', (route) => {
           const url = route.request().url()
-          if (url === CALLS_URL) return route.fulfill({ contentType: 'application/sdp', body: 'mock-answer' })
           if (new URL(url).origin === origin) return route.continue()
           external.push(url)
           return route.abort()
@@ -151,17 +157,13 @@ test(
           route.fulfill({
             json: route.request().url().endsWith('/session')
               ? {
-                  clientSecret: 'mock-sky-secret',
-                  model: 'mock-realtime',
+                  sessionId: 'live_test',
+                  sdp: 'mock-answer',
+                  model: 'mock-live',
                   voice: 'mock-blue',
                   opening: 'Listen to the user.',
                   instructions: 'You are Sky.',
                   tools: [],
-                  researcher: {
-                    clientSecret: 'mock-sonny-secret',
-                    voice: 'mock-amber',
-                    instructions: 'You are Sonny.',
-                  },
                 }
               : { ok: true },
           }),
@@ -192,7 +194,12 @@ test(
             turns.push(...appended)
             return route.fulfill({ json: { appended: appended.length } })
           }
-          return route.fulfill({ json: { turns, documents: 0, kept: 0, busy: false } })
+          if (pathname.endsWith('/plan') && plan) {
+            handoffActions.push(route.request().postDataJSON())
+            plan = { ...plan, attention: null, status: 'working' }
+            return route.fulfill({ json: { plan, queued: [] } })
+          }
+          return route.fulfill({ json: { turns, documents: 0, kept: 0, busy: false, plan } })
         })
         await page.goto(`${origin}/thread/voice-test`)
         await page.getByText('Start with the demo.', { exact: true }).waitFor()
@@ -204,7 +211,7 @@ test(
         await page.locator('.sky-voice-bar[data-phase="starting"]').waitFor()
         assert({
           given: 'voice is connecting with a prior conversation and an unsent draft',
-          should: 'show both agents and call controls while hiding the conversation and composer',
+          should: 'show Sky and call controls while hiding the conversation and composer',
           actual: {
             presence: await presence.isVisible(),
             sky: await presence.getByText('Sky', { exact: true }).isVisible(),
@@ -213,15 +220,15 @@ test(
             composer: await composer.isVisible(),
             end: await page.getByRole('button', { name: 'End voice', exact: true }).isVisible(),
           },
-          expected: { presence: true, sky: true, sonny: true, previous: false, composer: false, end: true },
+          expected: { presence: true, sky: true, sonny: false, previous: false, composer: false, end: true },
         })
-        await page.waitForFunction(() => (window as unknown as { mockVoice: BrowserVoice }).mockVoice.ready === 2)
+        await page.waitForFunction(() => (window as unknown as { mockVoice: BrowserVoice }).mockVoice.ready === 1)
         await page.evaluate(() => (window as unknown as { mockVoice: BrowserVoice }).mockVoice.connect())
         await page.locator('.sky-voice-bar[data-phase="live"]').waitFor()
         await page.locator('.sky-voice-presence[aria-busy="false"]').waitFor()
         assert({
-          given: 'both cloud forms initialize in a connected call',
-          should: 'render two accessible GPU visuals without avatar assets or a loading error',
+          given: 'the cloud form initializes in a connected call',
+          should: 'render one accessible GPU visual without avatar assets or a loading error',
           actual: {
             clouds: await presence.getByRole('img').count(),
             canvases: await presence.locator('canvas').evaluateAll((canvases) =>
@@ -241,14 +248,14 @@ test(
             retry: await presence.getByRole('button', { name: 'Retry voice visuals', exact: true }).count(),
             retiredAssets,
           },
-          expected: { clouds: 2, canvases: [true, true], renderer: [true, true], retry: 0, retiredAssets: [] },
+          expected: { clouds: 1, canvases: [true], renderer: [true], retry: 0, retiredAssets: [] },
         })
         await page.setViewportSize({ width: 390, height: 844 })
         await page.waitForFunction(() => document.querySelector('.sky-side')!.getBoundingClientRect().right <= 0)
         await page.getByRole('button', { name: 'End voice', exact: true }).click({ trial: true })
         assert({
           given: 'the voice stage is viewed on a narrow screen',
-          should: 'keep both cloud forms inside the viewport and the end-call control available',
+          should: 'keep the cloud form inside the viewport and the end-call control available',
           actual: {
             clouds: await presence.locator('canvas').evaluateAll((canvases) =>
               canvases.map((canvas) => {
@@ -258,9 +265,34 @@ test(
             ),
             end: await page.getByRole('button', { name: 'End voice', exact: true }).isVisible(),
           },
-          expected: { clouds: [true, true], end: true },
+          expected: { clouds: [true], end: true },
         })
         await page.setViewportSize({ width: 1280, height: 720 })
+        plan = {
+          ...samplePlan(),
+          version: 1,
+          at: 3,
+          status: 'needs-you',
+          attention: {
+            id: 'atlas-sign-in',
+            kind: 'browser',
+            message: 'Sign in to the example provider to continue.',
+          },
+        }
+        await page.getByRole('button', { name: 'View plan' }).click()
+        await page.getByRole('button', { name: 'I’ve finished — continue', exact: true }).click()
+        assert({
+          given: 'a browser handoff arrives while voice is active',
+          should: 'let the user complete it without ending the call',
+          actual: [
+            handoffActions,
+            await presence.isVisible(),
+            await page.getByRole('button', { name: 'End voice', exact: true }).isVisible(),
+          ],
+          expected: [[{ action: 'continue', id: 'atlas-sign-in' }], true, true],
+        })
+        await page.getByRole('button', { name: 'Close plan', exact: true }).click()
+        plan = null
         await speak(page, 'What should the demo show?', 'Show the first complete workflow.')
         assert({
           given: 'speech recognition and agent transcript events arrive during the call',
@@ -290,7 +322,7 @@ test(
         })
 
         await page.getByRole('button', { name: 'Start voice chat', exact: true }).click()
-        await page.waitForFunction(() => (window as unknown as { mockVoice: BrowserVoice }).mockVoice.ready === 4)
+        await page.waitForFunction(() => (window as unknown as { mockVoice: BrowserVoice }).mockVoice.ready === 2)
         await page.evaluate(() => (window as unknown as { mockVoice: BrowserVoice }).mockVoice.connect())
         await page.locator('.sky-voice-bar[data-phase="live"]').waitFor()
         await speak(page, 'Who should try it first?', 'Invite a small pilot group.')

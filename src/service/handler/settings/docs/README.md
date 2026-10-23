@@ -50,9 +50,8 @@ Pages:
   installed local models, with refresh and setup guidance. Saves to `ai.models.transcription`;
   the [transcript pipeline](../../../../commands/all/audio/transcript/docs/README.md)
   owns provider selection and retry behavior.
-- **AI → Voice** — independent Sky and Sonny voice pickers, each with a Hear
-  button (the audition's receive-only call, one row at a time). Picks
-  save to `voice.voice` and `voice.researcherVoice`, resolved per session
+- **AI → Voice** — Sky's voice picker with a Hear button using the shared
+  GPT-Live preview. Picks save to `voice.voice`, resolved per session
   in `commands/lib/voice/sessionConfig.ts`, so changes apply to the next
   call. See the owning
   [voice design](../../../../commands/lib/voice/docs/README.md).

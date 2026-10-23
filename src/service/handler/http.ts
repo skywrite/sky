@@ -185,8 +185,9 @@ export function createHttpApp(options: HttpHandlerOptions): Hono {
 
   // Chat over HTTP: a session per thread, each turn streamed as SSE — and
   // the day the threads live in
-  if (chat) {
-    app.route('/chat', createChatRoutes(chat))
+  const chatRoutes = chat ? createChatRoutes(chat) : undefined
+  if (chat && chatRoutes) {
+    app.route('/chat', chatRoutes)
     app.route(
       '/day',
       createDayRoutes({
@@ -227,7 +228,7 @@ export function createHttpApp(options: HttpHandlerOptions): Hono {
   // Voice over the web: the browser holds the call; the service mints its
   // secret and runs its tools. The page itself is /voice, below.
   if (voice) {
-    app.route('/voice', createVoiceRoutes(voice))
+    app.route('/voice', createVoiceRoutes({ ...voice, openChat: chatRoutes?.openVoice }))
   }
 
   // The settings page's data: the configuration as the service reads it.

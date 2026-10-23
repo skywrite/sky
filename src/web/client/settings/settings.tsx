@@ -15,8 +15,7 @@ import { Button, SegmentedControl, Select, useMantineColorScheme } from '@mantin
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
 import type { TranscriptionSettings } from '#commands/all/audio/transcript/lib/models.ts'
 import { ExtensionsPane } from '../extensions/extensions.tsx'
-import { whenSpeakersWarm } from '../voice/speakers.ts'
-import { CALLS_URL } from '../voice/voice.tsx'
+import { playVoicePreview } from '../voice/voicePreview.ts'
 import { WritingVoicePane } from '../writing/writingVoice.tsx'
 import { AboutMePane } from './settingsAboutMe.tsx'
 import { BeeperMain } from './settingsBeeper.tsx'
@@ -77,7 +76,7 @@ export interface SettingsData {
   google?: { accountCategories: Record<string, 'Professional' | 'Personal'> }
   theme: Theme
   textSize: TextSize
-  voice: { current: string; researcherCurrent: string; groups: { male: string[]; female: string[] } }
+  voice: { current: string; groups: { male: string[]; female: string[] } }
   models: ModelRow[]
   profiles: ProfileRow[]
   writingVoice: { profile: string; choices: Array<{ value: string; label: string }> }
@@ -208,118 +207,37 @@ function useSettings() {
 
 // ── Hear a voice: the audition's call, one row at a time ────────────
 
-/** Once generation is done, playback is over this long after — if the buffer never says so. */
-const DRAIN_FALLBACK_MS = 8000
-
 function useHear() {
   const [playing, setPlaying] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const audioRef = useRef<HTMLAudioElement>(null)
-  const callRef = useRef<RTCPeerConnection | null>(null)
-
+  const callRef = useRef<ReturnType<typeof playVoicePreview> | null>(null)
   const stop = useCallback(() => {
-    callRef.current?.close()
+    callRef.current?.stop()
     callRef.current = null
     setPlaying(null)
   }, [])
-
   const hear = useCallback(
-    async (voice: string, passage?: string, playbackKey = voice) => {
+    (voice: string, passage?: string, playbackKey = voice) => {
       stop()
       setError(null)
+      const audio = audioRef.current
+      if (!audio) return
       setPlaying(playbackKey)
-      const pc = new RTCPeerConnection()
-      callRef.current = pc
-      const mine = () => callRef.current === pc
-      const finish = () => {
-        if (!mine()) return
-        pc.close()
-        callRef.current = null
-        setPlaying(null)
-      }
-      try {
-        const minted = await fetch('/voice/_api/audition/session', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ voice, passage }),
-        })
-        const session = (await minted.json().catch(() => ({}))) as {
-          clientSecret?: string
-          opening?: string
-          message?: string
-        }
-        if (!minted.ok || !session.clientSecret || !session.opening) {
-          throw new Error(session.message ?? `The service answered ${minted.status}.`)
-        }
-        if (!mine()) return
-
-        const dc = pc.createDataChannel('oai-events')
-        let ready = false
-        let warm = false
-        let asked = false
-        const ask = () => {
-          if (asked || !ready || !warm || !mine()) return
-          asked = true
-          dc.send(JSON.stringify({ type: 'response.create', response: { instructions: session.opening } }))
-        }
-        let drain: number | null = null
-        dc.onmessage = (message) => {
-          const event = JSON.parse(message.data as string) as { type: string; error?: { message?: string } }
-          switch (event.type) {
-            case 'session.created':
-              ready = true
-              ask()
-              break
-            case 'response.done':
-              drain = window.setTimeout(finish, DRAIN_FALLBACK_MS)
-              break
-            case 'output_audio_buffer.stopped':
-              if (drain) window.clearTimeout(drain)
-              finish()
-              break
-            case 'error':
-              setError(event.error?.message ?? 'Realtime error')
-              finish()
-              break
-          }
-        }
-        pc.addTransceiver('audio', { direction: 'recvonly' })
-        pc.ontrack = (event) => {
-          const el = audioRef.current
-          if (!el) return
-          el.srcObject = event.streams[0] ?? null
-          void whenSpeakersWarm(el).then(() => {
-            warm = true
-            ask()
-          })
-          void el.play().catch(() => {})
-        }
-        pc.onconnectionstatechange = () => {
-          if (pc.connectionState === 'failed') {
-            setError('The connection failed.')
-            finish()
-          }
-        }
-        const offer = await pc.createOffer()
-        await pc.setLocalDescription(offer)
-        const answer = await fetch(CALLS_URL, {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${session.clientSecret}`, 'Content-Type': 'application/sdp' },
-          body: offer.sdp,
-        })
-        if (!answer.ok) throw new Error(`OpenAI refused the call (${answer.status}).`)
-        await pc.setRemoteDescription({ type: 'answer', sdp: await answer.text() })
-      } catch (err) {
-        if (!mine()) return
-        setError((err as Error).message)
-        finish()
-      }
+      callRef.current = playVoicePreview({
+        voice,
+        passage,
+        audio,
+        onError: setError,
+        onEnd: () => {
+          callRef.current = null
+          setPlaying(null)
+        },
+      })
     },
     [stop],
   )
-
   useEffect(() => stop, [stop])
-
   return { playing, error, audioRef, hear, stop }
 }
 
@@ -506,14 +424,6 @@ function VoicePane({ data, change }: { data: SettingsData; change: ReturnType<ty
       field: 'current',
       note: 'The voice you talk with. A change speaks on your next call.',
       passage: undefined,
-    },
-    {
-      name: 'Sonny',
-      key: 'voice.researcherVoice',
-      field: 'researcherCurrent',
-      note: 'Brings back notebook research while you keep talking with Sky. A change speaks on your next call.',
-      passage:
-        "Sonny here. I'll look through the notebook and bring back what matters. Keep talking with Sky while I work.",
     },
   ] as const
 

@@ -223,9 +223,11 @@ function Canvas() {
                 ? 'sky · Writing style'
                 : settingsSection === 'browser-automation'
                   ? 'sky · Browser automation'
-                  : settingsSection === 'about-me'
-                    ? 'sky · About me'
-                    : 'sky'
+                  : settingsSection === 'voice'
+                    ? 'sky · Voice'
+                    : settingsSection === 'about-me'
+                      ? 'sky · About me'
+                      : 'sky'
   }, [
     threadId,
     chatTitle,

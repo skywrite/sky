@@ -101,7 +101,7 @@ const SECTIONS: ReadonlyArray<{ id: string; title: string; keys: string[]; group
     keys: ['ai.models.strong', 'ai.models.fast', 'ai.models.transcription', 'ai.writingVoiceProfile'],
     groups: ['ai.profiles', 'ai.roles'],
   },
-  { id: 'web', title: 'Web', keys: ['web.theme', 'web.textSize', 'voice.voice', 'voice.researcherVoice'] },
+  { id: 'web', title: 'Web', keys: ['web.theme', 'web.textSize', 'voice.voice'] },
   { id: 'slack', title: 'Slack', keys: ['slack.workspace'] },
   { id: 'google', title: 'Google', keys: [], groups: ['google.accountCategories'] },
   { id: 'calendar', title: 'Calendar', keys: ['calendar.classifyEvents'] },
@@ -254,7 +254,7 @@ export interface SettingsData {
   google?: { accountCategories: Record<string, GoogleAccountCategory> }
   theme: Theme
   textSize: TextSize
-  voice: { current: string; researcherCurrent: string; groups: Record<'male' | 'female', readonly string[]> }
+  voice: { current: string; groups: Record<'male' | 'female', readonly string[]> }
   models: ModelRow[]
   /** Every model configuration: yours first, then the built-ins */
   profiles: ProfileRow[]
@@ -284,7 +284,7 @@ export interface SettingsHost {
   macWhisperModels?: () => Promise<MacWhisperModels>
   /** The file and the configuration read from it, fresh for each request */
   load: () => ConfigSnapshot
-  /** The voices Talk offers and the host/researcher preferences sessions use now */
+  /** The voices Talk offers and the voice preference sessions use now */
   voices: () => SettingsData['voice']
   /** The model roles as the AI pane shows them — read-only rows */
   models: () => ModelRow[]
@@ -329,7 +329,6 @@ export const SETTABLE_KEYS = {
   'web.theme': ['web', 'theme'],
   'web.textSize': ['web', 'textSize'],
   'voice.voice': ['voice', 'voice'],
-  'voice.researcherVoice': ['voice', 'researcherVoice'],
   'ai.writingVoiceProfile': ['ai', 'writingVoiceProfile'],
   'ai.models.transcription': ['ai', 'models', 'transcription'],
   'ai.roles.reasoning': ['ai', 'roles', 'reasoning'],
@@ -381,8 +380,7 @@ async function refuse(host: SettingsHost, key: SettableKey, value: string): Prom
       return (TEXT_SIZES as readonly string[]).includes(value)
         ? null
         : `text size must be one of ${TEXT_SIZES.join(', ')}`
-    case 'voice.voice':
-    case 'voice.researcherVoice': {
+    case 'voice.voice': {
       const { groups } = host.voices()
       return [...groups.male, ...groups.female].includes(value) ? null : `no such voice: ${value}`
     }

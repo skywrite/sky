@@ -10,7 +10,7 @@
 
 .sky-voice-forms {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   gap: clamp(16px, 4vw, 48px);
   width: 100%;
   max-width: 748px;
@@ -23,10 +23,6 @@
   margin: 0;
   min-width: 0;
   text-align: center;
-}
-
-.sky-voice-agent[data-speaker='sonny'] {
-  --voice-color: 238 153 60;
 }
 
 .sky-voice-cloud {

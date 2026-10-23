@@ -43,7 +43,7 @@ test(
     }
     const settings: SettingsHost = {
       load: () => ({ config, path: '/Config/config.jsonc', home: '/Home', file: null, env: {} }),
-      voices: () => ({ current: 'marin', researcherCurrent: 'ash', groups: { male: ['ash'], female: ['marin'] } }),
+      voices: () => ({ current: 'marin', groups: { male: ['ash'], female: ['marin'] } }),
       models: () =>
         Object.entries(getRoles(config.ai)).map(([role, profile]) => ({
           role,

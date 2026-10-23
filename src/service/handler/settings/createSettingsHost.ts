@@ -4,7 +4,7 @@ import * as os from 'node:os'
 import process from 'node:process'
 import { promisify } from 'node:util'
 import { getMacWhisperModels } from '#commands/all/audio/transcript/lib/macwhisper.ts'
-import { preferredResearcherVoice, preferredVoice, VOICE_GROUPS } from '#commands/lib/voice/sessionConfig.ts'
+import { preferredVoice, VOICE_GROUPS } from '#commands/lib/voice/sessionConfig.ts'
 import { DIR_AI_MEMORY, DIR_CODE } from '#config'
 import * as notebookConfig from '#config'
 import { isCommandAvailable } from '#lib/sys/mod.ts'
@@ -62,7 +62,7 @@ export function createSettingsHost(): SettingsRoutesOptions {
       provider in PROVIDER_KEYS
         ? hasKey(connections.secrets, PROVIDER_KEYS[provider as ProviderKeyId].secret)
         : Promise.resolve(false),
-    voices: () => ({ current: preferredVoice(), researcherCurrent: preferredResearcherVoice(), groups: VOICE_GROUPS }),
+    voices: () => ({ current: preferredVoice(), groups: VOICE_GROUPS }),
     models: (): ModelRow[] =>
       Object.entries(ROLES).map(([role, profileName]) => {
         const profile = PROFILES[profileName]

@@ -33,7 +33,7 @@ export const SETTINGS_PAGES = {
     label: 'Voice',
     href: '/settings/ai/voice',
     group: 'AI',
-    description: 'Choose how Sky and Sonny sound when you talk together.',
+    description: 'Choose how Sky sounds when you talk together.',
   },
   prompts: {
     label: 'Prompts',

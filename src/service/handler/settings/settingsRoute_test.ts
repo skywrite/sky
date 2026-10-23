@@ -296,7 +296,6 @@ function hostWith(config: SkyConfig = CONFIG) {
     load: () => snapshot,
     voices: () => ({
       current: config.voice.voice ?? 'marin',
-      researcherCurrent: config.voice.researcherVoice ?? 'ash',
       groups: GROUPS,
     }),
     models: () => [
@@ -365,15 +364,8 @@ test({ name: 'settings route - one payload carries every pane' }, async () => {
   assert({
     given: 'a config with no web/voice keys',
     should: 'answer the defaults and the host values',
-    actual: [
-      response.status,
-      data.theme,
-      data.textSize,
-      data.voice.current,
-      data.voice.researcherCurrent,
-      data.memoryNotes,
-    ],
-    expected: [200, 'system', 'default', 'marin', 'ash', 7],
+    actual: [response.status, data.theme, data.textSize, data.voice.current, data.memoryNotes],
+    expected: [200, 'system', 'default', 'marin', 7],
   })
   assert({
     given: 'the notebook block',
@@ -403,15 +395,15 @@ test({ name: 'settings route - one payload carries every pane' }, async () => {
   const configured = hostWith({
     ...CONFIG,
     web: { theme: 'dark', textSize: 'large' },
-    voice: { voice: 'ash', researcherVoice: 'sage' },
+    voice: { voice: 'ash' },
   })
   const app2 = await appWith(configured.host)
   const data2 = (await (await app2.request('http://localhost/settings/_api/settings')).json()) as SettingsData
   assert({
-    given: 'a config that sets appearance and independent speaker preferences',
-    should: 'answer them without mixing the two voices',
-    actual: [data2.theme, data2.textSize, data2.voice.current, data2.voice.researcherCurrent],
-    expected: ['dark', 'large', 'ash', 'sage'],
+    given: 'a config that sets appearance and a voice preference',
+    should: 'answer the selected appearance and voice',
+    actual: [data2.theme, data2.textSize, data2.voice.current],
+    expected: ['dark', 'large', 'ash'],
   })
 })
 
@@ -421,19 +413,16 @@ test({ name: 'settings route - set writes only known keys with valid values' }, 
 
   const good = await post(app, '/settings/_api/set', { key: 'web.theme', value: 'dark' })
   const voice = await post(app, '/settings/_api/set', { key: 'voice.voice', value: 'marin' })
-  const researcherVoice = await post(app, '/settings/_api/set', { key: 'voice.researcherVoice', value: 'sage' })
   assert({
     given: 'valid writes',
     should: 'answer ok and reach the host in order',
-    actual: [good.status, voice.status, researcherVoice.status, writes],
+    actual: [good.status, voice.status, writes],
     expected: [
-      200,
       200,
       200,
       [
         ['web.theme', 'dark'],
         ['voice.voice', 'marin'],
-        ['voice.researcherVoice', 'sage'],
       ],
     ],
   })
@@ -454,7 +443,7 @@ test({ name: 'settings route - set writes only known keys with valid values' }, 
       badEditor.status,
       writes.length,
     ],
-    expected: [400, 400, 400, 400, 400, 3],
+    expected: [400, 400, 400, 400, 400, 2],
   })
 })
 

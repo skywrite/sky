@@ -5,14 +5,12 @@ import type { Speaker } from '../voice/voiceController.ts'
 import type { VoiceCloud } from '../voice/voiceScene.ts'
 import './voicePresence.css'
 
-const SPEAKERS: Speaker[] = ['sky', 'sonny']
+const SPEAKERS: Speaker[] = ['sky']
 
 /** The call occupies the conversation canvas; its transcript stays in the chat's history. */
 export function VoicePresence({ voice }: { voice: Voice }) {
   const skyCanvas = useRef<HTMLCanvasElement>(null)
-  const sonnyCanvas = useRef<HTMLCanvasElement>(null)
   const skyFigure = useRef<HTMLElement>(null)
-  const sonnyFigure = useRef<HTMLElement>(null)
   const stateRef = useRef(voice.state)
   stateRef.current = voice.state
   const [loading, setLoading] = useState(true)
@@ -26,8 +24,8 @@ export function VoicePresence({ voice }: { voice: Voice }) {
     let frame = 0
     let reportedError: string | null = null
     const clouds: Partial<Record<Speaker, VoiceCloud>> = {}
-    const figures = { sky: skyFigure.current, sonny: sonnyFigure.current }
-    const canvases = { sky: skyCanvas.current, sonny: sonnyCanvas.current }
+    const figures = { sky: skyFigure.current }
+    const canvases = { sky: skyCanvas.current }
     const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)')
     setLoading(true)
     setError(null)
@@ -50,13 +48,11 @@ export function VoicePresence({ voice }: { voice: Voice }) {
             ? 'Connecting…'
             : speaking
               ? 'Speaking'
-              : speaker === 'sonny' && state.research.running
-                ? 'Researching'
-                : state.activity === 'checking' && speaker === 'sky'
-                  ? 'Checking'
-                  : state.muted
-                    ? 'Microphone muted'
-                    : 'Listening'
+              : state.processing > 0
+                ? 'Thinking'
+                : state.muted
+                  ? 'Microphone muted'
+                  : 'Listening'
         if (label && label.textContent !== status) label.textContent = status
       }
       if (motion.error && motion.error !== reportedError) {
@@ -86,7 +82,7 @@ export function VoicePresence({ voice }: { voice: Voice }) {
           SPEAKERS.map(async (speaker) => {
             const canvas = canvases[speaker]
             if (!canvas) return
-            const cloud = await createVoiceCloud(canvas, speaker)
+            const cloud = await createVoiceCloud(canvas)
             if (disposed) cloud.dispose()
             else clouds[speaker] = cloud
           }),
@@ -120,25 +116,12 @@ export function VoicePresence({ voice }: { voice: Voice }) {
     <section className="sky-voice-presence" aria-label="Voice conversation" aria-busy={loading}>
       <div className="sky-voice-forms">
         {SPEAKERS.map((speaker) => (
-          <figure
-            key={`${speaker}-${attempt}`}
-            ref={speaker === 'sky' ? skyFigure : sonnyFigure}
-            className="sky-voice-agent"
-            data-speaker={speaker}
-          >
+          <figure key={`${speaker}-${attempt}`} ref={skyFigure} className="sky-voice-agent" data-speaker={speaker}>
             <div className="sky-voice-cloud">
-              <canvas
-                ref={speaker === 'sky' ? skyCanvas : sonnyCanvas}
-                role="img"
-                aria-label={
-                  speaker === 'sky'
-                    ? 'Animated blue clouds in a circle for Sky'
-                    : 'Animated amber clouds in a triangle for Sonny'
-                }
-              />
+              <canvas ref={skyCanvas} role="img" aria-label="Animated blue clouds in a circle for Sky" />
             </div>
             <figcaption>
-              <span className="sky-voice-agent-name">{speaker === 'sky' ? 'Sky' : 'Sonny'}</span>
+              <span className="sky-voice-agent-name">Sky</span>
               <span className="sky-voice-agent-state">Connecting…</span>
             </figcaption>
           </figure>
@@ -146,7 +129,7 @@ export function VoicePresence({ voice }: { voice: Voice }) {
       </div>
       {loading && (
         <p className="sky-voice-presence-note" role="status">
-          Loading Sky and Sonny…
+          Loading Sky…
         </p>
       )}
       {error && (

@@ -15,7 +15,6 @@ import {
   WebGPURenderer,
   type Node,
 } from 'three/webgpu'
-import type { Speaker } from './voiceController.ts'
 
 export interface VoiceCloud {
   update(level: number, seconds: number, reducedMotion: boolean, listening: boolean): number
@@ -76,8 +75,8 @@ function createNoiseTexture(): Data3DTexture {
   return texture
 }
 
-/** Sky's circle and Sonny's triangle contain drifting wisps with matching audio motion. */
-export async function createVoiceCloud(canvas: HTMLCanvasElement, speaker: Speaker): Promise<VoiceCloud> {
+/** Sky's circle contains drifting wisps with matching audio motion. */
+export async function createVoiceCloud(canvas: HTMLCanvasElement): Promise<VoiceCloud> {
   const renderer = new WebGPURenderer({ canvas, alpha: true, antialias: true, powerPreference: 'low-power' })
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5))
   renderer.setClearColor(0xffffff, 0)
@@ -85,14 +84,14 @@ export async function createVoiceCloud(canvas: HTMLCanvasElement, speaker: Speak
   const scene = new Scene()
   const camera = new PerspectiveCamera(32, 1, 0.1, 10)
   camera.position.set(0, 0, 4.6)
-  const clock = uniform(speaker === 'sky' ? 0 : 3.7)
+  const clock = uniform(0)
   const energy = uniform(0)
   const attention = uniform(0)
   const volume = createNoiseTexture()
   const noise = texture3D(volume, null, 0)
-  const upperColor = color(speaker === 'sky' ? '#758ef4' : '#ffa448')
-  const lowerColor = color(speaker === 'sky' ? '#afcfff' : '#ffc1a9')
-  const white = color(speaker === 'sky' ? '#f7fbff' : '#fff8e9')
+  const upperColor = color('#758ef4')
+  const lowerColor = color('#afcfff')
+  const white = color('#f7fbff')
   const material = new MeshBasicNodeMaterial({
     transparent: true,
     depthWrite: false,
@@ -103,11 +102,7 @@ export async function createVoiceCloud(canvas: HTMLCanvasElement, speaker: Speak
     const result = vec4(0).toVar()
     RaymarchingBox(68, ({ positionRay }: { positionRay: Node<'vec3'> }) => {
       const p = positionRay.mul(2.8).toVar()
-      const triangleY = p.y.add(0.295)
-      const contour =
-        speaker === 'sky'
-          ? p.div(vec3(0.93, 0.93, 0.77)).length()
-          : max(max(p.x.abs().mul(Math.sqrt(3)).add(triangleY), triangleY.mul(-2)).div(1.18), p.z.abs().div(0.68))
+      const contour = p.div(vec3(0.93, 0.93, 0.77)).length()
       const edge = smoothstep(0.99, 1.012, contour).oneMinus()
       If(edge.greaterThan(0.001), () => {
         const drift = vec3(clock.mul(0.022), clock.mul(-0.014), clock.mul(0.011))

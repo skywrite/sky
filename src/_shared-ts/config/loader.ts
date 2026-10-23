@@ -168,7 +168,6 @@ export function loadSkyConfig(configPath = SKY_CONFIG_PATH): SkyConfig {
       config.web.textSize = parsed.web.textSize
     }
     if (parsed.voice?.voice) config.voice.voice = parsed.voice.voice
-    if (parsed.voice?.researcherVoice) config.voice.researcherVoice = parsed.voice.researcherVoice
     if (typeof parsed.experimental?.contextPreflight === 'boolean') {
       config.experimental.contextPreflight = parsed.experimental.contextPreflight
     }

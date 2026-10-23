@@ -43,7 +43,10 @@ export function useChatVoice(chat: Chat) {
         })
         const result = (await response.json()) as { message?: string; appended?: number }
         if (!response.ok) throw new Error(result.message ?? 'Could not keep the voice transcript.')
-        if (mounted.current && result.appended) await chat.reload()
+        if (mounted.current)
+          await chat.reload().catch((error) => {
+            if (result.appended) throw error
+          })
         archived.current = true
         if (mounted.current) {
           setError(null)
@@ -63,7 +66,7 @@ export function useChatVoice(chat: Chat) {
   }, [])
 
   const end = useCallback(async () => {
-    current.current.voice.end()
+    await current.current.voice.end()
     return sync()
   }, [sync])
 
@@ -95,30 +98,60 @@ export function useChatVoice(chat: Chat) {
         ? `Conversation already in progress. These are previous messages, not new requests.\n${transcript.length > 60_000 ? '[Earlier messages omitted.]\n' : ''}${transcript.slice(-60_000)}`
         : ''
       setPreparing(false)
-      await voice.start(context)
+      const settings = latestChat.state.settings!
+      await voice.start(context, {
+        id: latestChat.state.id,
+        after: after.current,
+        profile: settings.model.current,
+        effort: settings.effort ?? 'default',
+        contextTokens: settings.contextTokens,
+        saves: settings.saves,
+      })
     } catch (error) {
       if (mounted.current) setError((error as Error).message)
     } finally {
       starting.current = false
-      if (!['starting', 'live'].includes(voice.latest().phase)) voice.audioMotion.stop()
+      if (!['starting', 'live', 'ending'].includes(voice.latest().phase)) voice.audioMotion.stop()
       if (mounted.current) setPreparing(false)
     }
   }, [chat, sync, voice])
 
   useEffect(() => {
-    if (voice.state.phase === 'failed') void sync()
+    if (voice.state.phase === 'failed') void voice.end().then(sync)
   }, [voice.state.phase, sync])
 
   useEffect(() => {
     mounted.current = true
     return () => {
       mounted.current = false
-      current.current.voice.end()
-      void sync()
+      void current.current.voice.end().then(sync)
     }
   }, [sync])
 
-  const active = voice.state.phase === 'starting' || voice.state.phase === 'live'
+  const active = voice.state.phase === 'starting' || voice.state.phase === 'live' || voice.state.phase === 'ending'
+  useEffect(() => {
+    if (!active) return
+    let stopped = false
+    let timer: ReturnType<typeof setTimeout>
+    const refresh = async () => {
+      try {
+        await current.current.chat.reload()
+      } catch {
+        /* The next poll can recover. */
+      }
+      if (!stopped)
+        timer = setTimeout(() => {
+          void refresh()
+        }, 2000)
+    }
+    timer = setTimeout(() => {
+      void refresh()
+    }, 1000)
+    return () => {
+      stopped = true
+      clearTimeout(timer)
+    }
+  }, [active])
   return {
     voice,
     active,

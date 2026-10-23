@@ -151,23 +151,30 @@ Photo sizing, automatic edit masks and pixel preservation belong to the
 ### Voice in the conversation
 
 The waveform immediately after Send starts voice inside the thread. The
-connecting and live call show flowing cloud forms for Sky and Sonny on a voice stage, with mute,
-microphone/speaker choices, research status, and End voice beneath them.
+connecting and live call show Sky’s flowing cloud form on a voice stage, with mute,
+microphone/speaker choices, background processing status, and End voice beneath it.
 The text thread, live transcript, composer, context rail, and text controls
 are hidden during the call. The composer remains mounted, preserving its
 draft; ending voice or a connection failure returns to text. The brief
 preflight read keeps the text surface visible with Send disabled until the
 voice connection starts. Starting voice passes a bounded copy of the current
-conversation to both speakers. Leaving the chat releases the microphone and
-both audio connections. The former `/voice` page opens a new chat without
+conversation to Sky. Leaving the chat releases the microphone and
+audio connection. The former `/voice` page opens a new chat without
 starting its microphone; voice auditions remain in Settings and at
 `/voice/audition`. See [the voice-stage note](2026-09-07-voice-presence-in-chat.md).
 
-Sky uses blue and periwinkle with white wisps; Sonny uses amber and coral with
-cream wisps. Sky's silhouette is a circle and Sonny's is an upright triangle,
-with drifting clouds inside both procedural volumes. Uniform speech pulses
-preserve those silhouettes. Three.js uses
-WebGPU when available and WebGL2 otherwise. Their separate audio streams drive
+Voice leases the actual chat session and uses its tool factory, approval policy,
+file grants, and artifact hooks. Local documents reach Sol as native file or
+image parts when needed. Drafts, reviews, attachments, links, images, tool
+receipts, and plans stay in this thread; the plan and browser handoffs remain
+visible during the call. Tool-time spoken intent is checkpointed for recovery,
+and exact tool results join the next text turn's context. The lease prevents a
+competing message and releases after running tools settle. The transport and
+approval boundaries are documented in [browser voice](../../../../commands/lib/voice/docs/README.md).
+
+Sky uses blue and periwinkle with white wisps inside a circle. Uniform speech
+pulses preserve that silhouette. Three.js uses
+WebGPU when available and WebGL2 otherwise. The received audio stream drives
 motion and light; transcript arrivals never animate them. Reduced motion freezes
 idle movement and speech deformation while retaining a subtle light response.
 Visual or analysis errors leave the call controls usable. The human models and
@@ -179,8 +186,7 @@ with text or saving the thread. The route appends against the original message
 count and accepts identical retries, refusing to replace newer conversation.
 The transcript enters both model history and the normal recovery snapshot;
 the chat's filing preference still decides what Save & close keeps.
-Consecutive utterances from the same role share an exchange, with named Sky
-and Sonny replies. An opening hello before the first user message is omitted
+Consecutive utterances from the same role share an exchange, with named Sky replies; older Sonny replies remain readable. An opening hello before the first user message is omitted
 from the saved exchanges. Pending voice turns reappear in text if the
 handoff fails, with a retry action outside the composer; uncompleted live
 calls are held in the browser until they end. Text submission stays disabled

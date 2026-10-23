@@ -1,13 +1,13 @@
-/** Voice inside Chat: Sky hosts; Sonny returns from deeper research. */
+/** Voice inside Chat: one Sky conversation with delegated processing. */
 import { ActionIcon, Button, Popover, Select, Tooltip } from '@mantine/core'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { toolDisplayName } from '#universal/ai/toolDisplay.ts'
+import type { VoiceChatRequest } from '../../../service/handler/voice/chatTools.ts'
 import { whenSpeakersWarm } from './speakers.ts'
 import { VoiceAudioLevels } from './voiceAudio.ts'
-import { INITIAL_VOICE_STATE, VoiceController, type SinkElement, type VoiceState } from './voiceController.ts'
 import './voice.css'
+import { INITIAL_VOICE_STATE, VoiceController, type SinkElement, type VoiceState } from './voiceController.ts'
 
-export { CALLS_URL } from './voiceController.ts'
 export type { VoiceState, VoiceTurn } from './voiceController.ts'
 
 const DEVICES_KEY = 'sky-voice-devices'
@@ -42,10 +42,7 @@ const CAN_PICK_OUTPUT = typeof HTMLMediaElement !== 'undefined' && 'setSinkId' i
 export function useVoice(id: string) {
   const [state, setState] = useState<VoiceState>(INITIAL_VOICE_STATE)
   const audioRef = useRef<SinkElement | null>(null)
-  const sonnyAudioRef = useRef<SinkElement | null>(null)
-  const [audioMotion] = useState(
-    () => new VoiceAudioLevels((speaker) => (speaker === 'sky' ? audioRef.current : sonnyAudioRef.current)),
-  )
+  const [audioMotion] = useState(() => new VoiceAudioLevels(() => audioRef.current))
   const controllerRef = useRef<VoiceController | null>(null)
   if (!controllerRef.current) {
     controllerRef.current = new VoiceController(
@@ -61,7 +58,7 @@ export function useVoice(id: string) {
           }
           return navigator.mediaDevices.getUserMedia(constraints)
         },
-        audio: (speaker) => (speaker === 'sky' ? audioRef.current : sonnyAudioRef.current),
+        audio: () => audioRef.current,
         warmSpeakers: whenSpeakersWarm,
         setTimer: (callback, ms) => window.setTimeout(callback, ms),
         clearTimer: (timer) => window.clearTimeout(timer),
@@ -86,22 +83,25 @@ export function useVoice(id: string) {
   }, [])
 
   const start = useCallback(
-    async (context = '') => {
-      await controller.start(chosen.input, chosen.output, context)
+    async (context = '', chat?: VoiceChatRequest) => {
+      await controller.start(chosen.input, chosen.output, context, chat)
       if (controller.state.phase === 'live' || controller.state.phase === 'starting') void refreshDevices()
     },
     [controller, chosen, refreshDevices],
   )
   const end = useCallback(() => {
-    controller.end()
     audioMotion.stop()
+    return controller.end()
   }, [controller, audioMotion])
-  const resumeResearch = useCallback(() => controller.resumeResearch(), [controller])
   const mute = useCallback(() => controller.setMuted(!controller.state.muted), [controller])
-  const sendText = useCallback((text: string) => controller.sendText(text), [controller])
   const latest = useCallback(() => controller.state, [controller])
 
-  useEffect(() => end, [end])
+  useEffect(
+    () => () => {
+      void end()
+    },
+    [end],
+  )
   useEffect(() => {
     if (state.phase === 'ended' || state.phase === 'failed') audioMotion.stop()
   }, [state.phase, audioMotion])
@@ -135,14 +135,11 @@ export function useVoice(id: string) {
     state,
     audioMotion,
     audioRef,
-    sonnyAudioRef,
     devices,
     chosen,
     start,
     end,
-    resumeResearch,
     mute,
-    sendText,
     latest,
     chooseInput,
     chooseOutput,
@@ -157,23 +154,23 @@ function statusOf(state: VoiceState): string {
       return 'Not connected'
     case 'starting':
       return 'Connecting…'
+    case 'ending':
+      return 'Ending the call…'
     case 'ended':
       return 'Session over'
     case 'failed':
       return state.error ?? 'Something went wrong'
     case 'live':
       if (state.activity === 'checking') {
-        return state.tool === 'lookup_notebook'
+        return ['search_notebook', 'query_notebook', 'read_file'].includes(state.tool ?? '')
           ? 'Checking the notebook…'
-          : state.tool === 'lookup_web'
+          : ['web_search', 'read_web_page'].includes(state.tool ?? '')
             ? 'Checking the web…'
-            : `Running ${toolDisplayName(state.tool ?? 'a tool')}…`
+            : state.tool
+              ? `Running ${toolDisplayName(state.tool)}…`
+              : 'Thinking…'
       }
-      return state.activity === 'speaking'
-        ? `${state.speaker === 'sonny' ? 'Sonny' : 'Sky'} is responding`
-        : state.muted
-          ? 'Microphone muted'
-          : 'Listening'
+      return state.activity === 'speaking' ? 'Sky is responding' : state.muted ? 'Microphone muted' : 'Listening'
   }
 }
 
@@ -264,7 +261,7 @@ export function VoiceStatus({
   onRetry: () => void
 }) {
   const { state } = voice
-  const inCall = state.phase === 'starting' || state.phase === 'live'
+  const inCall = state.phase === 'starting' || state.phase === 'live' || state.phase === 'ending'
   if (!inCall && state.phase !== 'failed' && !syncing && !error) return null
   return (
     <div className="sky-voice-dock">
@@ -276,15 +273,10 @@ export function VoiceStatus({
         <span className="sky-voice-status" role="status">
           {error ?? (syncing ? 'Keeping the conversation…' : statusOf(state))}
         </span>
-        {state.phase === 'live' && (state.research.running > 0 || state.research.ready > 0) && (
+        {state.phase === 'live' && state.processing > 0 && state.activity === 'speaking' && (
           <span className="sky-voice-research" role="status">
-            {state.research.ready > 0 ? 'Research findings ready' : 'Researching…'}
+            Working in the background…
           </span>
-        )}
-        {state.phase === 'live' && state.research.paused > 0 && (
-          <Button size="xs" onClick={voice.resumeResearch}>
-            Resume research
-          </Button>
         )}
         {state.phase === 'live' && state.error && <span className="sky-voice-warn">{state.error}</span>}
         <div className="sky-voice-actions">
@@ -367,7 +359,7 @@ export function VoiceStatus({
             </Button>
           )}
           {inCall && (
-            <Button size="xs" variant="danger-quiet" onClick={onEnd}>
+            <Button size="xs" variant="danger-quiet" onClick={onEnd} disabled={state.phase === 'ending'}>
               End voice
             </Button>
           )}

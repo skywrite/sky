@@ -2,6 +2,7 @@ import * as path from 'node:path'
 import type { ModelMessage } from 'ai'
 import type { ResolvedModel } from '#shared/ai/models.ts'
 import ChatSession from '#shared/models/Chat/ChatSession/mod.ts'
+import type { ToolFactory } from '#shared/models/Chat/ChatSession/mod.ts'
 import { PlainDate, PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import type { ChatRoutesOptions, ThreadRestore } from './mod.ts'
 
@@ -9,7 +10,7 @@ export const FILE_CHAT_PREFS = { profile: 'test', contextTokens: 0, saves: true 
 export const FILE_CHAT_REPLY = 'The proposal includes a two-week pilot.'
 
 /** Real sessions and file storage, with the model and clock replaced by synthetic fixtures. */
-export function fileChatHost(root: string, snapshots: ThreadRestore[] = []) {
+export function fileChatHost(root: string, snapshots: ThreadRestore[] = [], tools?: ToolFactory) {
   const calls: ModelMessage[][] = []
   const sessions = new Map<string, ChatSession>()
   const snapshotPath = (id: string) => path.join(root, 'state', `${id}.md`)
@@ -53,7 +54,7 @@ export function fileChatHost(root: string, snapshots: ThreadRestore[] = []) {
         },
         ambient: { today: { date: '2026-01-27', dayOfWeek: 'Tuesday' }, health: [], prices: [] },
         systemPrompt: async () => 'Discuss the attached documents.',
-        tools: async () => ({ tools: {}, toolApproval: {} }),
+        tools: tools ?? (async () => ({ tools: {}, toolApproval: {} })),
         approvalHandler: async () => ({ approved: true, reason: 'test' }),
         autosavePath: snapshotPath(id),
         onEvent,
