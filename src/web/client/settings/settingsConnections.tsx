@@ -241,8 +241,12 @@ function useSlack() {
   }
 }
 
-function SlackRow() {
+/** The Slack row: on the Connections page it leads to Slack's own page; on that page it is the workspace line. */
+export function SlackRow({ navigate, onPage }: { navigate?: (to: string) => void; onPage?: boolean }) {
   const { status, busy, warn, hint, retrying, check, reconnect, pause } = useSlack()
+  const connected = Boolean(status?.installed && status.ok)
+  const host = status?.installed && status.ok ? status.workspace?.replace(/^https?:\/\//, '').replace(/\/$/, '') : null
+  const signedIn = status?.installed && status.ok ? status.displayName?.trim() : undefined
   const reason = status?.installed && !status.ok ? status.reason : undefined
   const recovery =
     reason === 'missing' ? 'Connect from Brave' : reason === 'expired' ? 'Refresh from Brave' : 'Restore access'
@@ -255,7 +259,7 @@ function SlackRow() {
       : !status.installed
         ? 'Sky talks to Slack through agent-slack, which this Mac does not have.'
         : status.ok
-          ? [status.team, status.workspace?.replace(/^https?:\/\//, '').replace(/\/$/, '')]
+          ? [onPage ? null : status.team, host, onPage && signedIn ? `signed in as ${signedIn}` : null]
               .filter(Boolean)
               .join(' · ') || 'Connected'
           : reason === 'keychain'
@@ -269,7 +273,8 @@ function SlackRow() {
 
   return (
     <Row
-      label="Slack"
+      label={onPage && connected ? (status?.installed && status.ok && status.team) || 'Workspace' : 'Slack'}
+      last={onPage}
       sub={
         <>
           {sub}
@@ -303,6 +308,11 @@ function SlackRow() {
           <span className="sky-set-off">{reason === 'missing' ? 'Not connected' : 'Paused'}</span>
         )
       ) : null}
+      {navigate && !onPage && connected && (
+        <Button size="compact-sm" aria-label="Slack settings" onClick={() => navigate(connectionHref('slack'))}>
+          ›
+        </Button>
+      )}
       {status?.installed !== false &&
         (retrying ? (
           <>
@@ -543,7 +553,7 @@ function AccountsBlock({ data, navigate }: { data: ConnectionsData; navigate: (t
   const toGoogle = () => navigate(connectionHref('google'))
   return (
     <Block head="Accounts">
-      <SlackRow />
+      <SlackRow navigate={navigate} />
       <BeeperRow navigate={navigate} />
       {google.accounts.length === 0 && (
         <Row label="Google" sub="Mail, Calendar, Drive and Docs. Sign in, tick the boxes — Sky sets up the rest." last>

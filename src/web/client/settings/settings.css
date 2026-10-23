@@ -631,3 +631,70 @@
   display: block;
   margin-top: 2px;
 }
+
+/* ── A connection's recent checks (Slack) ── */
+
+.sky-set-run {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--sky-border-soft);
+  font-size: 16px;
+}
+
+.sky-set-run[data-last='true'] {
+  border-bottom: 0;
+}
+
+.sky-set-run-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  background: var(--sky-dim);
+  flex: none;
+}
+
+.sky-set-run-dot[data-tone='done'] {
+  background: var(--sky-green);
+}
+
+.sky-set-run-txt {
+  flex: 1;
+  min-width: 0;
+}
+
+.sky-set-run-line {
+  display: block;
+  font-size: 14px;
+  color: var(--sky-dim);
+  margin-top: 2px;
+}
+
+.sky-set-run-at {
+  font-family: var(--mantine-font-family-monospace);
+  font-size: 13px;
+  color: var(--sky-dim);
+}
+
+.sky-set-count {
+  font-weight: 400;
+  font-size: 14px;
+  color: var(--sky-dim);
+  margin-left: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.sky-set-find {
+  margin: 4px 0 10px;
+}
+
+.sky-set-chip[data-tone='act'] {
+  background: var(--sky-accent-soft);
+  color: var(--sky-accent);
+}
+
+.sky-set-chip[data-tone='keep'] {
+  background: color-mix(in srgb, var(--sky-green) 14%, transparent);
+  color: var(--sky-green);
+}

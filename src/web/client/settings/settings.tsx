@@ -28,6 +28,7 @@ import { AIPane } from './settingsModels.tsx'
 import { PromptsMain } from './settingsPrompts.tsx'
 import { ProviderKeyMain, providerKeyPageOf } from './settingsProviderKeys.tsx'
 import { connectionPageOf, SETTINGS_PAGES, type SettingsSection } from './settingsRoutes.ts'
+import { SlackMain } from './settingsSlack.tsx'
 import { TranscriptionPane } from './settingsTranscription.tsx'
 import './settings.css'
 
@@ -739,6 +740,7 @@ export function SettingsMain({
   if (section === 'browser-automation') return <BrowserAutomationMain navigate={navigate} back={back} />
   if (section === 'prompts') return <PromptsMain path={path} navigate={navigate} back={back} />
   if (section === 'connections' && connectionPageOf(path) === 'beeper') return <BeeperMain navigate={navigate} />
+  if (section === 'connections' && connectionPageOf(path) === 'slack') return <SlackMain navigate={navigate} />
   if (section === 'connections' && connectionPageOf(path) === 'google')
     return <GoogleMain navigate={navigate} settings={data} onSettingsChanged={reload} />
   if (section === 'connections' && connectionPageOf(path) === 'typesafe') return <TypeSafeMain navigate={navigate} />

@@ -29,7 +29,7 @@ import { SettingsMain, useSettingsBoot } from './settings/settings.tsx'
 import { useAboutMeDraftGuard } from './settings/settingsAboutMe.tsx'
 import { SettingsNav } from './settings/settingsNav.tsx'
 import { usePromptDraftGuard } from './settings/settingsPrompts.tsx'
-import { settingsSectionOf } from './settings/settingsRoutes.ts'
+import { CONNECTION_PAGE_LABEL, connectionPageOf, settingsSectionOf } from './settings/settingsRoutes.ts'
 import { RestartPending } from './shell/serviceStatus.tsx'
 import { SidebarIcon } from './shell/sidebarIcon.tsx'
 import { SidebarUtilities } from './shell/sidebarUtilities.tsx'
@@ -101,6 +101,7 @@ function Canvas() {
   const meetingRoute = meetingRouteOf(path)
   const isAudition = path === '/voice/audition'
   const settingsSection = settingsSectionOf(path)
+  const connectionPage = settingsSection === 'connections' ? connectionPageOf(path) : null
   const isSettings = settingsSection !== null
   const peopleRoute = peopleRouteOf(path)
   const placesRoute = placesRouteOf(path)
@@ -217,7 +218,7 @@ function Canvas() {
           : isStreaks
             ? 'sky · streaks'
             : settingsSection === 'connections'
-              ? 'sky · Connections'
+              ? `sky · ${connectionPage ? CONNECTION_PAGE_LABEL[connectionPage] : 'Connections'}`
               : settingsSection === 'writing-voice'
                 ? 'sky · Writing style'
                 : settingsSection === 'browser-automation'
@@ -228,6 +229,7 @@ function Canvas() {
   }, [
     threadId,
     chatTitle,
+    connectionPage,
     isAudition,
     isStreaks,
     isOutbox,

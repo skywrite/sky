@@ -340,6 +340,9 @@ export const SETTABLE_KEYS = {
   'experimental.contextPreflight': ['experimental', 'contextPreflight'],
   'experimental.workstreams': ['experimental', 'workstreams'],
   'experimental.jevBrowser': ['experimental', 'jevBrowser'],
+  'slack.forYou.dms': ['slack', 'forYou', 'dms'],
+  'slack.forYou.mentions': ['slack', 'forYou', 'mentions'],
+  'slack.forYou.own': ['slack', 'forYou', 'own'],
 } as const
 
 export type SettableKey = keyof typeof SETTABLE_KEYS
@@ -350,6 +353,9 @@ export const BOOLEAN_KEYS: ReadonlySet<SettableKey> = new Set<SettableKey>([
   'experimental.contextPreflight',
   'experimental.workstreams',
   'experimental.jevBrowser',
+  'slack.forYou.dms',
+  'slack.forYou.mentions',
+  'slack.forYou.own',
 ])
 
 /** The valid values for one settable key, against the live host. null = fine. */
@@ -396,6 +402,9 @@ async function refuse(host: SettingsHost, key: SettableKey, value: string): Prom
     case 'experimental.workstreams':
     case 'experimental.jevBrowser':
     case 'calendar.classifyEvents':
+    case 'slack.forYou.dms':
+    case 'slack.forYou.mentions':
+    case 'slack.forYou.own':
       return value === 'true' || value === 'false' ? null : 'on is true, off is false'
   }
 }

@@ -115,8 +115,19 @@ export function settingsSectionOf(path: string): SettingsSection | null {
 }
 
 /** The connections that have a page of their own under Connections. */
-export const CONNECTION_PAGES = ['beeper', 'google', 'typesafe', 'anthropic', 'openai', 'cerebras'] as const
+export const CONNECTION_PAGES = ['beeper', 'google', 'slack', 'typesafe', 'anthropic', 'openai', 'cerebras'] as const
 export type ConnectionPage = (typeof CONNECTION_PAGES)[number]
+
+/** Each page's name, for the browser tab */
+export const CONNECTION_PAGE_LABEL: Record<ConnectionPage, string> = {
+  beeper: 'Beeper',
+  google: 'Google',
+  slack: 'Slack',
+  typesafe: 'TypeSafe',
+  anthropic: 'Anthropic',
+  openai: 'OpenAI',
+  cerebras: 'Cerebras',
+}
 
 export function connectionHref(page: ConnectionPage): string {
   return `${settingsHref('connections')}/${page}`

@@ -701,3 +701,110 @@ test('connections - the Beeper page changes a rule, previews a check, and runs o
     ],
   })
 })
+
+// ── Slack's page: the channel cache, a mute, a pull now, the two piles ──
+
+const JSON_HEADERS = { 'Content-Type': 'application/json' }
+
+test('the Slack page routes read the cache, write a mute, run a pull and count the piles over a scripted host', async () => {
+  const { host } = hostWith()
+  const rules: string[] = []
+  let pulls = 0
+  host.slack.channels = () =>
+    Promise.resolve({
+      forYou: { dms: true, mentions: true, own: false },
+      joined: 2,
+      muted: 1,
+      kept: 14,
+      days: 3,
+      channels: [
+        { id: 'C0ATLAS0001', name: 'atlas', on: true, kept: 12, lastPostEpoch: 1760000000 },
+        { id: 'C0ATLAS0002', name: 'team-survey', on: false, kept: 2 },
+      ],
+      runs: [
+        {
+          at: '2026-10-19 17:43',
+          added: 19,
+          channels: 8,
+          threads: 8,
+          read: 52,
+          unchanged: 347,
+          muted: 1,
+          errors: 0,
+          seconds: 21,
+        },
+      ],
+    })
+  host.slack.mute = (id, muted) => {
+    rules.push(`${id} ${muted ? 'muted' : 'on'}`)
+    return Promise.resolve(id !== 'C0NOPE')
+  }
+  host.slack.pull = () => {
+    pulls++
+    return Promise.resolve({ ran: true as const, added: 3, channels: 2, threads: 1, read: 5, muted: 1, errors: 0 })
+  }
+  host.slack.marks = () => Promise.resolve({ todos: 3, overdue: 1, saved: 12 })
+  const app = createConnectionsRoutes(host)
+  const channels = await app.request('/slack/channels')
+  const view = (await channels.json()) as { joined: number; channels: { name: string; on: boolean }[] }
+  const muted = await app.request('/slack/channels/C0ATLAS0001', {
+    method: 'POST',
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ on: false }),
+  })
+  const unknown = await app.request('/slack/channels/C0NOPE', {
+    method: 'POST',
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ on: true }),
+  })
+  const bad = await app.request('/slack/channels/C0ATLAS0001', { method: 'POST', headers: JSON_HEADERS, body: '{}' })
+  const pulled = await app.request('/slack/pull', { method: 'POST' })
+  const marks = await app.request('/slack/marks')
+  assert({
+    given: 'the four routes',
+    should: 'answer the cache, accept a mute, refuse an unknown channel and a bodiless mute, run the pull, and count',
+    actual: [
+      channels.status,
+      view.joined,
+      view.channels.map((row) => `${row.name}:${row.on}`),
+      [muted.status, unknown.status, bad.status],
+      rules,
+      [pulled.status, ((await pulled.json()) as { added: number }).added, pulls],
+      await marks.json(),
+    ],
+    expected: [
+      200,
+      2,
+      ['atlas:true', 'team-survey:false'],
+      [200, 404, 400],
+      ['C0ATLAS0001 muted', 'C0NOPE on'],
+      [200, 3, 1],
+      { todos: 3, overdue: 1, saved: 12 },
+    ],
+  })
+})
+
+test('the Slack page routes say so when the host has no channel cache, or no workspace is set', async () => {
+  const bare = createConnectionsRoutes(hostWith().host)
+  const { host } = hostWith()
+  host.slack.channels = () => Promise.resolve(null)
+  const unset = createConnectionsRoutes(host)
+  assert({
+    given: 'a host without the cache, and one whose cache has no workspace',
+    should: 'answer unavailable for every route, and ask for the workspace',
+    actual: [
+      (await bare.request('/slack/channels')).status,
+      (
+        await bare.request('/slack/channels/C0ATLAS0001', {
+          method: 'POST',
+          headers: JSON_HEADERS,
+          body: '{"on":true}',
+        })
+      ).status,
+      (await bare.request('/slack/pull', { method: 'POST' })).status,
+      (await bare.request('/slack/marks')).status,
+      (await unset.request('/slack/channels')).status,
+    ],
+    expected: [503, 503, 503, 503, 409],
+  })
+})

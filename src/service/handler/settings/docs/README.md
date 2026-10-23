@@ -104,8 +104,23 @@ Pages:
   and a preview of what the next check would save. The rules live beside the
   capture's state in `state/beeper/sync.json`, not in `config.jsonc`,
   because they key on Beeper's account ids. Every connection gets a page
-  this way as it grows rules of its own (ruled 2026-09-22); Slack stays a
-  row until then.
+  this way as it grows rules of its own (ruled 2026-09-22).
+- **Connections → Slack** — `/settings/connections/slack`, since 2026-10-20
+  (`web/client/settings/settingsSlack.tsx`; routes under `/slack/channels`,
+  `/slack/pull` and `/slack/marks` in `connections.ts`, the host's cache
+  part in `createConnectionsHost.ts`). What Sky does with Slack today is the
+  [channel cache](../../../../commands/all/slack/pull/docs/README.md), so the
+  page carries: the workspace line (the same silent status as the row), the
+  last few checks the pull made, Check now, the two marks in Slack with their
+  live counts, and every joined channel with a switch. A channel switched off
+  is a mute: the pull leaves it out and its cursor follows the channel, so
+  switching it back on resumes from now. Mutes live in `state/slack/rules.yaml`,
+  apart from the roster the pull rewrites. The connections row leads to the
+  page when Slack is connected. Since 2026-10-20 the page also carries For
+  you: three switches writing `slack.forYou.dms`, `.mentions` and `.own`,
+  the rules the [landing pass](../../../../commands/all/slack/land/docs/README.md)
+  reads on every pass. Left out this week, the last block of the 2026-10-16
+  mock, still waits for something to count.
 - **Connections → Google** — `/settings/connections/google`
   includes the Calendar classification switch; see the
   [classification contract](../../../../lib/calendarClassification/docs/README.md).

@@ -16,6 +16,7 @@
 
 import { Hono } from 'hono'
 import type { SlackIssue } from '#commands/all/slack/lib/connection.ts'
+import type { SlackChannelsView } from '#commands/all/slack/pull/lib/status.ts'
 import type { BeeperPreview, HeldChat, LastRun } from '#lib/beeper/mod.ts'
 import { BEEPER_SECRETS_CATEGORY } from '#lib/beeper/secrets.ts'
 import {
@@ -34,6 +35,7 @@ import { createLogin, createSecret, updateEntry } from '#lib/secrets/marshal.ts'
 import type { SecretsProvider } from '#lib/secrets/SecretsProvider.ts'
 import type { EntityType, IndexEntry, SecretEntry } from '#lib/secrets/types.ts'
 import { TYPESAFE_SECRET } from '#shared/ai/typesafe/client.ts'
+import type { SlackForYou } from '#shared/config/types.ts'
 import { createProviderKeyRoutes, type ProviderKeysHost } from './providerKeys.ts'
 import { secretFieldError, type SecretField } from './secretValidation.ts'
 
@@ -90,6 +92,17 @@ export type SlackStatus =
       displayName?: string | null
     }
   | ({ installed: true; ok: false; error: string } & Partial<SlackIssue>)
+
+/** The channel cache as Slack's page reads it (commands/all/slack/pull/lib/status.ts), with the For you rules. */
+export type SlackPageView = SlackChannelsView & { forYou: SlackForYou }
+
+/** What a check-now pull came to. */
+export type SlackPullOutcome =
+  | { ran: true; added: number; channels: number; threads: number; read: number; muted: number; errors: number }
+  | { ran: false; reason: string }
+
+/** Slack's two piles, counted; or why they could not be. */
+export type SlackMarks = { todos: number; overdue: number; saved: number } | { unavailable: string }
 
 /** How a Google sign-in started from the page is going. */
 export type GoogleConnectState =
@@ -192,6 +205,14 @@ export interface ConnectionsHost {
     /** Explicit recovery; restores Keychain access before deciding whether a Brave import is needed. */
     reconnect: (workspace?: string) => Promise<SlackStatus>
     pause?: (workspace?: string) => Promise<void>
+    /** The channel cache: which channels Sky keeps, what it kept, the recent checks, the For you rules; null without a workspace */
+    channels?: () => Promise<SlackPageView | null>
+    /** Leave a channel out, or keep it again; false when the roster does not know it */
+    mute?: (id: string, muted: boolean) => Promise<boolean>
+    /** Run a pull now */
+    pull?: () => Promise<SlackPullOutcome>
+    /** The To-dos and Saved piles, counted */
+    marks?: () => Promise<SlackMarks>
   }
   beeper: {
     status: () => Promise<BeeperStatus>
@@ -447,6 +468,49 @@ export function createConnectionsRoutes(host: ConnectionsHost): Hono {
       const workspace = 'workspace' in body && typeof body.workspace === 'string' ? body.workspace : undefined
       await host.slack.pause(workspace)
       return c.json(await host.slack.status(workspace))
+    } catch (err) {
+      return c.json(message(err), 500)
+    }
+  })
+
+  // The channel cache: what Sky keeps from Slack, a channel switched off, a pull now, and the two piles.
+  const NO_CACHE = { message: 'The Slack channel cache is unavailable here.' }
+  app.get('/slack/channels', async (c) => {
+    if (!host.slack.channels) return c.json(NO_CACHE, 503)
+    try {
+      const view = await host.slack.channels()
+      return view
+        ? c.json(view)
+        : c.json({ message: 'Set slack.workspace in ~/.sky/config.jsonc, then run sky slack:auth.' }, 409)
+    } catch (err) {
+      return c.json(message(err), 500)
+    }
+  })
+  app.post('/slack/channels/:id', async (c) => {
+    if (!host.slack.mute) return c.json(NO_CACHE, 503)
+    const body = (await c.req.json().catch(() => null)) as { on?: unknown } | null
+    if (typeof body?.on !== 'boolean') return c.json({ message: 'expected { on }' }, 400)
+    try {
+      const known = await host.slack.mute(c.req.param('id'), !body.on)
+      return known
+        ? c.json({ ok: true })
+        : c.json({ message: 'Sky does not know that channel yet. The next pull lists it.' }, 404)
+    } catch (err) {
+      return c.json(message(err), 500)
+    }
+  })
+  app.post('/slack/pull', async (c) => {
+    if (!host.slack.pull) return c.json(NO_CACHE, 503)
+    try {
+      return c.json(await host.slack.pull())
+    } catch (err) {
+      return c.json(message(err), 500)
+    }
+  })
+  app.get('/slack/marks', async (c) => {
+    if (!host.slack.marks) return c.json(NO_CACHE, 503)
+    try {
+      return c.json(await host.slack.marks())
     } catch (err) {
       return c.json(message(err), 500)
     }

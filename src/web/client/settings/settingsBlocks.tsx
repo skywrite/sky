@@ -64,9 +64,9 @@ export const mono = (text: string) => <span className="sky-set-mono">{text}</spa
 
 export const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`
 
-/** How long ago, in the words a person would use. */
-export function sinceLabel(iso: string, now = Date.now()): string {
-  const ms = now - Date.parse(iso)
+/** How long ago, in the words a person would use; the moment as ISO text or epoch milliseconds. */
+export function sinceLabel(at: string | number, now = Date.now()): string {
+  const ms = now - (typeof at === 'number' ? at : Date.parse(at))
   if (!Number.isFinite(ms) || ms < 60_000) return 'Just now'
   const minutes = Math.floor(ms / 60_000)
   if (minutes < 60) return `${plural(minutes, 'minute')} ago`

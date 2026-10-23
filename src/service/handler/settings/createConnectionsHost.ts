@@ -3,10 +3,15 @@ import process from 'node:process'
 import { BEEPER_SYNC_STATE, type BeeperSyncOutcome } from '#commands/all/beeper/inbox/sync.ts'
 import { slackConnection } from '#commands/all/slack/lib/agentSlack.ts'
 import { restoreSlackAccess, slackAuthStatus, slackProfileName } from '#commands/all/slack/lib/authStatus.ts'
+import type { PullResult } from '#commands/all/slack/pull/lib/pull.ts'
+import { readRoster } from '#commands/all/slack/pull/lib/roster.ts'
+import { readRules, withMuted, writeRules } from '#commands/all/slack/pull/lib/rules.ts'
+import { describeSlackChannels } from '#commands/all/slack/pull/lib/status.ts'
+import { fetchSavedItems } from '#commands/all/slack/saved/lib/list.ts'
 import CommandContext from '#commands/lib/core/CommandContext.ts'
 import CommandService from '#commands/lib/core/CommandService.ts'
 import * as notebookConfig from '#config'
-import { SLACK_WORKSPACE } from '#config'
+import { DIR_STATE_SLACK_DAYS, FILE_STATE_SLACK_CHANNELS, FILE_STATE_SLACK_RULES, SLACK_WORKSPACE } from '#config'
 import {
   type BeeperAccount,
   BeeperClient,
@@ -51,6 +56,7 @@ import {
   createTypeSafeClient,
   TYPESAFE_SECRET,
 } from '#shared/ai/typesafe/client.ts'
+import { loadSkyConfig, slackForYou } from '#shared/config/loader.ts'
 import {
   type BeeperAccountRow,
   type BeeperConnectState,
@@ -187,6 +193,57 @@ async function slackReconnect(workspace?: string): Promise<SlackStatus> {
   const restored = await restoreSlackAccess(workspace)
   if (!restored.ok) return { installed: true, ...restored }
   return slackStatus(workspace)
+}
+
+/**
+ * The channel cache behind Slack's page: the roster and rules the pull keeps
+ * under state/slack, a pull run the way the heartbeat runs it, and Slack's
+ * two piles counted through the listing slack:todos reads.
+ */
+function slackChannelCache(
+  runPull: () => Promise<PullResult | null>,
+): Pick<ConnectionsHost['slack'], 'channels' | 'mute' | 'pull' | 'marks'> {
+  return {
+    async channels() {
+      if (!SLACK_WORKSPACE) return null
+      const view = await describeSlackChannels({
+        roster: FILE_STATE_SLACK_CHANNELS,
+        rules: FILE_STATE_SLACK_RULES,
+        days: DIR_STATE_SLACK_DAYS,
+      })
+      // The rules are read from the file each time, so a switch applies to the next pass without a restart
+      return { ...view, forYou: slackForYou(loadSkyConfig()) }
+    },
+    async mute(id, muted) {
+      const roster = await readRoster(FILE_STATE_SLACK_CHANNELS)
+      if (!roster.channels.some((channel) => channel.id === id)) return false
+      await writeRules(FILE_STATE_SLACK_RULES, withMuted(await readRules(FILE_STATE_SLACK_RULES), id, muted))
+      return true
+    },
+    async pull() {
+      try {
+        const result = await runPull()
+        if (!result) return { ran: false, reason: 'The pull could not run.' }
+        return {
+          ran: true,
+          added: result.pulled.reduce((sum, channel) => sum + channel.added, 0),
+          channels: result.pulled.filter((channel) => channel.added > 0).length,
+          threads: result.pulled.reduce((sum, channel) => sum + channel.threads, 0),
+          read: result.pulled.length,
+          muted: result.muted,
+          errors: result.errors.length,
+        }
+      } catch (error) {
+        return { ran: false, reason: error instanceof Error ? error.message : 'The pull could not run.' }
+      }
+    },
+    async marks() {
+      const fetched = await fetchSavedItems('todo', 1)
+      if ('error' in fetched) return { unavailable: fetched.error }
+      const { counts } = fetched.list
+      return { todos: counts.todo ?? counts.in_progress ?? 0, overdue: counts.overdue ?? 0, saved: counts.saved ?? 0 }
+    },
+  }
 }
 
 /**
@@ -373,20 +430,31 @@ function typesafeConnection(secrets: SecretsProvider): ConnectionsHost['typesafe
 /** Connections over the real machine: the keychain, the model providers, agent-slack, Google's, Beeper's and TypeSafe's keys. */
 export function createConnectionsHost(): ConnectionsHost {
   const secrets = new KeychainSecretsProvider()
+  const env = Object.fromEntries(
+    Object.entries(process.env).filter((pair): pair is [string, string] => typeof pair[1] === 'string'),
+  )
   // Check now runs the same command the heartbeat runs, in this process.
+  const service = () => new CommandService(CommandContext.server(notebookConfig, env))
   const runCheck = async (): Promise<BeeperSyncOutcome | null> => {
-    const env = Object.fromEntries(
-      Object.entries(process.env).filter((pair): pair is [string, string] => typeof pair[1] === 'string'),
-    )
-    const result = await new CommandService(CommandContext.server(notebookConfig, env)).run('beeper:inbox:sync', {})
+    const result = await service().run('beeper:inbox:sync', {})
     if (result.status !== 'success') throw new Error(result.message ?? 'The check failed.')
+    return result.data ?? null
+  }
+  const runPull = async (): Promise<PullResult | null> => {
+    const result = await service().run('slack:pull', {})
+    if (result.status !== 'success') throw new Error(result.message ?? 'The pull failed.')
     return result.data ?? null
   }
   return {
     secrets,
     providers: () => KNOWN_PROVIDERS.map((id) => ({ id, label: PROVIDER_LABEL[id] ?? id })),
     google: googleSignIn(secrets),
-    slack: { status: slackStatus, reconnect: slackReconnect, pause: (workspace) => slackConnection.pause(workspace) },
+    slack: {
+      status: slackStatus,
+      reconnect: slackReconnect,
+      pause: (workspace) => slackConnection.pause(workspace),
+      ...slackChannelCache(runPull),
+    },
     beeper: beeperConnection(secrets, BEEPER_SYNC_STATE, runCheck),
     typesafe: typesafeConnection(secrets),
     keys: createProviderKeysHost(secrets),
