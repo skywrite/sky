@@ -8,6 +8,7 @@ const YAML_KEY_ORDER = [
   'ref',
   'merged',
   'summary',
+  'landed',
   'checkInterval',
   'followSince',
   'resumedAt',
@@ -36,6 +37,8 @@ interface FollowCreateFields {
   lastActivity?: PlainDateTime
   messages?: FollowMessage[]
   status?: FollowStatus
+  /** Born of the automatic landing, not of a gesture: its captures write no day log line */
+  landed?: boolean
 }
 
 function parseDateTimeField(value: unknown): PlainDateTime | undefined {
@@ -62,6 +65,7 @@ export default class Follow {
   readonly lastActivity: PlainDateTime | undefined
   readonly messages: FollowMessage[]
   readonly status: FollowStatus
+  readonly landed: boolean
 
   private constructor(fields: {
     source: MediumMessage
@@ -76,6 +80,7 @@ export default class Follow {
     lastActivity: PlainDateTime | undefined
     messages: FollowMessage[]
     status: FollowStatus
+    landed: boolean
   }) {
     this.source = fields.source
     this.ref = fields.ref
@@ -89,6 +94,7 @@ export default class Follow {
     this.lastActivity = fields.lastActivity
     this.messages = fields.messages
     this.status = fields.status
+    this.landed = fields.landed
   }
 
   static fromYaml(yamlStr: string): Follow {
@@ -107,6 +113,7 @@ export default class Follow {
       lastActivity: parseDateTimeField(data['lastActivity']),
       messages: Array.isArray(data['messages']) ? (data['messages'] as FollowMessage[]) : [],
       status: (data['status'] ?? 'active') as FollowStatus,
+      landed: data['landed'] === true,
     })
   }
 
@@ -124,6 +131,7 @@ export default class Follow {
       lastActivity: fields.lastActivity,
       messages: fields.messages ?? [],
       status: fields.status ?? 'active',
+      landed: fields.landed ?? false,
     })
   }
 
@@ -133,6 +141,7 @@ export default class Follow {
       ref: this.ref,
       merged: this.merged.length > 0 ? this.merged : null,
       summary: this.summary,
+      ...(this.landed ? { landed: true } : {}),
       checkInterval: this.checkInterval,
       followSince: this.followSince ? formatDateTime(this.followSince) : null,
       ...(this.resumedAt ? { resumedAt: formatDateTime(this.resumedAt) } : {}),
@@ -250,6 +259,7 @@ export default class Follow {
       lastActivity: this.lastActivity,
       messages: this.messages,
       status: this.status,
+      landed: this.landed,
     }
   }
 }

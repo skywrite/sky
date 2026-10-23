@@ -358,3 +358,22 @@ test('isExpired() falls back to the inactivity window when no expires is set', (
     actual: Follow.create({ source: 'Slack', ref: {}, summary: 'bare' }).isExpired(now),
   })
 })
+
+test('a landed follow remembers it, and one made by hand does not', () => {
+  const landed = Follow.fromYaml(`${SLACK_YAML}\nlanded: true`)
+  const byHand = Follow.fromYaml(SLACK_YAML)
+  assert({
+    given: 'yaml with landed: true, yaml without, and a follow created with the flag',
+    should: 'read the flag, default it off, write it only when set, and round-trip it',
+    actual: [
+      landed.landed,
+      byHand.landed,
+      byHand.toYaml().includes('landed'),
+      Follow.fromYaml(landed.toYaml()).landed,
+      Follow.create({ source: 'Slack', ref: { channel: 'C01234ABC' }, summary: 'x', landed: true }).updateStatus(
+        'closed',
+      ).landed,
+    ],
+    expected: [true, false, false, true, true],
+  })
+})

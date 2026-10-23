@@ -471,6 +471,33 @@ export default async function run() {
             })
           }
         }
+        // What Slack addressed to the owner lands in the day: one feed call, then the
+        // conversations it names. Its own lock keeps a pass started by hand apart.
+        release.update('Slack landing')
+        const landed = await commandService.run('slack:land', {})
+        if (landed.status !== 'success') {
+          logHeartbeat.error('Slack landing failed: {message}', { event: 'slack-land-failed', message: landed.message })
+        } else if (landed.data) {
+          tick.set({ slackLanded: landed.data.docs, slackLandErrors: landed.data.errors.length })
+          if (landed.data.docs > 0) {
+            logHeartbeat.info(
+              'Slack landing: {docs} document(s) from {threads} thread(s), {conversations} conversation(s)',
+              {
+                event: 'slack-landed',
+                docs: landed.data.docs,
+                threads: landed.data.threads.filter((thread) => thread.outcome.status === 'landed').length,
+                conversations: landed.data.conversations.filter((c) => c.outcome.status === 'landed').length,
+              },
+            )
+          }
+          if (landed.data.errors.length > 0) {
+            logHeartbeat.error('Slack landing: {count} failed: {message}', {
+              event: 'slack-land-errors',
+              count: landed.data.errors.length,
+              message: landed.data.errors[0],
+            })
+          }
+        }
       }
 
       // Only follow capture holds the service. The scheduled pass owns its

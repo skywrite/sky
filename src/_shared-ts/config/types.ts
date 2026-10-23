@@ -9,6 +9,9 @@ export interface AiProfileConfig {
   options?: Record<string, unknown>
 }
 
+/** What Sky lands in the day from Slack on its own: direct messages, mentions and thread replies, the owner's own messages. */
+export type SlackForYou = { dms: boolean; mentions: boolean; own: boolean }
+
 export interface SkyConfig {
   version: number
   dir: string
@@ -30,6 +33,8 @@ export interface SkyConfig {
   bins: Record<string, string>
   slack: {
     workspace?: string
+    /** Filled in by the loader; see slackForYou() for the defaults */
+    forYou?: SlackForYou
   }
   calendar?: {
     /** Separate meeting invitations from informational events using Jev. */

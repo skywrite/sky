@@ -56,6 +56,9 @@ export const DIR_STATE_SLACK_DAYS = path.join(DIR_STATE, 'slack', 'days')
 export const FILE_STATE_SLACK_CHANNELS = path.join(DIR_STATE, 'slack', 'channels.yaml')
 /** The person's choices about the Slack pull (muted channels), kept apart from the roster the pull rewrites */
 export const FILE_STATE_SLACK_RULES = path.join(DIR_STATE, 'slack', 'rules.yaml')
+/** The landing pass's cursors and recent runs, and one record per direct or group conversation it lands */
+export const FILE_STATE_SLACK_LAND = path.join(DIR_STATE, 'slack', 'land.yaml')
+export const DIR_STATE_SLACK_DMS = path.join(DIR_STATE, 'slack', 'dms')
 export const DIR_TMP_USER = path.join(DIR_USER_DATA, 'tmp')
 
 export const DIR_CODE_SRC = path.join(DIR_CODE, 'src')

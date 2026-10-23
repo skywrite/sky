@@ -96,6 +96,7 @@ export async function pollSlackFollow(
         link: data.message.permalink ?? data.link,
         previous: previous ? computePreviousRef(resolveTimeRef(previous), when.plainDate) : undefined,
         noEditor: true,
+        ...(follow.landed ? { noDayLog: true } : {}),
         ...(typeof inheritedTags === 'string' ? { tags: inheritedTags } : {}),
         ...(typeof inheritedRel === 'string' ? { rel: inheritedRel } : {}),
         ...(Array.isArray(inheritedRel) ? { noAutoRel: true } : {}),

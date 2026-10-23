@@ -33,6 +33,7 @@ const params = {
   follow: Flag.string('Follow file name', { hidden: true }),
   previous: Flag.string('Previous message ref', { hidden: true }),
   noEditor: Flag.bool('Skip opening editor', { hidden: true }),
+  noDayLog: Flag.bool('Skip the day file’s capture log line (the automatic landing)', { hidden: true, default: false }),
   noAutoTag: Flag.bool('Skip automatic tagging from the archived-thread tag corpus', { default: false }),
   noAutoRel: Flag.bool('Skip automatic rel suggestion from the entity graph', { default: false }),
   slackFiles: Flag.string('Slack file attachments as JSON (used by slack:follow:message)', { hidden: true }),
@@ -61,7 +62,7 @@ export default class SlackNewTask extends Command {
     const { output } = context
     let { to, from, when, summary, markdown } = args
     let { fromLink } = args
-    const { category, tags, rel, follow, previous, noEditor, noAutoTag, noAutoRel, slackFiles } = args
+    const { category, tags, rel, follow, previous, noEditor, noDayLog, noAutoTag, noAutoRel, slackFiles } = args
     let resolvedLink = args.link
 
     // If first arg is a Slack link with no other context, treat as --from-link
@@ -194,13 +195,16 @@ export default class SlackNewTask extends Command {
       return CommandResult.error(err as Error, 'Failed to write slack file')
     }
 
-    // Add or replace entry in Day
-    try {
-      const value = `[${summary || ''}](${filePath})`
-      dayDoc = dayDoc.setCompleteItem(key, value, { time: when.time, category })
-      await writeDay(dayDoc)
-    } catch (err) {
-      return CommandResult.error(err as Error, 'Failed to write day item')
+    // Add or replace entry in Day. A landing stays out of the day file: the
+    // document itself is the record, and chat reads the day file every turn.
+    if (!noDayLog) {
+      try {
+        const value = `[${summary || ''}](${filePath})`
+        dayDoc = dayDoc.setCompleteItem(key, value, { time: when.time, category })
+        await writeDay(dayDoc)
+      } catch (err) {
+        return CommandResult.error(err as Error, 'Failed to write day item')
+      }
     }
 
     await clearSavedVoiceTranscripts(transcriptRuns, output)

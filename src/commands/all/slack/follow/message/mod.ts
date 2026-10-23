@@ -50,6 +50,10 @@ const params = {
     },
   ),
   noEditor: Flag.bool('Skip opening editors for created files', { hidden: true, default: false }),
+  landing: Flag.bool('The automatic landing: no day log line, and the follow remembers it was landed', {
+    hidden: true,
+    default: false,
+  }),
 }
 
 type Params = InferParams<typeof params>
@@ -225,6 +229,7 @@ export default class SlackFollowMessageTask extends Command {
       lastActivity,
       messages: [],
       status: 'active',
+      landed: args.landing,
     })
     if (!args.force && candidate.isExpired(now)) {
       output.log(
@@ -239,6 +244,7 @@ export default class SlackFollowMessageTask extends Command {
         follow: fileNameNoExt,
         link: data.message.permalink ?? link,
         ...(args.noEditor ? { noEditor: true } : {}),
+        ...(args.landing ? { noDayLog: true } : {}),
       })
       const relPath = slackResult.ok ? slackResult.data?.filePath : undefined
       if (!relPath) {
@@ -310,6 +316,7 @@ export default class SlackFollowMessageTask extends Command {
           noAutoRel: true,
           ...(previous ? { previous } : {}),
           noEditor: true,
+          ...(args.landing ? { noDayLog: true } : {}),
         })
 
         const relPath = slackResult.ok ? slackResult.data?.filePath : undefined
@@ -353,6 +360,7 @@ export default class SlackFollowMessageTask extends Command {
         follow: fileNameNoExt,
         link: data.message.permalink ?? link,
         ...(args.noEditor ? { noEditor: true } : {}),
+        ...(args.landing ? { noDayLog: true } : {}),
       })
 
       const slackFilePath = slackResult.ok ? slackResult.data?.filePath : undefined
@@ -381,6 +389,7 @@ export default class SlackFollowMessageTask extends Command {
       // Stored as time refs — initialMessages keeps real paths for the editor.
       messages: initialMessages.map((m) => ({ date: m.date, path: toTimeRef(m.path) })),
       status: 'active',
+      landed: args.landing,
     })
 
     // 5. Write follow YAML

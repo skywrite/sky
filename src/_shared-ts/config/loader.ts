@@ -4,7 +4,7 @@ import * as path from 'node:path'
 import process from 'node:process'
 import { parse } from 'jsonc-parser'
 import { DEFAULT_LAYOUT_PATTERN, LAYOUT_PATTERNS, layoutByPattern } from '../nbfs/layout/registry.ts'
-import type { GoogleAccountCategory, SkyConfig } from './types.ts'
+import type { GoogleAccountCategory, SkyConfig, SlackForYou } from './types.ts'
 
 export const SKY_CONFIG_DIR = path.join(os.homedir(), '.sky')
 export const SKY_CONFIG_PATH = path.join(SKY_CONFIG_DIR, 'config.jsonc')
@@ -95,7 +95,7 @@ function defaults(): SkyConfig {
       },
     },
     bins: {},
-    slack: {},
+    slack: { forYou: { ...SLACK_FOR_YOU_DEFAULTS } },
     calendar: { classifyEvents: false },
     web: {},
     voice: {},
@@ -118,6 +118,13 @@ export function readSkyConfigFile(configPath = SKY_CONFIG_PATH): { text: string;
   if (!existsSync(configPath)) return null
   const text = readFileSync(configPath, 'utf-8')
   return { text, parsed: parse(text) as Partial<SkyConfig> }
+}
+
+export const SLACK_FOR_YOU_DEFAULTS: SlackForYou = { dms: true, mentions: true, own: true }
+
+/** The For you rules, whole, whatever the file left out. */
+export function slackForYou(config: Pick<SkyConfig, 'slack'>): SlackForYou {
+  return { ...SLACK_FOR_YOU_DEFAULTS, ...config.slack.forYou }
 }
 
 export function loadSkyConfig(configPath = SKY_CONFIG_PATH): SkyConfig {
@@ -145,6 +152,12 @@ export function loadSkyConfig(configPath = SKY_CONFIG_PATH): SkyConfig {
     if (parsed.commands?.day?.end) config.commands.day.end = parsed.commands.day.end
     if (parsed.bins) config.bins = { ...config.bins, ...parsed.bins }
     if (parsed.slack?.workspace) config.slack.workspace = parsed.slack.workspace
+    const forYou = { ...SLACK_FOR_YOU_DEFAULTS }
+    for (const key of ['dms', 'mentions', 'own'] as const) {
+      const value = parsed.slack?.forYou?.[key]
+      if (typeof value === 'boolean') forYou[key] = value
+    }
+    config.slack.forYou = forYou
     if (typeof parsed.calendar?.classifyEvents === 'boolean') {
       config.calendar = { classifyEvents: parsed.calendar.classifyEvents }
     }

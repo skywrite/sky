@@ -19,6 +19,12 @@ Settings › Connections › Slack shows the checks, the channels and their mute
 which the day summary reads ([recap docs](../recap/docs/README.md)). Layout,
 clocks and cursor rules: [pull/docs/README.md](pull/docs/README.md).
 
+## Landings
+
+`sky slack:land` lands what Slack addressed to the owner in the day directory
+on its own: direct messages, mentions and thread replies, and the owner's own
+messages, as the documents a capture writes. Design: [land/docs/README.md](land/docs/README.md).
+
 ## Authentication and background checks
 
 `lib/connection.ts` owns authentication for CLI calls, direct API requests and
