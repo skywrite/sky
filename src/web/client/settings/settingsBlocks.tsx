@@ -3,6 +3,7 @@
  * monospace value, and how a refusal from the service is read.
  */
 
+import { SegmentedControl } from '@mantine/core'
 import type { Key, ReactNode } from 'react'
 
 export const UNREACHABLE = "Couldn't reach sky — is the service running?"
@@ -60,3 +61,43 @@ export function Row({
 }
 
 export const mono = (text: string) => <span className="sky-set-mono">{text}</span>
+
+export const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`
+
+/** How long ago, in the words a person would use. */
+export function sinceLabel(iso: string, now = Date.now()): string {
+  const ms = now - Date.parse(iso)
+  if (!Number.isFinite(ms) || ms < 60_000) return 'Just now'
+  const minutes = Math.floor(ms / 60_000)
+  if (minutes < 60) return `${plural(minutes, 'minute')} ago`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${plural(hours, 'hour')} ago`
+  const days = Math.floor(hours / 24)
+  return days === 1 ? 'Yesterday' : `${days} days ago`
+}
+
+/** The two-way switch a connection page gives a rule. */
+export function OnOff({
+  value,
+  label,
+  disabled,
+  onChange,
+}: {
+  value: boolean
+  label: string
+  disabled?: boolean
+  onChange: (on: boolean) => void
+}) {
+  return (
+    <SegmentedControl
+      aria-label={label}
+      disabled={disabled}
+      value={value ? 'on' : 'off'}
+      onChange={(next) => onChange(next === 'on')}
+      data={[
+        { value: 'off', label: 'Off' },
+        { value: 'on', label: 'On' },
+      ]}
+    />
+  )
+}

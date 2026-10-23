@@ -5,9 +5,9 @@
  * form stay on that page.
  */
 
-import { Button, SegmentedControl } from '@mantine/core'
+import { Button } from '@mantine/core'
 import { type Key, useCallback, useEffect, useState } from 'react'
-import { Block, refusalOf, Row } from './settingsBlocks.tsx'
+import { Block, OnOff, plural, refusalOf, Row, sinceLabel } from './settingsBlocks.tsx'
 import { ConnectionPage } from './settingsConnectionPage.tsx'
 import { API, postJson } from './settingsConnections.tsx'
 import { settingsHref } from './settingsRoutes.ts'
@@ -67,20 +67,6 @@ type Preview = { rows: PreviewRow[]; complete: boolean }
 type CheckOutcome =
   | { ran: true; chats: number; messages: number; files: number; complete: boolean }
   | { ran: false; reason: string }
-
-const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`
-
-/** How long ago, in the words a person would use. */
-export function sinceLabel(iso: string, now = Date.now()): string {
-  const ms = now - Date.parse(iso)
-  if (!Number.isFinite(ms) || ms < 60_000) return 'Just now'
-  const minutes = Math.floor(ms / 60_000)
-  if (minutes < 60) return `${plural(minutes, 'minute')} ago`
-  const hours = Math.floor(minutes / 60)
-  if (hours < 24) return `${plural(hours, 'hour')} ago`
-  const days = Math.floor(hours / 24)
-  return days === 1 ? 'Yesterday' : `${days} days ago`
-}
 
 /** The left-out chats, counted by reason, most common first. */
 export function reasonSummary(skipped: { reason?: string }[]): string {
@@ -203,31 +189,6 @@ function useBeeperPage() {
     disconnect,
     hidePreview: () => setPreview(null),
   }
-}
-
-function OnOff({
-  value,
-  label,
-  disabled,
-  onChange,
-}: {
-  value: boolean
-  label: string
-  disabled?: boolean
-  onChange: (on: boolean) => void
-}) {
-  return (
-    <SegmentedControl
-      aria-label={label}
-      disabled={disabled}
-      value={value ? 'on' : 'off'}
-      onChange={(next) => onChange(next === 'on')}
-      data={[
-        { value: 'off', label: 'Off' },
-        { value: 'on', label: 'On' },
-      ]}
-    />
-  )
 }
 
 /** One network, one card: its own switch, and its groups' switch inside it. */
