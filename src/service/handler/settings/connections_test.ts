@@ -808,3 +808,60 @@ test('the Slack page routes say so when the host has no channel cache, or no wor
     expected: [503, 503, 503, 503, 409],
   })
 })
+
+// ── Messages on this Mac: the status behind the row, and the pane it opens ──
+
+test('the Messages-on-this-Mac routes read the status and open System Settings over a scripted host, and say so when there is none', async () => {
+  const { host } = hostWith()
+  const bare = createConnectionsRoutes(host)
+  const missing = await bare.request('/mac-messages')
+  let opened = 0
+  host.macMessages = {
+    status: () =>
+      Promise.resolve({
+        supported: true,
+        messages: 'denied',
+        contacts: 'readable',
+        books: 2,
+        names: 540,
+        handles: 0,
+        binary: '/opt/homebrew/bin/bun',
+      }),
+    openSettings: () => {
+      opened += 1
+      return Promise.resolve(opened === 1)
+    },
+  }
+  const app = createConnectionsRoutes(host)
+  const status = await app.request('/mac-messages')
+  const first = await app.request('/mac-messages/open-settings', { method: 'POST', headers: JSON_HEADERS, body: '{}' })
+  const second = await app.request('/mac-messages/open-settings', { method: 'POST', headers: JSON_HEADERS, body: '{}' })
+  assert({
+    given: 'a host without the connection, then one whose Messages database is sealed and whose pane opens once',
+    should: 'answer 503 without it, pass the status through, and report the pane opening or not',
+    actual: [
+      missing.status,
+      status.status,
+      await status.json(),
+      first.status,
+      second.status,
+      (await second.json()).message,
+    ],
+    expected: [
+      503,
+      200,
+      {
+        supported: true,
+        messages: 'denied',
+        contacts: 'readable',
+        books: 2,
+        names: 540,
+        handles: 0,
+        binary: '/opt/homebrew/bin/bun',
+      },
+      200,
+      503,
+      'System Settings could not be opened.',
+    ],
+  })
+})

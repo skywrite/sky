@@ -45,10 +45,11 @@ import {
   startLoopback,
 } from '#lib/google/mod.ts'
 import type { CloudSetupRun } from '#lib/google/mod.ts'
+import { macMessagesStatus } from '#lib/macMessages/mod.ts'
 import { KeychainSecretsProvider } from '#lib/secrets/KeychainSecretsProvider.ts'
 import { createSecret, updateEntry } from '#lib/secrets/marshal.ts'
 import type { SecretsProvider } from '#lib/secrets/SecretsProvider.ts'
-import { isCommandAvailable } from '#lib/sys/mod.ts'
+import { isCommandAvailable, runCommand } from '#lib/sys/mod.ts'
 import { KNOWN_PROVIDERS } from '#shared/ai/models.ts'
 import {
   checkPastedTypeSafeKey,
@@ -390,6 +391,25 @@ function beeperConnection(
 }
 
 /**
+ * Messages on this Mac: the names behind the numbers Beeper's iMessage shows,
+ * read from the Mac's own Contacts and Messages when this process may. The
+ * permission is Full Disk Access for the service's binary, granted in System
+ * Settings; the page opens that pane.
+ */
+function macMessagesConnection(): NonNullable<ConnectionsHost['macMessages']> {
+  return {
+    status: () => macMessagesStatus(),
+    async openSettings() {
+      if (process.platform !== 'darwin') return false
+      const result = await runCommand('/usr/bin/open', [
+        'x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles',
+      ])
+      return result.success
+    },
+  }
+}
+
+/**
  * TypeSafe's key, the way `sky secrets:set typesafe main` stores it — except
  * that the page asks TypeSafe first, so a mistyped key never lands. Every
  * look at the page asks again with the stored key, so a revoked key reads
@@ -456,6 +476,7 @@ export function createConnectionsHost(): ConnectionsHost {
       ...slackChannelCache(runPull),
     },
     beeper: beeperConnection(secrets, BEEPER_SYNC_STATE, runCheck),
+    macMessages: macMessagesConnection(),
     typesafe: typesafeConnection(secrets),
     keys: createProviderKeysHost(secrets),
   }

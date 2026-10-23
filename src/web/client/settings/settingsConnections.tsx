@@ -13,6 +13,7 @@ import { Button, PasswordInput, TextInput } from '@mantine/core'
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
 import { Block, mono, refusalOf, Row, UNREACHABLE } from './settingsBlocks.tsx'
 import { ConnectionPage } from './settingsConnectionPage.tsx'
+import { MacMessagesRow } from './settingsMacMessages.tsx'
 import { PROVIDER_KEY_ORDER, PROVIDER_KEY_PAGES } from './settingsProviderKeys.tsx'
 import { connectionHref } from './settingsRoutes.ts'
 
@@ -555,6 +556,7 @@ function AccountsBlock({ data, navigate }: { data: ConnectionsData; navigate: (t
     <Block head="Accounts">
       <SlackRow navigate={navigate} />
       <BeeperRow navigate={navigate} />
+      <MacMessagesRow />
       {google.accounts.length === 0 && (
         <Row label="Google" sub="Mail, Calendar, Drive and Docs. Sign in, tick the boxes — Sky sets up the rest." last>
           <span className="sky-set-off">Not connected</span>

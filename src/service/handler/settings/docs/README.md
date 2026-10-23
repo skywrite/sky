@@ -105,6 +105,16 @@ Pages:
   capture's state in `state/beeper/sync.json`, not in `config.jsonc`,
   because they key on Beeper's account ids. Every connection gets a page
   this way as it grows rules of its own (ruled 2026-09-22).
+- **Connections → Messages on this Mac** — a row on the Connections page,
+  since 2026-10-20 (`web/client/settings/settingsMacMessages.tsx`; routes
+  `/mac-messages` and `/mac-messages/open-settings` in `connections.ts`, the
+  host part in `createConnectionsHost.ts`, the reading in
+  [`lib/macMessages`](../../../../lib/macMessages/docs/README.md)). Beeper
+  shows iMessage senders by number alone, so the names come from this Mac's
+  Contacts and Messages, which the service may read only with Full Disk
+  Access. The row says whether it can, names the binary to add, opens the
+  System Settings pane, and reads again on Check again; the iMessage card on
+  Beeper's page points here while it cannot. Absent off a Mac.
 - **Connections → Slack** — `/settings/connections/slack`, since 2026-10-20
   (`web/client/settings/settingsSlack.tsx`; routes under `/slack/channels`,
   `/slack/pull` and `/slack/marks` in `connections.ts`, the host's cache

@@ -30,6 +30,7 @@ import {
   saveOAuthClient,
   type StoredTokens,
 } from '#lib/google/mod.ts'
+import type { MacMessagesStatus } from '#lib/macMessages/mod.ts'
 import { KeychainAccessError } from '#lib/secrets/keychainProtocol.ts'
 import { createLogin, createSecret, updateEntry } from '#lib/secrets/marshal.ts'
 import type { SecretsProvider } from '#lib/secrets/SecretsProvider.ts'
@@ -232,6 +233,12 @@ export interface ConnectionsHost {
     keep: (chat: string) => Promise<boolean>
     /** Bring Beeper Desktop to the front on a chat; null when the app is not running */
     open: (chat: string) => Promise<boolean | null>
+  }
+  /** Messages on this Mac: whether this process may read its Contacts and Messages, the names behind Beeper's iMessage numbers; absent off a Mac */
+  macMessages?: {
+    status: () => Promise<MacMessagesStatus>
+    /** Open the System Settings pane where Full Disk Access is granted; false when it could not be opened */
+    openSettings: () => Promise<boolean>
   }
   typesafe: {
     status: () => Promise<TypeSafeStatus>
@@ -606,6 +613,25 @@ export function createConnectionsRoutes(host: ConnectionsHost): Hono {
       const opened = await host.beeper.open(c.req.param('chat'))
       if (opened === null) return c.json({ message: 'Open Beeper Desktop first.' }, 409)
       return opened ? c.json({ ok: true }) : c.json({ message: 'Beeper could not open this chat.' }, 503)
+    } catch (err) {
+      return c.json(message(err), 500)
+    }
+  })
+
+  // Messages on this Mac: the names behind Beeper's iMessage numbers, and the permission that reads them.
+  app.get('/mac-messages', async (c) => {
+    if (!host.macMessages) return c.json({ message: 'Messages on this Mac is unavailable here.' }, 503)
+    try {
+      return c.json(await host.macMessages.status())
+    } catch (err) {
+      return c.json(message(err), 500)
+    }
+  })
+  app.post('/mac-messages/open-settings', async (c) => {
+    if (!host.macMessages) return c.json({ message: 'Messages on this Mac is unavailable here.' }, 503)
+    try {
+      const opened = await host.macMessages.openSettings()
+      return opened ? c.json({ ok: true }) : c.json({ message: 'System Settings could not be opened.' }, 503)
     } catch (err) {
       return c.json(message(err), 500)
     }

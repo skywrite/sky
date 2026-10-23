@@ -10,6 +10,7 @@ import { type Key, useCallback, useEffect, useState } from 'react'
 import { Block, OnOff, plural, refusalOf, Row, sinceLabel } from './settingsBlocks.tsx'
 import { ConnectionPage } from './settingsConnectionPage.tsx'
 import { API, postJson } from './settingsConnections.tsx'
+import { type MacMessagesStatus, needsGrant, useMacMessages } from './settingsMacMessages.tsx'
 import { settingsHref } from './settingsRoutes.ts'
 
 type AccountRow = {
@@ -195,11 +196,18 @@ function useBeeperPage() {
 function NetworkBlock({
   row,
   rule,
+  mac,
+  toConnections,
 }: {
   key?: Key | null
   row: AccountRow
   rule: ReturnType<typeof useBeeperPage>['rule']
+  /** Whether this Mac's Contacts and Messages can be read: the names behind iMessage's numbers */
+  mac: MacMessagesStatus | null
+  toConnections: () => void
 }) {
+  // Beeper names everyone on the other networks itself; iMessage is the one it shows by number alone.
+  const nameless = row.network === 'iMessage' && mac?.supported && needsGrant(mac)
   const sub = row.save
     ? row.chats
       ? `Saving · ${plural(row.chats, 'chat')} so far`
@@ -220,6 +228,15 @@ function NetworkBlock({
         </>
       }
     >
+      {nameless && (
+        <p className="sky-set-warn" role="alert">
+          Beeper shows iMessage senders by number alone, and Sky cannot read this Mac’s Contacts to name them, so every
+          sender would be held as unknown.{' '}
+          <Button size="compact-xs" variant="subtle" onClick={toConnections}>
+            Fix it under Connections
+          </Button>
+        </p>
+      )}
       <Row label="Save new messages" sub={sub}>
         <OnOff value={row.save} label={`Save ${row.network}`} onChange={(save) => void rule(row.id, { save })} />
       </Row>
@@ -420,6 +437,7 @@ export function BeeperMain({ navigate }: { navigate: (to: string) => void }) {
   const { status, warn, busy, preview, checked, rule, check, showPreview, keep, open, disconnect, hidePreview } =
     useBeeperPage()
   const live = Boolean(status?.connected && !status?.expired)
+  const mac = useMacMessages()
   const toConnections = () => navigate(settingsHref('connections'))
   return (
     <ConnectionPage
@@ -489,7 +507,9 @@ export function BeeperMain({ navigate }: { navigate: (to: string) => void }) {
       {status &&
         live &&
         status.running &&
-        status.accounts.map((row) => <NetworkBlock key={row.id} row={row} rule={rule} />)}
+        status.accounts.map((row) => (
+          <NetworkBlock key={row.id} row={row} rule={rule} mac={mac.status} toConnections={toConnections} />
+        ))}
       {status && live && status.held.length > 0 && (
         <HeldBlock held={status.held} busy={busy} keep={(chat) => void keep(chat)} open={(chat) => void open(chat)} />
       )}
