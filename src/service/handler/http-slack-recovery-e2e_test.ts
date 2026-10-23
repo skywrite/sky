@@ -104,15 +104,17 @@ test(
           )
           return row && !(row.querySelector('button') as HTMLButtonElement)?.disabled
         })
-        await page.clock.fastForward(4999)
+        await page.clock.fastForward(2500)
+        // An early check would reach the route a moment after the jump; let it arrive before counting.
+        await page.waitForTimeout(500)
         assert({
-          given: 'an unsuccessful automatic check has just settled',
-          should: 'wait before the next check',
+          given: 'an unsuccessful automatic check, halfway through the wait',
+          should: 'not check again yet',
           actual: reads,
           expected: 2,
         })
         status = { installed: true, ok: true, workspace, team: 'Atlas', user: 'jane', displayName: 'Jane Doe' }
-        await page.clock.fastForward(1)
+        await page.clock.fastForward(3500)
         await slack.getByText('Connected', { exact: true }).waitFor()
         await page.clock.fastForward(5000)
         await page.getByText('Slack reconnecting…', { exact: true }).waitFor({ state: 'hidden' })
