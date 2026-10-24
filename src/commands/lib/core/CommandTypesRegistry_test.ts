@@ -86,6 +86,8 @@ async function _verifyRunTypes(
   await tasks.run('markdown:sel', { server: true })
   await tasks.run('test:registry', { count: 0, verbose: false })
   await tasks.run('day:todo:move-next', { day: new PlainDate('2031-03-16') })
+  await tasks.run('day:start')
+  await tasks.run('day:start', { day: new PlainDate('2031-03-16') })
   await tasks.run(knownNames)
 
   // CLI, tool and plugin dispatchers can still supply names and arguments discovered at runtime.
@@ -112,6 +114,12 @@ async function _verifyRunTypes(
   await tasks.run('test:registry', { verbose: 'yes' })
   // @ts-expect-error a date override must match its declared input type
   await tasks.run('day:todo:move-next', { day: 123 })
+  // @ts-expect-error day:start requires a PlainDate override
+  await tasks.run('day:start', { day: 123 })
+  // @ts-expect-error a misspelled day override cannot silently start the default day
+  await tasks.run('day:start', { dya: new PlainDate('2031-03-16') })
+  // @ts-expect-error perfect belongs to day:end, not day:start
+  await tasks.run('day:start', { perfect: true })
   // @ts-expect-error typed composition uses declared argument names
   await tasks.run('ai:context:files', { _: ['ai:context:files', 'Find Atlas notes'] })
   // @ts-expect-error known unions cannot escape to the unregistered overload

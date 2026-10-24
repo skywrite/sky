@@ -1,4 +1,5 @@
 import CommandContext from '#commands/lib/core/CommandContext.ts'
+import type { CommandResult } from '#commands/lib/core/CommandResult.ts'
 import CommandService from '#commands/lib/core/CommandService.ts'
 import type * as ConfigModule from '#shared/config.ts'
 import type { PlainDate } from '#universal/dates/nbdt/mod.ts'
@@ -11,13 +12,16 @@ import type { WeekCommands } from './mod.ts'
  * day:end with its sweep.
  */
 export function createWeekHost(config: typeof ConfigModule, env: Record<string, string>): WeekCommands {
-  const run = async (name: string, args: Record<string, unknown>) => {
-    const tasks = new CommandService(CommandContext.server(config, env))
-    const result = await tasks.run(name, args)
+  const createTasks = () => new CommandService(CommandContext.server(config, env))
+  const requireSuccess = (name: string, result: CommandResult<unknown>): void => {
     if (result.status !== 'success') throw new Error(result.message ?? `${name} did not finish`)
   }
   return {
-    startDay: (day: PlainDate) => run('day:start', { day }),
-    endDay: (day: PlainDate, options) => run('day:end', { day, perfect: options?.perfect ?? true }),
+    async startDay(day: PlainDate): Promise<void> {
+      requireSuccess('day:start', await createTasks().run('day:start', { day }))
+    },
+    async endDay(day: PlainDate, options): Promise<void> {
+      requireSuccess('day:end', await createTasks().run('day:end', { day, perfect: options?.perfect ?? true }))
+    },
   }
 }
