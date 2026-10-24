@@ -1,11 +1,13 @@
-import { readFile, writeFile } from 'node:fs/promises'
+import { readFile } from 'node:fs/promises'
 import * as path from 'node:path'
-import type { Page, Request } from 'playwright'
+import type { Page, Request, Response } from 'playwright'
 import { exists } from '#shared/fs/mod.ts'
 import { dayFile } from '#shared/nbfs/mod.ts'
 import { assert, test } from '#test'
 import { PlainDate, Week, ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
+import { planSection } from './day/editingText.ts'
 import type { DayView } from './day/mod.ts'
+import { dayItemKey, type DayItemAddress } from './day/organizingTypes.ts'
 import { runWysiwygE2e } from './httpWysiwygE2eTestHelpers.ts'
 
 const DAY = new PlainDate('2026-01-27')
@@ -38,57 +40,142 @@ tz: America/Chicago
 async function dragRow(page: Page, text: string, targetText: string, touch: boolean) {
   const row = page.locator('.sky-prow').filter({ hasText: text })
   const target = page.locator('.sky-prow').filter({ hasText: targetText })
-  await row.scrollIntoViewIfNeeded()
+  await page.locator('.sky-organize-bar').getByRole('button', { name: 'Done', exact: true }).waitFor()
+  // Organize animates row padding; measuring mid-transition gives the touch stale drop coordinates.
+  await page.evaluate(() =>
+    Promise.all(
+      [...document.querySelectorAll('.sky-prow[data-organize-key]')]
+        .flatMap((row) => row.getAnimations())
+        .map((animation) => animation.finished.catch(() => {})),
+    ),
+  )
+  const targetKey = await target.getAttribute('data-organize-key')
+  const expectedOrder = await row.evaluate((node, targetKey) => {
+    const rows = [...node.parentElement!.querySelectorAll<HTMLElement>(':scope > [data-organize-key]')].filter(
+      (row) => row.dataset.organizeList === (node as HTMLElement).dataset.organizeList,
+    )
+    const target = rows.find((row) => row.dataset.organizeKey === targetKey)!
+    const scroll = node.closest('.sky-scroll')!
+    const from = node.getBoundingClientRect()
+    const to = target.getBoundingClientRect()
+    const bounds = scroll.getBoundingClientRect()
+    // Both rows must clear the scroll edges: holding a touch there intentionally keeps scrolling the list.
+    scroll.scrollTop +=
+      (Math.min(from.top, to.top) + Math.max(from.bottom, to.bottom)) / 2 -
+      (bounds.top + Math.min(bounds.bottom, innerHeight)) / 2
+    const ordered = rows.filter((row) => row !== node)
+    ordered.splice(ordered.indexOf(target) + 1, 0, node as HTMLElement)
+    return ordered.map((row) => row.dataset.organizeKey!)
+  }, targetKey)
   const from = (await row.locator('.sky-item-grip').boundingBox())!
   const to = (await target.boundingBox())!
   const width = (await row.boundingBox())!.width
   const x = from.x + from.width / 2,
     start = from.y + from.height / 2,
-    end = to.y + to.height - 4
-  const saved = page.waitForResponse((response) => response.url().endsWith('/item/organize/reorder'))
+    end = to.y + to.height / 2 + 4
+  const bounds = await row.evaluate((node) => {
+    const bounds = node.closest('.sky-scroll')!.getBoundingClientRect()
+    return { top: bounds.top, bottom: Math.min(bounds.bottom, innerHeight) }
+  })
+  assert({
+    given: `${touch ? 'touch' : 'mouse'} reordering without edge scrolling`,
+    should: 'keep the drop point outside the scroll edges',
+    actual: end > bounds.top + 48 && end < bounds.bottom - 48,
+    expected: true,
+  })
+  const drop = async (release: () => Promise<unknown>) => {
+    const [response] = await Promise.all([
+      page.waitForResponse((response) => response.url().endsWith('/item/organize/reorder')),
+      release(),
+    ])
+    return response
+  }
   // The row in hand: a copy of the whole row rides under the pointer while its slot waits in the list.
   const inHand = async () => {
-    const lift = page.locator('.sky-sort-lift')
-    const box = (await lift.boundingBox())!
+    await page
+      .waitForFunction(
+        (expected) => {
+          const rows = [...document.querySelectorAll<HTMLElement>('.sky-prow[data-organize-key]')]
+            .filter((row) => expected.includes(row.dataset.organizeKey!))
+            .sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top)
+          return rows.length === expected.length && rows.every((row, i) => row.dataset.organizeKey === expected[i])
+        },
+        expectedOrder,
+        { timeout: 5000 },
+      )
+      .catch(async (cause) => {
+        const actual = await page
+          .locator('.sky-prow[data-sort]')
+          .evaluateAll((rows) =>
+            rows
+              .sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top)
+              .map((row) => (row as HTMLElement).dataset.organizeKey),
+          )
+        throw new Error(
+          `Could not drag "${text}" after "${targetText}": ${JSON.stringify({ expected: expectedOrder, actual })}`,
+          { cause },
+        )
+      })
+    const actual = await page.evaluate(
+      ({ text, end, width }) => {
+        const lift = document.querySelector<HTMLElement>('.sky-sort-lift')!
+        const box = lift.getBoundingClientRect()
+        return {
+          text: lift.innerText.includes(text),
+          underPointer: box.top <= end && end <= box.bottom,
+          wholeRow: box.width >= width,
+          slots: document.querySelectorAll('.sky-prow[data-sort="slot"]').length,
+        }
+      },
+      { text, end, width },
+    )
     assert({
       given: `${touch ? 'touch' : 'mouse'} dragging a row`,
       should: 'carry the whole row, text and all, under the pointer',
-      actual: {
-        text: (await lift.innerText()).includes(text),
-        underPointer: box.y <= end && end <= box.y + box.height,
-        wholeRow: box.width >= width,
-        slots: await page.locator('.sky-prow[data-sort="slot"]').count(),
-      },
+      actual,
       expected: { text: true, underPointer: true, wholeRow: true, slots: 1 },
     })
   }
+  let response: Response
   if (touch) {
     const cdp = await page.context().newCDPSession(page)
-    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y: start }] })
-    for (let step = 1; step <= 10; step++)
-      await cdp.send('Input.dispatchTouchEvent', {
-        type: 'touchMove',
-        touchPoints: [{ x, y: start + ((end - start) * step) / 10 }],
-      })
-    await inHand()
-    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
-    await cdp.detach()
+    try {
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y: start }] })
+      for (let step = 1; step <= 10; step++)
+        await cdp.send('Input.dispatchTouchEvent', {
+          type: 'touchMove',
+          touchPoints: [{ x, y: start + ((end - start) * step) / 10 }],
+        })
+      await inHand()
+      response = await drop(() => cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }))
+    } finally {
+      await cdp.detach()
+    }
   } else {
     await page.mouse.move(x, start)
     await page.mouse.down()
     await page.mouse.move(x, end, { steps: 10 })
     await inHand()
-    await page.mouse.up()
+    response = await drop(() => page.mouse.up())
   }
-  const response = await saved
+  await response.finished()
   assert({
     given: `${touch ? 'touch' : 'mouse'} dragging`,
     should: 'save the reordered list',
     actual: response.status(),
     expected: 200,
   })
-  await page.locator('.sky-sort-lift').waitFor({ state: 'detached' })
-  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+  assert({
+    given: `${touch ? 'touch' : 'mouse'} dropping after the intended row`,
+    should: 'send exactly the previewed order',
+    actual: (response.request().postDataJSON() as { items: DayItemAddress[] }).items.map(dayItemKey),
+    expected: expectedOrder,
+  })
+  await page.waitForFunction(
+    () =>
+      !document.querySelector('.sky-sort-lift, .sky-prow[data-sort]') &&
+      !document.activeElement?.hasAttribute('data-sort-grip'),
+  )
   assert({
     given: 'a dropped row',
     should: 'leave no copy, no row standing aside, and no focus ring on its grip',
@@ -131,24 +218,28 @@ async function escapeDrag(page: Page, text: string, targetText: string, file: st
   })
 }
 
-test(
-  {
-    name: 'Organize supports desktop and touch reordering, mixed selections, date moves, Undo and single-item rescheduling',
-    timeout: 90000,
-  },
-  async (t) => {
-    await runWysiwygE2e(
-      t,
-      {
-        initialMarkdown: CONTENT,
-        file: `time/${dayFile(DAY)}`,
-        tempPrefix: 'day-organizing-',
-        day: true,
-        now: new ZonedDateTime('2026-01-27T08:00:00', 'UTC'),
-      },
-      async ({ page: desktop, origin, file, errors }) => {
-        const browser = desktop.context().browser()!
-        for (const mobile of [false, true]) {
+for (const { mobile, cpuRate } of [
+  { mobile: false, cpuRate: 1 },
+  { mobile: true, cpuRate: 1 },
+  { mobile: true, cpuRate: 6 },
+]) {
+  test(
+    {
+      name: `Organize supports ${mobile ? 'touch' : 'mouse'} reordering at ${cpuRate}x CPU throttling, mixed selections, date moves, Undo and single-item rescheduling`,
+      timeout: 90000,
+    },
+    async (t) => {
+      await runWysiwygE2e(
+        t,
+        {
+          initialMarkdown: CONTENT,
+          file: `time/${dayFile(DAY)}`,
+          tempPrefix: 'day-organizing-',
+          day: true,
+          now: new ZonedDateTime('2026-01-27T08:00:00', 'UTC'),
+        },
+        async ({ page: desktop, origin, file, errors }) => {
+          const browser = desktop.context().browser()!
           const context = await browser.newContext({
             viewport: mobile ? { width: 390, height: 844 } : { width: 1500, height: 1000 },
             isMobile: mobile,
@@ -159,19 +250,33 @@ test(
           page.on('pageerror', (error) => browserErrors.push(error.message))
           await page.route('**/schedule', (route) => route.fulfill({ json: { read: true, errors: [], meetings: [] } }))
           try {
-            await writeFile(file, CONTENT)
             await page.goto(`${origin}/${DAY.ymd}`)
             await page.getByRole('button', { name: 'Organize', exact: true }).click()
             if (!mobile) await escapeDrag(page, 'Review the Atlas proposal', 'Outline the next release', file)
-            await dragRow(page, 'Review the Atlas proposal', 'Outline the next release', mobile)
-            const savedOrder = await readFile(file, 'utf8')
+            const pointer = await context.newCDPSession(page)
+            try {
+              await pointer.send('Emulation.setCPUThrottlingRate', { rate: cpuRate })
+              await dragRow(page, 'Review the Atlas proposal', 'Outline the next release', mobile)
+            } finally {
+              await pointer.send('Emulation.setCPUThrottlingRate', { rate: 1 })
+              await pointer.detach()
+            }
+            const savedRows = planSection(await readFile(file, 'utf8'), 'Professional Todos')!.rows
             assert({
-              given: 'a reordered task with notes',
-              should: 'keep the note under its task in the saved file',
-              actual: savedOrder.includes(
-                '- Outline the next release\n- Review the Atlas proposal\n  Keep the attached notes.',
-              ),
-              expected: true,
+              given: `${mobile ? 'touch' : 'mouse'} reordering a task with notes`,
+              should: 'save the requested task order',
+              actual: savedRows.map((row) => row.raw),
+              expected: [
+                'Outline the next release',
+                'Review the Atlas proposal',
+                'Share the launch checklist with the team',
+              ],
+            })
+            assert({
+              given: `${mobile ? 'touch' : 'mouse'} reordering a task with notes`,
+              should: 'preserve its complete Markdown block',
+              actual: savedRows.find((row) => row.raw === 'Review the Atlas proposal')?.block,
+              expected: '- Review the Atlas proposal\n  Keep the attached notes.',
             })
             await page.getByRole('button', { name: 'Done', exact: true }).click()
             await page.reload()
@@ -321,7 +426,7 @@ test(
               },
               expected: { overflow: false, errors: [] },
             })
-            // Restore the custom-date move before running the other viewport.
+            // Undo the custom-date move after the later single-item edit and Undo.
             const restored = await page.request.post(`${origin}/day/${DAY.ymd}/item/organize/undo`, {
               data: { id: customUndo.undo },
             })
@@ -329,8 +434,90 @@ test(
           } finally {
             await context.close()
           }
+          assert({ given: 'the browser runs', should: 'finish without app errors', actual: errors, expected: [] })
+        },
+      )
+    },
+  )
+}
+
+test(
+  { name: 'touch dragging at a scroll edge scrolls only until cancelled and saves nothing', timeout: 60000 },
+  async (t) => {
+    await runWysiwygE2e(
+      t,
+      {
+        initialMarkdown: CONTENT,
+        file: `time/${dayFile(DAY)}`,
+        tempPrefix: 'day-organizing-scroll-',
+        day: true,
+        now: new ZonedDateTime('2026-01-27T08:00:00', 'UTC'),
+      },
+      async ({ page: desktop, origin, file, errors }) => {
+        const context = await desktop
+          .context()
+          .browser()!
+          .newContext({
+            viewport: { width: 390, height: 844 },
+            isMobile: true,
+            hasTouch: true,
+          })
+        const page = await context.newPage()
+        const touch = await context.newCDPSession(page)
+        const requests: string[] = []
+        page.on('pageerror', (error) => errors.push(error.message))
+        page.on('request', (request) => {
+          if (request.url().includes('/item/organize/')) requests.push(request.url())
+        })
+        try {
+          await page.clock.install({ time: '2026-01-27T08:00:00Z' })
+          await page.route('**/schedule', (route) => route.fulfill({ json: { read: true, errors: [], meetings: [] } }))
+          await page.goto(`${origin}/${DAY.ymd}`)
+          await page.getByRole('button', { name: 'Organize', exact: true }).click()
+          await page.clock.pauseAt('2026-01-27T08:05:00Z')
+          const row = page.locator('.sky-prow').filter({ hasText: 'Review the Atlas proposal' })
+          const from = (await row.locator('.sky-item-grip').boundingBox())!
+          const scroll = page.locator('.sky-scroll').filter({ has: row })
+          const bounds = (await scroll.boundingBox())!
+          const before = await readFile(file, 'utf8')
+          const initialScroll = await scroll.evaluate((node) => node.scrollTop)
+          const x = from.x + from.width / 2
+          await touch.send('Input.dispatchTouchEvent', {
+            type: 'touchStart',
+            touchPoints: [{ x, y: from.y + from.height / 2 }],
+          })
+          await touch.send('Input.dispatchTouchEvent', {
+            type: 'touchMove',
+            touchPoints: [{ x, y: bounds.y + bounds.height - 4 }],
+          })
+          await page.clock.runFor(160)
+          assert({
+            given: 'a held touch at the bottom scroll edge',
+            should: 'scroll the column while the pointer stays still',
+            actual: (await scroll.evaluate((node) => node.scrollTop)) > initialScroll,
+            expected: true,
+          })
+          await touch.send('Input.dispatchTouchEvent', { type: 'touchCancel', touchPoints: [] })
+          await page.clock.runFor(300)
+          await page.locator('.sky-sort-lift').waitFor({ state: 'detached' })
+          const stopped = await scroll.evaluate((node) => node.scrollTop)
+          await page.clock.runFor(160)
+          assert({
+            given: 'a cancelled touch after edge scrolling',
+            should: 'stop scrolling, put the row back, and leave the file unchanged',
+            actual: {
+              scrollTop: await scroll.evaluate((node) => node.scrollTop),
+              rowsAside: await page.locator('.sky-prow[data-sort]').count(),
+              requests,
+              markdown: await readFile(file, 'utf8'),
+              errors,
+            },
+            expected: { scrollTop: stopped, rowsAside: 0, requests: [], markdown: before, errors: [] },
+          })
+        } finally {
+          await touch.detach()
+          await context.close()
         }
-        assert({ given: 'the browser runs', should: 'finish without app errors', actual: errors, expected: [] })
       },
     )
   },
