@@ -1,3 +1,8 @@
+---
+created: 2026-04-12
+updated: 2026-10-24
+---
+
 # AGENTS.md
 
 Project knowledge for AI coding agents. This is the only agent instruction file in the repo.
@@ -23,6 +28,16 @@ Sky is a CLI and file system for organizing your life — daily journaling, task
 | [oxfmt](https://oxc.rs) | Code formatting |
 | [oxlint](https://oxc.rs) | Linting |
 | [tsc](https://www.typescriptlang.org) | Type checking (TypeScript 7, native Go binary) |
+
+**Bun's exact tested/default version is 1.4.0.**
+The root [`.bun-version`](.bun-version) pins the runtime, and the root
+[`package.json`](package.json) mirrors it with `"packageManager": "bun@1.4.0"`.
+CI reads `.bun-version`; keep both declarations in sync.
+Verify `bun --version` matches the pin before installing dependencies or running checks.
+These declarations do not switch the installed runtime: Sky's launchers use `bun` on `PATH`.
+
+Treat a Bun version bump as explicit upgrade work, with startup performance measured against the current pin first.
+Keep the version declarations and the pinned install instructions in [INSTALL.md](docs/INSTALL.md#1-install-bun) in sync.
 
 ## Project Structure
 

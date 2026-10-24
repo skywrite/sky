@@ -1,6 +1,6 @@
 ---
 created: 2026-07-28
-updated: 2026-08-29
+updated: 2026-10-24
 ---
 
 # Installing Sky
@@ -35,7 +35,7 @@ never had them, which is the one slow part.
 | Requirement | Why | Check |
 |---|---|---|
 | macOS | The only tested platform — see above | `uname` → `Darwin` |
-| [Bun](https://bun.sh) 1.4+ | Runtime, package manager, test runner | `bun --version` |
+| [Bun](https://bun.sh) 1.4.0 (pinned) | Runtime, package manager, test runner | `bun --version` → `1.4.0` |
 | git | Cloning and updating the repo | step 2 — on a fresh Mac, do not run `git` blind |
 | An AI provider API key | Journaling questions, `ai:chat`, summaries | see step 6 |
 
@@ -48,8 +48,16 @@ unlocks and what happens without it.
 
 ## 1. Install Bun
 
+Sky's exact tested/default Bun version is **1.4.0**.
+The root [`.bun-version`](../.bun-version) pins the runtime, and the root
+[`package.json`](../package.json) mirrors it with `"packageManager": "bun@1.4.0"`.
+CI reads `.bun-version`; local installs should use the same version.
+These declarations do not switch the installed runtime: Sky's launchers use `bun` on `PATH`.
+Version bumps must keep both declarations and these install instructions in sync, after comparing startup performance
+against the current pin.
+
 ```bash
-curl -fsSL https://bun.sh/install | bash
+curl -fsSL https://bun.sh/install | bash -s "bun-v1.4.0"
 ```
 
 Restart your shell, then verify:
@@ -58,9 +66,9 @@ Restart your shell, then verify:
 bun --version
 ```
 
-**Must print** `1.4.0` or higher — Sky's date layer is migrating to the standard
-`Temporal` API, which Bun ships enabled from 1.4. If `bun: command not found`, add
-`~/.bun/bin` to your `PATH` and re-check.
+**Must print** `1.4.0`, matching the repository pin.
+Sky's date layer uses the standard `Temporal` API, which Bun ships enabled from 1.4.
+If `bun: command not found`, add `~/.bun/bin` to your `PATH` and re-check.
 
 ## 2. Install git
 

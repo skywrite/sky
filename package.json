@@ -1,5 +1,6 @@
 {
   "private": true,
+  "packageManager": "bun@1.4.0",
   "workspaces": ["packages/*"],
   "devDependencies": {
     "@skywrite/commands": "workspace:*",
