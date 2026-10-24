@@ -41,6 +41,7 @@ import { createYogaInstance } from './graphql/schema.ts'
 import type { AutomationsRoutesOptions } from './handler/automations/mod.ts'
 import type { ChatRoutesOptions } from './handler/chat/mod.ts'
 import type { ClockRoutesOptions } from './handler/clock/mod.ts'
+import type { ReviewRuntime } from './handler/day/review/types.ts'
 import type { ExtensionRoutesOptions } from './handler/extensions/routes.ts'
 import { createHttpApp } from './handler/http.ts'
 import type { ImportRoutesOptions } from './handler/import/mod.ts'
@@ -100,6 +101,7 @@ export interface ServerOptions {
   people?: PeopleOptions
   places?: import('./handler/places/types.ts').PlacesOptions
   workstreams?: WorkstreamsRoutesOptions
+  dayReview?: ReviewRuntime
   tracking?: TrackingRoutesOptions
   streaks?: StreaksRoutesOptions
   /** The week page's command host; without it the page reads, but starts, ends and creates nothing */
@@ -278,6 +280,7 @@ export function createServer(options: ServerOptions): Server {
       people: options.people,
       places: options.places,
       workstreams: options.workstreams,
+      dayReview: options.dayReview,
       tracking: options.tracking,
       streaks: options.streaks,
       week,

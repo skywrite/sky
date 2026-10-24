@@ -21,6 +21,7 @@ import { createAutomationsHost } from './handler/automations/createAutomationsHo
 import { createChatHost } from './handler/chat/createSession.ts'
 import { createClockHost } from './handler/clock/createClockHost.ts'
 import { keptOwnerAddresses } from './handler/day/ownerAddresses.ts'
+import { createReviewRuntime } from './handler/day/review/createReviewHost.ts'
 import { createExtensionsHost } from './handler/extensions/createExtensionsHost.ts'
 import { createImportHost } from './handler/import/createImportHost.ts'
 import { createMeetingsHost } from './handler/meetings/createMeetingsHost.ts'
@@ -202,6 +203,7 @@ const server = createServer({
   outbox: createOutboxHost(config, env.toObject()),
   extensions: createExtensionsHost(config, env.toObject()),
   workstreams: createWorkstreamsHost(config),
+  dayReview: createReviewRuntime(config, env.toObject()),
   tracking: createTrackingHost(config),
   streaks: createStreaksHost(config),
   week: createWeekHost(config, env.toObject()),

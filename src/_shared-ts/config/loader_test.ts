@@ -140,3 +140,23 @@ test('Google accounts keep the category the file gives them, by lower-case email
     await rm(dir, { recursive: true, force: true })
   }
 })
+
+test('day review hours default to five and preserve valid numbers including disabled', async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'sky-review-config-'))
+  const file = path.join(dir, 'config.jsonc')
+  try {
+    const values: unknown[] = [loadSkyConfig(file).dayReview?.idleHours]
+    for (const idleHours of [0, 2.5, 24, -1, 25, '5', null]) {
+      await writeFile(file, JSON.stringify({ dayReview: { idleHours } }))
+      values.push(loadSkyConfig(file).dayReview?.idleHours)
+    }
+    assert({
+      given: 'missing, disabled, fractional and invalid periods',
+      should: 'use numeric settings safely',
+      actual: values,
+      expected: [5, 0, 2.5, 24, 5, 5, 5, 5],
+    })
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})

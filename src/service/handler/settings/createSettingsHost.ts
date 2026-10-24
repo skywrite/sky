@@ -107,7 +107,10 @@ export function createSettingsHost(): SettingsRoutesOptions {
     },
     about: aboutBuild,
     write: (key, value) => {
-      setConfigValue([...SETTABLE_KEYS[key]], BOOLEAN_KEYS.has(key) ? value === 'true' : value)
+      setConfigValue(
+        [...SETTABLE_KEYS[key]],
+        BOOLEAN_KEYS.has(key) ? value === 'true' : key === 'dayReview.idleHours' ? Number(value) : value,
+      )
       return Promise.resolve()
     },
     writeAccountCategory: (email, category) => {

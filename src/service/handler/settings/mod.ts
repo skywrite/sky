@@ -248,6 +248,7 @@ export interface ProfileInput {
 
 /** Everything the page shows, in one payload. */
 export interface SettingsData {
+  dayReview?: { idleHours: number }
   transcription: TranscriptionSettings
   calendar: { classifyEvents: boolean }
   /** Each Google account's category, by lower-case email; an account not listed files as Professional */
@@ -325,6 +326,7 @@ export type SettingsRoutesOptions = SettingsHost
 
 /** The keys the page may write, and where each lives in the file. */
 export const SETTABLE_KEYS = {
+  'dayReview.idleHours': ['dayReview', 'idleHours'],
   'calendar.classifyEvents': ['calendar', 'classifyEvents'],
   'web.theme': ['web', 'theme'],
   'web.textSize': ['web', 'textSize'],
@@ -360,6 +362,10 @@ export const BOOLEAN_KEYS: ReadonlySet<SettableKey> = new Set<SettableKey>([
 /** The valid values for one settable key, against the live host. null = fine. */
 async function refuse(host: SettingsHost, key: SettableKey, value: string): Promise<string | null> {
   switch (key) {
+    case 'dayReview.idleHours':
+      return value.trim() !== '' && Number.isFinite(Number(value)) && Number(value) >= 0 && Number(value) <= 24
+        ? null
+        : 'Choose an idle period from 0 to 24 hours. Zero turns the automatic review off.'
     case 'ai.models.transcription': {
       if (TRANSCRIPTION_MODELS.some((model) => model.value === value)) return null
       try {
@@ -413,6 +419,7 @@ async function settingsData(host: SettingsHost): Promise<SettingsData> {
   const [editors, memoryNotes, about] = await Promise.all([host.editors(), host.memoryNotes(), host.about()])
   return {
     theme: config.web.theme ?? 'system',
+    dayReview: { idleHours: config.dayReview?.idleHours ?? 5 },
     transcription: {
       value: transcriptionModelValue(config.ai.models.transcription),
       choices: await Promise.all(

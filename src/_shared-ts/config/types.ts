@@ -49,6 +49,8 @@ export interface SkyConfig {
     theme?: 'system' | 'light' | 'dark'
     textSize?: 'default' | 'large'
   }
+  /** Morning review only; starting and ending remain explicit. Zero disables the automatic prompt. */
+  dayReview?: { idleHours: number }
   voice: {
     /** The voice Sky uses in browser calls; unset means the built-in default. */
     voice?: string

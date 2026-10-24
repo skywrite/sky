@@ -1,0 +1,142 @@
+.sky-review {
+  font-size: 18px;
+  line-height: 1.55;
+}
+.sky-review-intro {
+  margin: 0 0 26px;
+  color: var(--sky-dim);
+}
+.sky-review-section {
+  border-top: 1px solid var(--sky-border-soft);
+  padding: 22px 0;
+}
+.sky-review-section h3 {
+  margin: 0 0 15px;
+  font-size: 21px;
+  font-weight: 600;
+}
+.sky-review-section p {
+  margin: 6px 0 14px;
+}
+.sky-review-item + .sky-review-item {
+  margin-top: 20px;
+}
+.sky-review-row,
+.sky-review-carry {
+  display: flex;
+  justify-content: space-between;
+  align-items: start;
+  gap: 18px;
+}
+.sky-review-copy {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.sky-review-copy strong {
+  font-weight: 550;
+}
+.sky-review-copy p,
+.sky-review-detail,
+.sky-review-hint,
+.sky-review-history small {
+  font-size: 15px;
+  color: var(--sky-dim);
+}
+.sky-review-copy p {
+  margin: 5px 0;
+  white-space: pre-wrap;
+}
+.sky-review-actions {
+  display: flex;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.sky-review-fields {
+  display: grid;
+  gap: 14px;
+  padding: 18px 0;
+}
+.sky-review-fields button {
+  justify-self: start;
+}
+.sky-review-link {
+  background: none;
+  border: none;
+  color: var(--sky-dim);
+  padding: 6px 0;
+  cursor: pointer;
+  font: inherit;
+  font-size: 15px;
+}
+.sky-review-link:hover {
+  text-decoration: underline;
+}
+.sky-review-job {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+  margin: 12px 0;
+}
+.sky-review-job > div {
+  flex: 1;
+  min-width: 0;
+}
+.sky-review-job strong {
+  font-weight: 500;
+}
+.sky-review-detail {
+  display: block;
+  overflow-wrap: anywhere;
+}
+.sky-review-history {
+  padding: 18px 0;
+  border-top: 1px solid var(--sky-border-soft);
+}
+.sky-review-history summary {
+  cursor: pointer;
+}
+.sky-review-history .sky-review-row {
+  margin-top: 16px;
+}
+.sky-review-history small {
+  display: block;
+}
+.sky-review-error {
+  padding: 15px;
+  border: 1px solid var(--sky-border-soft);
+  border-radius: 12px;
+  margin: 14px 0;
+}
+.sky-review-error button {
+  display: block;
+  margin-top: 10px;
+}
+.sky-review-footer {
+  position: sticky;
+  bottom: -1px;
+  background: var(--mantine-color-body);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 20px 0 4px;
+  border-top: 1px solid var(--sky-border-soft);
+}
+.sky-review-footer > span {
+  color: var(--sky-dim);
+  font-size: 15px;
+}
+@media (max-width: 600px) {
+  .sky-review-row,
+  .sky-review-carry {
+    flex-direction: column;
+    gap: 10px;
+  }
+  .sky-review-actions {
+    align-self: flex-start;
+  }
+  .sky-review-job {
+    font-size: 16px;
+  }
+}

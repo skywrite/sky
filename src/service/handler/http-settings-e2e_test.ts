@@ -83,6 +83,7 @@ test(
         if (refuseTranscriptionSave) return c.json({ message: 'This setting could not be saved.' }, 503)
         settings.transcription.value = input.value
       }
+      if (input.key === 'dayReview.idleHours') settings.dayReview = { idleHours: Number(input.value) }
       if (input.key === 'web.theme') settings.theme = input.value
       if (input.key === 'web.textSize') settings.textSize = input.value
       if (input.key === 'experimental.workstreams') {
@@ -326,6 +327,18 @@ test(
           1,
           'https://example.com/about',
         ],
+      })
+      const idleHours = page.getByLabel('Idle hours', { exact: true })
+      await idleHours.fill('2.5')
+      await page.getByRole('button', { name: 'Save day review settings', exact: true }).click()
+      await page.getByText('Saved', { exact: true }).waitFor()
+      await page.reload()
+      await idleHours.waitFor()
+      assert({
+        given: 'a changed idle preference',
+        should: 'save and reload it under Me',
+        actual: [await idleHours.inputValue(), settings.dayReview],
+        expected: ['2.5', { idleHours: 2.5 }],
       })
       await capture('about-me-light')
       await page.getByLabel('Profile link 1', { exact: true }).scrollIntoViewIfNeeded()

@@ -1,6 +1,6 @@
 ---
 created: 2026-09-03
-updated: 2026-10-21
+updated: 2026-10-23
 ---
 
 # The day's items, the day's rail, and the day's files
@@ -225,6 +225,28 @@ Reminder completion: [2026-09-06 — completing a reminder deletes it](2026-09-0
 
 Rows grow to fit wrapped text and collapse through a grid track, with no fixed
 height cap. See [2026-09-05 — larger type without clipped tasks](2026-09-05-larger-type-without-clipped-tasks.md).
+
+## Reviewing a previous day
+
+The morning review is independent of Start and End; neither command runs when a review opens or completes.
+An OS input monitor offers the last notebook day's review after returning from five idle hours across a calendar date.
+Settings → Me → About me changes the idle hours live; zero disables automatic prompts.
+Browser polls are not activity, and service downtime alone is not evidence of sleep.
+A date is offered once; the day page's Review yesterday / Review this day button always reopens it.
+
+`review/` composes the existing day mover, streak completion, tracking store, meeting/import workflows, recap commands,
+and `summary:day`.
+Review progress, drafts, job outcomes and the claimed popup live under the local user-data `state/day-review` directory,
+keyed by the reviewed date.
+Moving a selection uses the day planner's revision checks and locks, can create today's unstarted plan, and records receipts
+in the review state; ended-day restrictions still apply.
+Skip changes only review state, so a skipped historical streak remains missed under the existing streak rules.
+
+Recaps run when the review opens, independently reporting failures and supporting Retry.
+The summary runs only after all recaps succeed and every current review item is resolved or skipped.
+Closing pauses completion, while already-running recaps can finish; reopening resumes without repeating saved work.
+A saved summary is reused, never automatically overwritten, and an interrupted job offers Retry after restart.
+Meeting records and unfinished imports link to their existing editors; importing notes preserves the reviewed meeting date.
 
 ## Starting and ending a day from the page
 

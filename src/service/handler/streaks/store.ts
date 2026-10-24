@@ -241,6 +241,33 @@ export class StreaksStore {
     return { streaks, warnings: [...new Set(warnings)] }
   }
 
+  /** A day review needs that day's facts, not a scan of every day to calculate running counts. */
+  async review(date: PlainDate) {
+    const { streaks, warnings } = await this.load()
+    const file = path.join(this.paths.timeDir, dayFile(date))
+    await this.checked(file, true)
+    const day = DayDocument.fromMarkdown(await readFile(file, 'utf8'))
+    if (day.yamlError) throw new StreaksError('This day record could not be read.', 409)
+    const items = streaksItemsFromDay(day)
+    return {
+      warnings,
+      streaks: streaks
+        .filter(({ document }) => document.isTrackedOn(date))
+        .map(({ document, content }) => {
+          const matches = items.filter((item) => document.matchesDayItem(item))
+          if (matches.length > 1)
+            warnings.push(`Duplicate items for “${document.title}” on ${date.ymd}. Review the day record.`)
+          return {
+            name: document.name,
+            title: document.title,
+            revision: hash(content),
+            rule: narrative(document).rule,
+            done: matches.length > 0 && DayDocument.isItemDone(matches[0]),
+          }
+        }),
+    }
+  }
+
   async report(): Promise<StreakReport> {
     const today = await this.today()
     const { streaks, warnings } = await this.load()

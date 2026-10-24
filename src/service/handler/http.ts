@@ -27,6 +27,8 @@ import { type ChatRoutesOptions, createChatRoutes } from './chat/mod.ts'
 import { type ClockRoutesOptions, createClockRoutes } from './clock/mod.ts'
 import { createDayRoutes } from './day/mod.ts'
 import { loadOwnerNames } from './day/record.ts'
+import { createReviewRoutes } from './day/review/routes.ts'
+import type { ReviewRuntime } from './day/review/types.ts'
 import { createDayScheduleHost } from './day/schedule.ts'
 import { createExplorerRoutes, explorerHref } from './explorer/mod.ts'
 import { type ExtensionRoutesOptions, createExtensionRoutes } from './extensions/routes.ts'
@@ -108,6 +110,7 @@ export interface HttpHandlerOptions {
   people?: PeopleOptions
   places?: PlacesOptions
   workstreams?: WorkstreamsRoutesOptions
+  dayReview?: ReviewRuntime
   tracking?: TrackingRoutesOptions
   streaks?: StreaksRoutesOptions
   /** The week page's command host; without it the page reads, but starts, ends and creates nothing */
@@ -152,6 +155,7 @@ export function createHttpApp(options: HttpHandlerOptions): Hono {
     scores: () => scoresFrom(store.getPeopleWithScores(), store.getOrganizationsWithScores(), []),
     owner: async () => (await loadOwnerNames(chat?.aboutMePath))[0],
   })
+  const importRoutes = imports ? createImportRoutes({ ...imports, links: links.host }) : null
   const profiles =
     options.people && markdownStore
       ? createPeopleStore(markdownStore, markdownBaseDir, markdownDirs, {
@@ -188,29 +192,48 @@ export function createHttpApp(options: HttpHandlerOptions): Hono {
   const chatRoutes = chat ? createChatRoutes(chat) : undefined
   if (chat && chatRoutes) {
     app.route('/chat', chatRoutes)
-    app.route(
-      '/day',
-      createDayRoutes({
-        markdownBaseDir,
+    const dayOptions = {
+      markdownBaseDir,
+      timeDir: chat.timeDir,
+      aboutMePath: chat.aboutMePath,
+      ownerAddresses: options.ownerAddresses,
+      today: options.now ? () => options.now!().plainDateTime.plainDate : undefined,
+      planningToday: options.now ? () => planningDate(options.now!()) : undefined,
+      now: options.now,
+      // Start and End on the day pages run the same in-process day:start and day:end the week page's buttons do
+      commands: week,
+      files: { userDataDir, timeDir: chat.timeDir, markdownBaseDir, trashDir },
+      schedule: createDayScheduleHost({
         timeDir: chat.timeDir,
-        aboutMePath: chat.aboutMePath,
-        ownerAddresses: options.ownerAddresses,
-        today: options.now ? () => options.now!().plainDateTime.plainDate : undefined,
-        planningToday: options.now ? () => planningDate(options.now!()) : undefined,
-        now: options.now,
-        // Start and End on the day pages run the same in-process day:start and day:end the week page's buttons do
-        commands: week,
-        files: { userDataDir, timeDir: chat.timeDir, markdownBaseDir, trashDir },
-        schedule: createDayScheduleHost({
-          timeDir: chat.timeDir,
-          markdownBaseDir,
-          people: markdownStore?.people,
-          scores: store,
-        }),
-        workstreams: options.workstreams?.store,
-        mostImportant: options.mostImportant,
+        markdownBaseDir,
+        people: markdownStore?.people,
+        scores: store,
       }),
-    )
+      workstreams: options.workstreams?.store,
+      mostImportant: options.mostImportant,
+    }
+    const dayRoutes = createDayRoutes(dayOptions)
+    app.route('/day', dayRoutes)
+    if (options.dayReview)
+      app.route(
+        '/day-review/_api',
+        createReviewRoutes({
+          day: dayOptions,
+          dayRoutes,
+          stateDir: path.join(userDataDir, 'state/day-review'),
+          runtime: options.dayReview,
+          tracking: options.tracking?.store,
+          streaks: options.streaks?.store,
+          schedule: dayOptions.schedule,
+          imports: importRoutes
+            ? async () => {
+                const response = await importRoutes.request('/')
+                const body = (await response.json()) as { imports: import('./import/jobs.ts').ImportJob[] }
+                return body.imports
+              }
+            : undefined,
+        }),
+      )
     // The week the days live in: its days, its plan, what waits for the next one. The page itself is /week, below.
     app.route(
       '/week/_api',
@@ -277,9 +300,7 @@ export function createHttpApp(options: HttpHandlerOptions): Hono {
   app.get('/import/:id{[0-9a-f-]+}', (c, next) =>
     c.req.header('accept')?.includes('text/html') ? c.html(renderAppHtml('sky')) : next(),
   )
-  if (imports) {
-    app.route('/import', createImportRoutes({ ...imports, links: links.host }))
-  }
+  if (importRoutes) app.route('/import', importRoutes)
 
   // Context resolution endpoint (GraphQL query + relationship traversal)
   app.post('/context', async (c) => {

@@ -99,6 +99,7 @@ function defaults(): SkyConfig {
     calendar: { classifyEvents: false },
     web: {},
     voice: {},
+    dayReview: { idleHours: 5 },
     experimental: { workstreams: false },
     ai: {
       models: {
@@ -166,6 +167,14 @@ export function loadSkyConfig(configPath = SKY_CONFIG_PATH): SkyConfig {
     if (parsed.web?.theme && ['system', 'light', 'dark'].includes(parsed.web.theme)) config.web.theme = parsed.web.theme
     if (parsed.web?.textSize && ['default', 'large'].includes(parsed.web.textSize)) {
       config.web.textSize = parsed.web.textSize
+    }
+    if (
+      typeof parsed.dayReview?.idleHours === 'number' &&
+      Number.isFinite(parsed.dayReview.idleHours) &&
+      parsed.dayReview.idleHours >= 0 &&
+      parsed.dayReview.idleHours <= 24
+    ) {
+      config.dayReview = { idleHours: parsed.dayReview.idleHours }
     }
     if (parsed.voice?.voice) config.voice.voice = parsed.voice.voice
     if (typeof parsed.experimental?.contextPreflight === 'boolean') {

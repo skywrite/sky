@@ -13,6 +13,7 @@ import { DayView, useDay, useThreads } from './day/day.tsx'
 import type { ChatCloseNotice } from './day/dayChatClose.tsx'
 import { DayFilesMain, filesRouteOf, shortLabel } from './day/dayFiles.tsx'
 import { useItemHelpChat } from './day/dayItemHelp.tsx'
+import { DayReviewDialog, useReviewPrompt } from './day/review/dayReview.tsx'
 import { DocView, explorerFileOf, fileHref, Tree } from './explorer/explorer.tsx'
 import { ExtensionNavLinks, ExtensionPageMain, extensionRouteOf } from './extensions/extensions.tsx'
 import { useDocumentNotices } from './import/documentImport.tsx'
@@ -83,6 +84,19 @@ function useRoute(): [{ path: string; search: string }, (to: string, replace?: b
 function Canvas() {
   const [{ path, search }, go] = useRoute()
   const [menu, setMenu] = useState(false)
+  const reviewParam = new URLSearchParams(search).get('review')
+  const reviewDay = reviewParam && /^\d{4}-\d{2}-\d{2}$/.test(reviewParam) ? reviewParam : null
+  const openReview = (day: string) => {
+    const query = new URLSearchParams(search)
+    query.set('review', day)
+    go(`${path}?${query}`)
+  }
+  const closeReview = () => {
+    const query = new URLSearchParams(search)
+    query.delete('review')
+    go(`${path}${query.size ? `?${query}` : ''}`, true)
+  }
+  useReviewPrompt(openReview, Boolean(reviewDay))
   const workstreamsEnabled = useSettingsBoot()
   usePromptDraftGuard()
   useAboutMeDraftGuard()
@@ -660,6 +674,7 @@ function Canvas() {
           </Fragment>
         ) : (
           <DayView
+            onReview={openReview}
             trackingDate={dayYmd}
             search={search}
             navigate={navigate}
@@ -689,6 +704,16 @@ function Canvas() {
           />
         )}
       </SearchWorkspace>
+      {reviewDay && (
+        <DayReviewDialog
+          key={reviewDay}
+          day={reviewDay}
+          onClose={closeReview}
+          onChanged={dayChanged}
+          navigate={navigate}
+          onImportMeeting={queue.take}
+        />
+      )}
       <ImportDialog
         pending={queue.pending}
         again={queue.again}

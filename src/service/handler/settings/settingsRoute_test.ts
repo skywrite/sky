@@ -829,3 +829,23 @@ test('settings route - Workstreams defaults off and changes independently of not
     ],
   })
 })
+
+test('day review idle preference validates hours and takes effect in the next settings read', async () => {
+  const config = structuredClone(CONFIG)
+  const { host } = hostWith(config)
+  host.write = async (key, value) => {
+    if (key === 'dayReview.idleHours') config.dayReview = { idleHours: Number(value) }
+  }
+  const app = await appWith(host)
+  const read = async () => ((await (await app.request('/settings/_api/settings')).json()) as SettingsData).dayReview
+  const before = await read()
+  const statuses: number[] = []
+  for (const value of ['2.5', '-1', '25', 'NaN', '', '0'])
+    statuses.push((await post(app, '/settings/_api/set', { key: 'dayReview.idleHours', value })).status)
+  assert({
+    given: 'an idle duration, malformed values, then Off',
+    should: 'validate and read the saved setting live',
+    actual: [before, statuses, await read()],
+    expected: [{ idleHours: 5 }, [200, 400, 400, 400, 400, 200], { idleHours: 0 }],
+  })
+})

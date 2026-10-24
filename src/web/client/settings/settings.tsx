@@ -22,6 +22,7 @@ import { BeeperMain } from './settingsBeeper.tsx'
 import { Block, mono, refusalOf, Row, UNREACHABLE } from './settingsBlocks.tsx'
 import { BrowserAutomationMain } from './settingsBrowserAutomation.tsx'
 import { ConnectionsPane, TypeSafeMain } from './settingsConnections.tsx'
+import { DayReviewSettings } from './settingsDayReview.tsx'
 import { GoogleMain } from './settingsGoogle.tsx'
 import { AIPane } from './settingsModels.tsx'
 import { PromptsMain } from './settingsPrompts.tsx'
@@ -70,6 +71,7 @@ export interface ConfigView {
 }
 
 export interface SettingsData {
+  dayReview?: { idleHours: number }
   transcription: TranscriptionSettings
   calendar: { classifyEvents: boolean }
   /** Each Google account's category, by lower-case email; an account not listed files as Professional */
@@ -688,7 +690,10 @@ export function SettingsMain({
           </div>
           {note && <div className="sky-condensed">— {note} —</div>}
           {section === 'about-me' ? (
-            <AboutMePane memoryNotes={data?.memoryNotes ?? 0} />
+            <>
+              {data && <DayReviewSettings hours={data.dayReview?.idleHours ?? 5} />}
+              <AboutMePane memoryNotes={data?.memoryNotes ?? 0} />
+            </>
           ) : (
             data &&
             (section === 'experimental' ? (

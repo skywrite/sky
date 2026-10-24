@@ -1157,7 +1157,9 @@ export function DayView({
   onUndoKept = () => {},
   onDismissKept = () => {},
   onStarted = () => {},
+  onReview,
 }: {
+  onReview?: (day: string) => void
   trackingDate?: string | null
   search?: string
   navigate?: (path: string) => void
@@ -1371,6 +1373,9 @@ export function DayView({
     </>
   )
 
+  const calendarToday = view?.planningToday ?? PlainDate.today().ymd
+  const yesterday = new PlainDate(calendarToday).addDays(-1).ymd
+  const reviewTarget = view && view.day.ymd < calendarToday ? view.day.ymd : yesterday
   const header = (
     <header className="sky-head">
       <span className="sky-title">
@@ -1394,6 +1399,13 @@ export function DayView({
         <NightStartLine today={todayWeekday} due={due} busy={starting.busy} error={starting.error} onStart={startDue} />
       )}
       <nav className="sky-tabs">
+        {view && onReview && (
+          <Button onClick={() => onReview(reviewTarget)}>
+            {(!trackingDate && reviewTarget === yesterday) || view.day.ymd >= calendarToday
+              ? 'Review yesterday'
+              : 'Review this day'}
+          </Button>
+        )}
         <Button component="a" href={ymd ? `${journalHref(ymd)}?start` : undefined} disabled={!ymd}>
           Journal
         </Button>
