@@ -134,16 +134,19 @@ test('Places create readable names atomically, distinguish namesakes and reject 
     const input = { ...blankPlace(), name: 'Garden House', googlePlaceId: 'sample_google_place' }
     const concurrent = await Promise.allSettled([f.places.save(input), f.places.save(input)])
     const saved = f.places.index()[0]
+    f.options.now = () => new ZonedDateTime('2026-03-15 12:34', 'America/Chicago')
     const namesake = await f.places.save({ ...blankPlace(), name: 'Garden House', allowNamesake: true })
+    const caseNamesake = await f.places.save({ ...blankPlace(), name: 'GARDEN HOUSE', allowNamesake: true })
     assert({
       given: 'simultaneous duplicate imports and a confirmed namesake',
       should: 'publish once per identity and suffix colliding readable filenames',
-      actual: [concurrent.map((r) => r.status).sort(), saved.id, namesake.id, f.store.places.size],
+      actual: [concurrent.map((r) => r.status).sort(), saved.id, namesake.id, caseNamesake.id, f.store.places.size],
       expected: [
         ['fulfilled', 'rejected'],
-        'places/locations/2026/2026-02-12_093400_Garden-House.md',
-        'places/locations/2026/2026-02-12_093400_Garden-House-2.md',
-        2,
+        'places/locations/visit/Garden-House.md',
+        'places/locations/visit/Garden-House-2.md',
+        'places/locations/visit/GARDEN-HOUSE-3.md',
+        3,
       ],
     })
     const before = await f.places.detail(saved.id)
@@ -173,6 +176,63 @@ test('Places create readable names atomically, distinguish namesakes and reject 
         f.places.resolveRef(saved.ref),
       ],
       expected: [true, true, false, saved.id],
+    })
+  } finally {
+    await f.close()
+  }
+})
+
+test('New places share geographic name paths with the CLI and preserve old prefixed references as aliases', async () => {
+  const f = await fixture()
+  try {
+    const country = await f.places.save({ ...blankPlace(), name: 'France', kind: 'country' })
+    const city = await f.places.save({ ...blankPlace(), name: 'Harbor City', kind: 'city', parent: country.ref })
+    const cafe = await f.places.save({
+      ...blankPlace(),
+      name: 'Atlas Cafe',
+      category: 'drink',
+      country: 'FR',
+      city: 'Harbor City',
+      parent: city.ref,
+    })
+    const office = await f.places.save({
+      ...blankPlace(),
+      name: 'Atlas Studio',
+      category: 'office',
+      parent: city.ref,
+    })
+    const oldRef = 'places/2026-02-12_093400_Garden-House'
+    const oldFileRef = 'places/2026/2026-02-12_093400_Garden-House'
+    const id = 'places/locations/FR/Harbor-City/stay/Garden-House.md'
+    await f.seed(
+      id,
+      `---\nname: Garden House\nref: places/FR/Harbor-City/stay/Garden-House\nrefAliases: [${oldRef}, ${oldFileRef}]\n---\nOriginal notes.\n`,
+    )
+    await f.seed('people/Jane.md', `---\nname: Jane Doe\nlocation: ${oldRef}\n---\n`)
+    const migrated = await f.places.detail(f.places.resolveRef(oldRef))
+    assert({
+      given: 'new geographic places, venues with and without geographic metadata, and a repaired old reference',
+      should: 'use readable geographic paths and keep existing links and backlinks resolvable',
+      actual: [
+        country.id,
+        city.id,
+        cafe.id,
+        cafe.ref,
+        office.id,
+        f.places.resolveRef(oldFileRef),
+        migrated.activity.map((item) => item.label),
+        migrated.html.includes('Original notes.'),
+      ],
+      expected: [
+        'places/locations/FR.md',
+        'places/locations/FR/Harbor-City.md',
+        'places/locations/FR/Harbor-City/drink/Atlas-Cafe.md',
+        'places/FR/Harbor-City/drink/Atlas-Cafe',
+        'places/locations/FR/Harbor-City/office/Atlas-Studio.md',
+        id,
+        ['Jane Doe'],
+        true,
+      ],
     })
   } finally {
     await f.close()

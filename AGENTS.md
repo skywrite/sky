@@ -235,6 +235,8 @@ As of Bun 1.4 the standard `Temporal` API ships enabled in the runtime, so it is
 - Allocate the ID once, using the creation time and the owning subsystem's consistent timezone convention. Preserve it across edits and title changes so references remain stable. Do not rename existing records solely to adopt this convention.
 - Check for collisions atomically when creating the record, including on case-insensitive filesystems. Add a numeric suffix such as `-2` when needed; never overwrite another record. Second precision alone does not guarantee uniqueness.
 - Use a different identifier when its purpose requires it: preserve provider-assigned IDs and existing external references; retain natural canonical keys such as a daily journal's date; use deterministic keys for deduplication or idempotent retries; use opaque identifiers when a public ID must conceal private content, and cryptographically random values for secrets or access tokens. These can coexist with a readable content name. Record a concrete reason near the code when departing from the default for a new content record.
+- Places use geographic/category/name paths and plain name filenames, with numeric suffixes for collisions.
+  Do not prepend capture timestamps or add year directories to place identities.
 
 ### File System Operations
 

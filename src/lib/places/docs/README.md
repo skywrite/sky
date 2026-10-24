@@ -1,6 +1,6 @@
 ---
 created: 2026-09-08
-updated: 2026-09-24
+updated: 2026-10-24
 ---
 
 # Places
@@ -161,9 +161,11 @@ Descendant-place GraphQL query filters remain future work.
 `service/handler/places`; it reads the existing MarkdownStore and publishes saved
 files back into that store immediately. Detail URLs encode the logical place
 reference. Editing a legacy record pins its current reference explicitly, so a
-name change or later file move does not break links. New records use dated,
-case-preserving filenames under `places/locations/YYYY/`. Recognized countries
-keep their natural `places/XX` identity, matching repair and automatic linking.
+name change or later file move does not break links.
+New venues use the CLI's geography/category/name paths under `places/locations/`, with case-preserving name filenames.
+Without geographic metadata, the saved parent supplies the directory; places without a parent use their category or name.
+These are geographic identities, so filenames and references carry no capture timestamp or year directory.
+Recognized countries keep their natural `places/XX` identity, matching repair and automatic linking.
 
 Parent choices are saved references and must resolve uniquely to geography.
 Self-parenting and descendant cycles are refused. Existing hierarchical venue

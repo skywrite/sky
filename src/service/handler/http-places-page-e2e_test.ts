@@ -602,6 +602,8 @@ test(
           'create only on save, preserve identity and selection, save coordinates and render on phones without errors',
         actual: [
           beforeSave,
+          cityPath,
+          placePath,
           sameRoute,
           kept === selection,
           store.places.size,
@@ -610,7 +612,18 @@ test(
           overflow,
           errors,
         ],
-        expected: [2, true, true, 4, 48.85837, 2.294481, false, []],
+        expected: [
+          2,
+          '/places/FR/Paris',
+          '/places/FR/Paris/drink/Garden-House',
+          true,
+          true,
+          4,
+          48.85837,
+          2.294481,
+          false,
+          [],
+        ],
       })
     } finally {
       await browser?.close()

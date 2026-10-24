@@ -6,7 +6,7 @@ import { withProcessLock } from '#lib/jobs/files.ts'
 import { createDayFile } from '#lib/nbfs/createDayFile.ts'
 import { atomicWrite, hash } from '#lib/outbox/files.ts'
 import { countryPlaces } from '#lib/places/geography.ts'
-import { slugify } from '#lib/string/mod.ts'
+import { placeCreationPath } from '#lib/places/paths.ts'
 import { workstreamIdentityTime } from '#lib/workstreams/identities.ts'
 import type MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
 import splitYamlMarkdown from '#shared/models/Markdown/util/splitYamlMarkdown.ts'
@@ -232,9 +232,9 @@ export function createPlacesStore(store: MarkdownStore, baseDir: string, dirs: s
           : all.filter((place) => !place.archived && isWithinPlace(place, summary.ref, all)),
     }
   }
-  function creationTime() {
+  function today() {
     const now = (options.now ?? fetchNowSync)()
-    return options.now ? `${now.plainDateTime.toString()}:00` : workstreamIdentityTime(now.timezone)
+    return options.now ? now.date : workstreamIdentityTime(now.timezone).slice(0, 10)
   }
   async function replace(current: Awaited<ReturnType<typeof snapshot>>, body: string) {
     await safeFile(current.file)
@@ -318,24 +318,25 @@ export function createPlacesStore(store: MarkdownStore, baseDir: string, dirs: s
       }
       // Keep the old reference even for legacy files on the first metadata edit.
       if (self) set('ref', self.ref)
-      const time = creationTime(),
-        today = time.slice(0, 10)
-      set('updated', today)
+      const date = today()
+      set('updated', date)
       if (current) {
         await replace({ ...current, yaml }, current.body)
         return detail(input.id!)
       }
-      set('created', today)
-      const dir = path.join(root, time.slice(0, 4))
+      set('created', date)
+      const placePath = country?.ref?.slice('places/'.length) ?? placeCreationPath(new PlaceDocument(yaml.toJSON()))
+      const directory = path.posix.dirname(placePath)
+      const dir = path.join(root, directory)
       await safeFile(dir)
       await mkdir(dir, { recursive: true })
-      const stem = `${today}_${time.slice(11, 19).replaceAll(':', '')}_${slugify(input.name, { preserveCase: true }).slice(0, 100) || 'Place'}`
+      const stem = path.posix.basename(placePath)
       const existing = new Set((await readdir(dir)).map(plain))
       for (let suffix = 1; suffix < 10_000; suffix++) {
         const name = `${stem}${suffix === 1 ? '' : `-${suffix}`}`
         const file = path.join(dir, `${name}.md`)
         // Countries retain the shared natural key used by CLI repair and automatic linking.
-        const ref = country?.ref ?? `places/${name}`
+        const ref = country?.ref ?? `places/${path.posix.join(directory, name)}`
         if (existing.has(plain(`${name}.md`)) || store.places.hasPlacePath(ref)) continue
         yaml.set('ref', ref)
         const content = `---\n${yaml.toString()}---\n\n# ${input.name}\n\n${input.notes?.trim() ?? ''}\n`
@@ -351,9 +352,9 @@ export function createPlacesStore(store: MarkdownStore, baseDir: string, dirs: s
       const current = await snapshot(id)
       if (current.revision !== revision)
         throw new PlaceError('This place changed. Reload it before adding your note.', 409)
-      const today = creationTime().slice(0, 10)
-      current.yaml.set('updated', today)
-      await replace(current, `${current.body.trimEnd()}\n\n## ${today}\n\n${note.trim()}\n`)
+      const date = today()
+      current.yaml.set('updated', date)
+      await replace(current, `${current.body.trimEnd()}\n\n## ${date}\n\n${note.trim()}\n`)
       return detail(id)
     })
   }
@@ -363,7 +364,7 @@ export function createPlacesStore(store: MarkdownStore, baseDir: string, dirs: s
       if (current.revision !== revision)
         throw new PlaceError('This place changed. Reload it before archiving or restoring it.', 409)
       current.yaml.set('archived', archived)
-      current.yaml.set('updated', creationTime().slice(0, 10))
+      current.yaml.set('updated', today())
       await replace(current, current.body)
       return detail(id)
     })
