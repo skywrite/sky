@@ -1,6 +1,6 @@
 ---
 created: 2026-08-30
-updated: 2026-10-22
+updated: 2026-10-24
 ---
 
 # Settings — the web's settings section
@@ -61,7 +61,7 @@ Pages:
   practice, revision questions, and example compaction. Storage and learning
   belong to [writing voice](../../../../lib/writingVoice/docs/README.md).
   The selection saves to `ai.writingVoiceProfile` and applies on the next call.
-- **AI → Models** — `/settings/ai/models`: Thinking, Quick, Balanced, and
+- **AI → Models** — `/settings/ai/models`: Chat, Thinking, Quick, Balanced, and
   Vision select named presets (`ai.roles`). Each preset owns a model and
   default effort; the inline effort control edits that preset, and shared
   roles are identified beside it. Preset editors separate model and effort,

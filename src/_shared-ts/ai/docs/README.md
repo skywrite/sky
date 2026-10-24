@@ -1,15 +1,16 @@
 ---
 created: 2026-09-01
-updated: 2026-10-22
+updated: 2026-10-24
 ---
 
 # Model registry — roles, profiles, providers
 
 `models.ts` is the one place a call site picks a model. Three tiers:
 
-- **role** — `aiModel('reasoning')`. Semantic and stable; the four roles
-  (`reasoning`, `fast`, `balanced`, `vision`) have shipped defaults in `ROLES`;
-  `ai.roles` assigns them to presets in the user's configuration.
+- **role** — `aiModel('reasoning')`. Semantic and stable; the five roles
+  (`chat`, `reasoning`, `fast`, `balanced`, `vision`) have shipped defaults in
+  `ROLES`; `ai.roles` assigns them to presets in the user's configuration.
+  `chat` names only what a new chat opens on; a thread's picker overrides it.
 - **profile** — `default-opus-5.5`. A named provider + model + options tuple; an optional `label` names it
   in pickers and Settings (else the model's name). The shipped set is `defaultProfiles.ts`; a person's own come from
   `ai.profiles` in `~/.sky/config.jsonc` (config wins on a name clash).
@@ -138,6 +139,12 @@ also uses Jev to skip clearly irrelevant conversations before request extraction
 - Adding a profile makes it addressable (`--ai-reasoning default-x`,
   `sky ai:profiles`, the settings pane). Repointing a role through Settings
   (`ai.roles`) changes its default; `ROLES` remains the shipped fallback.
+- `chat` is the preset a new chat opens on, and only that. It ships as
+  `default-gpt-6.1-sol-ultrafast`; the `reasoning` role keeps the one-shot
+  analyses (chat summaries included) on Opus's depth without the Ultrafast
+  tier's 6x price. A thread's picker overrides the chat preset for that thread,
+  and the CLI's `--ai-reasoning` starts from the same role
+  ([2026-10-24](2026-10-24-chat-opens-on-sol-ultrafast.md)).
 - Superseded profiles stay in the catalog unless explicitly retired: a
   person's config or a command flag may still name them. The retired
   built-ins are Haiku 4.5 (2026-10-08), Sonnet 5 (2026-09-28), Opus 5 (2026-09-22), Opus 4.6/4.8,

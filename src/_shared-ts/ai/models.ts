@@ -94,7 +94,7 @@ export interface ResolvedModel {
   providerOptions?: Record<string, Record<string, JSONValue>>
 }
 
-export type Role = 'reasoning' | 'fast' | 'balanced' | 'vision'
+export type Role = 'chat' | 'reasoning' | 'fast' | 'balanced' | 'vision'
 
 /** Identity builder — infers the provider literal so `options` is checked per-provider. */
 export function defineProfile<P extends Provider>(profile: ModelProfile<P>): ModelProfile<P> {
@@ -106,8 +106,16 @@ export { PROFILES }
 
 export type ProfileName = keyof typeof PROFILES
 
-/** Role -> profile pointers. The swap point: repoint a role to move every call site that uses it. */
+/**
+ * Role -> profile pointers. The swap point: repoint a role to move every call site that uses it.
+ *
+ * `chat` is the profile a new chat opens on, and only that. Chat is its own lane because a long,
+ * tool-driven conversation earns Sol's Ultrafast tier, while the one-shot work on `reasoning`
+ * (summaries, extraction, meetings) keeps Opus's depth without that tier's 6x price. Chat summaries
+ * read `reasoning` too; a thread's picker overrides `chat` for that thread alone.
+ */
 export const ROLES = {
+  chat: 'default-gpt-6.1-sol-ultrafast',
   reasoning: 'default-opus-5.5',
   fast: 'default-haiku-5.5',
   balanced: 'default-sonnet-5.5',

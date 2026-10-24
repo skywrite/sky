@@ -72,7 +72,7 @@ export interface SkyConfig {
     }
     profiles?: Record<string, AiProfileConfig>
     /** Each role chooses a named preset from ai.profiles or the built-in catalog. */
-    roles?: Partial<Record<'reasoning' | 'fast' | 'balanced' | 'vision', string>>
+    roles?: Partial<Record<'chat' | 'reasoning' | 'fast' | 'balanced' | 'vision', string>>
     /** Model configuration used for writing voice drafting, learning, and compaction. */
     writingVoiceProfile?: string
   }

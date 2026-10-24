@@ -333,6 +333,7 @@ export const SETTABLE_KEYS = {
   'voice.voice': ['voice', 'voice'],
   'ai.writingVoiceProfile': ['ai', 'writingVoiceProfile'],
   'ai.models.transcription': ['ai', 'models', 'transcription'],
+  'ai.roles.chat': ['ai', 'roles', 'chat'],
   'ai.roles.reasoning': ['ai', 'roles', 'reasoning'],
   'ai.roles.fast': ['ai', 'roles', 'fast'],
   'ai.roles.balanced': ['ai', 'roles', 'balanced'],
@@ -395,6 +396,7 @@ async function refuse(host: SettingsHost, key: SettableKey, value: string): Prom
       return editors.includes(value) ? null : `no such editor on this machine: ${value}`
     }
     case 'ai.writingVoiceProfile':
+    case 'ai.roles.chat':
     case 'ai.roles.reasoning':
     case 'ai.roles.fast':
     case 'ai.roles.balanced':
@@ -760,6 +762,7 @@ export const PROVIDER_LABEL: Record<string, string> = {
 }
 
 export const ROLE_LABEL: Record<string, string> = {
+  chat: 'Chat',
   reasoning: 'Thinking',
   fast: 'Quick',
   balanced: 'Balanced',

@@ -261,7 +261,10 @@ export function AIPane({ data, reload }: { data: SettingsData; reload: () => Pro
           {error}
         </p>
       )}
-      <Block head="Default presets" note="Choose a preset for each kind of work. Adjust its default effort here.">
+      <Block
+        head="Default presets"
+        note="Choose a preset for each kind of work and for new chats. Adjust its default effort here."
+      >
         <div className="sky-ai-role-head" aria-hidden="true">
           <span>Used for</span>
           <span>Preset</span>

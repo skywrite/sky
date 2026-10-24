@@ -69,10 +69,10 @@ const params = {
     short: 'm',
     optional: true,
   }),
-  reasoning: Flag.string('Reasoning model profile for chat turns (e.g. default-opus-5.5, default-local-reasoning)', {
+  reasoning: Flag.string('Model profile for chat turns (e.g. default-gpt-6.1-sol-ultrafast, default-local-reasoning)', {
     long: 'ai-reasoning',
     short: 'r',
-    default: () => roleProfile('reasoning'),
+    default: () => roleProfile('chat'),
   }),
   fast: Flag.string('Preset for short labels on pasted text in the terminal input', {
     long: 'ai-fast',
@@ -259,7 +259,7 @@ export default class AiChatTask extends Command {
       'always saves back; exiting with no new messages touches nothing.',
     ],
     usage: [
-      'sky ai:chat                              # Use your Thinking preset',
+      'sky ai:chat                              # Use your Chat preset',
       'sky ai:chat -m "What should I focus on?" # Start with initial message',
       'sky ai:chat --ai-reasoning default-opus-5.5 --ai-effort high',
       'sky ai:chat --ai-max-context 100000      # Limit notebook context',

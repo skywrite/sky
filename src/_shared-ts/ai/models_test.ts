@@ -119,6 +119,12 @@ function modelId(m: ResolvedModel['model']): string {
 
 test('aiModel resolves a role to its baseline profile model', () => {
   assert({
+    given: 'the chat role',
+    should: 'resolve to the gpt-6.1-sol profile model',
+    actual: modelId(aiModel('chat').model),
+    expected: 'gpt-6.1-sol',
+  })
+  assert({
     given: 'the reasoning role',
     should: 'resolve to the opus-5.5 profile model',
     actual: modelId(aiModel('reasoning').model),
@@ -414,6 +420,12 @@ test('default-gpt-6.1-sol-ultrafast runs Sol on the Ultrafast tier and keeps it 
       getProfile('default-gpt-6.1-sol-ultrafast', customized).label,
     ],
     expected: ['GPT 6.1 Sol (Ultrafast)', 'GPT 6.1 Sol (Ultrafast)'],
+  })
+  assert({
+    given: 'the chat role',
+    should: 'open a chat on the Ultrafast tier',
+    actual: aiModel('chat').providerOptions?.['openai'],
+    expected: { reasoningEffort: 'high', serviceTier: 'ultrafast' },
   })
 })
 

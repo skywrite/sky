@@ -311,11 +311,11 @@ export function modelChoices(): ModelChoice[] {
   return choices.toSorted((a, b) => builtin(a) - builtin(b))
 }
 
-/** The web chat's catalog and defaults: ai:chat's reasoning role and context ceiling. */
+/** The web chat's catalog and defaults: ai:chat's Chat role and context ceiling. */
 export function createChatSettingsHost(): ChatSettingsHost {
   return {
     get defaultModel() {
-      return roleProfile('reasoning')
+      return roleProfile('chat')
     },
     defaultContextTokens: CHAT_READING.contextTokens,
     choices: modelChoices,
@@ -381,7 +381,7 @@ export function createChatHost(config: typeof ConfigModule, env: Record<string, 
     const today = startTime.plainDate
     // Drafts nobody has worked on have no record; the writer's tools see them as the page does.
     const unsavedDrafts = unsavedDraftsOf(id, writingDrafts, runs, startTime.toString())
-    const profileName = prefs.profile ?? roleProfile('reasoning')
+    const profileName = prefs.profile ?? roleProfile('chat')
     const profile = prefs.modelConfig ?? getProfile(profileName)
     const clock = {
       notebookDate: context.notebookNow.date,
