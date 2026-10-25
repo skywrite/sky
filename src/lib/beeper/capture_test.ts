@@ -7,7 +7,7 @@ import MessageDocument from '#shared/models/Message/document/mod.ts'
 import { dayAttachmentsDir, dayDir, dayFile, writeDay } from '#shared/nbfs/mod.ts'
 import { assert, test } from '#test'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
-import { type BeeperSource, loadBeeperSyncState, markKnown, syncBeeper } from './capture.ts'
+import { type BeeperSource, chatLabel, loadBeeperSyncState, markKnown, syncBeeper } from './capture.ts'
 import type { BeeperAccount, BeeperChat, BeeperMessage, ChatSearch } from './client.ts'
 
 type World = {
@@ -90,6 +90,215 @@ function message(
     ...extra,
   }
 }
+
+test('beeper capture - generated group titles resolve handles and preserve custom names and unknown people', () => {
+  const contacts: Record<string, string> = {
+    '+1 (555) 010-1001': 'Maya Okafor',
+    'jane@example.com': 'Jane Doe',
+  }
+  const names = {
+    resolve: (handle: string) => {
+      const name = contacts[handle]
+      return name ? { name, known: true } : null
+    },
+  }
+  const label = (title: string) =>
+    chatLabel({ id: 'g1', accountID: 'imessage', network: 'iMessage', type: 'group', title }, undefined, names)
+  assert({
+    given: 'formatted numbers, email handles, unknown recipients and deliberately named groups',
+    should: 'resolve complete handle lists even without participant metadata, leaving custom titles intact',
+    actual: [
+      label('+1 (555) 010-1001, jane@example.com & +1 555-010-9999'),
+      label('jane@example.com & nobody@example.com'),
+      label('+1 (555) 010-1001, jane@example.com & 7 others'),
+      label('+1 (555) 010-1001 & 1 other'),
+      label('Atlas R&D, 2026'),
+      label('Atlas @ Home'),
+      label(''),
+    ],
+    expected: [
+      'Maya Okafor, Jane Doe, +1 555-010-9999',
+      'Jane Doe, nobody@example.com',
+      'Maya Okafor, Jane Doe & 7 others',
+      'Maya Okafor & 1 other',
+      'Atlas R&D, 2026',
+      'Atlas @ Home',
+      'Group',
+    ],
+  })
+})
+
+test('beeper capture - resolved group names reach recipients, filenames, day entries and existing captures', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'sky-beeper-group-names-'))
+  const timeDir = path.join(root, 'time')
+  const stateFile = path.join(root, 'sync.json')
+  const day = PlainDate.fromString('2026-03-11')
+  const title = '+1 (555) 010-1001 & jane@example.com'
+  const resolved = 'Maya Okafor, Jane Doe'
+  const world: World = {
+    asset: '',
+    accounts: [{ accountID: 'imessage', network: 'iMessage' }],
+    chats: [
+      {
+        id: 'g1',
+        accountID: 'imessage',
+        network: 'iMessage',
+        type: 'group',
+        title,
+        lastActivity: '2026-03-11T09:00:00Z',
+      },
+    ],
+    messages: { g1: [message('g1', '0001', '2026-03-11T09:00:00Z', 'Picnic at noon', { accountID: 'imessage' })] },
+  }
+  try {
+    await writeFile(
+      stateFile,
+      JSON.stringify({
+        version: 1,
+        chats: {},
+        accounts: { imessage: { network: 'iMessage', save: true, groups: true, holdUnknown: true, chosen: true } },
+      }),
+    )
+    const options = {
+      timeDir,
+      attachmentsDir: path.join(root, 'attachments'),
+      stateFile,
+      client: beeperWith(world),
+      timezone: 'UTC',
+      dayTimezone: async () => 'UTC',
+      names: {
+        resolve: (handle: string) => ({ name: handle.includes('@') ? 'Jane Doe' : 'Maya Okafor', known: true }),
+      },
+    }
+    const first = await syncBeeper({ ...options, now: '2026-03-11T09:05:00Z' })
+    const state = await loadBeeperSyncState(stateFile)
+    const relative = state.chats.g1.files[day.toString()]
+    const file = path.join(root, relative)
+    const doc = MessageDocument.fromMarkdown(await readTextFile(file))
+    const dayText = await readTextFile(path.join(timeDir, dayFile(day)))
+    assert({
+      given: 'an unnamed iMessage group whose recipients are known',
+      should: 'use their names consistently in the saved message and day entry',
+      actual: [
+        first.messages,
+        doc.to,
+        path.basename(relative),
+        dayText.includes(`${resolved} iMessage -> [Picnic at noon]`),
+      ],
+      expected: [1, resolved, '09-00_imessage_Maya-Okafor-Jane-Doe_Picnic-at-noon.md', true],
+    })
+
+    // A capture made before the name lookup existed still has its original recipient list.
+    await writeFile(file, new MessageDocument({ ...doc.yaml, to: title }, doc.markdown).toMarkdown())
+    world.messages.g1.push(message('g1', '0002', '2026-03-11T09:10:00Z', 'Bringing lunch', { accountID: 'imessage' }))
+    world.chats[0].lastActivity = '2026-03-11T09:10:00Z'
+    const second = await syncBeeper({ ...options, now: '2026-03-11T09:15:00Z' })
+    const updated = MessageDocument.fromMarkdown(await readTextFile(file))
+    const afterSecond = await loadBeeperSyncState(stateFile)
+    assert({
+      given: 'a new reply appended to a capture whose recipients are still raw handles',
+      should: 'resolve the existing recipients and append the reply without renaming the file or losing prior messages',
+      actual: [
+        second.messages,
+        updated.to,
+        updated.markdown.includes('Picnic at noon'),
+        updated.markdown.includes('Bringing lunch'),
+        afterSecond.chats.g1.files[day.toString()],
+      ],
+      expected: [1, resolved, true, true, relative],
+    })
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('beeper capture - Screen Time notifications stay out while people in the same chat still land', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'sky-beeper-screen-time-'))
+  const timeDir = path.join(root, 'time')
+  const attachmentsDir = path.join(root, 'attachments')
+  const stateFile = path.join(root, 'sync.json')
+  const day = PlainDate.fromString('2026-03-11')
+  const notification = '{{sender}} sent a message from ScreenTimeRequest'
+  const world: World = {
+    asset: '',
+    accounts: [{ accountID: 'imessage', network: 'iMessage', user: { id: 'me' } }],
+    chats: [
+      {
+        id: 'i1',
+        accountID: 'imessage',
+        network: 'iMessage',
+        title: 'Doe family',
+        type: 'group',
+        lastActivity: '2026-03-11T09:00:00Z',
+      },
+    ],
+    messages: {
+      i1: [
+        message('i1', '0001', '2026-03-11T09:00:00Z', notification, {
+          accountID: 'imessage',
+          attachments: [{ type: 'img', srcURL: 'mxc://example.com/request', fileName: 'request.png' }],
+        }),
+      ],
+    },
+  }
+  try {
+    await writeFile(
+      stateFile,
+      JSON.stringify({
+        version: 1,
+        chats: {},
+        accounts: { imessage: { network: 'iMessage', save: true, groups: true, holdUnknown: true, chosen: true } },
+      }),
+    )
+    const client = beeperWith(world)
+    const options = { timeDir, attachmentsDir, stateFile, client, timezone: 'UTC', dayTimezone: async () => 'UTC' }
+    const first = await syncBeeper({ ...options, now: '2026-03-11T09:05:00Z' })
+    const afterFirst = await loadBeeperSyncState(stateFile)
+    assert({
+      given: 'a group chat containing only an automated Screen Time request with an attachment',
+      should: 'advance past it without creating notebook content or downloading its attachment',
+      actual: [
+        first.messages,
+        first.files,
+        await readdir(timeDir).catch(() => []),
+        client.calls.some((call) => call.startsWith('download ')),
+        afterFirst.chats.i1?.newest,
+      ],
+      expected: [0, [], [], false, '2026-03-11T09:00:00Z'],
+    })
+
+    const humanText = 'Screen time is paused until dinner. The ScreenTimeRequest setting is enabled.'
+    world.messages.i1.push(
+      message('i1', '0002', '2026-03-11T09:10:00Z', humanText, { accountID: 'imessage' }),
+      message('i1', '0003', '2026-03-11T09:15:00Z', `<p>${notification}</p>`, { accountID: 'imessage' }),
+    )
+    world.chats[0].lastActivity = '2026-03-11T09:15:00Z'
+    const second = await syncBeeper({ ...options, now: '2026-03-11T09:30:00Z' })
+    const afterSecond = await loadBeeperSyncState(stateFile)
+    const saved = path.join(root, afterSecond.chats.i1.files[day.toString()])
+    const text = await readTextFile(saved)
+    const dayText = await readTextFile(path.join(timeDir, dayFile(day)))
+    const third = await syncBeeper({ ...options, now: '2026-03-11T09:31:00Z' })
+    assert({
+      given: 'a person discussing Screen Time between notifications, followed by a repeat sync',
+      should: 'save their message and day entry once, excluding both plain and HTML notifications',
+      actual: [
+        second.messages,
+        second.files.length,
+        text.includes(humanText),
+        text.includes(notification),
+        dayText.includes('Screen time is paused until dinner.'),
+        afterSecond.chats.i1.newest,
+        third.messages,
+        (await readTextFile(saved)) === text,
+        client.calls.some((call) => call.startsWith('download ')),
+      ],
+      expected: [1, 1, true, false, true, '2026-03-11T09:15:00Z', 0, true, false],
+    })
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
 
 test('beeper capture - chats land as one saved message per chat per day, then grow in place', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'sky-beeper-capture-'))

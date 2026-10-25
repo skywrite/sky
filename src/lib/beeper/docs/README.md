@@ -1,6 +1,6 @@
 ---
 created: 2026-09-16
-updated: 2026-10-20
+updated: 2026-10-25
 ---
 
 # Beeper — every chat on this Mac, saved as messages
@@ -72,9 +72,10 @@ the notebook:
   add one. A day with no day file yet keeps the capture without an entry.
 
 What stays out: muted, archived, low-priority and read-only chats (Beeper's
-own notion of what matters), reactions, deleted and hidden messages, and
-every Slack account, since agent-slack already captures Slack and a second
-copy would duplicate each thread.
+own notion of what matters), reactions, deleted and hidden messages, automated
+iMessage Screen Time request placeholders, and every Slack account, since
+agent-slack already captures Slack and a second copy would duplicate each thread.
+Screen Time placeholders are skipped individually; people's messages in the same chat still land.
 
 ## Each network has a switch
 
@@ -122,7 +123,10 @@ Beeper shows by number alone — no name on a participant, no contacts for the
 account (the 2026-10-20 note below) — so for it the lookup is the only
 source of names: a number Contacts can name, or one the phone itself files
 as known, is not unknown, and the name goes on the file, the headings and
-`from:`. The owner's side comes from `me/about.md`. Without the
+`from:`. Unnamed groups whose titles list phone numbers or email addresses
+resolve each handle through the same lookup for `to:`, filenames, day entries and previews.
+Unknown handles remain visible, and custom group titles are preserved.
+The owner's side comes from `me/about.md`. Without the
 lookup — the service lacking Full Disk Access — every iMessage sender would
 be held, and the network's card says so.
 

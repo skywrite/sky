@@ -265,8 +265,19 @@ export function unknownSender(
   return name || other?.phoneNumber?.trim() || other?.username?.trim() || other?.email?.trim() || chat.id
 }
 
-/** The chat as the log and the page name it: the person's name when one is known, else Beeper's title. */
+/** Resolve Beeper's generated handle lists without replacing a custom group title or losing unknown recipients. */
+function groupTitle(title: string, names?: SenderNames): string {
+  const handles = title.trim().split(/\s*(?:,|&)\s*/)
+  const last = handles.at(-1) ?? ''
+  const others = handles.length > 1 && /^\d+ others?$/.test(last) ? handles.pop() : undefined
+  if (!handles.every((handle) => PHONE_LIKE.test(handle) || /^[^\s@]+@[^\s@]+$/.test(handle))) return title || 'Group'
+  const resolved = handles.map((handle) => names?.resolve(handle)?.name || handle).join(', ')
+  return others ? `${resolved} & ${others}` : resolved
+}
+
+/** The chat as the log and the page name it, with known names in place of raw handles. */
 export function chatLabel(chat: BeeperChat, account: BeeperAccount | undefined, names?: SenderNames): string {
+  if (chat.type === 'group') return groupTitle(chat.title, names)
   if (chat.type === 'single') {
     const other = otherSide(chat, account)
     const own = notebookName(other, names)
@@ -323,9 +334,15 @@ function instantMs(value: string): number | null {
   }
 }
 
-function keep(message: BeeperMessage): boolean {
+function keep(message: BeeperMessage, network: string): boolean {
   if (message.isDeleted || message.isHidden) return false
   if (message.type === 'REACTION') return false
+  // Beeper's fallback for an automated Screen Time request, not a person's message.
+  if (
+    network.toLowerCase() === 'imessage' &&
+    beeperText(message.text) === '{{sender}} sent a message from ScreenTimeRequest'
+  )
+    return false
   return Boolean(message.text?.trim()) || Boolean(message.attachments?.length)
 }
 
@@ -574,8 +591,8 @@ export async function syncBeeper(options: BeeperSyncOptions): Promise<BeeperSync
       result.notes.push(`${label}: Beeper gave no older page; messages before the oldest shown were not reached.`)
     }
     const seen = new Set(chatState.seen)
-    const fresh = fetched.messages
-      .filter(keep)
+    const kept = fetched.messages.filter((message) => keep(message, network))
+    const fresh = kept
       .filter((message) => !seen.has(message.id))
       .map((message) => ({ message, at: instantMs(message.timestamp) }))
       .filter((entry): entry is { message: BeeperMessage; at: number } => entry.at !== null && entry.at >= boundaryMs)
@@ -587,14 +604,14 @@ export async function syncBeeper(options: BeeperSyncOptions): Promise<BeeperSync
     const rule = state.accounts[chat.accountID]
     const who = rule?.holdUnknown && !chatState.known ? unknownSender(chat, account, options.names) : null
     if (who && !fetched.messages.some((message) => message.isSender)) {
-      const newest = fresh.at(-1)?.message ?? fetched.messages.find(keep)
+      const newest = fresh.at(-1)?.message ?? kept[0]
       if (newest) {
         state.held[chat.id] = {
           network,
           who,
           first: summarize(beeperText(newest.text), 'Message'),
           at: newest.timestamp,
-          count: fetched.messages.filter(keep).length,
+          count: kept.length,
         }
         result.held.push({ chat: who, network })
         if (!options.dryRun) await saveState(options.stateFile, state)
@@ -696,18 +713,15 @@ export async function syncBeeper(options: BeeperSyncOptions): Promise<BeeperSync
       const single = chat.type === 'single'
       const person = single ? counterpart(chat, account, options.names) : ''
       // A first name names the file; a number stays whole, since its first "word" would be the country code
-      const who = single
-        ? nameless(person, otherSide(chat, account))
-          ? person
-          : firstName(person)
-        : chat.title || 'Group'
+      const who = single ? (nameless(person, otherSide(chat, account)) ? person : firstName(person)) : label
       if (existing && (await exists(path.join(notebookDir, existing)))) {
         const file = path.join(notebookDir, existing)
         const doc = MessageDocument.fromMarkdown(await readTextFile(file))
         const additions = sections.filter((section) => !doc.markdown.includes(signature(section)))
         if (!additions.length) continue
         const markdown = `${doc.markdown.replace(/\s+$/, '')}\n\n${additions.map(render).join('\n')}`
-        let next = new MessageDocument(doc.yaml, markdown)
+        const yaml = !single && doc.to ? { ...doc.yaml, to: groupTitle(doc.to, options.names) } : doc.yaml
+        let next = new MessageDocument(yaml, markdown)
         const files = additions.flatMap((section) => section.attachments)
         if (files.length) next = next.setAttachments([...next.attachments, ...files])
         if (!options.dryRun) await writeTextFile(file, next.toMarkdown())
@@ -718,7 +732,7 @@ export async function syncBeeper(options: BeeperSyncOptions): Promise<BeeperSync
       }
       const first = sections[0]
       const from = single ? person : first.sender
-      const to = single ? selfName(account, options.ownerName) : chat.title || 'Group'
+      const to = single ? selfName(account, options.ownerName) : label
       const summary = summarize(first.text || first.transcript || '', first.fallback)
       const previousPath = Object.entries(chatState.files)
         .filter(([other]) => other < date)
