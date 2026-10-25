@@ -7,7 +7,7 @@ import { createTypeSafeClient } from '#shared/ai/typesafe/client.ts'
 import type { AIUsageRecord } from '#shared/ai/usageLog.ts'
 import { assert, test } from '#test'
 import { AnalysisCache } from './analysisCache.ts'
-import { createConversationScreen, SCREEN_SKIP_BELOW } from './conversationScreen.ts'
+import { createConversationScreen, SCREEN_ANY_RESPONSE_SKIP_BELOW, SCREEN_SKIP_BELOW } from './conversationScreen.ts'
 import { hash } from './files.ts'
 import { HISTORY_SOURCE_CHARS } from './history.ts'
 import type { OwnerInitiative } from './requestAttention.ts'
@@ -26,12 +26,13 @@ const conversation = (body = BODY): Conversation => ({
   target: null,
   limitations: [],
 })
-type Probabilities = ConversationScreenVerdict['probabilities']
+type Probabilities = Required<ConversationScreenVerdict['probabilities']>
 const quiet: Probabilities = {
-  direct_request: 0.05,
-  active_exchange: 0.05,
-  owner_commitment: 0.05,
-  initiative_decision: 0.1,
+  any_response: 0.01,
+  direct_request: 0.001,
+  active_exchange: 0.001,
+  owner_commitment: 0.001,
+  initiative_decision: 0.001,
   uncertain_context: 0.1,
 }
 function response(probabilities: Partial<Probabilities> = quiet) {
@@ -68,6 +69,7 @@ async function fixture() {
     usage,
     control,
     secrets,
+    client,
     screen,
     cache: new AnalysisCache(root, 'atlas'),
     clean: () => rm(root, { recursive: true, force: true }),
@@ -162,7 +164,99 @@ test('Every ownership basis and ambiguous context can keep a conversation in ful
       given: 'a possible direct ask, participation, promise, initiative decision, or unclear context',
       should: 'keep the normal analysis at the threshold, under uncertainty, and when a response is likely',
       actual: results,
-      expected: Array(15).fill(false),
+      expected: Array(Object.keys(quiet).length * 3).fill(false),
+    })
+  } finally {
+    await f.clean()
+  }
+})
+
+test('Skipping requires a low aggregate score consistent with every ownership score', async () => {
+  const f = await fixture()
+  try {
+    const cases: { probabilities: Probabilities; skipped: boolean }[] = [
+      { probabilities: quiet, skipped: true },
+      { probabilities: { ...quiet, any_response: SCREEN_ANY_RESPONSE_SKIP_BELOW - 0.001 }, skipped: true },
+      { probabilities: { ...quiet, any_response: SCREEN_ANY_RESPONSE_SKIP_BELOW }, skipped: false },
+      { probabilities: { ...quiet, any_response: 0.6 }, skipped: false },
+      {
+        probabilities: {
+          ...quiet,
+          any_response: 0.001,
+          direct_request: 0.19,
+          active_exchange: 0.19,
+          owner_commitment: 0.19,
+          initiative_decision: 0.19,
+          uncertain_context: 0.001,
+        },
+        skipped: false,
+      },
+      ...(['direct_request', 'active_exchange', 'owner_commitment', 'initiative_decision'] as const).map((key) => ({
+        probabilities: { ...quiet, [key]: 0.02 },
+        skipped: false,
+      })),
+    ]
+    const outcomes: (boolean | undefined)[] = []
+    for (const [index, entry] of cases.entries()) {
+      f.control.response = () => response(entry.probabilities)
+      const verdict = await f.screen().assess({
+        conversation: conversation(`${BODY}\nCase ${index}`),
+        prior: null,
+        cache: f.cache,
+      })
+      outcomes.push(verdict?.skipped)
+    }
+    assert({
+      given: 'quiet, aggregate-boundary, possible-response, and contradictory scores including four scores of 0.19',
+      should: 'skip only a consistently quiet assessment strictly below the aggregate cutoff',
+      actual: outcomes,
+      expected: cases.map(({ skipped }) => skipped),
+    })
+  } finally {
+    await f.clean()
+  }
+})
+
+test('The new policy never reuses a historical negative screen without an aggregate answer', async () => {
+  const f = await fixture()
+  try {
+    const input = { conversation: conversation(), prior: null, cache: f.cache }
+    const first = await f.screen().assess(input)
+    const request = f.calls[0]
+    const legacyQuestions = Object.fromEntries(
+      Object.entries(request.questions).filter(([key]) => key !== 'any_response'),
+    )
+    const legacyVersion = hash(
+      JSON.stringify([
+        'conversation-screen-v1',
+        f.client.defaultModel,
+        PROFILE,
+        [],
+        TODAY,
+        SCREEN_SKIP_BELOW,
+        HISTORY_SOURCE_CHARS,
+        legacyQuestions,
+      ]),
+    )
+    const legacyKey = hash(JSON.stringify([legacyVersion, request.state]))
+    const dir = path.join(f.cache.dir, 'screens')
+    await rm(path.join(dir, (await readdir(dir))[0]))
+    const legacyProbabilities = Object.fromEntries(Object.entries(quiet).filter(([key]) => key !== 'any_response'))
+    await writeFile(
+      path.join(dir, `${legacyKey}.json`),
+      JSON.stringify({
+        key: legacyKey,
+        result: { model: first!.model, ms: first!.ms, probabilities: legacyProbabilities },
+      }),
+    )
+    f.control.response = () => response({ ...quiet, any_response: 0.6 })
+    const current = f.screen()
+    const reassessed = await current.assess(input)
+    assert({
+      given: 'a cached negative receipt from the five-question policy and unchanged source messages',
+      should: 'invalidate the policy fingerprint and ask again instead of trusting the historical skip',
+      actual: [(await current.version()) !== legacyVersion, reassessed?.skipped, f.calls.length],
+      expected: [true, false, 2],
     })
   } finally {
     await f.clean()
@@ -276,12 +370,17 @@ test('Incomplete or oversized context and an unknown owner keep full analysis', 
 })
 
 test('Unavailable or malformed Jev responses fall back without retrying or caching a skip', async () => {
+  const { any_response: _aggregate, ...legacy } = quiet
   const cases = [
     () => new Response('Unavailable', { status: 503 }),
     () => new Response('Refused', { status: 401 }),
     () => response({ ...quiet, direct_request: -1 }),
     () => response({ ...quiet, uncertain_context: 2 }),
     () => response({ direct_request: 0 }),
+    () => response(legacy),
+    () => response({ ...quiet, any_response: -1 }),
+    () => response({ ...quiet, any_response: 2 }),
+    () => response({ ...quiet, any_response: 'low' } as unknown as Partial<Probabilities>),
   ]
   for (const respond of cases) {
     const f = await fixture()
@@ -334,6 +433,42 @@ test('A stalled Jev request is aborted once and leaves full analysis available',
     await f.clean()
   }
 })
+
+test(
+  'The screen deadline covers a stalled key read without starting a late provider request',
+  { timeout: 8000 },
+  async () => {
+    const f = await fixture()
+    const key = Promise.withResolvers<ReturnType<typeof createSecret>>()
+    f.secrets.get = () => key.promise
+    try {
+      const input = { conversation: conversation(), prior: null, cache: f.cache }
+      const screen = f.screen()
+      const started = performance.now()
+      const verdict = await screen.assess(input)
+      const elapsed = performance.now() - started
+      key.resolve(createSecret('tsk-test-key'))
+      const next = await screen.assess(input)
+      const receipts = await readdir(path.join(f.cache.dir, 'screens')).catch(() => [])
+      assert({
+        given: 'credential loading that has not finished when the three-second deadline expires',
+        should: 'fall back near the deadline, bypass the rest of the scan, and publish no late request or receipt',
+        actual: [verdict, next, elapsed >= 2800 && elapsed < 5000, f.calls.length, receipts.length],
+        expected: [null, null, true, 0, 0],
+      })
+      const recovered = await f.screen().assess(input)
+      assert({
+        given: 'a later scan after the key becomes available',
+        should: 'recover and screen the conversation normally',
+        actual: [recovered?.skipped, f.calls.length],
+        expected: [true, 1],
+      })
+    } finally {
+      key.resolve(createSecret('tsk-test-key'))
+      await f.clean()
+    }
+  },
+)
 
 test('A missing TypeSafe key leaves the existing pipeline available without reaching the provider', async () => {
   const f = await fixture()

@@ -1,6 +1,6 @@
 ---
 created: 2026-09-01
-updated: 2026-10-24
+updated: 2026-10-25
 ---
 
 # Model registry — roles, profiles, providers
@@ -104,6 +104,10 @@ and its [2026-10-04](../../models/Chat/ChatContext/docs/2026-10-04-admission-by-
   `llm/singleSystemMessage.ts`: the host takes one system message, first,
   and the cache helpers split instructions into several.
 - `lm-studio` and `ollama` are local and need no key.
+
+The authenticated fetch observes cancellation while waiting for credentials and again before starting HTTP.
+It cancels only the caller's wait, leaving the secrets provider's shared read available to other callers.
+Late completion of a cancelled read cannot start that caller's request.
 
 Chat request capacity uses the serialized provider input, including native
 images and files. OpenAI's registry provider (`llm/openaiProvider.ts`) supplies

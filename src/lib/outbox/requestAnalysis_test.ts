@@ -215,7 +215,12 @@ const active = (item: OutboxRecord) =>
 
 function screening() {
   const calls: unknown[] = []
-  const control = { probability: 0.001, fail: false, beforeReply: async () => {} }
+  const control = {
+    probability: 0.001,
+    probabilities: {} as Record<string, number>,
+    fail: false,
+    beforeReply: async () => {},
+  }
   const client = createTypeSafeClient({
     secrets: new TestSecretsProvider({ 'typesafe/main': createSecret('tsk-test-key') }),
     fetch: (async (_url, init) => {
@@ -225,9 +230,22 @@ function screening() {
       return Response.json({
         model: 'jev-test',
         answers: Object.fromEntries(
-          ['direct_request', 'active_exchange', 'owner_commitment', 'initiative_decision', 'uncertain_context'].map(
-            (key) => [key, { type: 'noul', noul: key === 'direct_request' ? control.probability : 0.001 }],
-          ),
+          [
+            'any_response',
+            'direct_request',
+            'active_exchange',
+            'owner_commitment',
+            'initiative_decision',
+            'uncertain_context',
+          ].map((key) => [
+            key,
+            {
+              type: 'noul',
+              noul:
+                control.probabilities[key] ??
+                (key === 'direct_request' || key === 'any_response' ? control.probability : 0.001),
+            },
+          ]),
         ),
         usage: { input_tokens: 100, output_tokens: 0 },
       })
@@ -322,6 +340,89 @@ test('Jev uncertainty or an unavailable provider keeps normal request analysis a
     } finally {
       await f.clean()
     }
+  }
+})
+
+test('Aggregate uncertainty and contradictory scores cannot hide an outstanding request', async () => {
+  const cases = [
+    { any_response: 0.05 },
+    {
+      any_response: 0.001,
+      direct_request: 0.19,
+      active_exchange: 0.19,
+      owner_commitment: 0.19,
+      initiative_decision: 0.19,
+    },
+    { any_response: 0.01, direct_request: 0.02 },
+    { uncertain_context: 0.2 },
+  ]
+  for (const probabilities of cases) {
+    const f = await fixture()
+    const jev = screening()
+    try {
+      Object.assign(jev.control.probabilities, probabilities)
+      await f.write(REF, message(`${TODAY} 09:00`, ask('A')))
+      const report = await f.run(FOUR_HOURS, undefined, jev.screen())
+      const item = await f.item()
+      assert({
+        given: `an outstanding request with screen scores ${JSON.stringify(probabilities)}`,
+        should: 'reach full analysis and retain the grounded request and reply',
+        actual: [report.prepared, report.failed, active(item), item.draft, item.requestAnalysis?.screen?.skipped],
+        expected: [1, 0, ['A'], answer('A'), false],
+      })
+    } finally {
+      await f.clean()
+    }
+  }
+})
+
+test('Historical screened Outbox records stay readable and are rechecked under the new policy', async () => {
+  const f = await fixture()
+  const jev = screening()
+  try {
+    await f.write(REF, message(`${TODAY} 09:00`, ask('A')))
+    await f.run(FOUR_HOURS, undefined, {
+      version: async () => 'legacy-five-question-policy',
+      assess: async () => ({
+        model: 'jev-test',
+        ms: 1,
+        probabilities: {
+          direct_request: 0.001,
+          active_exchange: 0.001,
+          owner_commitment: 0.001,
+          initiative_decision: 0.001,
+          uncertain_context: 0.001,
+        },
+        skipped: true,
+      }),
+    })
+    const historical = await f.item()
+    assert({
+      given: 'a saved Outbox item screened before the aggregate question existed',
+      should: 'load its original screen stamp without inventing an aggregate answer',
+      actual: [
+        historical.requestAnalysis?.screen?.skipped,
+        historical.requestAnalysis?.screen?.probabilities.any_response,
+      ],
+      expected: [true, undefined],
+    })
+    jev.control.probability = 0.99
+    const checked = await f.run(FOUR_HOURS, undefined, jev.screen())
+    const updated = await f.item()
+    assert({
+      given: 'the same messages checked under the new screen policy',
+      should: 'invalidate the scanner fingerprint, keep the item identity, and recover its outstanding request',
+      actual: [
+        checked.prepared,
+        updated.id === historical.id,
+        active(updated),
+        jev.calls.length,
+        updated.requestAnalysis?.screen?.probabilities.any_response,
+      ],
+      expected: [1, true, ['A'], 1, 0.99],
+    })
+  } finally {
+    await f.clean()
   }
 })
 

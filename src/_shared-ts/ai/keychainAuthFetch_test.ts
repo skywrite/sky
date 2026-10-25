@@ -1,3 +1,4 @@
+import { spyOn } from 'bun:test'
 import { createSecret } from '#lib/secrets/marshal.ts'
 import { TestSecretsProvider } from '#lib/secrets/TestSecretsProvider.ts'
 import { assert, test } from '#test'
@@ -50,6 +51,114 @@ test('keychainAuthFetch reads the keychain once per process', async () => {
   await signed(URL)
   await signed(URL)
   assert({ given: 'two sequential requests', should: 'read the keychain once', actual: reads, expected: 1 })
+})
+
+test('an already aborted request never reads credentials or starts HTTP', async () => {
+  const secrets = new TestSecretsProvider({ 'atlas/main': createSecret('ak-test-key') })
+  let reads = 0
+  const get = secrets.get.bind(secrets)
+  secrets.get = (...args) => {
+    reads++
+    return get(...args)
+  }
+  const recorder = recordingFetch()
+  const signed = keychainAuthFetch(secrets, SECRET, MISSING, recorder.fetch)
+  const reason = new Error('Request stopped')
+  const signal = AbortSignal.abort(reason)
+  const failures = [
+    await signed(URL, { signal }).catch((error: unknown) => error),
+    await signed(new Request(URL, { signal })).catch((error: unknown) => error),
+  ]
+  assert({
+    given: 'an aborted signal on either fetch options or the Request itself',
+    should: 'reject with the abort reason before touching the keychain or HTTP',
+    actual: [failures.every((error) => error === reason), reads, recorder.calls.length],
+    expected: [true, 0, 0],
+  })
+  await signed(new Request(URL, { signal }), { signal: null })
+  assert({
+    given: 'fetch options explicitly overriding the Request signal',
+    should: 'honor the override and sign the request normally',
+    actual: [reads, recorder.calls.length],
+    expected: [1, 1],
+  })
+})
+
+test('cancelling a credential wait leaves a shared read available to another caller', async () => {
+  const key = Promise.withResolvers<ReturnType<typeof createSecret>>()
+  const entered = Promise.withResolvers<void>()
+  const secrets = new TestSecretsProvider()
+  secrets.get = () => {
+    entered.resolve()
+    return key.promise
+  }
+  const recorder = recordingFetch()
+  const signed = keychainAuthFetch(secrets, SECRET, MISSING, recorder.fetch)
+  const controller = new AbortController()
+  const added = spyOn(controller.signal, 'addEventListener')
+  const removed = spyOn(controller.signal, 'removeEventListener')
+  const reason = new Error('First caller stopped')
+  const stopped = signed(URL, { signal: controller.signal }).catch((error: unknown) => error)
+  const continuing = signed(URL)
+  try {
+    await entered.promise
+    controller.abort(reason)
+    const failure = await stopped
+    assert({
+      given: 'two callers waiting for the same credential read, with one cancelled',
+      should: 'release the cancelled caller immediately and remove its abort listener before the read settles',
+      actual: [failure === reason, recorder.calls.length, removed.mock.calls[0]?.[1] === added.mock.calls[0]?.[1]],
+      expected: [true, 0, true],
+    })
+    key.resolve(createSecret('ak-shared-key'))
+    await continuing
+    await signed(URL)
+    assert({
+      given: 'the shared read finishing after the first caller cancelled',
+      should: 'sign only the continuing caller and its next request, without a late HTTP call for the stopped one',
+      actual: recorder.calls.map((call) => call.auth),
+      expected: ['Bearer ak-shared-key', 'Bearer ak-shared-key'],
+    })
+  } finally {
+    key.resolve(createSecret('ak-shared-key'))
+    await continuing
+    added.mockRestore()
+    removed.mockRestore()
+  }
+})
+
+test('credential success and failure both remove abort listeners, and failed reads can recover', async () => {
+  const secrets = new TestSecretsProvider()
+  const failure = new Error('Keychain unavailable')
+  let fails = true
+  secrets.get = async () => {
+    if (fails) throw failure
+    return createSecret('ak-recovered-key')
+  }
+  const recorder = recordingFetch()
+  const signed = keychainAuthFetch(secrets, SECRET, MISSING, recorder.fetch)
+  const controller = new AbortController()
+  const added = spyOn(controller.signal, 'addEventListener')
+  const removed = spyOn(controller.signal, 'removeEventListener')
+  try {
+    const rejected = await signed(URL, { signal: controller.signal }).catch((error: unknown) => error)
+    fails = false
+    await signed(URL, { signal: controller.signal })
+    assert({
+      given: 'a rejected credential lookup followed by a successful retry',
+      should: 'preserve the failure, remove both listeners, and send only the successful request',
+      actual: [
+        rejected === failure,
+        added.mock.calls.length,
+        removed.mock.calls.map((call, index) => call[1] === added.mock.calls[index]?.[1]),
+        recorder.calls.map((call) => call.auth),
+      ],
+      expected: [true, 2, [true, true], ['Bearer ak-recovered-key']],
+    })
+  } finally {
+    added.mockRestore()
+    removed.mockRestore()
+  }
 })
 
 test('a missing key fails with the fix and is not remembered', async () => {

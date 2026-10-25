@@ -67,6 +67,24 @@ export function forgetKey(secret: KeychainSecret): void {
   changes.set(slotOf(secret), (changes.get(slotOf(secret)) ?? 0) + 1)
 }
 
+/** Cancel only this caller's wait; the secrets provider may share the underlying read with another caller. */
+async function waitForKey(work: () => Promise<string>, signal?: AbortSignal | null): Promise<string> {
+  signal?.throwIfAborted()
+  if (!signal) return work()
+  let abort: () => void = () => {}
+  try {
+    return await Promise.race([
+      new Promise<never>((_, reject) => {
+        abort = () => reject(signal.reason)
+        signal.addEventListener('abort', abort, { once: true })
+      }),
+      work(),
+    ])
+  } finally {
+    signal.removeEventListener('abort', abort)
+  }
+}
+
 /**
  * A fetch that signs every request with a key from the OS keychain, or from
  * the secret's environment variable when the keychain holds none.
@@ -87,8 +105,12 @@ export function keychainAuthFetch(
 ): typeof fetch {
   let held: { key: string; change: number } | undefined
   return (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const signal = init?.signal === undefined && input instanceof Request ? input.signal : init?.signal
+    signal?.throwIfAborted()
     const change = changes.get(slotOf(secret)) ?? 0
-    if (held?.change !== change) held = { key: await readKey(secrets, secret, missing), change }
+    if (held?.change !== change)
+      held = { key: await waitForKey(() => readKey(secrets, secret, missing), signal), change }
+    signal?.throwIfAborted()
     const headers = new Headers(init?.headers)
     if (secret.header === 'x-api-key') headers.set('x-api-key', held.key)
     else headers.set('authorization', `Bearer ${held.key}`)

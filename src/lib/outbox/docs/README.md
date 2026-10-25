@@ -1,6 +1,6 @@
 ---
 created: 2026-09-06
-updated: 2026-10-20
+updated: 2026-10-25
 ---
 
 # Outbox — decisions prepared from saved conversations
@@ -17,7 +17,20 @@ Coverage is the existing captures, not every message in the connected accounts. 
 
 ## Finding responses and decisions
 
-`conversationScreen.ts` asks TypeSafe's Jev before request extraction, using the existing attention prompt, owner profile, active initiatives, current local date, and the complete linked conversation. Five independent questions cover the four ownership bases below and ambiguous context. Only when every probability is below 0.2 does the scan skip extraction and drafting. A possible obligation or uncertain answer continues through the full evidence-based pipeline. A missing TypeSafe key, invalid answer, or provider failure also falls back; the call has a three-second timeout with no retries, and a failed provider is bypassed for the rest of that check.
+`conversationScreen.ts` asks TypeSafe's Jev before request extraction, using the existing attention prompt, owner profile,
+active initiatives, current local date, and the complete linked conversation.
+Six questions cover any response owed, the four ownership bases below, and ambiguous context.
+Skipping requires the aggregate probability to be strictly below 0.05 and every other probability below 0.2.
+Each ownership score must also be no higher than the aggregate; contradictory scores use full analysis.
+The aggregate cutoff is a conservative initial policy, not a measured false-negative rate.
+A possible obligation or uncertain answer continues through the full evidence-based pipeline.
+A missing TypeSafe key, invalid answer, or provider failure also falls back; the call has a three-second timeout with no
+retries, including the caller's wait for credentials through the shared authenticated fetch.
+A failed provider is bypassed for the rest of that check; a later check can try again.
+
+New receipts require the aggregate answer, and the changed screen version invalidates earlier negative results and scanner
+fingerprints.
+Historical Outbox records without that answer remain readable, but cannot authorize a new skip.
 
 The screen never replaces an existing request ledger, even when its requests were previously resolved or archived: later replies must still be reconciled and can reopen an ask. Human review state and legacy items also bypass it. Missing history, an unidentified owner, or context exceeding the bounded input size uses the full reader rather than screening a truncated thread. Validated screen receipts live under `analysis/<conversation-hash>/screens/`; their fingerprints include all supplied evidence, policy, model selector, owner context, initiatives and local date, independently of the selected range. A screened result records zero extraction units and retains Jev's model, probabilities and duration in `requestAnalysis.screen`; it is a relevance judgment, not proof of an inventoried or resolved request. Source and item revision checks still gate publication.
 
