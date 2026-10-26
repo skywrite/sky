@@ -27,7 +27,8 @@ export function isIMessage(medium: string): boolean {
 const MAX_INPUT_CHARS = 24_000
 const MIN_PROFESSIONAL_PROBABILITY = 0.85
 const Probability = z.number().min(0).max(1)
-const Answer = z
+/** Jev's pick of a day section, with both probabilities; saved AI chats read the same answer. */
+export const DayCategoryAnswer = z
   .object({
     type: z.literal('choice'),
     choice: z.enum(['Personal', 'Professional']),
@@ -129,7 +130,7 @@ export function createMessageDayCategorizer(options: ClassifierOptions): Categor
           sink: options.sink,
         },
       )
-      const answer = Answer.parse(result.answers.day_category)
+      const answer = DayCategoryAnswer.parse(result.answers.day_category)
       return answer.choice === 'Professional' && answer.probabilities.Professional >= MIN_PROFESSIONAL_PROBABILITY
         ? 'Professional'
         : 'Personal'

@@ -862,7 +862,7 @@ test({ name: 'chat route - ending a thread files it or drops it' }, async () => 
 
 test('chat route - web saving logs to its notebook day and reports logging failures', async () => {
   const host = await testHost()
-  const web = createChatHost({ ...config, DEFAULT_CATEGORY: 'Personal' }, {})
+  const web = createChatHost({ ...config, DEFAULT_CATEGORY: 'Professional' }, {})
   host.endDefaults = { ...web.endDefaults, enricher: stubEnricher, memoryDir: null, people: false }
   const app = appWith(host)
   const dayPath = path.join(host.tmp, dayFile(TODAY))
@@ -886,7 +886,7 @@ test('chat route - web saving logs to its notebook day and reports logging failu
     const entry = day.getCompleteItem('09:30 > AI Chat', 'Personal')
     assert({
       given: 'a web chat saved using the host defaults',
-      should: 'save its transcript and log a working link under the configured category',
+      should: 'save its transcript and default its day link to Personal when categorization abstains',
       actual: {
         dayLog: saved?.dayLog,
         transcriptExists: saved ? await exists(saved.path) : false,
@@ -2503,11 +2503,16 @@ test(
 
 test('chat route - a parent filed for its branch is on its day, and closing it with nothing new finishes its save', async () => {
   const host = await testHost()
+  let categorized = 0
   host.endDefaults = {
     enricher: {
       ...stubEnricher,
       chooseTags: async () => 'Atlas/Planning',
       writeSummary: async () => ({ by: 'Opus 5.5, High', text: '- Jane asked what to focus on.' }),
+      chooseDayCategory: async (subject) => {
+        categorized++
+        return subject.body.includes('board prep') ? 'Professional' : 'Personal'
+      },
     },
     autoTag: true,
     writeSummary: true,
@@ -2534,7 +2539,8 @@ test('chat route - a parent filed for its branch is on its day, and closing it w
   const parentFile = path.join(path.dirname(host.tmp), parent.chat)
   const dayPath = path.join(host.tmp, dayFile(TODAY))
   const filed = await readTextFile(parentFile)
-  const entry = (await readDay(TODAY, host.tmp)).getCompleteItem('09:30 > AI Chat', 'Personal')
+  const day = await readDay(TODAY, host.tmp)
+  const entry = day.getCompleteItem('09:30 > AI Chat', 'Personal')
   const closed = (await (await post(app, 'http://localhost/chat/p1/end', { save: true })).json()) as {
     saved: SaveChatReport | null
   }
@@ -2542,15 +2548,25 @@ test('chat route - a parent filed for its branch is on its day, and closing it w
 
   assert({
     given: 'a parent filed early when its branch was saved, then closed with no message after the filing',
-    should: 'log the parent on its day when filed, then write its summary and tags into that file at close',
+    should: 'categorize parent and branch separately at first filing, then keep the parent placement at close',
     actual: {
       filedWithSummary: filed.includes('## Summary'),
       dayLine: entry ? path.resolve(path.dirname(dayPath), entry.path) === parentFile : false,
       closedPath: closed.saved?.path === parentFile,
       summary: finished.includes('- Jane asked what to focus on.'),
       tags: finished.includes('tags: Atlas/Planning'),
+      categorized,
+      branchProfessional: Boolean(day.getCompleteItem('10:15 > AI Chat', 'Professional')),
     },
-    expected: { filedWithSummary: false, dayLine: true, closedPath: true, summary: true, tags: true },
+    expected: {
+      filedWithSummary: false,
+      dayLine: true,
+      closedPath: true,
+      summary: true,
+      tags: true,
+      categorized: 2,
+      branchProfessional: true,
+    },
   })
 })
 

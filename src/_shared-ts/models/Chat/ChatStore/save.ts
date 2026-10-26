@@ -17,6 +17,7 @@
 
 import { mkdir, rename } from 'node:fs/promises'
 import * as path from 'node:path'
+import { chatDayCategory, type ChatDayCategory } from '#lib/chatDayCategory.ts'
 import { ensureDay } from '#lib/nbfs/ensureDay.ts'
 import { autoRelMessage, mergeRel } from '#lib/notebook/enrich/autoRel.ts'
 import { autoTagMessage } from '#lib/notebook/enrich/autoTag.ts'
@@ -121,6 +122,11 @@ export interface SaveEnricher {
     turns: ConversationMessage[]
     earlier: ConversationMessage[]
   }): Promise<ChatSummary | undefined>
+  /**
+   * The day section a new chat's entry goes under, from what the chat was
+   * about. Undefined means abstain: Personal is the default.
+   */
+  chooseDayCategory?(subject: EnrichSubject): Promise<ChatDayCategory | undefined>
 }
 
 /** What a person distillation hands the save: who was seen, what was learned. */
@@ -149,6 +155,7 @@ export const corpusEnricher: SaveEnricher = {
       contextNames,
     }),
   writeSummary: (input) => writeChatSummary({ ...input, userLabel: userSpeakerLabel() }),
+  chooseDayCategory: (subject) => chatDayCategory({ summary: subject.summary, transcript: subject.body }),
 }
 
 /**
@@ -308,8 +315,12 @@ export interface SaveChatInput {
    * abstains or fails, the file's existing summary stays.
    */
   writeSummary?: boolean
-  /** Record the chat as a day-file complete item (new chats only) */
-  logToDay?: { category: string } | null
+  /**
+   * Record the chat as a day-file complete item (new chats only), in the
+   * section its subject calls for, defaulting to Personal. `category`
+   * overrides classification only when the person `stated` it.
+   */
+  logToDay?: { category: string; stated?: boolean } | null
   /**
    * The AI-owned memory store (ai/memory/) — the one notebook space with a
    * standing write license. When set, the save distills the conversation
@@ -401,6 +412,10 @@ export async function saveChat(input: SaveChatInput): Promise<SaveChatReport> {
     input.writeSummary === true &&
     Boolean(enricher.writeSummary) &&
     (turns.length > (resume?.own.conversation.length ?? 0) || (resume !== null && !resume.summarySection))
+  // Asked once, for the entry a new chat's first save writes; a stated category is the person's own.
+  const wantDayCategory = Boolean(
+    input.logToDay && !input.logToDay.stated && !resume && parent?.kind !== 'thread' && enricher.chooseDayCategory,
+  )
   const baseDir = path.dirname(timeDir)
 
   if (wantTags || wantRel || wantPlaces || wantDocumentRel || wantSummary) {
@@ -425,6 +440,13 @@ export async function saveChat(input: SaveChatInput): Promise<SaveChatReport> {
   // branch's bare name can mean someone on a record its parent read.
   const contextNames: Promise<string[]> =
     wantRel || wantPeople ? readParties(input.contextLog, baseDir) : Promise.resolve([])
+  // Beside the choices below; only the day entry reads it.
+  const dayCategory: Promise<ChatDayCategory | undefined> = wantDayCategory
+    ? enricher.chooseDayCategory!(relSubject).catch(async (err) => {
+        await logAIError({ source: 'ai:chat', stage: 'day-category', message: (err as Error).message })
+        return undefined
+      })
+    : Promise.resolve(undefined)
   const [autoSummary, autoTags, autoRel, documentRel, memoryOps, personDistill, summarySection] = await Promise.all([
     priorSummary ? Promise.resolve(undefined) : enricher.summarize(transcript),
     wantTags ? enricher.chooseTags(subject) : Promise.resolve(undefined),
@@ -613,7 +635,7 @@ export async function saveChat(input: SaveChatInput): Promise<SaveChatReport> {
       startTime,
       summary,
       savePath,
-      category: input.logToDay.category,
+      category: input.logToDay.stated ? input.logToDay.category : ((await dayCategory) ?? 'Personal'),
       resumed: resume !== null,
     })
   }

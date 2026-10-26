@@ -1,6 +1,6 @@
 ---
 created: 2026-09-01
-updated: 2026-10-24
+updated: 2026-10-26
 ---
 
 # Chat over HTTP — a thread, its tuning, and the story of its context
@@ -635,8 +635,13 @@ a person can see and touch:
   The preference
   controls the final archive and save-time learning, and can change until
   close. Saving a new chat also logs its transcript link in the starting
-  day's Complete list, under the configured default category. The page
-  confirms logging or reports a day-file failure alongside the saved
+  day's Complete list, under Personal or Professional as Jev reads what
+  the chat was about, favoring Personal (`lib/chatDayCategory.ts`).
+  Professional requires clear business purpose; mixed, uncertain or unavailable
+  evidence defaults to Personal, as does a conversation too long to assess whole.
+  An explicit CLI category wins.
+  This choice only places the day entry; it adds no category metadata to the chat.
+  The page confirms logging or reports a day-file failure alongside the saved
   transcript. Resumed chats retain the store's existing rule of skipping
   another day entry. See [2026-09-07](2026-09-07-saving-includes-day-logging.md).
   Both choices keep temporary recovery snapshots during the active

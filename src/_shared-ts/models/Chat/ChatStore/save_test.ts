@@ -3,14 +3,14 @@ import * as path from 'node:path'
 import { exists, makeTempDir, readTextFile, writeTextFile } from '#shared/fs/mod.ts'
 import type { MemoryEntry } from '#shared/models/Memory/mod.ts'
 import type { MemoryOp } from '#shared/models/Memory/write.ts'
-import { dayDir, readDay } from '#shared/nbfs/mod.ts'
+import { dayDir, dayFile, readDay } from '#shared/nbfs/mod.ts'
 import { assert, test } from '#test'
 import { PlainDate, PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import type { ContextTurnLog } from '../document/ContextLog/mod.ts'
 import ChatDocument, { setUserSpeakerLabel } from '../document/mod.ts'
 import type { ConversationMessage } from '../type.d.ts'
 import { loadResumeSession } from './mod.ts'
-import { chatFilename, type SaveEnricher, saveChat } from './save.ts'
+import { chatFilename, type EnrichSubject, type SaveEnricher, saveChat } from './save.ts'
 
 setUserSpeakerLabel('Jane')
 
@@ -47,6 +47,7 @@ const neverCalled: SaveEnricher = {
   distillMemories: () => Promise.reject(new Error('distillMemories must not be called')),
   distillPersonFacts: () => Promise.reject(new Error('distillPersonFacts must not be called')),
   writeSummary: () => Promise.reject(new Error('writeSummary must not be called')),
+  chooseDayCategory: () => Promise.reject(new Error('chooseDayCategory must not be called')),
 }
 
 async function tmpNotebook(): Promise<string> {
@@ -540,7 +541,7 @@ test('saveChat - day-file logging is skipped on resume, never duplicated', async
 })
 
 test('saveChat - a chat on a day with no day file creates the day and logs it there', async () => {
-  const { timeDir, report } = await saveNew({ logToDay: { category: 'Professional' } })
+  const { timeDir, report } = await saveNew({ logToDay: { category: 'Professional', stated: true } })
   const day = await readDay(DAY, timeDir)
 
   assert({
@@ -556,6 +557,154 @@ test('saveChat - a chat on a day with no day file creates the day and logs it th
       started: undefined,
       items: ['09:30 > AI Chat -> [Atlas Launch Planning](actions/ai-chats/09-30_Atlas-Launch-Planning.md)'],
     },
+  })
+})
+
+test('saveChat - a new chat is logged in the section its subject calls for, unless the person chose one', async () => {
+  const asked: EnrichSubject[] = []
+  const personal = stubEnricher({
+    chooseDayCategory: async (subject) => {
+      asked.push(subject)
+      return 'Personal'
+    },
+  })
+  const chosen = await saveNew({ logToDay: { category: 'Professional' }, enricher: personal })
+  const resumed = await saveChat({
+    turns: [...TURNS, msg('user', 'One more thing.', '2026-01-27 10:00')],
+    contextLog: [],
+    resume: await loadResumeSession(chosen.report.path),
+    timeDir: chosen.timeDir,
+    day: DAY,
+    startTime: START,
+    endTime: END,
+    logToDay: { category: 'Professional' },
+    enricher: personal,
+  })
+  const stated = await saveNew({ logToDay: { category: 'Professional', stated: true }, enricher: personal })
+  const abstained = await saveNew({
+    logToDay: { category: 'Professional' },
+    enricher: stubEnricher({ chooseDayCategory: async () => undefined }),
+  })
+  const unavailable = await saveNew({
+    logToDay: { category: 'Professional' },
+    enricher: stubEnricher({
+      chooseDayCategory: async () => {
+        throw new Error('Synthetic outage')
+      },
+    }),
+  })
+  const withoutChooser = await saveNew({ logToDay: { category: 'Professional' } })
+  const professional = await saveNew({
+    logToDay: { category: 'Personal' },
+    enricher: stubEnricher({ chooseDayCategory: async () => 'Professional' }),
+  })
+  const listed = async (timeDir: string, title: string) =>
+    (await readDay(DAY, timeDir)).lists.find((list) => list.title === title)?.items ?? []
+
+  assert({
+    given: 'a personal chat saved then resumed, a manual choice, unavailable choices, and a clear work chat',
+    should: 'classify new chats only, honor manual choices, and default to Personal when no judgment is available',
+    actual: {
+      dayLogs: [
+        chosen.report.dayLog,
+        resumed.dayLog,
+        stated.report.dayLog,
+        abstained.report.dayLog,
+        unavailable.report.dayLog,
+        withoutChooser.report.dayLog,
+        professional.report.dayLog,
+      ],
+      asked: asked.map((subject) => subject.body.includes('Atlas launch')),
+      personal: await listed(chosen.timeDir, 'Personal Complete'),
+      professional: await listed(chosen.timeDir, 'Professional Complete'),
+      chatCategory: ChatDocument.fromMarkdown(await readTextFile(chosen.report.path)).yaml['category'],
+      dayCategory: (await readDay(DAY, chosen.timeDir)).yaml['category'],
+    },
+    expected: {
+      dayLogs: [
+        { logged: true, category: 'Personal' },
+        { logged: false, reason: 'resume' },
+        { logged: true, category: 'Professional' },
+        { logged: true, category: 'Personal' },
+        { logged: true, category: 'Personal' },
+        { logged: true, category: 'Personal' },
+        { logged: true, category: 'Professional' },
+      ],
+      asked: [true],
+      personal: ['09:30 > AI Chat -> [Atlas Launch Planning](actions/ai-chats/09-30_Atlas-Launch-Planning.md)'],
+      professional: [],
+      chatCategory: undefined,
+      dayCategory: undefined,
+    },
+  })
+})
+
+test('saveChat - day categorization sees personal context beyond the packed transcript', async () => {
+  const turns = [
+    msg('user', 'Help me write this code. ' + 'A technical detail. '.repeat(150) + ' This is a hobby with my sister.'),
+    msg('assistant', 'Here is a prototype. ' + 'Implementation detail. '.repeat(100) + ' Have fun together.'),
+  ]
+  let body = ''
+  const { report } = await saveNew({
+    turns,
+    logToDay: { category: 'Professional' },
+    enricher: stubEnricher({
+      chooseDayCategory: async (subject) => {
+        body = subject.body
+        return 'Personal'
+      },
+    }),
+  })
+  assert({
+    given: 'a technical conversation with personal context late in long turns',
+    should: 'keep the complete evidence for the day classifier',
+    actual: [body.includes(turns[0].content), body.includes(turns[1].content), report.dayLog],
+    expected: [true, true, { logged: true, category: 'Personal' }],
+  })
+})
+
+test('saveChat - resuming preserves a manually moved day entry exactly', async () => {
+  const { timeDir, report: first } = await saveNew({
+    logToDay: { category: 'Professional' },
+    enricher: stubEnricher({ chooseDayCategory: async () => 'Personal' }),
+  })
+  const dayPath = path.join(timeDir, dayFile(DAY))
+  const manual =
+    '# **2026-01-27 - Tue**\n\n## Personal Complete\n- 08:00 > Morning walk\n\n' +
+    '## Professional Complete\n' +
+    '- 09:30 > AI Chat -> [Atlas Launch Planning](actions/ai-chats/09-30_Atlas-Launch-Planning.md)\n'
+  await writeTextFile(dayPath, manual)
+  const resumed = await saveNew({
+    timeDir,
+    turns: [...TURNS, msg('user', 'One more thing.')],
+    resume: await loadResumeSession(first.path),
+    logToDay: { category: 'Personal' },
+    enricher: neverCalled,
+  })
+  assert({
+    given: 'a chat manually moved to Professional after it was first saved under Personal',
+    should: 'leave the day bytes alone on resume without another classification or entry',
+    actual: [resumed.report.dayLog, await readTextFile(dayPath)],
+    expected: [{ logged: false, reason: 'resume' }, manual],
+  })
+})
+
+test('saveChat - without a day entry there is no categorization', async () => {
+  let asked = false
+  const { timeDir, report } = await saveNew({
+    logToDay: null,
+    enricher: stubEnricher({
+      chooseDayCategory: async () => {
+        asked = true
+        return 'Personal'
+      },
+    }),
+  })
+  assert({
+    given: 'a chat saved without day logging',
+    should: 'save the chat without asking for a category or creating a day file',
+    actual: [asked, report.dayLog, await exists(path.join(timeDir, dayFile(DAY)))],
+    expected: [false, undefined, false],
   })
 })
 

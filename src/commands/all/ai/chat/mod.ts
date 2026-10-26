@@ -111,7 +111,7 @@ const params = {
     long: 'ai-inspect-context',
     default: false,
   }),
-  category: Flag.string('Category for the chat (e.g., reflection, planning)', {
+  category: Flag.string('Day section for the chat (e.g., Personal, Professional); otherwise chosen automatically', {
     short: 'c',
     optional: true,
   }),
@@ -989,7 +989,8 @@ export default class AiChatTask extends Command {
       writeSummary: true,
       memoryDir: DIR_AI_MEMORY,
       people: true,
-      logToDay: log ? { category: category || 'Professional' } : null,
+      // A --category is the person's choice; without one, the save picks the section from what the chat was about.
+      logToDay: log ? (category ? { category, stated: true } : { category: 'Personal' }) : null,
     })
 
     if (saved) {

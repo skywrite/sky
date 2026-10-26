@@ -274,7 +274,7 @@ export interface EndOptions {
   writeSummary?: boolean
   memoryDir?: string | null
   people?: boolean
-  logToDay?: { category: string } | null
+  logToDay?: { category: string; stated?: boolean } | null
   /** Test seam — see SaveEnricher */
   enricher?: SaveEnricher
 }
