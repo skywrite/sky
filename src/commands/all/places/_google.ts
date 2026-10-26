@@ -98,6 +98,7 @@ export const MAP_TYPE_DIR = {
   restaurant: 'eat',
   bakery: 'eat',
   lodging: 'stay',
+  hotel: 'stay',
   bar: 'drink',
   cafe: 'drink',
   night_club: 'drink',
@@ -137,5 +138,17 @@ export const MAP_TYPE_DIR = {
   travel_agency: 'do',
   supermarket: 'shop',
   university: 'visit',
-  establishment: 'eat',
+  establishment: 'visit',
+}
+
+const genericGooglePlaceTypes = new Set(['food', 'store', 'point_of_interest', 'establishment'])
+
+export function selectGooglePlaceType(types: readonly string[] = []): keyof typeof MAP_TYPE_DIR | undefined {
+  const mapped = types.filter((type): type is keyof typeof MAP_TYPE_DIR => Object.hasOwn(MAP_TYPE_DIR, type))
+  // Google can list generic tags before the venue type. Use those only as fallbacks.
+  return (
+    mapped.find((type) => !genericGooglePlaceTypes.has(type)) ??
+    mapped.find((type) => type === 'food' || type === 'store') ??
+    mapped[0]
+  )
 }

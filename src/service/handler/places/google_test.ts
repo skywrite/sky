@@ -3,6 +3,41 @@ import { TestSecretsProvider } from '#lib/secrets/TestSecretsProvider.ts'
 import { assert, test } from '#test'
 import { createMapsHost } from './google.ts'
 
+for (const api of ['new', 'legacy', 'new with primary type'] as const) {
+  test(`Maps classifies hotel search results and drafts using ${api}`, async () => {
+    const types =
+      api === 'new with primary type'
+        ? ['restaurant', 'establishment', 'lodging', 'hotel', 'point_of_interest']
+        : ['establishment', 'lodging', 'point_of_interest']
+    const request = async (url: string) => {
+      if (api === 'legacy') {
+        if (url.startsWith('https://places.googleapis.com/')) return Response.json({}, { status: 403 })
+        const place = { place_id: 'sample_hotel', name: 'Atlas Hotel', types }
+        return Response.json({
+          status: 'OK',
+          ...(url.includes('textsearch') ? { results: [place] } : { result: place }),
+        })
+      }
+      const place = {
+        id: 'sample_hotel',
+        displayName: { text: 'Atlas Hotel' },
+        types,
+        ...(api === 'new with primary type' ? { primaryType: 'hotel' } : {}),
+      }
+      return Response.json(url.includes('searchText') ? { places: [place] } : place)
+    }
+    const host = createMapsHost({ GOOGLE_MAPS_KEY: 'sample-key' }, new TestSecretsProvider(), request)
+    const found = await host.search('Atlas Hotel')
+    const draft = await host.detail(found[0].id)
+    assert({
+      given: 'a hotel with generic tags first or a specific primary type',
+      should: 'suggest Hotel & stay in both search results and the new-place draft',
+      actual: [found[0].category, draft.category],
+      expected: ['stay', 'stay'],
+    })
+  })
+}
+
 test('Maps reuses the existing shared key until a browser key overrides it', async () => {
   const secrets = new TestSecretsProvider(),
     requests: Array<{ url: string; key: string | null }> = []

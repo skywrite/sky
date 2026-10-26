@@ -14,6 +14,7 @@ import {
   fetchGoogleMapsPlaceDetails,
   fetchGoogleMapsTextSearch,
   MAP_TYPE_DIR,
+  selectGooglePlaceType,
 } from './_google.ts'
 
 const boldGreen = (str: string) => colors.bold(colors.green(str))
@@ -53,13 +54,13 @@ export default class PlacesSearchTask extends Command {
     }
 
     const firstGoogleSearchRes = googleSearchRes.results[0]
-    const locationType: string = firstGoogleSearchRes?.types[0] || ''
-
-    const placeType = Reflect.get(MAP_TYPE_DIR, locationType) as string | undefined
-    if (!placeType) {
-      output.log(`\n  Don't have mapping for "${locationType}".\n`)
-      return CommandResult.error(`No mapping for location type: ${locationType}`)
+    const locationType = selectGooglePlaceType(firstGoogleSearchRes.types)
+    if (!locationType) {
+      const unmappedTypes = firstGoogleSearchRes.types?.join(', ') || 'unknown'
+      output.log(`\n  Don't have mapping for "${unmappedTypes}".\n`)
+      return CommandResult.error(`No mapping for location types: ${unmappedTypes}`)
     }
+    const placeType = MAP_TYPE_DIR[locationType]
 
     output.log('\nGoogle Maps search result:\n')
     output.log(boldGreen('NAME: ') + firstGoogleSearchRes.name)

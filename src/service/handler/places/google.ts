@@ -1,6 +1,7 @@
 import {
   assembleGoogleAddressComponents,
   MAP_TYPE_DIR,
+  selectGooglePlaceType,
   type GoogleAddressComponent,
 } from '#commands/all/places/_google.ts'
 import { createSecret } from '#lib/secrets/marshal.ts'
@@ -45,8 +46,8 @@ const geography = (types: string[]): PlaceKind => {
 }
 function result(place: GooglePlace): GooglePlaceResult {
   const types = [place.primaryType, ...(place.types ?? [])].filter((type): type is string => Boolean(type))
-  const categories = MAP_TYPE_DIR as Record<string, string>
-  const category = types.map((type) => categories[type]).find(Boolean) || 'visit'
+  const type = selectGooglePlaceType(types)
+  const category = type ? MAP_TYPE_DIR[type] : 'visit'
   return {
     id: place.id,
     name: place.displayName?.text ?? '',
