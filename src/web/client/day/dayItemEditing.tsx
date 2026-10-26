@@ -104,7 +104,7 @@ export function DayItemEditing({
   const ymd = day?.day.ymd ?? ''
   const currentDay = useRef(ymd)
   currentDay.current = ymd
-  const readOnly = Boolean(day?.record.ended || !day?.day.dayRelativePath)
+  const readOnly = Boolean(day?.record.summarized || !day?.day.dayRelativePath)
   useEffect(() => {
     setDraft(null)
     setError(null)
@@ -129,7 +129,7 @@ export function DayItemEditing({
       setDraft((value) => (value ? { ...value, mode: 'details' } : null))
       setError(
         readOnly
-          ? 'This day has ended. You can copy your draft, but it cannot be saved.'
+          ? 'This day has a saved summary. Remove its summary to save your draft.'
           : 'This item changed elsewhere. Your draft is kept here; reload the day before trying again.',
       )
     }

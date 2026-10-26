@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import * as path from 'node:path'
 import { makeTempDir } from '#shared/fs/mod.ts'
+import { daySummaryPath } from '#shared/nbfs/daySummary.ts'
 import { dayFile } from '#shared/nbfs/mod.ts'
 import { assert, test } from '#test'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
@@ -48,7 +49,7 @@ async function withDay(
     app: ReturnType<typeof createDayRoutes>
     post: (route: string, body: unknown) => Promise<Response>
     read: () => Promise<string>
-    write: (content: string) => Promise<void>
+    write: (content: string, summarized?: boolean) => Promise<void>
   }) => Promise<void>,
   content = CONTENT,
   writePlanning?: DayRoutesOptions['writePlanning'],
@@ -69,7 +70,10 @@ async function withDay(
           body: JSON.stringify(body),
         }),
       read: () => readFile(file, 'utf8'),
-      write: (content) => writeFile(file, content),
+      write: async (content, summarized = false) => {
+        await writeFile(file, content)
+        if (summarized) await writeFile(daySummaryPath(file), '# Summary\n')
+      },
     })
   } finally {
     await rm(root, { recursive: true, force: true })
@@ -211,7 +215,7 @@ test('day edit converts types and categories, carries notes, sorts times and und
   })
 })
 
-test('day edits reject stale, ambiguous, malformed, ended and linked-activity requests without writes', async () => {
+test('day edits reject stale, ambiguous, malformed, summarized and linked-activity requests without writes', async () => {
   await withDay(async ({ post, read, write, app }) => {
     for (const [input, status] of [
       [edit('Missing task', 'New text'), 409],
@@ -251,14 +255,14 @@ test('day edits reject stale, ambiguous, malformed, ended and linked-activity re
       expected: 409,
     })
     const endedContent = CONTENT.replace('ended:\n', 'ended: 13.5h\n')
-    await write(endedContent)
+    await write(endedContent, true)
     const ended = await post('edit', edit('Review the budget', 'Changed'))
     assert({
-      given: 'a day that ended while editing',
-      should: 'reject the edit with the ended view',
+      given: 'a day summarized while editing',
+      should: 'reject the edit with the summarized view',
       actual: {
         status: ended.status,
-        ended: ((await ended.json()) as { view: DayView }).view.record.ended,
+        ended: ((await ended.json()) as { view: DayView }).view.record.summarized,
         content: await read(),
       },
       expected: { status: 409, ended: true, content: endedContent },

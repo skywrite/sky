@@ -8,10 +8,10 @@ import { taskDestination, taskFiling, type TaskFiling } from '#lib/nbfs/taskDest
 import { readOptional, withLock } from '#lib/outbox/files.ts'
 import { workstreamDayReference } from '#lib/workstreams/day.ts'
 import DayDocument from '#shared/models/Day/document/mod.ts'
+import { hasDaySummary } from '#shared/nbfs/daySummary.ts'
 import { PlainDate, Week } from '#universal/dates/nbdt/mod.ts'
 import { editPlanItem, ItemEditError, planSection, planSections } from './editingText.ts'
 import type { DayEditFields } from './editingTypes.ts'
-import { dayEnd } from './ended.ts'
 import isDay from './isDay.ts'
 import { bodyOf, dayFileOf, type ItemRoutesOptions } from './itemContext.ts'
 import { orderPlanList, planOrder, setPlanOrder } from './order.ts'
@@ -170,8 +170,10 @@ export function createDayOrganizer(options: ItemRoutesOptions) {
           const before = await readOptional(file)
           const after =
             before ?? (filed === 'day' ? DayDocument.createFutureDay(date).toMarkdown() : emptySchedule(list))
-          if (filed === 'day' && dayEnd(DayDocument.fromMarkdown(after)).ended)
-            throw new ItemEditError('The destination day has ended. Choose another date.')
+          if (filed === 'day' && (await hasDaySummary(file)))
+            throw new ItemEditError(
+              'The destination day has a saved summary. Choose another date or remove its summary.',
+            )
           change = { file, before, after }
           destinations.set(file, change)
         }
@@ -289,8 +291,8 @@ export function createDayOrganizer(options: ItemRoutesOptions) {
         const current = await readOptional(change.file)
         if (current === undefined)
           throw new ItemEditError('A day file was removed. The change cannot be undone automatically.')
-        if (dayEnd(DayDocument.fromMarkdown(current)).ended)
-          throw new ItemEditError('A day has ended. The change cannot be undone automatically.')
+        if (await hasDaySummary(change.file))
+          throw new ItemEditError('A day has a saved summary. Remove its summary before undoing this change.')
         let after = change.before
         if (current !== change.after) {
           after = current

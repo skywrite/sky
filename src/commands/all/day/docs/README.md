@@ -1,6 +1,6 @@
 ---
 created: 2026-08-29
-updated: 2026-10-25
+updated: 2026-10-26
 ---
 
 # Day commands
@@ -85,8 +85,7 @@ with no record, plus records whose `when:` states no end time. Its rules:
 
 The check lives in `meeting/lib/meetingCheck.ts` — a pure comparison over
 already-fetched sources, the fetches, and a model-facing render — and
-surfaces in four places: `day:end` (the ending day), `day:start` (the day
-before), and the ambient context of every chat and voice session, where
+surfaces in `day:start` (the day before) and the ambient context of every chat and voice session, where
 the render also judges each meeting against the notebook clock (upcoming,
 in progress, not logged). See
 [2026-08-30 — the meeting check reaches the chat and the voice](2026-08-30-meeting-check-in-chat-and-voice.md).
@@ -153,13 +152,14 @@ An empty move or reminder copy creates no destination. Failure to create a
 destination leaves the source untouched. Reminder moves save the destination
 before removing the source items.
 
-`day:end` runs `day:todo:incomplete` by default (`commands.day.end` in config).
-Add `day:commitments:incomplete` there to sweep both lists at close.
+The review moves unfinished tasks before generating the summary.
+The standalone incomplete commands remain available for an explicit sweep; no End action runs them.
+See the [summary cutoff](../../../../service/handler/day/docs/README.md#the-days-items) for the app's read-only rules.
 
 ### Where commitments differ from todos
 
-- **One `Incomplete` section per category.** The todo sweep usually runs first
-  (`day:end`), so the commitments sweep appends to an existing
+- **One `Incomplete` section per category.** When the todo sweep runs first,
+  the commitments sweep appends to an existing
   `Professional Incomplete` instead of adding a second heading with the same
   title. Two same-titled lists break every title lookup on the document.
 - **Commitments stay in time order.** Shared block ordering sorts commitments

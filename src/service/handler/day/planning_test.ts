@@ -4,6 +4,7 @@ import * as path from 'node:path'
 import { atomicWrite } from '#lib/outbox/files.ts'
 import { exists, makeTempDir } from '#shared/fs/mod.ts'
 import DayDocument from '#shared/models/Day/document/mod.ts'
+import { daySummaryPath } from '#shared/nbfs/daySummary.ts'
 import { dayFile } from '#shared/nbfs/mod.ts'
 import { assert, test } from '#test'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
@@ -546,7 +547,7 @@ test(
   },
 )
 
-test({ name: 'ending a day closes every planning mutation including an outstanding Undo' }, async () => {
+test({ name: 'summarizing a day closes every planning mutation including an outstanding Undo' }, async () => {
   await withNotebook(async ({ next, post, file, professional }) => {
     const entry = (await next())[0]
     const added = (await (
@@ -554,6 +555,7 @@ test({ name: 'ending a day closes every planning mutation including an outstandi
     ).json()) as DayPlanResult
     const ended = (await readFile(file, 'utf8')).replace('ended:', 'ended: 17:00')
     await writeFile(file, ended)
+    await writeFile(daySummaryPath(file), '# Summary\n')
     const requests = await Promise.all([
       post('add', { kind: 'todos', text: 'Another task', requestId: randomUUID() }),
       post('add', { kind: 'complete', text: 'A sample entry', time: '09:30', requestId: randomUUID() }),
@@ -561,11 +563,11 @@ test({ name: 'ending a day closes every planning mutation including an outstandi
       post('undo', { id: added.undo }),
     ])
     assert({
-      given: 'a client still showing a day after it ended',
-      should: 'return the ended view and preserve the day and Next files',
+      given: 'a client still showing a day after it was summarized',
+      should: 'return the summarized view and preserve the day and Next files',
       actual: [
         requests.map((result) => result.status),
-        ((await requests[0].json()) as { view: DayView }).view.record.ended,
+        ((await requests[0].json()) as { view: DayView }).view.record.summarized,
         await readFile(file, 'utf8'),
         await readFile(professional, 'utf8'),
       ],

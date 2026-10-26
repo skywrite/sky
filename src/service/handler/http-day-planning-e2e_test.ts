@@ -2,6 +2,7 @@ import { readFile, writeFile } from 'node:fs/promises'
 import * as path from 'node:path'
 import { exists } from '#shared/fs/mod.ts'
 import DayDocument from '#shared/models/Day/mod.ts'
+import { daySummaryPath } from '#shared/nbfs/daySummary.ts'
 import { dayFile } from '#shared/nbfs/mod.ts'
 import { assert, test } from '#test'
 import { PlainDate, ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
@@ -22,7 +23,7 @@ test(
       { initialMarkdown: EMPTY, tempPrefix: 'day-planning-', file: FILE, day: true },
       async ({ page, origin, file, errors }) => {
         await page.setViewportSize({ width: 1500, height: 1000 })
-        await page.goto(`${origin}/${DAY.ymd}`)
+        await page.goto(`${origin}/${DAY.ymd}?view=record`)
         const text = page.getByRole('textbox', { name: 'Item text', exact: true })
         await page.getByRole('button', { name: 'Add a to-do', exact: true }).click()
         await text.fill('Review the launch outline')
@@ -104,7 +105,7 @@ test(
       },
       async ({ page, origin, file, errors }) => {
         await page.setViewportSize({ width: 1500, height: 1000 })
-        await page.goto(`${origin}/${DAY.ymd}`)
+        await page.goto(`${origin}/${DAY.ymd}?view=record`)
         await page.getByRole('button', { name: 'From next lists', exact: true }).click()
         let dialog = page.getByRole('dialog')
         await dialog.getByRole('checkbox', { name: 'Read Atlas brief', exact: true }).check()
@@ -169,10 +170,11 @@ test(
           expected: [EMPTY, NEXT, PERSONAL, []],
         })
         await writeFile(file, EMPTY.replace('ended:', 'ended: 17:00'))
+        await writeFile(daySummaryPath(file), '# Summary\n')
         await page.reload()
-        await page.locator('.sky-day-ended').waitFor()
+        await page.locator('.sky-day-summarized').waitFor()
         assert({
-          given: 'the ended day',
+          given: 'the summarized day',
           should: 'hide all planning controls',
           actual: [
             await page.getByRole('button', { name: /^Add a (to-do|commitment|reminder)$/ }).count(),

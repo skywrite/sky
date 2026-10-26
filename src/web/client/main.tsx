@@ -162,7 +162,7 @@ function Canvas() {
   const clock = useClockNow()
   // This week, for the sidebar: the day waiting to start, and whether next week has a plan.
   const { view: thisWeek, reload: reloadWeek } = useWeek('')
-  // A day started or ended from a page: the week's dot, the clock, and today all follow.
+  // A day started or reviewed from a page: the week's dot, the clock, and today all follow.
   const dayChanged = () => {
     setDayStarts((count) => count + 1)
     reloadWeek()
@@ -611,6 +611,7 @@ function Canvas() {
             id={weekId}
             onOpenDay={(ymd, today) => navigate(today ? '/' : `/${ymd}`)}
             onOpenWeek={(id) => navigate(weekHref(id))}
+            onReview={(ymd) => navigate(`/${ymd}?review=${ymd}`)}
             onChanged={dayChanged}
           />
         ) : isClock ? (

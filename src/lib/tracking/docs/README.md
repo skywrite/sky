@@ -15,7 +15,7 @@ definition schema, record formats, and date interpretation.
 
 Tracking embedded in a day page reads and saves against the displayed `DayView` date.
 This includes Today when the notebook's open day is still yesterday and days selected from Week or the sidebar.
-An ended day shows its records read-only, including on Today.
+A summarized day shows its records read-only, including on Today.
 Standalone Tracking and CLI capture default to `currentMoment(timeDir)`, the calendar date and wall time in the notebook's
 timezone; they do not inherit the notebook's open day.
 

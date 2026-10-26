@@ -8,10 +8,10 @@ import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import { hold } from '../../../activity.ts'
 import type { ThreadSummary } from '../../chat/mod.ts'
 import type { StreaksStore } from '../../streaks/store.ts'
-import { buildDayEnding } from '../ending.ts'
 import isDay from '../isDay.ts'
 import { buildDayView, type DayRoutesOptions } from '../mod.ts'
 import { dayItemKey } from '../organizingTypes.ts'
+import { buildReviewRecords } from '../reviewRecords.ts'
 import type { ScheduleHost } from '../schedule.ts'
 import { DayReviewStore } from './store.ts'
 import { REVIEW_STEPS, type ReviewItem, type ReviewRuntime } from './types.ts'
@@ -50,7 +50,7 @@ export function createReviewRoutes(options: Options) {
     const view = await buildDayView(options.day, ymd)
     const items: ReviewItem[] = []
     const hasDay = Boolean(view.day.dayRelativePath)
-    const ended = view.record.ended
+    const summarized = view.record.summarized
     if (hasDay) {
       for (const item of [...view.record.todos, ...view.record.reminders].filter((item) => !item.done)) {
         if (!item.revision) continue
@@ -61,8 +61,8 @@ export function createReviewRoutes(options: Options) {
           detail: item.list,
           address: { list: item.list, raw: item.raw, occurrence: item.occurrence, revision: item.revision },
           href: item.workstream ? `/workstreams/${encodeURIComponent(item.workstream.id)}` : `/${ymd}?view=record`,
-          blocked: ended
-            ? 'This day has ended; its tasks are read-only.'
+          blocked: summarized
+            ? 'This day has a saved summary. Remove its summary to move tasks again.'
             : item.workstream
               ? 'Move this activity from its workstream.'
               : undefined,
@@ -87,7 +87,9 @@ export function createReviewRoutes(options: Options) {
               title: streak.title,
               detail: streak.rule,
               href: `/streaks/${encodeURIComponent(streak.name)}`,
-              blocked: ended ? 'This day has ended; its streaks are read-only.' : undefined,
+              blocked: summarized
+                ? 'This day has a saved summary. Remove its summary to edit streaks again.'
+                : undefined,
             })
           for (const message of report.warnings) warning('Check streaks', message, '/streaks')
         } catch (error) {
@@ -108,7 +110,9 @@ export function createReviewRoutes(options: Options) {
               name: metric.tracker.name,
               tracker: metric.tracker,
               href: `/tracking/${encodeURIComponent(metric.tracker.name)}`,
-              blocked: ended ? 'This day has ended; open Tracking to make a historical correction.' : undefined,
+              blocked: summarized
+                ? 'This day has a saved summary; open Tracking to make a historical correction.'
+                : undefined,
             })
           for (const error of report.errors) warning(`Could not read ${error.name}`, error.message, '/tracking')
           for (const metric of report.metrics)
@@ -131,11 +135,11 @@ export function createReviewRoutes(options: Options) {
             })
         }
       }
-      const ending = await buildDayEnding({
+      const records = await buildReviewRecords({
         dayDirPath: path.join(options.day.timeDir, dayDir(date)),
         markdownBaseDir: options.day.markdownBaseDir,
       })
-      for (const item of ending.endless)
+      for (const item of records.endless)
         items.push({
           id: fingerprint('meeting', item),
           kind: 'meeting',
@@ -176,7 +180,7 @@ export function createReviewRoutes(options: Options) {
     return {
       items,
       hasDay,
-      ended,
+      summarized,
       today: view.planningToday ?? PlainDate.today().ymd,
       summaryHref: view.summary ? `/${ymd}?view=summary` : null,
       chats: ((await options.chats?.list()) ?? [])

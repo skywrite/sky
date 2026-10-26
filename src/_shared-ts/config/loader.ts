@@ -91,7 +91,6 @@ function defaults(): SkyConfig {
       dirs: [],
       day: {
         start: ['day:sr:update', 'prices:all:fetch', 'util:weather'],
-        end: ['day:todo:incomplete'],
       },
     },
     bins: {},
@@ -150,7 +149,6 @@ export function loadSkyConfig(configPath = SKY_CONFIG_PATH): SkyConfig {
     if (parsed.categories) config.categories = parsed.categories
     if (parsed.commands?.dirs) config.commands.dirs = parsed.commands.dirs.map(expandTilde)
     if (parsed.commands?.day?.start) config.commands.day.start = parsed.commands.day.start
-    if (parsed.commands?.day?.end) config.commands.day.end = parsed.commands.day.end
     if (parsed.bins) config.bins = { ...config.bins, ...parsed.bins }
     if (parsed.slack?.workspace) config.slack.workspace = parsed.slack.workspace
     const forYou = { ...SLACK_FOR_YOU_DEFAULTS }

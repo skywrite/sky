@@ -18,7 +18,7 @@ function configWith(overrides: Partial<SkyConfig> = {}): SkyConfig {
     outputDir: `${HOME}/Desktop`,
     editor: 'code',
     categories: ['Professional', 'Personal'],
-    commands: { dirs: [`${HOME}/sky-extras`], day: { start: ['day:sr:update', 'util:weather'], end: [] } },
+    commands: { dirs: [`${HOME}/sky-extras`], day: { start: ['day:sr:update', 'util:weather'] } },
     bins: {},
     slack: { workspace: 'https://atlas.slack.com' },
     web: {},
@@ -99,10 +99,7 @@ test({ name: 'settings view - every value, with where it came from' }, () => {
     given: 'a list the file leaves out',
     should: 'show the default list',
     actual: [rows.get('commands.day.start'), rows.get('commands.day.end')],
-    expected: [
-      { key: 'commands.day.start', value: ['day:sr:update', 'util:weather'], source: 'default' },
-      { key: 'commands.day.end', value: [], source: 'default' },
-    ],
+    expected: [{ key: 'commands.day.start', value: ['day:sr:update', 'util:weather'], source: 'default' }, undefined],
   })
   assert({
     given: 'the model roles and the port, none in the file',

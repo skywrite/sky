@@ -2,6 +2,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import * as path from 'node:path'
 import DayDocument from '#shared/models/Day/document/mod.ts'
+import { daySummaryPath } from '#shared/nbfs/daySummary.ts'
 import { dayFile } from '#shared/nbfs/mod.ts'
 import { assert, test } from '#test'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
@@ -47,6 +48,7 @@ test('Planning and completing a workstream activity preserves one canonical task
     const next = await resolveWorkstreamDayItems(restarted, NEXT_DAY, NEXT_DAY, [item])
     const endedMarkdown = doc.updateYaml({ started: '08:00', ended: '13h', tz: 'America/Chicago' }).toMarkdown()
     await writeFile(f.file, endedMarkdown)
+    await writeFile(daySummaryPath(f.file), '# Summary\n')
     const app = createDayRoutes({
       markdownBaseDir: f.root,
       timeDir: f.options.timeDir,
@@ -62,16 +64,16 @@ test('Planning and completing a workstream activity preserves one canonical task
       body: JSON.stringify({ list: 'Workstream Todos', raw, done: true }),
     })
     assert({
-      given: 'an ended current day linked to work that has since reopened on another day',
+      given: 'a summarized current day linked to work that has since reopened on another day',
       should: 'preserve the recorded result and reject edits before touching the canonical work',
       actual: {
-        endedAt: ended.record.endedAt,
+        summarized: ended.record.summarized,
         done: ended.record.todos[0].done,
         status: rejected.status,
         sameWork: (await restarted.get(f.workstream.id))?.revision === before?.revision,
         sameDay: (await readFile(f.file, 'utf8')) === endedMarkdown,
       },
-      expected: { endedAt: `${DAY} 21:00`, done: true, status: 409, sameWork: true, sameDay: true },
+      expected: { summarized: true, done: true, status: 409, sameWork: true, sameDay: true },
     })
     assert({
       given: 'repeated planning/completion, restart, and reopening on another day',

@@ -8,8 +8,7 @@ import type { WeekCommands } from './mod.ts'
 /**
  * The week and day pages over the real notebook: each button is one
  * in-process command run, exactly the run the terminal would do —
- * day:start with its meeting check, streaks, location and time zone;
- * day:end with its sweep.
+ * day:start with its meeting check, streaks, location and time zone.
  */
 export function createWeekHost(config: typeof ConfigModule, env: Record<string, string>): WeekCommands {
   const createTasks = () => new CommandService(CommandContext.server(config, env))
@@ -19,9 +18,6 @@ export function createWeekHost(config: typeof ConfigModule, env: Record<string, 
   return {
     async startDay(day: PlainDate): Promise<void> {
       requireSuccess('day:start', await createTasks().run('day:start', { day }))
-    },
-    async endDay(day: PlainDate, options): Promise<void> {
-      requireSuccess('day:end', await createTasks().run('day:end', { day, perfect: options?.perfect ?? true }))
     },
   }
 }

@@ -72,29 +72,6 @@ test({ name: 'duplicate moves and individual row actions work on desktop and mob
           await page.locator('.sky-prow').first().waitFor()
           const sourceTitle = await page.title()
 
-          await page.getByRole('button', { name: 'End Tuesday', exact: true }).click()
-          const ending = page.locator('.sky-end')
-          const endCheck = page.waitForResponse((response) => response.url().endsWith('/item'))
-          await ending.getByRole('button', { name: 'Mark done: Review the budget', exact: true }).nth(1).click()
-          assert({
-            given: 'two identical tasks in the End dialog',
-            should: 'complete only the selected copy',
-            actual: (await endCheck).status(),
-            expected: 200,
-          })
-          await ending.locator('.sky-end-row[data-done="true"]').waitFor()
-          assert({
-            given: 'one completed copy',
-            should: 'leave the other task open in the dialog',
-            actual: await ending.locator('.sky-end-row[data-done="true"]').count(),
-            expected: 1,
-          })
-          const endUncheck = page.waitForResponse((response) => response.url().endsWith('/item'))
-          await ending.getByRole('button', { name: 'Mark not done: Review the budget', exact: true }).click()
-          await endUncheck
-          await ending.locator('.sky-end-row[data-done="true"]').waitFor({ state: 'detached' })
-          await ending.getByRole('button', { name: 'Not yet', exact: true }).click()
-
           await page.getByRole('button', { name: 'Organize', exact: true }).click()
           await page.getByRole('checkbox', { name: 'Select Review the budget', exact: true }).nth(1).click()
           assert({

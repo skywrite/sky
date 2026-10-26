@@ -204,7 +204,7 @@ type LinkedDayItem = {
   workstream?: { id: string; activityId: string; kind: string; error?: string }
 }
 
-/** The open current day reflects canonical work; null keeps an ended day's recorded participation. */
+/** The open current day reflects canonical work; null keeps a summarized day's recorded participation. */
 export async function resolveWorkstreamDayItems<T extends LinkedDayItem>(
   store: WorkstreamStore,
   day: string,

@@ -85,7 +85,6 @@ test('start route - runs day:start when Start is pressed and answers with the st
         await mkdir(path.dirname(file), { recursive: true })
         await writeFile(file, dayMarkdown(day, 'started: 07:06\nended:\n'))
       },
-      endDay: async () => {},
     },
   })
   const bare = createDayRoutes(options)

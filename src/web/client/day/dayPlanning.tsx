@@ -437,7 +437,7 @@ export function useDayPlanning(
   itemUndo: unknown,
 ) {
   const ymd = day?.day.ymd ?? ''
-  const enabled = Boolean(day && !day.record.ended)
+  const enabled = Boolean(day && !day.record.summarized)
   const [active, setActive] = useState<DayAddKind | 'next' | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)

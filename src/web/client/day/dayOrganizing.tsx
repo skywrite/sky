@@ -58,7 +58,7 @@ export function useDayOrganizing(
   navigate: (path: string) => void,
 ) {
   const ymd = day?.day.ymd ?? ''
-  const enabled = Boolean(day?.day.dayRelativePath && !day.record.ended)
+  const enabled = Boolean(day?.day.dayRelativePath && !day.record.summarized)
   const scope = `${ymd}/${enabled}`
   const current = useRef(scope)
   current.current = scope

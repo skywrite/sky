@@ -1,8 +1,9 @@
-import { readFile, writeFile } from 'node:fs/promises'
+import { readFile, rm, writeFile } from 'node:fs/promises'
 import * as path from 'node:path'
+import { daySummaryPath } from '#shared/nbfs/daySummary.ts'
 import { dayDir, dayFile } from '#shared/nbfs/mod.ts'
 import { assert, test } from '#test'
-import { PlainDate } from '#universal/dates/nbdt/mod.ts'
+import { PlainDate, ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
 import { runWysiwygE2e } from './httpWysiwygE2eTestHelpers.ts'
 
 const DAY = new PlainDate('2026-01-27')
@@ -36,8 +37,80 @@ tz: America/Chicago
 const end = (markdown: string) => markdown.replace('ended:\n', 'ended: 13.5h\n')
 
 test(
+  { name: 'summary polling locks and reopens the record while manual Start remains available', timeout: 60000 },
+  async (t) => {
+    const starts: string[] = []
+    await runWysiwygE2e(
+      t,
+      {
+        initialMarkdown: end(OPEN),
+        tempPrefix: 'day-summary-cutoff-',
+        file: FILE,
+        day: true,
+        now: new ZonedDateTime({ date: DAY.ymd, time: '31:00', timezone: 'America/Chicago' }),
+        week: () => ({
+          startDay: async (day) => {
+            starts.push(day.ymd)
+          },
+        }),
+      },
+      async ({ page, origin, file, errors }) => {
+        await page.goto(`${origin}/${DAY.ymd}?view=record`)
+        const priority = page.locator('.sky-day-priority')
+        await priority.getByRole('button', { name: 'Mark done', exact: true }).waitFor()
+        await writeFile(daySummaryPath(file), '# Summary\n\nAtlas planning moved forward.\n')
+        await page.evaluate(() => window.dispatchEvent(new Event('focus')))
+        await page.locator('.sky-day-summarized').waitFor()
+        assert({
+          given: 'a summary appears while the day record is open',
+          should: 'freeze task controls without requiring navigation or changing the notebook day',
+          actual: [await priority.getByRole('button', { name: 'Mark done', exact: true }).count(), starts],
+          expected: [0, []],
+        })
+        await page.goto(`${origin}/${DAY.ymd}`)
+        await page.getByRole('article', { name: 'Tuesday summary' }).waitFor()
+        await page.getByRole('button', { name: 'Start Wednesday' }).waitFor()
+        const summaryTitle = await page.title()
+        await page.goto(`${origin}/week`)
+        await page.getByText('Summarized', { exact: true }).waitFor()
+        assert({
+          given: 'the summary is shown by default and on the week page',
+          should: 'identify the viewed summary, keep Start manual, and offer no End action',
+          actual: [summaryTitle.includes('Summary'), await page.getByRole('button', { name: /^End / }).count(), starts],
+          expected: [true, 0, []],
+        })
+        await page.goBack()
+        await page.getByRole('article', { name: 'Tuesday summary' }).waitFor()
+        await rm(daySummaryPath(file))
+        await page.evaluate(() => window.dispatchEvent(new Event('focus')))
+        await priority.getByRole('button', { name: 'Mark done', exact: true }).waitFor()
+        assert({
+          given: 'the summary is removed while a legacy ended marker remains',
+          should: 'return to the editable record and update its title without starting a day',
+          actual: [
+            await page.locator('.sky-day-summarized').count(),
+            (await page.title()).includes('Day record'),
+            starts,
+          ],
+          expected: [0, true, []],
+        })
+        await page.goto(`${origin}/week`)
+        await page.getByRole('button', { name: 'Review Tuesday' }).waitFor()
+        await page.getByRole('button', { name: 'Start Wednesday' }).click()
+        assert({
+          given: 'Start is explicitly pressed after the review cutoff changes',
+          should: 'run Start once and leave the old day file untouched',
+          actual: [starts, (await readFile(file, 'utf8')) === end(OPEN), errors],
+          expected: [[DAY.addDays(1).ymd], true, []],
+        })
+      },
+    )
+  },
+)
+
+test(
   {
-    name: 'ended day keeps readable tasks and document links without editing controls on desktop and mobile',
+    name: 'summarized day keeps readable tasks and document links without editing controls on desktop and mobile',
     timeout: 30000,
   },
   async (t) => {
@@ -45,21 +118,24 @@ test(
       t,
       {
         initialMarkdown: end(OPEN),
-        tempPrefix: 'day-ended-',
+        tempPrefix: 'day-summarized-',
         file: FILE,
-        files: { [BRIEF]: '# Atlas brief\n\nA sample launch plan to review with the team.\n' },
+        files: {
+          [BRIEF]: '# Atlas brief\n\nA sample launch plan to review with the team.\n',
+          [daySummaryPath(FILE)]: '# Summary\n',
+        },
         day: true,
       },
       async ({ page, origin, file, errors }) => {
         await page.setViewportSize({ width: 1500, height: 1000 })
-        await page.goto(`${origin}/${DAY.ymd}`)
-        const badge = page.locator('.sky-day-ended')
+        await page.goto(`${origin}/${DAY.ymd}?view=record`)
+        const badge = page.locator('.sky-day-summarized')
         await badge.waitFor()
         await badge.focus()
         await page.getByRole('tooltip').waitFor()
         assert({
-          given: 'an ended day with both finished and unfinished tasks',
-          should: 'show the padlock, the Ended label with its time, and a readable explanation',
+          given: 'an summarized day with both finished and unfinished tasks',
+          should: 'show the Summarized label, and a readable explanation',
           actual: {
             label: await badge.innerText(),
             icons: await badge.locator('svg').count(),
@@ -67,10 +143,10 @@ test(
             count: await page.locator('.sky-day-progress').innerText(),
           },
           expected: {
-            label: 'Ended 21:30',
-            icons: 1,
-            explanation: 'Ended at 21:30. Tasks are read-only.',
-            count: 'Ended 21:30\n·\n1 of 4 tasks complete',
+            label: 'Summarized',
+            icons: 0,
+            explanation: 'This day has a saved summary. Remove its summary to edit tasks again.',
+            count: 'Summarized\n·\n1 of 4 tasks complete',
           },
         })
         // Close the badge's tooltip: left open, it trails the resize below by a frame and reads as overflow.
@@ -110,7 +186,7 @@ test(
               return selection?.toString()
             })
           assert({
-            given: `an ended day at ${width}px with a swipe attempted on a task`,
+            given: `an summarized day at ${width}px with a swipe attempted on a task`,
             should: 'keep task text selectable, preserve the file, and offer no task mutations or extra record heading',
             actual: {
               buttons: await page.locator('.sky-prow button').count(),
@@ -135,13 +211,13 @@ test(
         await page.getByRole('link', { name: 'Read Atlas brief', exact: true }).click()
         await page.waitForURL(`**/explorer/${BRIEF}`)
         await writeFile(file, end(OPEN.split('\n## Most Important')[0]))
-        await page.goto(`${origin}/${DAY.ymd}`)
+        await page.goto(`${origin}/${DAY.ymd}?view=record`)
         await badge.waitFor()
         assert({
-          given: 'a day whose lists have been cleared after ending',
-          should: 'keep the Ended indicator even without a task count and produce no browser errors',
+          given: 'a day whose lists have been cleared after summarizing',
+          should: 'keep the Summarized indicator even without a task count and produce no browser errors',
           actual: { progress: await page.locator('.sky-day-progress').innerText(), errors },
-          expected: { progress: 'Ended 21:30', errors: [] },
+          expected: { progress: 'Summarized', errors: [] },
         })
       },
     )
@@ -149,28 +225,29 @@ test(
 )
 
 test(
-  { name: 'a stale day view refreshes to Ended when a completion or Undo is refused', timeout: 30000 },
+  { name: 'a stale day view refreshes to Summarized when a completion or Undo is refused', timeout: 30000 },
   async (t) => {
     await runWysiwygE2e(
       t,
-      { initialMarkdown: OPEN, tempPrefix: 'day-ended-stale-', file: FILE, day: true },
+      { initialMarkdown: OPEN, tempPrefix: 'day-summarized-stale-', file: FILE, day: true },
       async ({ page, origin, file, errors }) => {
-        await page.goto(`${origin}/${DAY.ymd}`)
+        await page.goto(`${origin}/${DAY.ymd}?view=record`)
         const priority = page.locator('.sky-day-priority')
         await priority.getByRole('button', { name: 'Mark done', exact: true }).click()
         const undo = page.getByRole('button', { name: 'Undo', exact: true })
         await undo.waitFor()
         const endedAfterCompletion = end(await readFile(file, 'utf8'))
         await writeFile(file, endedAfterCompletion)
+        await writeFile(daySummaryPath(file), '# Summary\n')
         const undoResponse = page.waitForResponse(
           (response) =>
             response.url().endsWith(`/day/${DAY.ymd}/item/row/undo`) && response.request().method() === 'POST',
         )
         await undo.click()
-        await page.locator('.sky-day-ended').waitFor()
+        await page.locator('.sky-day-summarized').waitFor()
         assert({
-          given: 'the day ends while a completed task has an Undo available in an old tab',
-          should: 'refuse Undo and replace all task controls with the ended state',
+          given: 'the day is summarized while a completed task has an Undo available in an old tab',
+          should: 'refuse Undo and replace all task controls with the summarized state',
           actual: {
             status: (await undoResponse).status(),
             unchanged: (await readFile(file, 'utf8')) === endedAfterCompletion,
@@ -180,21 +257,23 @@ test(
         })
 
         await writeFile(file, OPEN)
+        await rm(daySummaryPath(file))
         await page.reload()
         await priority.getByRole('button', { name: 'Mark done', exact: true }).waitFor()
         await writeFile(file, end(OPEN))
+        await writeFile(daySummaryPath(file), '# Summary\n')
         const completionResponse = page.waitForResponse(
           (response) => response.url().endsWith(`/day/${DAY.ymd}/item`) && response.request().method() === 'POST',
         )
         await priority.getByRole('button', { name: 'Mark done', exact: true }).click()
-        await page.locator('.sky-day-ended').waitFor()
+        await page.locator('.sky-day-summarized').waitFor()
         await priority.getByRole('img', { name: 'Incomplete', exact: true }).waitFor()
         // Chromium reports the expected rejected writes as resource errors in its console.
         const conflict = 'console: Failed to load resource: the server responded with a status of 409 (Conflict)'
         for (let i = errors.length - 1; i >= 0; i--) if (errors[i] === conflict) errors.splice(i, 1)
         assert({
-          given: 'a checkbox pressed in a stale tab after the day ended elsewhere',
-          should: 'restore the unfinished task without writing and show Ended',
+          given: 'a checkbox pressed in a stale tab after the summary was saved elsewhere',
+          should: 'restore the unfinished task without writing and show Summarized',
           actual: {
             status: (await completionResponse).status(),
             unchanged: (await readFile(file, 'utf8')) === end(OPEN),

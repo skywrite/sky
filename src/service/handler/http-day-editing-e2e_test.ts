@@ -1,5 +1,6 @@
 import { readFile, writeFile } from 'node:fs/promises'
 import * as path from 'node:path'
+import { daySummaryPath } from '#shared/nbfs/daySummary.ts'
 import { dayDir, dayFile } from '#shared/nbfs/mod.ts'
 import { assert, test } from '#test'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
@@ -46,7 +47,7 @@ test(
       },
       async ({ page, origin, file, errors }) => {
         await page.setViewportSize({ width: 1500, height: 1000 })
-        await page.goto(`${origin}/${DAY.ymd}`)
+        await page.goto(`${origin}/${DAY.ymd}?view=record`)
         const row = (text: string) => page.locator('.sky-prow').filter({ hasText: text })
         const input = page.getByRole('textbox', { name: 'Item text', exact: true })
         await row('Review the outline').locator('.sky-ptext').dblclick()
@@ -138,7 +139,7 @@ test(
         try {
           const page = await context.newPage()
           page.on('pageerror', (error) => errors.push(error.message))
-          await page.goto(`${origin}/${DAY.ymd}`)
+          await page.goto(`${origin}/${DAY.ymd}?view=record`)
           const row = page.locator('.sky-prow').filter({ hasText: 'Water the plants' })
           const details = row.getByRole('button', { name: 'Item details', exact: true })
           assert({
@@ -214,13 +215,16 @@ test(
 )
 
 test(
-  { name: 'day editing retains drafts on write failure and when the day ends, and Escape cancels', timeout: 45000 },
+  {
+    name: 'day editing retains drafts on write failure and when the day is summarized, and Escape cancels',
+    timeout: 45000,
+  },
   async (t) => {
     await runWysiwygE2e(
       t,
       { initialMarkdown: CONTENT, file: FILE, tempPrefix: 'day-edit-failures-', day: true },
       async ({ page, origin, file, errors }) => {
-        await page.goto(`${origin}/${DAY.ymd}`)
+        await page.goto(`${origin}/${DAY.ymd}?view=record`)
         const row = page.locator('.sky-prow').filter({ hasText: 'Review the outline' })
         const input = page.getByRole('textbox', { name: 'Item text', exact: true })
         await row.locator('.sky-ptext').dblclick()
@@ -245,10 +249,11 @@ test(
           expected: 'Keep this draft',
         })
         await writeFile(file, CONTENT.replace('ended:\n', 'ended: 13.5h\n'))
+        await writeFile(daySummaryPath(file), '# Summary\n')
         await input.press('Enter')
         await page.getByRole('dialog', { name: 'Item details' }).waitFor()
         assert({
-          given: 'the day ending while an edit is open',
+          given: 'a summary saved while an edit is open',
           should: 'preserve a copyable draft and disable saving',
           actual: {
             text: await input.inputValue(),
@@ -259,7 +264,7 @@ test(
         await page.getByRole('button', { name: 'Cancel', exact: true }).click()
         await page.getByRole('dialog').waitFor({ state: 'detached' })
         assert({
-          given: 'returning to an ended day',
+          given: 'returning to an summarized day',
           should: 'show no editing actions',
           actual: await page.locator('.sky-prow button').count(),
           expected: 0,

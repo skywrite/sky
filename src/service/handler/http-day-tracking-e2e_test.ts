@@ -2,6 +2,7 @@ import * as path from 'node:path'
 import { serve } from '@hono/node-server'
 import { chromium } from 'playwright'
 import { TRACKING_TODAY, trackingFixture } from '#lib/tracking/testHelpers.ts'
+import { daySummaryPath } from '#shared/nbfs/daySummary.ts'
 import { dayFile } from '#shared/nbfs/mod.ts'
 import { env } from '#shared/sys/mod.ts'
 import { assert, test } from '#test'
@@ -58,6 +59,7 @@ test(
       })
       await f.put(path.join('time', dayFile(openDay)), dayMarkdown(openDay))
       await f.put(path.join('time', dayFile(previous)), dayMarkdown(previous, true))
+      await f.put(daySummaryPath(path.join('time', dayFile(previous))), '# Summary\n')
       await f.put('data/tracking/2030/focus-score.csv', `date, score\n${previous.ymd}, 3\n${TRACKING_TODAY}, 9\n`)
       const address = server.address()
       if (!address || typeof address === 'string') throw new Error('Missing test server address.')
@@ -79,13 +81,14 @@ test(
         .locator('.sky-tracking-log-row')
         .filter({ has: page.getByRole('link', { name: 'Reading log', exact: true }) })
       const waitForDay = async (date: string) => {
+        const response = await page.request.get(`${origin}/day/${date}`)
+        const view = await response.json()
+        if (view.summary) await page.getByText('Day record', { exact: true }).click()
         await page.waitForFunction(
           (expected) =>
             document.querySelector('.sky-tracking-day-footer .sky-tracking-hint')?.textContent?.includes(expected),
           date,
         )
-        const response = await page.request.get(`${origin}/day/${date}`)
-        const view = await response.json()
         await page.waitForFunction((title) => document.title === title, `sky · ${view.day.dateLabel} · Day record`)
       }
 
@@ -172,17 +175,18 @@ test(
         .click()
       await waitForDay(previous.ymd)
       assert({
-        given: 'an ended previous day selected in the sidebar',
+        given: 'a summarized previous day selected in the sidebar',
         should: 'show only its records with no editing controls',
         actual: [await focus.locator('.sky-tracking-log-value').innerText(), await daily.getByRole('button').count()],
         expected: ['3', 0],
       })
 
       await f.put(path.join('time', dayFile(openDay)), dayMarkdown(openDay, true))
+      await f.put(daySummaryPath(path.join('time', dayFile(openDay))), '# Summary\n')
       await page.goto(origin)
       await waitForDay(openDay.ymd)
       assert({
-        given: 'Today still points to a notebook day that has ended',
+        given: 'Today still points to a notebook day with a saved summary',
         should: 'keep that day’s tracking read-only too',
         actual: [await focus.locator('.sky-tracking-log-value').innerText(), await daily.getByRole('button').count()],
         expected: ['7', 0],

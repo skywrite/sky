@@ -7,6 +7,7 @@ import slugify from '#lib/string/slugify.ts'
 import DayDocument from '#shared/models/Day/document/mod.ts'
 import { Document } from '#shared/models/Markdown/mod.ts'
 import { toSingleLine } from '#shared/models/MostImportant/frontmatter.ts'
+import { hasDaySummary } from '#shared/nbfs/daySummary.ts'
 import { dayDir, dayFile } from '#shared/nbfs/mod.ts'
 import type { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import { miMarkdown } from './document.ts'
@@ -94,7 +95,8 @@ export async function saveMostImportant(
       throw new MostImportantError('This save was already used for a different draft. Review the saved task.')
     if (receipt?.linked) return { file: receipt.file, count: receipt.count }
     if (!receipt) {
-      if (dayDoc.yaml['ended']) throw new MostImportantError('This day has ended. Choose an open day for this task.')
+      if (await hasDaySummary(file))
+        throw new MostImportantError('This day has a saved summary. Choose another day or remove its summary.')
       const count =
         Math.max(
           items.length,
@@ -127,7 +129,8 @@ export async function saveMostImportant(
       await remember({ ...receipt, linked: true })
       return { file: relative, count }
     }
-    if (dayDoc.yaml['ended']) throw new MostImportantError('This day has ended. Choose an open day for this task.')
+    if (await hasDaySummary(file))
+      throw new MostImportantError('This day has a saved summary. Choose another day or remove its summary.')
     const encoded = target(relative)
     const raw = `MI/${count} -> [${label(draft.summary)}](${encoded})`
     let after: string | undefined

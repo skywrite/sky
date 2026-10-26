@@ -1,8 +1,9 @@
-import { mkdir, readFile, readdir, symlink, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises'
 import * as path from 'node:path'
 import { readOptional } from '#lib/outbox/files.ts'
 import DayDocument from '#shared/models/Day/mod.ts'
 import StreakDocument from '#shared/models/Streak/mod.ts'
+import { daySummaryPath } from '#shared/nbfs/daySummary.ts'
 import { assert, test } from '#test'
 import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import { readInput, STREAKS_TODAY, streaksFixture } from './testHelpers.ts'
@@ -26,7 +27,7 @@ test('streak reports read existing records and share the model counting rules', 
       should: 'count exact titles, keep today pending, and expose day locks and definition context',
       actual: [
         report.streaks.map((s) => [s.current, s.best, s.done, s.why, s.rule]),
-        report.days.map((day) => [day.date, day.ended]),
+        report.days.map((day) => [day.date, day.summarized]),
         await f.readDay(STREAKS_TODAY),
       ],
       expected: [
@@ -76,8 +77,9 @@ test('completion writes preserve other day bytes and safely undo only their own 
     const removed = await f.store.completion('read-a-chapter', { date: STREAKS_TODAY, done: false, expectedDone: true })
     const ended = (await f.readDay(STREAKS_TODAY)).replace('started: 08:00', 'started: 08:00\nended: 21:00')
     await writeFile(f.file(STREAKS_TODAY), ended)
+    await writeFile(daySummaryPath(f.file(STREAKS_TODAY)), '# Summary\n')
     assert({
-      given: 'a day ended after a completion removal',
+      given: 'a day summarized after a completion removal',
       should: 'keep even Undo read-only',
       actual: [(await f.post('/undo', { id: removed.undoId })).status, await f.readDay(STREAKS_TODAY)],
       expected: [409, ended],
@@ -202,7 +204,7 @@ test('archive records notebook time on a missing day and Undo removes the untouc
   }
 })
 
-test('archive and Undo refuse to change ended or subsequently edited day records', async () => {
+test('archive and Undo refuse to change summarized or subsequently edited day records', async () => {
   const f = await streaksFixture()
   try {
     await f.store.create(readInput)
@@ -212,7 +214,7 @@ test('archive and Undo refuse to change ended or subsequently edited day records
     const archivedFile = path.join(f.root, 'streaks/archived/read-a-chapter.md')
     const ended = await f.day(STREAKS_TODAY, ['Read a chapter'], true)
     assert({
-      given: 'an ended notebook day',
+      given: 'a summarized notebook day',
       should: 'refuse to archive without changing either the rule or the day',
       actual: [
         (await f.post(`/${original.name}/archive`, { revision: original.revision })).status,
@@ -222,6 +224,7 @@ test('archive and Undo refuse to change ended or subsequently edited day records
       ],
       expected: [409, ended, originalRule, undefined],
     })
+    await rm(daySummaryPath(f.file(STREAKS_TODAY)))
     await f.day(STREAKS_TODAY, ['Read a chapter'])
     const saved = await f.store.archive(original.name, { revision: original.revision })
     const archivedRule = await readFile(archivedFile, 'utf8')

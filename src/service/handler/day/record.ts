@@ -14,14 +14,15 @@ import { parseMeetingEntry } from '#shared/models/Day/document/meetings.ts'
 import DayDocument from '#shared/models/Day/document/mod.ts'
 import type Document from '#shared/models/Markdown/Document/mod.ts'
 import { isParticipant } from '#shared/models/Message/mod.ts'
+import { hasDaySummary } from '#shared/nbfs/daySummary.ts'
 import { ACTIONS_DIR, dayFile, isActionPath } from '#shared/nbfs/mod.ts'
 import type { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import { editableRow } from './editingText.ts'
-import { dayEnd } from './ended.ts'
 import { planOrder } from './order.ts'
 import { rowRevision } from './organizingText.ts'
 import type { CommitmentOrder } from './organizingTypes.ts'
 import { splitItemTime } from './planningTypes.ts'
+import { dayStatus } from './status.ts'
 
 /** One bullet from the day file: a plan, a promise, or a thing done. */
 export interface DayItem {
@@ -78,14 +79,10 @@ export interface VideoRow extends DayDocRow {
 }
 
 export interface DayRecord {
-  /** `HH:MM` the day started; null for a day that never did, which has no end to record */
+  /** `HH:MM` the day started; null for a day that never did. */
   started: string | null
-  ended: boolean
-  /** Recorded end in the day's timezone; null when open or the time cannot be read. */
-  endedAt: string | null
-  /** The end as the page reads it: `22:41`, `25:40` past midnight, or a date once it fell past the next noon */
-  endedClock: string | null
-  /** Ended with every planned item done — the file's `perfect: true` */
+  summarized: boolean
+  /** Every planned item is complete; shown as perfect once summarized. */
   perfect: boolean
   manualOrder?: string[]
   commitmentsOrder?: CommitmentOrder
@@ -258,9 +255,7 @@ function journalRow(row: DayDocRow): DayDocRow {
 export async function buildDayRecord(input: DayRecordInput): Promise<DayRecord> {
   const record: DayRecord = {
     started: null,
-    ended: false,
-    endedAt: null,
-    endedClock: null,
+    summarized: await hasDaySummary(path.join(input.timeDir, dayFile(input.day))),
     perfect: false,
     mostImportant: [],
     commitments: [],
@@ -282,7 +277,7 @@ export async function buildDayRecord(input: DayRecordInput): Promise<DayRecord> 
     const content = await readTextFile(file)
     const dayDoc = DayDocument.fromMarkdown(content)
     Object.assign(record, planOrder(content))
-    Object.assign(record, dayEnd(dayDoc))
+    Object.assign(record, await dayStatus(dayDoc, file))
     for (const meeting of dayDoc.meetings) {
       record.meetings.push({
         title: meeting.title,

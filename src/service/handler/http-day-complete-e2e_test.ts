@@ -1,6 +1,7 @@
 import { readFile, writeFile } from 'node:fs/promises'
 import * as path from 'node:path'
 import DayDocument from '#shared/models/Day/document/mod.ts'
+import { daySummaryPath } from '#shared/nbfs/daySummary.ts'
 import { dayFile } from '#shared/nbfs/mod.ts'
 import { env } from '#shared/sys/mod.ts'
 import { assert, test } from '#test'
@@ -18,7 +19,7 @@ for (const width of [1500, 390])
       { initialMarkdown: EMPTY, tempPrefix: 'day-complete-', file: FILE, day: true },
       async ({ page, origin, file, errors }) => {
         await page.setViewportSize({ width, height: 900 })
-        await page.goto(`${origin}/${DAY.ymd}`)
+        await page.goto(`${origin}/${DAY.ymd}?view=record`)
         const block = page.locator('.sky-block').filter({ has: page.locator('.sky-bhead', { hasText: 'Done today' }) })
         const add = block.getByRole('button', { name: 'Add entry', exact: true })
         await add.click()
@@ -77,11 +78,12 @@ for (const width of [1500, 390])
         if (screenshot) await page.screenshot({ path: `${screenshot}-entry-saved-${width}.png`, fullPage: true })
         const ended = (await readFile(file, 'utf8')).replace('ended:', 'ended: 26:00')
         await writeFile(file, ended)
+        await writeFile(daySummaryPath(file), '# Summary\n')
         await page.reload()
-        await page.locator('.sky-day-ended').waitFor()
+        await page.locator('.sky-day-summarized').waitFor()
         assert({
-          given: 'an extended-hours entry after reloading and ending the day',
-          should: 'retain the record and respect the ended day',
+          given: 'an extended-hours entry after reloading and summarizing the day',
+          should: 'retain the record and respect the summarized day',
           actual: {
             entries: DayDocument.fromMarkdown(ended).lists.find((list) => list.title === 'Professional Complete')
               ?.items,
@@ -119,7 +121,7 @@ for (const width of [1500, 390])
               },
             }),
           )
-          await page.goto(`${origin}/${DAY.ymd}`)
+          await page.goto(`${origin}/${DAY.ymd}?view=record`)
           const block = page
             .locator('.sky-block')
             .filter({ has: page.locator('.sky-bhead', { hasText: 'Done today' }) })

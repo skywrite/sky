@@ -2,6 +2,7 @@ import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import * as path from 'node:path'
 import type { StreakClassifier } from '#lib/streaks/category.ts'
+import { daySummaryPath } from '#shared/nbfs/daySummary.ts'
 import { dayFile } from '#shared/nbfs/mod.ts'
 import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import { createStreaksRoutes } from './mod.ts'
@@ -49,10 +50,11 @@ export async function streaksFixture(
     app,
     post,
     file,
-    async day(date: string, items: string[] = [], ended = false) {
-      const text = `---\ndate: ${date}\nstarted: 08:00\n${ended ? 'ended: 21:00\n' : ''}---\n\n# ${date}\n\n## Streaks\n\n${items.map((item) => `- ${item}`).join('\n') || '-'}\n\n## Personal Complete\n\n- Keep this [reference][book] unchanged.\n\n[book]: https://example.com/book\n`
+    async day(date: string, items: string[] = [], summarized = false) {
+      const text = `---\ndate: ${date}\nstarted: 08:00\n---\n\n# ${date}\n\n## Streaks\n\n${items.map((item) => `- ${item}`).join('\n') || '-'}\n\n## Personal Complete\n\n- Keep this [reference][book] unchanged.\n\n[book]: https://example.com/book\n`
       await mkdir(path.dirname(file(date)), { recursive: true })
       await writeFile(file(date), text)
+      if (summarized) await writeFile(daySummaryPath(file(date)), '# Summary\n')
       return text
     },
     readDay: (date: string) => readFile(file(date), 'utf8'),

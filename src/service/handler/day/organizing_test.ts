@@ -3,6 +3,7 @@ import { mkdir, rm, writeFile } from 'node:fs/promises'
 import * as path from 'node:path'
 import { atomicWrite, readOptional } from '#lib/outbox/files.ts'
 import { makeTempDir } from '#shared/fs/mod.ts'
+import { daySummaryPath } from '#shared/nbfs/daySummary.ts'
 import { dayFile } from '#shared/nbfs/mod.ts'
 import { assert, test } from '#test'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
@@ -44,7 +45,7 @@ async function withDays(
     post: (route: string, body: unknown, origin?: string, day?: string) => Promise<Response>
     view: (day?: string) => Promise<DayView>
     read: (day?: string) => Promise<string | undefined>
-    write: (day: string, content: string) => Promise<void>
+    write: (day: string, content: string, summarized?: boolean) => Promise<void>
   }) => Promise<void>,
   content = CONTENT,
   writePlanning?: DayRoutesOptions['writePlanning'],
@@ -52,9 +53,10 @@ async function withDays(
   const root = await makeTempDir({ prefix: 'day-organize-test-' })
   const timeDir = path.join(root, 'time')
   const file = (day: string) => path.join(timeDir, dayFile(new PlainDate(day)))
-  const write = async (day: string, content: string) => {
+  const write = async (day: string, content: string, summarized = false) => {
     await mkdir(path.dirname(file(day)), { recursive: true })
     await writeFile(file(day), content)
+    if (summarized) await writeFile(daySummaryPath(file(day)), '# Summary\n')
   }
   await write(DAY, content)
   const app = createDayRoutes({
@@ -364,7 +366,7 @@ test('move undo restores exact source bytes and removes only an untouched day cr
   })
 })
 
-test('moves reject stale notes, invalid dates, ended days and foreign origins without writes', async () => {
+test('moves reject stale notes, invalid dates, summarized days and foreign origins without writes', async () => {
   await withDays(async ({ post, view, read, write }) => {
     const input = { items: selected(await view()), date: TARGET, requestId: randomUUID() }
     for (const date of ['2026-02-30', '2026-01-26', DAY]) {
@@ -390,9 +392,9 @@ test('moves reject stale notes, invalid dates, ended days and foreign origins wi
     })
     await write(DAY, CONTENT)
     const ended = '---\nended: 12h\n---\n\n## Reminders\n\n- Read a book\n'
-    await write(TARGET, ended)
+    await write(TARGET, ended, true)
     assert({
-      given: 'an ended destination',
+      given: 'an summarized destination',
       should: 'leave both days intact',
       actual: { status: (await post('organize/move', input)).status, source: await read(), target: await read(TARGET) },
       expected: { status: 409, source: CONTENT, target: ended },
@@ -572,7 +574,7 @@ test('one save can edit and reschedule an item with idempotent retry and a singl
   })
 })
 
-test('ending the source closes every organizing action, and each route rejects cross-origin writes', async () => {
+test('summarizing the source closes every organizing action, and each route rejects cross-origin writes', async () => {
   await withDays(async ({ post, view, read, write }) => {
     const current = await view()
     const items = current.record.todos.map(({ list, raw, revision }) => ({ list, raw, revision }))
@@ -580,7 +582,7 @@ test('ending the source closes every organizing action, and each route rejects c
       await post('organize/reorder', { list: items[0].list, items: [...items].reverse(), requestId: randomUUID() })
     ).json()) as Result
     const ended = (await read())!.replace('ended:\n', 'ended: 12h\n')
-    await write(DAY, ended)
+    await write(DAY, ended, true)
     const actions = [
       ['move', { items: selected(current), date: TARGET, requestId: randomUUID() }],
       ['reorder', { list: items[0].list, items, requestId: randomUUID() }],
@@ -590,11 +592,11 @@ test('ending the source closes every organizing action, and each route rejects c
     for (const [route, body] of actions) {
       const rejected = await post(`organize/${route}`, body)
       assert({
-        given: `an ended day and a ${route} request`,
-        should: 'return the ended view without writing',
+        given: `an summarized day and a ${route} request`,
+        should: 'return the summarized view without writing',
         actual: {
           status: rejected.status,
-          ended: ((await rejected.json()) as { view: DayView }).view.record.ended,
+          ended: ((await rejected.json()) as { view: DayView }).view.record.summarized,
           content: await read(),
         },
         expected: { status: 409, ended: true, content: ended },

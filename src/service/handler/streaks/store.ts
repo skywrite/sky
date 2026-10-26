@@ -17,9 +17,9 @@ import StreakDocument, {
   streaksItemsFromDay,
   type StreakDayEntry,
 } from '#shared/models/Streak/mod.ts'
+import { hasDaySummary } from '#shared/nbfs/daySummary.ts'
 import { dayFile } from '#shared/nbfs/mod.ts'
 import { PlainDate, PlainDateTime } from '#universal/dates/nbdt/mod.ts'
-import { dayEnd } from '../day/ended.ts'
 import isDay from '../day/isDay.ts'
 import type { StreakDayView, StreakMutation, StreakReport, StreakView } from './types.ts'
 
@@ -286,7 +286,7 @@ export class StreaksStore {
             await this.checked(file)
             const document = DayDocument.fromMarkdown(await readFile(file, 'utf8'))
             if (document.yamlError) throw new Error('Invalid day')
-            days.push({ date: date.ymd, relativePath: this.relative(file), ended: dayEnd(document).ended })
+            days.push({ date: date.ymd, relativePath: this.relative(file), summarized: await hasDaySummary(file) })
             entries.push({ day: date, items: streaksItemsFromDay(document) })
           } catch (error) {
             if (!missing(error)) warnings.push(`Could not read the day record for ${date.ymd}.`)
@@ -459,7 +459,8 @@ export class StreaksStore {
         if (before === undefined) throw new StreaksError('Start this day in Sky before checking off a streak.', 409)
         const day = DayDocument.fromMarkdown(before)
         if (day.yamlError) throw new StreaksError('This day record could not be read.', 409)
-        if (dayEnd(day).ended) throw new StreaksError('This day has ended. Its streaks are read-only.', 409)
+        if (await hasDaySummary(file))
+          throw new StreaksError('This day has a saved summary. Remove its summary to edit streaks again.', 409)
         const matches = streaksItemsFromDay(day).filter((item) => streak.document.matchesDayItem(item))
         if (matches.length > 1)
           throw new StreaksError('This day contains duplicate streak items. Review its record first.', 409)
@@ -501,8 +502,8 @@ export class StreaksStore {
         const before = await readOptional(dayPath)
         const day = before === undefined ? DayDocument.createFutureDay(today) : DayDocument.fromMarkdown(before)
         if (day.yamlError) throw new StreaksError('This day record could not be read.', 409)
-        if (dayEnd(day).ended)
-          throw new StreaksError('This day has ended. Start a new day before archiving a streak.', 409)
+        if (await hasDaySummary(dayPath))
+          throw new StreaksError('This day has a saved summary. Start a new day before archiving a streak.', 409)
         const dayItem = `${now.time} > streaks/${name} -> Archived | ${streak.document.title}`
         const list = `${category.category ?? 'Personal'} Complete`
         const dayAfter = insertBlock(before ?? day.toMarkdown(), list, `- ${dayItem}`)
@@ -543,8 +544,8 @@ export class StreaksStore {
         const day = record.day
           ? record.changes.find((change) => change.file === path.join(this.paths.timeDir, dayFile(record.day!)))
           : undefined
-        if (day?.after && dayEnd(DayDocument.fromMarkdown(day.after)).ended)
-          throw new StreaksError('This day has ended. Its streaks are read-only.', 409)
+        if (day && (await hasDaySummary(day.file)))
+          throw new StreaksError('This day has a saved summary. Remove its summary to edit streaks again.', 409)
         await writePlanningChanges(
           record.changes.toReversed().map(({ file, before, after }) => ({ file, before: after, after: before })),
         )

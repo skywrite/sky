@@ -23,7 +23,7 @@ export interface StreakView {
 export interface StreakDayView {
   date: string
   relativePath: string
-  ended: boolean
+  summarized: boolean
 }
 
 export interface StreakReport {

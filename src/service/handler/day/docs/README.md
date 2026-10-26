@@ -1,6 +1,6 @@
 ---
 created: 2026-09-03
-updated: 2026-10-24
+updated: 2026-10-26
 ---
 
 # The day's items, the day's rail, and the day's files
@@ -65,7 +65,7 @@ Task text edits in place by double-click on desktop or a tap on touch screens;
 links retain their normal navigation. Details opens the same draft in a dialog
 or a mobile bottom sheet for text, type, category, time and date. Moving from inline
 editing into Details does not save. Save commits; Cancel discards. Refreshes
-preserve drafts, including when a changed or ended day prevents saving.
+preserve drafts, including when a changed or summarized day prevents saving.
 
 A web address in an item shows as a chip in place of the address
 (`web/client/day/dayItemLinks.ts`, drawn by `dayItemText.tsx`). The chip is named
@@ -116,7 +116,7 @@ future-day template, or a dated entry in a schedule file, writes that destinatio
 removes the source blocks. It resolves references and rebases relative links,
 including links in notes. A revision covers both the block and its resolved
 references, so a stale selection cannot move newly changed notes or links.
-Matching destination rows are retained alongside the moved copies. Ended days
+Matching destination rows are retained alongside the moved copies. Summarized days
 reject the entire batch. Linked workstream
 activities retain their canonical scheduling flow instead of bypassing their
 participation history through a raw Markdown move.
@@ -156,11 +156,12 @@ Entries with a meeting medium such as `Jane Doe In Person -> reviewed the plan`
 appear under Meetings, with their notes and duration. An ordinary `->` in a
 completed activity does not hide it from Done today.
 
-The day file's nonempty `ended` marker makes its task lists read-only, including Done today,
-deletion and Undo. A padlock with **Ended** appears beside the task count. Item
-routes recheck the file before a write and return 409 with the ended view to a
-stale client. Calendar midnight alone does not close a day. Filed documents and
-attachments can still be opened and added.
+A saved `summary.md` beside the day file makes its task lists read-only, including Done today, deletion and Undo.
+The record shows **Summarized** beside the task count.
+Every app mutation checks the summary file again and returns 409 with the current view to a stale client.
+Deleting the summary reopens editing; legacy `ended` frontmatter is preserved but never controls the cutoff.
+Calendar midnight does not close a day, and a summary neither starts the next day nor changes the notebook clock.
+Filed documents, attachments, and continuing chats remain accessible.
 
 - **The checkbox** strikes a task in the file (`~~task~~`, or for a timed
   item `HH:MM > ~~task~~`, the time kept readable). Checked tasks remain in
@@ -206,7 +207,7 @@ A miss — the day changed under the page — is a 404 and writes nothing.
 
 Workstream activities planned for a day appear as ordinary markdown links under
 `Workstream Todos`, addressed by stable workstream and activity IDs. The current
-open day projects the canonical activity's title and state; ended and past days retain their
+open day projects the canonical activity's title and state; summarized and past days retain their
 recorded participation snapshot. A checkbox writes the canonical result before
 the day projection. Repeated planning repairs an interrupted projection without
 adding another task. Removing the row detaches its daily placement and keeps the
@@ -228,7 +229,7 @@ height cap. See [2026-09-05 — larger type without clipped tasks](2026-09-05-la
 
 ## Reviewing a previous day
 
-The morning review is independent of Start and End; neither command runs when a review opens or completes.
+The morning review is independent of Start; opening or completing it never starts a day.
 An OS input monitor offers the last notebook day's review after returning from five idle hours across a calendar date.
 Settings → Me → About me changes the idle hours live; zero disables automatic prompts.
 Browser polls are not activity, and service downtime alone is not evidence of sleep.
@@ -239,7 +240,7 @@ and `summary:day`.
 Review progress, the current wizard step, drafts, job outcomes and the claimed popup live under the local user-data
 `state/day-review` directory, keyed by the reviewed date.
 Moving a selection uses the day planner's revision checks and locks, can create today's unstarted plan, and records receipts
-in the review state; ended-day restrictions still apply.
+in the review state; the saved-summary cutoff still applies.
 Skip changes only review state, so a skipped historical streak remains missed under the existing streak rules.
 Navigating steps never skips items implicitly; Skip remaining saves the visible choices and the next step together.
 Older reviews without a saved step open at their first unfinished section, then Continuing chats if any remain open,
@@ -250,14 +251,15 @@ Recaps run when the review opens, independently reporting failures and supportin
 The summary runs only after all recaps succeed and every current review item is resolved or skipped.
 Closing pauses completion, while already-running recaps can finish; reopening resumes without repeating saved work.
 A saved summary is reused, never automatically overwritten, and an interrupted job offers Retry after restart.
+Deleting the file pauses a completed review so background polling cannot silently recreate it.
+Explicitly reopening that review can generate a new summary while retaining its previous choices and recap results.
 Meeting records and unfinished imports link to their existing editors; importing notes preserves the reviewed meeting date.
 
-## Starting and ending a day from the page
+## Starting a day from the page
 
 A day runs from its start to the next day's start, and the notebook clock
-counts past 24:00 until then. The pages carry the two commands where the
-person already is. Each button runs the terminal's command at the moment it
-is pressed; `createWeekHost` runs them in-process.
+counts past 24:00 until then. The pages carry Start where the person already is.
+Each button runs `day:start` at the moment it is pressed; `createWeekHost` runs it in-process.
 
 - **Start** shows once the clock has moved past the open day, in two places
   (`web/client/day/dayStart.tsx`). The open day's page, the one Today opens,
@@ -272,21 +274,14 @@ is pressed; `createWeekHost` runs them in-process.
   nothing starts without a press. After `day:start` finishes, the shell
   re-reads today, the week list and the clock, and opens Today, which is the
   started day now.
-- **End** shows on a started day once the calendar has moved past it: in
-  the status line beside the count, and in the week's Days rows. It asks
-  first (`web/client/day/dayEnd.tsx`) — the plan's open items with live
-  checkboxes, the records with no end time, the calendar meetings with no
-  notes — and runs `day:end` when pressed; a late end reads with the date it
-  was pressed. Starting the next day does not end the previous one: its
-  meeting notes and imports usually come after, so it stays open, marked
-  "Not ended", until End is pressed.
+The week page offers Review for a past day with a record and no summary.
+A saved summary replaces the separate End action; there is no `day:end` command or end timestamp to write.
+The Start prompt remains available on the current notebook day after its summary is saved.
 
 | Route | Does |
 | --- | --- |
 | `GET /day`, `GET /day/:ymd` | The view; `due` names the day waiting to be started, `night` while it is before 04:00 |
 | `POST /day/:ymd/start` | `day:start` for a day not started and not ahead of the calendar; 409 otherwise, 422 when the command fails, each with the view |
-| `GET /day/:ymd/end` | What the End dialog shows: the records missing an end time |
-| `POST /day/:ymd/end` | `day:end` for a started day not yet ended; 409 otherwise, 422 when the command fails, each with the view |
 
 Narrative: [2026-10-03 — Start moves onto the day](2026-10-03-start-moves-onto-the-day.md).
 

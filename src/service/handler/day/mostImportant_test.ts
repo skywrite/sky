@@ -2,6 +2,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import * as path from 'node:path'
 import type { MIDraftInput, MostImportantAI } from '#lib/mostImportant/types.ts'
+import { daySummaryPath } from '#shared/nbfs/daySummary.ts'
 import { dayFile } from '#shared/nbfs/mod.ts'
 import { assert, test } from '#test'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
@@ -238,6 +239,7 @@ test('MI routes keep generation unsaved, carry answers and edits into refinement
       path.join(timeDir, dayFile(DAY)),
       (await readFile(path.join(timeDir, dayFile(DAY)), 'utf8')).replace('---\n', '---\nended: 18:00\n'),
     )
+    await writeFile(daySummaryPath(path.join(timeDir, dayFile(DAY))), '# Summary\n')
     const ended = await post('save', { draft: DRAFT, requestId: crypto.randomUUID() })
     const crossSite = await post('draft', interview, 'https://example.com')
     const malformed = await post('save', {
@@ -245,7 +247,7 @@ test('MI routes keep generation unsaved, carry answers and edits into refinement
       requestId: crypto.randomUUID(),
     })
     assert({
-      given: 'an ended day, a foreign origin, and a multiline title',
+      given: 'a summarized day, a foreign origin, and a multiline title',
       should: 'refuse the writes',
       actual: [ended.status, crossSite.status, malformed.status],
       expected: [409, 403, 400],

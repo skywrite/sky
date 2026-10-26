@@ -1,14 +1,13 @@
 import { Button } from '@mantine/core'
 import { Fragment, type KeyboardEvent, useCallback, useEffect, useState } from 'react'
 import { Block, clock, Cross } from '../day/day.tsx'
-import { EndDayDialog, LockIcon } from '../day/dayEnd.tsx'
 import { SunIcon } from '../day/dayStart.tsx'
 import { fileHref } from '../explorer/explorer.tsx'
 
 /**
  * The week is a page. Its column is the seven days and what state each is
  * in — the one waiting to be started carries the page's primary button, a
- * day never ended carries its End — then the plan against the latest
+ * past day without a summary offers Review — then the plan against the latest
  * check-in, and, for a week still ahead, what is already waiting for it:
  * the queue, the dated items, the backlog. Every button writes through the
  * week routes and the page renders the view that comes back.
@@ -18,14 +17,14 @@ import { fileHref } from '../explorer/explorer.tsx'
 // What the service knows about the week
 // -----------------------------------------------------------------------------
 
-export type DayState = 'ended' | 'running' | 'open' | 'due' | 'blank' | 'upcoming'
+export type DayState = 'summarized' | 'running' | 'open' | 'due' | 'blank' | 'upcoming'
 
 export interface WeekDay {
   ymd: string
   weekday: string
   exists: boolean
   started: string | null
-  ended: string | null
+  summarized: boolean
   perfect: boolean
   today: boolean
   state: DayState
@@ -222,17 +221,17 @@ function DaysBlock({
   busy,
   onOpenDay,
   onStart,
-  onEnd,
+  onReview,
 }: {
   days: WeekDay[]
   busy: string | null
   onOpenDay: (day: WeekDay) => void
   onStart: (day: WeekDay) => void
-  onEnd: (day: WeekDay) => void
+  onReview: (day: WeekDay) => void
 }) {
   const open = days.filter((d) => d.state === 'open').length
   return (
-    <Block head="Days" mini={open > 0 ? `${open} not ended` : undefined}>
+    <Block head="Days" mini={open > 0 ? `${open} awaiting review` : undefined}>
       {days.map((d) => (
         <div className="sky-wrow" key={d.ymd}>
           <button
@@ -245,12 +244,12 @@ function DaysBlock({
             {d.weekday}
             <span className="sky-wdate">{shortDate(d.ymd)}</span>
           </button>
-          {d.state === 'ended' && d.started && d.ended && (
-            <span className="sky-wstate">
-              {clock(d.started)} – {clock(d.ended)}
+          {d.state === 'summarized' && (
+            <span className="sky-wstate" data-tone="ok">
+              Summarized
             </span>
           )}
-          {d.state === 'ended' && d.perfect && (
+          {d.state === 'summarized' && d.perfect && (
             <span className="sky-wstate" data-tone="ok">
               perfect
             </span>
@@ -263,10 +262,10 @@ function DaysBlock({
           {d.state === 'open' && (
             <>
               <span className="sky-wstate" data-tone="warn">
-                not ended
+                Needs review
               </span>
-              <Button size="sm" leftSection={<LockIcon />} onClick={() => onEnd(d)}>
-                End {d.weekday}
+              <Button size="sm" onClick={() => onReview(d)}>
+                Review {d.weekday}
               </Button>
             </>
           )}
@@ -601,6 +600,7 @@ export function WeekMain({
   id,
   onOpenDay,
   onOpenWeek,
+  onReview,
   onChanged,
 }: {
   /** The week's id, or '' for this week */
@@ -608,13 +608,12 @@ export function WeekMain({
   /** A day row opened: today's page or a day's */
   onOpenDay: (ymd: string, today: boolean) => void
   onOpenWeek: (id: string) => void
+  onReview: (ymd: string) => void
   /** The notebook changed under a button — the shell re-reads what it shows of the week */
   onChanged?: () => void
 }) {
-  const { view, setView, reload } = useWeek(id)
+  const { view, setView } = useWeek(id)
   const [busy, setBusy] = useState<string | null>(null)
-  // A day never ended ends through the day's own dialog, which asks first
-  const [ending, setEnding] = useState<string | null>(null)
   const [note, setNote] = useState<string | null>(null)
 
   /** A write to the week routes; the fresh view lands, or the reason it did not. */
@@ -684,7 +683,7 @@ export function WeekMain({
               busy={busy}
               onOpenDay={(d) => onOpenDay(d.ymd, d.today)}
               onStart={(d) => void send(`start:${d.ymd}`, `/day/${d.ymd}/start`)}
-              onEnd={(d) => setEnding(d.ymd)}
+              onReview={(d) => onReview(d.ymd)}
             />
           )}
           {view?.queue && <QueueBlock queue={view.queue} days={view.days} actions={actions} />}
@@ -702,16 +701,6 @@ export function WeekMain({
           {view?.checkins && <CheckinBlock checkins={view.checkins} />}
         </div>
       </div>
-      {ending && (
-        <EndDayDialog
-          ymd={ending}
-          onClose={() => setEnding(null)}
-          onEnded={() => {
-            reload()
-            onChanged?.()
-          }}
-        />
-      )}
     </div>
   )
 }

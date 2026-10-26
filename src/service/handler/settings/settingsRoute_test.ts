@@ -259,7 +259,7 @@ const CONFIG: SkyConfig = {
   outputDir: `${HOME}/Desktop`,
   editor: 'code',
   categories: ['Professional', 'Personal'],
-  commands: { dirs: [], day: { start: ['day:sr:update'], end: [] } },
+  commands: { dirs: [], day: { start: ['day:sr:update'] } },
   bins: {},
   slack: {},
   web: {},

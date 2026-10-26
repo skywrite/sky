@@ -187,7 +187,7 @@ export async function getEvent(client: GoogleClient, calendarId: string, eventId
 
 /**
  * Why an event doesn't count as a meeting the notebook should have a record
- * of, or null to keep it. This is the policy behind day:end's missed-meeting
+ * of, or null to keep it. This is the policy behind the day review missed-meeting
  * gate: blocks of time knowingly spent with other people (or on a call).
  */
 export function meetingDropReason(event: CalendarEvent): string | null {

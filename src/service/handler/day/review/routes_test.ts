@@ -1,4 +1,5 @@
 import { readFile, writeFile } from 'node:fs/promises'
+import { daySummaryPath } from '#shared/nbfs/daySummary.ts'
 import { assert, test } from '#test'
 import { reviewFixture, REVIEW_DAY, REVIEW_TODAY } from './testFixture.ts'
 import type { ReviewView } from './types.ts'
@@ -40,7 +41,7 @@ test('real review actions carry duplicate todos and reminders, check streaks and
     const report = await f.tracking.report(REVIEW_DAY, REVIEW_DAY)
     assert({
       given: 'all choices resolved',
-      should: 'write real dated data and one summary, keeping start/end manual',
+      should: 'write real dated data and one summary, keeping Start manual and never writing an end marker',
       actual: [
         (today.match(/Review Atlas outline/g) ?? []).length,
         today.includes('Water the plants'),
@@ -65,7 +66,7 @@ test('real review actions carry duplicate todos and reminders, check streaks and
   }
 })
 
-test('review rejects cross-origin, invalid dates, stale items and writes to ended days, while skip preserves notebook bytes', async () => {
+test('review rejects cross-origin, invalid dates, stale items and writes to summarized days, while skip preserves notebook bytes', async () => {
   const f = await reviewFixture()
   try {
     const item = (await f.view()).items.find((i) => i.kind === 'carry')!
@@ -87,11 +88,12 @@ test('review rejects cross-origin, invalid dates, stale items and writes to ende
     })
     const ended = (await f.readDay(REVIEW_DAY)).replace('started: 08:00', 'started: 08:00\nended: 22:00')
     await writeFile(f.file(REVIEW_DAY), ended)
+    await writeFile(daySummaryPath(f.file(REVIEW_DAY)), '# Summary\n')
     const streak = (await f.view()).items.find((i) => i.kind === 'streak')!
     const blocked = await f.post(`${REVIEW_DAY}/answer`, { id: streak.id, action: 'apply' })
     const skipped = await f.post(`${REVIEW_DAY}/answer`, { id: streak.id, action: 'skip' })
     assert({
-      given: 'an ended day',
+      given: 'a summarized day',
       should: 'allow skipping review without changing its record',
       actual: [blocked.status, skipped.status, await readFile(f.file(REVIEW_DAY), 'utf8')],
       expected: [409, 200, ended],

@@ -1,8 +1,9 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { copyFile } from 'node:fs/promises'
 import * as path from 'node:path'
 import { makeTempDir } from '#shared/fs/mod.ts'
 import { setUserSpeakerLabel } from '#shared/models/Chat/document/mod.ts'
+import { daySummaryPath } from '#shared/nbfs/daySummary.ts'
 import { dayDir, dayFile } from '#shared/nbfs/mod.ts'
 import { assert, test } from '#test'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
@@ -119,32 +120,32 @@ date: 2026-01-27
 - Water the plants
 `
 
-test('day view uses the recorded end even after midnight, while unended past days stay open', async () => {
+test('legacy end markers never lock a day without a summary', async () => {
   const base = await notebookWithOneChat()
   const timeDir = path.join(base, 'time')
   const file = path.join(timeDir, dayFile(TODAY))
   const app = createDayRoutes({ markdownBaseDir: base, timeDir, today: () => TODAY.addDays(1) })
-  for (const [marker, ended, endedAt] of [
-    ['', false, null],
-    ['ended:\n', false, null],
-    ['ended: 0h\n', true, '2026-01-27 08:00'],
-    ['ended: 13.5h\n', true, '2026-01-27 21:30'],
-    ['ended: 17h\n', true, '2026-01-28 01:00'],
-    ['ended: unreadable\n', true, null],
+  for (const marker of [
+    '',
+    'ended:\n',
+    'ended: 0h\n',
+    'ended: 13.5h\n',
+    'ended: 17h\n',
+    'ended: unreadable\n',
   ] as const) {
     await writeFile(file, TOGGLE_DAY_MD.replace('date: 2026-01-27\n', `started: 08:00\ntz: America/Chicago\n${marker}`))
     const response = await app.request(`/${TODAY.ymd}`)
     const view = (await response.json()) as DayView
     assert({
       given: `a past day with ${marker.trim() || 'no end marker'}`,
-      should: 'keep the tasks and report the end marker even when its time cannot be read',
-      actual: { ended: view.record.ended, endedAt: view.record.endedAt, todos: view.record.todos.length },
-      expected: { ended, endedAt, todos: 2 },
+      should: 'keep every task editable regardless of the legacy marker',
+      actual: { summarized: view.record.summarized, todos: view.record.todos.length },
+      expected: { summarized: false, todos: 2 },
     })
   }
 })
 
-test('ended day routes reject completion, reopening, deletion and restoration from stale views', async () => {
+test('summarized day routes reject completion, reopening, deletion and restoration from stale views', async () => {
   const base = await notebookWithOneChat()
   const timeDir = path.join(base, 'time')
   const file = path.join(timeDir, dayFile(TODAY))
@@ -156,6 +157,7 @@ test('ended day routes reject completion, reopening, deletion and restoration fr
     '- ~~File the expense report~~',
   )
   await writeFile(file, closed)
+  await writeFile(daySummaryPath(file), '')
   for (const [route, body] of [
     ['', { list: 'Professional Todos', raw: 'Reply to the vendor shortlist', done: true }],
     ['', { list: 'Professional Todos', raw: '~~File the expense report~~', done: false }],
@@ -169,24 +171,36 @@ test('ended day routes reject completion, reopening, deletion and restoration fr
     })
     const result = (await response.json()) as { error: string; view: DayView }
     assert({
-      given: `a stale open view posting ${route || 'a checkbox change'} after day end`,
-      should: 'refuse the write, preserve the complete file, and return the ended view',
+      given: `a stale open view posting ${route || 'a checkbox change'} after a summary is saved`,
+      should: 'refuse the write, preserve the complete file, and return the summarized view',
       actual: {
-        wasOpen: open.record.endedAt === null,
+        wasOpen: !open.record.summarized,
         status: response.status,
         error: result.error,
-        endedAt: result.view.record.endedAt,
+        summarized: result.view.record.summarized,
         unchanged: (await readFile(file, 'utf8')) === closed,
       },
       expected: {
         wasOpen: true,
         status: 409,
-        error: 'This day has ended. Tasks are read-only.',
-        endedAt: '2026-01-27 21:30',
+        error: 'This day has a saved summary. Remove its summary to edit tasks again.',
+        summarized: true,
         unchanged: true,
       },
     })
   }
+  await rm(daySummaryPath(file))
+  const reopened = await toggleRequest(app, {
+    list: 'Professional Todos',
+    raw: 'Reply to the vendor shortlist',
+    done: true,
+  })
+  assert({
+    given: 'the summary is removed while a legacy ended marker remains',
+    should: 'reopen the task list without changing notebook time',
+    actual: [reopened.status, reopened.view?.record.summarized, reopened.view?.record.started],
+    expected: [200, false, '08:00'],
+  })
 })
 
 /** POST a checkbox toggle and hand back status plus the served view. */

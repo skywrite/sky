@@ -31,7 +31,7 @@ declare module '#commands/lib/core/CommandTypesRegistry.ts' {
  * with the chat and voice hosts that carry it into a model's context; this
  * command is its terminal voice. An unreachable calendar or service
  * degrades to a warning: a check must never hold the notebook hostage.
- * day:end runs this on the ending day; day:start on the previous.
+ * day:start runs this on the previous day; the review shows the same gaps.
  *
  * Also warns about the day's meetings and events that state no end time or
  * length — summary:day's Time section can only count what `when:` states,

@@ -1,6 +1,7 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import * as path from 'node:path'
 import { makeTempDir } from '#shared/fs/mod.ts'
+import { daySummaryPath } from '#shared/nbfs/daySummary.ts'
 import { dayFile, weekDir } from '#shared/nbfs/mod.ts'
 import { assert, test } from '#test'
 import { PlainDate, PlainDateTime, ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
@@ -177,6 +178,7 @@ async function weekNotebook(): Promise<{
     dayFile(new PlainDate('2026-08-31')),
     dayMd('2026-08-31', 'started: 06:10\nended: 16h\nperfect: true\ntz: America/Chicago\n'),
   )
+  await writeFile(daySummaryPath(path.join(timeDir, dayFile(new PlainDate('2026-08-31')))), '# Summary\n')
   await write(
     dayFile(new PlainDate('2026-09-01')),
     dayMd('2026-09-01', 'started: 07:05\nended:\ntz: America/Chicago\n'),
@@ -204,13 +206,13 @@ test({ name: "week view - the days carry their state, and the day after the note
   const view: WeekView = await buildWeekView({ markdownBaseDir: base, timeDir, now: NOW })
 
   assert({
-    given: 'Friday 06:52 on the clock with Thursday still the started day, three days never ended',
+    given: 'Friday 06:52 on the clock with Thursday still the started day, three days without summaries',
     should: 'read the week of the calendar day, mark Friday due, and say what each day is',
     actual: {
       id: view.id,
       current: view.current,
       states: view.days.map((d) => d.state),
-      monday: { started: view.days[0].started, ended: view.days[0].ended, perfect: view.days[0].perfect },
+      monday: { started: view.days[0].started, summarized: view.days[0].summarized, perfect: view.days[0].perfect },
       today: view.days.find((d) => d.today)?.ymd,
       due: view.due,
       queue: view.queue,
@@ -220,8 +222,8 @@ test({ name: "week view - the days carry their state, and the day after the note
     expected: {
       id: '2026-W36',
       current: true,
-      states: ['ended', 'open', 'open', 'open', 'due', 'upcoming', 'upcoming'],
-      monday: { started: '06:10', ended: '22:10', perfect: true },
+      states: ['summarized', 'open', 'open', 'open', 'due', 'upcoming', 'upcoming'],
+      monday: { started: '06:10', summarized: true, perfect: true },
       today: '2026-09-03',
       due: { ymd: '2026-09-04', weekday: 'Friday' },
       queue: null,
@@ -486,7 +488,7 @@ test({ name: 'week route - a backlog line moves into the queue' }, async () => {
 })
 
 test(
-  { name: 'week route - start runs the host; ending moved to the day, bulk week creation is unavailable' },
+  { name: 'week route - start runs the host; ending is unavailable, bulk week creation is unavailable' },
   async () => {
     const { base, timeDir } = await weekNotebook()
     const calls: string[] = []
@@ -494,9 +496,6 @@ test(
       startDay: async (day: PlainDate) => {
         calls.push(`start ${day.ymd}`)
         if (day.ymd === '2026-09-03') throw new Error('day:start did not finish')
-      },
-      endDay: async (day: PlainDate) => {
-        calls.push(`end ${day.ymd}`)
       },
     }
     const app = createWeekRoutes({ markdownBaseDir: base, timeDir, now: NOW, commands })
@@ -512,7 +511,7 @@ test(
 
     assert({
       given: 'a start host, a failing start, the retired end and create routes, and requests with no host or bad names',
-      should: 'run each start once, leave ending to the day routes, reject bulk creation, and report failures',
+      should: 'run each start once, reject the retired End route, reject bulk creation, and report failures',
       actual: {
         calls,
         statuses: [

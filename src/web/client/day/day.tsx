@@ -25,7 +25,6 @@ import { DayStreaks } from '../streaks/streaks.tsx'
 import { type ChatCloseNotice, DayChatClose } from './dayChatClose.tsx'
 import { DayChatResume } from './dayChatResume.tsx'
 import { chatState, chatTurnCount, type DayChatRow, dayChatRows } from './dayChats.ts'
-import { EndDayDialog, LockIcon } from './dayEnd.tsx'
 import { DayItemEditing, InlineItemEditor, ItemDetailsIcon, useItemEditing } from './dayItemEditing.tsx'
 import { DayItemHelp, ItemHelpButton } from './dayItemHelp.tsx'
 import { itemDocLinked } from './dayItemLinks.ts'
@@ -130,11 +129,8 @@ export interface DayDocRow {
 export interface DayRecord {
   /** `HH:MM` the day started; null for a day that never did */
   started: string | null
-  ended: boolean
-  endedAt: string | null
-  /** The end as it reads: `22:41`, `25:40` past midnight, or `Jan 29, 21:30` for a later sitting */
-  endedClock: string | null
-  /** Ended with every planned item done */
+  summarized: boolean
+  /** Every planned item is complete. */
   perfect: boolean
   manualOrder?: string[]
   commitmentsOrder?: CommitmentOrder
@@ -514,22 +510,20 @@ function StaticCheck({ done }: { done: boolean }) {
   )
 }
 
-function EndedBadge({ at }: { at: string | null }) {
+function SummarizedBadge() {
   return (
     <Tooltip
-      label={at ? `Ended at ${clock(at)}. Tasks are read-only.` : 'This day has ended. Tasks are read-only.'}
+      label="This day has a saved summary. Remove its summary to edit tasks again."
       withArrow
       events={{ hover: true, focus: true, touch: true }}
     >
-      <span className="sky-day-ended" tabIndex={0}>
-        <LockIcon />
-        {at ? `Ended ${clock(at)}` : 'Ended'}
+      <span className="sky-day-summarized" tabIndex={0}>
+        Summarized
       </span>
     </Tooltip>
   )
 }
 
-/** A page with a folded corner: the day's own file, beside its date. */
 function DayFileIcon() {
   return (
     <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
@@ -1420,28 +1414,25 @@ export function DayView({
     document.title = `sky · ${dateTitle}${modeTitle ? ` · ${modeTitle}` : ''}`
   }, [dateTitle, modeTitle])
   const readSummary = useCallback((summary: DaySummary | null) => {
-    setView((current) => (current && current.summary?.version !== summary?.version ? { ...current, summary } : current))
+    setView((current) =>
+      current && (current.summary?.version !== summary?.version || current.record.summarized !== Boolean(summary))
+        ? { ...current, summary, record: { ...current.record, summarized: Boolean(summary) } }
+        : current,
+    )
   }, [])
   useSummaryRefresh(ymd, readSummary)
-  const endedClock = view?.record.endedClock ?? null
-  const ended = view?.record.ended ?? false
-  // A started day can end once the calendar has moved past it — never the day still under way.
-  // The same rule the week page's End follows: after midnight, or the next morning before a new start.
-  const canEnd = Boolean(
-    view?.day.dayRelativePath && view.record.started && !ended && view.day.ymd < (view.planningToday ?? view.today.ymd),
-  )
-  const [ending, setEnding] = useState(false)
+  const summarized = view?.record.summarized ?? false
   // The day waiting to be started shows on two pages: the open day's (a whisper at night, a block
   // from 4 am) and its own, beside the count. Pressing Start runs day:start as the week page does.
   const due = view?.due ?? null
   const starting = useStartDay(() => onStarted())
-  const waitingOnOpenDay = Boolean(view && due && view.day.ymd === view.today.ymd && !view.summary)
+  const waitingOnOpenDay = Boolean(view && due && view.day.ymd === view.today.ymd)
   const waitingOwnPage = Boolean(view && due && view.day.ymd === due.ymd && !view.record.started)
   const todayWeekday = view ? new PlainDate(view.today.ymd).dayLong : ''
   const startDue = () => {
     if (due) void starting.run(due.ymd)
   }
-  const checkOff = useCheckOff(view?.day.ymd ?? '', setView, ended)
+  const checkOff = useCheckOff(view?.day.ymd ?? '', setView, summarized)
   const planning = useDayPlanning(view, setView, checkOff.dismissUndo, checkOff.undo)
   const organize = useDayOrganizing(
     view,
@@ -1473,7 +1464,7 @@ export function DayView({
   const completedTasks = doneToday.length + tasks.filter((item) => itemDone(item, checkOff.phases)).length
   const totalTasks = doneToday.length + tasks.length
 
-  const recordStatus = (ended || totalTasks > 0 || canEnd || waitingOwnPage) && (
+  const recordStatus = (summarized || totalTasks > 0 || waitingOwnPage) && (
     <div className="sky-day-statusline">
       {waitingOwnPage && (
         <>
@@ -1481,36 +1472,22 @@ export function DayView({
           {totalTasks > 0 && <span aria-hidden="true">·</span>}
         </>
       )}
-      {canEnd && !isToday && (
-        <>
-          <span className="sky-day-open">Not ended</span>
-          {totalTasks > 0 && <span aria-hidden="true">·</span>}
-        </>
-      )}
-      {(ended || totalTasks > 0) && (
+      {(summarized || totalTasks > 0) && (
         <span className="sky-day-progress" role="status" aria-atomic="true">
-          {ended && <EndedBadge at={endedClock} />}
-          {ended && totalTasks > 0 && <span aria-hidden="true">·</span>}
+          {summarized && <SummarizedBadge />}
+          {summarized && totalTasks > 0 && <span aria-hidden="true">·</span>}
           {totalTasks > 0 && (
             <span>
               {completedTasks} of {count(totalTasks, 'task')} complete
             </span>
           )}
-          {ended && view?.record.perfect && (
+          {summarized && totalTasks > 0 && view?.record.perfect && (
             <>
               <span aria-hidden="true">·</span>
               <span className="sky-day-perfect">Perfect day</span>
             </>
           )}
         </span>
-      )}
-      {canEnd && view && (
-        <>
-          {totalTasks > 0 && <span aria-hidden="true">·</span>}
-          <Button size="compact-sm" leftSection={<LockIcon />} onClick={() => setEnding(true)}>
-            End {new PlainDate(view.day.ymd).dayLong}
-          </Button>
-        </>
       )}
       {waitingOwnPage && due && (
         <>
@@ -1657,19 +1634,21 @@ export function DayView({
           {!showingSummary && <DayOrganizingHint />}
 
           <div className="sky-scroll">
+            {waitingOnOpenDay && due && !due.night && (
+              <div className="sky-col">
+                <NextDayBlock
+                  today={todayWeekday}
+                  due={due}
+                  busy={starting.busy}
+                  error={starting.error}
+                  onStart={startDue}
+                />
+              </div>
+            )}
             {showingSummary && view?.summary ? (
               <DaySummaryView summary={view.summary} weekday={new PlainDate(view.day.ymd).dayLong} />
             ) : (
               <div className="sky-col">
-                {waitingOnOpenDay && due && !due.night && (
-                  <NextDayBlock
-                    today={todayWeekday}
-                    due={due}
-                    busy={starting.busy}
-                    error={starting.error}
-                    onStart={startDue}
-                  />
-                )}
                 {record && (
                   <>
                     <DayMostImportant key={view!.day.ymd} day={view!} onSaved={setView}>
@@ -1702,9 +1681,9 @@ export function DayView({
                       {!organize.active && planning.composer('reminders')}
                     </ReminderCard>
 
-                    <DayStreaks ymd={view!.day.ymd} onNavigate={navigate} ended={ended} />
+                    <DayStreaks ymd={view!.day.ymd} onNavigate={navigate} summarized={summarized} />
 
-                    <DayTracking date={view!.day.ymd} readOnly={ended} navigate={navigate} />
+                    <DayTracking date={view!.day.ymd} readOnly={summarized} navigate={navigate} />
 
                     {record.meetings.length > 0 && (
                       <Block head="Meetings" mini={String(record.meetings.length)}>
@@ -1909,9 +1888,6 @@ export function DayView({
         </Fragment>
       )}
 
-      {ending && view && (
-        <EndDayDialog ymd={view.day.ymd} view={view} onView={setView} onClose={() => setEnding(false)} />
-      )}
       {dragging && <DropOverlay what={dragging} />}
     </div>
   )

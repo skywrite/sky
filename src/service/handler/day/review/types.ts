@@ -41,7 +41,7 @@ export interface ReviewView extends ReviewState {
   today: string
   items: ReviewItem[]
   hasDay: boolean
-  ended: boolean
+  summarized: boolean
   summaryHref: string | null
   chats: ReviewChat[]
 }

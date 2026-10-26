@@ -118,7 +118,7 @@ async function _verifyRunTypes(
   await tasks.run('day:start', { day: 123 })
   // @ts-expect-error a misspelled day override cannot silently start the default day
   await tasks.run('day:start', { dya: new PlainDate('2031-03-16') })
-  // @ts-expect-error perfect belongs to day:end, not day:start
+  // @ts-expect-error day:start has no perfect flag
   await tasks.run('day:start', { perfect: true })
   // @ts-expect-error typed composition uses declared argument names
   await tasks.run('ai:context:files', { _: ['ai:context:files', 'Find Atlas notes'] })

@@ -4,6 +4,7 @@ import * as path from 'node:path'
 import { readDayMostImportant } from '#commands/lib/notebookContext.ts'
 import DayDocument from '#shared/models/Day/document/mod.ts'
 import { Document } from '#shared/models/Markdown/mod.ts'
+import { daySummaryPath } from '#shared/nbfs/daySummary.ts'
 import { dayDir, dayFile } from '#shared/nbfs/mod.ts'
 import { assert, test } from '#test'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
@@ -155,6 +156,7 @@ test('a lost receipt after publication recovers once and a completed save never 
     const ended = DayDocument.fromMarkdown(await readFile(file, 'utf8'))
     ended.yaml['ended'] = '18:00'
     await writeFile(file, ended.toMarkdown())
+    await writeFile(daySummaryPath(file), '# Summary\n')
     const recovered = await saveMostImportant(storage, DAY, DRAFT, request)
     const miFile = path.join(path.dirname(file), saved.file)
     const edited = (await readFile(miFile, 'utf8')) + '\n## Result\n\nSent and ready for feedback.\n'
@@ -163,7 +165,8 @@ test('a lost receipt after publication recovers once and a completed save never 
     await writeFile(file, withoutItem)
     const again = await saveMostImportant(storage, DAY, DRAFT, request)
     assert({
-      given: 'publication before receipt success, then the day ends and the user edits and removes the day row',
+      given:
+        'publication before receipt success, then the day is summarized and the user edits and removes the day row',
       should: 'recover the original save and preserve the later edits and removal on every retry',
       actual: {
         saved,
@@ -318,10 +321,11 @@ test('MI completion changes its metadata, preserves working notes, and supports 
   })
 })
 
-test('ended days and MI links outside the notebook cannot be mutated', async () => {
+test('summarized days and MI links outside the notebook cannot be mutated', async () => {
   await fixture(async (storage, root, file) => {
     await mkdir(path.dirname(file), { recursive: true })
     await writeFile(file, '---\nended: 18:00\n---\n\n# 2030-06-17\n')
+    await writeFile(daySummaryPath(file), '# Summary\n')
     let ended = false
     try {
       await saveMostImportant(storage, DAY, DRAFT, crypto.randomUUID())
@@ -340,7 +344,7 @@ test('ended days and MI links outside the notebook cannot be mutated', async () 
       refused = true
     }
     assert({
-      given: 'an ended day and a symlink out of the notebook',
+      given: 'a summarized day and a symlink out of the notebook',
       should: 'refuse both writes',
       actual: {
         ended,

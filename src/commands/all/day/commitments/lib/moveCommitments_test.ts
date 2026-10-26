@@ -274,7 +274,7 @@ test('appendCommitments - creates the list on a day that has none', () => {
   const doc = appendCommitments(DayDocument.fromMarkdown(TARGET_ENDED), 'Professional Commitments', notDone)
 
   assert({
-    given: 'a target day whose empty Commitments list was removed at day:end',
+    given: 'a target day whose empty Commitments list was removed',
     should: 'create the list after Most Important',
     actual: titlesOf(doc),
     expected: ['Most Important', 'Professional Commitments', 'Professional Complete'],

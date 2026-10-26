@@ -1,6 +1,6 @@
 ---
 created: 2026-09-03
-updated: 2026-10-11
+updated: 2026-10-26
 ---
 
 # The web app's shell and client
@@ -289,7 +289,7 @@ Below the day's heading, a muted task count uses the existing Done today
 record for completed work and adds open Most important, Commitments, and
 To-dos to the total. Reminders and streaks stay separate. The count follows
 the saved view after completion, deletion, or Undo, and is hidden when the
-day has no tasks. An ended day keeps a neutral padlock + **Ended** badge here,
+day has no tasks. A summarized day keeps a neutral **Summarized** badge here,
 including when there are no tasks. See the [day's read-only rules](../../service/handler/day/docs/README.md#the-days-items).
 
 The header lives inside the day column and shares its 1000px maximum width

@@ -13,12 +13,10 @@ import {
   type MIProgressReporter,
 } from '#lib/mostImportant/types.ts'
 import { hash } from '#lib/outbox/files.ts'
-import { readOptional } from '#lib/outbox/files.ts'
-import DayDocument from '#shared/models/Day/document/mod.ts'
+import { hasDaySummary } from '#shared/nbfs/daySummary.ts'
 import { dayFile } from '#shared/nbfs/mod.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import { hold, touch } from '../../activity.ts'
-import { dayEnd } from './ended.ts'
 import isDay from './isDay.ts'
 import type { ItemRoutesOptions } from './itemContext.ts'
 
@@ -73,9 +71,14 @@ export function createMostImportantRoutes(options: ItemRoutesOptions & { ai?: Mo
       touch(`most-important:${ymd}:${input.data.id}`, 'creating a most important', input.data.active ? 120_000 : 0)
       return c.json({ active: input.data.active })
     }
-    const content = await readOptional(path.join(options.timeDir, dayFile(date)))
-    if (c.req.param('action') !== 'save' && content && dayEnd(DayDocument.fromMarkdown(content)).ended)
-      return c.json({ error: 'This day has ended. Your draft is still available.' }, 409)
+    if (c.req.param('action') !== 'save' && (await hasDaySummary(path.join(options.timeDir, dayFile(date)))))
+      return c.json(
+        {
+          error:
+            'This day has a saved summary. Your draft is still available; choose another day or remove the summary.',
+        },
+        409,
+      )
     const respond = async <T extends object>(run: (progress: MIProgressReporter) => Promise<T>) => {
       const release = hold('creating a most important')
       if (!c.req.header('Accept')?.includes('text/event-stream')) {

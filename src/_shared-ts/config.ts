@@ -22,7 +22,6 @@ export const CATEGORIES = skyConfig.categories
 export const DEFAULT_CATEGORY = skyConfig.categories[0]
 export const COMMAND_DIRS = skyConfig.commands.dirs
 export const DAY_START_COMMANDS = skyConfig.commands.day.start
-export const DAY_END_COMMANDS = skyConfig.commands.day.end
 export const BINS = skyConfig.bins
 export const AI_MODELS = skyConfig.ai.models
 export const AI_PROFILES: Record<string, AiProfileConfig> = skyConfig.ai.profiles ?? {}

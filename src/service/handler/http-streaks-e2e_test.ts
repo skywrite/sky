@@ -7,6 +7,7 @@ import { Hono } from 'hono'
 import { chromium, type Page } from 'playwright'
 import DayDocument from '#shared/models/Day/mod.ts'
 import StreakDocument from '#shared/models/Streak/document/mod.ts'
+import { daySummaryPath } from '#shared/nbfs/daySummary.ts'
 import { dayFile } from '#shared/nbfs/mod.ts'
 import { env } from '#shared/sys/mod.ts'
 import { assert, test } from '#test'
@@ -42,6 +43,7 @@ async function streaksFixture() {
     path.join('time', dayFile(new PlainDate('2026-05-19'))),
     dayMarkdown('2026-05-19', ['~~Read a chapter~~', 'Walk outside'], true),
   )
+  await writeFile(daySummaryPath(endedFile), '# Summary\n')
   await put(
     path.join('time', dayFile(new PlainDate('2026-05-18'))),
     dayMarkdown('2026-05-18', ['~~Read a chapter~~', '~~Walk outside~~']),
@@ -218,7 +220,7 @@ test(
       const dialog = page.getByRole('dialog')
       await dialog.waitFor()
       assert({
-        given: 'a completion recorded in an ended day',
+        given: 'a completion recorded in a summarized day',
         should: 'offer the day record without an enabled correction action',
         actual: [
           await dialog

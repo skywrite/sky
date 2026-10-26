@@ -18,7 +18,7 @@ export interface ReviewInventory {
   today: string
   items: ReviewItem[]
   hasDay: boolean
-  ended: boolean
+  summarized: boolean
   summaryHref: string | null
   chats?: ReviewChat[]
 }
@@ -63,17 +63,24 @@ export class DayReviewStore {
   }
   async view(day: string): Promise<ReviewView> {
     const [state, inventory] = await Promise.all([this.read(day), this.host.inventory(day)])
+    const missingSummary = !inventory.summaryHref && state.summary.status === 'done'
     const items = inventory.items.filter((item) => !state.answers[item.id])
     return {
       ...state,
       ...inventory,
+      // Deleting a summary reopens editing; only explicitly reopening review regenerates it.
+      paused: missingSummary || state.paused,
       items,
       chats: inventory.chats ?? [],
       step:
         state.step ??
         REVIEW_STEPS.find((step) => items.some((item) => reviewItemStep(item) === step)) ??
         (inventory.chats?.length ? 'chat' : 'summary'),
-      summary: inventory.summaryHref ? { ...state.summary, status: 'done' } : state.summary,
+      summary: inventory.summaryHref
+        ? { ...state.summary, status: 'done' }
+        : missingSummary
+          ? { id: 'summary', title: 'Daily summary', status: 'waiting' }
+          : state.summary,
     }
   }
   async refresh(day: string) {
@@ -87,6 +94,13 @@ export class DayReviewStore {
     await this.host.runtime.acknowledge(day)
     await this.change(day, (state) => {
       state.paused = false
+      if (inventory.summaryHref) {
+        state.summary.status = 'done'
+        delete state.summary.message
+      } else if (state.summary.status === 'done') {
+        state.summary.status = 'waiting'
+        delete state.summary.message
+      }
       state.step ??=
         REVIEW_STEPS.find((step) =>
           inventory.items.some((item) => !state.answers[item.id] && reviewItemStep(item) === step),

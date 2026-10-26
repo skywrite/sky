@@ -6,7 +6,7 @@ export const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token'
 export const GOOGLE_USERINFO_URL = 'https://openidconnect.googleapis.com/v1/userinfo'
 
 // Workspace scopes for the docs/sheets/slides feature, read-only Calendar for
-// the day:end missed-meeting check, and Gmail for the google:email pipeline
+// the day review missed-meeting check, and Gmail for the google:email pipeline
 // (gmail.modify — everything but permanent delete, so the same grant later
 // covers drafts/send). The identity scopes let auth learn which account
 // granted access so tokens can be stored per email. Adding a scope means

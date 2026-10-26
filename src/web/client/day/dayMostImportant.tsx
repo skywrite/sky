@@ -289,7 +289,7 @@ export function DayMostImportant({
     setOpened(true)
     if (state.step === 'choose' && !state.suggestions.length && !state.context && !busy) suggest()
   }
-  const readOnly = day.record.ended
+  const readOnly = day.record.summarized
   const hasTask = day.record.mostImportant.length > 0
   const body = (
     <div className="sky-mi-composer">
@@ -501,7 +501,7 @@ export function DayMostImportant({
         )}
         {readOnly && (
           <p role="alert" className="sky-mi-error">
-            This day has ended. Your draft is kept here.
+            This day has a saved summary. Remove its summary to save this draft. Your draft is kept here.
           </p>
         )}
       </div>

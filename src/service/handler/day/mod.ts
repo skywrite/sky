@@ -19,7 +19,6 @@ import { listDayChats } from '#shared/models/Chat/ChatStore/mod.ts'
 import { dayAIChatsDir, dayDir, dayFile, fetchNowSync } from '#shared/nbfs/mod.ts'
 import { PlainDate, type ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
 import { formatDateLabel } from '../home/today.ts'
-import { buildDayEnding, type DayEnding } from './ending.ts'
 import { createDayFilesRoutes, type DayFilesOptions } from './files.ts'
 import isDay from './isDay.ts'
 import { createItemRoutes } from './item.ts'
@@ -42,7 +41,7 @@ export interface DayRoutesOptions {
   planningToday?: () => PlainDate
   /** The notebook clock itself, for the hour past midnight; production reads it, tests script it */
   now?: () => ZonedDateTime
-  /** Runs day:start and day:end for the page's buttons; without it the two routes stay off */
+  /** Runs day:start for the page; without it the start route stays off. */
   commands?: DayCommands
   /** Test seam — production reads me/about.md */
   ownerNames?: string[]
@@ -62,8 +61,6 @@ export interface DayRoutesOptions {
 export interface DayCommands {
   /** day:start for the day waiting to begin, run the moment Start is pressed */
   startDay: (day: PlainDate) => Promise<void>
-  /** day:end, run the moment End is pressed */
-  endDay: (day: PlainDate, options?: { perfect?: boolean }) => Promise<void>
 }
 
 /**
@@ -220,7 +217,7 @@ export async function buildDayView(options: DayRoutesOptions, ymd?: string): Pro
       record[key] = await resolveWorkstreamDayItems(
         options.workstreams,
         day.ymd,
-        record.ended ? null : today.ymd,
+        record.summarized ? null : today.ymd,
         record[key],
       )
     }
@@ -237,14 +234,6 @@ export async function buildDayView(options: DayRoutesOptions, ymd?: string): Pro
     record,
     summary,
   }
-}
-
-/** What the End dialog shows for one day: the records missing an end time. */
-function dayEnding(options: DayRoutesOptions, day: PlainDate): Promise<DayEnding> {
-  return buildDayEnding({
-    dayDirPath: path.join(options.timeDir, dayDir(day)),
-    markdownBaseDir: options.markdownBaseDir,
-  })
 }
 
 export function createDayRoutes(options: DayRoutesOptions): Hono {
@@ -268,12 +257,6 @@ export function createDayRoutes(options: DayRoutesOptions): Hono {
     const dir = path.join(options.timeDir, dayDir(new PlainDate(ymd)))
     return c.json({ summary: await readDaySummary(dir, options.markdownBaseDir) })
   })
-  // Ending the day: what the End dialog shows, then day:end the moment End is pressed.
-  app.get('/:ymd/end', async (c) => {
-    const ymd = c.req.param('ymd')
-    if (!isDay(ymd)) return c.json({ error: `not a day: ${ymd}` }, 404)
-    return c.json(await dayEnding(options, new PlainDate(ymd)))
-  })
   const commands = options.commands
   if (commands) {
     // Starting the day that is waiting: day:start the moment Start is pressed, as the week page runs it.
@@ -291,25 +274,8 @@ export function createDayRoutes(options: DayRoutesOptions): Hono {
       }
       return c.json(await buildDayView(options, ymd))
     })
-    app.post('/:ymd/end', async (c) => {
-      const ymd = c.req.param('ymd')
-      if (!isDay(ymd)) return c.json({ error: `not a day: ${ymd}` }, 404)
-      const view = await buildDayView(options, ymd)
-      if (view.record.ended) return c.json({ error: 'This day has already ended.', view }, 409)
-      if (!view.record.started)
-        return c.json({ error: 'This day never started, so it has no end to record.', view }, 409)
-      const body = (await c.req.json().catch(() => null)) as { perfect?: unknown } | null
-      const perfect = body?.perfect
-      if (perfect !== undefined && typeof perfect !== 'boolean')
-        return c.json({ error: 'Perfect day must be true or false.', view }, 400)
-      try {
-        await commands.endDay(new PlainDate(ymd), { perfect: perfect ?? true })
-      } catch (error) {
-        return c.json({ error: (error as Error).message, view: await buildDayView(options, ymd) }, 422)
-      }
-      return c.json(await buildDayView(options, ymd))
-    })
   }
+
   // The day view's writes to one item — checkbox, delete, undo — each answering with the fresh view.
   app.route(
     '/',

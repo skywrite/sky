@@ -9,13 +9,14 @@ const item: ReviewItem = { id: 'meeting:test', kind: 'meeting', title: 'Atlas pl
 
 test('review saves skips and drafts across closing and restart, and summarizes exactly once after recaps', async () => {
   const dir = await makeTempDir({ prefix: 'sky-review-state-' })
+  let summaryHref: string | null = null
   const calls: string[] = []
   let release!: () => void
   const recap = new Promise<void>((resolve) => {
     release = resolve
   })
   const host: ReviewHost = {
-    inventory: async () => ({ today: '2030-06-18', items: [item], hasDay: true, ended: false, summaryHref: null }),
+    inventory: async () => ({ today: '2030-06-18', items: [item], hasDay: true, summarized: false, summaryHref }),
     apply: async () => {
       throw new Error('Not used')
     },
@@ -29,6 +30,7 @@ test('review saves skips and drafts across closing and restart, and summarizes e
       },
       summarize: async () => {
         calls.push('summary')
+        summaryHref = '/summary.md'
       },
     },
   }
@@ -57,13 +59,30 @@ test('review saves skips and drafts across closing and restart, and summarizes e
       actual: [view.items, view.drafts, calls],
       expected: [[], { 'tracking:test': { duration: '7.5' } }, ['slack', 'github', 'codex', 'claude-code', 'summary']],
     })
+    summaryHref = null
+    const removed = await resumed.refresh(DAY)
+    await resumed.settled(DAY)
+    assert({
+      given: 'the summary is deleted after review completion',
+      should: 'pause and reopen editing without recreating it during polling',
+      actual: [removed.paused, removed.summary.status, calls.filter((c) => c === 'summary').length],
+      expected: [true, 'waiting', 1],
+    })
+    await resumed.open(DAY)
+    await resumed.settled(DAY)
+    assert({
+      given: 'explicitly reopen the review after deleting its summary',
+      should: 'regenerate once while keeping the completed recaps and prior choices',
+      actual: [calls.filter((c) => c === 'summary').length, (await resumed.view(DAY)).items.length],
+      expected: [2, 0],
+    })
     await resumed.answer(DAY, item.id, 'restore')
     await resumed.settled(DAY)
     assert({
       given: 'review a skipped item again',
       should: 'restore it without overwriting the saved summary',
       actual: [(await resumed.view(DAY)).items.length, calls.filter((c) => c === 'summary').length],
-      expected: [1, 1],
+      expected: [1, 2],
     })
   } finally {
     release()
@@ -75,9 +94,10 @@ test('failed recaps block summary, independent recaps finish, and retries do not
   const dir = await makeTempDir({ prefix: 'sky-review-retry-' })
   let fail = true,
     summaries = 0
+  let summaryHref: string | null = null
   const calls: string[] = []
   const host: ReviewHost = {
-    inventory: async () => ({ today: '2030-06-18', items: [], hasDay: true, ended: false, summaryHref: null }),
+    inventory: async () => ({ today: '2030-06-18', items: [], hasDay: true, summarized: false, summaryHref }),
     apply: async () => {},
     runtime: {
       status: async () => ({ pending: null, supported: true }),
@@ -89,6 +109,7 @@ test('failed recaps block summary, independent recaps finish, and retries do not
       },
       summarize: async () => {
         summaries++
+        summaryHref = '/summary.md'
       },
     },
   }

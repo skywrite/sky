@@ -1,6 +1,6 @@
 ---
 created: 2026-09-27
-updated: 2026-10-24
+updated: 2026-10-26
 ---
 
 # Summaries
@@ -12,7 +12,7 @@ updated: 2026-10-24
 Two rules hold every line:
 
 - **Sourced.** The opening story and Meaningful Moments link to original day files using Markdown paths relative to `summary.md`. The input header supplies the summary directory so the model can resolve those paths. Detailed bullets keep their source tags (`[slack 13:05]`, `[meeting 10:00]`, `[journal]`), and source-based tables keep a Source column. Header-derived facts such as location and health measurements need no file link.
-- **Self-contained.** The file is written once and never revised, and days are sometimes ended out of order.
+- **Self-contained.** The file is written once and never revised, and days can be summarized out of order.
   Activity claims concern this day only: no streak counts, no "waiting since Tuesday", no week totals.
   A conversation's source can identify its earlier start and filing date without treating earlier messages as today's work.
 

@@ -31,7 +31,7 @@ test(
       outputDir: '/Output',
       editor: undefined,
       categories: [],
-      commands: { dirs: [], day: { start: [], end: [] } },
+      commands: { dirs: [], day: { start: [] } },
       bins: {},
       slack: {},
       web: { theme: 'light' },

@@ -1,6 +1,6 @@
 ---
 created: 2026-09-08
-updated: 2026-10-07
+updated: 2026-10-26
 ---
 
 # Streaks in the app
@@ -25,7 +25,7 @@ to the open day. A notebook with no started day falls back to the calendar
 date and can create its first rule without running setup or AI.
 
 A completion requires an existing, open day within the rule's schedule and
-start/end bounds. Ended days retain the day app's read-only contract;
+start/end bounds. Summarized days retain the day app's read-only contract;
 historical corrections work on open days, including for archived streaks.
 An item is inserted only when the user checks it off, using line edits that
 preserve unrelated day content. Viewing or creating a rule does not rewrite
@@ -45,7 +45,7 @@ Archive moves the rule without changing its recorded completions, clamping
 its end to the earlier of its planned end and notebook today. It adds a
 timestamped archive entry to today's category Complete list, using the same
 notebook clock and entry format as the CLI. A missing day is prepared without
-starting it; an ended day must be followed by starting a new day first.
+starting it; a summarized day requires starting a new day or removing its summary first.
 The rule move and day entry save together, rolling back failed writes only
 while their bytes still match. Undo is a short-lived in-memory token holding
 the exact before/after versions. It restores only while all saved bytes still

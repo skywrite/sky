@@ -37,7 +37,7 @@ function completion(actions: StreaksActions, streak: StreakView, date: string) {
 }
 
 function dayWritable(report: StreakReport, date: string): boolean {
-  return date <= report.today && report.days.some((day) => day.date === date && !day.ended)
+  return date <= report.today && report.days.some((day) => day.date === date && !day.summarized)
 }
 
 function ambiguousStreak(report: StreakReport, streak: StreakView): boolean {
@@ -72,7 +72,7 @@ function HabitRows({
   onDay,
   compact = false,
   date = report.today,
-  ended = false,
+  summarized = false,
 }: {
   streaks: StreakView[]
   report: StreakReport
@@ -82,9 +82,9 @@ function HabitRows({
   onDay: (target: StreakDayTarget) => void
   compact?: boolean
   date?: string
-  ended?: boolean
+  summarized?: boolean
 }) {
-  const writable = !ended && dayWritable(report, date)
+  const writable = !summarized && dayWritable(report, date)
   return (
     <div className={`sky-streaks-habit-rows${compact ? ' sky-streaks-compact' : ''}`}>
       {!compact && (
@@ -166,8 +166,8 @@ function StreakDayDialog({
       ? 'This date is outside the habit’s schedule.'
       : state === 'future'
         ? 'This day hasn’t happened yet.'
-        : day?.ended
-          ? 'This day has ended. Its record is read-only.'
+        : day?.summarized
+          ? 'This day has a saved summary. Its record is read-only.'
           : !day
             ? 'There is no day record for this date. Start the day in Today before checking in.'
             : state === 'done'
@@ -486,8 +486,8 @@ function StreakDetail({
       </div>
       {streak.status === 'active' && tracked && !dayWritable(report, report.today) && (
         <p className="sky-streaks-history-note">
-          {day?.ended ? (
-            'Today has ended. Its record is read-only.'
+          {day?.summarized ? (
+            'Today has a saved summary. Its record is read-only.'
           ) : (
             <>
               Start your day in{' '}
@@ -835,7 +835,7 @@ export function StreaksMain({ path, search, onNavigate }: { path: string; search
                         ? 'Finished habits keep their history.'
                         : due.length === 0
                           ? 'No streaks are scheduled today.'
-                          : `${complete} of ${due.length} done. ${complete === due.length ? 'You’re all set for today.' : day?.ended ? 'Today has ended.' : 'There’s still time for the rest.'}`}
+                          : `${complete} of ${due.length} done. ${complete === due.length ? 'You’re all set for today.' : day?.summarized ? 'Today has a saved summary.' : 'There’s still time for the rest.'}`}
                     </p>
                   </div>
                   {status === 'active' && (
@@ -867,8 +867,8 @@ export function StreaksMain({ path, search, onNavigate }: { path: string; search
                             </StreakLink>{' '}
                             to check in.
                           </>
-                        ) : day.ended ? (
-                          'Today has ended. Its record is read-only.'
+                        ) : day.summarized ? (
+                          'Today has a saved summary. Its record is read-only.'
                         ) : (
                           <>
                             An unfinished today doesn’t reset your streak.
@@ -932,12 +932,12 @@ export function DayStreaks({
   ymd,
   onNavigate,
   refreshKey,
-  ended = false,
+  summarized = false,
 }: {
   ymd: string
   onNavigate: Navigate
   refreshKey?: unknown
-  ended?: boolean
+  summarized?: boolean
 }) {
   const data = useStreaksReport(refreshKey ?? ymd)
   const actions = useStreaksActions(data.refresh)
@@ -973,7 +973,7 @@ export function DayStreaks({
             report={report}
             actions={actions}
             date={ymd}
-            ended={ended}
+            summarized={summarized}
             onNavigate={onNavigate}
             href={(streak) => `${streakHref(streak)}${ymd === report.today ? '' : `?month=${ymd.slice(0, 7)}`}`}
             onDay={() => {}}

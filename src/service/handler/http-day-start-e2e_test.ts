@@ -59,7 +59,6 @@ test(
           await writeFile(file, (await readFile(file, 'utf8')).replace('---\ntz:', '---\nstarted: 07:06\nended:\ntz:'))
           options.now = at('07:10', FRIDAY)
         },
-        endDay: async () => {},
       }),
     }
     await runWysiwygE2e(t, options, async ({ page, origin, errors }) => {
@@ -68,7 +67,7 @@ test(
       )
       await page.setViewportSize({ width: 1440, height: 1000 })
 
-      // 00:40, still up: Thursday's page whispers under its count, and End is already there.
+      // 00:40, still up: Thursday's page whispers under its count, with no End control.
       await page.goto(`${origin}/`)
       const whisper = page.locator('.sky-day-statusline[data-start="night"]')
       await whisper.waitFor()
@@ -117,7 +116,7 @@ test(
           night: {
             line: 'Past midnight. Still Thursday until you start Friday\n·\nStart Friday',
             block: 0,
-            endButtons: 1,
+            endButtons: 0,
           },
           morning: {
             lead: 'It’s Friday, September 27.',

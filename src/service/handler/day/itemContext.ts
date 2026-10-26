@@ -3,9 +3,9 @@ import type { Context } from 'hono'
 import type { WorkstreamStore } from '#lib/workstreams/store.ts'
 import { exists, readTextFile } from '#shared/fs/mod.ts'
 import DayDocument from '#shared/models/Day/document/mod.ts'
+import { hasDaySummary } from '#shared/nbfs/daySummary.ts'
 import { dayFile } from '#shared/nbfs/mod.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
-import { dayEnd } from './ended.ts'
 import isDay from './isDay.ts'
 import type { DayView } from './mod.ts'
 
@@ -34,8 +34,11 @@ export async function dayFileOf(
   const present = await exists(file)
   if (!present && !allowMissing) return c.json({ error: `no day file for ${ymd}` }, 404)
   const content = present ? await readTextFile(file) : DayDocument.createFutureDay(new PlainDate(ymd)).toMarkdown()
-  if (dayEnd(DayDocument.fromMarkdown(content)).ended) {
-    return c.json({ error: 'This day has ended. Tasks are read-only.', view: await options.view(ymd) }, 409)
+  if (await hasDaySummary(file)) {
+    return c.json(
+      { error: 'This day has a saved summary. Remove its summary to edit tasks again.', view: await options.view(ymd) },
+      409,
+    )
   }
   return { ymd, file, content, exists: present }
 }

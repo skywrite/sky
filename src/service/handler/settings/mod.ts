@@ -92,7 +92,7 @@ const SECTIONS: ReadonlyArray<{ id: string; title: string; keys: string[]; group
   {
     id: 'commands',
     title: 'Commands',
-    keys: ['commands.dirs', 'commands.day.start', 'commands.day.end'],
+    keys: ['commands.dirs', 'commands.day.start'],
     groups: ['bins'],
   },
   {

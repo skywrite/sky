@@ -5,6 +5,7 @@ import { chromium, type Page } from 'playwright'
 import { appendRecord, recordFilePath } from '#commands/all/track/lib/records.ts'
 import { sleepInput, TRACKING_TODAY, trackingFixture } from '#lib/tracking/testHelpers.ts'
 import TrackingDocument from '#shared/models/Tracking/mod.ts'
+import { daySummaryPath } from '#shared/nbfs/daySummary.ts'
 import { dayFile } from '#shared/nbfs/mod.ts'
 import { env } from '#shared/sys/mod.ts'
 import { assert, test } from '#test'
@@ -98,6 +99,7 @@ test(
         path.join('time', dayFile(new PlainDate('2030-06-17'))),
         '---\nstarted: 8:00\nended: 12h\n---\n\n# 2030-06-17\n\n## Most Important\n\n- Review the Atlas brief\n',
       )
+      await f.put(daySummaryPath(path.join('time', dayFile(new PlainDate('2030-06-17')))), '# Summary\n')
       const address = server.address()
       if (!address || typeof address === 'string') throw new Error('Missing browser test server address.')
       const origin = `http://127.0.0.1:${address.port}`
@@ -331,10 +333,10 @@ test(
         actual: (await f.store.report()).metrics.find((m) => m.tracker.name === 'running')!.entries.at(-1)!.values,
         expected: { distance: '6', duration: '36', notes: '' },
       })
-      await page.goto(`${origin}/2030-06-17`)
+      await page.goto(`${origin}/2030-06-17?view=record`)
       await daily.getByRole('heading', { name: 'Tracking', exact: true }).waitFor()
       assert({
-        given: 'an ended dated day',
+        given: 'a summarized dated day',
         should: 'show that day’s observations without editing controls',
         actual: [
           (await daily.locator('.sky-tracking-day-heading p').innerText()).startsWith('2030-06-17'),

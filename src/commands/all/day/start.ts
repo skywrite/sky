@@ -9,9 +9,9 @@ async function updateStartField(targetDay: PlainDate, tz: string | undefined, ti
   let dayModel = await readDay(targetDay, timeDir)
 
   if (tz) {
-    dayModel = dayModel.setStarted(ZonedDateTime.now().inTimeZone(tz)).setTimezone(tz).updateYaml({ ended: null })
+    dayModel = dayModel.setStarted(ZonedDateTime.now().inTimeZone(tz)).setTimezone(tz)
   } else {
-    dayModel = dayModel.setStarted().updateYaml({ ended: null })
+    dayModel = dayModel.setStarted()
   }
 
   await writeDay(dayModel, timeDir)

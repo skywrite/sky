@@ -27,7 +27,6 @@ export interface SkyConfig {
     dirs: string[]
     day: {
       start: string[]
-      end: string[]
     }
   }
   bins: Record<string, string>

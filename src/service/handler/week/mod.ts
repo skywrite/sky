@@ -1,7 +1,7 @@
 /**
  * The week the days live in — what the week page renders. Nothing here is
  * new to the notebook: the days are the week's day files read for their
- * started and ended stamps, the plan is week.md, the check-ins are
+ * start stamps and saved summaries, the plan is week.md, the check-ins are
  * checkins.md, and what waits for a week that has no plan yet is the
  * standing next and schedule files at the top of time/.
  *
@@ -23,10 +23,10 @@ import { hash, readOptional, withLock } from '#lib/outbox/files.ts'
 import { OutboxError } from '#lib/outbox/types.ts'
 import { exists, readTextFile } from '#shared/fs/mod.ts'
 import DayDocument from '#shared/models/Day/document/mod.ts'
+import { hasDaySummary } from '#shared/nbfs/daySummary.ts'
 import { dayFile, fetchNowSync, readDay, weekDir } from '#shared/nbfs/mod.ts'
 import { PlainDate, Week, ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
 import { hold } from '../../activity.ts'
-import { dayEnd } from '../day/ended.ts'
 import isDay from '../day/isDay.ts'
 import type { DayCommands } from '../day/mod.ts'
 import { captureWeekGoal, WeekCaptureError } from './capture.ts'
@@ -61,11 +61,11 @@ export interface WeekRoutesOptions {
 }
 
 export type DayState =
-  /** Started and ended */
-  | 'ended'
+  /** A summary has been saved. */
+  | 'summarized'
   /** The notebook's current day, still going */
   | 'running'
-  /** Started, never ended, and the calendar has moved past it */
+  /** A past day waiting for its review and summary. */
   | 'open'
   /** The calendar day, waiting to be started */
   | 'due'
@@ -81,8 +81,7 @@ export interface WeekDayRow {
   exists: boolean
   /** `HH:MM` from the day file */
   started: string | null
-  /** The end as a person reads it: `22:10`, `25:40` past midnight, or `Jan 29, 21:30` for a later sitting */
-  ended: string | null
+  summarized: boolean
   perfect: boolean
   /** The notebook's current day */
   today: boolean
@@ -161,38 +160,35 @@ async function dayRow(day: PlainDate, clock: Clock, options: WeekRoutesOptions):
   const file = path.join(options.timeDir, dayFile(day))
   const fileExists = await exists(file)
   let started: string | null = null
-  let ended: string | null = null
+  const summarized = await hasDaySummary(file)
   let perfect = false
   if (fileExists) {
     try {
       const doc = await readDay(day, options.timeDir)
       started = doc.started?.time ?? null
-      // The end on the day's own clock: 25:40 after midnight, a date once a later sitting stamped it
-      ended = dayEnd(doc).endedClock
-      perfect = doc.yaml['perfect'] === true
+      perfect = typeof doc.yaml['perfect'] === 'boolean' ? doc.yaml['perfect'] : doc.perfect
     } catch {
       // An unreadable day file is a day with nothing to say
     }
   }
   const cmp = PlainDate.compare(day, clock.calendarDay)
-  const state: DayState =
-    started && ended
-      ? 'ended'
-      : started && cmp < 0
-        ? 'open'
-        : started
-          ? 'running'
-          : cmp === 0
-            ? 'due'
-            : cmp > 0
-              ? 'upcoming'
-              : 'blank'
+  const state: DayState = summarized
+    ? 'summarized'
+    : fileExists && cmp < 0
+      ? 'open'
+      : started
+        ? 'running'
+        : cmp === 0
+          ? 'due'
+          : cmp > 0
+            ? 'upcoming'
+            : 'blank'
   return {
     ymd: day.ymd,
     weekday: day.dayLong,
     exists: fileExists,
     started,
-    ended,
+    summarized,
     perfect,
     today: day.ymd === clock.notebookDay.ymd,
     state,
@@ -335,7 +331,7 @@ export function createWeekRoutes(options: WeekRoutesOptions): Hono {
     return c.json(await buildWeekView(options, week.toString()))
   })
 
-  // The day waiting to begin. A day never ended ends through the day's own End dialog.
+  // Starting remains explicit; summaries do not advance the notebook clock.
   app.post('/:id/day/:ymd/start', async (c) => {
     const week = weekOf(c)
     if (week instanceof Response) return week
@@ -362,8 +358,8 @@ export function createWeekRoutes(options: WeekRoutesOptions): Hono {
         path.join(lockDir, destination.filed === 'schedule' ? 'schedule.lock' : `day-${day}.lock`),
         async () => {
           const before = await readOptional(destination.file)
-          if (destination.filed === 'day' && before && DayDocument.fromMarkdown(before).yaml.ended)
-            throw new Error('The destination day has ended. Choose another date.')
+          if (destination.filed === 'day' && (await hasDaySummary(destination.file)))
+            throw new Error('The destination day has a saved summary. Choose another date or remove its summary.')
           const content =
             before ??
             (destination.filed === 'day' ? DayDocument.createFutureDay(date).toMarkdown() : emptySchedule(list))

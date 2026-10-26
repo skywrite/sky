@@ -2,16 +2,19 @@ import * as path from 'node:path'
 import hasEndOrLength from '#commands/all/day/meeting/lib/hasEndOrLength.ts'
 import gatherDayDocs from '#commands/all/summary/lib/gatherDayDocs.ts'
 import { isActionPath } from '#shared/nbfs/mod.ts'
-import { clockMinutes } from './ended.ts'
 import { titleOf } from './record.ts'
+import { clockMinutes } from './status.ts'
 
-/** What the End dialog shows before a day ends, read from what the day filed. */
-export interface DayEnding {
+/** Unfinished records offered by the review before its summary is generated. */
+export interface DayReviewRecords {
   /** Meeting and event records that state no end time or length, in start order */
   endless: Array<{ start: string; title: string; path: string }>
 }
 
-export async function buildDayEnding(input: { dayDirPath: string; markdownBaseDir: string }): Promise<DayEnding> {
+export async function buildReviewRecords(input: {
+  dayDirPath: string
+  markdownBaseDir: string
+}): Promise<DayReviewRecords> {
   const { docs } = await gatherDayDocs(input.dayDirPath)
   const endless = docs
     .filter((entry) => isActionPath('meeting', entry.path) || isActionPath('event', entry.path))

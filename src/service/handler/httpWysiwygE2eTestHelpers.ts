@@ -170,7 +170,7 @@ export async function runWysiwygE2e(
     imports?: Partial<ImportRoutesOptions>
     /** A real chat host with a scripted model, for browser conversation tests. */
     chat?: (notebookBaseDir: string, userDataDir: string) => ChatRoutesOptions
-    /** Day start and end as the pages run them, scripted over the temp notebook */
+    /** Day start as the pages run it, scripted over the temp notebook */
     week?: (notebookBaseDir: string) => WeekCommands
   },
   run: (fixture: WysiwygE2eFixture) => Promise<void>,

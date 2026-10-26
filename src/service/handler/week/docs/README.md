@@ -1,6 +1,6 @@
 ---
 created: 2026-09-04
-updated: 2026-10-25
+updated: 2026-10-26
 ---
 
 # The week page
@@ -33,11 +33,10 @@ Sunday's End is one step back.
 
 ## The blocks
 
-- **Days.** Monday to Sunday, each in a word or two: the hours it ran and
-  green "perfect"; "today · started 6:20"; amber "not ended" with an End
-  button hugging it; "not started yet" with a quiet Start button — the day
+- **Days.** Monday to Sunday, each in a word or two: “Summarized” and green “perfect”; “today · started 6:20”;
+  amber “Needs review” with a Review button; "not started yet" with a quiet Start button — the day
   pages carry the primary one, see the
-  [day handler](../../day/docs/README.md#starting-and-ending-a-day-from-the-page);
+  [day handler](../../day/docs/README.md#starting-a-day-from-the-page);
   dim "upcoming". Every day opens its dated page, including dates without
   a file. Opening is read-only; adding a plan item prepares an unstarted day
   file. The seven days also appear for a week with no directory yet.
@@ -103,7 +102,6 @@ All under `/week/_api`, mounted when the service has a notebook.
 | `GET /:id` | The week's view, `2026-W36` |
 | `POST /capture` | `{text, requestId}` → a goal in the current calendar week's plan; answers `{id, path}` |
 | `POST /:id/day/:ymd/start` | day:start for the day; answers the view |
-| `POST /:id/day/:ymd/end` | day:end for the day; answers the view |
 | `POST /:id/queue` | `{text, category, day?}` → Week-Next, or the schedule file under the day |
 | `POST /:id/queue/remove` | `{file, list, raw, occurrence?, revision?}` → the selected complete block leaves |
 | `POST /:id/queue/promote` | `{file, list, raw}` → the line moves from its list into Week-Next |

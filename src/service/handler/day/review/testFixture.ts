@@ -125,9 +125,6 @@ tz: America/Chicago
       startDay: async () => {
         calls.push('start')
       },
-      endDay: async () => {
-        calls.push('end')
-      },
     },
     files: { userDataDir: path.join(root, '.state'), timeDir, markdownBaseDir: root },
   }
