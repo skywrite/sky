@@ -72,18 +72,18 @@ export function DayTracking({
   readOnly = false,
   navigate,
 }: {
-  date: string | null
+  date: string
   readOnly?: boolean
   navigate: (path: string) => void
 }) {
-  const query = date ? new URLSearchParams({ start: date, end: date }).toString() : 'days=1'
+  const query = new URLSearchParams({ start: date, end: date }).toString()
   const data = useTrackingReport(query),
     actions = useTrackingActions(data.refresh)
   const [target, setTarget] = useState<TrackingLogTarget | null>(null)
   const [chooser, setChooser] = useState(false)
   const [later, setLater] = useState<string[]>([])
   const { report } = data
-  const day = date ?? report?.today ?? ''
+  const day = date
   const isToday = day === report?.today
   useEffect(() => {
     if (!day) return

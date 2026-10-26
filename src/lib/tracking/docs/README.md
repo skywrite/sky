@@ -1,6 +1,6 @@
 ---
 created: 2026-09-08
-updated: 2026-09-09
+updated: 2026-10-26
 ---
 
 # Tracking in the web app
@@ -13,10 +13,11 @@ definition schema, record formats, and date interpretation.
 
 ## Calendar date and review
 
-Today's tracking uses `currentMoment(timeDir)`, the notebook's calendar date
-and wall time. The notebook's open day can still be yesterday. Never derive
-a new observation's date from the surrounding DayView. An explicit dated
-page requests that date; an ended dated page shows its records read-only.
+Tracking embedded in a day page reads and saves against the displayed `DayView` date.
+This includes Today when the notebook's open day is still yesterday and days selected from Week or the sidebar.
+An ended day shows its records read-only, including on Today.
+Standalone Tracking and CLI capture default to `currentMoment(timeDir)`, the calendar date and wall time in the notebook's
+timezone; they do not inherit the notebook's open day.
 
 Sentence interpretation is a separate, non-writing request using the same
 parser as CLI capture. The review exposes the exact date and declared values.

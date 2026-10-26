@@ -8,7 +8,7 @@ import TrackingDocument from '#shared/models/Tracking/mod.ts'
 import { dayFile } from '#shared/nbfs/mod.ts'
 import { env } from '#shared/sys/mod.ts'
 import { assert, test } from '#test'
-import { PlainDate } from '#universal/dates/nbdt/mod.ts'
+import { PlainDate, PlainDateTime, ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
 import { createTestHttpApp } from './httpTestHelpers.ts'
 import { composerText } from './httpWysiwygE2eTestHelpers.ts'
 
@@ -33,6 +33,7 @@ test(
       throw new Error('This fixture does not call a model.')
     }
     const app = createTestHttpApp([f.dirs.timeDir, f.dirs.trackingDir], {
+      now: () => new ZonedDateTime(new PlainDateTime('08:15', TRACKING_TODAY), 'America/Chicago'),
       tracking: { store: f.store },
       chat: { timeDir: f.dirs.timeDir, createSession: unavailable },
     })
@@ -154,7 +155,7 @@ test(
       await daily.getByRole('button', { name: 'Edit Sleep', exact: true }).waitFor()
       assert({
         given: 'quick capture on Today',
-        should: 'save using the tracking calendar day, independently of the open notebook day',
+        should: 'save to the displayed day when the notebook and calendar dates agree',
         actual: (await f.store.report()).metrics.find((m) => m.tracker.name === 'sleep')!.entries.at(-1)!.date,
         expected: TRACKING_TODAY,
       })

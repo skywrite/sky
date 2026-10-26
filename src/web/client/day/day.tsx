@@ -1524,7 +1524,7 @@ export function DayView({
 
                     <DayStreaks ymd={view!.day.ymd} onNavigate={navigate} ended={ended} />
 
-                    <DayTracking date={trackingDate} readOnly={trackingDate !== null && ended} navigate={navigate} />
+                    <DayTracking date={view!.day.ymd} readOnly={ended} navigate={navigate} />
 
                     {record.meetings.length > 0 && (
                       <Block head="Meetings" mini={String(record.meetings.length)}>
