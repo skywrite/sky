@@ -48,7 +48,7 @@ export default class DayItemsAddTask extends Command {
     description:
       "Add one item to a day's Todos, Commitments, or Reminders. Category is Personal or Professional by the " +
       "item's subject (default Professional). A commitment at a stated clock time carries it as HH:MM. Defaults " +
-      'to today; dates beyond this week go to the schedule, preserving the item type. Make the task understandable ' +
+      'to today; dates more than 7 days out go to the schedule, preserving the item type. Make the task understandable ' +
       'on its own tomorrow, and preserve relevant conversation context in notes.',
     params,
   }

@@ -58,8 +58,8 @@ export type PlaceWhere = 'Todos' | 'Commitments' | 'schedule' | 'the list'
 
 /**
  * Which list takes the item: a timed day is a Commitment, an untimed one a
- * Todo, a day past the last created day file waits in the schedule until
- * its week is made, and no day is the Next list.
+ * Todo, a day past the last date filed to day files waits in the schedule
+ * until that day starts, and no day is the Next list.
  */
 export function placeWhere(when: PlaceWhen, createdThrough: string | null): PlaceWhere {
   if (when.date === null) return 'the list'

@@ -7,7 +7,8 @@ import { runWysiwygE2e } from './httpWysiwygE2eTestHelpers.ts'
 
 const DAY = new PlainDate('2026-01-27')
 const TARGET = DAY.addDays(1)
-const LATER = new PlainDate('2026-02-02')
+// Past the rolling seven days from the test's today (01-28), so moves there wait in the schedule.
+const LATER = new PlainDate('2026-02-05')
 const SCHEDULE = `## ${LATER.ymd}\n\n- Review the budget\n  Keep the scheduled notes.\n`
 const SOURCE = `---
 started: 08:00
@@ -205,7 +206,7 @@ test({ name: 'duplicate moves and individual row actions work on desktop and mob
           const schedule = page.waitForResponse((response) => response.url().endsWith('/item/organize/move'))
           await calendar.getByRole('button', { name: 'Move 4 items', exact: true }).click()
           assert({
-            given: 'a move beyond this week with matching scheduled rows',
+            given: 'a move past the next seven days with matching scheduled rows',
             should: 'keep every selected copy',
             actual: (await schedule).status(),
             expected: 200,

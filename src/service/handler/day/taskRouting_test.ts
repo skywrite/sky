@@ -12,7 +12,8 @@ import { createDayRoutes, type DayView } from './mod.ts'
 
 const SOURCE = new PlainDate('2031-03-15')
 const TODAY = new PlainDate('2031-03-16')
-const LATER = new PlainDate('2031-03-17')
+// The first date past the rolling seven days filed straight to day files.
+const LATER = new PlainDate('2031-03-24')
 const CONTENT = `---
 started: 08:00
 ended:
@@ -35,7 +36,7 @@ ended:
 [brief]: https://example.com/atlas
 `
 
-test('next-week moves retain matching scheduled rows and Undo removes only the moved copies', async () => {
+test('later moves retain matching scheduled rows and Undo removes only the moved copies', async () => {
   await withDayNotebook(async ({ context }) => {
     const { config } = context
     const file = path.join(config.DIR_TIME, dayFile(SOURCE))
@@ -91,7 +92,7 @@ const post = (app: ReturnType<typeof createDayRoutes>, day: PlainDate, route: st
   })
 
 for (const precreated of [false, true])
-  test(`web bulk moves use schedule files beyond Sunday (precreated: ${precreated})`, async () => {
+  test(`web bulk moves use schedule files beyond the next seven days (precreated: ${precreated})`, async () => {
     await withDayNotebook(async ({ context }) => {
       const { config } = context
       const source = path.join(config.DIR_TIME, dayFile(SOURCE))
@@ -115,7 +116,7 @@ for (const precreated of [false, true])
       const professional = await readOptional(config.FILE_SCHEDULE_PROFESSIONAL)
       const personal = await readOptional(config.FILE_SCHEDULE_PERSONAL)
       assert({
-        given: 'a mixed selection moved into next week',
+        given: 'a mixed selection moved past the next seven days',
         should: 'use category schedules, keep notes and types, and link to the week where the tasks are visible',
         actual: {
           status: response.status,
@@ -185,7 +186,7 @@ test('web edits can change task type and schedule in one save, with exact Undo',
     })
     const result = (await response.json()) as { undo: string }
     assert({
-      given: 'a date and type edit to next week',
+      given: 'a date and type edit past the next seven days',
       should: 'schedule the edited commitment with its notes and create no day',
       actual: [
         response.status,
@@ -258,7 +259,7 @@ test('explicit day-page adds and Next pulls prepare the selected date without st
     })
     const pulled = (await pull.json()) as { undo: string }
     assert({
-      given: 'a Next item pulled onto next week',
+      given: 'a Next item pulled onto a later date',
       should: 'land in the selected day and leave the Next list',
       actual: [
         pull.status,
@@ -313,7 +314,7 @@ test('a failed web move rolls back both category schedules and preserves source 
   })
 })
 
-test('the week-page date picker follows the current week, regardless of the week being viewed', async () => {
+test('the week-page date picker follows the rolling seven days, regardless of the week being viewed', async () => {
   await withDayNotebook(async ({ context }) => {
     const { config } = context
     const app = createWeekRoutes({
@@ -332,7 +333,7 @@ test('the week-page date picker follows the current week, regardless of the week
     await outputFile(path.join(config.DIR_TIME, dayFile(LATER)), future)
     const result = await send(LATER)
     assert({
-      given: 'current-week and next-week date picks while viewing next week',
+      given: 'a pick within seven days and one past them, while viewing the later week',
       should: 'create the first day and schedule the second despite its existing file',
       actual: [
         result.status,

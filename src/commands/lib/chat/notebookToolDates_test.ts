@@ -48,22 +48,22 @@ test('raw tool dates create correctly dated day files and preserve the schedule 
       const later = await runToolCommand(tasks, entry, {
         task: 'Prepare the Widget demo',
         list: 'todos',
-        when: '2031-03-17',
+        when: '2031-03-24',
       })
       const scheduled = await readTextFile(context.config.FILE_SCHEDULE_PROFESSIONAL)
       assert({
-        given: 'a tool date string beyond the current week',
+        given: 'a tool date string past the next seven days',
         should: 'file the task under its schedule date without creating a day file',
         actual: {
           date: later.day,
           filed: later.filed,
-          dayCreated: await exists(path.join(context.config.DIR_TIME, dayFile('2031-03-17'))),
-          scheduled: scheduled.includes('## 2031-03-17') && scheduled.includes('- Prepare the Widget demo'),
+          dayCreated: await exists(path.join(context.config.DIR_TIME, dayFile('2031-03-24'))),
+          scheduled: scheduled.includes('## 2031-03-24') && scheduled.includes('- Prepare the Widget demo'),
           currentDayUnchanged:
             (await readTextFile(path.join(context.config.DIR_TIME, dayFile('2031-03-16')))) === content,
         },
         expected: {
-          date: '2031-03-17',
+          date: '2031-03-24',
           filed: 'schedule',
           dayCreated: false,
           scheduled: true,

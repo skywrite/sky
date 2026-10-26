@@ -1,6 +1,6 @@
 ---
 created: 2026-08-29
-updated: 2026-09-28
+updated: 2026-10-25
 ---
 
 # Day commands
@@ -31,7 +31,7 @@ Scheduled items continue to enter their day through the day-start flow.
 
 `lib/nbfs/taskDestination` is shared by CLI adds/carries, meeting action-item
 acceptance, and web date edits, bulk moves, and week-page date picks. A date
-through the current week's Sunday goes to its day file,
+up to seven days out goes to its day file,
 created unstarted when needed. Later dates go to `schedule-professional.md` or
 `schedule-personal.md` under `## YYYY-MM-DD`, even if a future day file already
 exists. Existing future plans are preserved; this rule does not migrate them.
@@ -39,11 +39,11 @@ Historical edits still go to their day files. An addition or Next pull made
 from a dated day page is explicitly for that day, so it writes directly to its
 file on any date and creates the unstarted template if needed.
 
-The boundary is the calendar date in the notebook's timezone: a Sunday running
+The seven days count from the calendar date in the notebook's timezone: a Sunday running
 at 25:30 is already Monday for planning. A new notebook falls back to system
-time. Use the full Monday–Sunday range, not a week-directory identity: the
-range can cross New Year while the directories are split by year. Web date
-pickers receive this calendar date separately from the last started day.
+time. The window rolls with the date instead of stopping at the week's Sunday,
+which sent every Sunday's "Move to tomorrow" to the schedule. It can cross week and year directories.
+Web date pickers receive this calendar date separately from the last started day.
 
 Legacy schedule items infer Todos versus Commitments from their clock prefix.
 When that would lose the original list, an item carries a first-line annotation
@@ -53,6 +53,8 @@ schedule; the annotation preserves their category-independent destination.
 `day:schedule:update` removes the annotation, restores the original list, and
 moves the complete block with its notes and rebased links. It saves the day
 before draining schedules. It accepts the target day forwarded by `day:start`.
+A drained date with nothing left under it loses its heading and blank lines,
+and so does any earlier date already standing empty.
 No startup routines run merely because a task is assigned a date.
 
 Moves and imports use shared Markdown-block and destination-first transaction

@@ -19,7 +19,8 @@ import AddTodo from './todo/add.ts'
 import MoveTodos from './todo/move-future.ts'
 
 const TODAY = new PlainDate('2031-03-16')
-const LATER = TODAY.addDays(1)
+// The first date past the rolling seven days filed straight to day files.
+const LATER = TODAY.addDays(8)
 
 test('carrying and importing identical task blocks preserves their multiplicity', async () => {
   await withDayNotebook(async (notebook) => {
@@ -34,7 +35,7 @@ test('carrying and importing identical task blocks preserves their multiplicity'
     const scheduled = await readTextFile(config.FILE_SCHEDULE_PROFESSIONAL)
     const scheduleRows = planSections(scheduled).find((section) => section.title === LATER.ymd)!.rows
     assert({
-      given: 'two identical unfinished blocks carried to next week',
+      given: 'two identical unfinished blocks carried past the next seven days',
       should: 'retain both copies and their notes in the schedule and the incomplete record',
       actual: {
         scheduled: scheduleRows.map((row) => row.raw),
@@ -68,7 +69,7 @@ test('carrying and importing identical task blocks preserves their multiplicity'
   })
 })
 
-test('CLI adds prepare missing current-week days and schedule every type beyond Sunday', async () => {
+test('CLI adds prepare missing days within seven days and schedule every type beyond them', async () => {
   await withDayNotebook(async (notebook) => {
     const { config } = notebook.context
     const future = DayDocument.createFutureDay(LATER).addTodoItem('Existing future plan').toMarkdown()
@@ -105,7 +106,7 @@ test('CLI adds prepare missing current-week days and schedule every type beyond 
       .flatMap((section) => section.rows)
       .filter((row) => row.raw)
     assert({
-      given: 'a missing current day and an already-existing next-week file',
+      given: 'a missing current day and an already-existing file past the next seven days',
       should: 'prepare only today, leave the future plan byte-for-byte intact, and preserve scheduled list types',
       actual: {
         started: today.started,
@@ -131,7 +132,7 @@ for (const [command, list, copy] of [
   [new MoveReminders(), 'Reminders', false],
   [new CopyReminders(), 'Reminders', true],
 ] as const) {
-  test(`${command.constructor.name} schedules next-week blocks without losing links or notes`, async () => {
+  test(`${command.constructor.name} schedules later blocks without losing links or notes`, async () => {
     await withDayNotebook(async (notebook) => {
       const { config } = notebook.context
       const source = `---\n---\n\n## ${list}\n\n- Review [Atlas][brief]\n  Keep [notes](notes.md).\n  - Nested detail\n- ~~Finished~~\n\n[brief]: https://example.com/atlas\n`
@@ -142,7 +143,7 @@ for (const [command, list, copy] of [
         list.startsWith('Professional') ? config.FILE_SCHEDULE_PROFESSIONAL : config.FILE_SCHEDULE_PERSONAL,
       )
       assert({
-        given: 'a task with attached notes and reference/relative links moved beyond this week',
+        given: 'a task with attached notes and reference/relative links moved past the next seven days',
         should: 'keep the task in the schedule, never create the future day, and honor move versus copy',
         actual: {
           created: await exists(path.join(config.DIR_TIME, dayFile(LATER))),
@@ -218,6 +219,29 @@ test('day:start imports legacy and typed scheduled blocks into an existing plan,
     } finally {
       run.mockRestore()
     }
+  })
+})
+
+test('day:schedule:update takes emptied dates out of the schedule', async () => {
+  await withDayNotebook(async (notebook) => {
+    const { config } = notebook.context
+    const later = LATER.addDays(7).ymd
+    await outputFile(
+      config.FILE_SCHEDULE_PROFESSIONAL,
+      `# Schedule\n\n## ${TODAY.ymd}\n\n\n## ${LATER.ymd}\n\n- 09:00 > Plan the launch\n\n## ${later}\n- Review Atlas\n`,
+    )
+    await new ImportSchedule().run({ ...notebook, args: { day: LATER } })
+    assert({
+      given: "a started day's scheduled task, beside an earlier date already left empty",
+      should: 'move the task into the day and remove both headings, keeping the later date as written',
+      actual: {
+        imported: DayDocument.fromMarkdown(await readTextFile(path.join(config.DIR_TIME, dayFile(LATER)))).lists.find(
+          (list) => list.title === 'Professional Commitments',
+        )?.items,
+        schedule: await readTextFile(config.FILE_SCHEDULE_PROFESSIONAL),
+      },
+      expected: { imported: ['09:00 > Plan the launch'], schedule: `# Schedule\n\n## ${later}\n- Review Atlas\n` },
+    })
   })
 })
 

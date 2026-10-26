@@ -4,7 +4,7 @@ import type { Page, Request, Response } from 'playwright'
 import { exists } from '#shared/fs/mod.ts'
 import { dayFile } from '#shared/nbfs/mod.ts'
 import { assert, test } from '#test'
-import { PlainDate, Week, ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
+import { PlainDate, ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
 import { planSection } from './day/editingText.ts'
 import type { DayView } from './day/mod.ts'
 import { dayItemKey, type DayItemAddress } from './day/organizingTypes.ts'
@@ -525,7 +525,7 @@ test(
 
 test(
   {
-    name: 'Sunday moves schedule next week and Open date shows the scheduled tasks on desktop and mobile',
+    name: 'Sunday moves to tomorrow land on Monday and Open date shows that day on desktop and mobile',
     timeout: 60000,
   },
   async (t) => {
@@ -543,6 +543,7 @@ test(
       async ({ page, origin, file, userDataDir, errors }) => {
         await page.route('**/schedule', (route) => route.fulfill({ json: { read: true, errors: [], meetings: [] } }))
         const timeDir = path.join(path.dirname(userDataDir), 'time')
+        const mondayFile = path.join(timeDir, dayFile(monday))
         for (const mobile of [false, true]) {
           await page.setViewportSize(mobile ? { width: 390, height: 844 } : { width: 1500, height: 1000 })
           await page.goto(`${origin}/${sunday.ymd}`)
@@ -557,35 +558,29 @@ test(
             return (await response.json()) as { undo: string }
           }
           await move()
-          await page
-            .locator('.sky-organize-toast')
-            .getByText('2 items scheduled for tomorrow', { exact: true })
-            .waitFor()
+          await page.locator('.sky-organize-toast').getByText('2 items moved to tomorrow', { exact: true }).waitFor()
           await page.locator('.sky-organize-toast').getByRole('button', { name: 'Undo', exact: true }).click()
           await page.locator('.sky-prow').filter({ hasText: 'Review the Atlas proposal' }).waitFor()
           assert({
             given: 'Undo of a Sunday-to-Monday move',
-            should: 'restore the source exactly',
-            actual: await readFile(file, 'utf8'),
-            expected: CONTENT,
+            should: 'restore the source exactly and remove the day the move created',
+            actual: { source: await readFile(file, 'utf8'), dayCreated: await exists(mondayFile) },
+            expected: { source: CONTENT, dayCreated: false },
           })
           const result = await move()
           await page.locator('.sky-organize-toast').getByRole('button', { name: 'Open date', exact: true }).click()
-          await page.waitForURL(`${origin}/week/${Week.of(monday)}`)
-          await page.getByText('Review the Atlas proposal', { exact: true }).waitFor()
-          await page.getByText('Send the venue options', { exact: true }).waitFor()
+          await page.waitForURL(`${origin}/${monday.ymd}`)
+          await page.locator('.sky-prow').filter({ hasText: 'Review the Atlas proposal' }).waitFor()
+          await page.locator('.sky-prow').filter({ hasText: 'Send the venue options' }).waitFor()
           assert({
-            given: `${mobile ? 'mobile' : 'desktop'} Open date after a next-week move`,
-            should: 'show the scheduled tasks, preserve attached notes, and create no future day',
+            given: `${mobile ? 'mobile' : 'desktop'} Open date after a move to tomorrow`,
+            should: "show the tasks on Monday's page, keep attached notes, and leave the schedule alone",
             actual: {
-              dayCreated: await exists(path.join(timeDir, dayFile(monday))),
-              notes: (await readFile(path.join(timeDir, 'schedule-professional.md'), 'utf8')).includes(
-                '  Keep the attached notes.',
-              ),
-              metadataVisible: (await page.locator('body').innerText()).includes('sky-list:'),
+              notes: (await readFile(mondayFile, 'utf8')).includes('  Keep the attached notes.'),
+              scheduled: await exists(path.join(timeDir, 'schedule-professional.md')),
               overflow: await page.evaluate(() => document.documentElement.scrollWidth > innerWidth),
             },
-            expected: { dayCreated: false, notes: true, metadataVisible: false, overflow: false },
+            expected: { notes: true, scheduled: false, overflow: false },
           })
           const undo = await page.request.post(`${origin}/day/${sunday.ymd}/item/organize/undo`, {
             data: { id: result.undo },
@@ -593,7 +588,7 @@ test(
           if (!undo.ok()) throw new Error(await undo.text())
         }
         assert({
-          given: 'scheduled browser moves',
+          given: 'Sunday browser moves',
           should: 'finish without browser errors',
           actual: errors,
           expected: [],

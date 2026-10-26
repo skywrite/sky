@@ -80,7 +80,7 @@ export interface PlacePrompt {
   initial: string[]
   /** The notebook's today, YYYY-MM-DD, so a host can say Today and Tomorrow and name the week's days */
   today: string
-  /** The last day from today whose day file exists; a later day waits in the schedule until its week is made */
+  /** The last date filed straight to its day file, seven days out; a later day waits in the schedule until it starts */
   createdThrough: string | null
   /** The when an item takes when nothing says otherwise */
   fallback: PlaceWhen

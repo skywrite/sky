@@ -1,15 +1,15 @@
-import { taskFiling } from '#lib/nbfs/taskDestination.ts'
+import { dayFilingThrough, taskFiling } from '#lib/nbfs/taskDestination.ts'
 import type { TranscriptActionItem } from '#lib/notebook/actionItems.ts'
 import { exists, readTextFile } from '#shared/fs/mod.ts'
 import ListDocument from '#shared/models/Markdown/ListDocument/mod.ts'
-import { PlainDate, Week } from '#universal/dates/nbdt/mod.ts'
+import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import { normalizeClock, placeDestination, type PlaceWhen } from '#universal/dates/whenLabel/mod.ts'
 
 /**
  * Where an accepted action item lands, and how it gets there.
  *
  * An item is placed on a day or on no day. A day with a clock time is a
- * Commitment; without one it is a Todo. A date in the current week takes the
+ * Commitment; without one it is a Todo. A date up to seven days out takes the
  * item directly; a later date parks it in the schedule
  * file under its date, time kept, and `day:schedule:update` files it on
  * that morning by the same split. No day means the Next list.
@@ -32,7 +32,7 @@ export function proposedWhen(item: TranscriptActionItem, today: string, fallback
 
 /** Last date routed straight to a day, whether its file exists yet or not. */
 export function planningThrough(today: PlainDate): string {
-  return Week.of(today).end.ymd
+  return dayFilingThrough(today).ymd
 }
 
 /** How many items wait under `## Next` in a next-* file's markdown. */

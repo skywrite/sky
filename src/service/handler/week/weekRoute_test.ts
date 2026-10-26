@@ -378,21 +378,21 @@ test({ name: 'week route - something for next week lands in the queue, or under 
   const dated = await post(app, '/2026-W37/queue', {
     text: 'Walk the dog before the call',
     category: 'Personal',
-    day: '2026-09-09',
+    day: '2026-09-12',
   })
   const nextFile = await readFile(path.join(timeDir, 'next-professional.md'), 'utf8')
   const scheduleFile = await readFile(path.join(timeDir, 'schedule-personal.md'), 'utf8')
 
   assert({
-    given: 'one item with no day and one with a day of the week',
+    given: 'one item with no day and one with a day past the next seven days',
     should: 'append the first to Week-Next stamped with this week, and file the second under its date in date order',
     actual: {
       statuses: [queued.status, dated.status],
       queuedLine: nextFile.includes('- Get a quote for the office lease renewal (pushed 2026-W36)'),
       queuedUnderWeekNext: nextFile.indexOf('Get a quote') < nextFile.indexOf('## Next'),
       queueShows: queued.view?.queue?.weekNext.professional.length,
-      datedOrder: scheduleFile.indexOf('## 2026-03-21') < scheduleFile.indexOf('## 2026-09-09'),
-      datedLine: /## 2026-09-09\n\s*\n?- Walk the dog before the call/.test(scheduleFile),
+      datedOrder: scheduleFile.indexOf('## 2026-03-21') < scheduleFile.indexOf('## 2026-09-12'),
+      datedLine: /## 2026-09-12\n\s*\n?- Walk the dog before the call/.test(scheduleFile),
       inWeek: dated.view?.queue?.scheduled.inWeek.map((g) => `${g.date} ${g.items.map((i) => i.category).join(',')}`),
     },
     expected: {
@@ -402,7 +402,7 @@ test({ name: 'week route - something for next week lands in the queue, or under 
       queueShows: 3,
       datedOrder: true,
       datedLine: true,
-      inWeek: ['2026-09-07 Professional,Professional', '2026-09-09 Personal'],
+      inWeek: ['2026-09-07 Professional,Professional', '2026-09-12 Personal'],
     },
   })
 })

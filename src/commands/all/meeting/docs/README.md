@@ -1,6 +1,6 @@
 ---
 created: 2026-09-03
-updated: 2026-09-24
+updated: 2026-10-25
 ---
 
 # meeting:new — the action items
@@ -39,9 +39,9 @@ answer, so the ledger can say each one in words.
 
 | The when | Lands in | As |
 | --- | --- | --- |
-| A date within this week, with a time | that day's `## Professional Commitments` | `HH:MM > item` |
-| A date within this week, no time | that day's `## Professional Todos` | `item` |
-| A date beyond this week | `schedule-professional.md` under `## YYYY-MM-DD`, the time kept | the morning's `day:schedule:update` files it under Commitments or Todos by the same split |
+| A date up to seven days out, with a time | that day's `## Professional Commitments` | `HH:MM > item` |
+| A date up to seven days out, no time | that day's `## Professional Todos` | `item` |
+| A later date | `schedule-professional.md` under `## YYYY-MM-DD`, the time kept | the morning's `day:schedule:update` files it under Commitments or Todos by the same split |
 | No day | `next-professional.md` `## Next` | `item` |
 
 A past date cannot be scheduled; it is treated as no day. Dated items use the shared
@@ -49,14 +49,14 @@ A past date cannot be scheduled; it is treated as no day. Dated items use the sh
 through `day:items:add` for commitments and `day:todo:add` for todos. Undated
 items run `next:add`; each route specifies its destination explicitly. The
 ledger prints one line per item — `✓ item → Tomorrow · Todos`,
-`✓ item → Fri 13 Mar · Commitments`, `✓ item → Mon 16 Mar · schedule`,
+`✓ item → Fri 13 Mar · Commitments`, `✓ item → Thu 19 Mar · schedule`,
 `✓ item → Next` — or `✗ item — reason`, and ticks the count.
 
 ## How the question is asked
 
 The step is one `place` question on the prompt seam
 (`commands/lib/prompt/Prompter.ts`): the items with their proposed whens,
-today's date, the current week's Sunday, the fallback, and how many items
+today's date, the last date filed to day files (seven days out), the fallback, and how many items
 already wait on Next.
 
 - **The terminal** keeps the multiselect it has always had. Space ticks,

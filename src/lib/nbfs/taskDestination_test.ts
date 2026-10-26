@@ -2,17 +2,18 @@ import { assert, test } from '#test'
 import { PlainDate, ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
 import { commandPlanningDate, taskFiling } from './taskDestination.ts'
 
-test('task filing uses Sunday as its boundary, including New Year and extended notebook hours', () => {
+test('task filing keeps a rolling seven days on day files, including New Year and extended notebook hours', () => {
   assert({
-    given: 'Sunday/Monday targets and a week crossing New Year',
-    should: 'keep the entire current calendar week on days and route later dates to the schedule',
+    given: "a Sunday's tomorrow, its seventh and eighth days out, and the same window crossing New Year",
+    should: 'keep tomorrow through seven days out on days and route later dates to the schedule',
     actual: [
-      taskFiling(new PlainDate('2031-03-16'), new PlainDate('2031-03-13')),
-      taskFiling(new PlainDate('2031-03-17'), new PlainDate('2031-03-13')),
-      taskFiling(new PlainDate('2032-01-04'), new PlainDate('2031-12-31')),
-      taskFiling(new PlainDate('2032-01-05'), new PlainDate('2031-12-31')),
+      taskFiling(new PlainDate('2031-03-17'), new PlainDate('2031-03-16')),
+      taskFiling(new PlainDate('2031-03-23'), new PlainDate('2031-03-16')),
+      taskFiling(new PlainDate('2031-03-24'), new PlainDate('2031-03-16')),
+      taskFiling(new PlainDate('2032-01-07'), new PlainDate('2031-12-31')),
+      taskFiling(new PlainDate('2032-01-08'), new PlainDate('2031-12-31')),
     ],
-    expected: ['day', 'schedule', 'day', 'schedule'],
+    expected: ['day', 'day', 'schedule', 'day', 'schedule'],
   })
   const systemNow = new ZonedDateTime('2031-03-17T01:30:00', 'UTC')
   assert({

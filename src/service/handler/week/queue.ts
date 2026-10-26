@@ -10,8 +10,8 @@
  *   week:plan uses, stamped with the week that pushed it.
  * - `schedule-professional.md` / `schedule-personal.md`: `## YYYY-MM-DD`
  *   lists; day:schedule:update pulls the day's list into the day file when
- *   that day starts. The shared date rule files tasks here beyond the
- *   current week.
+ *   that day starts. The shared date rule files tasks here more than seven
+ *   days out.
  *
  * Removing a line is the person's hand: the bullet leaves; a list left
  * empty leaves with it, so a dated heading never stands over nothing.

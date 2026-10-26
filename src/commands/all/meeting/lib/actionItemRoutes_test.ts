@@ -11,7 +11,7 @@ import {
   proposedWhen,
 } from './actionItemRoutes.ts'
 
-// A fictional week: Wednesday 11 March 2026, day files made through Sunday.
+// A fictional Wednesday, 11 March 2026: day files take dates through the 18th, seven days out.
 const TODAY = '2026-03-11'
 const fallback = { date: '2026-03-12', time: null }
 
@@ -34,20 +34,20 @@ test('actionItemRoutes: where each placement goes', async () => {
   const routes = await Promise.all([
     planActionItemRoute({ text, when: { date: '2026-03-12', time: '9:30' } }, TODAY),
     planActionItemRoute({ text, when: { date: '2026-03-12', time: null } }, TODAY),
-    planActionItemRoute({ text, when: { date: '2026-03-16', time: '10:00' } }, TODAY),
-    planActionItemRoute({ text, when: { date: '2026-03-16', time: null } }, TODAY),
+    planActionItemRoute({ text, when: { date: '2026-03-19', time: '10:00' } }, TODAY),
+    planActionItemRoute({ text, when: { date: '2026-03-19', time: null } }, TODAY),
     planActionItemRoute({ text, when: { date: null, time: null } }, TODAY),
     planActionItemRoute({ text, when: { date: '2026-03-02', time: '09:00' } }, TODAY),
   ])
   assert({
-    given: 'timed and untimed items on a made day, on a day whose week is not made, on no day, and in the past',
+    given: 'timed and untimed items within seven days, on a later day, on no day, and in the past',
     should: 'commit, todo, park in the schedule with the time kept, or go to Next — and say so in words',
     actual: routes.map((r) => [r.kind, r.task, r.destination]),
     expected: [
       ['commitments', '09:30 > Send the sheet', 'Tomorrow · Commitments'],
       ['todo', 'Send the sheet', 'Tomorrow · Todos'],
-      ['commitments', '10:00 > Send the sheet', 'Mon 16 Mar · schedule'],
-      ['todo', 'Send the sheet', 'Mon 16 Mar · schedule'],
+      ['commitments', '10:00 > Send the sheet', 'Thu 19 Mar · schedule'],
+      ['todo', 'Send the sheet', 'Thu 19 Mar · schedule'],
       ['next', 'Send the sheet', 'Next'],
       ['next', 'Send the sheet', 'Next'],
     ],
@@ -126,9 +126,9 @@ test('actionItemRoutes: what is created, and what waits', async () => {
   const today = new PlainDate(TODAY)
   assert({
     given: 'a Wednesday with no pre-created day files',
-    should: 'name Sunday as the planning boundary',
+    should: 'name the day seven days out as the planning boundary',
     actual: planningThrough(today),
-    expected: '2026-03-15',
+    expected: '2026-03-18',
   })
   const next = ['# Next Actions', '', '## Week-Next', '- One', '', '## Next', '- Two', '- Three', ''].join('\n')
   assert({

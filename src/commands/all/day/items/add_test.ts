@@ -18,6 +18,8 @@ import DayItemsAddTask from './add.ts'
 import DayItemsDoneTask from './done.ts'
 
 const DAY = new PlainDate('2031-03-16')
+// The first date past the rolling seven days filed straight to day files.
+const LATER = DAY.addDays(8)
 const TASKS = ['Draft the Q2 roadmap', 'Review the Atlas deck', 'Book the offsite room', 'Send Jane the agenda']
 
 /** A temp notebook whose locks and schedule files stay inside it. */
@@ -51,7 +53,7 @@ test('day:items:add - context stays with its task on days and schedules', async 
     const notes =
       'The launch checklist has no owner. Agree who will sign off before the demo.\n\n' +
       '- Keep the existing launch window.\n- [Source chat](/chat/source/atlas-planning)'
-    for (const when of [DAY, DAY.addDays(1)]) {
+    for (const when of [DAY, LATER]) {
       await new DayItemsAddTask().run({
         args: { task, notes, list: 'todos', category: 'Professional', time: undefined, when },
         ...call(context),
@@ -59,7 +61,7 @@ test('day:items:add - context stays with its task on days and schedules', async 
     }
     for (const [destination, heading] of [
       [file, 'Professional Todos'],
-      [schedule, DAY.addDays(1).ymd],
+      [schedule, LATER.ymd],
     ]) {
       const content = await readTextFile(destination)
       const rows = planSection(content, heading)?.rows ?? []
@@ -167,14 +169,14 @@ test('day:items:done - strikes sent at once all stay struck', async () => {
   })
 })
 
-test('day:todo:add - adds sent at once for next week all reach the schedule', async () => {
+test('day:todo:add - adds sent at once for a later date all reach the schedule', async () => {
   await notebook(async ({ context, schedule }) => {
     await outputFile(schedule, '# Schedule\n')
 
     await Promise.all(
       TASKS.map((task) =>
         new DayTodoAddTask().run({
-          args: { task, category: 'Professional', link: undefined, when: DAY.addDays(1) },
+          args: { task, category: 'Professional', link: undefined, when: LATER },
           ...call(context),
         }),
       ),

@@ -17,7 +17,7 @@ const TASK = 'Review the Atlas draft'
 type TodoArgs = Parameters<DayTodoAddTask['run']>[0]['args']
 
 async function assertFiled(context: CommandContext, when: PlainDate, category: string) {
-  const scheduled = when.ymd > TODAY.ymd
+  const scheduled = when.ymd > TODAY.addDays(7).ymd
   const file = scheduled
     ? category === 'Personal'
       ? context.config.FILE_SCHEDULE_PERSONAL
@@ -64,7 +64,7 @@ const composedCases: {
   },
 ]
 
-for (const when of [TODAY, TODAY.addDays(1)]) {
+for (const when of [TODAY, TODAY.addDays(8)]) {
   for (const scenario of composedCases) {
     test(`day:todo:add through run(): ${scenario.name} on ${when.ymd}`, async () => {
       await withDayNotebook(async ({ context }) => {

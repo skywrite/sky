@@ -1,6 +1,6 @@
 import * as path from 'node:path'
 import { dayFile } from '#shared/nbfs/mod.ts'
-import { PlainDate, Week, type ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
+import { PlainDate, type ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
 
 export type TaskFiling = 'day' | 'schedule'
 export interface TaskPaths {
@@ -9,9 +9,13 @@ export interface TaskPaths {
   FILE_SCHEDULE_PROFESSIONAL?: string
 }
 
-/** Use the full Monday–Sunday range, including a week split across two year directories. */
+/** The last date filed straight to its day file: a rolling seven days, so tomorrow never waits in the schedule. */
+export function dayFilingThrough(today: PlainDate): PlainDate {
+  return today.addDays(7)
+}
+
 export function taskFiling(day: PlainDate, today: PlainDate): TaskFiling {
-  return day.ymd > Week.of(today).end.ymd ? 'schedule' : 'day'
+  return day.ymd > dayFilingThrough(today).ymd ? 'schedule' : 'day'
 }
 
 /** Calendar date in the notebook's zone, including an open day running past 24:00. */

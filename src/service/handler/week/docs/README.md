@@ -1,6 +1,6 @@
 ---
 created: 2026-09-04
-updated: 2026-10-03
+updated: 2026-10-25
 ---
 
 # The week page
@@ -74,7 +74,7 @@ be waiting for it in the standing files at the top of `time/`:
   ones, and in amber the dates that came and went without the day starting,
   which the terminal only ever warned about. The add row's day pick follows the shared
   [date-routing rule](../../../../commands/all/day/docs/README.md#task-dates-choose-their-destination):
-  this week goes straight to a day; later dates go to the schedule. Task-list
+  a date up to seven days out goes straight to a day; later dates go to the schedule. Task-list
   annotations are hidden from displayed text but retained for day-start import.
   Repeated task text follows the [day item's copy-preservation rule](../../day/docs/README.md#the-days-items);
   scheduled copies have separate occurrence addresses and reject stale removals.

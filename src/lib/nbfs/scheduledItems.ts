@@ -31,11 +31,29 @@ export function appendScheduledBlock(content: string, date: string, block: strin
       (section) => /^\d{4}-\d{2}-\d{2}$/.test(section.title) && section.title > date,
     )
     const eol = content.includes('\r\n') ? '\r\n' : '\n'
-    const empty = `## ${date}${eol}${eol}-${eol}${eol}`
-    if (next) content = content.slice(0, next.from) + empty + content.slice(next.from)
-    else content = `${content}${content.endsWith(eol) ? '' : eol}${eol}${empty}`
+    // The task sits directly under its heading, as in day files; one blank line separates dates.
+    const empty = `## ${date}${eol}-${eol}`
+    if (next) content = content.slice(0, next.from) + empty + eol + content.slice(next.from)
+    else content = content.trim() ? `${content.trimEnd()}${eol}${eol}${empty}` : empty
   }
   return insertBlock(content, date, block)
+}
+
+// A heading followed by nothing but blank lines or a bare placeholder bullet.
+const EMPTY_DATE = /^##[^\r\n]*(?:\r?\n[\t ]*(?:[-*+][\t ]*)?)*$/
+
+/** Dates through `day` with nothing left under them leave with their headings and blank lines. */
+export function removeEmptyDates(content: string, day: string): string {
+  const empty = planSections(content).filter(
+    (section) =>
+      /^\d{4}-\d{2}-\d{2}$/.test(section.title) &&
+      section.title <= day &&
+      EMPTY_DATE.test(content.slice(section.from, section.end)),
+  )
+  let after = content
+  for (const section of [...empty].reverse()) after = after.slice(0, section.from) + after.slice(section.end)
+  // A removed last date also takes the blank lines that set it apart.
+  return empty.at(-1)?.end === content.length ? after.replace(/(\r?\n)(?:[\t ]*\r?\n)+$/, '$1') : after
 }
 
 export function emptySchedule(list: string): string {

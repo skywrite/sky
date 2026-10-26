@@ -6,7 +6,7 @@ import { planSections, planSection, blockRaw } from '#lib/nbfs/listBlocks.ts'
 import { withDayWrite, withScheduleWrite } from '#lib/nbfs/mod.ts'
 import { moveItemMarkdown } from '#lib/nbfs/moveItemMarkdown.ts'
 import { writePlanningChanges, type PlanningChange } from '#lib/nbfs/planningChanges.ts'
-import { readScheduledItem } from '#lib/nbfs/scheduledItems.ts'
+import { readScheduledItem, removeEmptyDates } from '#lib/nbfs/scheduledItems.ts'
 import { readOptional } from '#lib/outbox/files.ts'
 import DayDocument from '#shared/models/Day/document/mod.ts'
 import { dayFile } from '#shared/nbfs/mod.ts'
@@ -85,7 +85,7 @@ export default class DayScheduleUpdateTask extends Command {
           }
           let remaining = content
           for (const row of [...rows].reverse()) remaining = remaining.slice(0, row.from) + remaining.slice(row.to)
-          changes.push({ file: schedule, before: content, after: remaining })
+          changes.push({ file: schedule, before: content, after: removeEmptyDates(remaining, day.ymd) })
         }
         if (count) await writePlanningChanges([{ file, before, after }, ...changes])
         return CommandResult.success()
