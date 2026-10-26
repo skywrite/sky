@@ -112,3 +112,19 @@ test('detectTypeFromPath - library subject dirs shadowing entity names stay docu
     expected: 'document',
   })
 })
+
+test('detectTypeFromPath - the journal question bank is documents, not entries', () => {
+  assert({
+    given: 'a question definition under journal/questions/',
+    should: 'detect type document',
+    actual: detectTypeFromPath('/nb/journal/questions/Gratitude.md'),
+    expected: 'document',
+  })
+
+  assert({
+    given: 'a journal entry in a day folder',
+    should: 'still detect type journal',
+    actual: detectTypeFromPath('/nb/time/2025/W18/04-28/journal/Morning-Pages.md'),
+    expected: 'journal',
+  })
+})

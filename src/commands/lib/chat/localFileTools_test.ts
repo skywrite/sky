@@ -115,6 +115,27 @@ test('directory listings are bounded, resumable, and report symlinks without rea
     })
   }))
 
+test('directory listings return markdown frontmatter only when asked', async () =>
+  fixture(async (root) => {
+    await writeFile(path.join(root, 'Atlas.md'), '---\nauthor: Jane Doe\nimportance: 7\n---\n\n# Atlas\n')
+    await writeFile(path.join(root, 'Plain.md'), '# No fields\n')
+    await writeFile(path.join(root, 'atlas.txt'), 'author: Jane Doe')
+    const fields = (listing: Awaited<ReturnType<typeof listDirectory>>) =>
+      listing.entries?.map((entry) => ('frontmatter' in entry ? entry.frontmatter : undefined))
+    assert({
+      given: 'markdown files with and without frontmatter beside a text file, listed with and without frontmatter',
+      should: 'return the markdown file’s fields only when asked, and nothing for the others',
+      actual: [
+        fields(await listDirectory({ path: '.', frontmatter: true }, root)),
+        fields(await listDirectory({ path: '.' }, root)),
+      ],
+      expected: [
+        [{ author: 'Jane Doe', importance: 7 }, undefined, undefined],
+        [undefined, undefined, undefined],
+      ],
+    })
+  }))
+
 test('existing files, folders, and broken destination links are never overwritten or merged', async () =>
   fixture(async (root) => {
     await writeFile(path.join(root, 'source.txt'), 'source')

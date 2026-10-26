@@ -168,6 +168,7 @@ export default class DomainCollection {
     addAll(store.time.getAll())
     addAll(store.library.getAll())
     addAll(store.ai.getAll())
+    addAll(store.other.getAll())
 
     const domain = new DomainCollection(store)
     domain.collection = Collection.fromMap(items)

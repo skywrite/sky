@@ -11,6 +11,7 @@ const DIRS = {
   placesDir: '/nb/places',
   libraryDir: '/nb/library',
   timeDirs: ['/nb/time'],
+  otherDirs: ['/nb/field-guides', '/nb/ideas-archive'],
 }
 
 function buildEmpty(): Promise<MarkdownStore> {
@@ -322,5 +323,59 @@ test('MarkdownStore.version: unrouted set/delete leave it unchanged', async () =
     should: 'not bump the version (no cache invalidation for no-ops)',
     actual: store.version,
     expected: 0,
+  })
+})
+
+test('MarkdownStore.set: routes a doc in another notebook folder to the other DocumentStore', async () => {
+  const store = await buildEmpty()
+
+  store.set('/nb/field-guides/Atlas-Field-Guide.md', '---\nauthor: Jane Doe\n---\n\n# Atlas Field Guide')
+
+  assert({
+    given: 'set doc in a notebook folder no typed store models',
+    should: 'find it in the other store',
+    actual: store.other.findByPath('/nb/field-guides/Atlas-Field-Guide.md')?.yaml['author'],
+    expected: 'Jane Doe',
+  })
+
+  assert({
+    given: 'set doc in a notebook folder no typed store models',
+    should: 'bump version',
+    actual: store.version,
+    expected: 1,
+  })
+})
+
+test('MarkdownStore.delete: routes a doc in another notebook folder to the other DocumentStore', async () => {
+  const store = await buildEmpty()
+
+  store.set('/nb/field-guides/Atlas-Field-Guide.md', '---\nauthor: Jane Doe\n---\n\n# Atlas Field Guide')
+  store.delete('/nb/field-guides/Atlas-Field-Guide.md')
+
+  assert({
+    given: 'delete doc in a notebook folder no typed store models',
+    should: 'not find it in the other store',
+    actual: store.other.findByPath('/nb/field-guides/Atlas-Field-Guide.md'),
+    expected: undefined,
+  })
+})
+
+test('MarkdownStore.set: a folder that only shares a typed folder name prefix is not claimed by it', async () => {
+  const store = await buildEmpty()
+
+  store.set('/nb/ideas-archive/Widget-V2.md', '---\nstatus: parked\n---\n\n# Widget-V2')
+
+  assert({
+    given: 'set doc in ideas-archive/, a sibling of ideas/',
+    should: 'not route it to the ideas store',
+    actual: store.ideas.findByPath('/nb/ideas-archive/Widget-V2.md'),
+    expected: undefined,
+  })
+
+  assert({
+    given: 'set doc in ideas-archive/, a sibling of ideas/',
+    should: 'route it to the other store',
+    actual: store.other.findByPath('/nb/ideas-archive/Widget-V2.md')?.yaml['status'],
+    expected: 'parked',
   })
 })

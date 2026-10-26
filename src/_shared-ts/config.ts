@@ -2,6 +2,7 @@ import * as os from 'node:os'
 import * as path from 'node:path'
 import { workstreamStoragePaths } from '#lib/workstreams/storagePaths.ts'
 import { loadSkyConfig } from './config/loader.ts'
+import { notebookDirs } from './config/notebookDirs.ts'
 import type { AiProfileConfig } from './config/types.ts'
 
 export type { AiProfileConfig, SkyConfig } from './config/types.ts'
@@ -97,8 +98,9 @@ export const DIR_TIME = path.join(DIR_BASE, 'time')
 export const DIR_TRACKING = path.join(DIR_BASE, 'tracking')
 export const DIR_ORGS = path.join(DIR_BASE, 'orgs')
 
-// Walk order matters: DIR_ORGS before DIR_PROJECTS so orgs are loaded when tracking project references
-export const DIRS_MARKDOWN = [
+// Walk order matters: DIR_ORGS before DIR_PROJECTS so orgs are loaded when tracking project references.
+// Sky reads its whole notebook: every other visible top-level folder follows these.
+export const DIRS_MARKDOWN = notebookDirs(DIR_BASE, [
   DIR_AI,
   DIR_DECISIONS,
   DIR_GOALS,
@@ -113,7 +115,7 @@ export const DIRS_MARKDOWN = [
   DIR_STREAKS,
   DIR_TIME,
   DIR_TRACKING,
-]
+])
 
 export const FILE_SKY_CODE_ENV = path.join(DIR_CODE_SRC, '.env')
 

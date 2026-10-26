@@ -1,3 +1,6 @@
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import * as path from 'node:path'
 import { assert, test } from '#test'
 import MarkdownStore from './mod.ts'
 
@@ -325,4 +328,34 @@ test('MarkdownStore.resolve - unknown library/ refs stay unresolved', async () =
     actual: store.resolve('library/books/Missing-Title').type,
     expected: 'unresolved',
   })
+})
+
+test('MarkdownStore.build - loads notebook folders no typed store models as documents', async () => {
+  const base = await mkdtemp(path.join(tmpdir(), 'sky-store-other-'))
+  try {
+    const file = path.join(base, 'field-guides', 'Atlas-Field-Guide.md')
+    await mkdir(path.dirname(file), { recursive: true })
+    await writeFile(file, '---\nauthor: Jane Doe\n---\n\n# Atlas Field Guide\n')
+    const store = await MarkdownStore.build({
+      peopleDirs: [],
+      orgDirs: [],
+      otherDirs: [path.join(base, 'field-guides')],
+    })
+
+    assert({
+      given: 'a markdown file in a notebook folder no typed store models',
+      should: 'load it into the store as a document',
+      actual: store.findByPath(file)?.type,
+      expected: 'document',
+    })
+
+    assert({
+      given: 'a markdown file in a notebook folder no typed store models',
+      should: 'keep its frontmatter',
+      actual: store.other.findByPath(file)?.yaml['author'],
+      expected: 'Jane Doe',
+    })
+  } finally {
+    await rm(base, { recursive: true, force: true })
+  }
 })

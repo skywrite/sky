@@ -1,9 +1,11 @@
 import { createHash } from 'node:crypto'
 import { constants, createReadStream, type Stats } from 'node:fs'
-import { copyFile, link, lstat, mkdir, readdir, realpath, rmdir, unlink } from 'node:fs/promises'
+import { copyFile, link, lstat, mkdir, readdir, readFile, realpath, rmdir, unlink } from 'node:fs/promises'
 import * as path from 'node:path'
 import { tool } from 'ai'
 import { z } from 'zod'
+import splitYamlMarkdown from '#shared/models/Markdown/util/splitYamlMarkdown.ts'
+import { parseWithError } from '#shared/yaml/mod.ts'
 import { createFileTools, resolveFilePath, type FileToolsOptions } from './fileTools.ts'
 import { findDownloads } from './findDownloads.ts'
 
@@ -44,8 +46,16 @@ function problem(error: unknown): string {
   }
 }
 
+/** A markdown file's frontmatter fields, or nothing when it has none or they don't parse. */
+async function frontmatterOf(location: string): Promise<Record<string, unknown> | undefined> {
+  const { data } = parseWithError(splitYamlMarkdown(await readFile(location, 'utf8')).yaml)
+  return data && typeof data === 'object' && !Array.isArray(data) && Object.keys(data).length > 0
+    ? (data as Record<string, unknown>)
+    : undefined
+}
+
 export async function listDirectory(
-  input: { path: string; offset?: number; limit?: number },
+  input: { path: string; offset?: number; limit?: number; frontmatter?: boolean },
   cwd: string,
   signal?: AbortSignal,
 ) {
@@ -60,7 +70,17 @@ export async function listDirectory(
         const entryPath = path.join(location, name)
         try {
           const info = await lstat(entryPath)
-          return { name, path: entryPath, kind: kindOf(info), ...(info.isFile() ? { bytes: info.size } : {}) }
+          const fields =
+            input.frontmatter && info.isFile() && name.endsWith('.md')
+              ? await frontmatterOf(entryPath).catch(() => undefined)
+              : undefined
+          return {
+            name,
+            path: entryPath,
+            kind: kindOf(info),
+            ...(info.isFile() ? { bytes: info.size } : {}),
+            ...(fields ? { frontmatter: fields } : {}),
+          }
         } catch (error) {
           return { name, path: entryPath, error: problem(error) }
         }
@@ -238,11 +258,12 @@ export function createChatFileTools(options: Omit<FileToolsOptions, 'allowedRoot
     }),
     list_directory: tool({
       description:
-        'List an actual local folder before organizing its contents. Returns file/folder paths and sizes, with nextOffset for more entries. Does not read file contents or follow child symlinks. Use paths named by the user or returned by earlier tools.',
+        'List an actual local folder before organizing its contents. Returns file/folder paths and sizes, with nextOffset for more entries. Does not read file contents or follow child symlinks, except that frontmatter=true also returns each markdown file’s frontmatter fields, to see how a folder’s documents are dated and classified before adding one. Use paths named by the user or returned by earlier tools.',
       inputSchema: z.object({
         path: filePath,
         offset: z.number().int().min(0).optional(),
         limit: z.number().int().min(1).max(500).optional(),
+        frontmatter: z.boolean().optional(),
       }),
       execute: (input: Parameters<typeof listDirectory>[0], execution?: { abortSignal?: AbortSignal }) =>
         listDirectory(input, options.cwd, execution?.abortSignal),

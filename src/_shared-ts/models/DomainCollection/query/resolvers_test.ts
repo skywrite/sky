@@ -333,6 +333,7 @@ GTM launch checklist.`),
     time: createMockCollection([...meetingsData, ...messagesData, ...chatsData, ...notesData]),
     library: createMockCollection([]),
     ai: createMockCollection([]),
+    other: createMockCollection([]),
   } as unknown as MarkdownStore
 }
 
@@ -1241,6 +1242,7 @@ Talk notes.`),
     time: createMockCollection(videosData),
     library: createMockCollection([]),
     ai: createMockCollection([]),
+    other: createMockCollection([]),
   } as unknown as MarkdownStore
 }
 
@@ -1359,6 +1361,7 @@ function createTimeStore(items: Array<{ doc: Document; path: string }>): Markdow
     time: createMockCollection(items),
     library: createMockCollection([]),
     ai: createMockCollection([]),
+    other: createMockCollection([]),
   } as unknown as MarkdownStore
 }
 

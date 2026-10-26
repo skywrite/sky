@@ -33,6 +33,7 @@ function createFullMockStore(config: {
   time?: Array<{ doc: Document; path: string }>
   library?: Array<{ doc: Document; path: string }>
   ai?: Array<{ doc: Document; path: string }>
+  other?: Array<{ doc: Document; path: string }>
 }): MarkdownStore {
   return {
     people: {
@@ -72,6 +73,9 @@ function createFullMockStore(config: {
     ai: {
       getAll: () => Collection.from(config.ai ?? [], 'memory'),
     },
+    other: {
+      getAll: () => Collection.from(config.other ?? [], 'document'),
+    },
     resolve: () => ({ type: 'unresolved', value: null, raw: '' }),
     resolveAll: () => [],
   } as unknown as MarkdownStore
@@ -99,6 +103,19 @@ test('DomainCollection.fromStore - includes ai memories typed as memory', () => 
     should: 'include it with entity type memory',
     actual: collection.allItems.map((i) => ({ path: i.path, type: i.type })),
     expected: [{ path: '/nb/ai/memory/deck-shorthand.md', type: 'memory' }],
+  })
+})
+
+test('DomainCollection.fromStore - includes notebook folders no typed store models', () => {
+  const essay = Document.fromMarkdown(md('author: Jane Doe', '# Atlas Field Guide'))
+  const store = createFullMockStore({ other: [{ doc: essay, path: '/nb/field-guides/Atlas-Field-Guide.md' }] })
+  const collection = DomainCollection.fromStore(store)
+
+  assert({
+    given: 'a store with one document in field-guides/',
+    should: 'include it with entity type document',
+    actual: collection.allItems.map((i) => ({ path: i.path, type: i.type })),
+    expected: [{ path: '/nb/field-guides/Atlas-Field-Guide.md', type: 'document' }],
   })
 })
 

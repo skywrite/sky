@@ -103,6 +103,8 @@ const PATH_PATTERNS: Array<{ pattern: RegExp | ((path: string) => boolean); type
   { pattern: (p) => p.includes('/meeting/') || isActionPath('meeting', p), type: 'meeting' },
   { pattern: (p) => isActionPath('video', p), type: 'video' },
   { pattern: (p) => isActionPath('recap', p), type: 'recap' },
+  // journal/questions/ holds the question bank journal:new asks from, not entries.
+  { pattern: (p) => p.includes('/journal/questions/'), type: 'document' },
   { pattern: (p) => p.includes('/journal/'), type: 'journal' },
   // Saved chats: the kind folders are named once, in nbfs, and the checks live beside the names.
   { pattern: isAIChatPath, type: 'chat' },

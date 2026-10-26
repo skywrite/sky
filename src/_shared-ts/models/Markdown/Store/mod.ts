@@ -73,6 +73,36 @@ export interface MarkdownStoreConfig {
   /** The AI-owned ai/ dir (ai/memory/ and future ai/ spaces) */
   aiDir?: string
   timeDirs?: string[]
+  /**
+   * Every other notebook folder (journal/, field-guides/, one made tomorrow). No
+   * model fits them, but Sky reads its whole notebook, so they load as plain
+   * documents.
+   */
+  otherDirs?: string[]
+}
+
+/** Inside dir by whole path segments, so ideas/ never claims a sibling like ideas-archive/. */
+function isInside(filePath: string, dir: string): boolean {
+  return filePath.startsWith(dir.endsWith(path.sep) ? dir : `${dir}${path.sep}`)
+}
+
+/** The notebook's top-level folders (config.DIRS_MARKDOWN) that no typed sub-store claims. */
+function otherNotebookDirs(dirs: MarkdownStoreConfig): string[] {
+  const claimed = new Set<string | undefined>([
+    ...dirs.peopleDirs,
+    ...dirs.orgDirs,
+    ...(dirs.timeDirs ?? []),
+    dirs.projectsDir,
+    dirs.decisionsDir,
+    dirs.goalsDir,
+    dirs.streaksDir,
+    dirs.trackingDir,
+    dirs.ideasDir,
+    dirs.placesDir,
+    dirs.libraryDir,
+    dirs.aiDir,
+  ])
+  return config.DIRS_MARKDOWN.filter((dir) => !claimed.has(dir))
 }
 
 /** Unified store for markdown documents with entity resolution */
@@ -89,6 +119,8 @@ export default class MarkdownStore {
   readonly time: DocumentStore
   readonly library: DocumentStore
   readonly ai: DocumentStore
+  /** Notebook folders no typed store models, read as plain documents */
+  readonly other: DocumentStore
 
   /** Stored config for routing set/delete to correct sub-store */
   private dirs: MarkdownStoreConfig
@@ -106,6 +138,7 @@ export default class MarkdownStore {
     time: DocumentStore,
     library: DocumentStore,
     ai: DocumentStore,
+    other: DocumentStore,
     dirs: MarkdownStoreConfig,
   ) {
     this.people = people
@@ -120,11 +153,12 @@ export default class MarkdownStore {
     this.time = time
     this.library = library
     this.ai = ai
+    this.other = other
     this.dirs = dirs
   }
 
   static async build(cfg: MarkdownStoreConfig): Promise<MarkdownStore> {
-    const [people, orgs, projects, decisions, goals, streaks, tracking, ideas, places, time, library, ai] =
+    const [people, orgs, projects, decisions, goals, streaks, tracking, ideas, places, time, library, ai, other] =
       await Promise.all([
         PeopleStore.build(cfg.peopleDirs),
         OrgStore.build(cfg.orgDirs),
@@ -138,6 +172,7 @@ export default class MarkdownStore {
         DocumentStore.build(cfg.timeDirs ?? []),
         DocumentStore.build(cfg.libraryDir ? [cfg.libraryDir] : []),
         DocumentStore.build(cfg.aiDir ? [cfg.aiDir] : []),
+        DocumentStore.build(cfg.otherDirs ?? []),
       ])
 
     return new MarkdownStore(
@@ -153,6 +188,7 @@ export default class MarkdownStore {
       time,
       library,
       ai,
+      other,
       cfg,
     )
   }
@@ -160,10 +196,10 @@ export default class MarkdownStore {
   /**
    * Build a MarkdownStore with all entity directories from config.
    * Loads people, orgs, projects, decisions, goals, ideas, places, time,
-   * and the library.
+   * the library, and every other notebook folder as plain documents.
    */
   static buildFromAll(): Promise<MarkdownStore> {
-    return MarkdownStore.build({
+    const dirs: MarkdownStoreConfig = {
       peopleDirs: [config.DIR_PEOPLE, config.DIR_PEOPLE_OLD],
       orgDirs: [config.DIR_ORGS],
       projectsDir: config.DIR_PROJECTS,
@@ -176,7 +212,8 @@ export default class MarkdownStore {
       libraryDir: config.DIR_LIBRARY,
       aiDir: config.DIR_AI,
       timeDirs: [config.DIR_TIME],
-    })
+    }
+    return MarkdownStore.build({ ...dirs, otherDirs: otherNotebookDirs(dirs) })
   }
 
   /**
@@ -208,22 +245,25 @@ export default class MarkdownStore {
     filePath: string,
   ): { set(filePath: string, contents: string): void; delete(filePath: string): void } | null {
     for (const dir of this.dirs.peopleDirs) {
-      if (filePath.startsWith(dir)) return this.people
+      if (isInside(filePath, dir)) return this.people
     }
     for (const dir of this.dirs.orgDirs) {
-      if (filePath.startsWith(dir)) return this.orgs
+      if (isInside(filePath, dir)) return this.orgs
     }
-    if (this.dirs.projectsDir && filePath.startsWith(this.dirs.projectsDir)) return this.projects
-    if (this.dirs.decisionsDir && filePath.startsWith(this.dirs.decisionsDir)) return this.decisions
-    if (this.dirs.goalsDir && filePath.startsWith(this.dirs.goalsDir)) return this.goals
-    if (this.dirs.streaksDir && filePath.startsWith(this.dirs.streaksDir)) return this.streaks
-    if (this.dirs.trackingDir && filePath.startsWith(this.dirs.trackingDir)) return this.tracking
-    if (this.dirs.ideasDir && filePath.startsWith(this.dirs.ideasDir)) return this.ideas
-    if (this.dirs.placesDir && filePath.startsWith(this.dirs.placesDir)) return this.places
-    if (this.dirs.libraryDir && filePath.startsWith(this.dirs.libraryDir)) return this.library
-    if (this.dirs.aiDir && filePath.startsWith(this.dirs.aiDir)) return this.ai
+    if (this.dirs.projectsDir && isInside(filePath, this.dirs.projectsDir)) return this.projects
+    if (this.dirs.decisionsDir && isInside(filePath, this.dirs.decisionsDir)) return this.decisions
+    if (this.dirs.goalsDir && isInside(filePath, this.dirs.goalsDir)) return this.goals
+    if (this.dirs.streaksDir && isInside(filePath, this.dirs.streaksDir)) return this.streaks
+    if (this.dirs.trackingDir && isInside(filePath, this.dirs.trackingDir)) return this.tracking
+    if (this.dirs.ideasDir && isInside(filePath, this.dirs.ideasDir)) return this.ideas
+    if (this.dirs.placesDir && isInside(filePath, this.dirs.placesDir)) return this.places
+    if (this.dirs.libraryDir && isInside(filePath, this.dirs.libraryDir)) return this.library
+    if (this.dirs.aiDir && isInside(filePath, this.dirs.aiDir)) return this.ai
     for (const dir of this.dirs.timeDirs ?? []) {
-      if (filePath.startsWith(dir)) return this.time
+      if (isInside(filePath, dir)) return this.time
+    }
+    for (const dir of this.dirs.otherDirs ?? []) {
+      if (isInside(filePath, dir)) return this.other
     }
     return null
   }
@@ -416,6 +456,9 @@ export default class MarkdownStore {
 
     const aiDoc = this.ai.findByPath(filePath)
     if (aiDoc) return { doc: aiDoc, type: 'document' }
+
+    const otherDoc = this.other.findByPath(filePath)
+    if (otherDoc) return { doc: otherDoc, type: 'document' }
 
     return undefined
   }

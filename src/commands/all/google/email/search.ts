@@ -38,8 +38,11 @@ export default class GoogleEmailSearch extends Command {
   static override description: CommandDescription = {
     name: 'google:email:search',
     description:
-      'Search connected Gmail mailboxes by Gmail query (words, subject:, from:, to:, after:, before:). ' +
-      'Includes archived and sent mail, not just the inbox or followed threads. Use this to find a conversation ' +
+      'Search connected Gmail mailboxes by Gmail query (words, subject:, from:, to:, after:, before:, in:inbox, label:). ' +
+      'Without in: or label:, it covers archived and sent mail too, not just the inbox or followed threads. ' +
+      'When the user names where to look, such as their inbox (in:inbox), a label (label:) or an account (account), ' +
+      'keep it in every search and never widen past it on your own; if nothing there fits, say so and ask before ' +
+      'looking elsewhere. Use this to find a conversation ' +
       'before google:email:read; read every relevant matching thread when a conversation spans several threads. ' +
       'Returns threadId and account for reading. complete=false means a mailbox failed or a result limit was hit; ' +
       'narrow the query or increase limit before claiming complete coverage. Read-only; no browser or sign-in needed.',

@@ -81,6 +81,7 @@ Cocktail bar.`),
     time: createMockCollection([]),
     library: createMockCollection([]),
     ai: createMockCollection([]),
+    other: createMockCollection([]),
   } as unknown as MarkdownStore
 }
 

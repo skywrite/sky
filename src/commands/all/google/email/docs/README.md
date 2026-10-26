@@ -1,6 +1,6 @@
 ---
 created: 2026-08-30
-updated: 2026-10-16
+updated: 2026-10-25
 ---
 
 # google:email
@@ -47,6 +47,14 @@ Existing Gmail drafts still wait for the user to send them from Gmail.
   Partial failures and Stop retain successful paths plus errors for unsaved
   parts through the chat tool boundary. Downloads neither modify mail nor
   claim the files were inspected or uploaded elsewhere.
+- `google:email:export` — files one email's content (an essay, a newsletter issue) into a folder as a markdown
+  document, with the fields the chat passes to classify it like the folder's other files.
+  The words are copied from the HTML part, never retyped by a model: retyping can change an author's words, and
+  copying keeps a long filing run from paying output tokens for every essay.
+  The chat picks the boundaries by quoting the first and last words, matched on words alone, so a quote from
+  `google:email:read`'s plain text still finds its paragraph in the markdown.
+  `authored` is the email's date in the notebook's timezone; a taken file name or an existing document with the
+  same heading is refused. `list_directory` with `frontmatter=true` shows the folder's fields first.
 - `google:email:draft:new` / `google:email:draft:reply` — drafts that
   wait in Gmail for the user to send by hand. Approval-gated tools.
   Creation returns `draftId` for `google:email:draft:update`.

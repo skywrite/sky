@@ -28,6 +28,22 @@ export interface ChatSystemPromptInput {
   secrets?: SecretsProvider
 }
 
+/**
+ * Where the notebook lives. File tools resolve a bare path from home (web) or the shell's folder (CLI),
+ * so a notebook path the user names must reach them in full, or the model hunts for a lookalike folder.
+ */
+export function notebookBlock(config: Record<string, unknown>): string {
+  const dir = config.DIR_BASE
+  if (typeof dir !== 'string' || !dir) return ''
+  const home = config.DIR_HOME
+  const short = typeof home === 'string' && dir.startsWith(`${home}/`) ? `~/${dir.slice(home.length + 1)}` : undefined
+  return (
+    `## Notebook folder\n\nMy notebook is the folder ${short ? `\`${short}\` (\`${dir}\`)` : `\`${dir}\``}. ` +
+    'A notebook path I name, such as `people/...` or `projects/...`, means that path inside it: give file tools the full path. ' +
+    'Another folder that looks like a notebook, such as an old copy or a backup, is not it.'
+  )
+}
+
 export async function renderChatSystemPrompt(
   input: ChatSystemPromptInput,
 ): Promise<{ prompt: string; peopleCount: number }> {
@@ -47,7 +63,13 @@ export async function renderChatSystemPrompt(
     google: { block: google },
   })
   return {
-    prompt: [output, profile, WRITING_VOICE_CHAT_INSTRUCTIONS, LEGAL_REVIEW_CHAT_INSTRUCTIONS]
+    prompt: [
+      output,
+      notebookBlock(input.config),
+      profile,
+      WRITING_VOICE_CHAT_INSTRUCTIONS,
+      LEGAL_REVIEW_CHAT_INSTRUCTIONS,
+    ]
       .filter(Boolean)
       .join('\n\n'),
     peopleCount: people.length,

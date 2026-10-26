@@ -129,6 +129,7 @@ Weekly finance video.`),
     time: createMockCollection(chatsData),
     library: createMockCollection([]),
     ai: createMockCollection([]),
+    other: createMockCollection([]),
   } as unknown as MarkdownStore
 
   return store
@@ -578,6 +579,7 @@ test('executeQuery - orderBy: RELEVANCE keeps the titled match inside the limit'
     time: createMockCollection(items),
     library: createMockCollection([]),
     ai: createMockCollection([]),
+    other: createMockCollection([]),
   } as unknown as MarkdownStore
   const newest = await executeQuery<{ messages: { path: string }[] }>(
     '{ messages(where: { bodyContains: "widget" }, limit: 2) { path } }',
