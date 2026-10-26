@@ -107,8 +107,12 @@ export const PROFILES = {
   // Qwen 3.8 27B on Cerebras: ~1500 tok/s, reasoning on (`high` is the host's default;
   // stated so a glance at the profile says what runs). The model's own window is 262K;
   // Cerebras serves 131,072 tokens a request on the paid tier (64K free), so a chat's
-  // reading budget is fitted to that. The key is the keychain entry cerebras/main —
-  // see llm/cerebrasProvider.ts.
+  // reading budget is fitted to that. Checked 2026-10-25: on a paid key, a 140,058-token
+  // request was refused with "limit is 131072", as the model's docs page says
+  // (inference-docs.cerebras.ai/models/qwen-3.8-27b). The public model list at
+  // api.cerebras.ai/public/v1/models shows the free tier's 65,536 instead; that is no
+  // reason to lower the window. The key is the keychain entry cerebras/main — see
+  // llm/cerebrasProvider.ts.
   'default-cerebras-qwen-3.8': defineProfile({
     provider: 'cerebras',
     model: 'qwen-3.8-27b',
