@@ -1,4 +1,4 @@
-import { ActionIcon, Button, SegmentedControl, Tooltip } from '@mantine/core'
+import { ActionIcon, Button, Checkbox, Popover, SegmentedControl, Tooltip } from '@mantine/core'
 import { Fragment, type ReactNode, useCallback, useEffect, useRef, useState } from 'react'
 import { documentWorkWhen, workDurationLabel } from '#commands/all/notes/lib/documentInput.ts'
 import { PlainDate, PlainDateTime } from '#universal/dates/nbdt/mod.ts'
@@ -253,9 +253,24 @@ function noteDuration(day: string, when: string | null): string | null {
   }
 }
 
+const MESSAGE_SOURCES = new Map(
+  ['Email', 'Slack', 'iMessage', 'WhatsApp', 'Signal', 'Telegram', 'SMS', 'Discord', 'Teams'].map((label) => [
+    label.toLowerCase(),
+    label,
+  ]),
+)
+
 /** Frontmatter says `slack`; the page says `Slack`. */
 function mediumLabel(medium: string | null): string | null {
-  return medium ? medium.charAt(0).toUpperCase() + medium.slice(1) : null
+  const name = medium?.trim()
+  if (!name) return null
+  if (name.toLowerCase() === 'imessage audio') return 'iMessage Audio'
+  return MESSAGE_SOURCES.get(name.toLowerCase()) ?? name.charAt(0).toUpperCase() + name.slice(1)
+}
+
+function messageSource(medium: string | null): string {
+  const source = medium?.trim().toLowerCase() || 'unknown'
+  return source === 'imessage audio' ? 'imessage' : source
 }
 
 function currentMinutes(): number {
@@ -1118,6 +1133,153 @@ function Fold<T>({ rows, render, limit = 6 }: { rows: T[]; render: (row: T, i: n
   )
 }
 
+function MessagesCard({
+  messages,
+  selectedSources,
+  onSourcesChange,
+  onImport,
+}: {
+  messages: DayRecord['messages']['involved']
+  selectedSources: string[] | null
+  onSourcesChange: (sources: string[] | null) => void
+  onImport?: (files: File[], conversation: string) => void
+}) {
+  const [opened, setOpened] = useState(false)
+  const sources = new Map(MESSAGE_SOURCES)
+  const counts = new Map<string, number>()
+  for (const message of messages) {
+    const value = messageSource(message.medium)
+    if (!sources.has(value)) sources.set(value, mediumLabel(message.medium) ?? 'Unknown source')
+    counts.set(value, (counts.get(value) ?? 0) + 1)
+  }
+  for (const source of selectedSources ?? []) {
+    if (!sources.has(source)) sources.set(source, source === 'unknown' ? 'Unknown source' : mediumLabel(source)!)
+  }
+  const selected = new Set(selectedSources ?? sources.keys())
+  const all = [...sources.keys()].every((source) => selected.has(source))
+  const labels = [...selected].map((source) => sources.get(source)!)
+  const filterLabel = all
+    ? 'All sources'
+    : labels.length === 0
+      ? 'Select sources'
+      : labels.length <= 2
+        ? labels.join(', ')
+        : `${labels.length} sources`
+  const filtered =
+    selectedSources === null ? messages : messages.filter((message) => selected.has(messageSource(message.medium)))
+  const toggleSource = (source: string) => {
+    const next = new Set(selected)
+    if (next.has(source)) next.delete(source)
+    else next.add(source)
+    onSourcesChange(next.size === sources.size ? null : [...next])
+  }
+  if (messages.length === 0 && selectedSources === null) return null
+  return (
+    <Block
+      head="Messages"
+      className="sky-messages"
+      mini={
+        selectedSources !== null
+          ? `${filtered.length} of ${count(messages.length, 'conversation')}`
+          : count(messages.length, 'conversation')
+      }
+      action={
+        <Popover
+          opened={opened}
+          onChange={setOpened}
+          position="bottom-end"
+          width={280}
+          middlewares={{ size: true }}
+          shadow="md"
+          trapFocus
+          returnFocus
+        >
+          <Popover.Target>
+            <Button
+              className="sky-message-filter"
+              aria-label={`Filter messages by source: ${filterLabel}`}
+              aria-expanded={opened}
+              size="sm"
+              onClick={() => setOpened((value) => !value)}
+              rightSection={
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                  <path
+                    d="m4 6 4 4 4-4"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              }
+            >
+              {filterLabel}
+            </Button>
+          </Popover.Target>
+          <Popover.Dropdown className="sky-message-source-popover" aria-label="Message sources">
+            <Checkbox
+              className="sky-message-source-all"
+              classNames={{
+                body: 'sky-message-source-body',
+                labelWrapper: 'sky-message-source-label-wrap',
+                label: 'sky-message-source-label',
+              }}
+              label="All sources"
+              checked={all}
+              indeterminate={!all && selected.size > 0}
+              onChange={() => onSourcesChange(all ? [] : null)}
+              color="var(--sky-action-primary)"
+              iconColor="var(--sky-action-primary-text)"
+              size="sm"
+            />
+            {[...sources].map(([value, label]) => (
+              <Checkbox
+                key={value}
+                classNames={{
+                  body: 'sky-message-source-body',
+                  labelWrapper: 'sky-message-source-label-wrap',
+                  label: 'sky-message-source-label',
+                }}
+                aria-label={label}
+                label={
+                  <>
+                    <span>{label}</span>
+                    <span className="sky-message-source-count">{counts.get(value) ?? 0}</span>
+                  </>
+                }
+                checked={selected.has(value)}
+                onChange={() => toggleSource(value)}
+                color="var(--sky-action-primary)"
+                iconColor="var(--sky-action-primary-text)"
+                size="sm"
+              />
+            ))}
+          </Popover.Dropdown>
+        </Popover>
+      }
+    >
+      {filtered.length > 0 ? (
+        <Fragment key={selectedSources === null ? 'all' : JSON.stringify([...selectedSources].sort())}>
+          <Fold rows={filtered} render={(message) => <MessageLine message={message} onImport={onImport} />} />
+        </Fragment>
+      ) : (
+        <div className="sky-message-empty">
+          <span>
+            {selected.size === 0
+              ? 'Select one or more sources to see messages.'
+              : selected.size === 1
+                ? `No ${labels[0]} conversations on this day.`
+                : 'No conversations from the selected sources on this day.'}
+          </span>
+          <Button size="compact-sm" onClick={() => onSourcesChange(null)}>
+            Show all sources
+          </Button>
+        </div>
+      )}
+    </Block>
+  )
+}
+
 /** The archive, folded to a line: the conversations filed for reference. */
 function FiledCard({
   archive,
@@ -1224,6 +1386,24 @@ export function DayView({
     const query = new URLSearchParams(search)
     query.set('view', mode)
     navigate(`${trackingDate ? `/${trackingDate}` : '/'}?${query}`)
+  }
+  const sourceParams = new URLSearchParams(search)
+  const selectedMessageSources = sourceParams.has('messageSource')
+    ? [
+        ...new Set(
+          sourceParams
+            .getAll('messageSource')
+            .filter((source) => source.trim())
+            .map(messageSource),
+        ),
+      ]
+    : null
+  const selectMessageSources = (sources: string[] | null) => {
+    const query = new URLSearchParams(search)
+    query.delete('messageSource')
+    if (sources?.length === 0) query.set('messageSource', '')
+    else for (const source of sources ?? []) query.append('messageSource', source)
+    navigate(`${trackingDate ? `/${trackingDate}` : '/'}${query.size ? `?${query}` : ''}`)
   }
   const currentDay = view && view.day.ymd === (trackingDate ?? view.today.ymd)
   const dateTitle = currentDay ? view.day.dateLabel : (trackingDate ?? 'Today')
@@ -1561,16 +1741,12 @@ export function DayView({
                       </Block>
                     )}
 
-                    {record.messages.involved.length > 0 && (
-                      <Block head="Messages" mini={count(record.messages.involved.length, 'conversation')}>
-                        <Fold
-                          rows={record.messages.involved}
-                          render={(m: DayRecord['messages']['involved'][number]) => (
-                            <MessageLine message={m} onImport={onImportConversation} />
-                          )}
-                        />
-                      </Block>
-                    )}
+                    <MessagesCard
+                      messages={record.messages.involved}
+                      selectedSources={selectedMessageSources}
+                      onSourcesChange={selectMessageSources}
+                      onImport={onImportConversation}
+                    />
 
                     {videos.length > 0 && (
                       <Block head="Videos" mini={String(videos.length)}>

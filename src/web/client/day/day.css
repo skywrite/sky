@@ -43,6 +43,65 @@
   margin: 2px 0 0;
 }
 
+.sky-messages > .sky-block-head {
+  flex-wrap: wrap;
+}
+
+.sky-messages .sky-count {
+  white-space: nowrap;
+}
+
+.sky-message-filter {
+  flex: 0 1 auto;
+  max-width: 100%;
+}
+
+.sky-message-source-popover {
+  max-height: min(520px, calc(100dvh - 32px));
+  overflow-y: auto;
+}
+
+.sky-message-source-body {
+  align-items: center;
+}
+
+.sky-message-source-label-wrap {
+  flex: 1;
+}
+
+.sky-message-source-label {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding-block: 10px;
+  cursor: pointer;
+}
+
+.sky-message-source-count {
+  color: var(--sky-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.sky-message-source-all {
+  border-bottom: 1px solid var(--sky-border-soft);
+  margin-bottom: 4px;
+}
+
+.sky-message-empty {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  color: var(--sky-dim);
+  font-size: 15px;
+}
+
+@media (max-width: 600px) {
+  .sky-message-filter {
+    flex: 1 0 100%;
+  }
+}
+
 .sky-day-journal-summary {
   display: block;
   margin-top: 4px;
