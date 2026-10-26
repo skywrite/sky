@@ -14,6 +14,7 @@ const CATEGORY = '.sky-choice-inline:has(.sky-choice-label:text-is("Category")) 
 test({ name: 'voice memo category suggestions respect manual choices and retries', timeout: 60000 }, async (t) => {
   let heard!: (listen: Listen) => void
   const categories: unknown[] = []
+  const stated: unknown[] = []
   await runWysiwygE2e(
     t,
     {
@@ -30,6 +31,7 @@ test({ name: 'voice memo category suggestions respect manual choices and retries
         run: async function* (job, files) {
           if (!job.fields) throw new Error('Missing import fields')
           categories.push(startArgs({ ...job, source: job.readback.source }, job.fields, files).args.category)
+          stated.push(job.fields.categoryStated)
           yield { type: 'line', text: 'Preparing the memo.', level: 'log', command: 'meeting:new', depth: 1 }
           return { ok: false, message: 'Scripted pause for retry.' }
         },
@@ -93,8 +95,8 @@ test({ name: 'voice memo category suggestions respect manual choices and retries
       assert({
         given: 'all four imports started',
         should: 'pass the selected category to the door command without browser errors',
-        actual: [categories, errors],
-        expected: [cases.map(({ expected }) => `${expected} Complete`), []],
+        actual: [categories, stated, errors],
+        expected: [cases.map(({ expected }) => `${expected} Complete`), [false, true, true, false], []],
       })
     },
   )

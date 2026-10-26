@@ -117,6 +117,7 @@ export interface ImportJob {
     whenStated?: boolean
     dayStated?: boolean
     category: 'Professional' | 'Personal'
+    categoryStated?: boolean
     journalType: string | null
     summary?: string
     body?: string
@@ -1024,7 +1025,7 @@ function ConfirmBody({
       (meeting?.day && live ? `${meeting.day} ${live.suggestedWhen.split(' ')[1]}` : live?.suggestedWhen))
   const dayStated = Boolean(meeting?.day || job?.fields?.dayStated)
   const [touched, setTouched] = useState(Boolean(meeting || job?.fields))
-  const categoryTouched = useRef(Boolean(job?.fields?.category))
+  const categoryTouched = useRef(job?.fields?.categoryStated ?? Boolean(job?.fields?.category))
   const whenTouched = useRef(Boolean(job?.fields?.when))
   const [fields, setFields] = useState<Fields>({
     kind: meeting ? 'meeting' : (job?.fields?.kind ?? kinds[0] ?? 'meeting'),
@@ -1190,6 +1191,7 @@ function ConfirmBody({
         whenStated,
         dayStated,
         category: fields.category,
+        categoryStated: categoryTouched.current,
         fresh: fields.fresh,
         ...(audioConversation
           ? {

@@ -1,6 +1,6 @@
 ---
 created: 2026-09-01
-updated: 2026-10-21
+updated: 2026-10-26
 ---
 
 # Meeting from a file — the import
@@ -97,6 +97,8 @@ then the combined transcript goes through one names review. The saved message
 uses the stated speaker names and paragraphs of at most three sentences.
 New conversations get a 5–7 word topic summary for their metadata, filename, and
 day link; appending keeps the existing summary. The body retains the full transcript.
+Untouched category suggestions allow the shared [iMessage day-section decision](../../../../lib/beeper/docs/README.md#the-capture)
+after extraction; an explicit choice, including on a retry, takes precedence.
 A small model chooses only paragraph break positions; code preserves
 the cleaned words and enforces the limit, with a deterministic fallback. Internal
 file separators never become speaker labels. There is no diarization or inferred alternation.

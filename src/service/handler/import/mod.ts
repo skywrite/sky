@@ -230,6 +230,7 @@ function parseStart(body: unknown, job: ImportJob): StartFields | string {
     ...(b.whenStated === true ? { whenStated: true } : {}),
     ...(b.dayStated === true ? { dayStated: true } : {}),
     category,
+    ...(typeof b.categoryStated === 'boolean' ? { categoryStated: b.categoryStated } : {}),
     journalType,
     fresh: b.fresh === true,
     ...(audioSpeakers ? { audioSpeakers } : {}),

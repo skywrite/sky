@@ -15,6 +15,7 @@ import {
 import type { BeeperSyncResult } from '#lib/beeper/mod.ts'
 import { openMacSenderLookup } from '#lib/macMessages/mod.ts'
 import probeMedia from '#lib/media/ffmpeg/probeMedia.ts'
+import { notebookMessageDayCategorizer } from '#lib/messageDayCategory.ts'
 import { readTextFile } from '#shared/fs/mod.ts'
 import { AboutMeDocument } from '#shared/models/AboutMe/mod.ts'
 import PeopleStore from '#shared/models/Store/PeopleStore/mod.ts'
@@ -85,19 +86,23 @@ export default class BeeperInboxSyncTask extends Command {
     if (grantExpired(grant)) return unavailable('The Beeper grant expired. Run: sky beeper:auth')
     const now = new ZonedDateTime()
     try {
+      const people = await PeopleStore.build([DIR_PEOPLE, DIR_PEOPLE_OLD]).catch(() => null)
       const result = await syncBeeper({
         client: new BeeperClient(grant.token),
         timeDir: DIR_TIME,
         attachmentsDir: DIR_ATTACHMENTS,
         stateFile: BEEPER_SYNC_STATE,
+        stateDir: DIR_STATE,
         now: Instant.fromEpochMilliseconds(now.epochMilliseconds).toString(),
         timezone: (await fetchNow()).timezone,
         backfillDays: args.days,
         chatLimit: args.limit,
-        names: notebookSenderNames(
-          await PeopleStore.build([DIR_PEOPLE, DIR_PEOPLE_OLD]).catch(() => null),
-          await openMacSenderLookup(),
-        ),
+        names: notebookSenderNames(people, await openMacSenderLookup()),
+        categorizeIMessage: notebookMessageDayCategorizer({ DIR_PEOPLE, DIR_PEOPLE_OLD, FILE_ABOUT_ME }, secrets, {
+          people,
+          signal: context.signal,
+          warn: (message) => output.log(message),
+        }),
         ownerName: await ownerName(),
         transcribe: async (audio, fileName) => {
           const glossary = await loadGlossary()

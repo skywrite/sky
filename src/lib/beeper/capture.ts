@@ -2,7 +2,9 @@ import { mkdir, readFile } from 'node:fs/promises'
 import * as path from 'node:path'
 import { z } from 'zod'
 import { writeFileDedup } from '#commands/all/email/lib/copyToAttachments.ts'
+import { isIMessage, type CategorizeMessageDay } from '#lib/messageDayCategory.ts'
 import { DayDirFileWriter, ensureDay, messageFileName } from '#lib/nbfs/mod.ts'
+import withDayWrite from '#lib/nbfs/withDayWrite.ts'
 import slugify from '#lib/string/slugify.ts'
 import { exists, readTextFile, writeTextFile } from '#shared/fs/mod.ts'
 import outputFile from '#shared/fs/outputFile.ts'
@@ -44,6 +46,8 @@ export type BeeperSyncOptions = {
   timeDir: string
   attachmentsDir: string
   stateFile: string
+  /** Sky's state directory, for the same day-write lock used by the web and other commands. */
+  stateDir?: string
   /** When this run started, as an ISO instant. */
   now: string
   /** The notebook's current zone; a day with its own `tz:` re-renders in that zone. */
@@ -67,6 +71,8 @@ export type BeeperSyncOptions = {
   /** How long a saved voice note runs, in seconds, for its heading; null when unknown */
   duration?: (file: string) => Promise<number | null>
   category?: string
+  /** Chooses only the new day entry's section; existing entries and saved message metadata keep their values. */
+  categorizeIMessage?: CategorizeMessageDay
   dryRun?: boolean
   log?: (line: string) => void
 }
@@ -524,7 +530,6 @@ export async function syncBeeper(options: BeeperSyncOptions): Promise<BeeperSync
   const chatLimit = options.chatLimit ?? 100
   const messageLimit = options.messageLimit ?? 500
   const attachmentLimit = options.attachmentLimit ?? 20
-  const category = options.category ?? 'Professional'
   const result: BeeperSyncResult = {
     chats: 0,
     messages: 0,
@@ -776,16 +781,58 @@ export async function syncBeeper(options: BeeperSyncOptions): Promise<BeeperSync
       result.messages += sections.length
       result.files.push(toTimeRef(filePath))
       log(`  ${network} · ${label}: ${sections.length} message(s) on ${date} → ${rel}`)
+      let category = options.category ?? (isIMessage(network) ? 'Personal' : 'Professional')
+      if (!options.category && isIMessage(network) && options.categorizeIMessage) {
+        try {
+          category = await options.categorizeIMessage({
+            medium: network,
+            from,
+            to,
+            summary,
+            body: doc.markdown,
+            participants: [
+              ...sections.map((section) => section.sender),
+              ...(chat.participants?.items ?? [])
+                .filter((person) => !person.isSelf)
+                .map(
+                  (person) =>
+                    notebookName(person, options.names) ||
+                    lookedUp(person, options.names)?.name ||
+                    person.fullName ||
+                    person.phoneNumber ||
+                    person.email ||
+                    person.username ||
+                    '',
+                ),
+            ],
+          })
+        } catch {
+          result.notes.push(`${label}: day categorization is unavailable; the iMessage entry was filed under Personal.`)
+        }
+      }
       try {
         // The capture may land on a day that has no day file yet
         await ensureDay(day, options.timeDir)
-        let dayDoc = await readDay(day, options.timeDir)
-        const entry = first.voice && !first.text ? `Voice note: ${summary}` : summary
-        dayDoc = dayDoc.setCompleteItem(`${first.when.time} > ${who} ${network}`, `[${entry}](${rel})`, {
-          time: first.when.time,
-          category,
-        })
-        await writeDay(dayDoc, options.timeDir)
+        await withDayWrite(
+          { DIR_BASE: notebookDir, DIR_STATE: options.stateDir ?? path.dirname(options.stateFile) },
+          date,
+          async () => {
+            let dayDoc = await readDay(day, options.timeDir)
+            const key = `${first.when.time} > ${who} ${network}`
+            const existing = dayDoc.getCompleteItem(key)
+            const existingList =
+              existing?.path === rel
+                ? dayDoc.lists.find((list) => list.title.endsWith(' Complete') && list.items.includes(existing.raw))
+                    ?.title
+                : undefined
+            const entry = first.voice && !first.text ? `Voice note: ${summary}` : summary
+            dayDoc = dayDoc.setCompleteItem(key, `[${entry}](${rel})`, {
+              time: first.when.time,
+              category: existingList?.replace(/ Complete$/, '') ?? category,
+            })
+            await writeDay(dayDoc, options.timeDir)
+          },
+        )
       } catch (err) {
         result.notes.push(
           `${date}'s day file could not be updated (${(err as Error).message}); the ${network} capture is saved without a day entry.`,

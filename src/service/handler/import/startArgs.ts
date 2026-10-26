@@ -40,7 +40,7 @@ export interface StartArgs {
   command: string
   args: Record<string, unknown>
   /** What the person typed, as the command line would carry it */
-  rawArgs: { _: string[]; when?: string }
+  rawArgs: { _: string[]; when?: string; category?: string }
 }
 
 /** The door and its arguments for the fields the dialog settled. */
@@ -137,7 +137,7 @@ export function startArgs(job: StartContext, fields: StartFields, input: string 
           when,
           fresh,
         },
-        rawArgs,
+        rawArgs: fields.categoryStated === false ? rawArgs : { ...rawArgs, category },
       }
     case 'event':
       return { command: 'event:new', args: { fromVoiceMemo: filePath, category, when, fresh }, rawArgs }

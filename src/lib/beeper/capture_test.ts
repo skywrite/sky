@@ -1,6 +1,7 @@
 import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import * as path from 'node:path'
+import type { MessageDayCategoryInput } from '#lib/messageDayCategory.ts'
 import { readTextFile } from '#shared/fs/mod.ts'
 import DayDocument from '#shared/models/Day/mod.ts'
 import MessageDocument from '#shared/models/Message/document/mod.ts'
@@ -90,6 +91,208 @@ function message(
     ...extra,
   }
 }
+
+test('beeper capture categorizes new iMessage day entries without metadata or later category changes', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'sky-beeper-day-category-'))
+  const timeDir = path.join(root, 'time')
+  const stateFile = path.join(root, 'sync.json')
+  const day = PlainDate.fromString('2026-03-11')
+  const previousDay = day.addDays(-7)
+  const cases = [
+    { id: 'family', name: 'Alex Doe', text: 'Picnic at noon', network: 'iMessage' },
+    { id: 'client', name: 'Jordan Lee', text: 'Invoice for Atlas', network: 'iMessage' },
+    { id: 'unknown', name: 'Sam Quinn', text: 'Catch up', network: 'iMessage' },
+    { id: 'other', name: 'Taylor Quinn', text: 'Meeting agenda', network: 'WhatsApp' },
+  ]
+  const world: World = {
+    asset: '',
+    accounts: [{ accountID: 'imessage', network: 'iMessage' }],
+    chats: cases.map((item) => ({
+      id: item.id,
+      accountID: item.network.toLowerCase(),
+      network: item.network,
+      type: 'single',
+      title: item.name,
+      participants: { items: [{ id: item.id, fullName: item.name }] },
+      lastActivity: '2026-03-11T09:00:00Z',
+    })),
+    messages: Object.fromEntries(
+      cases.map((item) => [
+        item.id,
+        [
+          message(item.id, '0001', '2026-03-11T09:00:00Z', item.text, {
+            accountID: item.network.toLowerCase(),
+            senderName: item.name,
+            senderID: item.id,
+          }),
+        ],
+      ]),
+    ),
+  }
+  const calls: MessageDayCategoryInput[] = []
+  const options = {
+    client: beeperWith(world),
+    timeDir,
+    stateFile,
+    attachmentsDir: path.join(root, 'attachments'),
+    timezone: 'UTC',
+    dayTimezone: async () => 'UTC',
+    ownerName: 'Jane Doe',
+    categorizeIMessage: async (input: MessageDayCategoryInput) => {
+      calls.push(input)
+      if (input.from === 'Sam Quinn') throw new Error('Synthetic classifier outage')
+      return input.from === 'Jordan Lee' ? ('Professional' as const) : ('Personal' as const)
+    },
+  }
+  try {
+    await writeFile(
+      stateFile,
+      JSON.stringify({
+        version: 1,
+        chats: {},
+        accounts: {
+          imessage: { network: 'iMessage', save: true, holdUnknown: false, chosen: true },
+          whatsapp: { network: 'WhatsApp', save: true, holdUnknown: false, chosen: true },
+        },
+      }),
+    )
+    await writeDay(DayDocument.createPastDay(day), timeDir)
+    await writeDay(
+      DayDocument.createPastDay(previousDay).addCompleteItem('An older iMessage', { time: '09:00' }),
+      timeDir,
+    )
+    const oldFile = path.join(timeDir, dayFile(previousDay))
+    const oldText = await readTextFile(oldFile)
+    const first = await syncBeeper({ ...options, now: '2026-03-11T09:05:00Z' })
+    const state = await loadBeeperSyncState(stateFile)
+    const docs = await Promise.all(
+      cases.map(async (item) =>
+        MessageDocument.fromMarkdown(await readTextFile(path.join(root, state.chats[item.id].files[day.ymd]))),
+      ),
+    )
+    const dailyFile = path.join(timeDir, dayFile(day))
+    const daily = DayDocument.fromMarkdown(await readTextFile(dailyFile))
+    const placement = cases.map(
+      (item) => daily.lists.find((list) => list.items.some((row) => row.includes(item.text)))?.title,
+    )
+    assert({
+      given: 'personal and business iMessages, a failed classifier, and a different network',
+      should: 'route only the day entries, favor Personal on failure, keep other networks and older days intact',
+      actual: [
+        placement,
+        docs.map((doc) => Object.hasOwn(doc.yaml, 'category')),
+        calls.length,
+        calls[0].body.includes('Picnic at noon'),
+        calls[0].participants?.includes('Alex Doe'),
+        first.notes.some((note) => note.includes('filed under Personal')),
+        (await readTextFile(oldFile)) === oldText,
+        daily.lists.map((list) => list.title),
+      ],
+      expected: [
+        ['Personal Complete', 'Professional Complete', 'Personal Complete', 'Professional Complete'],
+        [false, false, false, false],
+        3,
+        true,
+        true,
+        true,
+        true,
+        ['Professional Complete', 'Personal Complete'],
+      ],
+    })
+
+    // A person may correct the section after capture; appending must preserve that choice.
+    const personal = daily.lists.find((list) => list.title === 'Personal Complete')!
+    const at = personal.items.findIndex((item) => item.includes('Picnic at noon'))
+    await writeDay(daily.removeItem(personal.title, at).addItem('Professional Complete', personal.items[at]), timeDir)
+    const correctedDay = await readTextFile(dailyFile)
+    world.messages.family.push(
+      message('family', '0002', '2026-03-11T09:10:00Z', 'Bringing lunch', { accountID: 'imessage' }),
+    )
+    world.chats[0].lastActivity = '2026-03-11T09:10:00Z'
+    await syncBeeper({ ...options, now: '2026-03-11T09:15:00Z' })
+    await syncBeeper({ ...options, now: '2026-03-11T09:16:00Z' })
+    assert({
+      given: 'a manual day-section correction followed by a reply and a repeated sync',
+      should: 'append once, preserve the section and avoid additional categorization or duplicate entries',
+      actual: [
+        (await readTextFile(dailyFile)) === correctedDay,
+        calls.length,
+        (await readTextFile(path.join(root, state.chats.family.files[day.ymd]))).split('Bringing lunch').length - 1,
+      ],
+      expected: [true, 3, 1],
+    })
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('beeper iMessage defaults, explicit categories and dry runs do not depend on the model', async () => {
+  for (const mode of ['default', 'explicit', 'dry'] as const) {
+    const root = await mkdtemp(path.join(tmpdir(), 'sky-beeper-category-default-'))
+    const stateFile = path.join(root, 'sync.json')
+    const timeDir = path.join(root, 'time')
+    let calls = 0
+    try {
+      await writeFile(
+        stateFile,
+        JSON.stringify({
+          version: 1,
+          chats: {},
+          accounts: {
+            imessage: { network: 'iMessage', save: true, holdUnknown: false, chosen: true },
+          },
+        }),
+      )
+      const world: World = {
+        asset: '',
+        accounts: [{ accountID: 'imessage', network: 'iMessage' }],
+        chats: [
+          {
+            id: 'one',
+            accountID: 'imessage',
+            network: 'iMessage',
+            type: 'single',
+            title: 'Alex Doe',
+            lastActivity: '2026-03-11T09:00:00Z',
+          },
+        ],
+        messages: { one: [message('one', '1', '2026-03-11T09:00:00Z', 'Dinner', { accountID: 'imessage' })] },
+      }
+      await syncBeeper({
+        client: beeperWith(world),
+        timeDir,
+        stateFile,
+        attachmentsDir: path.join(root, 'attachments'),
+        now: '2026-03-11T09:05:00Z',
+        timezone: 'UTC',
+        dayTimezone: async () => 'UTC',
+        category: mode === 'explicit' ? 'Professional' : undefined,
+        dryRun: mode === 'dry',
+        categorizeIMessage:
+          mode === 'default'
+            ? undefined
+            : async () => {
+                calls++
+                return 'Personal'
+              },
+      })
+      const dayText = await readFile(path.join(timeDir, dayFile('2026-03-11')), 'utf8').catch(() => null)
+      const category =
+        dayText === null
+          ? null
+          : DayDocument.fromMarkdown(dayText).lists.find((list) => list.items.some((row) => row.includes('Dinner')))
+              ?.title
+      assert({
+        given: mode,
+        should: 'default to Personal, honor the explicit choice, or leave a dry run unwritten without model calls',
+        actual: [category, calls],
+        expected: [mode === 'dry' ? null : mode === 'explicit' ? 'Professional Complete' : 'Personal Complete', 0],
+      })
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  }
+})
 
 test('beeper capture - generated group titles resolve handles and preserve custom names and unknown people', () => {
   const contacts: Record<string, string> = {

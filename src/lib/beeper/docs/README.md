@@ -1,6 +1,6 @@
 ---
 created: 2026-09-16
-updated: 2026-10-25
+updated: 2026-10-26
 ---
 
 # Beeper — every chat on this Mac, saved as messages
@@ -69,7 +69,15 @@ the notebook:
   read only with the Full Disk Access grant that names the senders
   (`../macMessages/docs/README.md`).
 - The day file gets a Complete entry per new file, the way Slack captures
-  add one. A day with no day file yet keeps the capture without an entry.
+  add one. A missing day file is created as needed.
+
+For iMessage, `lib/messageDayCategory.ts` chooses the entry's `Personal Complete` or `Professional Complete` section.
+The same decision is used by `message:new` for iMessage text and audio imports unless a category was explicitly chosen.
+Jev receives the owner's family context, profiles matched to the conversation's participants, and the conversation.
+Relationships come first; ambiguous or mixed exchanges and unavailable classification default to Personal.
+Professional requires clear business purpose with at least 85% probability.
+The choice is only the entry's location in `day.md`: it adds no category field to either file.
+Later appends keep the existing day entry and any manual section correction; sync does not sweep historical days.
 
 What stays out: muted, archived, low-priority and read-only chats (Beeper's
 own notion of what matters), reactions, deleted and hidden messages, automated

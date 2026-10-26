@@ -24,7 +24,9 @@ import {
   whenNBTime,
 } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
+import { isIMessage, notebookMessageDayCategorizer } from '#lib/messageDayCategory.ts'
 import { DayDirFileWriter, messageFileName, writeDayItems } from '#lib/nbfs/mod.ts'
+import withDayWrite from '#lib/nbfs/withDayWrite.ts'
 import { copyFileDedup } from '#lib/notebook/attachments.ts'
 import { imageCreationStamp, imageFileName, imageSummary } from '#lib/notebook/imageName.ts'
 import openEditor from '#lib/shell/openEditor.ts'
@@ -611,7 +613,7 @@ export default class MessageNewTask extends Command {
     const partialSlug = summarySlug ? `${whoSlug}_${summarySlug}` : whoSlug
     const fileName = messageFileName(when, mediumSlug, partialSlug)
 
-    const ddfw = new DayDirFileWriter(date)
+    const ddfw = new DayDirFileWriter(date, config.DIR_TIME)
     const entryWhen = when.time
 
     const attachments = attachmentFiles.length > 0 ? attachmentFiles.map((f) => ({ file: f })) : undefined
@@ -629,6 +631,14 @@ export default class MessageNewTask extends Command {
       data += '\n' + body
     }
 
+    if (rawArgs.category === undefined && rawArgs.c === undefined && isIMessage(medium)) {
+      const categorize = notebookMessageDayCategorizer(config, context.secrets, {
+        signal: context.signal,
+        warn: (message) => output.log(message),
+      })
+      category = `${await categorize({ medium, from, to, summary, body: body ?? summary ?? '' })} Complete`
+    }
+
     const filePath = await ddfw.write(fileName, data.trimStart())
     const fullPath = path.join(ddfw.fullDir, filePath)
     if (clipHashes) await recordFiledClips(config, path.relative(config.DIR_BASE, fullPath), clipHashes)
@@ -636,7 +646,7 @@ export default class MessageNewTask extends Command {
     const commEntry = `${who} ${medium}`.trim() // we trim in case there's no 'who'
 
     const dayItem = `${entryWhen} > ${commEntry} -> [${summary || ''}](${filePath})`
-    await writeDayItems(date, category, dayItem)
+    await withDayWrite(config, date.ymd, () => writeDayItems(date, category, dayItem, { timeDir: config.DIR_TIME }))
 
     if (context.platform === CommandPlatform.Console) {
       await openEditor([{ file: fullPath, line: data.split('\n').length }])

@@ -55,6 +55,8 @@ export interface StartFields {
   /** Only the date was chosen by dropping on the Meetings section; the clock time remains a proposal */
   dayStated?: boolean
   category: 'Professional' | 'Personal'
+  /** False while the dialog's category is only a suggestion; absent on older jobs with a settled choice. */
+  categoryStated?: boolean
   journalType: string | null
   /** Start over: forget the earlier run's record */
   fresh: boolean

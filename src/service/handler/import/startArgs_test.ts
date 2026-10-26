@@ -8,6 +8,7 @@ const fields = (over: Partial<StartFields>): StartFields => ({
   kind: 'meeting',
   when: PROPOSED,
   category: 'Professional',
+  categoryStated: false,
   journalType: null,
   fresh: false,
   ...over,
@@ -104,6 +105,24 @@ test('CAF audio goes to one message with every turn and a fixed medium', () => {
       ],
     })
   }
+})
+
+test('message imports distinguish suggested categories from manual choices, including older saved jobs', () => {
+  const inputs = [false, true, undefined]
+  const raw = inputs.map(
+    (categoryStated) =>
+      startArgs(
+        { ...memo, source: 'imessage-audio' },
+        fields({ kind: 'message', category: 'Personal', categoryStated }),
+        '/tmp/reply.caf',
+      ).rawArgs,
+  )
+  assert({
+    given: 'an untouched suggestion, a chosen Personal section, and a job saved before choice tracking',
+    should: 'allow automatic iMessage categorization only for the untouched suggestion',
+    actual: raw,
+    expected: [{ _: [] }, { _: [], category: 'Personal Complete' }, { _: [], category: 'Personal Complete' }],
+  })
 })
 
 test('a document starts a timed note with the work wording and a stable retry identity', () => {
