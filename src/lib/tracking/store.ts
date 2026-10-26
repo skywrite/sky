@@ -84,6 +84,7 @@ export const TrackerInputSchema = z
       ),
     ask: z.enum(['morning', 'evening', 'anytime']),
     schedule: z.enum(['daily', 'weekdays', 'manual']),
+    entries: z.enum(['one', 'many']).optional(),
     columns: z
       .array(ColumnSchema)
       .min(1)
@@ -206,6 +207,7 @@ export class TrackingStore {
       category: doc.category,
       ask: doc.ask,
       schedule: doc.schedule,
+      entries: doc.entries,
       storage: doc.storage,
       status,
       columns: doc.columns,
@@ -405,8 +407,11 @@ export class TrackingStore {
       if (definition.doc.storage === 'weekly' && input.category !== definition.doc.category)
         throw new TrackingError('This legacy tracker keeps its category so its existing records stay connected.')
       const now = await this.now()
-      const { markdown, ...properties } = input
-      const doc = new TrackingDocument({ ...definition.doc.yaml, ...properties, updated: now.date.ymd }, markdown)
+      const { markdown, entries, ...properties } = input
+      const yaml: Record<string, unknown> = { ...definition.doc.yaml, ...properties, updated: now.date.ymd }
+      // `one` is the default, so choosing it removes the line instead of writing it.
+      if (entries) yaml.entries = entries === 'many' ? entries : undefined
+      const doc = new TrackingDocument(yaml, markdown)
       return [this.change(definition.file, definition.raw, doc.toMarkdown())]
     })
   }

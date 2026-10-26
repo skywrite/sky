@@ -79,6 +79,19 @@ test(`TrackingDocument defaults and lenient parsing`, () => {
   })
 
   assert({
+    given: 'no entries field, or an unknown value',
+    should: 'take one entry a day',
+    expected: ['one', 'one'],
+    actual: [bare.entries, makeTracking(['name: mood', 'entries: lots']).entries],
+  })
+  assert({
+    given: 'entries: many',
+    should: 'take more than one entry a day',
+    expected: 'many',
+    actual: makeTracking(['name: weight', 'entries: many']).entries,
+  })
+
+  assert({
     given: 'no question field',
     should: 'have undefined question (never prompted)',
     expected: undefined,
@@ -181,6 +194,14 @@ test(`TrackingDocument.create() roundtrip`, () => {
     should: 'keep the why in the body',
     expected: true,
     actual: reparsed.markdown.includes('Dehydration masquerades as fatigue.'),
+  })
+
+  const many = TrackingDocument.create({ name: 'hydration', entries: 'many', createdOn: '2026-01-05' }).toMarkdown()
+  assert({
+    given: 'created definitions with and without more than one entry a day',
+    should: 'write entries: many after the schedule, and leave the default unwritten',
+    expected: [true, false],
+    actual: [many.includes('schedule: daily\nentries: many\n'), created.toMarkdown().includes('entries')],
   })
 })
 

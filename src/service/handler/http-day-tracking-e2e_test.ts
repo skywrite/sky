@@ -52,8 +52,9 @@ test(
         ...fields,
         title: 'Reading log',
         question: 'What did you read?',
+        entries: 'many',
         columns: [
-          { name: 'pages', type: 'number' },
+          { name: 'pages', type: 'number', aggregate: 'sum' },
           { name: 'duration', type: 'duration', unit: 'min' },
         ],
       })
@@ -132,6 +133,23 @@ test(
           ],
           [[openDay.ymd, { pages: '12', duration: '30' }]],
         ],
+      })
+      await reading.getByRole('button', { name: 'Add another Reading log entry', exact: true }).click()
+      await dialog.getByRole('textbox', { name: 'Pages', exact: true }).fill('8')
+      await dialog.getByRole('button', { name: 'Save entry', exact: true }).click()
+      await dialog.waitFor({ state: 'hidden' })
+      await reading.getByText('2 entries', { exact: true }).waitFor()
+      const editX = async (row: typeof focus) => (await row.getByRole('button', { name: /^Edit / }).boundingBox())?.x
+      assert({
+        given: 'a second entry on a tracker that takes more than one a day',
+        should: 'list it first, show the day’s total, and keep a one-a-day tracker’s pencil aligned without a +',
+        actual: [
+          await daily.locator('.sky-tracking-log-info > a').allInnerTexts(),
+          await reading.locator('.sky-tracking-log-value').innerText(),
+          await focus.getByRole('button', { name: /^Add another/ }).count(),
+          await editX(focus),
+        ],
+        expected: [['Reading log', 'Focus score'], '20', 0, await editX(reading)],
       })
 
       await page

@@ -15,6 +15,13 @@ export type TrackingStorage = 'weekly' | 'yearly'
 /** Which capture window prompts for this tracking. `anytime` is never prompted. */
 export type TrackingAsk = 'morning' | 'evening' | 'anytime'
 
+/**
+ * How many entries a day usually takes. `many` lets the day page add another
+ * beside a logged one; `one` (default) offers only editing it. Records never
+ * enforce either — a hand edit can always add a row.
+ */
+export type TrackingEntries = 'one' | 'many'
+
 /** Value shape of a record column. */
 export type TrackingColumnType = 'time' | 'number' | 'duration' | 'range' | 'word' | 'text'
 
@@ -32,6 +39,7 @@ export interface TrackingColumn {
 const DEFAULT_SCHEDULE: TrackingSchedule = 'daily'
 const DEFAULT_ASK: TrackingAsk = 'anytime'
 const DEFAULT_STORAGE: TrackingStorage = 'yearly'
+const DEFAULT_ENTRIES: TrackingEntries = 'one'
 const COLUMN_TYPES: readonly TrackingColumnType[] = ['time', 'number', 'duration', 'range', 'word', 'text']
 const AGGREGATES: readonly TrackingAggregate[] = ['last', 'sum', 'mean', 'collect']
 
@@ -59,6 +67,7 @@ export default class TrackingDocument extends Document {
     'question',
     'ask',
     'schedule',
+    'entries',
     'storage',
     'category',
     'columns',
@@ -108,6 +117,11 @@ export default class TrackingDocument extends Document {
   get schedule(): TrackingSchedule {
     const s = this.yaml['schedule']
     return s === 'weekdays' || s === 'manual' ? s : DEFAULT_SCHEDULE
+  }
+
+  /** Entries a day. Anything but `many` reads as the default, `one`. */
+  get entries(): TrackingEntries {
+    return this.yaml['entries'] === 'many' ? 'many' : DEFAULT_ENTRIES
   }
 
   /** Where records live. Explicit weekly storage supports legacy notebooks. */
@@ -216,8 +230,8 @@ export default class TrackingDocument extends Document {
   /**
    * Create a new TrackingDocument from input data.
    *
-   * YAML key order: name, title, question, ask, schedule, category, columns,
-   * start, end, created, updated, rel, tags
+   * YAML key order: name, title, question, ask, schedule, entries, storage,
+   * category, columns, start, end, created, updated, rel, tags
    */
   static create(input: {
     name: string
@@ -225,6 +239,7 @@ export default class TrackingDocument extends Document {
     question?: string
     ask?: TrackingAsk
     schedule?: TrackingSchedule
+    entries?: TrackingEntries
     storage?: TrackingStorage
     category?: string
     columns?: TrackingColumn[]
@@ -248,6 +263,8 @@ export default class TrackingDocument extends Document {
       question: input.question ?? null,
       ask: input.ask ?? DEFAULT_ASK,
       schedule: input.schedule ?? DEFAULT_SCHEDULE,
+      // Left out rather than null: a null would write an empty `entries:` line.
+      entries: input.entries === 'many' ? input.entries : undefined,
       storage: input.storage && input.storage !== DEFAULT_STORAGE ? input.storage : null,
       category: input.category ?? null,
       columns: input.columns && input.columns.length > 0 ? input.columns.map((c) => ({ ...c })) : null,

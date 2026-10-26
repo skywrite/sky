@@ -1,6 +1,6 @@
 ---
 created: 2026-08-30
-updated: 2026-09-26
+updated: 2026-10-26
 ---
 
 # Tracking commands
@@ -17,6 +17,9 @@ A tracking definition is a markdown file under `tracking/active/` (or
 `tracking/archived/`) with a `question:`, an `ask:` window
 (`morning` / `anytime` / `evening`), `schedule:`, `category:`, and its
 `columns:` (types: `time`, `number`, `duration`, `range`, `word`, `text`).
+An optional `entries: many` lets the day page add another entry beside a
+logged one. Without it the day page only edits the day's entry.
+Storage never limits entries in either case.
 
 Rows are written **exactly as a hand edit would write them**, to the file a
 hand edit would open:

@@ -1,7 +1,7 @@
 import { ActionIcon, Button, Modal, TextInput } from '@mantine/core'
 import { Fragment, useEffect, useRef, useState } from 'react'
 import type { TrackingMetric } from '#lib/tracking/types.ts'
-import { formatTrackingValue, isTrackingDay, primaryTrackingColumn } from '#lib/tracking/values.ts'
+import { formatTrackingValue, isTrackingDay, primaryTrackingColumn, trackingSeries } from '#lib/tracking/values.ts'
 import { trackingRequest, useTrackingActions, useTrackingReport } from '../tracking/trackingData.ts'
 import { TrackingLogDialog, type TrackingLogTarget } from '../tracking/trackingLog.tsx'
 import {
@@ -120,13 +120,21 @@ export function DayTracking({
         entries(metric).length ||
         (scheduled.includes(metric) && (!isToday || report?.window === 'evening' || metric.tracker.ask === 'morning')),
     )
-    .sort((a, b) => a.tracker.ask.localeCompare(b.tracker.ask) || a.tracker.title.localeCompare(b.tracker.title))
+    .sort(
+      (a, b) =>
+        Number(b.tracker.entries === 'many') - Number(a.tracker.entries === 'many') ||
+        a.tracker.ask.localeCompare(b.tracker.ask) ||
+        a.tracker.title.localeCompare(b.tracker.title),
+    )
   const evening =
     isToday && report?.window === 'morning'
       ? scheduled.filter((metric) => metric.tracker.ask === 'evening' && !entries(metric).length)
       : []
   const expected = visible.filter((metric) => scheduled.includes(metric))
   const completed = expected.filter((metric) => entries(metric).length).length
+  const canAdd = (metric: TrackingMetric) => !readOnly && metric.tracker.entries === 'many'
+  // Logged rows without a + keep its space, so values and pencils line up down the list.
+  const addColumn = visible.some((metric) => canAdd(metric) && entries(metric).length > 0)
   return (
     <section className="sky-tracking-day">
       <header className="sky-tracking-day-heading">
@@ -165,7 +173,7 @@ export function DayTracking({
               </TrackingLink>
               <p>
                 {latest
-                  ? latest.values.notes ||
+                  ? (logged.length === 1 && latest.values.notes) ||
                     `${logged.length > 1 ? logged.length + ' entries' : 'Logged'}${metric.tracker.ask === 'morning' && isToday ? ' this morning' : ''}`
                   : deferred
                     ? 'Set aside for later today'
@@ -175,7 +183,7 @@ export function DayTracking({
             {latest ? (
               <>
                 <span className="sky-tracking-log-value">
-                  {column && formatTrackingValue(column, latest.values[column.name])}
+                  {column && formatTrackingValue(column, trackingSeries(logged, column, day, day)[0].text)}
                 </span>
                 <TrackingIcon name="check" className="sky-tracking-saved" />
                 {!readOnly && (
@@ -186,6 +194,17 @@ export function DayTracking({
                   >
                     <TrackingIcon name="edit" />
                   </ActionIcon>
+                )}
+                {canAdd(metric) ? (
+                  <ActionIcon
+                    variant="secondary"
+                    aria-label={`Add another ${metric.tracker.title} entry`}
+                    onClick={() => open({ metric, date: day })}
+                  >
+                    <TrackingIcon name="plus" />
+                  </ActionIcon>
+                ) : (
+                  addColumn && <ActionIcon component="span" aria-hidden className="sky-tracking-slot" />
                 )}
               </>
             ) : !readOnly && report ? (

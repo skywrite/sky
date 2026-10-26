@@ -693,6 +693,9 @@
   width: 19px;
   height: 19px;
 }
+.sky-tracking-slot {
+  visibility: hidden;
+}
 .sky-tracking-log-actions {
   display: flex;
   align-items: center;

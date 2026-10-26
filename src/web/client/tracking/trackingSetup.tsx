@@ -43,6 +43,7 @@ export function TrackingSetup({
           category: tracker.category,
           ask: tracker.ask,
           schedule: tracker.schedule,
+          entries: tracker.entries,
           columns: tracker.columns,
           start: tracker.start ?? today,
           end: tracker.end,
@@ -54,6 +55,7 @@ export function TrackingSetup({
           category: '',
           ask: 'morning',
           schedule: 'daily',
+          entries: 'one',
           columns: [{ name: 'value', type: 'number', aggregate: 'last' }],
           start: today,
           end: null,
@@ -283,6 +285,13 @@ export function TrackingSetup({
                 disabled={actions.busy || draft.schedule === 'manual'}
               />
             </div>
+            <Checkbox
+              label="Allow more than one entry a day"
+              description="Once you log one, the day page shows a + to add another."
+              checked={draft.entries === 'many'}
+              onChange={(event) => update('entries', event.currentTarget.checked ? 'many' : 'one')}
+              disabled={actions.busy}
+            />
             <p className="sky-tracking-hint">
               Questions appear in Today’s check-in. You can always log an entry yourself.
             </p>

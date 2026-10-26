@@ -458,6 +458,31 @@ test('tracker lifecycle and interrupted transactions preserve recoverable histor
   }
 })
 
+test('more than one entry a day is saved in the definition and kept by edits that leave it out', async () => {
+  const f = await trackingFixture()
+  try {
+    await f.store.create(id(), { ...sleepInput, entries: 'many' })
+    const created = (await f.store.report()).metrics[0].tracker
+    await f.store.configure('sleep', id(), created.revision, sleepInput)
+    const kept = (await f.store.report()).metrics[0].tracker
+    await f.store.configure('sleep', id(), kept.revision, { ...sleepInput, entries: 'one' })
+    const cleared = (await f.store.report()).metrics[0].tracker
+    assert({
+      given: 'a tracker created to take many entries, edited without the setting, then set back to one',
+      should: 'keep many until it is changed, then remove the line from the definition',
+      actual: [
+        created.entries,
+        kept.entries,
+        cleared.entries,
+        (await readFile(path.join(f.root, cleared.path), 'utf8')).includes('entries'),
+      ],
+      expected: ['many', 'many', 'one', false],
+    })
+  } finally {
+    await f.dispose()
+  }
+})
+
 test('unreadable definitions are isolated and symlinked data is never edited', async () => {
   const f = await trackingFixture()
   try {

@@ -4,6 +4,7 @@ export type {
   TrackingAsk,
   TrackingColumn,
   TrackingColumnType,
+  TrackingEntries,
   TrackingSchedule,
   TrackingStorage,
 } from './document/mod.ts'

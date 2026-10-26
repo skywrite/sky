@@ -1,4 +1,10 @@
-import type { TrackingAsk, TrackingColumn, TrackingSchedule, TrackingStorage } from '#shared/models/Tracking/mod.ts'
+import type {
+  TrackingAsk,
+  TrackingColumn,
+  TrackingEntries,
+  TrackingSchedule,
+  TrackingStorage,
+} from '#shared/models/Tracking/mod.ts'
 
 export interface Tracker {
   name: string
@@ -7,6 +13,7 @@ export interface Tracker {
   category: string
   ask: TrackingAsk
   schedule: TrackingSchedule
+  entries: TrackingEntries
   storage: TrackingStorage
   status: 'active' | 'archived'
   columns: TrackingColumn[]
@@ -51,6 +58,8 @@ export interface TrackerInput {
   category: string
   ask: TrackingAsk
   schedule: TrackingSchedule
+  /** Left out, an edit keeps the definition's current value. */
+  entries?: TrackingEntries
   columns: TrackingColumn[]
   start: string
   end: string | null
