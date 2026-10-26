@@ -181,6 +181,34 @@ export function addKey(text: string, key: string, kind: RowKind): string {
   return doc.toString(STRINGIFY)
 }
 
+/** The front matter text with one name on a key's chips in place of another — kept once, where the first stood. */
+export function swapChip(text: string, key: string, from: string, to: string): string {
+  const row = readFrontmatter(text).rows.find((r) => r.key === key)
+  if (!row || !Array.isArray(row.value) || !row.value.includes(from)) return text
+  const chips = row.value.map((chip) => (chip === from ? to : chip))
+  return writeValue(
+    text,
+    key,
+    row.kind,
+    chips.filter((chip, index) => chips.indexOf(chip) === index),
+  )
+}
+
+/** A document's text as its front matter body (null without a block) and what follows it. */
+export function splitFrontmatter(content: string): { frontmatter: string | null; body: string } {
+  if (!content.startsWith('---\n')) return { frontmatter: null, body: content }
+  const end = content.indexOf('\n---', 4)
+  if (end < 0) return { frontmatter: null, body: content }
+  const after = content.indexOf('\n', end + 1)
+  return { frontmatter: content.slice(4, end), body: after < 0 ? '' : content.slice(after + 1) }
+}
+
+/** A document's text from its front matter body and what follows it; an empty body drops the block. */
+export function joinFrontmatter(frontmatter: string | null, body: string): string {
+  if (frontmatter === null || frontmatter.trim() === '') return body
+  return `---\n${frontmatter.replace(/\n?$/, '\n')}---\n${body}`
+}
+
 /** Whether the text has any key at all. */
 export function isEmptyFrontmatter(text: string): boolean {
   const doc = parseDocument(text)

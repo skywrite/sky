@@ -4,9 +4,12 @@ import {
   addKey,
   attachmentNames,
   isEmptyFrontmatter,
+  joinFrontmatter,
   readFrontmatter,
   removeAttachment,
   removeKey,
+  splitFrontmatter,
+  swapChip,
   writeChildValue,
   writeValue,
 } from './model.ts'
@@ -159,5 +162,45 @@ test({ name: 'frontmatter model - a file joins and leaves the attachments list i
       true,
       true,
     ],
+  })
+})
+
+test({ name: 'frontmatter model - a name swapped for the person it meant keeps its place and the shape' }, () => {
+  assert({
+    given:
+      'a first name on a comma line, the same in a list, a swap to a name already on the row, a name not on the row, and a key not there',
+    should:
+      'put the full name where the first stood, keep the list a list, keep the person once, and leave the rest alone',
+    actual: [
+      swapChip('who: Jane, Sam Park\nmedium: meeting\n', 'who', 'Jane', 'Jane Doe'),
+      swapChip('to:\n  - Sam Park\n  - Jane\n', 'to', 'Jane', 'Jane Doe'),
+      swapChip('cc: Jane Doe, Jane\n', 'cc', 'Jane', 'Jane Doe'),
+      swapChip('who: Sam Park\n', 'who', 'Jane', 'Jane Doe'),
+      swapChip('who: Jane\n', 'from', 'Jane', 'Jane Doe'),
+    ],
+    expected: [
+      'who: Jane Doe, Sam Park\nmedium: meeting\n',
+      'to:\n  - Sam Park\n  - Jane Doe\n',
+      'cc: Jane Doe\n',
+      'who: Sam Park\n',
+      'who: Jane\n',
+    ],
+  })
+})
+
+test({ name: 'frontmatter model - a document splits into its front matter and the rest, and joins back' }, () => {
+  const doc = '---\nwho: Jane Doe\n---\n\n# Atlas sync\n'
+  const { frontmatter, body } = splitFrontmatter(doc)
+  assert({
+    given: 'a document with a block, one without, and a block emptied',
+    should: 'give the block and the rest, join them back as they were, and drop the emptied block',
+    actual: [
+      frontmatter,
+      body,
+      joinFrontmatter(frontmatter, body),
+      splitFrontmatter('# Notes\n'),
+      joinFrontmatter('', body),
+    ],
+    expected: ['who: Jane Doe', '\n# Atlas sync\n', doc, { frontmatter: null, body: '# Notes\n' }, '\n# Atlas sync\n'],
   })
 })

@@ -60,6 +60,8 @@ interface Entity {
   aliases: string[]
   path: string
   hint?: string
+  /** Who a person is in a word or two: their org, or their title without one */
+  brief?: string
   /** A day document's day, for ordering newest first */
   date?: string
 }
@@ -219,9 +221,11 @@ function stem(path: string): string {
 function entityOf(type: EntityType, value: string, path: string, doc: Document, aliases: string[] = []): Entity {
   const yaml = doc.yaml
   let hint: string | undefined
+  let brief: string | undefined
   switch (type) {
     case 'person':
       hint = [asString(yaml['title']), asString(yaml['org'])].filter((s): s is string => s !== undefined).join(' · ')
+      brief = asString(yaml['org']) ?? asString(yaml['title'])
       break
     case 'org':
       hint = asString(yaml['sector'])
@@ -229,7 +233,7 @@ function entityOf(type: EntityType, value: string, path: string, doc: Document, 
     default:
       hint = path.split('/').slice(0, -1).join('/')
   }
-  return { type, value, aliases, path, hint: hint || undefined }
+  return { type, value, aliases, path, hint: hint || undefined, ...(brief ? { brief } : {}) }
 }
 
 export function buildVocabulary(store: MarkdownStore, base: string): Vocabulary {
@@ -340,6 +344,17 @@ function ranked<T>(
   return scored.slice(0, limit).map((s) => s.item)
 }
 
+/** A person's or org's interaction score and last interaction: what orders names that match alike. */
+function standing(entity: Entity, scores?: Scores): { score: number; last: string } {
+  const hit =
+    entity.type === 'person'
+      ? scores?.people.get(entity.value.toLowerCase())
+      : entity.type === 'org'
+        ? scores?.orgs.get(entity.value.toLowerCase())
+        : undefined
+  return { score: hit?.score ?? 0, last: hit?.lastInteraction ?? '' }
+}
+
 const KINDS_TO_TYPES: Partial<Record<CompletionKind, EntityType[]>> = {
   people: ['person'],
   orgs: ['org'],
@@ -384,21 +399,12 @@ export function complete(
   const pool = vocabulary.entities.filter(
     (entity) => types.includes(entity.type) && (!projectQuery || (entity.type === 'project' && !nestedProjectQuery)),
   )
-  const scoreOf = (entity: Entity): { score: number; last: string } => {
-    const hit =
-      entity.type === 'person'
-        ? scores?.people.get(entity.value.toLowerCase())
-        : entity.type === 'org'
-          ? scores?.orgs.get(entity.value.toLowerCase())
-          : undefined
-    return { score: hit?.score ?? 0, last: hit?.lastInteraction ?? '' }
-  }
   const chosen = ranked(
     pool,
     (entity) => best(query, [entity.value, ...(entity.label ? [entity.label] : []), ...entity.aliases]),
     (a, b) => {
-      const sa = scoreOf(a)
-      const sb = scoreOf(b)
+      const sa = standing(a, scores)
+      const sb = standing(b, scores)
       return (
         sb.score - sa.score ||
         sb.last.localeCompare(sa.last) ||
@@ -412,7 +418,7 @@ export function complete(
   return chosen.map((entity) => {
     const completion: Completion = { value: entity.value, type: entity.type, path: entity.path }
     if (entity.label) completion.label = entity.label
-    const { last } = scoreOf(entity)
+    const { last } = standing(entity, scores)
     const recency = last && today ? ago(last, today) : ''
     const hint = [entity.hint, recency].filter((part) => part && part.length > 0).join(' · ')
     if (hint) completion.hint = hint
@@ -460,6 +466,90 @@ export async function resolveNames(
     out[name] = type ? { type, path, ...(ref.type === 'place' ? { label: ref.value.name } : {}) } : null
   }
   return out
+}
+
+// --- did you mean: who a name the notebook does not know may be ---------------------------------
+
+/** How far ahead on score a namesake must be to be offered alone — the rule name linking keeps. */
+const SCORE_DOMINANCE = 3
+
+/** A name's words as compared: accents folded, case and punctuation dropped. */
+function wordsOf(name: string): string[] {
+  return name
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '')
+    .toLowerCase()
+    .split(/[\s\-_.,()]+/)
+    .filter((word) => word.length > 0)
+}
+
+/** Whether two words differ by one slip of the keys: a letter added, dropped or changed, or two swapped. */
+function oneSlip(a: string, b: string): boolean {
+  if (a === b || Math.abs(a.length - b.length) > 1) return false
+  let i = 0
+  while (i < a.length && a[i] === b[i]) i++
+  if (a.length === b.length) {
+    return (
+      a.slice(i + 1) === b.slice(i + 1) || (a[i] === b[i + 1] && a[i + 1] === b[i] && a.slice(i + 2) === b.slice(i + 2))
+    )
+  }
+  return a.length > b.length ? a.slice(i + 1) === b.slice(i) : b.slice(i + 1) === a.slice(i)
+}
+
+/**
+ * Whether a name is a shorter way of writing another: the same first word, then its other words
+ * in order, each the word itself or its initial — "Jane", "Jane D" and "Jane Doe" all write
+ * "Jane Ann Doe". Loosely, a word of four letters or more may also be one slip away ("Jnae").
+ */
+function writes(short: string[], long: string[], loosely: boolean): boolean {
+  const same = (word: string, full: string) =>
+    word === full || (loosely && word[0] === full[0] && word.length >= 4 && full.length >= 4 && oneSlip(word, full))
+  if (short.length === 0 || short.length > long.length || !same(short[0], long[0])) return false
+  let at = 1
+  for (const word of short.slice(1)) {
+    while (at < long.length && !same(word, long[at]) && !(word.length === 1 && long[at].startsWith(word))) at++
+    if (at === long.length) return false
+    at++
+  }
+  return true
+}
+
+/**
+ * Who a name the notebook does not know may mean, the likeliest first: the people the name is a
+ * shorter way of writing (a first name, a first name and an initial), or the other way round;
+ * when no one is, the people it misspells by a slip. The interaction score decides among them: a
+ * namesake three times ahead of the next is offered alone, otherwise the top two, by score.
+ */
+export function suggest(vocabulary: Vocabulary, name: string, scores?: Scores): Completion[] {
+  const words = wordsOf(name)
+  if (words.length === 0) return []
+  const people = vocabulary.entities.filter((entity) => entity.type === 'person')
+  const matching = (loosely: boolean) =>
+    people.filter((entity) =>
+      [entity.value, ...entity.aliases]
+        .map(wordsOf)
+        .some((spelling) => writes(words, spelling, loosely) || writes(spelling, words, loosely)),
+    )
+  const found = matching(false)
+  const ranked = (found.length > 0 ? found : matching(true))
+    .map((entity) => ({ entity, ...standing(entity, scores) }))
+    .sort((a, b) => b.score - a.score || b.last.localeCompare(a.last) || a.entity.value.localeCompare(b.entity.value))
+  // A person filed twice under one name is offered once.
+  const seen = new Set<string>()
+  const [top, second] = ranked.filter(({ entity }) => {
+    const key = entity.value.toLowerCase()
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+  if (!top) return []
+  const alone = !second || (top.score > 0 && top.score >= SCORE_DOMINANCE * second.score)
+  return (alone ? [top] : [top, second]).map(({ entity }) => ({
+    value: entity.value,
+    type: entity.type,
+    path: entity.path,
+    ...(entity.brief ? { hint: entity.brief } : {}),
+  }))
 }
 
 // --- linked from: what points at a document ----------------------------------------------------

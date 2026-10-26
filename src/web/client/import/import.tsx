@@ -57,6 +57,7 @@ import {
 import { dayFileHref, sizeLabel } from '../attachments/files.tsx'
 import { renderStatic } from '../editor/wysiwyg/render.ts'
 import { fileHref } from '../explorer/explorer.tsx'
+import { joinFrontmatter, splitFrontmatter } from '../frontmatter/model.ts'
 import { DocumentRail } from '../frontmatter/Rail.tsx'
 import { useCompletions } from '../frontmatter/rows.tsx'
 import { useFrontmatter } from '../frontmatter/useFrontmatter.ts'
@@ -2877,19 +2878,6 @@ function FiledDetails({ file }: { file: string }) {
       )}
     </Block>
   )
-}
-
-function splitFrontmatter(content: string): { frontmatter: string | null; body: string } {
-  if (!content.startsWith('---\n')) return { frontmatter: null, body: content }
-  const end = content.indexOf('\n---', 4)
-  if (end < 0) return { frontmatter: null, body: content }
-  const after = content.indexOf('\n', end + 1)
-  return { frontmatter: content.slice(4, end), body: after < 0 ? '' : content.slice(after + 1) }
-}
-
-function joinFrontmatter(frontmatter: string | null, body: string): string {
-  if (frontmatter === null || frontmatter.trim() === '') return body
-  return `---\n${frontmatter.replace(/\n?$/, '\n')}---\n${body}`
 }
 
 /** The filed document, rendered the way the explorer renders it. */

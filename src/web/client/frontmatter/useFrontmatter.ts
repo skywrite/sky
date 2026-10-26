@@ -7,6 +7,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { type Resolved, resolveNames } from './complete.ts'
 import { ENTITY_KINDS } from './kinds.ts'
 import { isEmptyFrontmatter, readFrontmatter, type Row } from './model.ts'
+import { saveFrontmatter } from './save.ts'
 
 export interface FrontmatterState {
   /** The body as it is; '' when the document has no block */
@@ -24,6 +25,11 @@ export interface FrontmatterState {
   commit: (text: string) => void
   /** Rewrites the body from its latest text, so changes made one after another each see the last */
   update: (change: (body: string) => string) => void
+  /**
+   * Changes the body from either view: as update does while editing; while reading — where a
+   * chip's suggestion is the one change offered — written to the file itself and shown at once
+   */
+  amend: (change: (body: string) => string) => Promise<void>
   readOnly: boolean
 }
 
@@ -32,7 +38,10 @@ export function useFrontmatter(
   file: string,
   onChange?: (text: string | null) => void,
 ): FrontmatterState {
-  const body = text ?? ''
+  // What reading wrote stands in for the text it replaced, until the page reads the file again.
+  const [written, setWritten] = useState<{ file: string; over: string; text: string } | null>(null)
+  const read = text ?? ''
+  const body = written && written.file === file && written.over === read ? written.text : read
   const parsed = useMemo(() => readFrontmatter(body), [body])
   const rows = parsed.rows
   const [resolved, setResolved] = useState<Record<string, Resolved | null>>({})
@@ -67,6 +76,11 @@ export function useFrontmatter(
     onChange(isEmptyFrontmatter(trimmed) ? null : trimmed)
   }
   const update = (change: (body: string) => string) => commit(change(latest.current))
+  const amend = async (change: (body: string) => string) => {
+    if (onChange) return update(change)
+    const next = await saveFrontmatter(file, change)
+    setWritten({ file, over: read, text: next })
+  }
   const learn = (name: string, hit: Resolved) => setResolved((previous) => ({ ...previous, [name]: hit }))
   return {
     body,
@@ -78,6 +92,7 @@ export function useFrontmatter(
     setFocusKey,
     commit,
     update,
+    amend,
     readOnly: !onChange,
   }
 }

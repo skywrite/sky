@@ -205,6 +205,35 @@
   color: var(--sky-accent);
 }
 
+/* under a row whose chip names no one in People: who the name likely means */
+.sky-prop-meant {
+  flex-basis: 100%;
+  margin: 4px 0 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--sky-dim);
+}
+
+.sky-prop-meant-pick {
+  border: 0;
+  background: transparent;
+  color: var(--sky-accent);
+  font: inherit;
+  font-weight: 500;
+  padding: 0 2px;
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.sky-prop-meant-pick:hover {
+  background: var(--sky-hover);
+}
+
+.sky-prop-meant-pick:focus-visible {
+  outline: 2px solid var(--sky-accent);
+  outline-offset: 1px;
+}
+
 .sky-prop-text,
 .sky-prop-long {
   display: inline-flex;

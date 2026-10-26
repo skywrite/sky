@@ -67,6 +67,7 @@ import {
   type CompletionKind,
   resolveNames,
   scoresFrom,
+  suggest,
   vocabularyOf,
 } from './vocabulary/mod.ts'
 import { createVoiceRoutes, type VoiceRoutesOptions } from './voice/mod.ts'
@@ -517,6 +518,17 @@ export function createHttpApp(options: HttpHandlerOptions): Hono {
     const source =
       typeof body?.path === 'string' && !path.isAbsolute(body.path) ? path.resolve(base, body.path) : undefined
     return c.json({ resolved: await resolveNames(markdownStore, base, names, source) })
+  })
+
+  // Who a name on a chip may mean when the notebook has no one by it — the likeliest by score first.
+  app.get('/docs/_api/suggest', async (c) => {
+    if (!markdownStore) return c.json({ items: [] })
+    const items = suggest(
+      await vocabularyOf(markdownStore, path.resolve(markdownBaseDir)),
+      c.req.query('name') ?? '',
+      scoresFrom(store.getPeopleWithScores(), [], []),
+    )
+    return c.json({ items })
   })
 
   // A file beside a document — in the notebook, in the media mirror of the document's directory,

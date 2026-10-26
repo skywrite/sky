@@ -58,6 +58,7 @@ export function IdentityLine({
                 focusKey={state.focusKey}
                 body={state.body}
                 commit={state.commit}
+                amend={state.amend}
                 onResolved={state.learn}
               />
             </Fragment>

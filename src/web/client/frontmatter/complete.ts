@@ -62,7 +62,15 @@ export async function fetchCompletions(
   if (options.key) params.set('key', options.key)
   if (options.dir) params.set('dir', options.dir)
   if (options.limit) params.set('limit', String(options.limit))
-  const url = `/docs/_api/complete?${params.toString()}`
+  return items(`/docs/_api/complete?${params.toString()}`)
+}
+
+/** Who a name the notebook does not know may mean, the likeliest first; none when no one comes close. */
+export async function fetchSuggestions(name: string): Promise<Completion[]> {
+  return items(`/docs/_api/suggest?${new URLSearchParams({ name }).toString()}`)
+}
+
+function items(url: string): Promise<Completion[]> {
   const cached = recall(completions, url)
   if (cached) return cached
   const request = fetch(url)

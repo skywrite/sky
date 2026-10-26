@@ -9,9 +9,9 @@ import { When } from '#universal/dates/nbdt/mod.ts'
 import { LinksInput } from '../links/links.tsx'
 import { addPerson, AddPersonError, canAddPerson } from './addPerson.ts'
 import { ChipsInput } from './ChipsInput.tsx'
-import { type Completion, fetchCompletions, type Resolved, serves, timeZones } from './complete.ts'
+import { type Completion, fetchCompletions, fetchSuggestions, type Resolved, serves, timeZones } from './complete.ts'
 import { CHIP_KINDS, ENTITY_KINDS, type RowKind, suggestedKeys, TYPE_MARKS } from './kinds.ts'
-import { readFrontmatter, removeKey, type Row, writeChildValue, writeValue } from './model.ts'
+import { readFrontmatter, removeKey, type Row, swapChip, writeChildValue, writeValue } from './model.ts'
 
 const IDLE_COMMIT_MS = 700
 const SEARCH_DEBOUNCE_MS = 80
@@ -93,9 +93,10 @@ export function OptionMark({ type }: { type: string | undefined }) {
   return <span className="sky-prop-mark">{type ? (TYPE_MARKS[type] ?? '') : ''}</span>
 }
 
-/** Why a person was not added from their chip, said under the row. */
-interface AddProblem {
+/** Why a chip's name was not added, or not changed to the person it meant, said under the row. */
+interface ChipProblem {
   name: string
+  /** What did not happen, and why */
   text: string
   /** A profile already has the name: the People page is where to find it */
   exists: boolean
@@ -109,7 +110,7 @@ function AddPerson({
 }: {
   name: string
   onAdded: (hit: Resolved) => void
-  onProblem: (problem: AddProblem | null) => void
+  onProblem: (problem: ChipProblem | null) => void
 }) {
   const [busy, setBusy] = useState(false)
   const label = `Add ${name} to People`
@@ -130,7 +131,7 @@ function AddPerson({
           .then(onAdded, (error: unknown) =>
             onProblem({
               name,
-              text: error instanceof Error ? error.message : 'The request could not be completed.',
+              text: `${name} was not added. ${error instanceof Error ? error.message : 'The request could not be completed.'}`,
               exists: error instanceof AddPersonError && error.exists,
             }),
           )
@@ -139,6 +140,61 @@ function AddPerson({
     >
       {busy ? 'Adding…' : 'Add'}
     </button>
+  )
+}
+
+/** Who a name the notebook does not know may mean, asked of the service once per name. */
+function useSuggestions(name: string): Completion[] {
+  const [answer, setAnswer] = useState<{ name: string; people: Completion[] }>({ name: '', people: [] })
+  useEffect(() => {
+    let alive = true
+    void fetchSuggestions(name).then((people) => {
+      if (alive) setAnswer({ name, people })
+    })
+    return () => {
+      alive = false
+    }
+  }, [name])
+  return answer.name === name ? answer.people : NO_COMPLETIONS
+}
+
+/**
+ * Under a row whose chip names no one the notebook knows: the person the name likely means, by
+ * score — or the top two when the score cannot tell them apart. A press puts the person in its
+ * place; Add on the chip still makes someone new.
+ */
+function DidYouMean({
+  name,
+  named,
+  onPick,
+}: {
+  name: string
+  /** Say which chip the line is about — the row has more than one it could be */
+  named: boolean
+  onPick: (person: Completion) => void
+}) {
+  const people = useSuggestions(name)
+  if (people.length === 0) return null
+  return (
+    <p className="sky-prop-meant">
+      {named ? `${name}: did you mean ` : 'Did you mean '}
+      {people.map((person, index) => (
+        <Fragment key={person.path ?? person.value}>
+          {index > 0 ? ' or ' : null}
+          <button
+            type="button"
+            className="sky-prop-meant-pick"
+            title={`Change ${name} to ${person.value}`}
+            aria-label={`Change ${name} to ${person.value}`}
+            onClick={() => onPick(person)}
+          >
+            {person.value}
+          </button>
+          {person.hint ? ` (${person.hint})` : null}
+        </Fragment>
+      ))}
+      ?
+    </p>
   )
 }
 
@@ -195,6 +251,7 @@ export function ChipsRow({
   autoFocus,
   onCommit,
   onResolved,
+  onSwap,
 }: {
   row: Row
   file: string
@@ -205,22 +262,46 @@ export function ChipsRow({
   onCommit: (chips: string[]) => void
   /** Takes where a name points once its person is added; without it no chip offers to add one */
   onResolved?: (name: string, hit: Resolved) => void
+  /** Puts a person's name in place of a chip's, in the file; without it no chip offers who it may mean */
+  onSwap?: (name: string, to: string) => Promise<void>
 }) {
   const chips = Array.isArray(row.value) ? row.value : []
   const entityKind = ENTITY_KINDS[row.kind] ?? null
   const [search, setSearch] = useState('')
   const items = useCompletions(readOnly ? null : entityKind, search, { dir })
-  const [problem, setProblem] = useState<AddProblem | null>(null)
+  const [problem, setProblem] = useState<ChipProblem | null>(null)
   if (row.kind === 'rel') return <LinksInput values={chips} file={file} readOnly={readOnly} onChange={onCommit} />
+  // A name no profile has: the chip offers to add the person, the row who the name may mean.
+  const unknown = (chip: string) =>
+    onResolved !== undefined && row.kind === 'people' && resolved[chip] === null && canAddPerson(chip)
   const addFor = (chip: string) =>
-    onResolved && row.kind === 'people' && resolved[chip] === null && canAddPerson(chip) ? (
+    onResolved && unknown(chip) ? (
       <AddPerson name={chip} onAdded={(hit) => onResolved(chip, hit)} onProblem={setProblem} />
     ) : null
+  const take = (chip: string, person: Completion) => {
+    if (!onSwap || !person.path) return
+    setProblem(null)
+    // The chip links as soon as it reads the person's name.
+    onResolved?.(person.value, { type: 'person', path: person.path })
+    onSwap(chip, person.value).catch((error: unknown) =>
+      setProblem({
+        name: chip,
+        text: `${chip} was not changed to ${person.value}. ${error instanceof Error ? error.message : 'The request could not be completed.'}`,
+        exists: false,
+      }),
+    )
+  }
+  const unknownChips = onSwap ? chips.filter(unknown) : []
+  const meant = unknownChips.map((chip) => (
+    <Fragment key={chip}>
+      <DidYouMean name={chip} named={unknownChips.length > 1} onPick={(person) => take(chip, person)} />
+    </Fragment>
+  ))
   // Said while the name is still on the row; removing its chip takes the sentence with it.
   const problemLine =
     problem && chips.includes(problem.name) ? (
       <p className="sky-prop-problem" role="alert">
-        {problem.name} was not added. {problem.text}
+        {problem.text}
         {problem.exists ? (
           <>
             {' '}
@@ -255,6 +336,7 @@ export function ChipsRow({
           </span>
         ))}
         {chips.length === 0 && readOnly ? <span className="sky-prop-empty">—</span> : null}
+        {meant}
         {problemLine}
       </div>
     )
@@ -290,6 +372,7 @@ export function ChipsRow({
           </span>
         )}
       />
+      {meant}
       {problemLine}
     </>
   )
@@ -536,6 +619,7 @@ export function PropRow({
   focusKey,
   body,
   commit,
+  amend,
   parentKey,
   onResolved,
 }: {
@@ -546,6 +630,8 @@ export function PropRow({
   focusKey: string | null
   body: string
   commit: (text: string) => void
+  /** Changes the document from either view — reading included; without it no chip offers who a name may mean */
+  amend?: (change: (body: string) => string) => Promise<void>
   parentKey?: string
   /** Takes where a name points once its person is added from the row */
   onResolved?: (name: string, hit: Resolved) => void
@@ -566,6 +652,7 @@ export function PropRow({
         autoFocus={focusKey === id}
         onCommit={(chips) => commit(writeValue(body, row.key, row.kind, chips))}
         onResolved={onResolved}
+        onSwap={amend ? (name, to) => amend((text) => swapChip(text, row.key, name, to)) : undefined}
       />
     )
   } else {

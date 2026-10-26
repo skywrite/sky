@@ -314,6 +314,83 @@ test(
   },
 )
 
+test(
+  {
+    name: 'rail — a name with no profile offers who it likely means, and takes the pick reading or editing',
+    timeout: 40000,
+  },
+  async (t) => {
+    const doc = DOC.replace('who: Jane Doe', 'who: Jamal, Priya Nair\nfrom: Jnae Doe')
+    await runWysiwygE2e(
+      t,
+      { initialMarkdown: doc, tempPrefix: 'wysiwyg-rail-did-you-mean-', files: PEOPLE, store: true },
+      async ({ page, origin, file, errors }) => {
+        const shots = env.get('SKY_EXPLORER_SCREENSHOTS')
+        const shot = async (name: string) => {
+          if (shots) await page.screenshot({ path: path.join(shots, `${name}.png`), animations: 'disabled' })
+        }
+        const who = '.sky-identity .sky-prop[data-key="who"]'
+        const from = '.sky-identity .sky-prop[data-key="from"]'
+        const lines = () =>
+          page.locator('.sky-identity .sky-prop-meant').evaluateAll((ps) => ps.map((p) => p.textContent))
+        await page.setViewportSize({ width: 1400, height: 900 })
+        await page.goto(`${origin}/explorer/notes/preview.md`)
+        await page.locator(`${from} .sky-prop-meant`).waitFor()
+        await page.locator(`${who} .sky-prop-meant`).waitFor()
+        const reading = {
+          lines: await lines(),
+          added: await page
+            .locator(`${who} .sky-prop-chip-add`)
+            .evaluateAll((buttons) => buttons.map((button) => button.getAttribute('aria-label'))),
+        }
+        await shot('did-you-mean-reading')
+        const saved = page.waitForResponse(
+          (response) => response.url().includes('/docs/_api/content/') && response.request().method() === 'PUT',
+        )
+        await page.getByRole('button', { name: 'Change Jamal to Jamal Reyes', exact: true }).click()
+        await saved
+        await page.locator(`${who} a.sky-prop-chip.link`, { hasText: 'Jamal Reyes' }).waitFor()
+        await shot('did-you-mean-reading-taken')
+        const taken = {
+          href: await page.locator(`${who} a.sky-prop-chip.link`, { hasText: 'Jamal Reyes' }).getAttribute('href'),
+          lines: await lines(),
+          doc: await readMarkdownFromDisk(file),
+        }
+
+        await openEditor(page, origin)
+        await page.waitForSelector('.sky-identity:not([data-readonly])')
+        await page.locator(`${from} .sky-prop-meant`).waitFor()
+        await shot('did-you-mean-editing')
+        await page.getByRole('button', { name: 'Change Jnae Doe to Jane Doe', exact: true }).click()
+        await page.locator(`${from} .mantine-Pill-root`, { hasText: 'Jane Doe' }).waitFor()
+        await waitForAutosave(page)
+
+        assert({
+          given:
+            'a first name one person has and a misspelled full name, with no profile under either, picked once reading and once editing',
+          should:
+            'offer the person each likely means with their org beside Add, write the pick into the file from either view, and link the chip',
+          actual: { reading, taken, editing: await lines(), doc: await readMarkdownFromDisk(file), errors },
+          expected: {
+            reading: {
+              lines: ['Jamal: did you mean Jamal Reyes (Atlas)?', 'Did you mean Jane Doe (Acme)?'],
+              added: ['Add Jamal to People', 'Add Priya Nair to People'],
+            },
+            taken: {
+              href: '/explorer/people/Jamal-Reyes.md',
+              lines: ['Did you mean Jane Doe (Acme)?'],
+              doc: doc.replace('who: Jamal,', 'who: Jamal Reyes,'),
+            },
+            editing: [],
+            doc: doc.replace('who: Jamal,', 'who: Jamal Reyes,').replace('from: Jnae Doe', 'from: Jane Doe'),
+            errors: [],
+          },
+        })
+      },
+    )
+  },
+)
+
 test({ name: 'rail — Links offers the open projects and saves a working link', timeout: 40000 }, async (t) => {
   const projectPath = 'projects/open/Widget-V2/_project/overview.md'
   await runWysiwygE2e(

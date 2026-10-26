@@ -7,7 +7,7 @@ import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import { FIXTURES_DIR } from '../../fixtures/mod.ts'
 import { ScoringStore } from '../../scoring/ScoringStore.ts'
 import { createTestHttpApp } from '../httpTestHelpers.ts'
-import { ago, backlinksOf, complete, matchScore, resolveNames, scoresFrom, vocabularyOf } from './mod.ts'
+import { ago, backlinksOf, complete, matchScore, resolveNames, scoresFrom, suggest, vocabularyOf } from './mod.ts'
 
 const storePromise = MarkdownStore.build({
   peopleDirs: [`${FIXTURES_DIR}/people`],
@@ -291,4 +291,85 @@ test({ name: 'vocabulary - a person with several names completes once, under any
   } finally {
     await rm(base, { recursive: true, force: true })
   }
+})
+
+test({ name: 'vocabulary - a name no one has is offered the person it likely means, by score' }, async () => {
+  const base = await mkdtemp(path.join(os.tmpdir(), 'vocabulary-suggest-'))
+  try {
+    for (const dir of ['people', 'orgs', 'projects', 'time']) await mkdir(path.join(base, dir), { recursive: true })
+    const people: Record<string, string> = {
+      'Jane-Doe': 'name: Jane Doe\norg: Acme\ntitle: Head of Ops',
+      'Jane-Roe': 'name: Jane Roe\norg: Globex',
+      'Janet-Lee': 'name: Janet Lee\ntitle: Designer',
+      'Mary-Jane': 'name: Mary Jane',
+      'Jose-Ortiz': 'name: José Ortiz',
+    }
+    for (const [file, yaml] of Object.entries(people)) {
+      await writeFile(path.join(base, `people/${file}.md`), `---\n${yaml}\n---\n`)
+    }
+    const store = await MarkdownStore.build({
+      peopleDirs: [`${base}/people`],
+      orgDirs: [`${base}/orgs`],
+      projectsDir: `${base}/projects`,
+      timeDirs: [`${base}/time`],
+    })
+    const vocabulary = await vocabularyOf(store, base)
+    const today = new PlainDate('2026-01-20')
+    const scored = (weights: Record<string, number>) => {
+      const scoring = new ScoringStore()
+      for (const [name, weight] of Object.entries(weights)) {
+        scoring.recordPersonInteraction(name, '2026-01-19', weight, today)
+      }
+      return scoresFrom(scoring.getPeopleWithScores(Object.keys(weights)), [], [])
+    }
+    const ahead = scored({ 'Jane Doe': 10, 'Jane Roe': 1 })
+    const offered = (name: string, scores = ahead) => suggest(vocabulary, name, scores).map((person) => person.value)
+    assert({
+      given: 'a first name two people share, one of them far ahead on score',
+      should: 'offer that one alone, with the org that says who it is',
+      actual: suggest(vocabulary, 'Jane', ahead),
+      expected: [{ value: 'Jane Doe', type: 'person', path: 'people/Jane-Doe.md', hint: 'Acme' }],
+    })
+    assert({
+      given:
+        'the same first name when the two score about the same, and when someone whose name only starts with it scores highest',
+      should: 'offer both, the higher score first, and never the longer name',
+      actual: [
+        offered('Jane', scored({ 'Jane Doe': 5, 'Jane Roe': 6 })),
+        offered('Jane', scored({ 'Janet Lee': 20, 'Jane Doe': 1, 'Jane Roe': 1 })),
+      ],
+      expected: [
+        ['Jane Roe', 'Jane Doe'],
+        ['Jane Doe', 'Jane Roe'],
+      ],
+    })
+    assert({
+      given:
+        'a first name and an initial, a slip in the first name, a name written without its accent, someone known by their title, a different last name, a shorter first name, and a name no one has',
+      should: 'offer the person each one writes, and no one for a different person',
+      actual: [
+        ...['Jane R', 'Jnae', 'Jose', 'Jane Smith', 'Jan', 'Priya'].map((name) => offered(name)),
+        suggest(vocabulary, 'Janet', ahead)[0]?.hint,
+      ],
+      expected: [['Jane Roe'], ['Jane Doe'], ['José Ortiz'], [], [], [], 'Designer'],
+    })
+  } finally {
+    await rm(base, { recursive: true, force: true })
+  }
+})
+
+test({ name: 'vocabulary - the suggestion route answers who a name may mean' }, async () => {
+  const store = await storePromise
+  const app = createTestHttpApp([`${FIXTURES_DIR}/people`], { markdownStore: store })
+  const known = await app.request('http://localhost/docs/_api/suggest?name=Alex')
+  const nobody = await app.request('http://localhost/docs/_api/suggest?name=Zebulon')
+  assert({
+    given: 'a first name one person has, and a name no one has',
+    should: 'answer that person with their org, and no one',
+    actual: [await known.json(), await nobody.json()],
+    expected: [
+      { items: [{ value: 'Alex Rivera', type: 'person', path: 'people/Alex-Rivera.md', hint: 'Meta' }] },
+      { items: [] },
+    ],
+  })
 })
