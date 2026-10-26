@@ -150,6 +150,13 @@ Pages:
   account the side of the day its saved mail is filed under. The choice is
   `google.accountCategories` in `config.jsonc`, keyed by lower-case email; see
   `commands/all/google/email/docs/README.md`.
+- **Connections → Notion** — `/settings/connections/notion`, since 2026-10-24
+  (`web/client/settings/settingsNotion.tsx`; routes under `/notion` in `connections.ts`, the host part in
+  `createConnectionsHost.ts`). Connect on the Accounts row opens Notion's own approval page in a tab, and the row
+  turns connected when the redirect lands; the page names the workspace and who signed in, and disconnects.
+  Every visit asks Notion who is signed in, so a grant Notion stopped honoring reads as expired. The host part is
+  optional: without it the routes answer 503 and the row stays hidden. Why Sky signs in through Notion's MCP
+  server, and what chats do with it: [notion commands](../../../../commands/all/notion/docs/README.md).
 - **Browser automation** — `/settings/browser-automation`: password manager
   setup, native approval for supported password logins, and the manual handoff
   for other authentication steps. One 1Password row groups

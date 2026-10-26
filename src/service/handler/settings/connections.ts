@@ -10,8 +10,10 @@
  * Slack's credentials are agent-slack's: checks stay silent, and explicit
  * recovery restores saved access before a Brave import. Beeper Desktop
  * signs in from here the way `sky beeper:auth` does, or takes a token made
- * in the app. TypeSafe's validated setup lives under Connections; its
- * key is still stored only after TypeSafe accepts it.
+ * in the app. Notion signs in with one click through the MCP server it runs
+ * for AI apps: Sky registers itself, Notion shows its own approval page, and
+ * the grant renews itself. TypeSafe's validated setup lives under
+ * Connections; its key is still stored only after TypeSafe accepts it.
  */
 
 import { Hono } from 'hono'
@@ -31,6 +33,7 @@ import {
   type StoredTokens,
 } from '#lib/google/mod.ts'
 import type { MacMessagesStatus } from '#lib/macMessages/mod.ts'
+import { NOTION_GRANT_ENTRY, NOTION_SECRETS_CATEGORY } from '#lib/notion/secrets.ts'
 import { KeychainAccessError } from '#lib/secrets/keychainProtocol.ts'
 import { createLogin, createSecret, updateEntry } from '#lib/secrets/marshal.ts'
 import type { SecretsProvider } from '#lib/secrets/SecretsProvider.ts'
@@ -166,6 +169,26 @@ export type BeeperConnectState =
   | { status: 'done'; expiresAt?: string }
   | { status: 'failed'; message: string }
 
+/** Notion's grant on this machine, and who it belongs to. */
+export type NotionStatus = {
+  /** A grant is stored */
+  connected: boolean
+  /** Notion turned the grant away and it could not be renewed: sign in again */
+  expired?: boolean
+  /** The workspace and the person, as Notion names them */
+  workspace?: string
+  user?: string
+  email?: string
+  /** Why Notion could not be asked, in plain words */
+  error?: string
+}
+
+/** How a Notion sign-in started from the page is going. */
+export type NotionConnectState =
+  | { status: 'waiting' }
+  | { status: 'done'; workspace?: string }
+  | { status: 'failed'; message: string }
+
 /** TypeSafe's key on this machine, and whether TypeSafe takes it. */
 export type TypeSafeStatus = {
   /** A key is stored */
@@ -233,6 +256,15 @@ export interface ConnectionsHost {
     keep: (chat: string) => Promise<boolean>
     /** Bring Beeper Desktop to the front on a chat; null when the app is not running */
     open: (chat: string) => Promise<boolean | null>
+  }
+  /** Notion, through the MCP server it runs for AI apps; absent in tests that leave it out */
+  notion?: {
+    status: () => Promise<NotionStatus>
+    /** Starts a sign-in: Notion's approval URL for the browser and an id to ask after */
+    connect: () => Promise<{ id: string; url: string }>
+    /** How a sign-in is going; null for an id this process never issued */
+    connection: (id: string) => NotionConnectState | null
+    disconnect: () => Promise<void>
   }
   /** Messages on this Mac: whether this process may read its Contacts and Messages, the names behind Beeper's iMessage numbers; absent off a Mac */
   macMessages?: {
@@ -325,7 +357,8 @@ export async function describeConnections(host: ConnectionsHost, includeSecrets 
       (e) =>
         e.category !== GOOGLE_SECRETS_CATEGORY &&
         e.category !== BEEPER_SECRETS_CATEGORY &&
-        e.category !== TYPESAFE_SECRET.category,
+        e.category !== TYPESAFE_SECRET.category &&
+        !(e.category === NOTION_SECRETS_CATEGORY && e.name === NOTION_GRANT_ENTRY),
     )
     .sort((a, b) => a.category.localeCompare(b.category) || a.name.localeCompare(b.name))
   const rows = includeSecrets
@@ -613,6 +646,38 @@ export function createConnectionsRoutes(host: ConnectionsHost): Hono {
       const opened = await host.beeper.open(c.req.param('chat'))
       if (opened === null) return c.json({ message: 'Open Beeper Desktop first.' }, 409)
       return opened ? c.json({ ok: true }) : c.json({ message: 'Beeper could not open this chat.' }, 503)
+    } catch (err) {
+      return c.json(message(err), 500)
+    }
+  })
+
+  // Notion: one click — Notion's own approval page, opened from the page.
+  const NO_NOTION = { message: 'Notion is unavailable here.' }
+  app.get('/notion', async (c) => {
+    if (!host.notion) return c.json(NO_NOTION, 503)
+    try {
+      return c.json(await host.notion.status())
+    } catch (err) {
+      return c.json(message(err), 500)
+    }
+  })
+  app.post('/notion/connect', async (c) => {
+    if (!host.notion) return c.json(NO_NOTION, 503)
+    try {
+      return c.json(await host.notion.connect())
+    } catch (err) {
+      return c.json(message(err), 500)
+    }
+  })
+  app.get('/notion/connect/:id', (c) => {
+    const state = host.notion?.connection(c.req.param('id'))
+    return state ? c.json(state) : c.json({ message: 'no such sign-in' }, 404)
+  })
+  app.delete('/notion', async (c) => {
+    if (!host.notion) return c.json(NO_NOTION, 503)
+    try {
+      await host.notion.disconnect()
+      return c.json({ ok: true })
     } catch (err) {
       return c.json(message(err), 500)
     }

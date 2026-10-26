@@ -47,6 +47,16 @@ import {
 } from '#lib/google/mod.ts'
 import type { CloudSetupRun } from '#lib/google/mod.ts'
 import { macMessagesStatus, openMacSenderLookup } from '#lib/macMessages/mod.ts'
+import {
+  deleteNotionGrant,
+  loadNotionGrant,
+  NotionClient,
+  NotionError,
+  type NotionSelf,
+  revokeNotionGrant,
+  saveNotionGrant,
+  startNotionSignIn,
+} from '#lib/notion/mod.ts'
 import { KeychainSecretsProvider } from '#lib/secrets/KeychainSecretsProvider.ts'
 import { createSecret, updateEntry } from '#lib/secrets/marshal.ts'
 import type { SecretsProvider } from '#lib/secrets/SecretsProvider.ts'
@@ -66,6 +76,8 @@ import {
   type BeeperStatus,
   type ConnectionsHost,
   type GoogleConnectState,
+  type NotionConnectState,
+  type NotionStatus,
   type SlackStatus,
   tailOf,
   type TypeSafeStatus,
@@ -401,6 +413,62 @@ function beeperConnection(
 }
 
 /**
+ * Notion's sign-in, run from the page: Sky registers itself with the MCP
+ * server Notion runs for AI apps, Notion's own approval page opens in the
+ * browser, and the grant lands in the keychain with the names Notion gives
+ * the workspace and the person. Every look at the page asks Notion who is
+ * signed in, so a grant Notion stopped honoring reads as expired.
+ */
+function notionConnection(secrets: SecretsProvider): NonNullable<ConnectionsHost['notion']> {
+  const states = new Map<string, NotionConnectState>()
+  return {
+    async status() {
+      const grant = await loadNotionGrant(secrets)
+      if (!grant) return { connected: false }
+      const known: NotionStatus = {
+        connected: true,
+        ...(grant.workspace ? { workspace: grant.workspace } : {}),
+        ...(grant.user ? { user: grant.user } : {}),
+        ...(grant.email ? { email: grant.email } : {}),
+      }
+      try {
+        return { ...known, ...(await new NotionClient(grant, secrets).self()) }
+      } catch (error) {
+        if (error instanceof NotionError && error.kind === 'unauthorized') return { ...known, expired: true }
+        return { ...known, error: error instanceof Error ? error.message : 'Notion could not be asked.' }
+      }
+    },
+    async connect() {
+      const signIn = await startNotionSignIn()
+      const id = randomUUID()
+      states.set(id, { status: 'waiting' })
+      void (async () => {
+        try {
+          const grant = await signIn.finish()
+          await saveNotionGrant(secrets, grant)
+          // The names come from Notion itself; a sign-in that cannot read them is connected all the same.
+          const self: NotionSelf = await new NotionClient(grant, secrets).self().catch(() => ({}))
+          if (self.workspace || self.user || self.email)
+            await saveNotionGrant(secrets, { ...((await loadNotionGrant(secrets)) ?? grant), ...self })
+          states.set(id, { status: 'done', ...(self.workspace ? { workspace: self.workspace } : {}) })
+        } catch (err) {
+          states.set(id, { status: 'failed', message: err instanceof Error ? err.message : String(err) })
+        } finally {
+          setTimeout(() => states.delete(id), CONNECT_KEEP_MS).unref()
+        }
+      })()
+      return { id, url: signIn.url }
+    },
+    connection: (id) => states.get(id) ?? null,
+    async disconnect() {
+      const grant = await loadNotionGrant(secrets)
+      await deleteNotionGrant(secrets)
+      if (grant) await revokeNotionGrant(grant)
+    },
+  }
+}
+
+/**
  * Messages on this Mac: the names behind the numbers Beeper's iMessage shows,
  * read from the Mac's own Contacts and Messages when this process may. The
  * permission is Full Disk Access for the service's binary, granted in System
@@ -457,7 +525,7 @@ function typesafeConnection(secrets: SecretsProvider): ConnectionsHost['typesafe
   }
 }
 
-/** Connections over the real machine: the keychain, the model providers, agent-slack, Google's, Beeper's and TypeSafe's keys. */
+/** Connections over the real machine: the keychain, the model providers, agent-slack, Google's, Beeper's, Notion's and TypeSafe's keys. */
 export function createConnectionsHost(): ConnectionsHost {
   const secrets = new KeychainSecretsProvider()
   const env = Object.fromEntries(
@@ -486,6 +554,7 @@ export function createConnectionsHost(): ConnectionsHost {
       ...slackChannelCache(runPull),
     },
     beeper: beeperConnection(secrets, BEEPER_SYNC_STATE, runCheck),
+    notion: notionConnection(secrets),
     macMessages: macMessagesConnection(),
     typesafe: typesafeConnection(secrets),
     keys: createProviderKeysHost(secrets),

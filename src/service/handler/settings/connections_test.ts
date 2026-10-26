@@ -865,3 +865,59 @@ test('the Messages-on-this-Mac routes read the status and open System Settings o
     ],
   })
 })
+
+test('the Notion routes start a sign-in, read who is signed in, and forget the grant, and say so when there is none', async () => {
+  const { host } = hostWith()
+  const bare = createConnectionsRoutes(host)
+  const missing = [
+    await bare.request('/notion'),
+    await bare.request('/notion/connect', { method: 'POST', headers: JSON_HEADERS, body: '{}' }),
+    await bare.request('/notion', { method: 'DELETE' }),
+  ].map((response) => response.status)
+  const signIn = { id: 'n1', url: 'https://mcp.example.com/authorize?state=s' }
+  const grant = {
+    accessToken: 'ntn-access-secret',
+    clientId: 'sky-client',
+    tokenEndpoint: 'https://mcp.example.com/token',
+  }
+  await host.secrets.set('notion', 'workspace', createSecret(JSON.stringify(grant)))
+  host.notion = {
+    status: async () =>
+      (await host.secrets.get('notion', 'workspace'))
+        ? { connected: true, workspace: 'Atlas', user: 'Jane Doe' }
+        : { connected: false },
+    connect: () => Promise.resolve(signIn),
+    connection: (id) => (id === signIn.id ? { status: 'done', workspace: 'Atlas' } : null),
+    disconnect: () => host.secrets.delete('notion', 'workspace'),
+  }
+  const app = createConnectionsRoutes(host)
+  const status = await app.request('/notion')
+  const started = await app.request('/notion/connect', { method: 'POST', headers: JSON_HEADERS, body: '{}' })
+  const done = await app.request('/notion/connect/n1')
+  const unknown = await app.request('/notion/connect/nope')
+  const listing = (await (await app.request('/')).json()) as ConnectionsData
+  const gone = await app.request('/notion', { method: 'DELETE' })
+  const after = await app.request('/notion')
+  assert({
+    given: 'a host without Notion, then one with a stored grant for the Atlas workspace',
+    should: 'answer 503 without it; report, start, follow and end a sign-in; keep the grant out of the keychain list',
+    actual: [
+      missing,
+      [status.status, await status.json()],
+      [started.status, await started.json()],
+      [done.status, await done.json(), unknown.status],
+      listing.secrets.filter((row) => row.category === 'notion').map((row) => row.name),
+      JSON.stringify(listing).includes(grant.accessToken),
+      [gone.status, await after.json()],
+    ],
+    expected: [
+      [503, 503, 503],
+      [200, { connected: true, workspace: 'Atlas', user: 'Jane Doe' }],
+      [200, signIn],
+      [200, { status: 'done', workspace: 'Atlas' }, 404],
+      ['main'],
+      false,
+      [200, { connected: false }],
+    ],
+  })
+})

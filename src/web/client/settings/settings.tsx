@@ -25,6 +25,7 @@ import { ConnectionsPane, TypeSafeMain } from './settingsConnections.tsx'
 import { DayReviewSettings } from './settingsDayReview.tsx'
 import { GoogleMain } from './settingsGoogle.tsx'
 import { AIPane } from './settingsModels.tsx'
+import { NotionMain } from './settingsNotion.tsx'
 import { PromptsMain } from './settingsPrompts.tsx'
 import { ProviderKeyMain, providerKeyPageOf } from './settingsProviderKeys.tsx'
 import { connectionPageOf, SETTINGS_PAGES, type SettingsSection } from './settingsRoutes.ts'
@@ -655,6 +656,7 @@ export function SettingsMain({
   if (section === 'connections' && connectionPageOf(path) === 'slack') return <SlackMain navigate={navigate} />
   if (section === 'connections' && connectionPageOf(path) === 'google')
     return <GoogleMain navigate={navigate} settings={data} onSettingsChanged={reload} />
+  if (section === 'connections' && connectionPageOf(path) === 'notion') return <NotionMain navigate={navigate} />
   if (section === 'connections' && connectionPageOf(path) === 'typesafe') return <TypeSafeMain navigate={navigate} />
   const keyPage = section === 'connections' ? providerKeyPageOf(path) : null
   // Keyed by provider, so going from one provider's page to another starts fresh.

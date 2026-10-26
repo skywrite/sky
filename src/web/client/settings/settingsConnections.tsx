@@ -4,7 +4,8 @@
  * A Google account signs in here the way `sky google:auth` does: the consent
  * page opens in a tab, and Sky's service receives the redirect on this
  * machine. Slack checks saved access silently and offers deliberate recovery.
- * Beeper Desktop approves Sky on its own page, opened from here. API keys
+ * Beeper Desktop approves Sky on its own page, opened from here, and so
+ * does Notion (settingsNotion.tsx). API keys
  * belong to their integrations; TypeSafe validates its key before storage,
  * and so do the model providers under Services (settingsProviderKeys.tsx).
  */
@@ -14,6 +15,7 @@ import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
 import { Block, mono, refusalOf, Row, UNREACHABLE } from './settingsBlocks.tsx'
 import { ConnectionPage } from './settingsConnectionPage.tsx'
 import { MacMessagesRow } from './settingsMacMessages.tsx'
+import { NotionRow } from './settingsNotion.tsx'
 import { PROVIDER_KEY_ORDER, PROVIDER_KEY_PAGES } from './settingsProviderKeys.tsx'
 import { connectionHref } from './settingsRoutes.ts'
 
@@ -89,7 +91,7 @@ type TypeSafeStatus = {
 export const API = '/settings/_api/connections'
 
 /** The sign-in is asked after this often while the tab is open. */
-const SIGN_IN_POLL_MS = 1500
+export const SIGN_IN_POLL_MS = 1500
 const SLACK_RETRY_MS = 5000
 
 // ── Talking to the service ──────────────────────────────────────────
@@ -557,6 +559,7 @@ function AccountsBlock({ data, navigate }: { data: ConnectionsData; navigate: (t
       <SlackRow navigate={navigate} />
       <BeeperRow navigate={navigate} />
       <MacMessagesRow />
+      <NotionRow navigate={navigate} />
       {google.accounts.length === 0 && (
         <Row label="Google" sub="Mail, Calendar, Drive and Docs. Sign in, tick the boxes — Sky sets up the rest." last>
           <span className="sky-set-off">Not connected</span>
