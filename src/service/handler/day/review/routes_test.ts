@@ -15,8 +15,8 @@ test('real review actions carry duplicate todos and reminders, check streaks and
     assert({
       given: 'duplicate todos and a reminder',
       should: 'move once and accept a retry',
-      actual: [first.status, retry.status],
-      expected: [200, 200],
+      actual: [first.status, retry.status, (await f.view()).step],
+      expected: [200, 200, 'carry'],
     })
     const streak = initial.items.find((i) => i.kind === 'streak')!
     const tracked = initial.items.find((i) => i.kind === 'tracking')!
@@ -95,6 +95,83 @@ test('review rejects cross-origin, invalid dates, stale items and writes to ende
       should: 'allow skipping review without changing its record',
       actual: [blocked.status, skipped.status, await readFile(f.file(REVIEW_DAY), 'utf8')],
       expected: [409, 200, ended],
+    })
+  } finally {
+    await f.dispose()
+  }
+})
+
+test('wizard navigation saves its place and skips a visible selection atomically without changing notebook content', async () => {
+  const f = await reviewFixture()
+  try {
+    await f.post(`${REVIEW_DAY}/open`)
+    await f.waitFor((view) => view.recaps.every((job) => job.status === 'done'))
+    const before = await f.readDay(REVIEW_DAY)
+    const initial = await f.view()
+    const carry = initial.items.filter((item) => item.kind === 'carry')
+    const tracking = initial.items.find((item) => item.kind === 'tracking')!
+    const streak = initial.items.find((item) => item.kind === 'streak')!
+    const skipped = await f.post(`${REVIEW_DAY}/step`, { step: 'streak', skipIds: carry.map((item) => item.id) })
+    await f.post(`${REVIEW_DAY}/draft`, { id: tracking.id, values: { hours: '2.5' } })
+    await f.post(`${REVIEW_DAY}/step`, { step: 'tracking' })
+    await f.post(`${REVIEW_DAY}/close`)
+    const resumed = (await (await f.makeRoutes().request(`/${REVIEW_DAY}`)).json()) as ReviewView
+    assert({
+      given: 'skip tasks, move to tracking, then close and recreate the review',
+      should: 'keep the step, skipped items and draft while leaving the notebook alone',
+      actual: [
+        skipped.status,
+        resumed.step,
+        resumed.paused,
+        Object.values(resumed.answers).map((answer) => answer.result),
+        resumed.drafts[tracking.id],
+        await f.readDay(REVIEW_DAY),
+      ],
+      expected: [200, 'tracking', true, ['skipped', 'skipped', 'skipped'], { hours: '2.5' }, before],
+    })
+    const stale = await f.post(`${REVIEW_DAY}/step`, {
+      step: 'summary',
+      skipIds: [streak.id, `meeting:${'0'.repeat(64)}`],
+    })
+    const invalid = await f.post(`${REVIEW_DAY}/step`, { step: 'unknown' })
+    const unchanged = await f.view()
+    assert({
+      given: 'one stale item in a skip request, or an invalid step',
+      should: 'save neither partial skips nor the new step',
+      actual: [stale.status, invalid.status, unchanged.step, unchanged.answers, unchanged.drafts],
+      expected: [409, 400, resumed.step, resumed.answers, resumed.drafts],
+    })
+    await f.post(`${REVIEW_DAY}/answer`, { id: carry[0].id, action: 'restore' })
+    await f.post(`${REVIEW_DAY}/step`, { step: 'carry' })
+    assert({
+      given: 'return to a skipped step and review an item again',
+      should: 'restore the decision without changing the day or starting a summary',
+      actual: [
+        (await f.view()).items.some((item) => item.id === carry[0].id),
+        await f.readDay(REVIEW_DAY),
+        f.calls.filter((call) => ['start', 'end', 'summary'].includes(call)),
+      ],
+      expected: [true, before, []],
+    })
+  } finally {
+    await f.dispose()
+  }
+})
+
+test('continuing chats are informational and closing one preserves the other conversations', async () => {
+  const f = await reviewFixture()
+  try {
+    const initial = await f.view()
+    await f.post(`${REVIEW_DAY}/step`, { step: 'chat' })
+    const closed = await f.post(`${REVIEW_DAY}/chat/close`, { id: initial.chats[0].id })
+    f.chats[0].saves = false
+    const temporary = await f.post(`${REVIEW_DAY}/chat/close`, { id: f.chats[0].id })
+    const unknown = await f.post(`${REVIEW_DAY}/chat/close`, { id: 'unknown' })
+    assert({
+      given: 'close one chat, then attempt to close a temporary or unknown chat from review',
+      should: 'close only the chosen saved chat and retain the wizard step',
+      actual: [closed.status, temporary.status, unknown.status, (await f.view()).step, f.chats.length, f.calls],
+      expected: [200, 409, 409, 'chat', 1, ['close-chat']],
     })
   } finally {
     await f.dispose()

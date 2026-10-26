@@ -1,6 +1,6 @@
 ---
 created: 2026-09-03
-updated: 2026-10-23
+updated: 2026-10-24
 ---
 
 # The day's items, the day's rail, and the day's files
@@ -236,11 +236,15 @@ A date is offered once; the day page's Review yesterday / Review this day button
 
 `review/` composes the existing day mover, streak completion, tracking store, meeting/import workflows, recap commands,
 and `summary:day`.
-Review progress, drafts, job outcomes and the claimed popup live under the local user-data `state/day-review` directory,
-keyed by the reviewed date.
+Review progress, the current wizard step, drafts, job outcomes and the claimed popup live under the local user-data
+`state/day-review` directory, keyed by the reviewed date.
 Moving a selection uses the day planner's revision checks and locks, can create today's unstarted plan, and records receipts
 in the review state; ended-day restrictions still apply.
 Skip changes only review state, so a skipped historical streak remains missed under the existing streak rules.
+Navigating steps never skips items implicitly; Skip remaining saves the visible choices and the next step together.
+Older reviews without a saved step open at their first unfinished section, then Continuing chats if any remain open,
+or Summary when nothing is pending.
+Continuing chats offers optional Save & close; conversations carry forward without blocking the summary.
 
 Recaps run when the review opens, independently reporting failures and supporting Retry.
 The summary runs only after all recaps succeed and every current review item is resolved or skipped.
@@ -316,6 +320,10 @@ chat writes back to its file. A live continuation replaces its saved row
 while retaining the branches below it. Parent lookup uses the live id when it is
 available and falls back to the saved path. A parent outside the day is
 still named beside the branch point.
+
+Today includes every open chat, even without new activity; historical days also link chats with messages on that day.
+The canonical transcript stays in its original folder.
+See [conversations across days](../../chat/docs/README.md#conversations-across-days) for activity and summary ownership.
 
 The chat store walks every level of the day's chat directory so further
 splits remain visible. Returning to the day from a chat or document reads

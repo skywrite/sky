@@ -181,12 +181,23 @@ function Canvas() {
     threads.find((thread) => thread.id === threadId)?.title ??
     (currentChat ? threadTitle(currentChat.turns, currentChat.inherited) : null) ??
     (currentChat?.parent ? 'New branch' : 'New chat')
-  // The day the chat belongs to, from the page's own read-back, else the
-  // list. A chat from an earlier day — continued from its file, or left open
-  // since — goes back to that day when it ends or the person steps back.
+  // Return to the day the conversation was opened from; filing stays anchored to its original day.
   const chatDay = currentChat?.day ?? threads.find((thread) => thread.id === threadId)?.day ?? null
-  const chatHome =
-    chatDay && day && chatDay !== day.today.ymd
+  const requestedReturn = new URLSearchParams(search).get('returnTo')
+  const returnTo =
+    requestedReturn && /^\/(?:\d{4}-\d{2}-\d{2})?(?:\?review=\d{4}-\d{2}-\d{2})?$/.test(requestedReturn)
+      ? requestedReturn
+      : null
+  const chatHome = returnTo
+    ? {
+        path: returnTo,
+        label: returnTo.includes('?review=')
+          ? 'Day review'
+          : returnTo === '/'
+            ? 'Today'
+            : shortLabel(returnTo.slice(1)),
+      }
+    : chatDay && day && chatDay !== day.today.ymd
       ? { path: `/${chatDay}`, label: shortLabel(chatDay) }
       : { path: '/', label: 'Today' }
   const onDayPage =
@@ -276,7 +287,11 @@ function Canvas() {
   const tomorrowYmd = day ? new PlainDate(day.today.ymd).addDays(1).ymd : null
   const tomorrowActive = showDateNav && !isWeek && tomorrowYmd !== null && activeDayYmd === tomorrowYmd
 
-  const openThread = (id: string) => navigate(`/thread/${id}`)
+  const threadHref = (id: string) => {
+    const destination = onDayPage ? (day?.day.ymd === day?.today.ymd ? '/' : path) : returnTo
+    return `/thread/${encodeURIComponent(id)}${destination ? `?returnTo=${encodeURIComponent(destination)}` : ''}`
+  }
+  const openThread = (id: string) => navigate(threadHref(id))
   const helpWithItem = useItemHelpChat(path, openThread)
   const openImport = (id: string) => navigate(`/import/${id}`)
   // A file the rail's pad kept with the day: the toast holds Undo for a moment.
@@ -319,7 +334,7 @@ function Canvas() {
       return
     }
     const body = (await response.json()) as { id: string }
-    if (tab) tab.location.href = `/thread/${body.id}`
+    if (tab) tab.location.href = threadHref(body.id)
     else openThread(body.id)
   }
   const branchesOf = (id: string) => others.filter((t) => t.parent?.id === id)

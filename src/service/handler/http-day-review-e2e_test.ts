@@ -56,22 +56,34 @@ test(
       await page.goto(origin)
       const dialog = page.getByRole('dialog', { name: `Review ${REVIEW_DAY}` })
       await dialog.waitFor()
+      await dialog.getByRole('heading', { name: 'What’s coming with you?' }).waitFor()
       const shots = env.get('SKY_REVIEW_SCREENSHOTS')
       if (shots) {
         await mkdir(shots, { recursive: true })
         await page.screenshot({ path: path.join(shots, 'desktop.png'), fullPage: true })
       }
-      await page.waitForFunction((day) => document.title === `sky · Review ${day}`, REVIEW_DAY)
+      await page.waitForFunction((day) => document.title === `sky · Review ${day} · Tasks`, REVIEW_DAY)
+      assert({
+        given: 'the first wizard step',
+        should: 'focus on tasks while later decisions stay out of the way',
+        actual: [
+          await dialog.getByRole('heading', { name: 'What’s coming with you?' }).count(),
+          await dialog.getByRole('textbox').count(),
+        ],
+        expected: [1, 0],
+      })
       await dialog.getByRole('button', { name: 'Move to today (3)' }).click()
       await dialog.getByRole('button', { name: 'Move to today (3)' }).waitFor({ state: 'detached' })
+      await dialog.getByRole('button', { name: 'Continue', exact: true }).click()
       await dialog.getByRole('button', { name: 'Done', exact: true }).click()
       await dialog.getByRole('button', { name: 'Done', exact: true }).waitFor({ state: 'detached' })
-      await dialog.getByRole('button', { name: 'Enter', exact: true }).click()
+      await dialog.getByRole('button', { name: 'Continue', exact: true }).click()
       await dialog.getByRole('textbox', { name: 'hours', exact: true }).fill('3.25')
-      await dialog.getByRole('button', { name: 'Enter', exact: true }).click()
-      await dialog.getByRole('button', { name: 'Enter', exact: true }).click()
+      await dialog.getByRole('button', { name: 'Back', exact: true }).click()
+      await dialog.getByRole('heading', { name: 'Did you do these?' }).waitFor()
+      await dialog.getByRole('button', { name: 'Continue', exact: true }).click()
       assert({
-        given: 'a tracking answer collapsed before the next poll',
+        given: 'Back and Continue before the next poll',
         should: 'retain the typed value',
         actual: await dialog.getByRole('textbox', { name: 'hours', exact: true }).inputValue(),
         expected: '3.25',
@@ -82,19 +94,47 @@ test(
       await page.reload()
       await page.getByRole('button', { name: 'Review yesterday', exact: true }).click()
       await dialog.waitFor()
-      await dialog.getByRole('button', { name: 'Enter', exact: true }).click()
+      await dialog.getByRole('textbox', { name: 'hours', exact: true }).waitFor()
       assert({
         given: 'close and reload',
-        should: 'keep the unfinished tracking draft',
-        actual: await dialog.getByRole('textbox', { name: 'hours', exact: true }).inputValue(),
-        expected: '3.25',
+        should: 'resume the saved step with its unfinished tracking draft',
+        actual: [await dialog.getByRole('textbox', { name: 'hours', exact: true }).inputValue(), (await f.view()).step],
+        expected: ['3.25', 'tracking'],
       })
       await page.setViewportSize({ width: 390, height: 844 })
       await page.getByRole('dialog', { name: `Review ${REVIEW_DAY}` }).waitFor()
       if (shots) await page.screenshot({ path: path.join(shots, 'phone.png'), fullPage: true })
       await dialog.getByRole('button', { name: `Save for ${REVIEW_DAY}` }).click()
       await dialog.getByRole('button', { name: `Save for ${REVIEW_DAY}` }).waitFor({ state: 'detached' })
-      await dialog.getByRole('button', { name: 'Skip', exact: true }).click()
+      await dialog.getByRole('button', { name: 'Continue', exact: true }).click()
+      await dialog.getByRole('heading', { name: 'Anything worth keeping?' }).waitFor()
+      await dialog.getByRole('button', { name: 'Skip this step' }).click()
+      await dialog.getByRole('heading', { name: 'Keep the conversation going' }).waitFor()
+      if (shots) await page.screenshot({ path: path.join(shots, 'continuing-chats-phone.png'), fullPage: true })
+      await dialog
+        .locator('.sky-review-item')
+        .filter({ hasText: 'Widget questions' })
+        .getByRole('button', { name: 'Save & close' })
+        .click()
+      await dialog.getByRole('button', { name: 'Continue', exact: true }).click()
+      await dialog.getByRole('button', { name: 'Read summary' }).waitFor()
+      assert({
+        given: 'one continuing chat kept open',
+        should: 'allow summary without closing the remaining conversation',
+        actual: f.chats.map((chat) => chat.title),
+        expected: ['Atlas planning'],
+      })
+      if (shots) await page.screenshot({ path: path.join(shots, 'summary-phone.png'), fullPage: true })
+      await dialog.getByRole('button', { name: 'Back', exact: true }).click()
+      await dialog.getByRole('heading', { name: 'Keep the conversation going' }).waitFor()
+      await dialog.getByRole('button', { name: 'Back', exact: true }).click()
+      await dialog.locator('summary', { hasText: '1 handled or skipped' }).click()
+      await dialog.getByRole('button', { name: 'Review again' }).click()
+      await dialog.getByRole('button', { name: 'Import notes' }).waitFor()
+      await dialog.getByRole('button', { name: 'Skip this step' }).click()
+      await dialog.getByRole('heading', { name: 'Keep the conversation going' }).waitFor()
+      await dialog.getByRole('button', { name: 'Continue', exact: true }).click()
+      await dialog.getByRole('button', { name: 'Read summary' }).waitFor()
       await dialog.getByRole('button', { name: 'Read summary' }).click()
       await page.waitForURL(`**/${REVIEW_DAY}?view=summary`)
       await page.getByRole('button', { name: 'Review this day' }).click()
@@ -118,7 +158,9 @@ test(
       await dialog.waitFor({ state: 'detached' })
       await page.goForward()
       await dialog.waitFor()
-      await page.waitForFunction((day) => document.title === `sky · Review ${day}`, REVIEW_DAY)
+      await page.waitForFunction((day) => document.title === `sky · Review ${day} · Summary`, REVIEW_DAY)
+      await dialog.getByRole('button', { name: 'Close for now' }).click()
+      await page.waitForFunction(() => !document.title.includes('Review'))
     } finally {
       await browser?.close()
       await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())))

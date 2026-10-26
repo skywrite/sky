@@ -15,6 +15,7 @@ import { exists, readTextFile, writeTextFile } from '#shared/fs/mod.ts'
 import { AboutMeDocument } from '#shared/models/AboutMe/mod.ts'
 import { estimateTokens } from '#shared/models/AI/ContextAssembler/mod.ts'
 import createDayLabeler from '#shared/models/Chat/ChatContext/dayLabel.ts'
+import { createChatActivityReader } from '#shared/models/Chat/ChatStore/dayActivity.ts'
 import DomainCollection from '#shared/models/DomainCollection/mod.ts'
 import { Collection } from '#shared/models/Markdown/mod.ts'
 import MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
@@ -24,9 +25,10 @@ import { readPromptFile } from '#shared/prompts/load.ts'
 import { renderPromptFile } from '#shared/prompts/mod.ts'
 import { stringify } from '#shared/yaml/mod.ts'
 import { estimatedTokens, fitBudget, modelTokens } from '#universal/ai/readingBudget.ts'
-import { PlainDate } from '#universal/dates/nbdt/mod.ts'
+import { Instant, instantNow, PlainDate } from '#universal/dates/nbdt/mod.ts'
 import { gatherHealthData, type HealthData } from './_health.ts'
 import { type DayPriceData, gatherDayPriceData } from './_prices.ts'
+import { chatActivityInput, chatActivitySource, chatActivitySources } from './lib/chatActivity.ts'
 import { serializeSummaryContext } from './lib/contextRecord.ts'
 import gatherDayDocs from './lib/gatherDayDocs.ts'
 import { type StreakCompletion, streakCompletion, streakRow } from './lib/streaks.ts'
@@ -154,7 +156,19 @@ export default class SummaryDayTask extends Command {
 
     // 1. Gather the day's documents in reading order: journals first, actions
     // chronologically, day.md last — HTML comments stripped, summary.md excluded.
-    const { docs, skipped } = await gatherDayDocs(dayDirPath)
+    const gathered = await gatherDayDocs(dayDirPath)
+    // Whole transcripts may contain later days. Only the dated messages below are activity evidence.
+    const docs = gathered.docs.filter((entry) => !isActionPath('chat', entry.path))
+    const { skipped } = gathered
+    const chatActivity = await createChatActivityReader({
+      timeDir,
+      baseDir: config.DIR_BASE,
+      snapshotDir: config.DIR_STATE_AI_CHATS,
+    })(day.ymd)
+    if (chatActivity.errors.length)
+      return CommandResult.fail(`Could not read chat activity:\n${chatActivity.errors.join('\n')}`)
+    const serviceUrl = `http://localhost:${config.PORT_SERVER}`
+    const chatInput = chatActivityInput(chatActivity.chats, dayDirPath, serviceUrl)
 
     const skippedCount = skipped.tiny.length + skipped.yamlError.length + skipped.unreadable.length
     if (skippedCount > 0) {
@@ -166,7 +180,7 @@ export default class SummaryDayTask extends Command {
       }
     }
 
-    if (docs.length === 0) {
+    if (docs.length === 0 && !chatActivity.chats.length) {
       return CommandResult.fail('No files found for this day')
     }
 
@@ -216,7 +230,7 @@ export default class SummaryDayTask extends Command {
     const baseDir = <string>config.DIR_BASE
     const rootPaths = new Set(docs.map((d) => d.path))
     const background = collection.allItems
-      .filter((item) => !rootPaths.has(item.path))
+      .filter((item) => !rootPaths.has(item.path) && !isActionPath('chat', item.path))
       .map((i) => ({ doc: i.doc.stripHtmlComments(), path: i.path }))
     // Stamp each dated document relative to the summarized day - its own docs
     // read (TODAY), thread antecedents (N days ago) - so the model never infers
@@ -228,6 +242,7 @@ export default class SummaryDayTask extends Command {
         delimited: true,
         label: dayLabel,
       }),
+      chatInput,
       Collection.from(docs.map((d) => ({ doc: d.doc, path: d.path }))).toMarkdown({
         relativeTo: timeDir,
         delimited: true,
@@ -311,7 +326,7 @@ export default class SummaryDayTask extends Command {
     const yamlHeader: Record<string, unknown> = {
       title: 'Daily Summary',
       day: day.ymd,
-      generated: new Date().toISOString(),
+      generated: Instant.from(instantNow()).toString(),
       model: modelId,
       ...(usage ? { usage } : {}),
       tags: 'Summary/Daily',
@@ -323,6 +338,7 @@ export default class SummaryDayTask extends Command {
     }
 
     let outputContent = ['---', stringify(yamlHeader).trim(), '---', '', response].join('\n')
+    outputContent += chatActivitySources(chatActivity.chats, dayDirPath, serviceUrl)
 
     // Append the SUMMARY-CONTEXT record: what the model read (with token
     // estimates, in shipped order) and what was skipped, for staleness
@@ -339,6 +355,11 @@ export default class SummaryDayTask extends Command {
       scope: 'day',
       budget: estimatedTokens(budget, ratio),
       kept: [
+        ...chatActivity.chats.map((chat) => ({
+          path: chat.path ? path.relative(baseDir, chat.path) : chatActivitySource(chat, dayDirPath, serviceUrl),
+          tokens: estimateTokens(chatActivityInput([chat], dayDirPath, serviceUrl)),
+          kind: 'chat-day',
+        })),
         ...background.map((b) => ({
           path: relPath(b.path),
           tokens: estimateTokens(b.doc.toMarkdown()),

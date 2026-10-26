@@ -413,8 +413,18 @@ function ScheduleSection({
  * conversation, even when the chat already has a file. Keep their branch
  * context from the full hierarchy in the day record.
  */
-function ChatsSection({ ymd, chats, threads }: { ymd: string; chats: DayData['chats']; threads: ThreadSummary[] }) {
-  const rows = dayChatRows(ymd, chats, threads).filter((row) => row.target.kind === 'live')
+function ChatsSection({
+  ymd,
+  today,
+  chats,
+  threads,
+}: {
+  ymd: string
+  today: boolean
+  chats: DayData['chats']
+  threads: ThreadSummary[]
+}) {
+  const rows = dayChatRows(ymd, chats, threads, today).filter((row) => row.target.kind === 'live')
   if (rows.length === 0) {
     return (
       <Section title="Chats">
@@ -438,13 +448,16 @@ function ChatsSection({ ymd, chats, threads }: { ymd: string; chats: DayData['ch
               className="sky-dr-label sky-dr-open"
               title={row.title}
               href={
-                row.target.kind === 'live' ? `/thread/${encodeURIComponent(row.target.id)}` : fileHref(row.target.path)
+                row.target.kind === 'live'
+                  ? `/thread/${encodeURIComponent(row.target.id)}?returnTo=${encodeURIComponent(today ? '/' : `/${ymd}`)}`
+                  : fileHref(row.target.path)
               }
             >
               {row.title}
             </a>
           </span>
           <span className="sky-dr-mark">{chatState(row) ?? chatTurnCount(row)}</span>
+          {row.started && row.started !== ymd && <span className="sky-dr-who">Started {row.started}</span>}
           {row.parent && (
             <span className="sky-dr-who" title={`From turn ${row.parent.turn} of ${row.parent.title}`}>
               {row.state !== null && `${chatTurnCount(row)} · `}from turn {row.parent.turn} of {row.parent.title}
@@ -596,6 +609,7 @@ function AttachmentsPad({ ymd, onKept }: { ymd: string; onKept: (kept: Kept[]) =
 
 export function DayRail({
   ymd,
+  today,
   chats,
   threads,
   imports,
@@ -605,9 +619,10 @@ export function DayRail({
   onToggle,
 }: {
   ymd: string
-  /** Chats filed under the day */
+  today: boolean
+  /** Saved transcripts linked from this day, including activity filed under an earlier day. */
   chats: DayData['chats']
-  /** Every live thread; the rail keeps the ones that started on this day */
+  /** Today keeps every live thread; historical days keep the ones associated with that day. */
   threads: ThreadSummary[]
   /** Imports, when the day is today */
   imports: ImportJob[]
@@ -626,7 +641,7 @@ export function DayRail({
       </div>
       <div className="sky-rail-body">
         <ScheduleSection schedule={schedule} ymd={ymd} onImportMeeting={onImportMeeting} />
-        <ChatsSection ymd={ymd} chats={chats} threads={threads} />
+        <ChatsSection ymd={ymd} today={today} chats={chats} threads={threads} />
         <WorkingSection imports={imports} onOpenImport={onOpenImport} />
       </div>
       <AttachmentsPad ymd={ymd} onKept={onKept} />

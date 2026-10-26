@@ -14,6 +14,7 @@ import { resolveWorkstreamDayItems } from '#lib/workstreams/day.ts'
 import type { WorkstreamStore } from '#lib/workstreams/store.ts'
 import { WorkstreamError } from '#lib/workstreams/types.ts'
 import { exists } from '#shared/fs/mod.ts'
+import { chatActivityDays, type DayChatActivity } from '#shared/models/Chat/ChatStore/dayActivity.ts'
 import { listDayChats } from '#shared/models/Chat/ChatStore/mod.ts'
 import { dayAIChatsDir, dayDir, dayFile, fetchNowSync } from '#shared/nbfs/mod.ts'
 import { PlainDate, type ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
@@ -29,6 +30,7 @@ import { createScheduleRoutes, type ScheduleHost } from './schedule.ts'
 import { readDaySummary, type DaySummary } from './summary.ts'
 
 export interface DayRoutesOptions {
+  chatActivity?: (day: string) => Promise<{ chats: DayChatActivity[]; errors: string[] }>
   /** The notebook root that saved-chat paths are shown relative to */
   markdownBaseDir: string
   /** Notebook time root — where a day's chats are filed */
@@ -94,11 +96,12 @@ export interface DayRef {
 }
 
 export interface SavedChatSummary {
+  started?: string
   /** Relative to the notebook root */
   path: string
   time: string
   summary: string
-  /** Complete exchanges the file itself holds */
+  /** Complete exchanges attributed to the viewed day. */
   exchanges: number
   /** The chat this one branched from (relative to the notebook root) and the turn it left after; null for a chat that began on its own */
   parent: { chat: string; turn: number } | null
@@ -184,7 +187,7 @@ export async function buildDayView(options: DayRoutesOptions, ymd?: string): Pro
     }),
     readDaySummary(dayDirPath, options.markdownBaseDir),
   ])
-  const chats = saved
+  const chats: SavedChatSummary[] = saved
     .filter((c) => c.parent?.kind !== 'thread')
     .map((c) => ({
       path: path.relative(options.markdownBaseDir, c.path),
@@ -193,6 +196,24 @@ export async function buildDayView(options: DayRoutesOptions, ymd?: string): Pro
       exchanges: c.exchanges,
       parent: c.parent,
     }))
+  if (options.chatActivity) {
+    const activity = await options.chatActivity(day.ymd)
+    for (const chat of activity.chats) {
+      if (!chat.path || chat.parent?.kind === 'thread') continue
+      const relative = path.relative(options.markdownBaseDir, chat.path)
+      const existing = chats.findIndex((item) => item.path === relative)
+      const row: SavedChatSummary = {
+        path: relative,
+        summary: chat.title,
+        started: chat.started,
+        time: chatActivityDays(chat.messages)[day.ymd]?.when ?? '',
+        exchanges: Math.floor(chat.messages.length / 2),
+        parent: chat.parent,
+      }
+      if (existing < 0) chats.push(row)
+      else chats[existing] = row
+    }
+  }
 
   if (options.workstreams) {
     for (const key of ['mostImportant', 'commitments', 'todos', 'reminders', 'done'] as const) {

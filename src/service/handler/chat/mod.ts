@@ -33,6 +33,7 @@ import type {
   ModelProfile,
   TurnReport,
 } from '#shared/models/Chat/ChatSession/mod.ts'
+import { chatActivityDays, type ChatDayCount } from '#shared/models/Chat/ChatStore/dayActivity.ts'
 import { listDayChats, type ResumeSession } from '#shared/models/Chat/ChatStore/mod.ts'
 import { branchDir } from '#shared/models/Chat/document/lineage.ts'
 import type { ChatParent } from '#shared/models/Chat/document/mod.ts'
@@ -356,6 +357,7 @@ export interface ThreadSummary {
   when: string | null
   /** The day the thread started, `YYYY-MM-DD` — the day it belongs to and files under */
   day: string
+  activity: Record<string, ChatDayCount>
   turns: number
   busy: boolean
   /** False for a thread that will not be kept — the list says so */
@@ -591,6 +593,7 @@ function summarize(id: string, thread: Thread, baseDir: string): ThreadSummary {
     line,
     when: (session.turns.at(-1)?.when ?? thread.interrupted?.when ?? undefined)?.slice(11) ?? null,
     day: session.startTime.plainDate.ymd,
+    activity: chatActivityDays(session.turns.slice(session.inherited)),
     turns: session.turns.length,
     busy: thread.busy,
     saves: thread.saves,

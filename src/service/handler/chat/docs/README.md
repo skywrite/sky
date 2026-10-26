@@ -1,6 +1,6 @@
 ---
 created: 2026-09-01
-updated: 2026-10-21
+updated: 2026-10-24
 ---
 
 # Chat over HTTP — a thread, its tuning, and the story of its context
@@ -79,6 +79,25 @@ the recovery snapshot is cleared, including when a parent is filed for a branch.
 This avoids links breaking at Save & close or after restart without filing a
 temporary conversation merely because it created a task. Discarded temporary
 chats and deleted transcripts report an unavailable source; the task keeps its notes.
+
+### Conversations across days
+
+Today shows every open conversation until it is closed, including chats with no new activity today.
+Historical days show their filed chats and conversations with messages dated to that day.
+There is one transcript: continuing and closing a chat writes back to its original file, and a new branch still files
+beside its parent.
+Opening from a day or its review carries a return destination; direct links without one fall back to the original day.
+
+`ChatStore/dayActivity.ts` reads saved transcripts and live recovery snapshots without filing or enriching them.
+It selects messages by their written notebook date, preserving extended hours, strips inherited turns from live branches,
+and lets a live continuation replace its saved copy.
+Undated legacy messages belong only to the transcript's filing day.
+Temporary chats contribute no new messages to saved summaries, and a day with no messages has no chat activity to summarize.
+
+Daily summaries receive only those dated messages before the reading budget is measured.
+Their visible **Conversations active this day** section records start date, activity date, transcript home, and open/saved
+status when summarized; a live chat uses the durable source link above, which still resolves after filing.
+The review's Continuing chats step is informational: Save & close is optional, and open chats never block the summary.
 
 ### Writing in the composer
 
@@ -634,10 +653,9 @@ a person can see and touch:
   tuning chosen for the thread, in the browser and in the service. Every
   thread the service ends takes its browser draft with it, reply threads
   included. See [2026-09-13](2026-09-13-discard-what-was-never-sent.md).
-  Ending a thread returns the page to the day the thread belongs to: today
-  for a new chat, the chat's own day for one continued from an earlier day
-  or left open since then. The header's back button names that day and
-  goes there too. See [2026-09-23](2026-09-23-a-chat-returns-to-its-day.md).
+  Ending a thread returns to the day or review it was opened from.
+  The header's back button names that destination and goes there too.
+  A direct link without a return destination falls back to the thread's original day.
 
 
 The `timeline.ts` derivation: the seed entry counts what the baseline

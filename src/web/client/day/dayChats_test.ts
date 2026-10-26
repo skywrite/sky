@@ -143,3 +143,28 @@ test('day chats retain an absent parent’s name and tolerate cyclic parent keys
     expected: ['Atlas', 'Board'],
   })
 })
+
+test('Today carries every open chat while historical days show only their own activity', () => {
+  const threads = [
+    live({
+      day: '2026-01-25',
+      activity: { '2026-01-25': { when: '10:00', turns: 1 }, [DAY]: { when: '25:30', turns: 2 } },
+    }),
+    live({ id: 'dormant', day: '2026-01-24', activity: { '2026-01-24': { when: '11:00', turns: 1 } } }),
+  ]
+  assert({
+    given: 'an active continuation and a dormant but open chat',
+    should: 'carry both into Today and count only the current day’s messages',
+    actual: dayChatRows(DAY, [], threads, true).map((row) => [row.key, row.time, row.turns, row.started]),
+    expected: [
+      ['live:live-root', '25:30', 2, '2026-01-25'],
+      ['live:dormant', '', 0, '2026-01-24'],
+    ],
+  })
+  assert({
+    given: 'the same day opened later as history',
+    should: 'keep its actual conversation activity without inserting an idle chat',
+    actual: dayChatRows(DAY, [], threads).map((row) => row.key),
+    expected: ['live:live-root'],
+  })
+})

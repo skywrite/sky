@@ -4,6 +4,7 @@ import { TrackingStore } from '#lib/tracking/store.ts'
 import { makeTempDir } from '#shared/fs/mod.ts'
 import { dayDir, dayFile } from '#shared/nbfs/mod.ts'
 import { PlainDate, PlainDateTime, ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
+import type { ThreadSummary } from '../../chat/mod.ts'
 import { StreaksStore } from '../../streaks/store.ts'
 import { createDayRoutes, type DayRoutesOptions } from '../mod.ts'
 import { ReviewIdle } from './idle.ts'
@@ -81,6 +82,21 @@ tz: America/Chicago
   })
   const idle = new ReviewIdle(stateDir)
   const calls: string[] = []
+  const chats: ThreadSummary[] = ['Atlas planning', 'Widget questions'].map((title, index) => ({
+    id: `ongoing-${index}`,
+    title,
+    day: '2030-06-16',
+    when: '10:00',
+    activity: { [REVIEW_DAY]: { when: '10:00', turns: 1 } },
+    state: 'done',
+    line: null,
+    turns: 2,
+    busy: false,
+    saves: true,
+    parent: null,
+    inherited: 0,
+    saved: null,
+  }))
   const runtime: ReviewRuntime = {
     status: () => idle.status(),
     claim: () => idle.claim(),
@@ -124,6 +140,16 @@ tz: America/Chicago
       runtime,
       streaks,
       tracking,
+      chats: {
+        list: async () => chats,
+        close: async (id) => {
+          calls.push('close-chat')
+          chats.splice(
+            chats.findIndex((chat) => chat.id === id),
+            1,
+          )
+        },
+      },
       schedule: async () => ({
         read: true,
         errors: [],
@@ -163,6 +189,7 @@ tz: America/Chicago
     now,
     file,
     calls,
+    chats,
     runtime,
     idle,
     app,

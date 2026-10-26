@@ -3,10 +3,14 @@ import { readJson, withProcessLock, writeJson } from '#lib/jobs/files.ts'
 import { hold } from '../../../activity.ts'
 import {
   RECAPS,
+  REVIEW_STEPS,
+  reviewItemStep,
   type RecapId,
   type ReviewItem,
+  type ReviewChat,
   type ReviewRuntime,
   type ReviewState,
+  type ReviewStep,
   type ReviewView,
 } from './types.ts'
 
@@ -16,6 +20,7 @@ export interface ReviewInventory {
   hasDay: boolean
   ended: boolean
   summaryHref: string | null
+  chats?: ReviewChat[]
 }
 export interface ReviewHost {
   inventory(day: string): Promise<ReviewInventory>
@@ -58,10 +63,16 @@ export class DayReviewStore {
   }
   async view(day: string): Promise<ReviewView> {
     const [state, inventory] = await Promise.all([this.read(day), this.host.inventory(day)])
+    const items = inventory.items.filter((item) => !state.answers[item.id])
     return {
       ...state,
       ...inventory,
-      items: inventory.items.filter((item) => !state.answers[item.id]),
+      items,
+      chats: inventory.chats ?? [],
+      step:
+        state.step ??
+        REVIEW_STEPS.find((step) => items.some((item) => reviewItemStep(item) === step)) ??
+        (inventory.chats?.length ? 'chat' : 'summary'),
       summary: inventory.summaryHref ? { ...state.summary, status: 'done' } : state.summary,
     }
   }
@@ -76,6 +87,10 @@ export class DayReviewStore {
     await this.host.runtime.acknowledge(day)
     await this.change(day, (state) => {
       state.paused = false
+      state.step ??=
+        REVIEW_STEPS.find((step) =>
+          inventory.items.some((item) => !state.answers[item.id] && reviewItemStep(item) === step),
+        ) ?? (inventory.chats?.length ? 'chat' : 'summary')
       if (!this.workers.has(day)) {
         for (const job of [...state.recaps, state.summary]) {
           if (job.status === 'running') {
@@ -97,6 +112,25 @@ export class DayReviewStore {
     await this.change(day, (state) => {
       state.drafts[id] = values
     })
+  }
+  async goToStep(day: string, step: ReviewStep, skipIds: string[] = []) {
+    await this.change(day, async (state) => {
+      if (skipIds.length) {
+        const inventory = await this.host.inventory(day)
+        const items = skipIds
+          .filter((id) => !state.answers[id])
+          .map((id) => inventory.items.find((item) => item.id === id))
+        if (items.some((item) => !item))
+          throw new Error('Some items changed. Refresh the review before skipping this step.')
+        for (const item of items as ReviewItem[]) {
+          state.answers[item.id] = { item, result: 'skipped' }
+          delete state.drafts[item.id]
+        }
+      }
+      state.step = step
+    })
+    if (skipIds.length) this.kick(day)
+    return this.view(day)
   }
   async move(day: string, ids: string[]) {
     await this.change(day, async (state) => {

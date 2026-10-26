@@ -10,7 +10,12 @@ export const FILE_CHAT_PREFS = { profile: 'test', contextTokens: 0, saves: true 
 export const FILE_CHAT_REPLY = 'The proposal includes a two-week pilot.'
 
 /** Real sessions and file storage, with the model and clock replaced by synthetic fixtures. */
-export function fileChatHost(root: string, snapshots: ThreadRestore[] = [], tools?: ToolFactory) {
+export function fileChatHost(
+  root: string,
+  snapshots: ThreadRestore[] = [],
+  tools?: ToolFactory,
+  now: () => PlainDateTime = () => new PlainDateTime('2026-01-27 09:31'),
+) {
   const calls: ModelMessage[][] = []
   const sessions = new Map<string, ChatSession>()
   const snapshotPath = (id: string) => path.join(root, 'state', `${id}.md`)
@@ -69,7 +74,7 @@ export function fileChatHost(root: string, snapshots: ThreadRestore[] = [], tool
           }
         },
         fetchContext: async () => [],
-        now: async () => new PlainDateTime('2026-01-27 09:31'),
+        now: async () => now(),
         logError: async () => {},
       })
       sessions.set(id, session)

@@ -91,6 +91,7 @@ export interface DayData {
   days: DayRef[]
   section: null
   chats: Array<{
+    started?: string
     path: string
     time: string
     summary: string
@@ -164,6 +165,7 @@ export interface ThreadSummary {
   when: string | null
   /** The day the thread started, `YYYY-MM-DD` */
   day: string
+  activity?: Record<string, { when: string; turns: number }>
   turns: number
   busy: boolean
   /** False for a thread that will not be kept */
@@ -1047,7 +1049,17 @@ function MessageLine({
 }
 
 /** An open chat's title opens its conversation; a closed chat's opens its document, with Continue chat beside it. */
-function ChatsCard({ rows, onOpenSaved }: { rows: DayChatRow[]; onOpenSaved: (path: string) => void }) {
+function ChatsCard({
+  rows,
+  ymd,
+  returnTo,
+  onOpenSaved,
+}: {
+  rows: DayChatRow[]
+  ymd: string
+  returnTo: string
+  onOpenSaved: (path: string) => void
+}) {
   if (rows.length === 0) return null
   return (
     <Block head="Chats" mini={count(rows.length, 'chat')}>
@@ -1064,7 +1076,11 @@ function ChatsCard({ rows, onOpenSaved }: { rows: DayChatRow[]; onOpenSaved: (pa
               <span className="sky-day-chat-heading">
                 <a
                   className="sky-day-chat-open"
-                  href={target.kind === 'live' ? `/thread/${encodeURIComponent(target.id)}` : fileHref(target.path)}
+                  href={
+                    target.kind === 'live'
+                      ? `/thread/${encodeURIComponent(target.id)}?returnTo=${encodeURIComponent(returnTo)}`
+                      : fileHref(target.path)
+                  }
                 >
                   {row.title}
                 </a>
@@ -1072,6 +1088,7 @@ function ChatsCard({ rows, onOpenSaved }: { rows: DayChatRow[]; onOpenSaved: (pa
               </span>
               <span className="sky-day-chat-meta">
                 {chatTurnCount(row)}
+                {row.started && row.started !== ymd && ` · Started ${row.started}`}
                 {row.parent && ` · from turn ${row.parent.turn} of ${row.parent.title}`}
               </span>
             </DocLine>
@@ -1260,7 +1277,7 @@ export function DayView({
   // the header on a narrow one — the same rule as a document's Details.
   const rail = useRail(view?.day.ymd ?? null)
   const record = view?.record ?? null
-  const chats = view ? dayChatRows(view.day.ymd, view.chats, threads) : []
+  const chats = view ? dayChatRows(view.day.ymd, view.chats, threads, view.day.ymd === view.today.ymd) : []
   const events = record?.events ?? []
   const videos = record?.videos ?? []
   const isToday = view ? view.day.ymd === view.today.ymd : false
@@ -1573,7 +1590,12 @@ export function DayView({
                       </Block>
                     )}
 
-                    <ChatsCard rows={chats} onOpenSaved={onOpenSaved} />
+                    <ChatsCard
+                      ymd={view!.day.ymd}
+                      returnTo={view?.day.ymd === view?.today.ymd ? '/' : `/${view?.day.ymd}`}
+                      rows={chats}
+                      onOpenSaved={onOpenSaved}
+                    />
 
                     {(doneToday.length > 0 || entryComposer) && (
                       <Block head="Done today" mini={String(doneToday.length)}>
@@ -1644,6 +1666,7 @@ export function DayView({
         {!showingSummary && rail.open && view && (
           <DayRail
             ymd={view.day.ymd}
+            today={view.day.ymd === view.today.ymd}
             chats={view.chats}
             threads={threads}
             imports={imports}

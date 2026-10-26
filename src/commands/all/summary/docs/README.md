@@ -1,6 +1,6 @@
 ---
 created: 2026-09-27
-updated: 2026-10-20
+updated: 2026-10-24
 ---
 
 # Summaries
@@ -12,7 +12,9 @@ updated: 2026-10-20
 Two rules hold every line:
 
 - **Sourced.** The opening story and Meaningful Moments link to original day files using Markdown paths relative to `summary.md`. The input header supplies the summary directory so the model can resolve those paths. Detailed bullets keep their source tags (`[slack 13:05]`, `[meeting 10:00]`, `[journal]`), and source-based tables keep a Source column. Header-derived facts such as location and health measurements need no file link.
-- **Self-contained.** The file is written once and never revised, and days are sometimes ended out of order. Nothing in it may depend on another day: no streak counts, no "waiting since Tuesday", no week totals. Anything that spans days is computed by the app from the files.
+- **Self-contained.** The file is written once and never revised, and days are sometimes ended out of order.
+  Activity claims concern this day only: no streak counts, no "waiting since Tuesday", no week totals.
+  A conversation's source can identify its earlier start and filing date without treating earlier messages as today's work.
 
 The opening is for recognizing a day when revisiting it: **Day at a Glance** holds a concrete headline and two or three natural sentences; **Meaningful Moments** holds a few specific moments, each with a short title, one or two sentences, and source links. Event times appear only when known. Quiet days can have fewer moments or none. Decisions, conversations, finished work, and personal experiences earn their place through significance, not activity volume; no invented feelings or obligatory uplifting ending.
 
@@ -27,6 +29,14 @@ A closing **Where Things Stand** section is the day's index: one line per matter
 Slack channels reach the summary through the Slack recap, `actions/recaps/<time>_slack.md`, which `recap:slack` writes from the channel cache with Opus 5.5 at high effort ([recap notes](../../recap/docs/README.md)): every channel the owner is a member of, digested into a Channels block, What moved, Asked of you and Where things stand, each line tagged with its channel and time. The service writes it once the next day has started; `summary:day` writes it first when a day with channel messages has none, and `--dry-run` only says so. To the prompt the recap is the room the owner was in: a line in it is filed material unless it starts with `You:`, its Channels block becomes the summary's `## Channels` section, and the matters go to Where Things Stand. The raw channel files never reach the summary.
 
 The reading budget is 750k of the model's tokens, fitted to the profile's window. The text is measured at four characters a token and restated through the model's learned ratio (`_shared-ts/ai/tokenRatio.ts`); over budget, the command refuses rather than trims.
+
+## Conversations
+
+Whole chat files are excluded from both the day's documents and entity background.
+`lib/chatActivity.ts` formats only the day's messages from saved transcripts and permanent live chats, then appends a
+deterministic **Conversations active this day** source section to the saved summary.
+The [cross-day contract](../../../../service/handler/chat/docs/README.md#conversations-across-days) owns transcript location,
+temporary-chat exclusion, and links that survive Save & close.
 
 ## Streaks
 

@@ -160,6 +160,7 @@ export async function runWysiwygE2e(
     people?: boolean
     /** Serve the day page too: its routes, and the import routes a drop on it needs */
     day?: boolean
+    dayReview?: import('./day/review/types.ts').ReviewRuntime
     /** Use ordinary browser popup restrictions instead of Playwright's permissive default. */
     popupBlocking?: boolean
     now?: ZonedDateTime
@@ -225,6 +226,7 @@ export async function runWysiwygE2e(
           : {}),
         mostImportant: options.mostImportant,
         journal: options.journal,
+        dayReview: options.dayReview,
         now: options.now ? () => options.now! : undefined,
         ...(options.chat ? { chat: options.chat(notebookBaseDir, userDataDir) } : {}),
         ...(options.week ? { week: options.week(notebookBaseDir) } : {}),

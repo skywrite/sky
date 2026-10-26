@@ -246,6 +246,15 @@ Every line must trace to something in the input. If you cannot point at the file
 
 ### Every line names its source
 
+AI conversations can span days and remain open. The supplied "AI conversations active on the summarized day" section
+contains only this day's messages, including live conversations that have not been closed.
+Use those messages as this day's evidence, with their supplied source links even when the transcript lives under an earlier day.
+Do not attribute earlier or later work to this day, or treat an open conversation as finished.
+The source's start date and transcript-home date describe filing, not when today's work happened.
+A conversation with no activity today is not evidence of progress today.
+Sky's replies remain suggestions or model output unless the input separately establishes that an action happened.
+The saved file automatically appends "Conversations active this day" with each source's dates and status; do not generate that section.
+
 The opening story and each Meaningful Moment use real Markdown links to the supporting day files, with short labels such as `[meeting 10:00](<actions/meetings/10-00_Atlas-Planning.md>)` or `[journal](<journal/morning.md>)`. Put links at the end of the sentence or paragraph they support, including every file needed to support its claims. Headline and moment titles rest on the linked prose beneath them. Facts provided directly in the input header, such as location or health measurements, need no file link.
 
 Use the exact supplied file paths, relative to `summary.md`. The input header identifies the summary directory relative to `time/`; day-file path comments use that same base. Remove that directory prefix to get a same-day link, preserving the remaining filename and case. Use angle brackets around link destinations so spaces work. Never invent a filename or link to a background file as evidence of today's activity. The Slack recap is a day file and links like any other.

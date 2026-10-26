@@ -13,6 +13,7 @@ export interface DayChatRow {
   target: { kind: 'saved'; path: string } | { kind: 'live'; id: string }
   parent: { title: string; turn: number } | null
   depth: number
+  started: string | null
 }
 
 interface ChatNode extends Omit<DayChatRow, 'parent' | 'depth'> {
@@ -27,10 +28,17 @@ function fileTitle(file: string): string {
 }
 
 /** One tree for the day column and the rail, with a live continuation replacing its saved row. */
-export function dayChatRows(ymd: string, chats: DayData['chats'], threads: ThreadSummary[]): DayChatRow[] {
+export function dayChatRows(
+  ymd: string,
+  chats: DayData['chats'],
+  threads: ThreadSummary[],
+  today = false,
+): DayChatRow[] {
   const savedPaths = new Set(chats.map((chat) => chat.path))
   const live = threads.filter(
-    (thread) => !thread.id.startsWith('day-') && (thread.day === ymd || (thread.saved && savedPaths.has(thread.saved))),
+    (thread) =>
+      !thread.id.startsWith('day-') &&
+      (today || thread.day === ymd || thread.activity?.[ymd] || (thread.saved && savedPaths.has(thread.saved))),
   )
   const continued = new Set(live.map((thread) => thread.saved))
   const nodes: ChatNode[] = [
@@ -46,18 +54,22 @@ export function dayChatRows(ymd: string, chats: DayData['chats'], threads: Threa
           target: { kind: 'saved', path: chat.path },
           path: chat.path,
           parent: chat.parent,
+          started: chat.started ?? null,
         }),
       ),
     ...live.map(
       (thread): ChatNode => ({
         key: `live:${thread.id}`,
         title: thread.title ?? (thread.parent ? 'New branch' : 'New chat'),
-        time: thread.when ?? chats.find((chat) => chat.path === thread.saved)?.time ?? '',
-        turns: Math.floor(Math.max(0, thread.turns - thread.inherited) / 2),
+        time: thread.activity?.[ymd]?.when ?? (thread.day === ymd ? thread.when : '') ?? '',
+        turns:
+          thread.activity?.[ymd]?.turns ??
+          (thread.activity ? 0 : Math.floor(Math.max(0, thread.turns - thread.inherited) / 2)),
         state: thread.state,
         target: { kind: 'live', id: thread.id },
         path: thread.saved,
         parent: thread.parent,
+        started: thread.day,
       }),
     ),
   ]
@@ -100,6 +112,7 @@ export function dayChatRows(ymd: string, chats: DayData['chats'], threads: Threa
           }
         : null,
       depth,
+      started: node.started,
     })
     for (const child of children.get(node.key) ?? []) visit(child, depth + 1)
   }

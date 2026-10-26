@@ -38,6 +38,7 @@ export function createTestHttpApp(
     markdownStore?: MarkdownStore | null
     now?: () => ZonedDateTime
     chat?: ChatRoutesOptions
+    dayReview?: import('./day/review/types.ts').ReviewRuntime
     voice?: VoiceRoutesOptions
     settings?: SettingsRoutesOptions
     clock?: ClockRoutesOptions
@@ -69,6 +70,7 @@ export function createTestHttpApp(
     markdownBaseDir,
     markdownDirs,
     chat: options.chat,
+    dayReview: options.dayReview,
     now: options.now,
     voice: options.voice,
     settings: options.settings,

@@ -11,6 +11,7 @@ import { Hono } from 'hono'
 import type { CalendarSchedulerHost } from '#lib/calendarScheduler/types.ts'
 import type { MostImportantAI } from '#lib/mostImportant/types.ts'
 import { planningDate } from '#lib/nbfs/taskDestination.ts'
+import { createChatActivityReader } from '#shared/models/Chat/ChatStore/dayActivity.ts'
 import type MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
 import { fetchNowSync } from '#shared/nbfs/mod.ts'
 import type { PlainDate, ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
@@ -193,6 +194,13 @@ export function createHttpApp(options: HttpHandlerOptions): Hono {
   if (chat && chatRoutes) {
     app.route('/chat', chatRoutes)
     const dayOptions = {
+      chatActivity: createChatActivityReader({
+        timeDir: chat.timeDir,
+        baseDir: markdownBaseDir,
+        documents: markdownStore
+          ? () => markdownStore.time.paths.map((file) => ({ path: file, doc: markdownStore.time.findByPath(file)! }))
+          : undefined,
+      }),
       markdownBaseDir,
       timeDir: chat.timeDir,
       aboutMePath: chat.aboutMePath,
@@ -224,6 +232,29 @@ export function createHttpApp(options: HttpHandlerOptions): Hono {
           runtime: options.dayReview,
           tracking: options.tracking?.store,
           streaks: options.streaks?.store,
+          chats: {
+            list: async () => {
+              const response = await chatRoutes.request('/')
+              return ((await response.json()) as { threads: import('./chat/mod.ts').ThreadSummary[] }).threads
+            },
+            close: async (id) => {
+              const response = await chatRoutes.request(`/${encodeURIComponent(id)}/end`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ save: true }),
+              })
+              const result = (await response.json().catch(() => ({}))) as {
+                message?: string
+                saved?: { path: string; aborted?: { reason: string } }
+              }
+              if (result.saved?.aborted)
+                throw new Error(
+                  `${result.saved.aborted.reason} A recovery copy was kept at ${result.saved.path}. Refresh the review to check the chat's current state.`,
+                )
+              if (!response.ok)
+                throw new Error(result.message ?? 'The chat could not be saved. Open it to review the problem.')
+            },
+          },
           schedule: dayOptions.schedule,
           imports: importRoutes
             ? async () => {

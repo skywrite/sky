@@ -215,7 +215,7 @@ date: ${DAY.ymd}
         })
         await page.goBack()
         await mainLeaf.getByRole('button', { name: 'Continue chat', exact: true }).click()
-        await page.waitForURL(`${origin}/thread/continued-chat`)
+        await page.waitForURL(`${origin}/thread/continued-chat?returnTo=%2F`)
         const openDocument = page.getByRole('link', { name: 'Open document', exact: true })
         await openDocument.waitFor()
         assert({
@@ -233,7 +233,7 @@ date: ${DAY.ymd}
           given: 'Open document clicked in the conversation header',
           should: 'open the document in a new tab and keep the conversation where it is',
           actual: page.url(),
-          expected: `${origin}/thread/continued-chat`,
+          expected: `${origin}/thread/continued-chat?returnTo=%2F`,
         })
         await tab.close()
         await page.goto(`${origin}/${DAY.ymd}`)
@@ -275,7 +275,7 @@ date: ${DAY.ymd}
             href: await railParent.getByRole('link', { name: 'Atlas continued', exact: true }).getAttribute('href'),
             resume: await railParent.getByRole('button', { name: 'Continue chat', exact: true }).count(),
           },
-          expected: { titles: ['Atlas continued'], count: '1', href: '/thread/live-parent', resume: 0 },
+          expected: { titles: ['Atlas continued'], count: '1', href: '/thread/live-parent?returnTo=%2F', resume: 0 },
         })
         const mainParent = page.locator('.sky-day-chat').filter({ hasText: 'Atlas continued' }).first()
         assert({
@@ -285,10 +285,10 @@ date: ${DAY.ymd}
             href: await mainParent.getByRole('link', { name: 'Atlas continued', exact: true }).getAttribute('href'),
             resume: await mainParent.getByRole('button', { name: 'Continue chat', exact: true }).count(),
           },
-          expected: { href: '/thread/live-parent', resume: 0 },
+          expected: { href: '/thread/live-parent?returnTo=%2F', resume: 0 },
         })
         await railParent.getByRole('link', { name: 'Atlas continued', exact: true }).click()
-        await page.waitForURL(`${origin}/thread/live-parent`)
+        await page.waitForURL(`${origin}/thread/live-parent?returnTo=%2F`)
         assert({
           given: 'the title of an already active conversation clicked in the rail',
           should: 'open its thread without opening another',
@@ -336,7 +336,7 @@ date: ${DAY.ymd}
           expected: 4,
         })
         await mainLeaf.getByRole('button', { name: 'Continue chat', exact: true }).click()
-        await page.waitForURL(`${origin}/thread/continued-chat`)
+        await page.waitForURL(`${origin}/thread/continued-chat?returnTo=%2F`)
         await openDocument.waitFor()
         assert({
           given: 'the conversation header on a phone',
@@ -365,7 +365,7 @@ date: ${DAY.ymd}
           .filter({ hasText: 'Atlas kickoff' })
           .getByRole('button', { name: 'Continue chat', exact: true })
           .click()
-        await page.waitForURL(`${origin}/thread/earlier-chat`)
+        await page.waitForURL(`${origin}/thread/earlier-chat?returnTo=${encodeURIComponent(`/${EARLIER.ymd}`)}`)
         await page.getByRole('button', { name: 'Mon, Jan 26' }).waitFor()
         await page.getByRole('button', { name: 'Save & close', exact: true, disabled: false }).click()
         await page.waitForURL(`${origin}/${EARLIER.ymd}`)

@@ -1,25 +1,139 @@
+.sky-review-dialog-content {
+  display: flex;
+  flex-direction: column;
+  max-height: var(--sky-dialog-max-height);
+}
+.sky-review-dialog-content .sky-dialog-header {
+  flex-shrink: 0;
+}
+.sky-review-dialog-body {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
 .sky-review {
+  display: flex;
+  flex-direction: column;
+  height: min(700px, calc(85dvh - 150px));
+  min-height: 0;
   font-size: 18px;
   line-height: 1.55;
 }
-.sky-review-intro {
-  margin: 0 0 26px;
+.sky-review-steps {
+  flex-shrink: 0;
+  padding: 4px 0 24px;
+}
+.sky-review-steps ol {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.sky-review-steps li {
+  position: relative;
+}
+.sky-review-steps li:not(:last-child)::after {
+  content: '';
+  position: absolute;
+  top: 16px;
+  left: calc(50% + 23px);
+  width: calc(100% - 46px);
+  height: 1px;
+  background: var(--sky-border-soft);
+}
+.sky-review-steps button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  border: 0;
+  border-radius: 10px;
+  padding: 0 2px 5px;
+  background: none;
   color: var(--sky-dim);
+  font: inherit;
+  font-size: 15px;
+  cursor: pointer;
 }
-.sky-review-section {
-  border-top: 1px solid var(--sky-border-soft);
-  padding: 22px 0;
+.sky-review-steps button:hover:not(:disabled) {
+  color: var(--sky-text);
 }
-.sky-review-section h3 {
-  margin: 0 0 15px;
-  font-size: 21px;
+.sky-review-steps button:focus-visible,
+.sky-review-link:focus-visible {
+  outline: 2px solid var(--sky-action-focus);
+  outline-offset: 3px;
+}
+.sky-review-step-number {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--sky-border-soft);
+  border-radius: 50%;
+  font-size: 14px;
+}
+.sky-review-steps [data-complete] .sky-review-step-number {
+  color: var(--sky-green);
+  background: var(--sky-side);
+  border-color: transparent;
+}
+.sky-review-steps [aria-current='step'] {
+  color: var(--sky-text);
   font-weight: 600;
 }
-.sky-review-section p {
+.sky-review-steps [aria-current='step'] .sky-review-step-number {
+  background: var(--sky-action-primary);
+  color: var(--sky-action-primary-text);
+  border-color: transparent;
+}
+.sky-review-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  padding: 4px 4px 20px;
+}
+.sky-review-step-head {
+  margin-bottom: 26px;
+}
+.sky-review-step-head h2 {
+  margin: 6px 0 10px;
+  font-size: 28px;
+  line-height: 1.25;
+  font-weight: 600;
+  letter-spacing: -0.025em;
+}
+.sky-review-step-head h2:focus {
+  outline: none;
+}
+.sky-review-step-head p {
+  margin: 0;
+  color: var(--sky-text-2);
+}
+.sky-review-step-head .sky-review-eyebrow {
+  color: var(--sky-dim);
+  font-size: 14px;
+}
+.sky-review-section h3,
+.sky-review-summary h3,
+.sky-review-recaps h3 {
+  margin: 0 0 8px;
+  font-size: 20px;
+  font-weight: 600;
+}
+.sky-review-section p,
+.sky-review-summary p {
   margin: 6px 0 14px;
 }
+.sky-review-item {
+  padding: 18px 0;
+}
 .sky-review-item + .sky-review-item {
-  margin-top: 20px;
+  border-top: 1px solid var(--sky-border-soft);
 }
 .sky-review-row,
 .sky-review-carry {
@@ -27,6 +141,14 @@
   justify-content: space-between;
   align-items: start;
   gap: 18px;
+}
+.sky-review-carry {
+  align-items: center;
+  padding-bottom: 12px;
+}
+.sky-review-carry > span {
+  font-size: 15px;
+  color: var(--sky-dim);
 }
 .sky-review-copy {
   min-width: 0;
@@ -46,7 +168,8 @@
   margin: 5px 0;
   white-space: pre-wrap;
 }
-.sky-review-actions {
+.sky-review-actions,
+.sky-review-navigation {
   display: flex;
   flex-shrink: 0;
   flex-wrap: wrap;
@@ -55,7 +178,8 @@
 .sky-review-fields {
   display: grid;
   gap: 14px;
-  padding: 18px 0;
+  padding: 16px 0 4px;
+  max-width: 420px;
 }
 .sky-review-fields button {
   justify-self: start;
@@ -63,20 +187,49 @@
 .sky-review-link {
   background: none;
   border: none;
-  color: var(--sky-dim);
+  color: var(--sky-text-2);
   padding: 6px 0;
   cursor: pointer;
   font: inherit;
   font-size: 15px;
+  text-align: left;
 }
 .sky-review-link:hover {
   text-decoration: underline;
+}
+.sky-review-empty {
+  display: flex;
+  gap: 16px;
+  align-items: baseline;
+  padding: 22px 0;
+}
+.sky-review-empty > span {
+  color: var(--sky-green);
+  font-size: 24px;
+}
+.sky-review-empty p {
+  color: var(--sky-text-2);
+}
+.sky-review-summary {
+  background: var(--sky-side);
+  border-radius: var(--sky-card-radius);
+  padding: 24px;
+}
+.sky-review-recaps {
+  margin-top: 26px;
+}
+.sky-review-recaps h3 span {
+  display: inline-block;
+  color: var(--sky-dim);
+  font-size: 14px;
+  font-weight: 400;
+  margin-left: 8px;
 }
 .sky-review-job {
   display: flex;
   gap: 12px;
   align-items: baseline;
-  margin: 12px 0;
+  margin: 16px 0;
 }
 .sky-review-job > div {
   flex: 1;
@@ -90,14 +243,17 @@
   overflow-wrap: anywhere;
 }
 .sky-review-history {
-  padding: 18px 0;
+  padding: 18px 0 0;
   border-top: 1px solid var(--sky-border-soft);
+  font-size: 16px;
 }
 .sky-review-history summary {
   cursor: pointer;
+  color: var(--sky-text-2);
 }
 .sky-review-history .sky-review-row {
   margin-top: 16px;
+  overflow-wrap: anywhere;
 }
 .sky-review-history small {
   display: block;
@@ -106,35 +262,83 @@
   padding: 15px;
   border: 1px solid var(--sky-border-soft);
   border-radius: 12px;
-  margin: 14px 0;
+  margin: 0 0 20px;
 }
 .sky-review-error button {
   display: block;
   margin-top: 10px;
 }
 .sky-review-footer {
-  position: sticky;
-  bottom: -1px;
-  background: var(--mantine-color-body);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 20px 0 4px;
-  border-top: 1px solid var(--sky-border-soft);
+  flex-shrink: 0;
+  padding-top: 18px;
+  background: var(--sky-dialog-bg);
 }
-.sky-review-footer > span {
+.sky-review-status,
+.sky-review-footer-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+.sky-review-status {
   color: var(--sky-dim);
-  font-size: 15px;
+  font-size: 14px;
+  margin-bottom: 10px;
+}
+.sky-review-status .sky-review-link {
+  font-size: 14px;
+}
+.sky-dialog-sheet .sky-review-dialog-body,
+.sky-dialog-sheet .sky-review {
+  flex: 1;
+}
+.sky-dialog-sheet .sky-review {
+  height: auto;
 }
 @media (max-width: 600px) {
-  .sky-review-row,
+  .sky-review-steps {
+    padding-bottom: 20px;
+  }
+  .sky-review-steps button {
+    font-size: 13px;
+    gap: 6px;
+  }
+  .sky-review-step-head h2 {
+    font-size: 26px;
+  }
   .sky-review-carry {
     flex-direction: column;
     gap: 10px;
   }
+  .sky-review-carry {
+    align-items: start;
+  }
   .sky-review-actions {
     align-self: flex-start;
+  }
+  .sky-review-row {
+    gap: 12px;
+  }
+  .sky-review-item:first-child {
+    padding-top: 8px;
+  }
+  .sky-review-status {
+    flex-wrap: wrap;
+    gap: 0;
+  }
+  .sky-review-footer-actions {
+    flex-direction: column-reverse;
+    align-items: stretch;
+    gap: 8px;
+  }
+  .sky-review-navigation {
+    justify-content: space-between;
+  }
+  .sky-review-navigation > :last-child {
+    margin-left: auto;
+  }
+  .sky-review-footer-actions > button {
+    align-self: center;
   }
   .sky-review-job {
     font-size: 16px;

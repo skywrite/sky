@@ -6,6 +6,7 @@ import type { TrackingStore } from '#lib/tracking/store.ts'
 import { dayDir } from '#shared/nbfs/mod.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import { hold } from '../../../activity.ts'
+import type { ThreadSummary } from '../../chat/mod.ts'
 import type { StreaksStore } from '../../streaks/store.ts'
 import { buildDayEnding } from '../ending.ts'
 import isDay from '../isDay.ts'
@@ -13,7 +14,7 @@ import { buildDayView, type DayRoutesOptions } from '../mod.ts'
 import { dayItemKey } from '../organizingTypes.ts'
 import type { ScheduleHost } from '../schedule.ts'
 import { DayReviewStore } from './store.ts'
-import type { ReviewItem, ReviewRuntime } from './types.ts'
+import { REVIEW_STEPS, type ReviewItem, type ReviewRuntime } from './types.ts'
 
 interface Options {
   day: DayRoutesOptions
@@ -24,6 +25,7 @@ interface Options {
   streaks?: StreaksStore
   imports?: () => Promise<import('../../import/jobs.ts').ImportJob[]>
   schedule?: ScheduleHost
+  chats?: { list: () => Promise<ThreadSummary[]>; close: (id: string) => Promise<void> }
 }
 const fingerprint = (kind: string, value: unknown) => `${kind}:${hash(JSON.stringify(value))}`
 const reviewDay = (c: Context) =>
@@ -177,6 +179,19 @@ export function createReviewRoutes(options: Options) {
       ended,
       today: view.planningToday ?? PlainDate.today().ymd,
       summaryHref: view.summary ? `/${ymd}?view=summary` : null,
+      chats: ((await options.chats?.list()) ?? [])
+        .filter((thread) => !thread.id.startsWith('day-') && thread.day <= ymd)
+        .map((thread) => ({
+          id: thread.id,
+          title: thread.title ?? 'Untitled chat',
+          started: thread.day,
+          lastActive:
+            Object.keys(thread.activity ?? {})
+              .sort()
+              .at(-1) ?? null,
+          saves: thread.saves,
+          busy: thread.busy,
+        })),
     }
   }
   const store = new DayReviewStore(options.stateDir, {
@@ -242,6 +257,25 @@ export function createReviewRoutes(options: Options) {
   app.post('/:day/refresh', async (c) => {
     calendars.delete(reviewDay(c))
     return c.json(await store.open(reviewDay(c)))
+  })
+  app.post('/:day/step', async (c) => {
+    const body = z
+      .object({ step: z.enum(REVIEW_STEPS), skipIds: z.array(ItemId).max(1000).optional() })
+      .parse(await c.req.json())
+    return c.json(await store.goToStep(reviewDay(c), body.step, body.skipIds))
+  })
+  app.post('/:day/chat/close', async (c) => {
+    const day = reviewDay(c)
+    const { id } = z.object({ id: z.string().min(1).max(200) }).parse(await c.req.json())
+    const chat = (await store.view(day)).chats.find((chat) => chat.id === id)
+    if (!options.chats || !chat) throw new Error('This chat is no longer open. Refresh the review.')
+    if (!chat.saves) throw new Error('Open this temporary chat to decide whether to keep it.')
+    try {
+      await options.chats.close(id)
+    } catch (error) {
+      throw new Error(`Could not save and close “${chat.title}”: ${(error as Error).message}`)
+    }
+    return c.json(await store.refresh(day))
   })
   app.post('/:day/move', async (c) => {
     const body = z
