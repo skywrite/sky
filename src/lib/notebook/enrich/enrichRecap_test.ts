@@ -31,6 +31,41 @@ test('comprehensive recap regeneration adds all topics and refs while retaining 
   })
 })
 
+test('scored tags replace the recap archive for tags while rel keeps it', async () => {
+  const seen: Record<string, unknown> = {}
+  const actual = await enrichRecap(
+    { app: 'slack', what: 'Channel activity', body: 'Synthetic channel summaries.', kind: 'daily Slack recap' },
+    {},
+    { comprehensive: true, scoredTags: { role: 'reasoning' } },
+    {
+      tag: async () => {
+        seen.archive = true
+        return 'Hobby/Music'
+      },
+      scoredTag: async (input, opts) => {
+        seen.scored = { body: input.body, comprehensive: opts.comprehensive, role: opts.role }
+        return 'Work/Engineering; Work/Finance'
+      },
+      rel: async (input, opts) => {
+        seen.rel = { to: input.to, mediums: opts.mediums }
+        return undefined
+      },
+    },
+  )
+  assert({
+    given: 'a recap tagged from the scored vocabulary',
+    should: 'take its tags from the scored tagger alone and keep rel on the recap archive',
+    actual: { actual, seen },
+    expected: {
+      actual: { tags: 'Work/Engineering; Work/Finance', rel: undefined },
+      seen: {
+        scored: { body: 'Synthetic channel summaries.', comprehensive: true, role: 'reasoning' },
+        rel: { to: 'slack', mediums: ['recap'] },
+      },
+    },
+  })
+})
+
 test('openSlots fills only absence and honors the escape flags', () => {
   assert({
     given: 'no curation and no flags',

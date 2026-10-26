@@ -9,7 +9,7 @@ import enrichRecap from '#lib/notebook/enrich/enrichRecap.ts'
 import readRecapCuration from '#lib/notebook/recap/readRecapCuration.ts'
 import openEditor from '#lib/shell/openEditor.ts'
 import { logAIError } from '#shared/ai/errorLog.ts'
-import { aiModelByProfile, getProfile, type ModelProfile } from '#shared/ai/models.ts'
+import { aiModelByProfile, getProfile, type ModelProfile, type Role } from '#shared/ai/models.ts'
 import { ratioFor } from '#shared/ai/tokenRatio.ts'
 import { estimateTokens } from '#shared/models/AI/ContextAssembler/mod.ts'
 import { Document } from '#shared/models/Markdown/mod.ts'
@@ -38,6 +38,11 @@ const PROMPT_FILE = new URL('./prompts/slack.prompt.md', import.meta.url).pathna
 // What the tag and rel classifiers are told they are labeling.
 const KIND = 'daily Slack channel recap'
 
+// The recap's tags: the model reads the recap against every tag in the
+// notebook, most-scored first. The recap archives hold only the other
+// recaps' tags. Uncapped, the fast role returned most of the menu.
+const TAG_ROLE: Role = 'reasoning'
+
 // The digest reads a whole day of channels at once and the day summary
 // reads the digest: the reasoning model at high effort here, and the
 // summary keeps its own model.
@@ -58,7 +63,7 @@ const params = {
   dryRun: Flag.bool('Print the prompts without calling the model or writing', { default: false }),
   noEditor: Flag.bool('Skip opening the recap in the editor', { default: false }),
   rel: Flag.string('Related entities, comma-separated (e.g. projects/atlas)', { optional: true }),
-  noAutoTag: Flag.bool('Skip automatic tagging from the archived-recaps tag corpus', { default: false }),
+  noAutoTag: Flag.bool("Skip automatic tagging from the notebook's tag scores", { default: false }),
   noAutoRel: Flag.bool('Skip automatic rel suggestion from the entity graph', { default: false }),
   whenDue: Flag.bool('Only a recent day whose next day has started and that has no recap yet; nothing otherwise', {
     hidden: true,
@@ -220,7 +225,13 @@ export default class RecapSlackTask extends Command {
     const curated = await enrichRecap(
       { app: SLACK_APP, what: SLACK_WHAT, body, kind: KIND },
       { rel: relList?.length ? relList : curation.rel, tags: curation.tags },
-      { comprehensive: true, noAutoTag: args.noAutoTag, noAutoRel: args.noAutoRel, log: (line) => output.log(line) },
+      {
+        comprehensive: true,
+        scoredTags: { role: TAG_ROLE },
+        noAutoTag: args.noAutoTag,
+        noAutoRel: args.noAutoRel,
+        log: (line) => output.log(line),
+      },
     )
 
     const doc = RecapDocument.create({

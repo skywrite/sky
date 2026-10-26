@@ -1,6 +1,6 @@
 ---
 created: 2026-09-01
-updated: 2026-10-23
+updated: 2026-10-25
 ---
 
 # Recap commands
@@ -139,6 +139,11 @@ the day's existing file. Its rules:
   keys each recap on its `app:`, so a GitHub recap's prior is what earlier
   GitHub recaps carried, and the tag menu is the closed set of tags already
   on recaps. A tag the archives never used cannot be proposed.
+- **Slack's recap tags from the notebook's tag scores.** The recap archives hold only the other recaps' tags, such as
+  GitHub's, so a Slack day could only be filed under those.
+  The model reads the recap against every tag used since 2025, ranked by the service's tag score, where recent files
+  weigh more.
+  It runs on the reasoning role (Opus 5.5): uncapped, the fast role returned most of the menu for a busy day.
 - **Rel comes from the body and the prior.** Subjects extracted from the
   recap body resolve against open projects and known entities; this app's
   earlier refs are candidates too. Ordinary recap selection keeps at most two; Slack's whole-day recap keeps every

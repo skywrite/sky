@@ -1,5 +1,13 @@
 import { assert, test } from '#test'
-import { buildTagMenu, corpusMediumOf, majorityTagsFor, recordsFromRows, sliceBefore, tagHistoryFor } from './corpus.ts'
+import {
+  buildTagMenu,
+  corpusMediumOf,
+  majorityTagsFor,
+  recordsFromRows,
+  scoredTagMenu,
+  sliceBefore,
+  tagHistoryFor,
+} from './corpus.ts'
 import type { CorpusRows, MessageRecord } from './corpus.ts'
 
 // ── recordsFromRows: GraphQL rows → corpus records ─────────────────────────
@@ -248,6 +256,26 @@ test('sliceBefore excludes the given day', () => {
     should: 'keep strictly earlier records',
     actual: slice.map((r) => r.date),
     expected: ['2026-01-05', '2026-01-06'],
+  })
+})
+
+test('scoredTagMenu ranks tags by score and leaves out the old style', () => {
+  assert({
+    given: 'scored tags, one last used before the floor and one never used',
+    should: 'list the rest most-scored first, each with its file count',
+    actual: scoredTagMenu(
+      [
+        { name: 'Work/Eng', score: 2.5, lastSeen: '2026-01-08', fileCount: 30 },
+        { name: 'Work/Incident', score: 9, lastSeen: '2026-01-07', fileCount: 4 },
+        { name: 'Old/Style', score: 1, lastSeen: '2024-06-01', fileCount: 80 },
+        { name: 'Hobby/Music', score: 0, lastSeen: null, fileCount: 0 },
+      ],
+      '2025-01-01',
+    ),
+    expected: [
+      { tag: 'Work/Incident', count: 4 },
+      { tag: 'Work/Eng', count: 30 },
+    ],
   })
 })
 

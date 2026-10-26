@@ -1,6 +1,7 @@
 import type { RecapCuration } from '#lib/notebook/recap/readRecapCuration.ts'
+import type { Role } from '#shared/ai/models.ts'
 import { autoRelMessage, mergeRel } from './autoRel.ts'
-import { autoTagMessage } from './autoTag.ts'
+import { autoTagFromScores, autoTagMessage } from './autoTag.ts'
 
 // Recaps classify against the recap archives only: the app is a recap's
 // conversation, so each app's past tags and refs are the prior.
@@ -11,10 +12,23 @@ export type { RecapCuration }
 export type EnrichRecapOptions = {
   /** A whole-day recap reads every section and has no tag or relationship count limit. */
   comprehensive?: boolean
+  /**
+   * Tag from the notebook's whole vocabulary, ranked by tag score, on the
+   * role named. The recap archives hold only what the other recaps cover, so
+   * a recap of conversations other captures file (Slack) finds no tags there.
+   */
+  scoredTags?: { role: Role }
   noAutoTag?: boolean
   noAutoRel?: boolean
   /** Receives one line per filled slot. */
   log?: (line: string) => void
+}
+
+export type EnrichRecapServices = {
+  tag: typeof autoTagMessage
+  rel: typeof autoRelMessage
+  /** Tags from the scored vocabulary; autoTagFromScores when absent. */
+  scoredTag?: typeof autoTagFromScores
 }
 
 function hasRel(rel: RecapCuration['rel']): boolean {
@@ -34,9 +48,10 @@ export function openSlots(curated: RecapCuration, opts: EnrichRecapOptions): { t
 
 /**
  * Fill a recap's empty tags/rel slots from the recap archives: tags from the
- * closed menu of tags already on recaps, refs from the entity graph guided
- * by this app's earlier recaps. Both run at once. Never throws; a slot the
- * classifiers abstain on stays empty, as it would have.
+ * closed menu of tags already on recaps (or the notebook's scored tags),
+ * refs from the entity graph guided by this app's earlier recaps. Both run
+ * at once. Never throws; a slot the classifiers abstain on stays empty, as
+ * it would have.
  */
 export default async function enrichRecap(
   recap: {
@@ -48,15 +63,23 @@ export default async function enrichRecap(
   },
   curated: RecapCuration,
   opts: EnrichRecapOptions = {},
-  services = { tag: autoTagMessage, rel: autoRelMessage },
+  services: EnrichRecapServices = { tag: autoTagMessage, rel: autoRelMessage },
 ): Promise<RecapCuration> {
   const slots = openSlots(curated, opts)
   if (!slots.tags && !slots.rel) return curated
 
   const input = { to: recap.app, summary: recap.what, body: recap.body }
   const enrich = { mediums: RECAP_MEDIUMS, kind: recap.kind, comprehensive: opts.comprehensive }
+  const tagging = () =>
+    opts.scoredTags
+      ? (services.scoredTag ?? autoTagFromScores)(input, {
+          kind: recap.kind,
+          comprehensive: opts.comprehensive,
+          role: opts.scoredTags.role,
+        })
+      : services.tag(input, enrich)
   const [tags, rel] = await Promise.all([
-    slots.tags ? services.tag(input, enrich) : undefined,
+    slots.tags ? tagging() : undefined,
     slots.rel ? services.rel(input, enrich) : undefined,
   ])
   if (tags) opts.log?.(`  Auto-tags: ${tags}`)

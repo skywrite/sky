@@ -296,6 +296,29 @@ export function buildTagMenu(records: MessageRecord[]): TagCount[] {
   )
 }
 
+/** One row of the service's tag scores. */
+export type TagScoreRow = { name: string; score: number; lastSeen: string | null; fileCount: number }
+
+/**
+ * The notebook's whole tag vocabulary as a menu, most-scored first: the
+ * service scores a tag by its files, recent ones weighing more. Empty when
+ * the service is unreachable.
+ */
+export async function loadScoredTagMenu(since: string): Promise<TagCount[]> {
+  const data = (await queryService('{ tagsWithScores { name score lastSeen fileCount } }')) as
+    | { tagsWithScores?: TagScoreRow[] }
+    | undefined
+  return scoredTagMenu(data?.tagsWithScores ?? [], since)
+}
+
+/** Scored tags as a menu, most-scored first, each counting its files; tags last used before `since` stay out. */
+export function scoredTagMenu(rows: TagScoreRow[], since: string): TagCount[] {
+  return rows
+    .filter((row) => row.lastSeen !== null && row.lastSeen >= since)
+    .sort((a, b) => b.score - a.score || (a.name < b.name ? -1 : 1))
+    .map((row) => ({ tag: row.name, count: row.fileCount }))
+}
+
 /** Tags previously used in the conversation `to` identifies, most-used first. */
 export function tagHistoryFor(records: MessageRecord[], to: string | undefined): TagCount[] {
   if (!to) return []

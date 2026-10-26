@@ -1,11 +1,21 @@
 import type { Role } from '#shared/ai/models.ts'
 import { chooseTags } from './classify.ts'
-import { buildTagMenu, loadMessageCorpus, tagHistoryFor } from './corpus.ts'
+import { buildTagMenu, loadMessageCorpus, loadScoredTagMenu, type TagCount, tagHistoryFor } from './corpus.ts'
 
 // Taxonomy floor: pre-2025 tags are the abandoned old style and never enter the
 // menus. Backtested via slack:tags:eval — the floor lifted any-overlap 47%→59%
 // and halved foreign-branch errors to 5% (1% on 2026-era threads).
 const TAXONOMY_SINCE = '2025-01-01'
+
+// projects/* is rel vocabulary, never tag vocabulary (standing rule): project
+// membership is a reference, not a topic. Historical captures carry it as
+// tags, so it must leave the menu here or the classifier re-learns it.
+const isTopic = (row: TagCount): boolean => !row.tag.startsWith('projects/')
+
+// summary:day and summary:week stamp their own files Summary/Daily and
+// Summary/Weekly: what the file is, not a topic. The scored vocabulary spans
+// every file, so they are in it, and a daily recap picks them.
+const isScoredTopic = (row: TagCount): boolean => isTopic(row) && !row.tag.startsWith('Summary/')
 
 export type AutoTagInput = {
   /**
@@ -43,10 +53,7 @@ export async function autoTagMessage(
   try {
     const corpus = await loadMessageCorpus(opts.mediums)
     const records = corpus.records.filter((r) => r.date >= TAXONOMY_SINCE)
-    // projects/* is rel vocabulary, never tag vocabulary (standing rule): project
-    // membership is a reference, not a topic. Historical captures carry it as
-    // tags, so it must leave the menu here or the classifier re-learns it.
-    const menu = buildTagMenu(records).filter((t) => !t.tag.startsWith('projects/'))
+    const menu = buildTagMenu(records).filter(isTopic)
     if (menu.length === 0) return undefined
 
     const outcome = await chooseTags(
@@ -64,6 +71,39 @@ export async function autoTagMessage(
       // The classifier's model: the fast role by default; a medium whose
       // captures are long and many-topic (chats) asks for a stronger one.
       opts.role ?? 'fast',
+    )
+    return outcome.tags.length > 0 ? outcome.tags.join('; ') : undefined
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * Pick tags for a document no single archive files, such as a day's recap of
+ * many Slack conversations: the classifier reads the whole document against
+ * every tag in the notebook, most-scored first. Same closed menu and
+ * never-throws contract as autoTagMessage; no conversation history applies.
+ */
+export async function autoTagFromScores(
+  input: AutoTagInput,
+  opts: { kind?: string; comprehensive?: boolean; role: Role },
+): Promise<string | undefined> {
+  try {
+    const menu = (await loadScoredTagMenu(TAXONOMY_SINCE)).filter(isScoredTopic)
+    if (menu.length === 0) return undefined
+
+    const outcome = await chooseTags(
+      {
+        body: input.body,
+        kind: opts.kind,
+        comprehensive: opts.comprehensive,
+        to: input.to,
+        from: input.from,
+        summary: input.summary,
+        tagHistory: [],
+        menu,
+      },
+      opts.role,
     )
     return outcome.tags.length > 0 ? outcome.tags.join('; ') : undefined
   } catch {
