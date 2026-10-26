@@ -104,6 +104,11 @@ test(
             await dialog.getByRole('button', { name: 'Move follow-up.caf up', exact: true }).click()
             await page.setViewportSize({ width: 390, height: 844 })
             await page.waitForSelector('.sky-confirm.sky-sheet')
+            // The phone sheet is a new dialog: the opening words return once it reloads the import.
+            await dialog
+              .locator('.sky-audio-opening')
+              .nth(count - 1)
+              .waitFor()
             assert({
               given: 'three clips dropped together, with the last moved up',
               should: 'show one conversation in the chosen order and fit the phone viewport',

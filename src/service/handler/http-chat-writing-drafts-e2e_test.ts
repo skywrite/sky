@@ -88,6 +88,7 @@ test(
         await retype(draft.getByLabel('Edit draft text', { exact: true }), 'with the launch team', 'by Friday')
         await draft.getByRole('button', { name: 'Save edit', exact: true }).click()
         await draft.getByText('The Atlas draft is ready. Please review it by Friday.', { exact: true }).waitFor()
+        await draft.getByRole('button', { name: 'Versions · 2', exact: true }).waitFor()
         await page.reload()
         await draft.getByRole('button', { name: 'Versions · 2', exact: true }).waitFor()
         assert({
@@ -166,6 +167,7 @@ test(
         await retype(editor, 'Thanks for your help.', 'Thanks.')
         await current.getByRole('button', { name: 'Save edit', exact: true }).click()
         await current.getByText('The Atlas draft is ready. Please review it by Friday.', { exact: true }).waitFor()
+        await current.getByRole('button', { name: 'Versions · 3', exact: true }).waitFor()
         await page.reload()
         await current.getByRole('button', { name: 'Versions · 3', exact: true }).waitFor()
         await current.getByRole('button', { name: 'Copy', exact: true }).click()
@@ -414,6 +416,7 @@ test(
         await retype(editor, 'Thanks for your help.', 'Thanks.')
         await second.getByRole('button', { name: 'Save edit', exact: true }).click()
         await second.getByText('The Atlas draft is ready. Please review it by Friday.', { exact: true }).waitFor()
+        await editor.waitFor({ state: 'detached' })
         await composer.fill('Show the current wording again.')
         await composer.press('Enter')
         const latest = replies.nth(2).locator('.sky-writing-draft')
