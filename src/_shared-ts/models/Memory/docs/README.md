@@ -1,6 +1,6 @@
 ---
 created: 2026-08-29
-updated: 2026-09-08
+updated: 2026-10-25
 ---
 
 # The memory store — what the assistant carries between chats
@@ -39,7 +39,7 @@ is about the user's own life and setup, not a fact learned from a
 document. The first live week misread both — see the
 [2026-08-29 narrative](2026-08-29-distiller-harvested-its-own-answers.md).
 
-## Never memory
+## Exclusions from automatic capture
 
 - Figures from a document under discussion — the document holds them and
   a copy goes stale first.
@@ -49,6 +49,9 @@ document. The first live week misread both — see the
 - Designs, plans, decisions, ideas worked out in one chat — capture flows
   own those.
 - Events, meetings, tasks, anything else the notebook records.
+
+An explicit request to remember a commitment or time-bound fact can save it as a thread, with its concrete date and context.
+That request does not authorize invented details or changes to the authoritative notebook record.
 
 ## File shape
 
@@ -67,10 +70,11 @@ locked: true
 When Jane says "the big deck" she means the Atlas overview deck.
 ```
 
-- `source` is the teaching chat. A confirm keeps it; an update moves it
-  to the correcting chat.
+- `source` identifies the teaching chat: its notebook path after save-time capture,
+  `/chat/source/<id>` for a live web chat, or `chat:terminal:<start-time>` for terminal chat.
+  A confirm keeps it; an update moves it to the correcting chat.
 - `uses` counts distinct sessions that confirmed the memory.
-- `locked: true` is hand-set: neither writer rewrites, deletes, or
+- `locked: true` is hand-set: no writer rewrites, deletes, or
   confirms the file, and budget eviction skips it — so a locked memory
   never accumulates `uses`. Hand-written seeds are locked; a seed that
   should keep earning confirms stays unlocked.
@@ -95,6 +99,16 @@ When Jane says "the big deck" she means the Atlas overview deck.
 
 ## Write side
 
+- `commands/lib/chat/memoryTools.ts` exposes `search_memories` and `remember` in both full chat hosts.
+  An explicit instruction to remember is saved in the current turn, without another confirmation or waiting for chat close.
+  The host supplies the memory directory, conversation source, and current message date; the model supplies only the fact.
+  The result reads the saved file back and returns its text and explorer link before the assistant confirms success.
+  It persists even if the conversation is later discarded.
+  The standing prompt stays frozen in the current session; the tool result carries the new fact until future chats load it.
+- Search returns exact contents and a revision for corrections.
+  Semantic IDs preserve the existing store's deduplication and correction identity across retries.
+  A new request cannot overwrite an existing ID; a correction must match the revision it read.
+  Identical kind and body return the existing memory without another write.
 - `lib/notebook/enrich/distillMemories.ts` runs at chat save
   (`Chat/ChatStore/save.ts`) on the `balanced` role: the packed transcript
   against the store's index → ops `create` / `confirm` / `update` /
@@ -103,8 +117,11 @@ When Jane says "the big deck" she means the Atlas overview deck.
 - `write.ts` applies them. `MAX_OPS_PER_SAVE` (8) bounds runaway output;
   `MAX_CREATES_PER_SAVE` (3) bounds growth and counts only new files — a
   create on an existing slug is an update. Locked and missing targets skip
-  with a reason. Every outcome renders as a 🧠 line at chat exit and lands
+  with a reason. Save-time outcomes render as a 🧠 line at chat exit and land
   in the chat's CONTEXT-LOG `memory` field.
+- Every writer shares a machine-local lock outside the synced notebook.
+  Writes publish complete files atomically, new files reserve their names exclusively, and linked targets are rejected.
+  Direct corrections check revisions under that lock so another Sky writer cannot overwrite an intervening change.
 - The chat system prompt tells the model memories are notes, not the
   record.
 

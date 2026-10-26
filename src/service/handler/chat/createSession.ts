@@ -16,6 +16,7 @@ import { harvestFileRefs, SessionBlessings } from '#commands/all/ai/chat/lib/app
 import { calendarDraftRefusal } from '#commands/lib/chat/calendarScheduling.ts'
 import { FileGrants } from '#commands/lib/chat/fileGrants.ts'
 import { createChatFileTools } from '#commands/lib/chat/localFileTools.ts'
+import { createMemoryTools } from '#commands/lib/chat/memoryTools.ts'
 import {
   createNotebookTools,
   createToolApprovalConfig,
@@ -515,6 +516,14 @@ export function createChatHost(config: typeof ConfigModule, env: Record<string, 
               onAttachments,
             }),
             ...createReadChatTool({ notebookDir: config.DIR_BASE }),
+            ...createMemoryTools({
+              memoryDir: config.DIR_AI_MEMORY,
+              notebookDir: config.DIR_BASE,
+              source: sourceChatHref(id),
+              today: () =>
+                hooks.context.conversation.findLast((turn) => turn.role === 'user')?.when?.slice(0, 10) ??
+                context.notebookNow.date,
+            }),
             ...(await createNotebookTools(toolTasks, {
               sourceChat: sourceChatHref(id),
               notebookDir: config.DIR_BASE,

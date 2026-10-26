@@ -9,6 +9,7 @@ import { aiEffortFlag } from '#commands/lib/aiParams.ts'
 import { FileGrants } from '#commands/lib/chat/fileGrants.ts'
 import { READ_FILE_TOOL } from '#commands/lib/chat/fileTools.ts'
 import { createChatFileTools } from '#commands/lib/chat/localFileTools.ts'
+import { createMemoryTools } from '#commands/lib/chat/memoryTools.ts'
 import {
   createNotebookTools,
   createToolApprovalConfig,
@@ -639,6 +640,14 @@ export default class AiChatTask extends Command {
             ...webTools,
             ...fileTools,
             ...createReadChatTool({ notebookDir: DIR_BASE }),
+            ...createMemoryTools({
+              memoryDir: DIR_AI_MEMORY,
+              notebookDir: DIR_BASE,
+              source: `chat:terminal:${startTime.toString()}`,
+              today: () =>
+                hooks.context.conversation.findLast((turn) => turn.role === 'user')?.when?.slice(0, 10) ??
+                context.notebookNow.date,
+            }),
             ...notebookTools,
             ...createWritingVoiceTools(createWritingLessons(context.config), {
               source: `chat:terminal:${startTime.toString()}`,

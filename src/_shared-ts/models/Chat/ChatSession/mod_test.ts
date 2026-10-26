@@ -2,6 +2,7 @@ import { rm } from 'node:fs/promises'
 import * as path from 'node:path'
 import { jsonSchema, simulateReadableStream } from 'ai'
 import { MockLanguageModelV3 } from 'ai/test'
+import { createMemoryTools } from '#commands/lib/chat/memoryTools.ts'
 import type { AIErrorEntry } from '#shared/ai/errorLog.ts'
 import { InputTokenLimitError } from '#shared/ai/inputTokenLimit.ts'
 import type { ResolvedModel } from '#shared/ai/models.ts'
@@ -9,6 +10,7 @@ import { exists, makeTempDir, readTextFile } from '#shared/fs/mod.ts'
 import type { PreflightVerdict } from '#shared/models/Chat/document/ContextLog/mod.ts'
 import type { ResearchContext } from '#shared/models/Chat/researchContext.ts'
 import { Document } from '#shared/models/Markdown/mod.ts'
+import { loadMemories, renderPreferenceBlock } from '#shared/models/Memory/mod.ts'
 import { dayDir } from '#shared/nbfs/mod.ts'
 import { withTiming, withTimingEnvironment } from '#shared/timing/mod.ts'
 import { assert, test } from '#test'
@@ -121,6 +123,100 @@ async function makeSession(over: Partial<ChatSessionOptions> = {}) {
 }
 
 const types = (events: ChatSessionEvent[]) => events.map((e) => e.type)
+
+test('an explicit memory tool saves during the reply and survives discarding the chat', async () => {
+  const notebookDir = await makeTempDir({ prefix: 'sky-chat-memory-session-' })
+  const memoryDir = path.join(notebookDir, 'ai', 'memory')
+  let requests = 0
+  let sawReceipt = false
+  const reply = 'Remembered: use metric units. [Memory](/explorer/ai/memory/use-metric-units.md)'
+  const model = new MockLanguageModelV3({
+    doStream: async ({ prompt }) => {
+      const first = requests++ === 0
+      if (!first) sawReceipt = JSON.stringify(prompt).includes('/explorer/ai/memory/use-metric-units.md')
+      return {
+        stream: simulateReadableStream<any>({
+          chunks: [
+            { type: 'stream-start', warnings: [] },
+            ...(first
+              ? [
+                  {
+                    type: 'tool-call',
+                    toolCallId: 'remember-metric',
+                    toolName: 'remember',
+                    input: JSON.stringify({
+                      kind: 'preference',
+                      summary: 'Use metric units',
+                      body: 'The user prefers metric units.',
+                    }),
+                  },
+                ]
+              : [
+                  { type: 'text-start', id: 'reply' },
+                  { type: 'text-delta', id: 'reply', delta: reply },
+                  { type: 'text-end', id: 'reply' },
+                ]),
+            {
+              type: 'finish',
+              finishReason: { unified: first ? 'tool-calls' : 'stop', raw: undefined },
+              usage: {
+                inputTokens: { total: 1, noCache: 1, cacheRead: 0, cacheWrite: 0 },
+                outputTokens: { total: 1, text: 1, reasoning: 0 },
+              },
+            },
+          ],
+        }),
+      }
+    },
+  })
+  const { session, tmp, errors } = await makeSession({
+    model: { model },
+    invokeModel: undefined,
+    contextTokens: 0,
+    today: new PlainDate('2031-03-16'),
+    startTime: new PlainDateTime('2031-03-16 23:59'),
+    now: async () => new PlainDateTime('2031-03-17 00:05'),
+    tools: async (hooks) => ({
+      tools: createMemoryTools({
+        memoryDir,
+        notebookDir,
+        source: '/chat/source/sample-memory',
+        today: () => hooks.context.conversation.findLast((turn) => turn.role === 'user')!.when!.slice(0, 10),
+      }),
+      toolApproval: {},
+    }),
+    approvalHandler: async () => {
+      throw new Error('An explicit memory request needs no repeat approval.')
+    },
+  })
+  try {
+    await session.start()
+    const report = await session.send('Remember that I prefer metric units.')
+    const during = await loadMemories(memoryDir)
+    await session.end({ save: false })
+    const after = await loadMemories(memoryDir)
+    const markdown = await readTextFile(after[0].path)
+    assert({
+      given: 'an explicit memory request followed by discarding the conversation',
+      should:
+        'return the saved receipt before replying, use the current message date, and retain the memory for future chats',
+      actual: [
+        requests,
+        sawReceipt,
+        report.text,
+        errors.length,
+        during.length,
+        after.length,
+        markdown.includes('created: 2031-03-17'),
+        renderPreferenceBlock(after),
+      ],
+      expected: [2, true, reply, 0, 1, 1, true, '- The user prefers metric units.'],
+    })
+  } finally {
+    await rm(tmp, { recursive: true, force: true })
+    await rm(notebookDir, { recursive: true, force: true })
+  }
+})
 
 test('a session recovers capacity, reports the reduction, and keeps it through recovery', async () => {
   let requests = 0

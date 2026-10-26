@@ -1,6 +1,6 @@
 ---
 created: 2026-09-10
-updated: 2026-10-12
+updated: 2026-10-25
 ---
 
 # Chat prompt and tools
@@ -19,6 +19,9 @@ bounded tool results and model requests are described in
 
 Web page snapshots, section reads, and continuation positions follow the
 [shared web reader contract](../../web/docs/README.md).
+
+Explicit requests to remember use `memoryTools.ts` in both full chat hosts and persist during the current turn.
+See the [memory store's write contract](../../../../_shared-ts/models/Memory/docs/README.md#write-side).
 
 ## Local file organization
 

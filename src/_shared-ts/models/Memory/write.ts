@@ -13,9 +13,12 @@
  * is the archive.
  */
 
-import { unlink } from 'node:fs/promises'
+import { createHash, randomUUID } from 'node:crypto'
+import { link, lstat, mkdir, open, rename, unlink } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import * as path from 'node:path'
-import { exists, outputFile, readTextFile } from '#shared/fs/mod.ts'
+import { missing, withProcessLock } from '#lib/jobs/files.ts'
+import { readTextFile } from '#shared/fs/mod.ts'
 import { Document } from '#shared/models/Markdown/mod.ts'
 import { stringify } from '#shared/yaml/mod.ts'
 import { MEMORY_KINDS, type MemoryKind, yamlDate } from './mod.ts'
@@ -114,6 +117,9 @@ export function sanitizeSlug(raw: string): string {
     .replace(/-+$/g, '')
 }
 
+/** Hash the exact on-disk contents so corrections can detect intervening edits. */
+export const memoryRevision = (content: string): string => createHash('sha256').update(content).digest('hex')
+
 /** A body must be plain prose — leading frontmatter fences would corrupt the file. */
 function cleanBody(raw: string): string {
   return raw
@@ -128,6 +134,7 @@ function cleanBody(raw: string): string {
 // -----------------------------------------------------------------------------
 
 interface ExistingMemory {
+  revision: string
   created?: string
   updated?: string
   /** The teaching chat — survives confirms, moves on updates */
@@ -140,11 +147,18 @@ interface ExistingMemory {
 }
 
 async function readExisting(filePath: string): Promise<ExistingMemory | null> {
-  if (!(await exists(filePath))) return null
-  const doc = Document.fromMarkdown(await readTextFile(filePath))
+  const stat = await lstat(filePath).catch((error: unknown) => {
+    if (missing(error)) return null
+    throw error
+  })
+  if (!stat) return null
+  if (!stat.isFile()) throw new Error('Memory must be a regular file, not a link or directory.')
+  const content = await readTextFile(filePath)
+  const doc = Document.fromMarkdown(content)
   const rawKind = String(doc.yaml['kind'] ?? '')
   const source = String(doc.yaml['source'] ?? '').trim()
   return {
+    revision: memoryRevision(content),
     created: yamlDate(doc.yaml['created']),
     updated: yamlDate(doc.yaml['updated']),
     ...(source ? { source } : {}),
@@ -161,8 +175,11 @@ export interface ApplyMemoryOpsInput {
   ops: MemoryOp[]
   /** YYYY-MM-DD stamped into updated/lastConfirmed (and created on new files) */
   today: string
-  /** Notebook-relative path of the teaching chat, recorded as source: */
+  /** Teaching chat's notebook path or host-owned live-chat reference, recorded as source: */
   source: string
+  /** Explicit edits use the revision they read; null reserves a new memory without replacing one. */
+  expectedRevisions?: Record<string, string | null>
+  signal?: AbortSignal
   /** Op ceiling override — the consolidator legitimately batches more than a save's cap */
   maxOps?: number
   /** New-file ceiling override; the consolidator never creates, so it leaves this alone */
@@ -182,6 +199,22 @@ interface ApplyBudget {
  * costs the rest or the save itself.
  */
 export async function applyMemoryOps(input: ApplyMemoryOpsInput): Promise<MemoryOpOutcome[]> {
+  try {
+    // All writers share a local lock, outside the synced notebook.
+    const key = createHash('sha256').update(path.resolve(input.memoryDir)).digest('hex')
+    const lock = path.join(tmpdir(), 'sky-memory-writes', key)
+    return await withProcessLock(lock, () => applyUnlockedMemoryOps(input))
+  } catch (error) {
+    return input.ops.map((op) => ({
+      op: op.op,
+      summary: opGist(op),
+      outcome: 'skipped',
+      reason: error instanceof Error ? error.message : String(error),
+    }))
+  }
+}
+
+async function applyUnlockedMemoryOps(input: ApplyMemoryOpsInput): Promise<MemoryOpOutcome[]> {
   const outcomes: MemoryOpOutcome[] = []
   const cap = input.maxOps ?? MAX_OPS_PER_SAVE
   const budget: ApplyBudget = { creates: input.maxCreates ?? MAX_CREATES_PER_SAVE }
@@ -191,6 +224,7 @@ export async function applyMemoryOps(input: ApplyMemoryOpsInput): Promise<Memory
       continue
     }
     try {
+      input.signal?.throwIfAborted()
       outcomes.push(await applyOne(op, input, budget))
     } catch (err) {
       outcomes.push({ op: op.op, summary: opGist(op), outcome: 'skipped', reason: (err as Error).message })
@@ -217,6 +251,17 @@ async function applyOne(op: MemoryOp, input: ApplyMemoryOpsInput, budget: ApplyB
   const filePath = path.join(input.memoryDir, `${slug}.md`)
   const existing = await readExisting(filePath)
 
+  const expected = input.expectedRevisions?.[slug]
+  if (expected !== undefined && expected !== (existing?.revision ?? null)) {
+    return {
+      op: op.op,
+      slug,
+      summary: existing?.summary || opGist(op),
+      outcome: 'skipped',
+      reason: 'Memory changed since it was read. Search memories again before updating it.',
+    }
+  }
+
   if (existing?.locked) {
     return { op: op.op, slug, summary: existing.summary || slug, outcome: 'skipped', reason: 'locked' }
   }
@@ -242,7 +287,7 @@ async function applyOne(op: MemoryOp, input: ApplyMemoryOpsInput, budget: ApplyB
       }
       // An existing slug is refined in place — created and uses survive, and
       // the outcome says 'update' so the host's verb stays truthful.
-      await outputFile(
+      await writeMemory(
         filePath,
         memoryMarkdown({
           created: existing?.created ?? input.today,
@@ -254,6 +299,7 @@ async function applyOne(op: MemoryOp, input: ApplyMemoryOpsInput, budget: ApplyB
           uses: existing?.uses ?? 0,
           body,
         }),
+        !existing,
       )
       return { op: existing ? 'update' : 'create', slug, kind: op.kind, summary: op.summary, outcome: 'applied' }
     }
@@ -263,7 +309,7 @@ async function applyOne(op: MemoryOp, input: ApplyMemoryOpsInput, budget: ApplyB
       // Content is untouched: updated stays put, only lastConfirmed/uses move.
       // The source stays too — a confirm is evidence the memory holds, not a
       // re-teaching; only an update moves provenance to the correcting chat.
-      await outputFile(
+      await writeMemory(
         filePath,
         memoryMarkdown({
           created: existing.created ?? input.today,
@@ -285,7 +331,7 @@ async function applyOne(op: MemoryOp, input: ApplyMemoryOpsInput, budget: ApplyB
         return { op: 'update', slug, summary: existing.summary || slug, outcome: 'skipped', reason: 'empty body' }
       const summary = op.summary?.trim() || existing.summary || slug
       // source moves to the correcting chat: an update IS a re-teaching.
-      await outputFile(
+      await writeMemory(
         filePath,
         memoryMarkdown({
           created: existing.created ?? input.today,
@@ -311,5 +357,24 @@ async function applyOne(op: MemoryOp, input: ApplyMemoryOpsInput, budget: ApplyB
         outcome: 'applied',
       }
     }
+  }
+}
+
+/** Publish a complete file; a concurrent namesake must never be overwritten on create. */
+async function writeMemory(file: string, content: string, create = false): Promise<void> {
+  await mkdir(path.dirname(file), { recursive: true })
+  const temporary = `${file}.${randomUUID()}.tmp`
+  const handle = await open(temporary, 'wx', 0o600)
+  try {
+    await handle.writeFile(content, 'utf8')
+    await handle.sync()
+    await handle.close()
+    if (create) await link(temporary, file)
+    else await rename(temporary, file)
+  } finally {
+    await handle.close()
+    await unlink(temporary).catch((error: unknown) => {
+      if (!missing(error)) throw error
+    })
   }
 }
