@@ -636,9 +636,10 @@ a person can see and touch:
   controls the final archive and save-time learning, and can change until
   close. Saving a new chat also logs its transcript link in the starting
   day's Complete list, under Personal or Professional as Jev reads what
-  the chat was about, favoring Personal (`lib/chatDayCategory.ts`).
-  Professional requires clear business purpose; mixed, uncertain or unavailable
-  evidence defaults to Personal, as does a conversation too long to assess whole.
+  the chat was about, leaning Professional (`lib/chatDayCategory.ts`).
+  Personal needs Jev to be fairly sure, so a mixed or unclear chat stays Professional;
+  without an answer, the configured default category stands.
+  A long chat is judged on its opening and ending.
   An explicit CLI category wins.
   This choice only places the day entry; it adds no category metadata to the chat.
   The page confirms logging or reports a day-file failure alongside the saved

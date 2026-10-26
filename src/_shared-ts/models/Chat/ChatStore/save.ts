@@ -124,7 +124,7 @@ export interface SaveEnricher {
   }): Promise<ChatSummary | undefined>
   /**
    * The day section a new chat's entry goes under, from what the chat was
-   * about. Undefined means abstain: Personal is the default.
+   * about. Undefined means abstain: the host's category stands.
    */
   chooseDayCategory?(subject: EnrichSubject): Promise<ChatDayCategory | undefined>
 }
@@ -317,8 +317,8 @@ export interface SaveChatInput {
   writeSummary?: boolean
   /**
    * Record the chat as a day-file complete item (new chats only), in the
-   * section its subject calls for, defaulting to Personal. `category`
-   * overrides classification only when the person `stated` it.
+   * section its subject calls for. `category` stands when the person
+   * `stated` it, and when no choice comes back.
    */
   logToDay?: { category: string; stated?: boolean } | null
   /**
@@ -635,7 +635,7 @@ export async function saveChat(input: SaveChatInput): Promise<SaveChatReport> {
       startTime,
       summary,
       savePath,
-      category: input.logToDay.stated ? input.logToDay.category : ((await dayCategory) ?? 'Personal'),
+      category: (await dayCategory) ?? input.logToDay.category,
       resumed: resume !== null,
     })
   }

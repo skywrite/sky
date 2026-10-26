@@ -862,7 +862,7 @@ test({ name: 'chat route - ending a thread files it or drops it' }, async () => 
 
 test('chat route - web saving logs to its notebook day and reports logging failures', async () => {
   const host = await testHost()
-  const web = createChatHost({ ...config, DEFAULT_CATEGORY: 'Professional' }, {})
+  const web = createChatHost({ ...config, DEFAULT_CATEGORY: 'Personal' }, {})
   host.endDefaults = { ...web.endDefaults, enricher: stubEnricher, memoryDir: null, people: false }
   const app = appWith(host)
   const dayPath = path.join(host.tmp, dayFile(TODAY))
@@ -886,7 +886,7 @@ test('chat route - web saving logs to its notebook day and reports logging failu
     const entry = day.getCompleteItem('09:30 > AI Chat', 'Personal')
     assert({
       given: 'a web chat saved using the host defaults',
-      should: 'save its transcript and default its day link to Personal when categorization abstains',
+      should: 'save its transcript and log a working link under the configured category',
       actual: {
         dayLog: saved?.dayLog,
         transcriptExists: saved ? await exists(saved.path) : false,

@@ -990,7 +990,7 @@ export default class AiChatTask extends Command {
       memoryDir: DIR_AI_MEMORY,
       people: true,
       // A --category is the person's choice; without one, the save picks the section from what the chat was about.
-      logToDay: log ? (category ? { category, stated: true } : { category: 'Personal' }) : null,
+      logToDay: log ? (category ? { category, stated: true } : { category: 'Professional' }) : null,
     })
 
     if (saved) {

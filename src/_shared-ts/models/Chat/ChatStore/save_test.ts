@@ -541,7 +541,7 @@ test('saveChat - day-file logging is skipped on resume, never duplicated', async
 })
 
 test('saveChat - a chat on a day with no day file creates the day and logs it there', async () => {
-  const { timeDir, report } = await saveNew({ logToDay: { category: 'Professional', stated: true } })
+  const { timeDir, report } = await saveNew({ logToDay: { category: 'Professional' } })
   const day = await readDay(DAY, timeDir)
 
   assert({
@@ -582,7 +582,7 @@ test('saveChat - a new chat is logged in the section its subject calls for, unle
   })
   const stated = await saveNew({ logToDay: { category: 'Professional', stated: true }, enricher: personal })
   const abstained = await saveNew({
-    logToDay: { category: 'Professional' },
+    logToDay: { category: 'Personal' },
     enricher: stubEnricher({ chooseDayCategory: async () => undefined }),
   })
   const unavailable = await saveNew({
@@ -603,7 +603,7 @@ test('saveChat - a new chat is logged in the section its subject calls for, unle
 
   assert({
     given: 'a personal chat saved then resumed, a manual choice, unavailable choices, and a clear work chat',
-    should: 'classify new chats only, honor manual choices, and default to Personal when no judgment is available',
+    should: 'classify new chats only, honor manual choices, and keep the given category when no judgment is available',
     actual: {
       dayLogs: [
         chosen.report.dayLog,
@@ -626,8 +626,8 @@ test('saveChat - a new chat is logged in the section its subject calls for, unle
         { logged: false, reason: 'resume' },
         { logged: true, category: 'Professional' },
         { logged: true, category: 'Personal' },
-        { logged: true, category: 'Personal' },
-        { logged: true, category: 'Personal' },
+        { logged: true, category: 'Professional' },
+        { logged: true, category: 'Professional' },
         { logged: true, category: 'Professional' },
       ],
       asked: [true],
