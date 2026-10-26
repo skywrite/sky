@@ -1,6 +1,6 @@
 ---
 created: 2026-08-30
-updated: 2026-09-28
+updated: 2026-10-26
 ---
 
 # Explorer — the notebook's files as pages
@@ -34,6 +34,10 @@ files it holds, one row per entry; `/explorer` itself lists the roots.
   its title, waiting in the composer. The chat finds the file through
   its ordinary reading of the notebook — the link is not a pin — so a
   chat set to read nothing will not see it.
+- `web/client/explorer/explorerFind.tsx` — find and replace, a box floating over the top right of the open file.
+  ⌘F opens it, ⌥⌘F opens it with Replace showing, and the ⋯ menu's Find and replace… does either for anyone who doesn't know the keys.
+  The search is `web/client/editor/find.ts`; a replace goes through the editor's `replaceText`.
+  Asking for Replace while reading switches to the editor.
 - `meeting.ts` — the view behind a meeting's page, `/<day>/meetings/<slug>`.
   `GET /explorer/_api/meeting?day=&slug=` (or `?path=`) answers what the
   file's frontmatter says, resolved: who as profiles with their route,
@@ -81,6 +85,12 @@ while editing, with readable titles, date/type filters and chat branch context.
 - Nothing is deleted outright: Delete is a move to the Trash, undone from
   the toast, and the day whose line pointed at the file lets the line go
   rather than keep a link to nothing.
+- Find searches the text a reader sees, block by block, and paints matches with the CSS Custom Highlight API.
+  Nothing is added to the page, so the editor's DOM and the selection are untouched.
+  In the editor it skips the hidden markdown: a link's address or a `**` never matches.
+  A match that hidden syntax splits is left out, because replacing it would break the markup; an escape's backslash goes with the character it escapes.
+  The title line and the rail's properties are not searched.
+  Replace all is one step on the editor's undo stack, and its toast offers Undo.
 
 ## Verified
 

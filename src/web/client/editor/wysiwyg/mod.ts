@@ -107,6 +107,18 @@ export interface EditorHooks {
 
 export type EditorFormat = 'bold' | 'italic' | 'heading' | 'paragraph' | 'bullets' | 'undo' | 'redo'
 
+/** A stretch of one block's markdown: offsets count every character, hidden syntax included. */
+export interface TextSpan {
+  blockId: string
+  start: number
+  end: number
+}
+
+/** A stretch to rewrite, with what it reads now: one whose block changed since is skipped. */
+export interface TextEdit extends TextSpan {
+  expect: string
+}
+
 export interface EditorHandle {
   content(): string
   format(command: EditorFormat): void
@@ -122,6 +134,10 @@ export interface EditorHandle {
   focusStart(): void
   /** Puts the caret after the last character of the last block. */
   focusEnd(): void
+  /** Rewrites stretches of text as one undo step, leaving the caret alone; how many were rewritten. */
+  replaceText(edits: TextEdit[], text: string): number
+  /** Selects a stretch of a block and gives the editor the keys. */
+  selectText(span: TextSpan): void
   destroy(): void
 }
 
@@ -147,6 +163,8 @@ export function mountEditor(root: HTMLElement, state: EditorState, hooks: Editor
     setFrontmatter: (text) => editor.setFrontmatter(text),
     focusStart: () => editor.focusStart(),
     focusEnd: () => editor.focusEnd(),
+    replaceText: (edits, text) => editor.replaceText(edits, text),
+    selectText: (span) => editor.selectText(span),
     destroy: () => editor.destroy(),
   }
 }
@@ -1189,6 +1207,52 @@ class Editor {
       this.doc.root.prependChild(created)
       return { caret: null }
     })
+  }
+
+  // --- find and replace ---------------------------------------------------------------------------
+
+  /**
+   * Rewrites stretches of block text as one step on the undo stack. The caret stays where it was:
+   * the keys belong to the find box that asked.
+   */
+  replaceText(edits: TextEdit[], text: string): number {
+    this.flushAll()
+    const order = new Map<string, number>()
+    for (const [index, leaf] of [...this.root.querySelectorAll<HTMLElement>('.end-block[data-node]')].entries())
+      order.set(leaf.dataset.node!, index)
+    const byBlock = new Map<string, TextEdit[]>()
+    for (const edit of edits) {
+      if (this.doc.getNode(edit.blockId)?.text.slice(edit.start, edit.end) !== edit.expect) continue
+      byBlock.set(edit.blockId, [...(byBlock.get(edit.blockId) ?? []), edit])
+    }
+    const nodes = [...byBlock.keys()]
+      .map((id) => this.doc.getNode(id))
+      .filter((node): node is Node => node !== undefined)
+      .sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0))
+    if (nodes.length === 0) return 0
+    let count = 0
+    this.transact(anchorsAround(...nodes), null, () => {
+      for (const node of nodes) {
+        // From the end, so the offsets still to come hold; a stretch overlapping one already done is skipped.
+        let value = node.text
+        let limit = value.length
+        for (const edit of byBlock.get(node.id)!.sort((a, b) => b.start - a.start)) {
+          if (edit.end > limit) continue
+          value = value.slice(0, edit.start) + text + value.slice(edit.end)
+          limit = edit.start
+          count++
+        }
+        node.text = value
+        if (node.type === 'table_cell' && node.parent?.parent) node.parent.parent.userText = undefined
+      }
+      return count > 0 ? { caret: null } : null
+    })
+    return count
+  }
+
+  selectText(span: TextSpan) {
+    if (!this.doc.getNode(span.blockId)) return
+    this.place(span.blockId, span.start, span.end)
   }
 
   private enter(shift: boolean, modifier: boolean) {

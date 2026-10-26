@@ -30,6 +30,7 @@ import {
   undoRemove,
   useDirChanges,
 } from './explorerDelete.tsx'
+import { FindBox, type FindRequest, ReplacedToast } from './explorerFind.tsx'
 
 /**
  * The explorer. The sidebar is the tree — a directory lists itself when
@@ -622,6 +623,37 @@ export function DocView({
   useEffect(() => {
     scrollRef.current?.scrollTo(0, 0)
   }, [doc?.path, listing?.path])
+
+  // Find and replace, wherever a file is open: ⌘F finds, ⌥⌘F replaces too, and the ⋯ menu offers it
+  // to anyone who doesn't know the keys.
+  const [findRequest, setFindRequest] = useState<FindRequest | null>(null)
+  const openFind = useCallback((replace: boolean) => {
+    setFindRequest((previous) => ({ seq: (previous?.seq ?? 0) + 1, replace }))
+  }, [])
+  useEffect(() => {
+    if (!canToggleEditing) return
+    const shortcut = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.isComposing || !event.metaKey || event.ctrlKey || event.shiftKey) return
+      // ⌥ turns the key into ƒ on a Mac; the physical key is still F.
+      if (event.code !== 'KeyF' && event.key.toLowerCase() !== 'f') return
+      if (document.querySelector('[role="dialog"]')) return
+      event.preventDefault()
+      event.stopPropagation()
+      openFind(event.altKey)
+    }
+    // Ahead of the browser's own find, which cannot replace.
+    window.addEventListener('keydown', shortcut, true)
+    return () => window.removeEventListener('keydown', shortcut, true)
+  }, [canToggleEditing, openFind])
+  const startEditing = useCallback(() => {
+    if (!editing) toggleEditing()
+  }, [editing, toggleEditing])
+  const [replaced, setReplaced] = useState<{ key: number; text: string } | null>(null)
+  useEffect(() => {
+    if (!replaced) return
+    const timer = window.setTimeout(() => setReplaced(null), TOAST_MS)
+    return () => window.clearTimeout(timer)
+  }, [replaced])
   // The front matter the editor holds while editing; the read document's otherwise.
   const [editFrontmatter, setEditFrontmatter] = useState<string | null>(null)
   const frontmatterText = editing ? editFrontmatter : doc?.frontmatter ? doc.frontmatter : null
@@ -798,6 +830,16 @@ export function DocView({
                   </ActionIcon>
                 </Menu.Target>
                 <Menu.Dropdown>
+                  <Menu.Item
+                    onClick={() => openFind(editing)}
+                    rightSection={
+                      <kbd className="sky-menu-kbd" aria-hidden="true">
+                        ⌘ F
+                      </kbd>
+                    }
+                  >
+                    Find and replace…
+                  </Menu.Item>
                   <Menu.Item onClick={chatAbout}>Chat about this…</Menu.Item>
                   <Menu.Divider />
                   <Menu.Label>Text size · {Math.round(scale * 100)}%</Menu.Label>
@@ -847,6 +889,19 @@ export function DocView({
           data-dragging={audioDrop.dragging || undefined}
           {...audioDrop.handlers}
         >
+          {canToggleEditing && findRequest && (
+            <div className="sky-find-dock">
+              <FindBox
+                request={findRequest}
+                editing={editing}
+                editor={editor}
+                scroller={scrollRef}
+                onEdit={startEditing}
+                onReplaced={(text) => setReplaced({ key: Date.now(), text })}
+                onClose={() => setFindRequest(null)}
+              />
+            </div>
+          )}
           {audioDrop.dragging && <div className="sky-audio-document-drop">Add to this conversation</div>}
           {missing ? (
             <div className="sky-blank">
@@ -881,6 +936,17 @@ export function DocView({
       {toast && (
         <Fragment key={toast.key}>
           <RemovedToast toast={toast} onUndo={() => void undo()} />
+        </Fragment>
+      )}
+      {replaced && (
+        <Fragment key={replaced.key}>
+          <ReplacedToast
+            text={replaced.text}
+            onUndo={() => {
+              setReplaced(null)
+              editor.current?.format('undo')
+            }}
+          />
         </Fragment>
       )}
     </div>

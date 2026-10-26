@@ -1,0 +1,236 @@
+/* Find and replace: a box floating over the top right of the open file, and the matches it paints. */
+
+/* A strip of no height pinned to the top of the scrolling column, the document's width: the box
+   hangs from it, so it stays in view and the document does not move to make room. */
+.sky-find-dock {
+  position: sticky;
+  top: 0;
+  z-index: 12;
+  height: 0;
+  max-width: 1000px;
+  margin: 0 auto;
+  container-type: inline-size;
+}
+
+.sky-findbox {
+  position: absolute;
+  top: 6px;
+  right: 48px;
+  width: min(452px, calc(100% - 28px));
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border-radius: var(--mantine-radius-lg);
+  background: var(--sky-card);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.16);
+}
+
+[data-mantine-color-scheme='dark'] .sky-findbox {
+  box-shadow:
+    0 10px 32px rgba(0, 0, 0, 0.45),
+    0 0 0 1px var(--sky-border-soft);
+}
+
+.sky-findbox-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.sky-findbox-fold svg {
+  transition: transform 120ms ease;
+}
+
+.sky-findbox-fold[aria-expanded='true'] svg {
+  transform: rotate(90deg);
+}
+
+/* Under the fold button, so the two fields line up. */
+.sky-findbox-gap {
+  flex: none;
+  width: calc(2.125rem * var(--mantine-scale));
+}
+
+/* The fields are the search field's, a size down. */
+.sky-findbox-field {
+  flex: 1;
+  min-width: 0;
+  height: 40px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 4px 0 12px;
+  border: 1px solid var(--sky-border-soft);
+  border-radius: var(--mantine-radius-md);
+  background: var(--sky-side);
+}
+
+.sky-findbox-field:focus-within {
+  background: var(--sky-bg);
+  border-color: var(--sky-accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--sky-accent) 9%, transparent);
+}
+
+.sky-findbox-field input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  font: inherit;
+  font-size: 16px;
+  color: var(--sky-text);
+}
+
+.sky-findbox-field input::placeholder {
+  color: var(--sky-dim);
+  opacity: 1;
+}
+
+.sky-findbox-opt {
+  flex: none;
+  height: 28px;
+  min-width: 30px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--sky-dim);
+  cursor: pointer;
+}
+
+.sky-findbox-opt:hover {
+  background: var(--sky-hover);
+  color: var(--sky-text);
+}
+
+.sky-findbox-opt[aria-pressed='true'] {
+  background: var(--sky-accent-soft);
+  color: var(--sky-accent);
+}
+
+.sky-findbox-opt:focus-visible {
+  outline: 2px solid var(--sky-action-focus);
+  outline-offset: 1px;
+}
+
+.sky-findbox-opt u {
+  text-underline-offset: 3px;
+}
+
+.sky-findbox-count {
+  flex: none;
+  min-width: 64px;
+  padding: 0 2px;
+  font-size: 14px;
+  color: var(--sky-dim);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.sky-findbox-row > .sky-button {
+  flex: none;
+  padding-inline: 10px;
+}
+
+/* With nothing to act on, the quiet buttons stay quiet: dimmed, no fill. */
+.sky-findbox :is(.sky-button, .sky-action-icon):disabled {
+  background: none;
+  color: var(--sky-dim);
+  cursor: default;
+}
+
+/* The ⋯ menu shows the shortcut beside Find and replace. */
+.sky-menu-kbd {
+  font: 12px var(--mantine-font-family);
+  padding: 1px 5px;
+  border: 1px solid var(--sky-border-soft);
+  border-radius: 5px;
+  color: var(--sky-dim);
+  white-space: nowrap;
+}
+
+/* The matches, in the amber Sky marks a match with elsewhere: a document's own ==highlight== is
+   the browser's yellow. Highlights take no custom properties, so each scheme names its color. */
+::highlight(sky-find) {
+  background-color: rgba(232, 89, 12, 0.2);
+}
+
+::highlight(sky-find-current) {
+  background-color: rgba(232, 89, 12, 0.48);
+}
+
+[data-mantine-color-scheme='dark'] ::highlight(sky-find) {
+  background-color: rgba(255, 169, 77, 0.22);
+}
+
+[data-mantine-color-scheme='dark'] ::highlight(sky-find-current) {
+  background-color: rgba(255, 169, 77, 0.5);
+}
+
+@media (max-width: 900px) {
+  .sky-findbox {
+    right: 14px;
+  }
+}
+
+/* A phone has no room to float over: the box sits above the document, still pinned at the top. */
+@media (max-width: 520px) {
+  .sky-find-dock {
+    height: auto;
+    padding: 6px 14px 0;
+  }
+
+  .sky-findbox {
+    position: relative;
+    top: auto;
+    right: auto;
+    width: 100%;
+  }
+}
+
+/* A column too narrow for one line: each field takes a line of its own, beside Close; the count,
+   the arrows and the replace buttons go under it. */
+@container (max-width: 520px) {
+  .sky-findbox-row {
+    flex-wrap: wrap;
+    row-gap: 6px;
+  }
+
+  .sky-findbox-row > .sky-findbox-field {
+    order: -1;
+    flex: 1 1 calc(100% - 46px);
+  }
+
+  .sky-findbox-row > .sky-findbox-close {
+    order: -1;
+  }
+
+  .sky-findbox-count {
+    margin-right: auto;
+    text-align: left;
+  }
+
+  .sky-findbox-gap {
+    display: none;
+  }
+
+  .sky-findbox-row > .sky-button:first-of-type {
+    margin-left: auto;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sky-findbox-fold svg {
+    transition: none;
+  }
+}
