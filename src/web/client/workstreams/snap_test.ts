@@ -1,5 +1,5 @@
 import { assert, test } from '#test'
-import { snapWorkstream, type SnapRect, type SnapResult } from './workstreamsSnap.ts'
+import { snapWorkstream, type SnapRect, type SnapResult } from './snap.ts'
 
 const rect = (id: string, x: number, y: number, width = 100, height = 80): SnapRect => ({ id, x, y, width, height })
 

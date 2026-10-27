@@ -11,7 +11,6 @@ import type { Reporting, WorkstreamRecord } from '#lib/workstreams/types.ts'
 import { renderStatic } from '../editor/wysiwyg/render.ts'
 import { RenderedHtml } from '../lib/renderedHtml.tsx'
 import { outboxHref } from '../outbox/outboxRoutes.ts'
-import { workstreamRequest } from './workstreams.tsx'
 import {
   canSendReport,
   describeReportTarget,
@@ -19,7 +18,8 @@ import {
   reportDeliveryStatus,
   reportTargetLink,
   slackReportTarget,
-} from './workstreamsDeliveryModel.ts'
+} from './deliveryModel.ts'
+import { workstreamRequest } from './request.ts'
 
 type DeliveryReport = {
   grants: (ReportDeliveryGrant & { scopeCurrent?: boolean })[]

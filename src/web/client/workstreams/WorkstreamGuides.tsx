@@ -1,4 +1,4 @@
-import type { SnapResult } from './workstreamsSnap.ts'
+import type { SnapResult } from './snap.ts'
 
 export function WorkstreamGuides({ feedback, zoom }: { feedback: SnapResult; zoom: number }) {
   const tick = 3 / zoom

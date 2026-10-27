@@ -1,5 +1,5 @@
 import { assert, test } from '#test'
-import { laneBeforeAt, laneOrderChanges, moveLaneBefore } from './workstreamsOrder.ts'
+import { laneBeforeAt, laneOrderChanges, moveLaneBefore } from './order.ts'
 
 test({ name: 'workstream lanes - moving between unequal-height rows uses canvas coordinates' }, () => {
   const lanes = [

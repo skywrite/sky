@@ -2,9 +2,9 @@ import { Button, Drawer, Modal, Select, Textarea } from '@mantine/core'
 import { useMediaQuery } from '@mantine/hooks'
 import { useState } from 'react'
 import type { Workstream, WorkstreamRecord } from '#lib/workstreams/types.ts'
-import type { CanvasRelationship } from './workstreamsCanvas.tsx'
-import { relationshipLabels, requiredResultAvailable } from './workstreamsRelationshipModel.ts'
-import './workstreamsRelationships.css'
+import { relationshipLabels, requiredResultAvailable } from './relationshipModel.ts'
+import type { CanvasRelationship } from './WorkstreamsCanvas.tsx'
+import './WorkstreamRelationshipEditor.css'
 
 export type RelationshipEditorTarget = {
   source: WorkstreamRecord

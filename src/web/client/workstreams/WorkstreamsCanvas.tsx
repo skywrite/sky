@@ -2,13 +2,6 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import type { WorkstreamColor } from '#lib/workstreams/colors.ts'
 import { CARD_HEIGHT, CARD_WIDTH, defaultWorkstreamPosition } from '#lib/workstreams/layout.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
-import { CanvasToolbar, type CanvasTool } from './CanvasToolbar.tsx'
-import { LaneInsertion } from './LaneInsertion.tsx'
-import { LinkHint } from './LinkHint.tsx'
-import { MapCard } from './MapCard.tsx'
-import { RelationshipLines } from './RelationshipLines.tsx'
-import { LABEL_WIDTH, TimelineGrid, WEEK_WIDTH } from './TimelineGrid.tsx'
-import { TimelineRow } from './TimelineRow.tsx'
 import {
   type Bounds,
   type Camera,
@@ -21,13 +14,20 @@ import {
   wheelCamera,
   worldAt,
   zoomAt,
-} from './workstreamsCamera.ts'
-import { WorkstreamsEmpty } from './workstreamsEmpty.tsx'
-import { WorkstreamGuides } from './workstreamsGuides.tsx'
-import { openWorkstreamMenu, type WorkstreamMenuTarget } from './workstreamsMenu.tsx'
-import { type LaneGeometry, laneBeforeAt } from './workstreamsOrder.ts'
-import { snapWorkstream, type SnapRect, type SnapResult } from './workstreamsSnap.ts'
-import './workstreamsRelationshipsCanvas.css'
+} from './camera.ts'
+import { CanvasToolbar, type CanvasTool } from './CanvasToolbar.tsx'
+import { LaneInsertion } from './LaneInsertion.tsx'
+import { LinkHint } from './LinkHint.tsx'
+import { MapCard } from './MapCard.tsx'
+import { type LaneGeometry, laneBeforeAt } from './order.ts'
+import { RelationshipLines } from './RelationshipLines.tsx'
+import { snapWorkstream, type SnapRect, type SnapResult } from './snap.ts'
+import { LABEL_WIDTH, TimelineGrid, WEEK_WIDTH } from './TimelineGrid.tsx'
+import { TimelineRow } from './TimelineRow.tsx'
+import { WorkstreamGuides } from './WorkstreamGuides.tsx'
+import { WorkstreamsEmpty } from './WorkstreamsEmpty.tsx'
+import { openWorkstreamMenu, type WorkstreamMenuTarget } from './WorkstreamsMenu.tsx'
+import './WorkstreamsCanvas.css'
 
 export interface CanvasActivity {
   id: string

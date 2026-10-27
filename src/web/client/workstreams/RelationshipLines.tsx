@@ -1,14 +1,14 @@
 import type { Key } from 'react'
 import { CARD_HEIGHT, CARD_WIDTH } from '#lib/workstreams/layout.ts'
+import type { Point } from './camera.ts'
 import type { ActivityBox } from './TimelineRow.tsx'
-import type { Point } from './workstreamsCamera.ts'
 import type {
   CanvasActivity,
   CanvasRelationship,
   CanvasWorkstream,
   LinkDrag,
   WorkstreamView,
-} from './workstreamsCanvas.tsx'
+} from './WorkstreamsCanvas.tsx'
 
 export type RelationshipLayout = {
   view: WorkstreamView

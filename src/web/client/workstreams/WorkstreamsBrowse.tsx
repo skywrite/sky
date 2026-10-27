@@ -1,7 +1,8 @@
 import { Button, Modal, TextInput } from '@mantine/core'
 import { useState } from 'react'
 import type { WorkstreamRecord } from '#lib/workstreams/types.ts'
-import { openWorkstreamMenu, WorkstreamMenuButton, type WorkstreamMenuTarget } from './workstreamsMenu.tsx'
+import { WorkstreamMenuButton } from './WorkstreamMenuButton.tsx'
+import { openWorkstreamMenu, type WorkstreamMenuTarget } from './WorkstreamsMenu.tsx'
 
 /** Keyboard and screen-reader navigation over the same filtered work as the canvas. */
 export function WorkstreamsBrowse({

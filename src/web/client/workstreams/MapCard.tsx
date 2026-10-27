@@ -1,10 +1,11 @@
 import type { Key } from 'react'
 import { CARD_HEIGHT, CARD_WIDTH } from '#lib/workstreams/layout.ts'
+import type { Point } from './camera.ts'
+import { workstreamColorStyle } from './colors.ts'
 import { WorkstreamConnector } from './WorkstreamConnector.tsx'
-import type { Point } from './workstreamsCamera.ts'
-import type { CanvasWorkstream } from './workstreamsCanvas.tsx'
-import { workstreamColorStyle } from './workstreamsColors.tsx'
-import { openWorkstreamMenu, WorkstreamMenuButton, type WorkstreamMenuTarget } from './workstreamsMenu.tsx'
+import { WorkstreamMenuButton } from './WorkstreamMenuButton.tsx'
+import type { CanvasWorkstream } from './WorkstreamsCanvas.tsx'
+import { openWorkstreamMenu, type WorkstreamMenuTarget } from './WorkstreamsMenu.tsx'
 
 export function MapCard({
   item,

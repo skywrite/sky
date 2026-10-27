@@ -1,5 +1,5 @@
 import type { Activity, Workstream } from '#lib/workstreams/types.ts'
-import type { CanvasRelationship } from './workstreamsCanvas.tsx'
+import type { CanvasRelationship } from './WorkstreamsCanvas.tsx'
 
 export const relationshipLabels: Record<CanvasRelationship['kind'], string> = {
   related: 'Related to',

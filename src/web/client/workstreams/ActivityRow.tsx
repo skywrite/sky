@@ -2,10 +2,11 @@ import { Button } from '@mantine/core'
 import type { Key } from 'react'
 import { ActivitySchema, type Activity } from '#lib/workstreams/types.ts'
 import { outboxHref } from '../outbox/outboxRoutes.ts'
+import { ActionResultEvidence } from './ActionResultEvidence.tsx'
+import { DecisionReasoning } from './DecisionReasoning.tsx'
 import { Prose } from './Prose.tsx'
+import { requiredResultAvailable } from './relationshipModel.ts'
 import { complete, useWorkstreamDetail, type WorkstreamCommunication } from './WorkstreamDetailContext.ts'
-import { ActionResultEvidence, DecisionReasoning } from './workstreamsDelegation.tsx'
-import { requiredResultAvailable } from './workstreamsRelationshipModel.ts'
 
 function communicationStatus(value: WorkstreamCommunication): string {
   if (value.delivery) return 'Owner reported sent'

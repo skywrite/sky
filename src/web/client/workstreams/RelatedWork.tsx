@@ -1,5 +1,5 @@
+import { relationshipLabel, relationshipsFor } from './relationshipModel.ts'
 import { useWorkstreamDetail } from './WorkstreamDetailContext.ts'
-import { relationshipLabel, relationshipsFor } from './workstreamsRelationshipModel.ts'
 
 export function RelatedWork({ limit }: { limit?: number }) {
   const { item, all, onInspectRelationship } = useWorkstreamDetail()

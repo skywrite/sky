@@ -1,15 +1,7 @@
 import { VisuallyHidden } from '@mantine/core'
-import type { CSSProperties, KeyboardEvent } from 'react'
+import type { KeyboardEvent } from 'react'
 import { WORKSTREAM_COLORS, type WorkstreamColor } from '#lib/workstreams/colors.ts'
-
-export function workstreamColorStyle(color: WorkstreamColor = 'blue'): CSSProperties {
-  return {
-    '--sky-workstream-card-fill': `var(--sky-workstream-${color}-fill)`,
-    '--sky-workstream-card-border': `var(--sky-workstream-${color}-border)`,
-    '--sky-workstream-card-accent': `var(--sky-workstream-${color}-accent)`,
-    '--sky-workstream-card-ink': `var(--sky-workstream-${color}-ink)`,
-  } as CSSProperties
-}
+import { workstreamColorStyle } from './colors.ts'
 
 const labels: Record<WorkstreamColor, string> = {
   blue: 'Blue (default)',

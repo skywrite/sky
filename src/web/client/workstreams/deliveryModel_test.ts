@@ -6,7 +6,7 @@ import {
   reportDeliveryStatus,
   reportTargetLink,
   slackReportTarget,
-} from './workstreamsDeliveryModel.ts'
+} from './deliveryModel.ts'
 
 test({ name: 'report delivery UI - legacy email send grants remain review-only' }, () => {
   assert({

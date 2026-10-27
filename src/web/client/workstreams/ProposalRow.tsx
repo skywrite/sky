@@ -1,9 +1,9 @@
 import { Button } from '@mantine/core'
 import type { Key } from 'react'
 import type { Workstream } from '#lib/workstreams/types.ts'
+import { CoordinationPreview } from './CoordinationPreview.tsx'
+import { workstreamRequest } from './request.ts'
 import { useWorkstreamDetail } from './WorkstreamDetailContext.ts'
-import { CoordinationPreview } from './workstreamsCoordination.tsx'
-import { workstreamRequest } from './workstreamsRequest.ts'
 
 export function ProposalRow({
   proposal,

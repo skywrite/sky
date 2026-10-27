@@ -1,8 +1,9 @@
 import type { Key } from 'react'
+import { workstreamColorStyle } from './colors.ts'
 import { WorkstreamConnector } from './WorkstreamConnector.tsx'
-import type { CanvasActivity, CanvasWorkstream } from './workstreamsCanvas.tsx'
-import { workstreamColorStyle } from './workstreamsColors.tsx'
-import { openWorkstreamMenu, WorkstreamMenuButton, type WorkstreamMenuTarget } from './workstreamsMenu.tsx'
+import { WorkstreamMenuButton } from './WorkstreamMenuButton.tsx'
+import type { CanvasActivity, CanvasWorkstream } from './WorkstreamsCanvas.tsx'
+import { openWorkstreamMenu, type WorkstreamMenuTarget } from './WorkstreamsMenu.tsx'
 
 export type ActivityBox = { x: number; y: number; width: number }
 

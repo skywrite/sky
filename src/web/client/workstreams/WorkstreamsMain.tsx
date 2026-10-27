@@ -14,25 +14,24 @@ import {
   type WorkstreamRun,
 } from '#lib/workstreams/types.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
-import { WorkstreamsBrowse } from './workstreamsBrowse.tsx'
-import type { Point } from './workstreamsCamera.ts'
+import type { Point } from './camera.ts'
+import { DeletedWorkDialog, type DeletedWorkView } from './DeletedWorkDialog.tsx'
+import { laneOrderChanges } from './order.ts'
+import { proposalRelationship, relationshipChanges } from './relationshipModel.ts'
+import { workstreamRequest } from './request.ts'
+import { useHiddenWorkstreamDeletions } from './useHiddenWorkstreamDeletions.ts'
+import { WorkstreamCapture } from './WorkstreamCapture.tsx'
+import { type WorkstreamCommunication, WorkstreamDetail } from './WorkstreamDetail.tsx'
+import { WorkstreamRelationshipEditor, type RelationshipEditorTarget } from './WorkstreamRelationshipEditor.tsx'
+import { WorkstreamsBrowse } from './WorkstreamsBrowse.tsx'
 import {
   WorkstreamsCanvas,
   type CanvasRelationship,
   type CanvasWorkstream,
   type WorkstreamView,
-} from './workstreamsCanvas.tsx'
-import { WorkstreamCapture } from './workstreamsCapture.tsx'
-import { DeletedWorkDialog, type DeletedWorkView, useHiddenWorkstreamDeletions } from './workstreamsDeleted.tsx'
-import { type WorkstreamCommunication, WorkstreamDetail } from './workstreamsDetail.tsx'
-import { WorkstreamsMenu, type WorkstreamMenuTarget } from './workstreamsMenu.tsx'
-import { laneOrderChanges } from './workstreamsOrder.ts'
-import { proposalRelationship, relationshipChanges } from './workstreamsRelationshipModel.ts'
-import { WorkstreamRelationshipEditor, type RelationshipEditorTarget } from './workstreamsRelationships.tsx'
-import { workstreamRequest } from './workstreamsRequest.ts'
-import './workstreams.css'
-
-export { workstreamRequest } from './workstreamsRequest.ts'
+} from './WorkstreamsCanvas.tsx'
+import { WorkstreamsMenu, type WorkstreamMenuTarget } from './WorkstreamsMenu.tsx'
+import './WorkstreamsMain.css'
 
 function initialView(): WorkstreamView {
   try {

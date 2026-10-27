@@ -1,4 +1,4 @@
-import type { Bounds, Point } from './workstreamsCamera.ts'
+import type { Bounds, Point } from './camera.ts'
 
 export type SnapRect = Bounds & { id: string }
 export interface AlignmentGuide {

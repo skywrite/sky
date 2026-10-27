@@ -3,7 +3,7 @@ import { fileHref } from '../explorer/explorer.tsx'
 import { Prose } from './Prose.tsx'
 import { RelatedWork } from './RelatedWork.tsx'
 import { moment, useWorkstreamDetail } from './WorkstreamDetailContext.ts'
-import { WorkstreamReports } from './workstreamsDelivery.tsx'
+import { WorkstreamReports } from './WorkstreamReports.tsx'
 
 export function DetailsTab() {
   const { item, runs, busy, act, navigate, onRelate, onSubstream, openEditor, openArtifact } = useWorkstreamDetail()

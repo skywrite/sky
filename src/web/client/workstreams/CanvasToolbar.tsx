@@ -1,6 +1,6 @@
 import { ActionIcon, Button } from '@mantine/core'
 import { useState } from 'react'
-import type { WorkstreamView } from './workstreamsCanvas.tsx'
+import type { WorkstreamView } from './WorkstreamsCanvas.tsx'
 
 export type CanvasTool = 'select' | 'hand'
 

@@ -1,6 +1,6 @@
 import { createContext, useContext } from 'react'
 import type { Activity, Artifact, WorkstreamRecord, WorkstreamRun } from '#lib/workstreams/types.ts'
-import type { CanvasRelationship } from './workstreamsCanvas.tsx'
+import type { CanvasRelationship } from './WorkstreamsCanvas.tsx'
 
 export type WorkstreamCommunication = {
   id: string

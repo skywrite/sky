@@ -6,7 +6,7 @@ import {
   relationshipLabel,
   relationshipsFor,
   requiredResultAvailable,
-} from './workstreamsRelationshipModel.ts'
+} from './relationshipModel.ts'
 
 const work = (id: string) => WorkstreamSchema.parse({ id, title: id, created: '2025-03-15', updated: '2025-03-15' })
 

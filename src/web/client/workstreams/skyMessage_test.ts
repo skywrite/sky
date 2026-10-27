@@ -1,6 +1,6 @@
 import { RunSchema } from '#lib/workstreams/types.ts'
 import { assert, test } from '#test'
-import { workstreamSkyMessage } from './workstreamsSkyMessage.ts'
+import { workstreamSkyMessage } from './skyMessage.ts'
 
 const error = 'Sky could not complete this attempt. The response was incomplete. Please try again.'
 const failed = RunSchema.parse({

@@ -5,9 +5,9 @@ import { ActivityRow } from './ActivityRow.tsx'
 import { ProposalRow } from './ProposalRow.tsx'
 import { Prose } from './Prose.tsx'
 import { RelatedWork } from './RelatedWork.tsx'
+import { relationshipsFor, requiredResultAvailable } from './relationshipModel.ts'
+import { workstreamSkyMessage } from './skyMessage.ts'
 import { complete, moment, useWorkstreamDetail } from './WorkstreamDetailContext.ts'
-import { relationshipsFor, requiredResultAvailable } from './workstreamsRelationshipModel.ts'
-import { workstreamSkyMessage } from './workstreamsSkyMessage.ts'
 
 export function BriefTab({
   decisions,

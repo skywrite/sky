@@ -9,7 +9,7 @@ import {
   wheelCamera,
   worldAt,
   zoomAt,
-} from './workstreamsCamera.ts'
+} from './camera.ts'
 
 test({ name: 'workstream camera - zoom keeps the world beneath the cursor stable' }, () => {
   const camera = { x: -340, y: 120, zoom: 0.5 }

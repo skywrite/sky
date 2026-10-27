@@ -39,7 +39,7 @@ import { StreaksMain } from './streaks/streaks.tsx'
 import { TrackingMain } from './tracking/tracking.tsx'
 import { AuditionMain } from './voice/audition.tsx'
 import { useWeek, weekHref, weekIdOf, WeekMain } from './week/week.tsx'
-import { WorkstreamsMain } from './workstreams/workstreams.tsx'
+import { WorkstreamsMain } from './workstreams/WorkstreamsMain.tsx'
 
 /**
  * The web app's client: React and Mantine on the sky theme, bundled by Bun on

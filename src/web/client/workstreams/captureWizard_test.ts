@@ -1,6 +1,6 @@
 import type { CaptureRequest, CaptureResponse } from '#lib/workstreams/captureTypes.ts'
 import { assert, test } from '#test'
-import { captureStepRequest, captureSteps, type CaptureStep } from './workstreamsCaptureWizard.ts'
+import { captureStepRequest, captureSteps, type CaptureStep } from './captureWizard.ts'
 
 const request: CaptureRequest = { intent: 'Launch the Atlas pilot over the next three months.', answers: [] }
 const ready: CaptureResponse = {

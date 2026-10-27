@@ -8,9 +8,9 @@ import {
   type CaptureResponse,
 } from '#lib/workstreams/captureTypes.ts'
 import { fileHref } from '../explorer/explorer.tsx'
-import { captureSteps, captureStepRequest, type CaptureStep } from './workstreamsCaptureWizard.ts'
-import { workstreamRequest } from './workstreamsRequest.ts'
-import './workstreamsCapture.css'
+import { captureSteps, captureStepRequest, type CaptureStep } from './captureWizard.ts'
+import { workstreamRequest } from './request.ts'
+import './WorkstreamCapture.css'
 
 const timingQuestion: NonNullable<CaptureResponse['question']> = {
   field: 'timing',

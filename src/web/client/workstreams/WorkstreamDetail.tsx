@@ -23,21 +23,23 @@ import {
 } from '#lib/workstreams/types.ts'
 import { fileHref } from '../explorer/explorer.tsx'
 import { outboxHref } from '../outbox/outboxRoutes.ts'
+import { ActionCompletionEditor } from './ActionCompletionEditor.tsx'
 import { BriefTab } from './BriefTab.tsx'
+import { DecisionAuthorityEditor } from './DecisionAuthorityEditor.tsx'
 import { DetailsTab } from './DetailsTab.tsx'
 import { Prose } from './Prose.tsx'
+import { workstreamRequest } from './request.ts'
 import {
   complete,
   WorkstreamDetailContext,
   type ActivityActions,
   type WorkstreamCommunication,
 } from './WorkstreamDetailContext.ts'
-import { workstreamRequest } from './workstreams.tsx'
-import type { CanvasRelationship } from './workstreamsCanvas.tsx'
-import { ActionCompletionEditor, DecisionAuthorityEditor } from './workstreamsDelegation.tsx'
-import { openWorkstreamMenu, WorkstreamMenuButton, type WorkstreamMenuTarget } from './workstreamsMenu.tsx'
+import { WorkstreamMenuButton } from './WorkstreamMenuButton.tsx'
+import type { CanvasRelationship } from './WorkstreamsCanvas.tsx'
+import { openWorkstreamMenu, type WorkstreamMenuTarget } from './WorkstreamsMenu.tsx'
 import { WorkTab } from './WorkTab.tsx'
-import './workstreamsBrief.css'
+import './WorkstreamDetail.css'
 
 export type { WorkstreamCommunication } from './WorkstreamDetailContext.ts'
 
