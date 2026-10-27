@@ -204,6 +204,25 @@ When a change meets the threshold above, use its existing topic home and the sma
 - A view that must manage its own DOM (for example, syntax highlighting) must update it only when the HTML changes. Preserve existing text nodes during unrelated updates.
 - When fixing a shared rendering bug, search the web client for the same pattern and fix every affected surface. Verify in a browser that selection survives background refreshes, including a drag across a refresh and a range spanning paragraphs, and that changed content still appears.
 
+### React Component Files
+
+The web client follows the common React file-naming convention.
+
+- Name a file that exports a component after that component, in PascalCase: `MapCard.tsx` exports `MapCard`.
+- Export one component per file.
+  Its own types, constants and small helpers can sit beside it, and so can private components that only it renders.
+- Give each hook its own file named after the hook, such as `useHiddenWorkstreamDeletions.ts`.
+  Modules without components keep camelCase names, such as `camera.ts`.
+- Name a test after the module it tests: `snap_test.ts`, `WorkstreamsMain_test.ts`.
+  Name a component's stylesheet after the component: `WorkstreamDetail.css`.
+- Let the feature folder be the namespace; never repeat its name as a file prefix.
+  For example, `workstreams/camera.ts`, not `workstreams/workstreamsCamera.ts`.
+- Most older client files still use lowercase names; `workstreams/` is converted, so use it as the reference.
+  Don't copy the old pattern.
+  When renaming a file, update every import and commit the rename by itself so git keeps the file's history.
+  On macOS, a rename that only changes capitalization needs `git mv`.
+  Otherwise git keeps the old name and Linux CI breaks.
+
 ### Imports
 
 Use subpath imports with `#` prefix (configured in `package.json`):
