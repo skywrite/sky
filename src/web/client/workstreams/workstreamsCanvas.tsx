@@ -1,8 +1,14 @@
-import { ActionIcon, Button } from '@mantine/core'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { WorkstreamColor } from '#lib/workstreams/colors.ts'
 import { CARD_HEIGHT, CARD_WIDTH, defaultWorkstreamPosition } from '#lib/workstreams/layout.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
+import { CanvasToolbar, type CanvasTool } from './CanvasToolbar.tsx'
+import { LaneInsertion } from './LaneInsertion.tsx'
+import { LinkHint } from './LinkHint.tsx'
+import { MapCard } from './MapCard.tsx'
+import { RelationshipLines } from './RelationshipLines.tsx'
+import { LABEL_WIDTH, TimelineGrid, WEEK_WIDTH } from './TimelineGrid.tsx'
+import { TimelineRow } from './TimelineRow.tsx'
 import {
   type Bounds,
   type Camera,
@@ -16,10 +22,9 @@ import {
   worldAt,
   zoomAt,
 } from './workstreamsCamera.ts'
-import { workstreamColorStyle } from './workstreamsColors.tsx'
 import { WorkstreamsEmpty } from './workstreamsEmpty.tsx'
 import { WorkstreamGuides } from './workstreamsGuides.tsx'
-import { openWorkstreamMenu, WorkstreamMenuButton, type WorkstreamMenuTarget } from './workstreamsMenu.tsx'
+import { openWorkstreamMenu, type WorkstreamMenuTarget } from './workstreamsMenu.tsx'
 import { type LaneGeometry, laneBeforeAt } from './workstreamsOrder.ts'
 import { snapWorkstream, type SnapRect, type SnapResult } from './workstreamsSnap.ts'
 import './workstreamsRelationshipsCanvas.css'
@@ -58,8 +63,6 @@ export interface CanvasRelationship {
   proposalId?: string
 }
 export type WorkstreamView = 'map' | 'timeline'
-const WEEK_WIDTH = 252
-const LABEL_WIDTH = 300
 
 function ordinal(date: PlainDate): number {
   const y = date.year - 1
@@ -114,7 +117,7 @@ type Gesture = {
   }
   kind: 'pan' | 'map' | 'activity' | 'lane' | 'link'
 }
-type LinkDrag = { fromId: string; start: Point; end: Point; toId?: string }
+export type LinkDrag = { fromId: string; start: Point; end: Point; toId?: string }
 type Pinch = { camera: Camera; anchor: Point; distance: number }
 type SafariGesture = Event & { clientX: number; clientY: number; scale: number }
 
@@ -159,7 +162,7 @@ export function WorkstreamsCanvas({
   const [camera, setCamera] = useState(() => safeSavedCamera(view))
   const cameraRef = useRef(camera)
   const cameraView = useRef(view)
-  const [tool, setTool] = useState<'select' | 'hand'>('select')
+  const [tool, setTool] = useState<CanvasTool>('select')
   const [panning, setPanning] = useState(false)
   const [size, setSize] = useState({ x: 1000, y: 700 })
   const [moves, setMoves] = useState<Record<string, Point>>({})
@@ -170,7 +173,6 @@ export function WorkstreamsCanvas({
   const snappingRef = useRef(snapping)
   snappingRef.current = snapping
   const [snapFeedback, setSnapFeedback] = useState<SnapResult | null>(null)
-  const [help, setHelp] = useState(false)
   const gesture = useRef<Gesture | null>(null)
   const pointers = useRef(new Map<number, Point>())
   const pinch = useRef<Pinch | null>(null)
@@ -801,8 +803,17 @@ export function WorkstreamsCanvas({
     }
   }, [publish])
 
+  const canClick = () => !suppressClick.current && !space.current && tool !== 'hand'
   const select = (id: string) => {
-    if (!suppressClick.current && !space.current && tool !== 'hand') onSelect(id)
+    if (canClick()) onSelect(id)
+  }
+  const changeSnapping = (next: boolean) => {
+    setSnapping(next)
+    try {
+      localStorage.setItem('sky-workstreams-snapping', String(next))
+    } catch {
+      /* Snapping preferences are optional. */
+    }
   }
   const firstWeek = Math.max(earliestWeek, Math.floor((-camera.x / camera.zoom - LABEL_WIDTH) / WEEK_WIDTH) - 1)
   const lastWeek = Math.ceil(((size.x - camera.x) / camera.zoom - LABEL_WIDTH) / WEEK_WIDTH) + 1
@@ -813,165 +824,6 @@ export function WorkstreamsCanvas({
   const totalHeight = Math.max(size.y / camera.zoom, ...[...lanes.values()].map((lane) => lane.y + lane.height))
   const center = { x: size.x / 2, y: size.y / 2 }
   const laneY = (id: string) => lanes.get(id)!.y + (laneDrag?.id === id ? laneDrag.delta : 0)
-  const drawRelationship = (relationship: CanvasRelationship, index: number) => {
-    const { fromId, toId, kind, reason } = relationship
-    if (view === 'map' && fromId === toId) return null
-    const from = items.find((item) => item.id === fromId)!
-    const to = items.find((item) => item.id === toId)!
-    const requiredActivity = to.activities.find((activity) => activity.id === relationship.requiredActivityId)
-    const dependentActivity = from.activities.find((activity) => activity.id === relationship.activityId)
-    const parallel = relationships.filter(
-      (candidate) =>
-        (candidate.fromId === fromId && candidate.toId === toId) ||
-        (candidate.fromId === toId && candidate.toId === fromId),
-    )
-    let start: Point, end: Point, first: Point, second: Point
-    if (view === 'map') {
-      // A prerequisite arrow runs from the supplying work to the activity that needs it.
-      const source = positions.get(kind === 'prerequisite' ? toId : fromId)!
-      const target = positions.get(kind === 'prerequisite' ? fromId : toId)!
-      const direction = target.x >= source.x ? 1 : -1
-      const portGap = Math.min(26, (CARD_HEIGHT - 32) / Math.max(1, parallel.length - 1))
-      const separation = (parallel.indexOf(relationship) - (parallel.length - 1) / 2) * portGap
-      start = { x: source.x + (direction === 1 ? CARD_WIDTH : 0), y: source.y + CARD_HEIGHT / 2 + separation }
-      end = { x: target.x + (direction === 1 ? 0 : CARD_WIDTH), y: target.y + CARD_HEIGHT / 2 + separation }
-      const bend = Math.max(65, Math.abs(end.x - start.x) / 2)
-      first = { x: start.x + direction * bend, y: start.y }
-      second = { x: end.x - direction * bend, y: end.y }
-      if (Math.abs(source.y - target.y) < CARD_HEIGHT / 2) {
-        // Leave the row clear, including any other cards between these workstreams.
-        const lift = 40 + parallel.indexOf(relationship) * 36
-        start = { x: source.x + CARD_WIDTH / 2, y: source.y }
-        end = { x: target.x + CARD_WIDTH / 2, y: target.y }
-        first = { x: start.x, y: Math.min(start.y, end.y) - lift }
-        second = { x: end.x, y: Math.min(start.y, end.y) - lift }
-      }
-    } else if (kind === 'prerequisite' && requiredActivity && dependentActivity) {
-      const source = activityBox(to, requiredActivity)
-      const target = activityBox(from, dependentActivity)
-      start = { x: source.x + source.width, y: laneY(toId) + source.y + 18 }
-      end = { x: target.x, y: laneY(fromId) + target.y + 18 }
-      first = { x: start.x + 55, y: start.y }
-      second = { x: end.x - 55, y: end.y }
-    } else {
-      const supplier = kind === 'prerequisite' ? toId : fromId
-      const recipient = kind === 'prerequisite' ? fromId : toId
-      start = { x: laneLeft + 265, y: laneY(supplier) + 40 }
-      end = { x: laneLeft + 265, y: laneY(recipient) + 40 }
-      const bend = 80 + (index % 4) * 22
-      first = { x: start.x + bend, y: start.y }
-      second = { x: end.x + bend, y: end.y }
-    }
-    const path = `M ${start.x} ${start.y} C ${first.x} ${first.y}, ${second.x} ${second.y}, ${end.x} ${end.y}`
-    const labelT = parallel.length > 1 ? 0.3 + (0.4 * parallel.indexOf(relationship)) / (parallel.length - 1) : 0.5
-    const inverse = 1 - labelT
-    const midpoint = {
-      x:
-        inverse ** 3 * start.x +
-        3 * inverse ** 2 * labelT * first.x +
-        3 * inverse * labelT ** 2 * second.x +
-        labelT ** 3 * end.x,
-      y:
-        inverse ** 3 * start.y +
-        3 * inverse ** 2 * labelT * first.y +
-        3 * inverse * labelT ** 2 * second.y +
-        labelT ** 3 * end.y,
-    }
-    const description =
-      kind === 'prerequisite'
-        ? `${from.title} needs a result from ${to.title}${reason ? `: ${reason}` : ''}`
-        : `${from.title} ${kind === 'parent' ? 'is part of' : kind === 'contributes' ? 'contributes to' : 'is related to'} ${to.title}${reason ? `: ${reason}` : ''}`
-    const label =
-      kind === 'prerequisite'
-        ? `Needs: ${reason || requiredActivity?.title || 'a result'}`
-        : kind === 'parent'
-          ? 'Part of'
-          : kind === 'contributes'
-            ? 'Contributes to'
-            : 'Related to'
-    const shortLabel = `${relationship.proposalId ? 'Sky suggests · ' : ''}${label.length > 42 ? `${label.slice(0, 39)}…` : label}`
-    const focused = selected === fromId || selected === toId
-    const labelWidth = Math.max(82, shortLabel.length * 6.4 + 24)
-    const inspect = () => {
-      if (!suppressClick.current && !space.current && tool !== 'hand') onInspectRelationship(relationship)
-    }
-    return (
-      <g
-        key={`${kind}:${fromId}:${toId}:${relationship.activityId ?? ''}:${relationship.requiredActivityId ?? ''}:${relationship.proposalId ?? ''}`}
-        className="sky-workstreams-relationship"
-        data-kind={kind}
-        data-focused={focused}
-        data-muted={!!neighborhood && !focused}
-        data-preview={!!relationship.proposalId}
-      >
-        <path
-          className="sky-workstreams-relationship-line"
-          d={path}
-          markerEnd={kind === 'related' ? undefined : 'url(#workstream-arrow)'}
-          vectorEffect="non-scaling-stroke"
-        />
-        <path
-          className="sky-workstreams-relationship-hit"
-          d={path}
-          data-canvas-control
-          data-canvas-relationship
-          role="button"
-          tabIndex={0}
-          aria-label={`${relationship.proposalId ? 'Review Sky suggestion: ' : 'Inspect relationship: '}${description}`}
-          vectorEffect="non-scaling-stroke"
-          onClick={inspect}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter' || event.key === ' ') {
-              event.preventDefault()
-              onInspectRelationship(relationship)
-            }
-          }}
-        >
-          <title>{description}</title>
-        </path>
-        <g
-          className="sky-workstreams-relationship-label"
-          transform={`translate(${midpoint.x}, ${midpoint.y}) scale(${1 / camera.zoom})`}
-          data-canvas-control
-          data-canvas-relationship
-          onClick={inspect}
-          aria-hidden="true"
-        >
-          <rect x={-labelWidth / 2} y={-14} width={labelWidth} height={28} rx={14} />
-          <text textAnchor="middle" dominantBaseline="central">
-            {shortLabel}
-          </text>
-        </g>
-      </g>
-    )
-  }
-  const connector = (item: CanvasWorkstream) => (
-    <ActionIcon
-      className="sky-workstreams-connector"
-      aria-label={`Relate ${item.title} to another workstream`}
-      title="Drag to another workstream to relate them, or click to choose."
-      variant="secondary"
-      data-canvas-control
-      data-workstream-connector={item.id}
-      disabled={disabled}
-      style={{ transform: `translate(50%, -50%) scale(${1 / camera.zoom})` }}
-      onClick={(event) => {
-        if (event.detail === 0 && !disabled) onRelate(item.id)
-      }}
-    >
-      <svg
-        width="16"
-        height="16"
-        viewBox="0 0 20 20"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.7"
-        aria-hidden="true"
-      >
-        <path d="M8 5H5a5 5 0 0 0 0 10h3m4-10h3a5 5 0 0 1 0 10h-3M6 10h8" />
-      </svg>
-    </ActionIcon>
-  )
 
   return (
     <div
@@ -1001,252 +853,78 @@ export function WorkstreamsCanvas({
         className="sky-workstreams-world"
         style={{ transform: `translate(${camera.x}px, ${camera.y}px) scale(${camera.zoom})` }}
       >
-        <svg
-          className="sky-workstreams-edges sky-workstreams-relationship-graph"
-          aria-label="Relationships between workstreams"
-        >
-          <defs>
-            <marker
-              id="workstream-arrow"
-              markerWidth="8"
-              markerHeight="8"
-              refX="6"
-              refY="3"
-              orient="auto"
-              markerUnits="userSpaceOnUse"
-            >
-              <path d="M0,0 L6,3 L0,6" fill="none" stroke="currentColor" strokeWidth="1.5" />
-            </marker>
-          </defs>
-          {relationships.map(drawRelationship)}
-          {linkDrag && (
-            <path
-              className="sky-workstreams-link-preview"
-              d={`M ${linkDrag.start.x} ${linkDrag.start.y} C ${linkDrag.start.x + 65} ${linkDrag.start.y}, ${linkDrag.end.x - 65} ${linkDrag.end.y}, ${linkDrag.end.x} ${linkDrag.end.y}`}
-              vectorEffect="non-scaling-stroke"
-            />
-          )}
-        </svg>
+        <RelationshipLines
+          relationships={relationships}
+          items={items}
+          layout={{ view, positions, laneLeft, laneY, activityBox }}
+          selected={selected}
+          neighborhood={neighborhood}
+          zoom={camera.zoom}
+          linkDrag={linkDrag}
+          canClick={canClick}
+          onInspect={onInspectRelationship}
+        />
         {view === 'map' && snapFeedback && <WorkstreamGuides feedback={snapFeedback} zoom={camera.zoom} />}
         {view === 'map' ? (
           <>
-            {items.map((item) => {
-              const point = positions.get(item.id)!
-              const openActivities = item.activities.filter(
-                (activity) => activity.status !== 'done' && activity.status !== 'decided',
-              ).length
-              const summary =
-                item.status === 'active'
-                  ? item.attention ||
-                    `Active · ${openActivities} open ${openActivities === 1 ? 'activity' : 'activities'}`
-                  : item.status === 'proposed'
-                    ? 'Proposed'
-                    : item.status === 'paused'
-                      ? 'Paused'
-                      : item.status === 'completed'
-                        ? 'Completed'
-                        : 'Canceled'
-              return (
-                <div
-                  key={item.id}
-                  className="sky-workstreams-card"
-                  data-workstream={item.id}
-                  data-state={item.status}
-                  data-color={item.color ?? 'blue'}
-                  data-attention={item.needsAttention}
-                  data-selected={item.id === selected}
-                  data-muted={!!neighborhood && !neighborhood.has(item.id)}
-                  data-drop-target={linkDrag?.toId === item.id}
-                  onContextMenu={(event) => openWorkstreamMenu(event, item.id, item.title, onMenu)}
-                  onKeyDown={(event) => {
-                    if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10'))
-                      openWorkstreamMenu(event, item.id, item.title, onMenu)
-                  }}
-                  style={{
-                    ...workstreamColorStyle(item.color),
-                    left: point.x,
-                    top: point.y,
-                    width: CARD_WIDTH,
-                    height: CARD_HEIGHT,
-                  }}
-                >
-                  <button type="button" className="sky-workstreams-card-open" onClick={() => select(item.id)}>
-                    <strong title={item.title}>{item.title}</strong>
-                    <span className="sky-workstreams-card-outcome" title={item.outcome}>
-                      {item.outcome || 'The outcome is taking shape.'}
-                    </span>
-                    <span className="sky-workstreams-card-bottom">
-                      <span className="sky-workstreams-card-summary">
-                        {item.parentId && 'Sub-workstream · '}
-                        {summary}
-                      </span>
-                      {item.status === 'active' && (
-                        <span
-                          className="sky-workstreams-card-assistance"
-                          data-assisting={item.assistance !== 'off' && item.assistance !== 'manual'}
-                        >
-                          {item.assistance === 'off' || item.assistance === 'manual'
-                            ? 'You’re leading'
-                            : item.assistance === 'drive'
-                              ? 'Sky driving'
-                              : 'Sky assisting'}
-                        </span>
-                      )}
-                    </span>
-                  </button>
-                  <WorkstreamMenuButton
-                    workstreamId={item.id}
-                    title={item.title}
-                    onMenu={onMenu}
-                    disabled={disabled}
-                    className="sky-workstreams-canvas-menu"
-                    style={{ transform: `scale(${1 / camera.zoom})` }}
-                  />
-                  {connector(item)}
-                </div>
-              )
-            })}
+            {items.map((item) => (
+              <MapCard
+                key={item.id}
+                item={item}
+                point={positions.get(item.id)!}
+                selected={item.id === selected}
+                muted={!!neighborhood && !neighborhood.has(item.id)}
+                dropTarget={linkDrag?.toId === item.id}
+                zoom={camera.zoom}
+                disabled={disabled}
+                onOpen={select}
+                onMenu={onMenu}
+                onRelate={onRelate}
+              />
+            ))}
           </>
         ) : (
           <>
-            {weeks.map((index) => {
-              const week = monday.addDays(index * 7)
-              return (
-                <div
-                  key={index}
-                  className="sky-workstreams-week"
-                  style={{ left: LABEL_WIDTH + index * WEEK_WIDTH, width: WEEK_WIDTH, height: totalHeight }}
-                >
-                  <strong>W{week.weekOfYear}</strong>
-                  <span>
-                    {week.ymd} — {week.addDays(6).ymd}
-                  </span>
-                </div>
-              )
-            })}
-            <div
-              className="sky-workstreams-today-line"
-              style={{ left: LABEL_WIDTH + (dayOffset(monday.ymd, today) * WEEK_WIDTH) / 7, height: totalHeight }}
-            >
-              <span>Today</span>
-            </div>
-            <div className="sky-workstreams-label-column" style={{ left: laneLeft, height: totalHeight }}>
-              <span>Workstreams</span>
-            </div>
-            {items.map((item) => {
-              const lane = lanes.get(item.id)!
-              return (
-                <div
-                  key={item.id}
-                  className="sky-workstreams-lane"
-                  data-workstream={item.id}
-                  data-color={item.color ?? 'blue'}
-                  data-muted={!!neighborhood && !neighborhood.has(item.id)}
-                  data-drop-target={linkDrag?.toId === item.id}
-                  onContextMenu={(event) => openWorkstreamMenu(event, item.id, item.title, onMenu)}
-                  onKeyDown={(event) => {
-                    if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10'))
-                      openWorkstreamMenu(event, item.id, item.title, onMenu)
-                  }}
-                  data-dragging={laneDrag?.id === item.id}
-                  style={{
-                    ...workstreamColorStyle(item.color),
-                    top: lane.y + (laneDrag?.id === item.id ? laneDrag.delta : 0),
-                    height: lane.height,
-                  }}
-                >
-                  <div
-                    className="sky-workstreams-lane-label"
-                    data-workstream={item.id}
-                    data-lane-drag
-                    data-selected={selected === item.id}
-                    title="Drag vertically to reorder. Hold Space to pan."
-                    style={{ left: laneLeft }}
-                  >
-                    <button type="button" className="sky-workstreams-lane-open" onClick={() => select(item.id)}>
-                      <strong>{item.title}</strong>
-                      <span>
-                        {item.status !== 'active' && `${item.status[0]!.toUpperCase()}${item.status.slice(1)} · `}
-                        {item.activities.length
-                          ? `${item.activities.length} ${item.activities.length === 1 ? 'activity' : 'activities'}`
-                          : 'No activities yet'}
-                      </span>
-                    </button>
-                    <WorkstreamMenuButton
-                      workstreamId={item.id}
-                      title={item.title}
-                      onMenu={onMenu}
-                      disabled={disabled}
-                      className="sky-workstreams-canvas-menu"
-                      style={{ transform: `scale(${1 / camera.zoom})` }}
-                    />
-                    {connector(item)}
-                  </div>
-                  {!item.activities.length && (
-                    <button
-                      type="button"
-                      className="sky-workstreams-unscheduled"
-                      style={{ left: laneLeft, top: 115 }}
-                      data-workstream={item.id}
-                      onClick={() => select(item.id)}
-                    >
-                      Define the next useful action →
-                    </button>
-                  )}
-                  {item.activities.some((activity) => !activity.start) && (
-                    <span className="sky-workstreams-undated-label" style={{ left: laneLeft + 4 }}>
-                      Unscheduled
-                    </span>
-                  )}
-                  {item.activities.map((activity) => {
-                    const box = activityBox(item, activity)
-                    const done = activity.status === 'done' || activity.status === 'decided'
-                    return (
-                      <button
-                        key={activity.id}
-                        type="button"
-                        className="sky-workstreams-clip"
-                        data-workstream={item.id}
-                        data-activity={activity.id}
-                        data-scheduled={!!activity.start}
-                        data-kind={activity.kind}
-                        data-done={done}
-                        title={`${activity.title} · ${done ? 'Completed' : activity.kind === 'decision' ? 'Decision' : 'Action'}`}
-                        onClick={() => select(item.id)}
-                        style={{ left: box.x, width: box.width, top: box.y }}
-                      >
-                        <span>
-                          {done ? '✓ ' : activity.kind === 'decision' ? '◇ ' : ''}
-                          {activity.title}
-                        </span>
-                      </button>
-                    )
-                  })}
-                </div>
-              )
-            })}
+            <TimelineGrid
+              weeks={weeks}
+              monday={monday}
+              todayLeft={LABEL_WIDTH + (dayOffset(monday.ymd, today) * WEEK_WIDTH) / 7}
+              laneLeft={laneLeft}
+              height={totalHeight}
+            />
+            {items.map((item) => (
+              <TimelineRow
+                key={item.id}
+                item={item}
+                top={laneY(item.id)}
+                height={lanes.get(item.id)!.height}
+                laneLeft={laneLeft}
+                dragging={laneDrag?.id === item.id}
+                selected={selected === item.id}
+                muted={!!neighborhood && !neighborhood.has(item.id)}
+                dropTarget={linkDrag?.toId === item.id}
+                zoom={camera.zoom}
+                disabled={disabled}
+                activityBox={activityBox}
+                onOpen={select}
+                onMenu={onMenu}
+                onRelate={onRelate}
+              />
+            ))}
             {laneDrag && (
-              <div
-                className="sky-workstreams-lane-insertion"
-                style={{
-                  left: laneLeft,
-                  top: laneDrag.beforeId
+              <LaneInsertion
+                laneLeft={laneLeft}
+                top={
+                  laneDrag.beforeId
                     ? lanes.get(laneDrag.beforeId)!.y - 9
-                    : Math.max(...[...lanes.values()].map((lane) => lane.y + lane.height)) + 9,
-                  width: LABEL_WIDTH + WEEK_WIDTH * 4 - laneLeft,
-                }}
+                    : Math.max(...[...lanes.values()].map((lane) => lane.y + lane.height)) + 9
+                }
               />
             )}
           </>
         )}
       </div>
-      {linkDrag && (
-        <div className="sky-workstreams-link-hint" role="status">
-          {linkDrag.toId
-            ? 'Release to choose how these workstreams relate'
-            : 'Drop on another workstream · Esc to cancel'}
-        </div>
-      )}
+      {linkDrag && <LinkHint overTarget={!!linkDrag.toId} />}
       {!items.length && (
         <WorkstreamsEmpty
           onStart={onAdd}
@@ -1256,119 +934,18 @@ export function WorkstreamsCanvas({
           availableHeight={size.y}
         />
       )}
-      <div className="sky-workstreams-dock" data-canvas-control>
-        <ActionIcon
-          aria-label="Select tool (V)"
-          title="Select (V)"
-          variant={tool === 'select' ? 'light' : 'subtle'}
-          onClick={() => setTool('select')}
-        >
-          ↖
-        </ActionIcon>
-        <ActionIcon
-          aria-label="Hand tool (H)"
-          title="Pan (H or hold Space)"
-          variant={tool === 'hand' ? 'light' : 'subtle'}
-          onClick={() => setTool('hand')}
-        >
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6">
-            <path d="M8 12V6a1.5 1.5 0 0 1 3 0v5-7a1.5 1.5 0 0 1 3 0v7-5a1.5 1.5 0 0 1 3 0v6-2a1.5 1.5 0 0 1 3 0v6c0 4-2 6-6 6h-1c-3 0-4-2-5-4l-4-5a1.5 1.5 0 0 1 2-2l2 1Z" />
-          </svg>
-        </ActionIcon>
-        <span className="sky-workstreams-dock-divider" />
-        {view === 'map' && (
-          <ActionIcon
-            aria-label="Snap to workstreams"
-            aria-pressed={snapping}
-            title={`Snapping ${snapping ? 'on' : 'off'} · Hold Option / Alt to move freely`}
-            variant={snapping ? 'light' : 'subtle'}
-            onClick={() => {
-              const next = !snapping
-              setSnapping(next)
-              try {
-                localStorage.setItem('sky-workstreams-snapping', String(next))
-              } catch {
-                /* Snapping preferences are optional. */
-              }
-            }}
-          >
-            <svg
-              width="19"
-              height="19"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.7"
-              aria-hidden="true"
-            >
-              <path d="M5 3v10a7 7 0 0 0 14 0V3h-4v10a3 3 0 0 1-6 0V3ZM5 7h4m6 0h4" />
-            </svg>
-          </ActionIcon>
-        )}
-        <ActionIcon
-          aria-label="Zoom out (-)"
-          disabled={camera.zoom <= 0.1}
-          onClick={() => publish(zoomAt(cameraRef.current, cameraRef.current.zoom / 1.25, center))}
-        >
-          −
-        </ActionIcon>
-        <button
-          type="button"
-          className="sky-workstreams-zoom"
-          title="Reset to 100% (Shift+0)"
-          onClick={() => publish(zoomAt(cameraRef.current, 1, center))}
-        >
-          {Math.round(camera.zoom * 100)}%
-        </button>
-        <ActionIcon
-          aria-label="Zoom in (+)"
-          disabled={camera.zoom >= 8}
-          onClick={() => publish(zoomAt(cameraRef.current, cameraRef.current.zoom * 1.25, center))}
-        >
-          ＋
-        </ActionIcon>
-        <Button size="xs" onClick={() => fit()} title="Fit all (Shift+1)">
-          Fit
-        </Button>
-        <ActionIcon aria-label="Canvas controls" onClick={() => setHelp(!help)}>
-          ?
-        </ActionIcon>
-      </div>
-      {help && (
-        <div className="sky-workstreams-help" data-canvas-control>
-          <strong>Move around the work</strong>
-          <p>Scroll to pan. Pinch or Ctrl / ⌘ + scroll to zoom.</p>
-          <p>
-            <kbd>＋</kbd> / <kbd>−</kbd> Zoom
-            <br />
-            <kbd>Space</kbd> + drag Pan
-            <br />
-            <kbd>Shift 0</kbd> Actual size
-            <br />
-            <kbd>Shift 1</kbd> Fit all
-            <br />
-            <kbd>Shift 2</kbd> Fit selection
-          </p>
-          <p>
-            {view === 'map'
-              ? 'Drag a card to align its edges, center, or spacing with nearby workstreams. The magnet turns snapping on or off.'
-              : 'Drag a lane heading vertically to reorder workstreams. Drag a dated activity horizontally to change its planned dates.'}
-          </p>
-          {view === 'map' && (
-            <p>
-              <kbd>Option / Alt</kbd> Move freely
-              <br />
-              <kbd>Shift</kbd> Keep a drag straight
-              <br />
-              <kbd>Esc</kbd> Cancel a drag
-            </p>
-          )}
-          <p>
-            Drag a card’s link handle to another workstream to relate them. Select a line to understand or edit the
-            relationship. On touch, use the workstream’s three-dot menu.
-          </p>
-        </div>
-      )}
+      <CanvasToolbar
+        view={view}
+        tool={tool}
+        onToolChange={setTool}
+        snapping={snapping}
+        onSnappingChange={changeSnapping}
+        zoom={camera.zoom}
+        onZoomOut={() => publish(zoomAt(cameraRef.current, cameraRef.current.zoom / 1.25, center))}
+        onZoomReset={() => publish(zoomAt(cameraRef.current, 1, center))}
+        onZoomIn={() => publish(zoomAt(cameraRef.current, cameraRef.current.zoom * 1.25, center))}
+        onFit={() => fit()}
+      />
     </div>
   )
 }

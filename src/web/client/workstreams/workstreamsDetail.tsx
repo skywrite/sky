@@ -12,7 +12,6 @@ import {
 } from '@mantine/core'
 import { useEffect, useRef, useState } from 'react'
 import {
-  ActivitySchema,
   ReportingSchema,
   SourceSchema,
   type Activity,
@@ -22,24 +21,25 @@ import {
   type WorkstreamRecord,
   type WorkstreamRun,
 } from '#lib/workstreams/types.ts'
-import { renderStatic } from '../editor/wysiwyg/render.ts'
 import { fileHref } from '../explorer/explorer.tsx'
-import { RenderedHtml } from '../lib/renderedHtml.tsx'
 import { outboxHref } from '../outbox/outboxRoutes.ts'
+import { BriefTab } from './BriefTab.tsx'
+import { DetailsTab } from './DetailsTab.tsx'
+import { Prose } from './Prose.tsx'
+import {
+  complete,
+  WorkstreamDetailContext,
+  type ActivityActions,
+  type WorkstreamCommunication,
+} from './WorkstreamDetailContext.ts'
 import { workstreamRequest } from './workstreams.tsx'
 import type { CanvasRelationship } from './workstreamsCanvas.tsx'
-import { CoordinationPreview } from './workstreamsCoordination.tsx'
-import {
-  ActionCompletionEditor,
-  ActionResultEvidence,
-  DecisionAuthorityEditor,
-  DecisionReasoning,
-} from './workstreamsDelegation.tsx'
-import { WorkstreamReports } from './workstreamsDelivery.tsx'
+import { ActionCompletionEditor, DecisionAuthorityEditor } from './workstreamsDelegation.tsx'
 import { openWorkstreamMenu, WorkstreamMenuButton, type WorkstreamMenuTarget } from './workstreamsMenu.tsx'
-import { relationshipLabel, relationshipsFor, requiredResultAvailable } from './workstreamsRelationshipModel.ts'
-import { workstreamSkyMessage } from './workstreamsSkyMessage.ts'
+import { WorkTab } from './WorkTab.tsx'
 import './workstreamsBrief.css'
+
+export type { WorkstreamCommunication } from './WorkstreamDetailContext.ts'
 
 type Props = {
   item: WorkstreamRecord
@@ -59,33 +59,7 @@ type Props = {
   navigate: (path: string) => void
   notice: (message: string) => void
 }
-export type WorkstreamCommunication = {
-  id: string
-  status: 'needs_review' | 'placing' | 'ready' | 'placement_unknown' | 'dismissed'
-  native?: unknown
-  delivery?: { at: string; evidence: string; kind: 'owner_report' }
-  stale: boolean
-}
-function communicationStatus(value: WorkstreamCommunication): string {
-  if (value.delivery) return 'Owner reported sent'
-  if (value.status === 'placement_unknown') return 'Placement uncertain'
-  if (value.status === 'placing') return 'Preparing native draft'
-  if (value.stale) return 'Context changed · Review needed'
-  if (value.status === 'ready')
-    return value.native ? 'Native draft ready · Sending unconfirmed' : 'Draft prepared · Sending unconfirmed'
-  return value.status === 'dismissed' ? 'Dismissed' : 'Needs review'
-}
 type Editor = 'overview' | 'details' | 'sky' | null
-
-function prose(text: string) {
-  return <RenderedHtml className="sky-workstream-prose" html={renderStatic(text)} />
-}
-function complete(activity: Activity) {
-  return activity.state === 'done' || activity.state === 'canceled'
-}
-function moment(value?: string) {
-  return value ? value.replace('T', ' ').slice(0, 16) : ''
-}
 
 export function WorkstreamDetail({
   item,
@@ -150,7 +124,6 @@ export function WorkstreamDetail({
     setResult(activity.result)
     setResolution(activity)
   }
-  const parent = all.find((candidate) => candidate.id === item.parentId)
   const openDecisions = item.activities.filter(
     (activity) => activity.kind === 'decision' && !complete(activity) && !activity.subworkstreamId,
   )
@@ -159,11 +132,6 @@ export function WorkstreamDetail({
       item.sky.decisionPolicies[activity.id]?.mode === 'delegate' && activity.decisionAnalysis?.outcome !== 'escalated',
   )
   const decisions = openDecisions.filter((activity) => !delegatedDecisions.includes(activity))
-  const activities = item.activities.filter(
-    (activity) => activity.kind !== 'decision' && !activity.subworkstreamId && (showCompleted || !complete(activity)),
-  )
-  const done = item.activities.filter(complete).length
-  const currentRun = runs.find((run) => run.status === 'running')
   const saveActivity = (value: Activity) =>
     void act(async () => {
       await patch(editBase, {
@@ -173,6 +141,10 @@ export function WorkstreamDetail({
       })
       setActivityEdit(null)
     })
+  const changeRequest = (text: string) => {
+    if (contextOperation.current?.text !== text.trim()) contextOperation.current = null
+    setRequest(text)
+  }
   const review = (noteOnly = false) =>
     void act(async () => {
       const text = request.trim()
@@ -236,981 +208,354 @@ export function WorkstreamDetail({
         activities: item.activities.map((value) => (value.id === activity.id ? { ...value, state: 'ready' } : value)),
       })
     })
-  const activityRow = (activity: Activity) => {
-    const expanded = expandedActivity === activity.id
-    const missingResults = activity.requires.filter((requirement) => !requiredResultAvailable(requirement, all))
-    const waitingFor = activity.waitingFor || missingResults[0]?.result
-    return (
-      <div
-        key={activity.id}
-        id={`activity-${activity.id}`}
-        className="sky-workstream-activity sky-workstream-brief-activity"
-        data-done={complete(activity)}
-        data-highlight={highlightedActivity === activity.id}
-        data-expanded={expanded}
-      >
-        <div className="sky-workstream-activity-heading">
-          <span className="sky-workstream-activity-symbol" aria-hidden="true">
-            {complete(activity) ? '✓' : activity.kind === 'decision' ? '◇' : '○'}
-          </span>
-          <button
-            type="button"
-            className="sky-workstream-activity-title"
-            aria-expanded={expanded}
-            aria-controls={`activity-detail-${activity.id}`}
-            onClick={() => setExpandedActivity(expanded ? null : activity.id)}
-          >
-            {activity.title}
-          </button>
-          <span className="sky-workstream-activity-owner">
-            {activity.kind === 'decision'
-              ? item.sky.decisionPolicies[activity.id]?.mode === 'delegate'
-                ? 'Sky'
-                : activity.person || 'You'
-              : activity.executor === 'sky'
-                ? 'Sky'
-                : activity.person || 'You'}
-          </span>
-        </div>
-        {!expanded && waitingFor && <p className="sky-workstream-hint">Waiting for {waitingFor}</p>}
-        {!expanded && (
-          <div className="sky-workstream-brief-activity-action">
-            <span>{activity.due ? `By ${activity.due}` : activity.state === 'ready' ? '' : activity.state}</span>
-            {complete(activity) ? (
-              <Button size="xs" onClick={() => setExpandedActivity(activity.id)}>
-                View result
-              </Button>
-            ) : activity.state === 'proposed' ? (
-              <Button size="xs" variant="primary-quiet" disabled={busy} onClick={() => acceptActivity(activity)}>
-                Accept next step
-              </Button>
-            ) : activity.outboxId ? (
-              <Button size="xs" variant="primary-quiet" onClick={() => navigate(outboxHref(activity.outboxId!))}>
-                Open in Outbox ↗
-              </Button>
-            ) : missingResults.length > 0 ? (
-              <Button size="xs" variant="primary-quiet" onClick={() => setExpandedActivity(activity.id)}>
-                View prerequisite
-              </Button>
-            ) : activity.kind === 'decision' ? (
-              <Button
-                size="xs"
-                variant="primary-quiet"
-                disabled={busy}
-                onClick={() => setExpandedActivity(activity.id)}
-              >
-                Review decision
-              </Button>
-            ) : activity.executor === 'sky' ? (
-              <Button
-                size="xs"
-                variant="primary-quiet"
-                disabled={busy || !!currentRun}
-                onClick={() => reviewActivity(activity)}
-              >
-                Ask Sky to advance
-              </Button>
-            ) : (
-              <Button size="xs" variant="primary-quiet" onClick={() => today(activity)} disabled={busy}>
-                {activity.participation.some((entry) => !entry.removed) ? 'Plan for today' : 'Today'}
-              </Button>
-            )}
-          </div>
-        )}
-        <div id={`activity-detail-${activity.id}`} hidden={!expanded}>
-          {activity.recommendation && (
-            <p className="sky-workstream-recommendation">
-              <strong>Recommendation</strong> {activity.recommendation}
-            </p>
-          )}
-          {activity.waitingFor && <p className="sky-workstream-hint">Waiting for {activity.waitingFor}</p>}
-          {activity.kind === 'decision' && <DecisionReasoning activity={activity} item={item} />}
-          {activity.kind !== 'decision' && (
-            <ActionResultEvidence verification={activity.actionVerification} item={item} />
-          )}
-          {activity.result && <div className="sky-workstream-result">{prose(activity.result)}</div>}
-          {activity.outboxId && communications.find((value) => value.id === activity.outboxId) && (
-            <p className="sky-workstream-hint">
-              Communication: {communicationStatus(communications.find((value) => value.id === activity.outboxId)!)}
-            </p>
-          )}
-          {activity.requires.length > 0 && (
-            <div className="sky-workstream-requires">
-              {activity.requires.map((requirement) => {
-                const workstream = all.find((candidate) => candidate.id === requirement.workstreamId),
-                  dependency = workstream?.activities.find((candidate) => candidate.id === requirement.activityId)
-                return (
-                  <button
-                    key={`${requirement.workstreamId}:${requirement.activityId}`}
-                    type="button"
-                    onClick={() => onSelect(requirement.workstreamId)}
-                  >
-                    {requiredResultAvailable(requirement, all) ? '✓' : '↳'} Requires{' '}
-                    {requirement.result || dependency?.title || 'a result'}
-                    {workstream ? ` · ${workstream.title}` : ''}
-                  </button>
-                )
-              })}
-            </div>
-          )}
-          <div className="sky-workstream-activity-foot">
-            <span>
-              {activity.state === 'ready' ? '' : activity.state}
-              {activity.due
-                ? `${activity.state === 'ready' ? '' : ' · '}By ${activity.due}`
-                : activity.start
-                  ? ` · ${activity.start}${activity.end ? ` → ${activity.end}` : ''}`
-                  : ''}
-            </span>
-            <div>
-              {activity.decisionResolution && (
-                <Button
-                  size="xs"
-                  onClick={() =>
-                    openActivity(
-                      ActivitySchema.parse({
-                        id: crypto.randomUUID(),
-                        title: `Reconsider: ${activity.title}`.slice(0, 500),
-                        kind: 'decision',
-                        outcome: activity.outcome,
-                        notes: `Previous decision: ${activity.result}\n\nDescribe what changed and why this decision needs reconsideration.`,
-                      }),
-                    )
-                  }
-                >
-                  Reconsider
-                </Button>
-              )}
-              {activity.kind === 'decision' && !complete(activity) && (
-                <Button
-                  size="xs"
-                  onClick={() => {
-                    setEditBase(item)
-                    setDecisionAuthority(activity)
-                  }}
-                >
-                  Who decides
-                </Button>
-              )}
-              {activity.kind !== 'decision' && activity.executor === 'sky' && !complete(activity) && (
-                <Button
-                  size="xs"
-                  onClick={() => {
-                    setEditBase(item)
-                    setActionCompletion(activity)
-                  }}
-                >
-                  {item.sky.actionPolicies[activity.id] ? 'Completion rule' : 'Define done'}
-                </Button>
-              )}
-              {activity.state === 'proposed' && (
-                <Button
-                  size="xs"
-                  variant="primary"
-                  disabled={busy}
-                  onClick={() =>
-                    void act(async () => {
-                      await patch(item, {
-                        activities: item.activities.map((value) =>
-                          value.id === activity.id ? { ...value, state: 'ready' } : value,
-                        ),
-                      })
-                    })
-                  }
-                >
-                  Accept next step
-                </Button>
-              )}
-              {!complete(activity) && (
-                <Button size="xs" onClick={() => today(activity)} disabled={busy}>
-                  {activity.participation.some((entry) => !entry.removed) ? 'Plan for today' : 'Today'}
-                </Button>
-              )}
-              {activity.outboxId ? (
-                <Button size="xs" onClick={() => navigate(outboxHref(activity.outboxId!))}>
-                  Open in Outbox ↗
-                </Button>
-              ) : (
-                <Button size="xs" onClick={() => openCommunication(activity)}>
-                  Prepare message
-                </Button>
-              )}
-              <Button size="xs" onClick={() => openActivity(activity)}>
-                Edit activity
-              </Button>
-              <Button size="xs" disabled={busy} onClick={() => promote(activity)}>
-                Expand into sub-workstream
-              </Button>
-            </div>
-          </div>
-          {!activity.decisionResolution && (
-            <Button
-              size="xs"
-              disabled={busy}
-              aria-label={complete(activity) ? `Reopen ${activity.title}` : `Complete ${activity.title}`}
-              onClick={() =>
-                complete(activity)
-                  ? void act(async () => {
-                      await patch(item, {
-                        activities: item.activities.map((value) =>
-                          value.id === activity.id ? { ...value, state: 'ready' } : value,
-                        ),
-                      })
-                    })
-                  : openResolution(activity)
-              }
-            >
-              {complete(activity)
-                ? 'Reopen activity'
-                : activity.kind === 'decision'
-                  ? 'Record decision'
-                  : 'Record result'}
-            </Button>
-          )}
-        </div>
-      </div>
-    )
-  }
-
   const openArtifact = (value: Artifact) =>
     void act(async () => {
       setArtifact(await workstreamRequest<{ artifact: Artifact; content: string }>(`/${item.id}/artifacts/${value.id}`))
     })
-  const relatedWork = relationshipsFor(item, all)
-  const relationRows = (limit?: number) =>
-    relatedWork.slice(0, limit).map((relation) => {
-      const id = relation.fromId === item.id ? relation.toId : relation.fromId
-      const target = all.find((candidate) => candidate.id === id)
-      const title = target?.title ?? 'Unavailable workstream'
-      return (
-        <button
-          type="button"
-          className="sky-workstream-related"
-          key={`${relation.fromId}:${relation.toId}:${relation.kind}:${relation.activityId ?? ''}:${relation.requiredActivityId ?? ''}`}
-          aria-label={`Inspect ${relationshipLabel(relation, item.id).toLowerCase()} relationship with ${title}`}
-          onClick={() => onInspectRelationship(relation)}
-        >
-          <span aria-hidden="true">↔</span>
-          <span>
-            <strong>{title}</strong>
-            <small>
-              {relationshipLabel(relation, item.id)}
-              {relation.reason ? ` · ${relation.reason}` : ''}
-            </small>
-          </span>
-          <span aria-hidden="true">›</span>
-        </button>
-      )
-    })
-  const proposalRow = (proposal: NonNullable<Workstream['proposals']>[number]) => (
-    <div className="sky-workstream-suggestion" key={proposal.id}>
-      <strong>{proposal.title}</strong>
-      {proposal.reason !== proposal.title && <p>{proposal.reason}</p>}
-      {proposal.outcome && <p>{proposal.outcome}</p>}
-      {proposal.kind === 'coordination' && proposal.coordination && (
-        <CoordinationPreview proposal={proposal.coordination} />
-      )}
-      <div className="sky-workstream-brief-actions">
-        <Button
-          size="xs"
-          variant="primary-quiet"
-          disabled={busy}
-          onClick={() =>
-            proposal.kind === 'relation'
-              ? onReviewRelationship(item.id, proposal.id)
-              : void act(async () => {
-                  await workstreamRequest(`/${item.id}/proposals/${proposal.id}/accept`, 'POST', {
-                    revision: item.revision,
-                  })
-                })
-          }
-        >
-          {proposal.kind === 'relation' ? 'Review relationship' : 'Apply suggestion'}
-        </Button>
-        <Button
-          size="xs"
-          disabled={busy}
-          onClick={() =>
-            void act(async () => {
-              await workstreamRequest(`/${item.id}/proposals/${proposal.id}/dismiss`, 'POST', {
-                revision: item.revision,
-              })
-            })
-          }
-        >
-          Dismiss
-        </Button>
-      </div>
-    </div>
-  )
-  const needsReview = item.activities.find(
-    (activity) =>
-      !complete(activity) &&
-      !!activity.outboxId &&
-      communications.some(
-        (value) => value.id === activity.outboxId && (value.status === 'needs_review' || value.stale),
-      ),
-  )
-  const attention = decisions[0] ?? needsReview
-  const nextAction = item.activities.find(
-    (activity) =>
-      activity.id !== attention?.id &&
-      activity.kind !== 'decision' &&
-      !activity.subworkstreamId &&
-      !complete(activity) &&
-      activity.state !== 'waiting' &&
-      activity.requires.every((requirement) => requiredResultAvailable(requirement, all)),
-  )
-  const relationProposal = item.proposals?.find((proposal) => proposal.kind === 'relation')
-  const latestArtifact = item.artifacts.at(-1)
-  const skyMessage = workstreamSkyMessage(item.sky, runs)
-  const skyActivity = item.activities.find(
-    (activity) =>
-      !complete(activity) &&
-      activity.executor === 'sky' &&
-      (activity.state === 'running' || activity.state === 'waiting'),
-  )
+  const activityActions: ActivityActions = {
+    accept: acceptActivity,
+    reopen: acceptActivity,
+    advance: reviewActivity,
+    planToday: today,
+    edit: openActivity,
+    chooseDecider: (activity) => {
+      setEditBase(item)
+      setDecisionAuthority(activity)
+    },
+    defineDone: (activity) => {
+      setEditBase(item)
+      setActionCompletion(activity)
+    },
+    prepareMessage: openCommunication,
+    expand: promote,
+    record: openResolution,
+  }
 
   return (
-    <aside className="sky-workstream-detail sky-workstream-brief" aria-label={item.title}>
-      <header
-        className="sky-workstream-detail-header"
-        onContextMenu={(event) => {
-          if (!busy) openWorkstreamMenu(event, item.id, item.title, onMenu)
-        }}
-      >
-        <div>
-          {parent ? (
-            <button type="button" className="sky-workstream-parent" onClick={() => onSelect(parent.id)}>
-              ↳ {parent.title}
-            </button>
-          ) : (
-            <span className="sky-workstreams-eyebrow">Workstream</span>
-          )}
-          <h2>{item.title}</h2>
-        </div>
-        <div className="sky-workstream-header-actions">
-          <WorkstreamMenuButton workstreamId={item.id} title={item.title} onMenu={onMenu} disabled={busy} />
-          <ActionIcon aria-label="Close workstream" onClick={onClose}>
-            ×
-          </ActionIcon>
-        </div>
-      </header>
-      <Tabs
-        value={view}
-        onChange={(value) => setView(value ?? 'brief')}
-        keepMounted={false}
-        className="sky-workstream-brief-tabs"
-      >
-        <Tabs.List aria-label="Workstream views" className="sky-workstream-brief-tab-list">
-          <Tabs.Tab value="brief">Brief</Tabs.Tab>
-          <Tabs.Tab value="work">
-            Work{' '}
-            <span className="sky-workstream-tab-count">
-              {item.activities.filter((activity) => !complete(activity)).length || ''}
-            </span>
-          </Tabs.Tab>
-          <Tabs.Tab value="details">Details</Tabs.Tab>
-        </Tabs.List>
-        <div className="sky-workstream-detail-scroll">
-          <Tabs.Panel value="brief">
-            <section className="sky-workstream-outcome">
-              <div className="sky-workstream-section-head">
-                <h3>What success looks like</h3>
-                <Button size="xs" onClick={() => openEditor('overview')}>
-                  Edit
-                </Button>
-              </div>
-              <BriefOutcome
-                text={
-                  item.outcome ||
-                  item.intent ||
-                  'Describe what you want to accomplish. The outcome can become clearer as you go.'
-                }
+    <WorkstreamDetailContext.Provider
+      value={{
+        item,
+        all,
+        runs,
+        communications,
+        busy,
+        act,
+        navigate,
+        onSelect,
+        onRelate,
+        onSubstream,
+        onInspectRelationship,
+        onReviewRelationship,
+        openEditor,
+        openArtifact,
+        showView: setView,
+        expandedActivity,
+        expandActivity: setExpandedActivity,
+        highlightedActivity,
+        activityActions,
+      }}
+    >
+      <aside className="sky-workstream-detail sky-workstream-brief" aria-label={item.title}>
+        <DetailHeader
+          item={item}
+          parent={all.find((candidate) => candidate.id === item.parentId)}
+          busy={busy}
+          onSelect={onSelect}
+          onMenu={onMenu}
+          onClose={onClose}
+        />
+        <Tabs
+          value={view}
+          onChange={(value) => setView(value ?? 'brief')}
+          keepMounted={false}
+          className="sky-workstream-brief-tabs"
+        >
+          <Tabs.List aria-label="Workstream views" className="sky-workstream-brief-tab-list">
+            <Tabs.Tab value="brief">Brief</Tabs.Tab>
+            <Tabs.Tab value="work">
+              Work{' '}
+              <span className="sky-workstream-tab-count">
+                {item.activities.filter((activity) => !complete(activity)).length || ''}
+              </span>
+            </Tabs.Tab>
+            <Tabs.Tab value="details">Details</Tabs.Tab>
+          </Tabs.List>
+          <div className="sky-workstream-detail-scroll">
+            <Tabs.Panel value="brief">
+              <BriefTab
+                decisions={decisions}
+                request={request}
+                savedRequest={savedRequest}
+                onRequestChange={changeRequest}
+                onReview={review}
               />
-              {item.due && <span className="sky-workstream-date">By {item.due}</span>}
-              {item.state !== 'active' && <span className="sky-workstream-date">{item.state}</span>}
-            </section>
-            <section className="sky-workstream-section sky-workstream-brief-status">
-              <h3>Where things stand</h3>
-              {item.understanding ? (
-                <BriefProse text={item.understanding} />
-              ) : (
-                <p className="sky-workstream-hint">
-                  No update recorded yet. Share what you know below to start shaping the work.
-                </p>
-              )}
-            </section>
-            {attention || nextAction ? (
-              <section className="sky-workstream-section sky-workstream-brief-next">
-                {attention && (
-                  <>
-                    <h3>Needs you</h3>
-                    {activityRow(attention)}
-                  </>
-                )}
-                {!attention && nextAction && (
-                  <>
-                    <h3>Next move</h3>
-                    {activityRow(nextAction)}
-                  </>
-                )}
-                <Button size="xs" onClick={() => setView('work')}>
-                  View all work
-                </Button>
-              </section>
-            ) : (
-              <section className="sky-workstream-section">
-                <div className="sky-workstream-section-head">
-                  <h3>Next move</h3>
-                  <Button size="xs" onClick={() => setView('work')}>
-                    View all work
-                  </Button>
-                </div>
-                <p className="sky-workstream-hint">
-                  {item.activities.some((activity) => !complete(activity))
-                    ? 'Work is waiting. Open the activities to see the inputs or decisions needed.'
-                    : item.activities.length
-                      ? 'The recorded activities are finished. Review whether the outcome has been achieved.'
-                      : 'Add one useful action, or ask Sky to help find the next move.'}
-                </p>
-              </section>
-            )}
-            <section className="sky-workstream-sky sky-workstream-brief-sky">
-              <div className="sky-workstream-section-head">
-                <h3>
-                  <span className="sky-workstream-sky-mark">✦</span>
-                  {currentRun ? 'Sky is working' : 'Sky'}
-                </h3>
-                <Button size="xs" onClick={() => openEditor('sky')}>
-                  {item.sky.mode === 'off' ? 'Give responsibility' : 'Responsibility'}
-                </Button>
-              </div>
-              {currentRun ? (
-                <p>Review started {moment(currentRun.started)}. Results will appear here when it finishes.</p>
-              ) : skyMessage.summary ? (
-                <BriefProse text={skyMessage.summary} />
-              ) : skyMessage.error ? null : skyActivity ? (
-                <p>
-                  {skyActivity.state === 'waiting'
-                    ? `Waiting for ${skyActivity.waitingFor || 'an input'}`
-                    : 'Working on'}
-                  : {skyActivity.title}
-                </p>
-              ) : (
-                <p>
-                  {item.sky.mode === 'off'
-                    ? 'Ask Sky to help with a next move. Ongoing help is off.'
-                    : 'Ongoing help is enabled. No review result has been recorded yet.'}
-                </p>
-              )}
-              {skyMessage.error && <p className="sky-workstreams-error">{skyMessage.error}</p>}
-              {latestArtifact && (
-                <button
-                  className="sky-workstream-artifact"
-                  type="button"
-                  disabled={busy}
-                  onClick={() => openArtifact(latestArtifact)}
-                >
-                  <span aria-hidden="true">▤</span>
-                  <span>
-                    <strong>{latestArtifact.title}</strong>
-                    <small>Prepared work · {moment(latestArtifact.created)}</small>
-                  </span>
-                  <span aria-hidden="true">↗</span>
-                </button>
-              )}
-              <Textarea
-                aria-label="What changed, or what would you like to move forward?"
-                placeholder="What changed, or what would you like to move forward?"
-                autosize
-                minRows={2}
-                maxRows={6}
-                maxLength={20000}
-                value={request}
-                disabled={busy}
-                onChange={(event) => {
-                  const text = event.currentTarget.value
-                  if (contextOperation.current?.text !== text.trim()) contextOperation.current = null
-                  setRequest(text)
-                }}
+            </Tabs.Panel>
+            <Tabs.Panel value="work">
+              <WorkTab
+                decisions={decisions}
+                delegatedDecisions={delegatedDecisions}
+                showCompleted={showCompleted}
+                onShowCompletedChange={setShowCompleted}
               />
-              {savedRequest && request.trim() === savedRequest && (
-                <p className="sky-workstream-hint" role="status">
-                  Your note is saved. You can retry asking Sky without saving it again.
-                </p>
-              )}
-              <div className="sky-workstream-brief-actions">
-                <Button variant="primary" size="sm" disabled={busy || !!currentRun} onClick={() => review()}>
-                  {request.trim() ? 'Send to Sky' : 'Review this workstream'}
-                </Button>
-                <Button size="sm" disabled={busy || !request.trim()} onClick={() => review(true)}>
-                  Save note only
-                </Button>
-              </div>
-            </section>
-            <section className="sky-workstream-section sky-workstream-brief-relations">
-              <div className="sky-workstream-section-head">
-                <h3>The wider picture</h3>
-                <Button size="xs" onClick={() => onRelate(item.id)}>
-                  Relate to…
-                </Button>
-              </div>
-              {relatedWork.length ? (
-                relationRows(3)
-              ) : (
-                <p className="sky-workstream-hint">Connect this outcome to work it supports or needs a result from.</p>
-              )}
-              {relatedWork.length > 3 && (
-                <Button size="xs" onClick={() => setView('details')}>
-                  View all {relatedWork.length} relationships
-                </Button>
-              )}
-              {relationProposal && proposalRow(relationProposal)}
-            </section>
-          </Tabs.Panel>
-          <Tabs.Panel value="work">
-            <div className="sky-workstream-brief-view-intro">
-              <h3>Move the work forward</h3>
-              <p>Choose an activity to see its context and actions.</p>
-            </div>
-            {!!item.proposals?.length && (
-              <section className="sky-workstream-section">
-                <h3>Sky suggests</h3>
-                {item.proposals.map(proposalRow)}
-              </section>
-            )}
-            {decisions.length > 0 && (
-              <section className="sky-workstream-section">
-                <div className="sky-workstream-section-head">
-                  <h3>Decisions that need you</h3>
-                  <span className="sky-workstream-hint">{decisions.length}</span>
-                </div>
-                {decisions.map(activityRow)}
-              </section>
-            )}
-            {delegatedDecisions.length > 0 && (
-              <section className="sky-workstream-section">
-                <div className="sky-workstream-section-head">
-                  <h3>Decisions Sky is handling</h3>
-                  <span className="sky-workstream-hint">{delegatedDecisions.length}</span>
-                </div>
-                {delegatedDecisions.map(activityRow)}
-              </section>
-            )}
-            <section className="sky-workstream-section">
-              <div className="sky-workstream-section-head">
-                <h3>Actions & follow-through</h3>
-                <Button
-                  size="xs"
-                  onClick={() =>
-                    openActivity(
-                      ActivitySchema.parse({
-                        id: crypto.randomUUID(),
-                        title: 'New action',
-                        executor: item.sky.mode === 'drive' ? 'sky' : 'human',
-                      }),
-                    )
-                  }
-                >
-                  ＋ Add
-                </Button>
-              </div>
-              {activities.length ? (
-                activities.map(activityRow)
-              ) : (
-                <p className="sky-workstream-hint">
-                  Start with one useful action. You and Sky can develop the rest as the work unfolds.
-                </p>
-              )}
-              {done > 0 && (
-                <Button size="xs" onClick={() => setShowCompleted(!showCompleted)}>
-                  {showCompleted ? 'Hide completed work' : `Show ${done} completed`}
-                </Button>
-              )}
-              {showCompleted &&
-                item.activities
-                  .filter((activity) => activity.kind === 'decision' && complete(activity))
-                  .map(activityRow)}
-            </section>
-
-            <div className="sky-workstream-structure-actions">
-              <Button size="sm" onClick={onSubstream}>
-                ＋ Sub-workstream
+            </Tabs.Panel>
+            <Tabs.Panel value="details">
+              <DetailsTab />
+            </Tabs.Panel>
+            <footer className="sky-workstream-footer">
+              <a href={fileHref(item.path)}>Open workstream file ↗</a>
+              <Button size="xs" onClick={() => navigate('/')}>
+                Today
               </Button>
-              <Button size="sm" onClick={() => onRelate(item.id)}>
-                Relate to…
+              <Button size="xs" onClick={() => navigate('/outbox')}>
+                Outbox
               </Button>
-            </div>
-          </Tabs.Panel>
-          <Tabs.Panel value="details">
-            <div className="sky-workstream-brief-view-intro">
-              <h3>The context behind the work</h3>
-              <p>People, source material, reporting, and what has happened.</p>
-            </div>
-            <section className="sky-workstream-section">
-              <div className="sky-workstream-section-head">
-                <h3>The wider picture</h3>
-                <Button size="xs" onClick={() => onRelate(item.id)}>
-                  Relate to…
-                </Button>
-              </div>
-              {relationRows()}
-              <Button size="xs" onClick={onSubstream}>
-                ＋ Sub-workstream
-              </Button>
-            </section>
-            {item.artifacts.length > 0 && (
-              <section className="sky-workstream-section">
-                <h3>Prepared work</h3>
-                {[...item.artifacts].reverse().map((value) => (
-                  <button
-                    className="sky-workstream-artifact"
-                    type="button"
-                    key={value.id}
-                    disabled={busy}
-                    onClick={() =>
-                      void act(async () => {
-                        setArtifact(
-                          await workstreamRequest<{ artifact: Artifact; content: string }>(
-                            `/${item.id}/artifacts/${value.id}`,
-                          ),
-                        )
-                      })
-                    }
-                  >
-                    <span>▤</span>
-                    <span>
-                      <strong>{value.title}</strong>
-                      <small>
-                        {value.kind} · {moment(value.created)}
-                      </small>
-                    </span>
-                    <span>↗</span>
-                  </button>
-                ))}
-              </section>
-            )}
-            {item.reporting.length > 0 && (
-              <WorkstreamReports
-                item={item}
-                busy={busy}
-                act={act}
-                onEdit={() => openEditor('details')}
-                navigate={navigate}
-              />
-            )}
-            <section className="sky-workstream-section">
-              <div className="sky-workstream-section-head">
-                <h3>People, timing & details</h3>
-                <Button size="xs" onClick={() => openEditor('details')}>
-                  Edit
-                </Button>
-              </div>
-              {item.stakeholders.length ? (
-                <div className="sky-workstream-people">
-                  {item.stakeholders.map((person) => (
-                    <span key={person.id}>
-                      <strong>{person.name}</strong>
-                      {person.role && <small>{person.role}</small>}
-                    </span>
-                  ))}
-                </div>
-              ) : (
-                <p className="sky-workstream-hint">
-                  Add stakeholders, metrics, sources, and reporting when they become useful.
-                </p>
-              )}
-              {item.metrics.map((metric) => (
-                <p className="sky-workstream-metric" key={metric.id}>
-                  <strong>{metric.name}</strong>
-                  <span>
-                    {metric.current || '—'}
-                    {metric.unit ? ` ${metric.unit}` : ''}
-                    {metric.target ? ` / ${metric.target}` : ''}
-                  </span>
-                </p>
-              ))}
-              {item.sources.map((source) => (
-                <a className="sky-workstream-source" key={source.id} href={fileHref(source.path)}>
-                  {source.label || source.path}
-                  {source.sensitive ? ' · Sensitive' : ''} ↗
-                </a>
-              ))}
-            </section>
-
-            <section className="sky-workstream-section">
-              <div className="sky-workstream-section-head">
-                <h3>Sky’s responsibility</h3>
-                <Button size="xs" onClick={() => openEditor('sky')}>
-                  {item.sky.mode === 'off' ? 'Give responsibility' : 'Responsibility'}
-                </Button>
-              </div>
-              <p className="sky-workstream-hint">
-                {item.sky.mode === 'off'
-                  ? 'Ongoing help is off. You can still ask Sky for a specific next step.'
-                  : `${item.sky.mode === 'drive' ? 'Carrying the work' : 'Assisting'} · Reviews every ${item.sky.reviewEveryHours} hours`}
-              </p>
-              {item.sky.instruction && prose(item.sky.instruction)}
-              {item.sky.mode !== 'off' && item.sky.nextReviewAt && (
-                <p className="sky-workstream-hint">Next review {moment(item.sky.nextReviewAt)}</p>
-              )}
-            </section>
-            {item.unknowns.length > 0 && (
-              <details className="sky-workstream-disclosure">
-                <summary>Still to understand · {item.unknowns.length}</summary>
-                <ul>
-                  {item.unknowns.map((unknown, index) => (
-                    <li key={index}>{unknown}</li>
-                  ))}
-                </ul>
-              </details>
-            )}
-            {item.notes && (
-              <details className="sky-workstream-disclosure">
-                <summary>Working notes</summary>
-                {prose(item.notes)}
-              </details>
-            )}
-            <details className="sky-workstream-disclosure">
-              <summary>Activity & Sky reviews</summary>
-              {[...runs].slice(0, 12).map((run) => (
-                <div className="sky-workstream-history" key={run.id}>
-                  <small>
-                    {moment(run.started)} · Sky · {run.status}
-                  </small>
-                  <p>
-                    {run.error ||
-                      run.summary ||
-                      (run.status === 'running' ? 'Review in progress.' : 'No summary recorded.')}
-                  </p>
-                </div>
-              ))}
-              {[...item.history]
-                .reverse()
-                .slice(0, 30)
-                .map((entry) => (
-                  <div className="sky-workstream-history" key={entry.id}>
-                    <small>
-                      {moment(entry.at)} · {entry.actor === 'sky' ? 'Sky' : 'You'}
-                    </small>
-                    <p>{entry.summary}</p>
-                  </div>
-                ))}
-            </details>
-          </Tabs.Panel>
-          <footer className="sky-workstream-footer">
-            <a href={fileHref(item.path)}>Open workstream file ↗</a>
-            <Button size="xs" onClick={() => navigate('/')}>
-              Today
-            </Button>
-            <Button size="xs" onClick={() => navigate('/outbox')}>
-              Outbox
-            </Button>
-          </footer>
-        </div>
-      </Tabs>
-      {editor === 'overview' && (
-        <OverviewEditor
-          item={editBase}
-          busy={busy}
-          onClose={() => setEditor(null)}
-          onSave={(changes) =>
-            void act(async () => {
-              await patch(editBase, changes)
-              setEditor(null)
-            })
-          }
-        />
-      )}
-      {editor === 'details' && (
-        <DetailsEditor
-          item={editBase}
-          busy={busy}
-          onClose={() => setEditor(null)}
-          onSave={(changes) =>
-            void act(async () => {
-              await patch(editBase, changes)
-              setEditor(null)
-            })
-          }
-        />
-      )}
-      {editor === 'sky' && (
-        <SkyEditor
-          item={editBase}
-          busy={busy}
-          onClose={() => setEditor(null)}
-          onSave={(settings) =>
-            void act(async () => {
-              await workstreamRequest(`/${item.id}/sky`, 'POST', { revision: editBase.revision, settings })
-              setEditor(null)
-            })
-          }
-        />
-      )}
-      {activityEdit && (
-        <ActivityEditor
-          activity={activityEdit}
-          all={all}
-          busy={busy}
-          onClose={() => setActivityEdit(null)}
-          onSave={saveActivity}
-        />
-      )}
-      {decisionAuthority && (
-        <DecisionAuthorityEditor
-          item={editBase}
-          activity={decisionAuthority}
-          policy={editBase.sky.decisionPolicies[decisionAuthority.id]}
-          busy={busy}
-          onClose={() => setDecisionAuthority(null)}
-          onSave={(policy, assumptions) =>
-            void act(async () => {
-              await workstreamRequest(`/${item.id}/activities/${decisionAuthority.id}/decision-policy`, 'POST', {
-                revision: editBase.revision,
-                policy,
-                assumptions,
-              })
-              setDecisionAuthority(null)
-              notice(
-                policy.mode === 'delegate'
-                  ? 'Decision delegated within the boundaries you set.'
-                  : 'Decision responsibility updated.',
-              )
-              if (item.sky.mode !== 'off')
-                await workstreamRequest(`/${item.id}/run`, 'POST', {
-                  request: `Review the decision “${decisionAuthority.title}” using its current responsibility and evidence requirements.`,
-                })
-            })
-          }
-        />
-      )}
-      {actionCompletion && (
-        <ActionCompletionEditor
-          item={editBase}
-          activity={actionCompletion}
-          policy={editBase.sky.actionPolicies[actionCompletion.id]}
-          busy={busy}
-          onClose={() => setActionCompletion(null)}
-          onSave={(policy) =>
-            void act(async () => {
-              const actionPolicies = { ...editBase.sky.actionPolicies }
-              if (policy) actionPolicies[actionCompletion.id] = policy
-              else delete actionPolicies[actionCompletion.id]
-              await workstreamRequest(`/${item.id}/sky`, 'POST', {
-                revision: editBase.revision,
-                settings: { ...editBase.sky, actionPolicies },
-              })
-              setActionCompletion(null)
-              notice(
-                policy
-                  ? 'Sky can verify completion against the agreed deliverable.'
-                  : 'Sky will bring this result to you for review.',
-              )
-            })
-          }
-        />
-      )}
-      <Modal
-        opened={!!resolution}
-        onClose={() => setResolution(null)}
-        title={resolution?.kind === 'decision' ? 'Record the decision' : 'Record the result'}
-        size="lg"
-      >
-        <div className="sky-workstream-edit">
-          <strong>{resolution?.title}</strong>
-          {resolution?.recommendation && <p>{resolution.recommendation}</p>}
-          <Textarea
-            label={resolution?.kind === 'decision' ? 'What did you decide?' : 'What happened?'}
-            description="This result becomes part of the workstream’s understanding."
-            autosize
-            minRows={4}
-            value={result}
-            onChange={(event) => setResult(event.currentTarget.value)}
-          />
-          <Button
-            variant="primary"
-            disabled={busy || !result.trim()}
-            onClick={() =>
+            </footer>
+          </div>
+        </Tabs>
+        {editor === 'overview' && (
+          <OverviewEditor
+            item={editBase}
+            busy={busy}
+            onClose={() => setEditor(null)}
+            onSave={(changes) =>
               void act(async () => {
-                if (!resolution) return
-                await workstreamRequest(`/${item.id}/activities/${resolution.id}/resolve`, 'POST', {
-                  revision: editBase.revision,
-                  result,
-                })
-                setResolution(null)
+                await patch(editBase, changes)
+                setEditor(null)
               })
             }
-          >
-            Save {resolution?.kind === 'decision' ? 'decision' : 'result'}
-          </Button>
-        </div>
-      </Modal>
-      {communication && (
-        <CommunicationEditor
-          item={editBase}
-          activity={communication}
+          />
+        )}
+        {editor === 'details' && (
+          <DetailsEditor
+            item={editBase}
+            busy={busy}
+            onClose={() => setEditor(null)}
+            onSave={(changes) =>
+              void act(async () => {
+                await patch(editBase, changes)
+                setEditor(null)
+              })
+            }
+          />
+        )}
+        {editor === 'sky' && (
+          <SkyEditor
+            item={editBase}
+            busy={busy}
+            onClose={() => setEditor(null)}
+            onSave={(settings) =>
+              void act(async () => {
+                await workstreamRequest(`/${item.id}/sky`, 'POST', { revision: editBase.revision, settings })
+                setEditor(null)
+              })
+            }
+          />
+        )}
+        {activityEdit && (
+          <ActivityEditor
+            activity={activityEdit}
+            all={all}
+            busy={busy}
+            onClose={() => setActivityEdit(null)}
+            onSave={saveActivity}
+          />
+        )}
+        {decisionAuthority && (
+          <DecisionAuthorityEditor
+            item={editBase}
+            activity={decisionAuthority}
+            policy={editBase.sky.decisionPolicies[decisionAuthority.id]}
+            busy={busy}
+            onClose={() => setDecisionAuthority(null)}
+            onSave={(policy, assumptions) =>
+              void act(async () => {
+                await workstreamRequest(`/${item.id}/activities/${decisionAuthority.id}/decision-policy`, 'POST', {
+                  revision: editBase.revision,
+                  policy,
+                  assumptions,
+                })
+                setDecisionAuthority(null)
+                notice(
+                  policy.mode === 'delegate'
+                    ? 'Decision delegated within the boundaries you set.'
+                    : 'Decision responsibility updated.',
+                )
+                if (item.sky.mode !== 'off')
+                  await workstreamRequest(`/${item.id}/run`, 'POST', {
+                    request: `Review the decision “${decisionAuthority.title}” using its current responsibility and evidence requirements.`,
+                  })
+              })
+            }
+          />
+        )}
+        {actionCompletion && (
+          <ActionCompletionEditor
+            item={editBase}
+            activity={actionCompletion}
+            policy={editBase.sky.actionPolicies[actionCompletion.id]}
+            busy={busy}
+            onClose={() => setActionCompletion(null)}
+            onSave={(policy) =>
+              void act(async () => {
+                const actionPolicies = { ...editBase.sky.actionPolicies }
+                if (policy) actionPolicies[actionCompletion.id] = policy
+                else delete actionPolicies[actionCompletion.id]
+                await workstreamRequest(`/${item.id}/sky`, 'POST', {
+                  revision: editBase.revision,
+                  settings: { ...editBase.sky, actionPolicies },
+                })
+                setActionCompletion(null)
+                notice(
+                  policy
+                    ? 'Sky can verify completion against the agreed deliverable.'
+                    : 'Sky will bring this result to you for review.',
+                )
+              })
+            }
+          />
+        )}
+        <ResolutionDialog
+          resolution={resolution}
+          result={result}
           busy={busy}
-          onClose={() => setCommunication(null)}
-          onSave={(payload) =>
+          onResultChange={setResult}
+          onClose={() => setResolution(null)}
+          onSave={() =>
             void act(async () => {
-              const response = await workstreamRequest<{ item?: { id: string } }>(
-                `/${item.id}/activities/${communication.id}/outbox`,
-                'POST',
-                { revision: editBase.revision, ...payload },
-              )
-              setCommunication(null)
-              notice('Message prepared in Outbox for review.')
-              if (response.item) navigate(outboxHref(response.item.id))
+              if (!resolution) return
+              await workstreamRequest(`/${item.id}/activities/${resolution.id}/resolve`, 'POST', {
+                revision: editBase.revision,
+                result,
+              })
+              setResolution(null)
             })
           }
         />
-      )}
-      <Modal
-        opened={!!artifact}
-        onClose={() => setArtifact(null)}
-        title={artifact?.artifact.title ?? 'Prepared work'}
-        size="xl"
-      >
-        {artifact && (
-          <div className="sky-workstream-artifact-reader">
-            {prose(artifact.content)}
-            <a href={fileHref(artifact.artifact.path)}>Open document ↗</a>
-          </div>
+        {communication && (
+          <CommunicationEditor
+            item={editBase}
+            activity={communication}
+            busy={busy}
+            onClose={() => setCommunication(null)}
+            onSave={(payload) =>
+              void act(async () => {
+                const response = await workstreamRequest<{ item?: { id: string } }>(
+                  `/${item.id}/activities/${communication.id}/outbox`,
+                  'POST',
+                  { revision: editBase.revision, ...payload },
+                )
+                setCommunication(null)
+                notice('Message prepared in Outbox for review.')
+                if (response.item) navigate(outboxHref(response.item.id))
+              })
+            }
+          />
         )}
-      </Modal>
-    </aside>
+        <ArtifactReader artifact={artifact} onClose={() => setArtifact(null)} />
+      </aside>
+    </WorkstreamDetailContext.Provider>
   )
 }
 
-function BriefOutcome({ text }: { text: string }) {
-  const [expanded, setExpanded] = useState(false)
-  const long = text.length > 140 || text.includes('\n')
+function DetailHeader({
+  item,
+  parent,
+  busy,
+  onSelect,
+  onMenu,
+  onClose,
+}: {
+  item: WorkstreamRecord
+  parent?: WorkstreamRecord
+  busy: boolean
+  onSelect: (id: string) => void
+  onMenu: (target: WorkstreamMenuTarget) => void
+  onClose: () => void
+}) {
   return (
-    <div className="sky-workstream-brief-outcome-text">
-      <p className={long && !expanded ? 'sky-workstream-brief-clamped' : undefined}>{text}</p>
-      {long && (
-        <Button size="xs" variant="primary-quiet" aria-expanded={expanded} onClick={() => setExpanded(!expanded)}>
-          {expanded ? 'Show less' : 'Read full outcome'}
-        </Button>
-      )}
-    </div>
+    <header
+      className="sky-workstream-detail-header"
+      onContextMenu={(event) => {
+        if (!busy) openWorkstreamMenu(event, item.id, item.title, onMenu)
+      }}
+    >
+      <div>
+        {parent ? (
+          <button type="button" className="sky-workstream-parent" onClick={() => onSelect(parent.id)}>
+            ↳ {parent.title}
+          </button>
+        ) : (
+          <span className="sky-workstreams-eyebrow">Workstream</span>
+        )}
+        <h2>{item.title}</h2>
+      </div>
+      <div className="sky-workstream-header-actions">
+        <WorkstreamMenuButton workstreamId={item.id} title={item.title} onMenu={onMenu} disabled={busy} />
+        <ActionIcon aria-label="Close workstream" onClick={onClose}>
+          ×
+        </ActionIcon>
+      </div>
+    </header>
   )
 }
 
-function BriefProse({ text }: { text: string }) {
-  const [expanded, setExpanded] = useState(false)
-  const long = text.length > 280 || text.split('\n').length > 3
+function ResolutionDialog({
+  resolution,
+  result,
+  busy,
+  onResultChange,
+  onClose,
+  onSave,
+}: {
+  resolution: Activity | null
+  result: string
+  busy: boolean
+  onResultChange: (result: string) => void
+  onClose: () => void
+  onSave: () => void
+}) {
   return (
-    <div className="sky-workstream-brief-prose">
-      <div className={long && !expanded ? 'sky-workstream-brief-clamped' : undefined}>{prose(text)}</div>
-      {long && (
-        <Button size="xs" variant="primary-quiet" aria-expanded={expanded} onClick={() => setExpanded(!expanded)}>
-          {expanded ? 'Show less' : 'Read full update'}
+    <Modal
+      opened={!!resolution}
+      onClose={onClose}
+      title={resolution?.kind === 'decision' ? 'Record the decision' : 'Record the result'}
+      size="lg"
+    >
+      <div className="sky-workstream-edit">
+        <strong>{resolution?.title}</strong>
+        {resolution?.recommendation && <p>{resolution.recommendation}</p>}
+        <Textarea
+          label={resolution?.kind === 'decision' ? 'What did you decide?' : 'What happened?'}
+          description="This result becomes part of the workstream’s understanding."
+          autosize
+          minRows={4}
+          value={result}
+          onChange={(event) => onResultChange(event.currentTarget.value)}
+        />
+        <Button variant="primary" disabled={busy || !result.trim()} onClick={() => onSave()}>
+          Save {resolution?.kind === 'decision' ? 'decision' : 'result'}
         </Button>
+      </div>
+    </Modal>
+  )
+}
+
+function ArtifactReader({
+  artifact,
+  onClose,
+}: {
+  artifact: { artifact: Artifact; content: string } | null
+  onClose: () => void
+}) {
+  return (
+    <Modal opened={!!artifact} onClose={onClose} title={artifact?.artifact.title ?? 'Prepared work'} size="xl">
+      {artifact && (
+        <div className="sky-workstream-artifact-reader">
+          <Prose text={artifact.content} />
+          <a href={fileHref(artifact.artifact.path)}>Open document ↗</a>
+        </div>
       )}
-    </div>
+    </Modal>
   )
 }
 
