@@ -8,7 +8,6 @@ test('DayDocument.fromMarkdown - parses YAML with day data', () => {
 started: 09:00
 ended: 5h 30m
 tags: work; productive
-perfect: true
 ---
 
 # **2025-07-31 - Thu**
@@ -23,7 +22,6 @@ perfect: true
   assert({ actual: day.yaml.started, expected: '09:00' })
   assert({ actual: day.yaml.ended, expected: '5h 30m' })
   assert({ actual: day.yaml.tags, expected: 'work; productive' })
-  assert({ actual: day.yaml.perfect, expected: true })
 })
 
 test('Day - extracts day from markdown title', () => {
@@ -155,5 +153,3 @@ tags: work; coding; testing
   assert({ actual: tags.has('coding'), expected: true })
   assert({ actual: tags.has('testing'), expected: true })
 })
-
-// Skipping perfect property test as requested

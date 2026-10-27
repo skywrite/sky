@@ -1,6 +1,6 @@
 ---
 created: 2026-10-03
-updated: 2026-10-03
+updated: 2026-10-27
 ---
 
 # Days start and close by themselves
@@ -44,8 +44,8 @@ after. The day's page lists what stands between it and its end: records
 with no end time, calendar meetings with no notes, messages saved but not
 imported, tasks still open. Each row is done or dismissed. When the list is
 empty, `day:end` runs; a day left untouched for a few days closes anyway.
-"Close Thursday" stays for closing early. Unfinished tasks go to Incomplete,
-the perfect-day mark lands and the summary gets written, as End does today.
+"Close Thursday" stays for closing early. Unfinished tasks go to Incomplete
+and the summary gets written, as End does today.
 
 **The words.** While the notebook's day and the calendar's disagree, the
 sidebar names the days instead of saying Today and Tomorrow ("Thursday ·

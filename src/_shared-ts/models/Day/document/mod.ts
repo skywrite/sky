@@ -82,42 +82,6 @@ export default class DayDocument extends ListDocument {
     return this.day.dayShort
   }
 
-  /**
-   * A day is "perfect" when all planned tasks were executed:
-   * - No incomplete items in any Commitments list
-   * - No incomplete items in any Todos list
-   * - Reminders list is empty or all items done
-   * - No "Incomplete" section exists
-   */
-  get perfect(): boolean {
-    for (const list of this.lists) {
-      const title = list.title
-
-      // No "Incomplete" section should exist
-      if (title.includes('Incomplete')) {
-        return false
-      }
-
-      // Check Commitments and Todos lists for incomplete items
-      if (title.includes('Commitments') || title.includes('Todos')) {
-        const hasIncompleteItems = list.items.some(DayDocument.isItemNotDone)
-        if (hasIncompleteItems) {
-          return false
-        }
-      }
-
-      // Check Reminders list
-      if (title === 'Reminders') {
-        const hasIncompleteItems = list.items.some(DayDocument.isItemNotDone)
-        if (hasIncompleteItems) {
-          return false
-        }
-      }
-    }
-
-    return true
-  }
-
   get ended(): ZonedDateTime | undefined {
     const ended = this.yaml['ended'] as undefined | string
     if (!ended) return undefined

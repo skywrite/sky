@@ -82,7 +82,6 @@ export interface WeekDayRow {
   /** `HH:MM` from the day file */
   started: string | null
   summarized: boolean
-  perfect: boolean
   /** The notebook's current day */
   today: boolean
   state: DayState
@@ -161,12 +160,10 @@ async function dayRow(day: PlainDate, clock: Clock, options: WeekRoutesOptions):
   const fileExists = await exists(file)
   let started: string | null = null
   const summarized = await hasDaySummary(file)
-  let perfect = false
   if (fileExists) {
     try {
       const doc = await readDay(day, options.timeDir)
       started = doc.started?.time ?? null
-      perfect = typeof doc.yaml['perfect'] === 'boolean' ? doc.yaml['perfect'] : doc.perfect
     } catch {
       // An unreadable day file is a day with nothing to say
     }
@@ -189,7 +186,6 @@ async function dayRow(day: PlainDate, clock: Clock, options: WeekRoutesOptions):
     exists: fileExists,
     started,
     summarized,
-    perfect,
     today: day.ymd === clock.notebookDay.ymd,
     state,
     dayRelativePath: fileExists ? path.relative(options.markdownBaseDir, file) : null,

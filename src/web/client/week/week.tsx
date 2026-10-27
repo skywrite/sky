@@ -25,7 +25,6 @@ export interface WeekDay {
   exists: boolean
   started: string | null
   summarized: boolean
-  perfect: boolean
   today: boolean
   state: DayState
   dayRelativePath: string | null
@@ -247,11 +246,6 @@ function DaysBlock({
           {d.state === 'summarized' && (
             <span className="sky-wstate" data-tone="ok">
               Summarized
-            </span>
-          )}
-          {d.state === 'summarized' && d.perfect && (
-            <span className="sky-wstate" data-tone="ok">
-              perfect
             </span>
           )}
           {(d.state === 'running' || d.state === 'open') && d.started && (

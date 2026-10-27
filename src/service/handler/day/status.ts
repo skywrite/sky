@@ -10,16 +10,11 @@ export function clockMinutes(time: string): number | null {
 export interface DayStatus {
   started: string | null
   summarized: boolean
-  perfect: boolean
 }
 
 export async function dayStatus(document: DayDocument, file: string): Promise<DayStatus> {
   const marker = document.yaml['started']
   const started = typeof marker === 'string' && clockMinutes(marker) !== null ? marker : null
   const summarized = await hasDaySummary(file)
-  return {
-    started,
-    summarized,
-    perfect: typeof document.yaml['perfect'] === 'boolean' ? document.yaml['perfect'] : document.perfect,
-  }
+  return { started, summarized }
 }

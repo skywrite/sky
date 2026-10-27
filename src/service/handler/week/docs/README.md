@@ -1,6 +1,6 @@
 ---
 created: 2026-09-04
-updated: 2026-10-26
+updated: 2026-10-27
 ---
 
 # The week page
@@ -33,7 +33,7 @@ Sunday's End is one step back.
 
 ## The blocks
 
-- **Days.** Monday to Sunday, each in a word or two: “Summarized” and green “perfect”; “today · started 6:20”;
+- **Days.** Monday to Sunday, each in a word or two: “Summarized”; “today · started 6:20”;
   amber “Needs review” with a Review button; "not started yet" with a quiet Start button — the day
   pages carry the primary one, see the
   [day handler](../../day/docs/README.md#starting-a-day-from-the-page);

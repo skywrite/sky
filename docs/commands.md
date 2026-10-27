@@ -1,6 +1,6 @@
 ---
 created: 2026-07-28
-updated: 2026-08-29
+updated: 2026-10-27
 ---
 
 # Commands
@@ -32,7 +32,6 @@ sky day:commitments:move-next    # push unfinished commitments to tomorrow
 sky day:reminders:add "Renew passport"
 sky day:location                 # set location from the device, or a phone via QR code
 sky day:not-ended                # find days you forgot to close
-sky day:perfect:check            # did you actually do everything you said you would?
 ```
 
 `day:start` and `day:end` are composites — they run a configurable list of other commands.

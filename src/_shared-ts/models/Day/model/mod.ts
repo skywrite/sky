@@ -40,10 +40,6 @@ export default class Day {
     return this.doc.dayWordShort
   }
 
-  get perfect(): boolean {
-    return this.doc.perfect
-  }
-
   get started(): ZonedDateTime | undefined {
     return this.doc.started
   }

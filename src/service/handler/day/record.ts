@@ -82,8 +82,6 @@ export interface DayRecord {
   /** `HH:MM` the day started; null for a day that never did. */
   started: string | null
   summarized: boolean
-  /** Every planned item is complete; shown as perfect once summarized. */
-  perfect: boolean
   manualOrder?: string[]
   commitmentsOrder?: CommitmentOrder
   mostImportant: DayItem[]
@@ -256,7 +254,6 @@ export async function buildDayRecord(input: DayRecordInput): Promise<DayRecord> 
   const record: DayRecord = {
     started: null,
     summarized: await hasDaySummary(path.join(input.timeDir, dayFile(input.day))),
-    perfect: false,
     mostImportant: [],
     commitments: [],
     todos: [],

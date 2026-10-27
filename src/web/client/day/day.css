@@ -904,8 +904,3 @@ a.sky-item-link:focus-visible {
   line-height: 1.4;
   color: var(--sky-dim);
 }
-
-.sky-day-perfect {
-  color: var(--sky-green);
-  font-weight: 550;
-}

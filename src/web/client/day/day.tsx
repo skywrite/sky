@@ -130,8 +130,6 @@ export interface DayRecord {
   /** `HH:MM` the day started; null for a day that never did */
   started: string | null
   summarized: boolean
-  /** Every planned item is complete. */
-  perfect: boolean
   manualOrder?: string[]
   commitmentsOrder?: CommitmentOrder
   mostImportant: DayItem[]
@@ -1480,12 +1478,6 @@ export function DayView({
             <span>
               {completedTasks} of {count(totalTasks, 'task')} complete
             </span>
-          )}
-          {summarized && totalTasks > 0 && view?.record.perfect && (
-            <>
-              <span aria-hidden="true">·</span>
-              <span className="sky-day-perfect">Perfect day</span>
-            </>
           )}
         </span>
       )}

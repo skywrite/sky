@@ -176,7 +176,7 @@ async function weekNotebook(): Promise<{
   }
   await write(
     dayFile(new PlainDate('2026-08-31')),
-    dayMd('2026-08-31', 'started: 06:10\nended: 16h\nperfect: true\ntz: America/Chicago\n'),
+    dayMd('2026-08-31', 'started: 06:10\nended: 16h\ntz: America/Chicago\n'),
   )
   await writeFile(daySummaryPath(path.join(timeDir, dayFile(new PlainDate('2026-08-31')))), '# Summary\n')
   await write(
@@ -212,7 +212,7 @@ test({ name: "week view - the days carry their state, and the day after the note
       id: view.id,
       current: view.current,
       states: view.days.map((d) => d.state),
-      monday: { started: view.days[0].started, summarized: view.days[0].summarized, perfect: view.days[0].perfect },
+      monday: { started: view.days[0].started, summarized: view.days[0].summarized },
       today: view.days.find((d) => d.today)?.ymd,
       due: view.due,
       queue: view.queue,
@@ -223,7 +223,7 @@ test({ name: "week view - the days carry their state, and the day after the note
       id: '2026-W36',
       current: true,
       states: ['summarized', 'open', 'open', 'open', 'due', 'upcoming', 'upcoming'],
-      monday: { started: '06:10', summarized: true, perfect: true },
+      monday: { started: '06:10', summarized: true },
       today: '2026-09-03',
       due: { ymd: '2026-09-04', weekday: 'Friday' },
       queue: null,

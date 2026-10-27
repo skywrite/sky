@@ -15,7 +15,7 @@ const exactFixtures = [
   { yaml: 'medium: Phone', field: 'medium', value: 'Zoom', expected: false, description: 'string no match' },
   { yaml: 'year: 2025', field: 'year', value: 2025, expected: true, description: 'number match' },
   { yaml: 'year: 2025', field: 'year', value: 2024, expected: false, description: 'number no match' },
-  { yaml: 'perfect: true', field: 'perfect', value: true, expected: true, description: 'boolean match' },
+  { yaml: 'archived: true', field: 'archived', value: true, expected: true, description: 'boolean match' },
 ]
 
 for (const { yaml, field, value, expected, description } of exactFixtures) {
