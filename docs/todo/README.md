@@ -1,6 +1,6 @@
 ---
 created: 2026-09-06
-updated: 2026-10-12
+updated: 2026-10-27
 ---
 
 # Open work
@@ -32,3 +32,9 @@ story from there.
   import stopped to ask the person is re-asked after a restart, not failed.
 - [Voice tool calls wait through a restart](voice-tools-retry.md) — the
   voice page retries a tool call the service missed while away.
+
+## Maybe later
+
+- [Spelling and grammar checking](maybe/spelling-and-grammar-checking.md) —
+  built-in suggestions for the shared editor; engine options, integration
+  considerations, and preliminary effort estimates.
