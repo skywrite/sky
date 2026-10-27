@@ -1,6 +1,7 @@
 import { type PileResult, runPile } from '#commands/all/slack/saved/lib/pile.ts'
 import { Command, type CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
+import { addTodoReminder } from './lib/remind.ts'
 
 const params = {
   channel: Flag.string(
@@ -66,8 +67,12 @@ export default class SlackTodosTask extends Command {
       'the follow expiry window archive without a follow. A thread captured',
       'before gets only its new replies, and an archived one that has come',
       'back to life is followed again. Summary, auto-tags, and auto-rel apply',
-      'either way, each to-do is then marked complete in Slack, and captured',
-      'files open in the editor when done.',
+      "either way. Each captured to-do is added to today's Reminders with a",
+      'link to its Slack message, regardless of the message or reminder date,',
+      'including when the conversation was already captured. Retries preserve',
+      'an existing reminder for that message. Only after the reminder is saved',
+      'is the to-do marked complete in Slack. Captured files open in the editor',
+      'when done.',
       '--capture-all captures every available matching to-do in this fetch,',
       'in the selected sort order. Use --limit to increase the fetch size.',
       '',
@@ -98,6 +103,9 @@ export default class SlackTodosTask extends Command {
       {
         context,
         tasks,
+        addReminder: async (row) => {
+          if (await addTodoReminder(row, context)) context.output.log("  Added to today's Reminders")
+        },
       },
     )
   }

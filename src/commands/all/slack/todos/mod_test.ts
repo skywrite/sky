@@ -1,4 +1,7 @@
 import { spyOn } from 'bun:test'
+import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import * as path from 'node:path'
 import type { AgentSlackLaterItem, AgentSlackLaterList } from '#commands/all/slack/cli/lib/agent-slack/types.ts'
 import * as names from '#commands/all/slack/lib/resolveNames.ts'
 import * as capture from '#commands/all/slack/saved/lib/capture.ts'
@@ -7,6 +10,9 @@ import CommandContext from '#commands/lib/core/CommandContext.ts'
 import CommandService from '#commands/lib/core/CommandService.ts'
 import { BufferedOutput } from '#commands/lib/output/BufferedOutput.ts'
 import * as config from '#config'
+import { planSections } from '#lib/nbfs/listBlocks.ts'
+import { exists } from '#shared/fs/mod.ts'
+import { dayFile } from '#shared/nbfs/mod.ts'
 import { assert, test } from '#test'
 import { ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
 import SlackTodosTask from './mod.ts'
@@ -34,13 +40,21 @@ async function fixture(
     captured: capture.LaterCaptureRow[]
     displayed: capture.LaterCaptureRow[]
     fetchArgs: () => unknown[][]
+    reminderFile: string
   }) => Promise<void>,
   counts: AgentSlackLaterList['counts'] = { in_progress: 162, saved: 69, todo: 93, overdue: 1 },
 ) {
+  const root = await mkdtemp(path.join(tmpdir(), 'slack-todos-test-'))
   const output = new BufferedOutput()
   const now = new ZonedDateTime('2025-06-15 12:00', 'UTC')
   const context = CommandContext.test(
-    { ...config, SLACK_WORKSPACE: 'https://atlas.slack.com' },
+    {
+      ...config,
+      SLACK_WORKSPACE: 'https://atlas.slack.com',
+      DIR_BASE: root,
+      DIR_TIME: path.join(root, 'time'),
+      DIR_STATE: path.join(root, 'state'),
+    },
     { systemNow: now, notebookNow: now },
   ).fork({ output })
   const captured: capture.LaterCaptureRow[] = []
@@ -64,8 +78,9 @@ async function fixture(
     }),
     spyOn(names, 'resolveUserProfiles').mockResolvedValue(new Map()),
     spyOn(names, 'resolveHandleProfiles').mockResolvedValue(new Map()),
-    spyOn(capture, 'captureLaterItems').mockImplementation(async (rows) => {
+    spyOn(capture, 'captureLaterItems').mockImplementation(async (rows, deps) => {
       captured.push(...rows)
+      for (const row of rows) await deps.addReminder?.(row)
       return { captured: [], completed: rows.length, openRows: rows, openTargets: [], skipped: [], failures: [] }
     }),
     spyOn(capture, 'openInSlack').mockResolvedValue(undefined),
@@ -94,9 +109,11 @@ async function fixture(
       captured,
       displayed,
       fetchArgs: () => fetch.mock.calls.map((call) => [...call]),
+      reminderFile: path.join(context.config.DIR_TIME, dayFile('2025-06-15')),
     })
   } finally {
     for (const spy of spies) spy.mockRestore()
+    await rm(root, { recursive: true, force: true })
   }
 }
 
@@ -132,6 +149,51 @@ test('slack:todos lists the To-dos pile soonest due first, overdue flagged, and 
       assert({ given: 'the result', should: 'report the pile total', actual: result.data?.pileTotal, expected: 93 })
     },
   )
+})
+
+test("slack:todos capture adds old messages with any due date to today's Reminders once", async () => {
+  await fixture([todo(1, -3600), todo(2, 7 * 86400), todo(3, undefined)], async ({ invoke, reminderFile }) => {
+    await invoke()
+    await invoke({ open: '1' })
+    assert({
+      given: 'listing or opening to-dos without capturing',
+      should: 'leave the day file untouched',
+      actual: await exists(reminderFile),
+      expected: false,
+    })
+
+    await invoke({ captureBatch: 1 })
+    const batch = planSections(await readFile(reminderFile, 'utf8')).find((section) => section.title === 'Reminders')!
+    assert({
+      given: 'a capture batch of one',
+      should: 'add only the selected to-do as a linked reminder',
+      actual: batch.rows.map((row) => row.raw),
+      expected: ['[To-do 1](https://atlas.slack.com/archives/C0ATLAS/p1740000001000100)'],
+    })
+
+    await invoke({ captureAll: true })
+    const captured = await readFile(reminderFile, 'utf8')
+    await invoke({ captureAll: true })
+    const retried = await readFile(reminderFile, 'utf8')
+    assert({
+      given: 'old messages due in the past, next week, or without a reminder, captured twice',
+      should: "put all three into today's Reminders and leave the second run byte-for-byte unchanged",
+      actual: [
+        planSections(captured)
+          .find((section) => section.title === 'Reminders')
+          ?.rows.map((row) => row.raw),
+        retried === captured,
+      ],
+      expected: [
+        [
+          '[To-do 1](https://atlas.slack.com/archives/C0ATLAS/p1740000001000100)',
+          '[To-do 2](https://atlas.slack.com/archives/C0ATLAS/p1740000002000100)',
+          '[To-do 3](https://atlas.slack.com/archives/C0ATLAS/p1740000003000100)',
+        ],
+        true,
+      ],
+    })
+  })
 })
 
 test('slack:todos captures the soonest due first and reports the re-run hint for its own name', async () => {

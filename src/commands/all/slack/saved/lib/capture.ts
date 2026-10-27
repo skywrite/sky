@@ -32,7 +32,7 @@ export type LaterCaptureOutcome = {
  */
 export async function captureLaterItems(
   rows: LaterCaptureRow[],
-  deps: { tasks: CommandService; output: OutputHandler },
+  deps: { tasks: CommandService; output: OutputHandler; addReminder?: (row: LaterCaptureRow) => Promise<void> },
 ): Promise<LaterCaptureOutcome> {
   const { tasks, output } = deps
   const captured: string[] = []
@@ -41,6 +41,17 @@ export async function captureLaterItems(
   const skipped: string[] = []
   const failures: string[] = []
   let completed = 0
+
+  const remind = async (row: LaterCaptureRow): Promise<boolean> => {
+    try {
+      await deps.addReminder?.(row)
+      return true
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error)
+      failures.push(`${row.link}: captured but today's reminder could not be saved — ${detail}; left pending in Slack`)
+      return false
+    }
+  }
 
   for (const row of rows) {
     const { link } = row
@@ -55,6 +66,7 @@ export async function captureLaterItems(
       // still the right move
       if (result.message?.includes('Duplicate follow') || result.message?.includes('Already captured')) {
         output.log('  Thread already in the notebook — skipping capture')
+        if (!(await remind(row))) continue
         const done = await runAgentSlack(['later', 'complete', link])
         if (done.success) {
           completed++
@@ -86,6 +98,7 @@ export async function captureLaterItems(
     openTargets.push(...files.map((p) => path.join(DIR_BASE, p)))
     openRows.push(row)
 
+    if (!(await remind(row))) continue
     const done = await runAgentSlack(['later', 'complete', link])
     if (done.success) {
       completed++

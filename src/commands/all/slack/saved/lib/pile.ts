@@ -4,7 +4,7 @@ import colors from 'picocolors'
 import { formatSlackTimestamp } from '#commands/all/slack/lib/mod.ts'
 import { CommandResult } from '#commands/mod.ts'
 import type { CommandArgs } from '#commands/mod.ts'
-import { captureLaterItems, openInSlack } from './capture.ts'
+import { captureLaterItems, openInSlack, type LaterCaptureRow } from './capture.ts'
 import { resolveLaterConversations } from './conversations.ts'
 import {
   backfillMissingMessages,
@@ -90,7 +90,9 @@ function emptyPileNote(spec: PileSpec, args: PileArgs, pileCount: number | undef
 export async function runPile(
   spec: PileSpec,
   args: PileArgs,
-  deps: Pick<CommandArgs<PileArgs>, 'context' | 'tasks'>,
+  deps: Pick<CommandArgs<PileArgs>, 'context' | 'tasks'> & {
+    addReminder?: (row: LaterCaptureRow) => Promise<void>
+  },
 ): Promise<CommandResult<PileResult>> {
   const { context, tasks } = deps
   const { output, systemNow } = context
@@ -282,7 +284,7 @@ export async function runPile(
     output.log(`Capturing the ${selectionLabel} of ${capturable.length} capturable`)
   }
 
-  const outcome = await captureLaterItems(picked, { tasks, output })
+  const outcome = await captureLaterItems(picked, { tasks, output, addReminder: deps.addReminder })
 
   const remaining = queueTotal - outcome.completed
 
