@@ -54,6 +54,7 @@ import type { VoiceRoutesOptions } from './handler/voice/mod.ts'
 import { createWebSocketHandler } from './handler/websocket.ts'
 import type { WeekCommands } from './handler/week/mod.ts'
 import type { WorkstreamsRoutesOptions } from './handler/workstreams/mod.ts'
+import { NotebookChanges } from './notebookChanges.ts'
 import { createEntityDetector, type PathConfig } from './scanner/entities.ts'
 import { createScanners } from './scanner/scan.ts'
 import { scanDirectories, scanFiles } from './scanner/walkDirs.ts'
@@ -122,6 +123,7 @@ export interface ServerOptions {
  * Server instance returned by createServer.
  */
 export interface Server {
+  notebookChanges: NotebookChanges
   /** Start the HTTP server */
   start(): Promise<void>
   /** Stop the HTTP server */
@@ -258,6 +260,8 @@ export function createServer(options: ServerOptions): Server {
   // The one path scope both write surfaces share: the REST content API and
   // the saveDocument mutation gate against the same base and allowlist.
   const markdownBaseDir = findCommonAncestor(markdownDirs.map((dir) => path.dirname(dir)))
+  const notebookChanges = new NotebookChanges(markdownBaseDir, paths.time)
+  let wsHandler: ReturnType<typeof createWebSocketHandler> | null = null
 
   // Create Hono app (called after markdownStore is ready)
   function createApp() {
@@ -293,6 +297,7 @@ export function createServer(options: ServerOptions): Server {
   let actualPort = port
 
   return {
+    notebookChanges,
     get port() {
       return actualPort
     },
@@ -320,7 +325,7 @@ export function createServer(options: ServerOptions): Server {
       // TODO: Add file watcher support when enableFileWatcher is true
 
       // Attach WebSocket handler to the node:http server's upgrade event
-      const wsHandler = createWebSocketHandler(store)
+      wsHandler = createWebSocketHandler(store, notebookChanges)
 
       await new Promise<void>((resolve) => {
         // Loopback only. Nothing off this machine talks to the service directly:
@@ -334,11 +339,14 @@ export function createServer(options: ServerOptions): Server {
           logServer.info('Server running at http://127.0.0.1:{port}/', { port: actualPort })
           resolve()
         })
-        httpServer.on('upgrade', wsHandler.handleUpgrade)
+        httpServer.on('upgrade', wsHandler!.handleUpgrade)
       })
     },
 
     stop() {
+      wsHandler?.close()
+      wsHandler = null
+      notebookChanges.close()
       if (httpServer) {
         httpServer.close()
         httpServer = null

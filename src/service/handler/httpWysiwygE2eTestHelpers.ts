@@ -17,10 +17,15 @@ import { exists } from '#shared/fs/mod.ts'
 import MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
 import { env } from '#shared/sys/mod.ts'
 import type { ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
+import MarkdownWatcher from '../MarkdownWatcher/mod.ts'
+import { NotebookChanges } from '../notebookChanges.ts'
+import { Store } from '../store.ts'
 import type { ChatRoutesOptions } from './chat/mod.ts'
 import { createTestHttpApp } from './httpTestHelpers.ts'
 import type { ImportRoutesOptions } from './import/mod.ts'
 import { readText, readTranscript, readUnknown, sourceOf } from './import/readback.ts'
+import { pollNotebookFixture } from './pollNotebookFixture.ts'
+import { createWebSocketHandler } from './websocket.ts'
 import type { WeekCommands } from './week/mod.ts'
 
 interface TestContext {
@@ -29,10 +34,12 @@ interface TestContext {
 
 interface RunningServer {
   origin: string
+  reconnectNotebook: () => void
   close: () => Promise<void>
 }
 
 export interface WysiwygE2eFixture {
+  reconnectNotebook: () => void
   origin: string
   page: Page
   /** The file under edit on disk. */
@@ -88,13 +95,26 @@ async function launchChromiumOrSkip(t: TestContext, popupBlocking = false): Prom
   }
 }
 
-function startAppServer(app: { fetch: (request: Request) => Response | Promise<Response> }): RunningServer {
+function startAppServer(
+  app: { fetch: (request: Request) => Response | Promise<Response> },
+  store: Store,
+  changes: NotebookChanges,
+): RunningServer {
   const server: ServerType = serve({ fetch: app.fetch, hostname: '127.0.0.1', port: 0 })
+  let ws = createWebSocketHandler(store, changes)
+  server.on('upgrade', ws.handleUpgrade)
   const addr = server.address()
   const port = addr && typeof addr === 'object' ? addr.port : 0
   return {
     origin: `http://127.0.0.1:${port}`,
+    reconnectNotebook() {
+      server.off('upgrade', ws.handleUpgrade)
+      ws.close()
+      ws = createWebSocketHandler(store, changes)
+      server.on('upgrade', ws.handleUpgrade)
+    },
     close() {
+      ws.close()
       return new Promise<void>((resolve, reject) => {
         server.close((err) => (err ? reject(err) : resolve()))
       })
@@ -160,6 +180,8 @@ export async function runWysiwygE2e(
     people?: boolean
     /** Serve the day page too: its routes, and the import routes a drop on it needs */
     day?: boolean
+    /** Watch this isolated notebook. 'poll' also exercises the Linux harness fallback on macOS. */
+    watch?: boolean | 'poll'
     dayReview?: import('./day/review/types.ts').ReviewRuntime
     /** Use ordinary browser popup restrictions instead of Playwright's permissive default. */
     popupBlocking?: boolean
@@ -178,6 +200,10 @@ export async function runWysiwygE2e(
   const notebookBaseDir = await mkdtemp(path.join(os.tmpdir(), options.tempPrefix))
   let browser: Browser | undefined
   let server: RunningServer | undefined
+  const notebookChanges = new NotebookChanges(notebookBaseDir, path.join(notebookBaseDir, 'time'))
+  const watcher = MarkdownWatcher.create()
+  let stopPolling: (() => Promise<void>) | undefined
+  let watching: Promise<void> | undefined
   try {
     const relativePath = options.file ?? 'notes/preview.md'
     const file = path.join(notebookBaseDir, relativePath)
@@ -206,9 +232,11 @@ export async function runWysiwygE2e(
         projectsDir: path.join(notebookBaseDir, 'projects'),
       })
     }
+    const store = new Store()
     const app = createTestHttpApp(
       [...roots].map((root) => path.join(notebookBaseDir, root)),
       {
+        store,
         userDataDir,
         markdownStore,
         keep: { searchDirs: [downloads], spotlight: false },
@@ -232,8 +260,29 @@ export async function runWysiwygE2e(
         ...(options.week ? { week: options.week(notebookBaseDir) } : {}),
       },
     )
+    if (options.watch ?? options.day) {
+      const dirs = [...roots].map((root) => path.join(notebookBaseDir, root))
+      if (process.platform === 'linux' || options.watch === 'poll') {
+        // Bun's second recursive Linux watcher can remain silent (see MarkdownWatcher/create_test.ts).
+        // Poll only the tiny fixture on CI; macOS exercises the production watcher below.
+        stopPolling = await pollNotebookFixture(dirs, (file, contents) => {
+          if (contents === undefined) markdownStore?.delete(file)
+          else markdownStore?.set(file, contents)
+          notebookChanges.changed(file)
+        })
+      } else {
+        watching = (async () => {
+          for await (const change of watcher.run({ dirs, eventKinds: ['create', 'modify', 'remove'] })) {
+            if (!change.file) continue
+            if (change.event === 'remove') markdownStore?.delete(change.file)
+            else if (change.contents !== undefined) markdownStore?.set(change.file, change.contents)
+            notebookChanges.changed(change.file)
+          }
+        })()
+      }
+    }
     browser = await launchChromiumOrSkip(t, options.popupBlocking)
-    server = startAppServer(app)
+    server = startAppServer(app, store, notebookChanges)
     const context = await browser.newContext()
     const page = await context.newPage()
     const errors: string[] = []
@@ -242,11 +291,25 @@ export async function runWysiwygE2e(
       if (message.type() === 'error' && !message.text().includes('404')) errors.push(`console: ${message.text()}`)
     })
     try {
-      await run({ origin: server.origin, page, file, relativePath, userDataDir, downloads, trash, errors })
+      await run({
+        origin: server.origin,
+        page,
+        file,
+        relativePath,
+        userDataDir,
+        downloads,
+        trash,
+        errors,
+        reconnectNotebook: server.reconnectNotebook,
+      })
     } finally {
       if (errors.length > 0) console.error(`[e2e page errors]\n${errors.join('\n')}`)
     }
   } finally {
+    await stopPolling?.()
+    watcher.close()
+    await watching
+    notebookChanges.close()
     if (browser) await browser.close()
     if (server) await server.close()
     await rm(notebookBaseDir, { recursive: true, force: true })

@@ -9,6 +9,7 @@ import { Buffer } from 'node:buffer'
 import type { IncomingMessage } from 'node:http'
 import type { Duplex } from 'node:stream'
 import { type WebSocket, WebSocketServer } from 'ws'
+import type { NotebookChanges } from '../notebookChanges.ts'
 import type { Store } from '../store.ts'
 import { isLocalRequest } from './localRequest.ts'
 
@@ -20,7 +21,7 @@ import { isLocalRequest } from './localRequest.ts'
  * server.on('upgrade', wsHandler.handleUpgrade)
  * ```
  */
-export function createWebSocketHandler(store: Store) {
+export function createWebSocketHandler(store: Store, changes?: NotebookChanges) {
   const wss = new WebSocketServer({
     noServer: true,
     handleProtocols: (protocols: Set<string>) =>
@@ -28,7 +29,8 @@ export function createWebSocketHandler(store: Store) {
   })
 
   function handleUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer) {
-    if (req.url !== '/graphql') return
+    const notebook = req.url === '/notebook/changes' && changes
+    if (req.url !== '/graphql' && !notebook) return
     // The same rule as every HTTP route (see localRequest.ts)
     const header = (name: string) => {
       const value = req.headers[name]
@@ -49,6 +51,19 @@ export function createWebSocketHandler(store: Store) {
     }
 
     wss.handleUpgrade(req, socket, head, (ws: WebSocket) => {
+      if (notebook) {
+        const off = notebook.subscribe((change) => {
+          // A sleeping client reconnects and reads again instead of buffering an unbounded backlog.
+          if (ws.bufferedAmount > 64 * 1024) return ws.terminate()
+          if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(change))
+        })
+        ws.on('message', (data: Buffer) => {
+          if (data.toString() === 'ping') ws.send('pong')
+        })
+        ws.on('close', off)
+        ws.on('error', () => ws.terminate())
+        return
+      }
       console.log('WebSocket client connected')
       const listeners: Array<{ event: string; fn: (...args: any[]) => void }> = []
 
@@ -90,7 +105,13 @@ export function createWebSocketHandler(store: Store) {
     })
   }
 
-  return { handleUpgrade }
+  return {
+    handleUpgrade,
+    close() {
+      for (const client of wss.clients) client.terminate()
+      wss.close()
+    },
+  }
 }
 
 /**

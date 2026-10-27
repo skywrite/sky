@@ -1,6 +1,6 @@
 ---
 created: 2026-09-05
-updated: 2026-10-21
+updated: 2026-10-27
 ---
 
 # The service process
@@ -72,6 +72,25 @@ parses saved state in bounded workers so one file cannot block HTTP startup.
 Manual [Outbox checks](../../lib/outbox/docs/2026-09-08-checks-survive-restarts.md)
 also run in a detached worker, with a short activity hold protecting the HTTP
 startup request until that worker is registered.
+
+## Notebook changes in open pages
+
+The notebook watcher publishes through `NotebookChanges` only after updating the service's stores.
+It includes empty files and deletions, coalescing paths with a 150 ms trailing debounce and a one-second maximum wait.
+The `/notebook/changes` WebSocket shares the existing upgrade handler's local-request check.
+It sends notebook-relative paths and affected dates; shared sources and oversized batches invalidate all days.
+Saved chats count as shared because a transcript in one day's folder can contain activity on other days.
+
+Each browser tab shares one connection across components and navigation.
+Registration precedes the ready message, which asks the client to read again, including after reconnects.
+Notifications are invalidations, not a durable event log; tab activation also revalidates to cover suspended browsers.
+The day client coalesces requests, runs one read at a time, and retains one trailing read for changes during a request.
+
+The day page and shell share one saved snapshot in `web/client/day/dayState.ts`; drafts remain in their editing controls.
+Every day response, including mutation replies, carries a service instance and sequence allocated **before** reading.
+That ordering prevents a slow old read or save response from replacing a newer snapshot.
+A service restart changes the instance, so the old process's replies cannot overtake the new one.
+Background failures retain the last view and retry; reconnect and activation bypass retry backoff.
 
 ## Document text for models comes from the service
 

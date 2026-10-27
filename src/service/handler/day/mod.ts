@@ -18,6 +18,7 @@ import { chatActivityDays, type DayChatActivity } from '#shared/models/Chat/Chat
 import { listDayChats } from '#shared/models/Chat/ChatStore/mod.ts'
 import { dayAIChatsDir, dayDir, dayFile, fetchNowSync } from '#shared/nbfs/mod.ts'
 import { PlainDate, type ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
+import { nextViewVersion, type ViewVersion } from '../../viewVersion.ts'
 import { formatDateLabel } from '../home/today.ts'
 import { createDayFilesRoutes, type DayFilesOptions } from './files.ts'
 import isDay from './isDay.ts'
@@ -105,6 +106,7 @@ export interface SavedChatSummary {
 }
 
 export interface DayView {
+  version: ViewVersion
   today: DayRef
   /** Calendar date used by task date pickers and the scheduling boundary. */
   planningToday?: string
@@ -164,6 +166,7 @@ function dueDay(options: DayRoutesOptions, today: PlainDate): DayDue | null {
 
 /** The view of one day: today by default, or the day named by `ymd`. */
 export async function buildDayView(options: DayRoutesOptions, ymd?: string): Promise<DayView> {
+  const version = nextViewVersion()
   const today = notebookToday(options)
   const day = ymd ? new PlainDate(ymd) : today
   const days = await Promise.all(
@@ -224,6 +227,7 @@ export async function buildDayView(options: DayRoutesOptions, ymd?: string): Pro
   }
 
   return {
+    version,
     today: days[0],
     planningToday: planningToday(options).ymd,
     due: dueDay(options, today),

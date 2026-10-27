@@ -131,7 +131,7 @@ test(
           return document.getSelection()!.toString()
         })
         await writeFile(summaryFile, `${SUMMARY}\n<!-- metadata changed -->`)
-        await page.waitForResponse((response) => response.url().endsWith(`/${DAY.ymd}/summary`) && response.ok())
+        await page.waitForResponse((response) => response.url().endsWith(`/day/${DAY.ymd}`) && response.ok())
         await page.waitForTimeout(150)
         assert({
           given: 'a selection across both story paragraphs while the saved file refreshes',
@@ -164,7 +164,7 @@ test(
         await page.mouse.down()
         await page.mouse.move(drag.end.x, drag.end.y, { steps: 10 })
         await writeFile(summaryFile, `${SUMMARY}\n<!-- another metadata change -->`)
-        await page.waitForResponse((response) => response.url().endsWith(`/${DAY.ymd}/summary`) && response.ok())
+        await page.waitForResponse((response) => response.url().endsWith(`/day/${DAY.ymd}`) && response.ok())
         await page.waitForTimeout(150)
         await page.mouse.up()
         assert({
@@ -187,7 +187,11 @@ test(
         await page.getByText('Day record', { exact: true }).click()
         await page.getByText('Prepare the Atlas checklist', { exact: true }).waitFor()
         await waitForTitle(recordTitle)
-        await page.waitForResponse((response) => response.url().endsWith(`/${DAY.ymd}/summary`) && response.ok())
+        const refreshed = page.waitForResponse(
+          (response) => response.url().endsWith(`/day/${DAY.ymd}`) && response.ok(),
+        )
+        await page.evaluate(() => window.dispatchEvent(new Event('focus')))
+        await refreshed
         assert({
           given: 'the reader switches to the day record and a background refresh follows',
           should: 'keep their chosen view and leave the saved day untouched',

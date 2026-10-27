@@ -1,10 +1,11 @@
 import { ActionIcon, Button, Checkbox, Popover, SegmentedControl, Tooltip } from '@mantine/core'
-import { Fragment, type ReactNode, useCallback, useEffect, useRef, useState } from 'react'
+import { Fragment, type ReactNode, useEffect, useRef, useState } from 'react'
 import { documentWorkWhen, workDurationLabel } from '#commands/all/notes/lib/documentInput.ts'
 import { PlainDate, PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import { dayItemKey, type CommitmentOrder } from '../../../service/handler/day/organizingTypes.ts'
 import { comparePlanItems } from '../../../service/handler/day/planningTypes.ts'
 import type { DaySummary } from '../../../service/handler/day/summary.ts'
+import type { ViewVersion } from '../../../service/viewVersion.ts'
 import { type Kept, KeptToast } from '../attachments/files.tsx'
 import { fileHref, resolvePath } from '../explorer/explorer.tsx'
 import { DocumentImportNotice } from '../import/documentImport.tsx'
@@ -45,7 +46,7 @@ import {
 import { useDayPlanning } from './dayPlanning.tsx'
 import { DayRail } from './dayRail.tsx'
 import { NextDayBlock, NightStartLine, StartButton, useStartDay } from './dayStart.tsx'
-import { DaySummaryView, useSummaryRefresh } from './daySummary.tsx'
+import { DaySummaryView } from './daySummary.tsx'
 import { DayTracking } from './dayTracking.tsx'
 import { revealOpacity, useSwipeToDelete } from './swipe.ts'
 
@@ -81,6 +82,7 @@ export interface DayDue {
 }
 
 export interface DayData {
+  version?: ViewVersion
   today: DayRef
   planningToday?: string
   /** The day waiting to be started; null while the clock and the calendar agree */
@@ -170,27 +172,6 @@ export interface ThreadSummary {
   inherited: number
   /** The saved chat this thread continues; null for one with no file yet */
   saved: string | null
-}
-
-/** The day named by `ymd`, or today when null. */
-export function useDay(ymd: string | null, refreshKey?: string): DayData | null {
-  const [day, setDay] = useState<DayData | null>(null)
-  const requestedDay = useRef(ymd)
-  useEffect(() => {
-    let alive = true
-    if (requestedDay.current !== ymd) {
-      requestedDay.current = ymd
-      setDay(null)
-    }
-    fetch(ymd ? `/day/${ymd}` : '/day')
-      .then((r) => (r.ok ? r.json() : null))
-      .then((body) => alive && setDay(body as DayData | null))
-      .catch(() => alive && setDay(null))
-    return () => {
-      alive = false
-    }
-  }, [ymd, refreshKey])
-  return day
 }
 
 /** The live threads, re-read every few seconds — the list is in memory on the service, so this is cheap. */
@@ -1308,7 +1289,8 @@ export function DayView({
   trackingDate = null,
   search = '',
   navigate = (path: string) => window.location.assign(path),
-  day,
+  day: view,
+  applyView: setView,
   threads,
   imports = [],
   importNotice,
@@ -1335,6 +1317,7 @@ export function DayView({
   search?: string
   navigate?: (path: string) => void
   day: DayData | null
+  applyView: (view: DayData) => void
   threads: ThreadSummary[]
   /** Files dropped on the day, running or done — rows beside the threads */
   imports?: ImportJob[]
@@ -1363,9 +1346,6 @@ export function DayView({
 }) {
   const fileRef = useRef<HTMLInputElement>(null)
 
-  // Checking a box answers with the fresh view; it lands here, over the prop.
-  const [view, setView] = useState<DayData | null>(day)
-  useEffect(() => setView(day), [day])
   const ymd = view?.day.ymd
   const journal = useJournal(ymd ?? null)
   const reflectionHref = (file: string) => {
@@ -1411,14 +1391,6 @@ export function DayView({
   useEffect(() => {
     document.title = `sky · ${dateTitle}${modeTitle ? ` · ${modeTitle}` : ''}`
   }, [dateTitle, modeTitle])
-  const readSummary = useCallback((summary: DaySummary | null) => {
-    setView((current) =>
-      current && (current.summary?.version !== summary?.version || current.record.summarized !== Boolean(summary))
-        ? { ...current, summary, record: { ...current.record, summarized: Boolean(summary) } }
-        : current,
-    )
-  }, [])
-  useSummaryRefresh(ymd, readSummary)
   const summarized = view?.record.summarized ?? false
   // The day waiting to be started shows on two pages: the open day's (a whisper at night, a block
   // from 4 am) and its own, beside the count. Pressing Start runs day:start as the week page does.

@@ -1,6 +1,6 @@
 ---
 created: 2026-09-03
-updated: 2026-10-26
+updated: 2026-10-27
 ---
 
 # The day's items, the day's rail, and the day's files
@@ -26,8 +26,9 @@ prose. The complete file opens in Explorer. Older one-sentence openings remain
 readable; custom formats render their document body, and empty files offer a
 link to edit them. The file is sufficient even when `day.md` is absent.
 
-`web/client/day/daySummary.tsx` renders this content with `RenderedHtml` and polls
-only `GET /day/:ymd/summary`, keeping unchanged text nodes and selections intact.
+`web/client/day/daySummary.tsx` renders this content with `RenderedHtml`, keeping unchanged text nodes and selections intact.
+The record and summary refresh together through the service's
+[notebook change subscription](../../../docs/README.md#notebook-changes-in-open-pages).
 The `view=summary|record` URL query preserves an explicit choice across reloads
 and browser history; a day without the query opens its default view. The day
 component owns the tab title so it follows the displayed day and view during

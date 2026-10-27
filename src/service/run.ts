@@ -677,7 +677,7 @@ async function watchFiles() {
     if (mdStore) {
       if (ret.event === 'remove') {
         mdStore.delete(ret.file)
-      } else if (ret.contents) {
+      } else if (ret.contents !== undefined) {
         mdStore.set(ret.file, ret.contents)
       }
     }
@@ -694,23 +694,18 @@ async function watchFiles() {
       scheduleEntityRebuild()
     }
 
-    if (!ret.contents) continue
-
-    const { personScoresUpdated, orgScoresUpdated, tagScoresUpdated } = processFileUpdate(
-      ret.contents,
-      ret.file,
-      server.entityDetector,
-      server.scanners,
-    )
-
-    if (personScoresUpdated) {
-      store.emitPersonScoresUpdated()
+    if (ret.contents !== undefined) {
+      const { personScoresUpdated, orgScoresUpdated, tagScoresUpdated } = processFileUpdate(
+        ret.contents,
+        ret.file,
+        server.entityDetector,
+        server.scanners,
+      )
+      if (personScoresUpdated) store.emitPersonScoresUpdated()
+      if (orgScoresUpdated) store.emitOrgScoresUpdated()
+      if (tagScoresUpdated) store.emitTagScoresUpdated()
     }
-    if (orgScoresUpdated) {
-      store.emitOrgScoresUpdated()
-    }
-    if (tagScoresUpdated) {
-      store.emitTagScoresUpdated()
-    }
+    // Include empty files and deletions, after the stores have seen the change.
+    server.notebookChanges.changed(ret.file)
   }
 }

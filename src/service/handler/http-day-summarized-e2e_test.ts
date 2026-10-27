@@ -37,7 +37,7 @@ tz: America/Chicago
 const end = (markdown: string) => markdown.replace('ended:\n', 'ended: 13.5h\n')
 
 test(
-  { name: 'summary polling locks and reopens the record while manual Start remains available', timeout: 60000 },
+  { name: 'summary refresh locks and reopens the record while manual Start remains available', timeout: 60000 },
   async (t) => {
     const starts: string[] = []
     await runWysiwygE2e(

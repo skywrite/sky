@@ -1,40 +1,6 @@
-import { useEffect } from 'react'
 import type { DaySummary, SummaryPassage } from '../../../service/handler/day/summary.ts'
 import { fileHref } from '../explorer/explorer.tsx'
 import { RenderedHtml } from '../lib/renderedHtml.tsx'
-
-/** Refresh one small file without rebuilding the day's plan or replacing unchanged prose. */
-export function useSummaryRefresh(ymd: string | undefined, onRead: (summary: DaySummary | null) => void) {
-  useEffect(() => {
-    if (!ymd) return
-    const controller = new AbortController()
-    let reading = false
-    const read = async () => {
-      if (document.hidden || reading) return
-      reading = true
-      try {
-        const response = await fetch(`/day/${ymd}/summary`, { signal: controller.signal })
-        if (response.ok && !controller.signal.aborted) {
-          const body = (await response.json()) as { summary: DaySummary | null }
-          if (!controller.signal.aborted) onRead(body.summary)
-        }
-      } catch {
-        // A temporary connection failure leaves the saved view readable.
-      } finally {
-        reading = false
-      }
-    }
-    const timer = window.setInterval(() => void read(), 5000)
-    window.addEventListener('focus', read)
-    document.addEventListener('visibilitychange', read)
-    return () => {
-      controller.abort()
-      window.clearInterval(timer)
-      window.removeEventListener('focus', read)
-      document.removeEventListener('visibilitychange', read)
-    }
-  }, [ymd, onRead])
-}
 
 function Passage({ passage, className }: { passage: SummaryPassage; className: string }) {
   return (

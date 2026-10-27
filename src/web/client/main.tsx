@@ -9,11 +9,12 @@ import { type Kept, undoKeep } from './attachments/files.tsx'
 import { AutomationDetail, AutomationsMain, AutomationsSideNav, NewAutomation } from './automations/automations.tsx'
 import { ChatMain, threadTitle, useChat } from './chat/chat.tsx'
 import { ClockAmbient, ClockMain, clockChanged, useClockNow } from './clock/clock.tsx'
-import { DayView, useDay, useThreads } from './day/day.tsx'
+import { DayView, useThreads } from './day/day.tsx'
 import type { ChatCloseNotice } from './day/dayChatClose.tsx'
 import { DayFilesMain, filesRouteOf, shortLabel } from './day/dayFiles.tsx'
 import { useItemHelpChat } from './day/dayItemHelp.tsx'
 import { DayReviewDialog, useReviewPrompt } from './day/review/dayReview.tsx'
+import { useDay } from './day/useDay.ts'
 import { DocView, explorerFileOf, fileHref, Tree } from './explorer/explorer.tsx'
 import { ExtensionNavLinks, ExtensionPageMain, extensionRouteOf } from './extensions/extensions.tsx'
 import { useDocumentNotices } from './import/documentImport.tsx'
@@ -158,7 +159,7 @@ function Canvas() {
       )
       .sort(),
   ].join('\u0000')
-  const day = useDay(dayYmd, dayRefreshKey)
+  const { day, applyView: applyDayView } = useDay(dayYmd, dayRefreshKey)
   const clock = useClockNow()
   // This week, for the sidebar: the day waiting to start, and whether next week has a plan.
   const { view: thisWeek, reload: reloadWeek } = useWeek('')
@@ -695,6 +696,7 @@ function Canvas() {
             search={search}
             navigate={navigate}
             day={day}
+            applyView={applyDayView}
             threads={others}
             imports={dayImports}
             importNotice={documentNotices.notice}

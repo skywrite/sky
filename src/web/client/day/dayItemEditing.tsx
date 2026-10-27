@@ -128,9 +128,11 @@ export function DayItemEditing({
     if (readOnly || !items.some((item) => keyOf(item) === keyOf(draft.item))) {
       setDraft((value) => (value ? { ...value, mode: 'details' } : null))
       setError(
-        readOnly
+        day.record.summarized
           ? 'This day has a saved summary. Remove its summary to save your draft.'
-          : 'This item changed elsewhere. Your draft is kept here; reload the day before trying again.',
+          : !day.day.dayRelativePath
+            ? 'This day file was removed. Your draft is kept here; restore the day file before saving.'
+            : 'This item changed elsewhere. Your draft is kept here; reload the day before trying again.',
       )
     }
   }, [day, readOnly])
