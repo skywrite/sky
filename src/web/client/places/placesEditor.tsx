@@ -356,7 +356,7 @@ export function PlacesEditor({
               <PlaceIcon name={more ? 'down' : 'right'} size={16} />
               More details<span>Website, aliases, coordinates</span>
             </button>
-            <Collapse in={more}>
+            <Collapse expanded={more}>
               <div className="sky-places-form">
                 <TextInput
                   label="Website"
