@@ -1,5 +1,5 @@
 import { assert, test } from '#test'
-import { snapWorkstream, type SnapRect, type SnapResult } from './snap.ts'
+import { snapRect, type SnapRect, type SnapResult } from './snap.ts'
 
 const rect = (id: string, x: number, y: number, width = 100, height = 80): SnapRect => ({ id, x, y, width, height })
 
@@ -9,7 +9,7 @@ test({ name: 'workstream snapping - tolerance follows screen pixels without larg
     given: 'drags five or seven screen pixels away from an aligned edge at several zooms',
     should: 'snap within six screen pixels and leave the farther position untouched',
     actual: [0.5, 1, 2, 4].map((zoom) =>
-      [5, 7].map((offset) => snapWorkstream(rect('moving', 100 + offset / zoom, 200), [peer], zoom).point.x),
+      [5, 7].map((offset) => snapRect(rect('moving', 100 + offset / zoom, 200), [peer], zoom).point.x),
     ),
     expected: [
       [100, 114],
@@ -21,7 +21,7 @@ test({ name: 'workstream snapping - tolerance follows screen pixels without larg
   assert({
     given: 'a very far zoom-out',
     should: 'cap the attraction distance in world space',
-    actual: snapWorkstream(rect('moving', 125, 200), [peer], 0.01).point.x,
+    actual: snapRect(rect('moving', 125, 200), [peer], 0.01).point.x,
     expected: 125,
   })
 })
@@ -31,7 +31,7 @@ test({ name: 'workstream snapping - card edges and centers align independently o
   assert({
     given: 'a wider card near a matching left edge and a matching center',
     should: 'align the appropriate anchor rather than assume equal widths',
-    actual: [103, 78].map((x) => snapWorkstream(rect('moving', x, 180, 140), [peer], 1)),
+    actual: [103, 78].map((x) => snapRect(rect('moving', x, 180, 140), [peer], 1)),
     expected: [
       { point: { x: 100, y: 180 }, guides: [{ axis: 'x', value: 100, from: 0, to: 260 }], gaps: [] },
       { point: { x: 80, y: 180 }, guides: [{ axis: 'x', value: 150, from: 0, to: 260 }], gaps: [] },
@@ -40,7 +40,7 @@ test({ name: 'workstream snapping - card edges and centers align independently o
   assert({
     given: 'the left edge of one card near the right edge of another',
     should: 'also support alignment between different anchors',
-    actual: snapWorkstream(rect('moving', 197, 180), [peer], 1),
+    actual: snapRect(rect('moving', 197, 180), [peer], 1),
     expected: { point: { x: 200, y: 180 }, guides: [{ axis: 'x', value: 200, from: 0, to: 260 }], gaps: [] },
   })
 })
@@ -51,7 +51,7 @@ test({ name: 'workstream snapping - equal spacing works before, between, and aft
     given: 'two cards with a fifty-unit horizontal gap',
     should: 'extend that spacing in either direction and measure both actual gaps',
     actual: [-153, 304].map((x) => {
-      const result = snapWorkstream(rect('moving', x, 0), peers, 1)
+      const result = snapRect(rect('moving', x, 0), peers, 1)
       return { x: result.point.x, gaps: result.gaps }
     }),
     expected: [
@@ -71,7 +71,7 @@ test({ name: 'workstream snapping - equal spacing works before, between, and aft
       },
     ],
   })
-  const between = snapWorkstream(rect('moving', 204, 0), [rect('first', 0, 0), rect('second', 400, 0)], 1)
+  const between = snapRect(rect('moving', 204, 0), [rect('first', 0, 0), rect('second', 400, 0)], 1)
   assert({
     given: 'a card being placed between two others',
     should: 'balance the available space on either side',
@@ -87,7 +87,7 @@ test({ name: 'workstream snapping - equal spacing works before, between, and aft
 })
 
 test({ name: 'workstream snapping - vertical spacing uses card heights and a shared column' }, () => {
-  const result = snapWorkstream(rect('moving', -100, 263), [rect('first', -100, 0), rect('second', -100, 130)], 1)
+  const result = snapRect(rect('moving', -100, 263), [rect('first', -100, 0), rect('second', -100, 130)], 1)
   assert({
     given: 'a column with a fifty-unit vertical gap',
     should: 'snap and measure the two vertical spaces',
@@ -107,13 +107,9 @@ test({ name: 'workstream snapping - spacing does not use unrelated rows, enormou
     given: 'cards outside the moving row, separated by an enormous gap, or already occupying the target',
     should: 'leave the drag untouched with no spacing guides',
     actual: [
-      snapWorkstream(rect('moving', 304, 200), [rect('first', 0, 0), rect('second', 150, 0)], 1),
-      snapWorkstream(rect('moving', 1404, 0), [rect('first', 0, 0), rect('second', 700, 0)], 1),
-      snapWorkstream(
-        rect('moving', 304, 0),
-        [rect('first', 0, 0), rect('second', 150, 0), rect('occupied', 280, 0)],
-        1,
-      ),
+      snapRect(rect('moving', 304, 200), [rect('first', 0, 0), rect('second', 150, 0)], 1),
+      snapRect(rect('moving', 1404, 0), [rect('first', 0, 0), rect('second', 700, 0)], 1),
+      snapRect(rect('moving', 304, 0), [rect('first', 0, 0), rect('second', 150, 0), rect('occupied', 280, 0)], 1),
     ].map((result) => ({ x: result.point.x, gaps: result.gaps })),
     expected: [
       { x: 304, gaps: [] },
@@ -130,9 +126,9 @@ test({ name: 'workstream snapping - modifier keys preserve raw coordinates on di
     given: 'a drag near both axes with a constrained or disabled snap',
     should: 'only move the permitted axis and omit all guides when disabled',
     actual: [
-      snapWorkstream(moving, peers, 1, { axis: 'x' }),
-      snapWorkstream(moving, peers, 1, { axis: 'y' }),
-      snapWorkstream(moving, peers, 1, { disabled: true }),
+      snapRect(moving, peers, 1, { axis: 'x' }),
+      snapRect(moving, peers, 1, { axis: 'y' }),
+      snapRect(moving, peers, 1, { disabled: true }),
     ].map((result) => ({ point: result.point, axes: result.guides.map((guide) => guide.axis), gaps: result.gaps })),
     expected: [
       { point: { x: 100, y: 3 }, axes: ['x'], gaps: [] },
@@ -145,14 +141,14 @@ test({ name: 'workstream snapping - modifier keys preserve raw coordinates on di
 test({ name: 'workstream snapping - negative coordinates, peer order, and self references are safe' }, () => {
   const moving = rect('moving', -98, -200)
   const peers = [rect('alpha', -100, -400), rect('beta', -96, 0), moving]
-  const result = snapWorkstream(moving, peers, 1, { axis: 'x' })
+  const result = snapRect(moving, peers, 1, { axis: 'x' })
   assert({
     given: 'equally close targets and the dragged card itself in the peer list',
     should: 'choose a stable target regardless of peer enumeration or zoom sign',
     actual: [
       result,
-      snapWorkstream(moving, [...peers].reverse(), 1, { axis: 'x' }),
-      snapWorkstream(moving, peers, -1, { axis: 'x' }),
+      snapRect(moving, [...peers].reverse(), 1, { axis: 'x' }),
+      snapRect(moving, peers, -1, { axis: 'x' }),
     ],
     expected: Array.from(
       { length: 3 },
@@ -166,14 +162,14 @@ test({ name: 'workstream snapping - negative coordinates, peer order, and self r
   assert({
     given: 'only a self-reference or an aligned peer far outside the relevant area',
     should: 'avoid stray guides',
-    actual: [[moving], [rect('distant', -100, 10000)]].map((items) => snapWorkstream(moving, items, 1)),
+    actual: [[moving], [rect('distant', -100, 10000)]].map((items) => snapRect(moving, items, 1)),
     expected: Array.from({ length: 2 }, (): SnapResult => ({ point: { x: -98, y: -200 }, guides: [], gaps: [] })),
   })
 })
 
 test({ name: 'workstream snapping - orthogonal alignment cannot leave false equal-spacing guides' }, () => {
   const moving = rect('moving', 304, 79)
-  const result = snapWorkstream(moving, [rect('first', 0, 0), rect('second', 150, 0)], 1)
+  const result = snapRect(moving, [rect('first', 0, 0), rect('second', 150, 0)], 1)
   assert({
     given: 'a card just overlapping a row that snaps to the row’s lower edge',
     should: 'drop the horizontal spacing snap when the final card is no longer in that row',

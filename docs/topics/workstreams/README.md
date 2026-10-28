@@ -1,6 +1,6 @@
 ---
 created: 2026-09-04
-updated: 2026-09-13
+updated: 2026-10-27
 ---
 
 # Workstreams — from a loose objective to work that moves forward
@@ -254,6 +254,8 @@ the hand tool to pan, and visible zoom controls. Keyboard shortcuts include
 plus/minus, Shift-0 for 100%, Shift-1 to fit the visible work, and Shift-2 to focus
 the selection. Keep these controls discoverable in the interface. Text fields
 retain their normal typing shortcuts.
+The camera, tools and gestures live in `src/web/client/lib/canvas/` (see its docs); the workstreams canvas
+adds the cards, lanes and link handles on top.
 
 Object movement and camera movement have different meanings:
 

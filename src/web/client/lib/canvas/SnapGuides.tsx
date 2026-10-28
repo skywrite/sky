@@ -1,15 +1,15 @@
 import type { SnapResult } from './snap.ts'
 
-export function WorkstreamGuides({ feedback, zoom }: { feedback: SnapResult; zoom: number }) {
+export function SnapGuides({ feedback, zoom }: { feedback: SnapResult; zoom: number }) {
   const tick = 3 / zoom
   return (
-    <svg className="sky-workstreams-snap-guides" aria-hidden="true">
+    <svg className="sky-canvas-snap-guides" aria-hidden="true">
       {feedback.guides.map((guide, index) => {
         const vertical = guide.axis === 'x'
         const start = vertical ? { x: guide.value, y: guide.from } : { x: guide.from, y: guide.value }
         const end = vertical ? { x: guide.value, y: guide.to } : { x: guide.to, y: guide.value }
         return (
-          <g key={`align-${index}`} className="sky-workstreams-alignment-guide">
+          <g key={`align-${index}`} className="sky-canvas-alignment-guide">
             <path d={`M ${start.x} ${start.y} L ${end.x} ${end.y}`} vectorEffect="non-scaling-stroke" />
             {[start, end].map((point, endpoint) => (
               <path
@@ -27,7 +27,7 @@ export function WorkstreamGuides({ feedback, zoom }: { feedback: SnapResult; zoo
         const label = String(Math.round(gap.distance * 10) / 10)
         const width = Math.max(24, label.length * 7 + 10)
         return (
-          <g key={`gap-${index}`} className="sky-workstreams-spacing-guide">
+          <g key={`gap-${index}`} className="sky-canvas-spacing-guide">
             <path d={`M ${gap.from.x} ${gap.from.y} L ${gap.to.x} ${gap.to.y}`} vectorEffect="non-scaling-stroke" />
             {[gap.from, gap.to].map((point, endpoint) => (
               <path

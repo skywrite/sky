@@ -155,7 +155,7 @@ function candidates(
 }
 
 /** Snap in screen space, with a world-space cap so a far zoom-out never pulls a card across its neighbors. */
-export function snapWorkstream(
+export function snapRect(
   moving: SnapRect,
   peers: readonly SnapRect[],
   zoom: number,

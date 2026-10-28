@@ -97,7 +97,7 @@ test(
       if (shots)
         await f.page.screenshot({ path: path.join(shots, 'overview-negative-map.png'), animations: 'disabled' })
 
-      const world = f.page.locator('.sky-workstreams-world')
+      const world = f.page.locator('.sky-canvas-world')
       const pan = async (x: number, y: number) => {
         const previous = await world.getAttribute('style')
         const canvas = await f.page.locator('.sky-workstreams-canvas').boundingBox()
@@ -105,7 +105,7 @@ test(
         await f.page.mouse.move(canvas.x + canvas.width / 4, canvas.y + canvas.height * 0.75)
         await f.page.mouse.wheel(x, y)
         await f.page.waitForFunction(
-          (before) => document.querySelector('.sky-workstreams-world')?.getAttribute('style') !== before,
+          (before) => document.querySelector('.sky-canvas-world')?.getAttribute('style') !== before,
           previous,
         )
       }
@@ -145,7 +145,7 @@ test(
       const panned = await world.getAttribute('style')
       await f.page.getByRole('button', { name: 'Zoom in (+)', exact: true }).click()
       await f.page.waitForFunction(
-        (previous) => document.querySelector('.sky-workstreams-world')?.getAttribute('style') !== previous,
+        (previous) => document.querySelector('.sky-canvas-world')?.getAttribute('style') !== previous,
         panned,
       )
       const userCamera = await world.getAttribute('style')
@@ -878,20 +878,20 @@ test(
       if (shots)
         await f.page.screenshot({ path: path.join(shots, 'created-card-low-zoom-filters.png'), animations: 'disabled' })
 
-      const world = f.page.locator('.sky-workstreams-world')
+      const world = f.page.locator('.sky-canvas-world')
       const revealedCamera = await world.getAttribute('style')
       const canvas = await f.page.locator('.sky-workstreams-canvas').boundingBox()
       if (!canvas) throw new Error('Missing canvas')
       await f.page.mouse.move(canvas.x + canvas.width / 2, canvas.y + canvas.height * 0.75)
       await f.page.mouse.wheel(180, 80)
       await f.page.waitForFunction(
-        (previous) => document.querySelector('.sky-workstreams-world')?.getAttribute('style') !== previous,
+        (previous) => document.querySelector('.sky-canvas-world')?.getAttribute('style') !== previous,
         revealedCamera,
       )
       const pannedCamera = await world.getAttribute('style')
       await f.page.getByRole('button', { name: 'Zoom in (+)', exact: true }).click()
       await f.page.waitForFunction(
-        (previous) => document.querySelector('.sky-workstreams-world')?.getAttribute('style') !== previous,
+        (previous) => document.querySelector('.sky-canvas-world')?.getAttribute('style') !== previous,
         pannedCamera,
       )
       const userCamera = await world.getAttribute('style')

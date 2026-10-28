@@ -12,7 +12,7 @@ import { createTestHttpApp } from './httpTestHelpers.ts'
 const NOW = '2025-03-15 12:00'
 
 async function camera(page: Page): Promise<string | null> {
-  return page.locator('.sky-workstreams-world').getAttribute('style')
+  return page.locator('.sky-canvas-world').getAttribute('style')
 }
 
 test(

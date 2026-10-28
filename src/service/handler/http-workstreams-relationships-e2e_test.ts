@@ -121,13 +121,13 @@ test(
       await page.goto(`${origin}/workstreams`)
       const card = (id: string) => page.locator(`.sky-workstreams-card[data-workstream="${id}"]`)
       await card(source.id).waitFor()
-      const originalCamera = await page.locator('.sky-workstreams-world').getAttribute('style')
+      const originalCamera = await page.locator('.sky-canvas-world').getAttribute('style')
       await page.getByRole('button', { name: 'Fit', exact: true }).click()
       await page.waitForFunction(
-        (before) => document.querySelector('.sky-workstreams-world')?.getAttribute('style') !== before,
+        (before) => document.querySelector('.sky-canvas-world')?.getAttribute('style') !== before,
         originalCamera,
       )
-      const camera = () => page.locator('.sky-workstreams-world').getAttribute('style')
+      const camera = () => page.locator('.sky-canvas-world').getAttribute('style')
       const beforeCamera = await camera()
       await card(source.id).hover()
       const from = await center(
@@ -222,7 +222,7 @@ test(
       const beforeFit = await camera()
       await page.getByRole('button', { name: 'Fit', exact: true }).click()
       await page.waitForFunction(
-        (before) => document.querySelector('.sky-workstreams-world')?.getAttribute('style') !== before,
+        (before) => document.querySelector('.sky-canvas-world')?.getAttribute('style') !== before,
         beforeFit,
       )
       await clickEdge(page, /Review Sky suggestion: Atlas pilot needs a result from Widget research/)

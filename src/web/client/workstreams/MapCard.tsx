@@ -1,5 +1,5 @@
 import { CARD_HEIGHT, CARD_WIDTH } from '#lib/workstreams/layout.ts'
-import type { Point } from './camera.ts'
+import type { Point } from '../lib/canvas/camera.ts'
 import { workstreamColorStyle } from './colors.ts'
 import { WorkstreamConnector } from './WorkstreamConnector.tsx'
 import { WorkstreamMenuButton } from './WorkstreamMenuButton.tsx'

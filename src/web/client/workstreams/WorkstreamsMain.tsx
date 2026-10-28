@@ -9,7 +9,7 @@ import type {
   WorkstreamReport,
 } from '#lib/workstreams/types.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
-import type { Point } from './camera.ts'
+import type { Point } from '../lib/canvas/camera.ts'
 import { DeletedWorkDialog, type DeletedWorkView } from './DeletedWorkDialog.tsx'
 import { laneOrderChanges } from './order.ts'
 import { proposalRelationship, relationshipChanges } from './relationshipModel.ts'
