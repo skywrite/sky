@@ -1,6 +1,6 @@
 ---
 created: 2026-09-27
-updated: 2026-10-26
+updated: 2026-10-27
 ---
 
 # Summaries
@@ -26,7 +26,14 @@ A closing **Where Things Stand** section is the day's index: one line per matter
 
 ## The Slack recap
 
-Slack channels reach the summary through the Slack recap, `actions/recaps/<time>_slack.md`, which `recap:slack` writes from the channel cache with Opus 5.5 at high effort ([recap notes](../../recap/docs/README.md)): every channel the owner is a member of, digested into a Channels block, What moved, Asked of you and Where things stand, each line tagged with its channel and time. The service writes it once the next day has started; `summary:day` writes it first when a day with channel messages has none, and `--dry-run` only says so. To the prompt the recap is the room the owner was in: a line in it is filed material unless it starts with `You:`, its Channels block becomes the summary's `## Channels` section, and the matters go to Where Things Stand. The raw channel files never reach the summary.
+Slack channels reach the summary through the Slack recap, `actions/recaps/<time>_slack.md`, which `recap:slack` writes from the channel cache with Opus 5.5 at high effort ([recap notes](../../recap/docs/README.md)): every channel the owner is a member of, digested into a Channels block, What moved, Asked of you and Where things stand, each line tagged with its channel and time. The service writes it once the next day has started; `summary:day` writes it first when a day with channel messages has none, and `--dry-run` only says so.
+To the prompt the recap is the room the owner was in: a line in it is filed material unless it starts with `You:`, a
+noteworthy development can surface as a Signal, and the matters go to Where Things Stand.
+The recap is context for the summary and is never copied into it, so the summary has no Channels section.
+Carrying the recap's Channels block over made up about half of each summary's text and repeated a file the day already
+keeps.
+Some older dailies still have the section, and the week prompt reads it as background.
+The raw channel files never reach the summary.
 
 The reading budget is 750k of the model's tokens, fitted to the profile's window. The text is measured at four characters a token and restated through the model's learned ratio (`_shared-ts/ai/tokenRatio.ts`); over budget, the command refuses rather than trims.
 

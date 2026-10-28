@@ -76,8 +76,8 @@ export default class SummaryDayTask extends Command {
     descriptionLong: [
       'Creates a summary.md file in the day directory: the day compressed once, for reading tomorrow and for search later.',
       'Opens with a recognizable headline, a short story, and Meaningful Moments linked to original day files, generated alongside the detailed record.',
-      'Detailed sections: Done, Not Done, Commitments Made, Waiting On, Time, Health, Signals, Insights, Archival, Channels, Asset Prices - every line names its source file.',
-      'Slack channels reach it through the Slack recap that recap:slack writes from the channel cache; a day with channel messages but no recap gets one written first. Channels lists what moved where.',
+      'Detailed sections: Done, Not Done, Commitments Made, Waiting On, Time, Health, Signals, Insights, Archival, Asset Prices - every line names its source file.',
+      'Slack channels reach it through the Slack recap that recap:slack writes from the channel cache; a day with channel messages but no recap gets one written first. The recap shapes the summary but is not copied into it.',
       'The day is self-contained: nothing in it depends on another day. A closing Where Things Stand section names what the day touched and where each stood.',
     ],
     usage: [
