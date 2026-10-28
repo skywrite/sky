@@ -168,3 +168,100 @@ test(
     }
   },
 )
+
+test(
+  {
+    name: 'morning review shows in every open tab until the person acts on it in one of them',
+    ignore: env.get('SKY_BROWSER_TESTS') !== '1',
+    timeout: 120000,
+  },
+  async () => {
+    const f = await reviewFixture()
+    const app = new Hono()
+    app.route('/day-review/_api', f.app)
+    app.route(
+      '/',
+      createTestHttpApp([f.timeDir], {
+        now: f.now,
+        userDataDir: path.join(f.root, '.state'),
+        chat: {
+          timeDir: f.timeDir,
+          createSession: async () => {
+            throw new Error('No model in this fixture.')
+          },
+        },
+        week: f.dayOptions.commands,
+        tracking: { store: f.tracking },
+        streaks: { store: f.streaks },
+      }),
+    )
+    const server = serve({ fetch: app.fetch, hostname: '127.0.0.1', port: 0 })
+    let browser
+    try {
+      const address = server.address()
+      if (!address || typeof address === 'string') throw new Error('No test server port.')
+      const origin = `http://127.0.0.1:${address.port}`
+      browser = await chromium.launch({
+        headless: true,
+        executablePath: env.get('SKY_BROWSER_EXECUTABLE') || undefined,
+      })
+      const context = await browser.newContext({ viewport: { width: 1440, height: 1100 } })
+      await context.route('**/day/*/schedule', (route) =>
+        route.fulfill({ json: { read: true, errors: [], meetings: [] } }),
+      )
+      const pauses: string[] = []
+      context.on('request', (request) => {
+        if (request.method() === 'POST' && request.url().endsWith(`/${REVIEW_DAY}/close`)) pauses.push(request.url())
+      })
+      const tab = async () => {
+        const page = await context.newPage()
+        page.setDefaultTimeout(15000)
+        const status = page.waitForResponse((response) => response.url().endsWith('/day-review/_api/status'))
+        await page.goto(origin)
+        return {
+          page,
+          pending: ((await (await status).json()) as { pending: string | null }).pending,
+          dialog: page.getByRole('dialog', { name: `Review ${REVIEW_DAY}` }),
+        }
+      }
+      await f.idle.sample(0, 0, REVIEW_DAY, REVIEW_DAY, 5)
+      await f.idle.sample(6 * 3_600_000, 0, REVIEW_DAY, REVIEW_TODAY, 5)
+      const first = await tab()
+      await first.dialog.waitFor()
+      const second = await tab()
+      await second.dialog.waitFor()
+      await first.page.bringToFront()
+      await first.page.reload()
+      await first.dialog.waitFor()
+      await second.page.bringToFront()
+      const acknowledged = second.page.waitForResponse((response) =>
+        response.url().endsWith(`/${REVIEW_DAY}/acknowledge`),
+      )
+      await second.dialog.getByRole('button', { name: 'Skip this step' }).click()
+      await acknowledged
+      await second.dialog.getByRole('heading', { name: 'Did you do these?' }).waitFor()
+      await first.page.bringToFront()
+      await first.page.evaluate(() => window.dispatchEvent(new Event('focus')))
+      await first.dialog.waitFor({ state: 'detached' })
+      const later = await tab()
+      assert({
+        given: 'the review shown in two tabs, one reloaded, then a choice made in the other',
+        should:
+          'keep it where the person acted, withdraw it elsewhere without pausing it, and not show it in a new tab',
+        actual: [
+          new URL(second.page.url()).searchParams.get('review'),
+          await second.dialog.count(),
+          pauses,
+          (await f.view()).paused,
+          later.pending,
+          await later.dialog.count(),
+        ],
+        expected: [REVIEW_DAY, 1, [], false, null, 0],
+      })
+    } finally {
+      await browser?.close()
+      await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())))
+      await f.dispose()
+    }
+  },
+)

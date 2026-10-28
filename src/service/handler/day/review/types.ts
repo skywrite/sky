@@ -65,7 +65,6 @@ export type RecapId = (typeof RECAPS)[number]['id']
 
 export interface ReviewRuntime {
   status(): Promise<{ pending: string | null; supported: boolean }>
-  claim(): Promise<string | null>
   acknowledge(day: string): Promise<void>
   recap(id: RecapId, day: string): Promise<string | void>
   summarize(day: string): Promise<void>

@@ -7,7 +7,7 @@ const HOUR = 3_600_000
 const DAY = '2030-06-17',
   TODAY = '2030-06-18'
 
-test('review waits for a real return across dates and can be claimed only once', async () => {
+test('review waits for a real return across dates and stays offered until acknowledged', async () => {
   const dir = await makeTempDir({ prefix: 'sky-review-idle-' })
   try {
     const idle = new ReviewIdle(dir)
@@ -20,12 +20,13 @@ test('review waits for a real return across dates and can be claimed only once',
       expected: null,
     })
     await idle.sample(6 * HOUR + 1000, 0, DAY, TODAY, 5)
-    const claims = await Promise.all([idle.claim(), idle.claim()])
+    const tabs = await Promise.all([idle.status(), idle.status()])
+    await idle.acknowledge(DAY)
     assert({
-      given: 'two browser tabs on returning',
-      should: 'offer one popup for the old day',
-      actual: claims.filter(Boolean),
-      expected: [DAY],
+      given: 'two browser tabs on returning, then a choice in one of them',
+      should: 'offer the old day to both until the choice',
+      actual: [tabs.map((tab) => tab.pending), (await idle.status()).pending],
+      expected: [[DAY, DAY], null],
     })
     await idle.sample(12 * HOUR, 0, DAY, TODAY, 5)
     assert({
@@ -64,7 +65,7 @@ test('idle uses configured hours, rejects same-date naps and unsupported samples
     assert({
       given: 'automatic prompting disabled',
       should: 'clear a pending popup',
-      actual: await idle.claim(),
+      actual: (await idle.status()).pending,
       expected: null,
     })
   } finally {
@@ -81,7 +82,7 @@ test('restart needs observed idle evidence instead of treating service downtime 
     assert({
       given: 'service stopped while the computer may have been active',
       should: 'not infer idle from downtime',
-      actual: await restarted.claim(),
+      actual: (await restarted.status()).pending,
       expected: null,
     })
     await restarted.sample(12 * HOUR, 6 * HOUR, DAY, TODAY, 5)
@@ -90,7 +91,7 @@ test('restart needs observed idle evidence instead of treating service downtime 
     assert({
       given: 'idle observed before a restart',
       should: 'remember the return',
-      actual: await afterSleep.claim(),
+      actual: (await afterSleep.status()).pending,
       expected: DAY,
     })
   } finally {

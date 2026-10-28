@@ -33,12 +33,11 @@ export async function reviewRequest<T>(route: string, body?: unknown): Promise<T
   return value
 }
 
-/** One tab claims the return prompt; dismissing it does not cause another tab to show it. */
-export function useReviewPrompt(open: (day: string) => void, showing: boolean) {
-  const openRef = useRef(open)
-  openRef.current = open
+/** Every tab shows the return prompt until the person acts on it in one of them. */
+export function useReviewPrompt(): [string | null, (day: string) => void] {
+  const [pending, setPending] = useState<string | null>(null)
+  const [dismissed, setDismissed] = useState<string | null>(null)
   useEffect(() => {
-    if (showing) return
     let alive = true,
       checking = false
     const check = async () => {
@@ -46,10 +45,7 @@ export function useReviewPrompt(open: (day: string) => void, showing: boolean) {
       checking = true
       try {
         const status = await reviewRequest<{ pending: string | null }>('status')
-        if (status.pending && alive) {
-          const claim = await reviewRequest<{ day: string | null }>('claim', {})
-          if (claim.day && alive) openRef.current(claim.day)
-        }
+        if (alive) setPending(status.pending)
       } catch {
         /* A disconnected service must not interrupt another screen. */
       } finally {
@@ -68,7 +64,8 @@ export function useReviewPrompt(open: (day: string) => void, showing: boolean) {
       window.removeEventListener('focus', check)
       document.removeEventListener('visibilitychange', check)
     }
-  }, [showing])
+  }, [])
+  return [pending === dismissed ? null : pending, setDismissed]
 }
 
 function Job({ job, retry, busy }: { job: ReviewJob; retry: () => void; busy: boolean }) {
@@ -140,12 +137,18 @@ function TrackingAnswers({
 
 export function DayReviewDialog({
   day,
+  prompted = false,
+  onEngage,
   onClose,
   onChanged,
   navigate,
   onImportMeeting,
 }: {
   day: string
+  /** Shown by the return prompt rather than opened by the person. */
+  prompted?: boolean
+  /** The person acted in a prompted review, which makes it theirs to keep open. */
+  onEngage?: () => void
   onClose: () => void
   onChanged: () => void
   navigate: (href: string) => void
@@ -166,6 +169,14 @@ export function DayReviewDialog({
   const draftWrites = useRef(Promise.resolve())
   const pendingDrafts = useRef(0)
   const failedDrafts = useRef(new Set<string>())
+  // Until the person acts in a prompted review, every tab shows it, and a tab dropping its copy never pauses it.
+  const engaged = useRef(!prompted)
+  const engage = (keep = true) => {
+    if (engaged.current) return
+    engaged.current = true
+    void reviewRequest(`${day}/acknowledge`, {}).catch(() => {})
+    if (keep) onEngage?.()
+  }
   const step = view?.step ?? 'carry'
   const stepIndex = REVIEW_STEPS.indexOf(step)
   useEffect(() => {
@@ -194,7 +205,10 @@ export function DayReviewDialog({
       if (working.current || closing.current) return
       const version = generation.current
       try {
-        const fresh = await reviewRequest<ReviewView>(open ? `${day}/open` : day, open ? {} : undefined)
+        const fresh = await reviewRequest<ReviewView>(
+          open ? `${day}/open` : day,
+          open ? (engaged.current ? {} : { prompted: true }) : undefined,
+        )
         if (alive && !closing.current && version === generation.current) {
           setView(fresh)
           if (open) setError(null)
@@ -208,7 +222,7 @@ export function DayReviewDialog({
       void read(false)
     }, 4000)
     const pause = () => {
-      void reviewRequest(`${day}/close`, {}).catch(() => {})
+      if (engaged.current) void reviewRequest(`${day}/close`, {}).catch(() => {})
     }
     window.addEventListener('pagehide', pause)
     return () => {
@@ -264,6 +278,7 @@ export function DayReviewDialog({
   const close = async (after = onClose) => {
     if (working.current || closing.current) return
     closing.current = true
+    engage(false)
     setBusy('close')
     try {
       await flushDrafts()
@@ -295,7 +310,7 @@ export function DayReviewDialog({
   const moveAll = () =>
     void run('carry', () => reviewRequest(`${day}/move`, { ids: movable.slice(0, 100).map((item) => item.id) }))
   const content = (
-    <div className="sky-review">
+    <div className="sky-review" onPointerDownCapture={() => engage()} onKeyDownCapture={() => engage()}>
       <input
         ref={fileInput}
         type="file"

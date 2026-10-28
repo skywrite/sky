@@ -251,9 +251,15 @@ export function createReviewRoutes(options: Options) {
   })
   app.onError((error, c) => c.json({ message: error.message }, error instanceof z.ZodError ? 400 : 409))
   app.get('/status', async (c) => c.json(await options.runtime.status()))
-  app.post('/claim', async (c) => c.json({ day: await options.runtime.claim() }))
+  app.post('/:day/acknowledge', async (c) => {
+    await options.runtime.acknowledge(reviewDay(c))
+    return c.json({ ok: true })
+  })
   app.get('/:day', async (c) => c.json(await store.refresh(reviewDay(c))))
-  app.post('/:day/open', async (c) => c.json(await store.open(reviewDay(c))))
+  app.post('/:day/open', async (c) => {
+    const body = z.object({ prompted: z.boolean().optional() }).parse(await c.req.json())
+    return c.json(await store.open(reviewDay(c), body))
+  })
   app.post('/:day/close', async (c) => {
     await store.close(reviewDay(c))
     return c.json({ ok: true })

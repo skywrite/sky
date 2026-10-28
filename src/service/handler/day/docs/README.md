@@ -1,6 +1,6 @@
 ---
 created: 2026-09-03
-updated: 2026-10-27
+updated: 2026-10-28
 ---
 
 # The day's items, the day's rail, and the day's files
@@ -234,12 +234,14 @@ The morning review is independent of Start; opening or completing it never start
 An OS input monitor offers the last notebook day's review after returning from five idle hours across a calendar date.
 Settings → Me → About me changes the idle hours live; zero disables automatic prompts.
 Browser polls are not activity, and service downtime alone is not evidence of sleep.
-A date is offered once; the day page's Review yesterday / Review this day button always reopens it.
+Every open tab, and any tab opened later, shows the prompt until the person acts on it or closes it in one tab.
+Acting in a prompted copy keeps the review in that tab's address; the other tabs drop theirs without pausing the review.
+The date is then not offered again; the day page's Review yesterday / Review this day button always reopens it.
 
 `review/` composes the existing day mover, streak completion, tracking store, meeting/import workflows, recap commands,
 and `summary:day`.
-Review progress, the current wizard step, drafts, job outcomes and the claimed popup live under the local user-data
-`state/day-review` directory, keyed by the reviewed date.
+Review progress, the current wizard step, drafts, job outcomes and the prompt's pending and offered dates live under
+the local user-data `state/day-review` directory, keyed by the reviewed date.
 Moving a selection uses the day planner's revision checks and locks, can create today's unstarted plan, and records receipts
 in the review state; the saved-summary cutoff still applies.
 Skip changes only review state, so a skipped historical streak remains missed under the existing streak rules.

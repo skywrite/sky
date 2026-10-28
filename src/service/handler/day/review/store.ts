@@ -88,10 +88,11 @@ export class DayReviewStore {
     if (view.hasDay && !view.paused && !view.items.length && view.summary.status === 'waiting') this.kick(day)
     return view
   }
-  async open(day: string) {
+  /** A prompted open is the return prompt showing in a tab; the day stays offered until a person acts. */
+  async open(day: string, { prompted = false }: { prompted?: boolean } = {}) {
     const inventory = await this.host.inventory(day)
     if (day >= inventory.today) throw new Error('Review a previous day. Today is still in progress.')
-    await this.host.runtime.acknowledge(day)
+    if (!prompted) await this.host.runtime.acknowledge(day)
     await this.change(day, (state) => {
       state.paused = false
       if (inventory.summaryHref) {

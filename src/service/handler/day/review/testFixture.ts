@@ -99,7 +99,6 @@ tz: America/Chicago
   }))
   const runtime: ReviewRuntime = {
     status: () => idle.status(),
-    claim: () => idle.claim(),
     acknowledge: (day) => idle.acknowledge(day),
     recap: async (id) => {
       calls.push(id)

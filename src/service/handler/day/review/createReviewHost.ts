@@ -49,7 +49,6 @@ export function createReviewRuntime(config: typeof ConfigModule, env: Record<str
       ...(await idle.status()),
       ...(loadSkyConfig().dayReview?.idleHours === 0 ? { pending: null } : {}),
     }),
-    claim: async () => (loadSkyConfig().dayReview?.idleHours === 0 ? null : idle.claim()),
     acknowledge: (day) => idle.acknowledge(day),
     recap: async (id, ymd) => {
       const day = new PlainDate(ymd)

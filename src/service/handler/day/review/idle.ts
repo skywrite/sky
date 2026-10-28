@@ -57,15 +57,7 @@ export class ReviewIdle {
     return { pending: state?.pending ?? null, supported: this.supported }
   }
 
-  async claim() {
-    return this.update((state) => {
-      const day = state.pending ?? null
-      if (day) state.offered = [...new Set([...state.offered, day])].slice(-366)
-      delete state.pending
-      return day
-    })
-  }
-
+  /** The day stays pending, shown in every tab, until a person acts on it in one of them. */
   async acknowledge(day: string) {
     await this.update((state) => {
       state.offered = [...new Set([...state.offered, day])].slice(-366)

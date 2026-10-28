@@ -179,3 +179,24 @@ test('continuing chats are informational and closing one preserves the other con
     await f.dispose()
   }
 })
+
+test('the return prompt stays offered to every tab until a person acts on it', async () => {
+  const f = await reviewFixture()
+  try {
+    await f.idle.sample(0, 0, REVIEW_DAY, REVIEW_DAY, 5)
+    await f.idle.sample(6 * 3_600_000, 0, REVIEW_DAY, REVIEW_TODAY, 5)
+    const pending = async () => ((await (await f.app.request('/status')).json()) as { pending: string | null }).pending
+    await f.post(`${REVIEW_DAY}/open`, { prompted: true })
+    await f.post(`${REVIEW_DAY}/open`, { prompted: true })
+    const shown = await pending()
+    const acknowledged = await f.post(`${REVIEW_DAY}/acknowledge`)
+    assert({
+      given: 'the prompt opened in two tabs, then a choice in one of them',
+      should: 'keep offering the day until the choice, then stop',
+      actual: [shown, acknowledged.status, await pending()],
+      expected: [REVIEW_DAY, 200, null],
+    })
+  } finally {
+    await f.dispose()
+  }
+})

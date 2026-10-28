@@ -22,7 +22,6 @@ test('review saves skips and drafts across closing and restart, and summarizes e
     },
     runtime: {
       status: async () => ({ pending: null, supported: true }),
-      claim: async () => null,
       acknowledge: async () => {},
       recap: async (id) => {
         calls.push(id)
@@ -100,7 +99,6 @@ test('saved recaps become ready while another recap is running, and summary wait
     apply: async () => {},
     runtime: {
       status: async () => ({ pending: null, supported: true }),
-      claim: async () => null,
       acknowledge: async () => {},
       recap: async (id) => {
         calls.push(id)
@@ -163,7 +161,6 @@ test('failed recaps block summary, independent recaps finish, and retries do not
     apply: async () => {},
     runtime: {
       status: async () => ({ pending: null, supported: true }),
-      claim: async () => null,
       acknowledge: async () => {},
       recap: async (id) => {
         calls.push(id)

@@ -87,17 +87,19 @@ function Canvas() {
   const [menu, setMenu] = useState(false)
   const reviewParam = new URLSearchParams(search).get('review')
   const reviewDay = reviewParam && /^\d{4}-\d{2}-\d{2}$/.test(reviewParam) ? reviewParam : null
-  const openReview = (day: string) => {
+  const openReview = (day: string, replace = false) => {
     const query = new URLSearchParams(search)
     query.set('review', day)
-    go(`${path}?${query}`)
+    go(`${path}?${query}`, replace)
   }
   const closeReview = () => {
     const query = new URLSearchParams(search)
     query.delete('review')
     go(`${path}${query.size ? `?${query}` : ''}`, true)
   }
-  useReviewPrompt(openReview, Boolean(reviewDay))
+  // The address holds a review the person opened or acted in; until then the prompt shows it in every tab.
+  const [promptDay, dismissPrompt] = useReviewPrompt()
+  const shownReview = reviewDay ?? promptDay
   const workstreamsEnabled = useSettingsBoot()
   usePromptDraftGuard()
   useAboutMeDraftGuard()
@@ -724,11 +726,16 @@ function Canvas() {
           />
         )}
       </SearchWorkspace>
-      {reviewDay && (
+      {shownReview && (
         <DayReviewDialog
-          key={reviewDay}
-          day={reviewDay}
-          onClose={closeReview}
+          key={shownReview}
+          day={shownReview}
+          prompted={!reviewDay}
+          onEngage={() => openReview(shownReview, true)}
+          onClose={() => {
+            dismissPrompt(shownReview)
+            if (reviewDay) closeReview()
+          }}
           onChanged={dayChanged}
           navigate={navigate}
           onImportMeeting={queue.take}

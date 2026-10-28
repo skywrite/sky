@@ -25,7 +25,6 @@ test(
         day: true,
         dayReview: {
           status: async () => ({ pending: null, supported: true }),
-          claim: async () => null,
           acknowledge: async () => {},
           recap: async () => {},
           summarize: async () => {
