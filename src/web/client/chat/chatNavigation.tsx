@@ -62,7 +62,7 @@ export function ChatTurnNavigation({
     const update = () => {
       if (!area.clientHeight) return
       const readingLine = area.getBoundingClientRect().top + 40
-      let selected = messages[0]
+      let selected: HTMLElement | undefined = messages[0]
       for (const message of messages) {
         if (message.getBoundingClientRect().top > readingLine) break
         selected = message
