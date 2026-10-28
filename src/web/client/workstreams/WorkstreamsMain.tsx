@@ -1,17 +1,12 @@
 import { ActionIcon, Button, SegmentedControl, Select, TextInput } from '@mantine/core'
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { WorkstreamDraft } from '#lib/workstreams/ai.ts'
+import { Fragment, useMemo, useState } from 'react'
 import type { WorkstreamColor } from '#lib/workstreams/colors.ts'
 import { defaultWorkstreamPosition } from '#lib/workstreams/layout.ts'
-import { relationshipProposal } from '#lib/workstreams/relationships.ts'
-import {
-  ActivitySchema,
-  type Activity,
-  type Workstream,
-  type WorkstreamDeletionReceipt,
-  type WorkstreamRecord,
-  type WorkstreamReport,
-  type WorkstreamRun,
+import type {
+  Workstream,
+  WorkstreamDeletionReceipt,
+  WorkstreamRecord,
+  WorkstreamReport,
 } from '#lib/workstreams/types.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import type { Point } from './camera.ts'
@@ -20,8 +15,9 @@ import { laneOrderChanges } from './order.ts'
 import { proposalRelationship, relationshipChanges } from './relationshipModel.ts'
 import { workstreamRequest } from './request.ts'
 import { useHiddenWorkstreamDeletions } from './useHiddenWorkstreamDeletions.ts'
+import { useWorkstreams } from './useWorkstreams.ts'
 import { WorkstreamCapture } from './WorkstreamCapture.tsx'
-import { type WorkstreamCommunication, WorkstreamDetail } from './WorkstreamDetail.tsx'
+import { WorkstreamDetail } from './WorkstreamDetail.tsx'
 import { WorkstreamRelationshipEditor, type RelationshipEditorTarget } from './WorkstreamRelationshipEditor.tsx'
 import { WorkstreamsBrowse } from './WorkstreamsBrowse.tsx'
 import {
@@ -42,13 +38,8 @@ function initialView(): WorkstreamView {
 }
 
 export function WorkstreamsMain({ id, navigate }: { id: string | null; navigate: (path: string) => void }) {
-  const [report, setReport] = useState<WorkstreamReport | null>(null)
-  const [runs, setRuns] = useState<WorkstreamRun[]>([])
-  const [communications, setCommunications] = useState<WorkstreamCommunication[]>([])
-  const readSequence = useRef(0)
-  const [error, setError] = useState('')
-  const [notice, setNotice] = useState('')
-  const [busy, setBusy] = useState(false)
+  const { report, runs, communications, error, notice, busy, setError, setNotice, refresh, act, replaceReport } =
+    useWorkstreams(id)
   const [creating, setCreating] = useState(false)
   const [captureIntent, setCaptureIntent] = useState('')
   const [parentId, setParentId] = useState<string | undefined>()
@@ -64,59 +55,6 @@ export function WorkstreamsMain({ id, navigate }: { id: string | null; navigate:
   const deleted = report?.deleted ?? []
   const visibleDeletions = deleted.filter((receipt) => hiddenDeletions[receipt.id] !== receipt.revision)
   const primaryDeletion = visibleDeletions.find((receipt) => receipt.id === latestDeletionId) ?? visibleDeletions[0]
-  const refresh = useCallback(async () => {
-    const sequence = ++readSequence.current
-    const next = await workstreamRequest<WorkstreamReport>('/status')
-    if (sequence !== readSequence.current) return
-    setReport(next)
-    if (id && next.items.some((item) => item.id === id)) {
-      const detail = await workstreamRequest<{
-        workstream: WorkstreamRecord
-        runs: WorkstreamRun[]
-        communications?: WorkstreamCommunication[]
-      }>(`/${encodeURIComponent(id)}`)
-      if (sequence !== readSequence.current) return
-      setRuns(detail.runs)
-      setCommunications(detail.communications ?? [])
-    } else {
-      setRuns([])
-      setCommunications([])
-    }
-  }, [id])
-  const refreshRef = useRef(refresh)
-  refreshRef.current = refresh
-  useEffect(() => {
-    let alive = true
-    const read = () => {
-      if (alive)
-        void refresh().catch((problem: Error) => {
-          if (alive) setError(problem.message)
-        })
-    }
-    read()
-    const timer = setInterval(read, 10_000)
-    window.addEventListener('focus', read)
-    return () => {
-      alive = false
-      clearInterval(timer)
-      window.removeEventListener('focus', read)
-    }
-  }, [refresh])
-  const act = async (action: () => Promise<void>) => {
-    if (busy) return
-    setBusy(true)
-    setError('')
-    setNotice('')
-    try {
-      await action()
-      await refresh()
-    } catch (problem) {
-      setError(problem instanceof Error ? problem.message : 'Sky could not complete this step.')
-      await refresh().catch(() => {})
-    } finally {
-      setBusy(false)
-    }
-  }
   const selected = report?.items.find((item) => item.id === id)
   const openMenu = (target: WorkstreamMenuTarget) => {
     const item = report?.items.find((candidate) => candidate.id === target.workstreamId)
@@ -583,8 +521,7 @@ export function WorkstreamsMain({ id, navigate }: { id: string | null; navigate:
           >('/create', 'POST', input)
           // Publish the durable result before navigation or any longer Sky run.
           // A status read started before creation must not hide it again.
-          ++readSequence.current
-          setReport((current) => {
+          replaceReport((current) => {
             if (!current) return current
             const layout = { ...current.layout }
             if (position) {
@@ -611,7 +548,7 @@ export function WorkstreamsMain({ id, navigate }: { id: string | null; navigate:
           if (item.sky.mode !== 'off') {
             setNotice('Sky is starting with the context you shared.')
             void workstreamRequest(`/${item.id}/run`, 'POST', {})
-              .then(() => refreshRef.current())
+              .then(() => refresh())
               .catch((problem: Error) => setError(problem.message))
               .finally(() =>
                 setNotice((current) => (current === 'Sky is starting with the context you shared.' ? '' : current)),
@@ -621,82 +558,4 @@ export function WorkstreamsMain({ id, navigate }: { id: string | null; navigate:
       />
     </main>
   )
-}
-
-type Proposal = {
-  title: string
-  outcome: string
-  understanding?: string
-  unknowns?: string[]
-  activities: Activity[]
-  proposals: Workstream['proposals']
-}
-type DraftProposal = Pick<WorkstreamDraft, 'title' | 'outcome'> & Partial<Omit<WorkstreamDraft, 'title' | 'outcome'>>
-
-export function normalizeWorkstreamProposal(value: DraftProposal): Proposal {
-  return {
-    title: value.title,
-    outcome: value.outcome,
-    understanding: value.understanding,
-    unknowns: value.unknowns ?? [],
-    activities: [
-      ...(value.activities ?? []).map((activity) =>
-        ActivitySchema.parse({
-          id: crypto.randomUUID(),
-          title: activity.title,
-          notes: activity.description ?? '',
-          executor: activity.executor ?? 'human',
-          state: 'proposed',
-        }),
-      ),
-      ...(value.decisions ?? []).map((decision) =>
-        ActivitySchema.parse({
-          id: crypto.randomUUID(),
-          title: decision.question,
-          kind: 'decision',
-          notes: decision.context ?? '',
-          recommendation: decision.recommendation ?? '',
-          state: 'proposed',
-        }),
-      ),
-    ],
-    proposals: [
-      ...(value.coordination &&
-      (value.coordination.stakeholders?.length ||
-        value.coordination.reporting?.length ||
-        value.coordination.timeline ||
-        value.coordination.metrics?.length)
-        ? [
-            {
-              id: crypto.randomUUID(),
-              kind: 'coordination' as const,
-              title: 'People, timing, and updates',
-              reason: 'Details Sky drew from your intention, with suggestions to review.',
-              coordination: value.coordination,
-            },
-          ]
-        : []),
-      ...(value.subworkstreams ?? []).map((child) => ({
-        id: crypto.randomUUID(),
-        kind: 'subworkstream' as const,
-        title: child.title,
-        outcome: child.outcome,
-        reason: child.reason,
-      })),
-      ...(value.relationships ?? []).map((relation) => ({
-        id: crypto.randomUUID(),
-        ...relationshipProposal(relation),
-      })),
-      ...(value.suggestions ?? []).map((suggestion) => ({
-        id: crypto.randomUUID(),
-        kind: 'suggestion' as const,
-        title: suggestion,
-        reason: 'A possible next refinement from Sky.',
-      })),
-    ],
-  }
-}
-
-export function acceptWorkstreamProposal(proposal: Proposal): Proposal {
-  return { ...proposal, activities: proposal.activities.map((activity) => ({ ...activity, state: 'ready' })) }
 }

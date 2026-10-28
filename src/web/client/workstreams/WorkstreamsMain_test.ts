@@ -1,5 +1,5 @@
 import { assert, test } from '#test'
-import { acceptWorkstreamProposal, normalizeWorkstreamProposal } from './WorkstreamsMain.tsx'
+import { acceptWorkstreamProposal, normalizeWorkstreamProposal } from './proposals.ts'
 
 test({ name: 'workstream capture - proposed decisions remain decisions and relationships await review' }, () => {
   const proposal = normalizeWorkstreamProposal({
