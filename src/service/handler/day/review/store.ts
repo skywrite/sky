@@ -229,29 +229,32 @@ export class DayReviewStore {
   private async run(day: string) {
     let view = await this.view(day)
     if (!view.hasDay) return
-    for (const recap of view.recaps) {
-      if (recap.status !== 'waiting') continue
-      await this.change(day, (state) => {
-        state.recaps.find((job) => job.id === recap.id)!.status = 'running'
-      })
-      try {
-        const message = await this.host.runtime.recap(recap.id as RecapId, day)
-        await this.change(day, (state) => {
-          Object.assign(
-            state.recaps.find((job) => job.id === recap.id)!,
-            { status: 'done', message },
-          )
-        })
-      } catch (error) {
-        await this.change(day, (state) => {
-          Object.assign(
-            state.recaps.find((job) => job.id === recap.id)!,
-            { status: 'error', message: (error as Error).message },
-          )
-        })
-      }
-    }
-    // Re-read after every recap and every user action. Closing does not authorize a summary.
+    const recaps = await this.change(day, (state) => {
+      const waiting = state.recaps.filter((job) => job.status === 'waiting')
+      for (const job of waiting) job.status = 'running'
+      return waiting
+    })
+    await Promise.all(
+      recaps.map(async (recap) => {
+        try {
+          const message = await this.host.runtime.recap(recap.id as RecapId, day)
+          await this.change(day, (state) => {
+            Object.assign(
+              state.recaps.find((job) => job.id === recap.id)!,
+              { status: 'done', message },
+            )
+          })
+        } catch (error) {
+          await this.change(day, (state) => {
+            Object.assign(
+              state.recaps.find((job) => job.id === recap.id)!,
+              { status: 'error', message: (error as Error).message },
+            )
+          })
+        }
+      }),
+    )
+    // Re-read after all recaps finish, including any intervening choices or pause.
     view = await this.view(day)
     if (
       view.paused ||

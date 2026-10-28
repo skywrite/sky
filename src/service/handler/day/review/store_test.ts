@@ -90,6 +90,68 @@ test('review saves skips and drafts across closing and restart, and summarizes e
   }
 })
 
+test('saved recaps become ready while another recap is running, and summary waits for every source', async () => {
+  const dir = await makeTempDir({ prefix: 'sky-review-parallel-' })
+  const slack = Promise.withResolvers<void>()
+  const calls: string[] = []
+  let summaryHref: string | null = null
+  const store = new DayReviewStore(dir, {
+    inventory: async () => ({ today: '2030-06-18', items: [], hasDay: true, summarized: false, summaryHref }),
+    apply: async () => {},
+    runtime: {
+      status: async () => ({ pending: null, supported: true }),
+      claim: async () => null,
+      acknowledge: async () => {},
+      recap: async (id) => {
+        calls.push(id)
+        if (id === 'slack') await slack.promise
+        else return 'Already saved.'
+      },
+      summarize: async () => {
+        calls.push('summary')
+        summaryHref = '/summary.md'
+      },
+    },
+  })
+  try {
+    await store.open(DAY)
+    let view = await store.view(DAY)
+    for (let attempt = 0; attempt < 100 && view.recaps.filter((job) => job.status === 'done').length < 3; attempt++) {
+      await Bun.sleep(10)
+      view = await store.view(DAY)
+    }
+    assert({
+      given: 'Slack is still running and the other recaps already exist',
+      should: 'show saved recaps as ready without waiting for Slack, and defer the summary',
+      actual: [view.recaps.map((job) => [job.status, job.message ?? null]), view.summary.status, calls],
+      expected: [
+        [
+          ['running', null],
+          ['done', 'Already saved.'],
+          ['done', 'Already saved.'],
+          ['done', 'Already saved.'],
+        ],
+        'waiting',
+        ['slack', 'github', 'codex', 'claude-code'],
+      ],
+    })
+    await store.open(DAY)
+    await store.refresh(DAY)
+    slack.resolve()
+    await store.settled(DAY)
+    assert({
+      given: 'the last recap finishes after reopening and polling the review',
+      should: 'run the summary once without repeating any recap',
+      actual: [calls, (await store.view(DAY)).summary.status],
+      expected: [['slack', 'github', 'codex', 'claude-code', 'summary'], 'done'],
+    })
+  } finally {
+    slack.resolve()
+    await store.settled(DAY)
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
 test('failed recaps block summary, independent recaps finish, and retries do not repeat successful work', async () => {
   const dir = await makeTempDir({ prefix: 'sky-review-retry-' })
   let fail = true,
