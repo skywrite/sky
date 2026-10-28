@@ -1,6 +1,6 @@
 ---
 created: 2026-09-16
-updated: 2026-10-26
+updated: 2026-10-27
 ---
 
 # Beeper — every chat on this Mac, saved as messages
@@ -52,6 +52,9 @@ the notebook:
 - Frontmatter: `from`, `to`, `when`, `medium` (the network's name, so a
   card reads WhatsApp, not Beeper), `summary`, `chat` and `account` (Beeper's
   ids, which Outbox keys on), `group: true` for group chats, `attachments`.
+  `from` and `to` follow the day's first message.
+  A one-to-one chat you open reads you → them; one they open reads them → you.
+  A group's `from` is its first sender and its `to` the group.
 - Your own messages are saved with the rest, under your account's display
   name, so Outbox can see when you answered.
 - Photos, files and voice notes are copied into the day's attachments
@@ -84,6 +87,10 @@ own notion of what matters), reactions, deleted and hidden messages, automated
 iMessage Screen Time request placeholders, and every Slack account, since
 agent-slack already captures Slack and a second copy would duplicate each thread.
 Screen Time placeholders are skipped individually; people's messages in the same chat still land.
+Chat events on Signal and WhatsApp stay out too: a disappearing-message timer, someone leaving.
+Beeper files them under a person's name, as if that person wrote them.
+Those networks give every message a type and the events none, so an untyped message there is an event.
+iMessage gives no message a type, so the rule does not apply to it.
 
 ## Each network has a switch
 

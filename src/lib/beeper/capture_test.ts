@@ -503,6 +503,86 @@ test('beeper capture - Screen Time notifications stay out while people in the sa
   }
 })
 
+test('beeper capture - a chat the owner opens reads owner to them, in Beeper order, without the timer event', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'sky-beeper-direction-'))
+  const timeDir = path.join(root, 'time')
+  const attachmentsDir = path.join(root, 'attachments')
+  const stateFile = path.join(root, 'sync.json')
+  const day = PlainDate.fromString('2026-03-11')
+  const opened = '2026-03-11T09:00:00Z'
+  const signal = { accountID: 'signal' }
+  const timer = 'New messages set to disappear after 7 days'
+  const world: World = {
+    asset: '',
+    accounts: [{ accountID: 'signal', network: 'Signal', user: { id: 'me', fullName: 'Jane Doe', isSelf: true } }],
+    chats: [
+      {
+        id: 's1',
+        accountID: 'signal',
+        network: 'Signal',
+        title: 'Maya Okafor',
+        type: 'single',
+        participants: {
+          items: [
+            { id: 'u1', fullName: 'Maya Okafor' },
+            { id: 'me', fullName: 'Jane Doe', isSelf: true },
+          ],
+        },
+        lastActivity: '2026-03-11T09:05:00Z',
+      },
+    ],
+    messages: {
+      // Beeper's shape when the owner opens a Signal chat: the timer event, its hidden
+      // notice and the first messages share one instant, ordered by number-valued sort keys
+      s1: [
+        message('s1', '7', opened, timer, { ...signal, isSender: true, type: undefined }),
+        message('s1', '8', opened, 'Automatically enabled disappearing message timer', {
+          ...signal,
+          isSender: true,
+          type: 'NOTICE',
+          isHidden: true,
+        }),
+        message('s1', '99', opened, 'Lunch on Thursday?', { ...signal, isSender: true }),
+        message('s1', '100', opened, 'I can book a table.', { ...signal, isSender: true }),
+        message('s1', '101', '2026-03-11T09:05:00Z', 'Works for me!', signal),
+      ],
+    },
+  }
+  try {
+    await writeFile(
+      stateFile,
+      JSON.stringify({
+        version: 1,
+        chats: {},
+        accounts: { signal: { network: 'Signal', save: true, groups: true, holdUnknown: false, chosen: true } },
+      }),
+    )
+    const client = beeperWith(world)
+    const options = { timeDir, attachmentsDir, stateFile, client, timezone: 'UTC', dayTimezone: async () => 'UTC' }
+    const result = await syncBeeper({ ...options, now: '2026-03-11T09:10:00Z' })
+    const state = await loadBeeperSyncState(stateFile)
+    const doc = MessageDocument.fromMarkdown(await readTextFile(path.join(root, state.chats.s1.files[day.toString()])))
+    assert({
+      given: 'a Signal chat the owner opens, with the timer event at the same instant and a reply after',
+      should: 'save it from the owner to the other person, in Beeper order, leaving the timer event out',
+      actual: [
+        result.messages,
+        [doc.yaml.from, doc.yaml.to, doc.summary],
+        [...doc.markdown.matchAll(/- \*\*(.+?)\*\*\n\n(.+)/g)].map((m) => `${m[1]}: ${m[2]}`),
+        doc.markdown.includes(timer),
+      ],
+      expected: [
+        3,
+        ['Jane Doe', 'Maya Okafor', 'Lunch on Thursday?'],
+        ['Jane Doe: Lunch on Thursday?', 'Jane Doe: I can book a table.', 'Maya Okafor: Works for me!'],
+        false,
+      ],
+    })
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
 test('beeper capture - chats land as one saved message per chat per day, then grow in place', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'sky-beeper-capture-'))
   const timeDir = path.join(root, 'time')

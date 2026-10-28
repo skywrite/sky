@@ -166,6 +166,8 @@ const SKIPPED_LIMIT = 60
 const OVERLAP_MS = 6 * 3_600_000
 const SUMMARY_CHARS = 80
 const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024
+/** Networks that give every message a type, so one without a type is a chat event. iMessage gives none. */
+const TYPED_NETWORKS = new Set(['signal', 'whatsapp'])
 
 const EMPTY_STATE = (): BeeperSyncState => ({ version: 1, chats: {}, accounts: {}, held: {} })
 
@@ -343,6 +345,8 @@ function instantMs(value: string): number | null {
 function keep(message: BeeperMessage, network: string): boolean {
   if (message.isDeleted || message.isHidden) return false
   if (message.type === 'REACTION') return false
+  // A disappearing-message timer or someone leaving: Beeper files the event under a person's name
+  if (!message.type && TYPED_NETWORKS.has(network.toLowerCase())) return false
   // Beeper's fallback for an automated Screen Time request, not a person's message.
   if (
     network.toLowerCase() === 'imessage' &&
@@ -412,6 +416,8 @@ function summarize(text: string, fallback: string): string {
 type Section = {
   when: PlainDateTime
   sender: string
+  /** The owner wrote it: the day's first message sets which way the file's from/to read */
+  own: boolean
   text: string
   lines: string[]
   attachments: Attachment[]
@@ -510,6 +516,13 @@ async function newMessages(
   }
 }
 
+/** Beeper's sort keys are whole numbers written as text, of any length: "9" comes before "10" */
+function bySortKey(a: string, b: string): number {
+  if (!/^-?\d+$/.test(a) || !/^-?\d+$/.test(b)) return a.localeCompare(b)
+  const difference = BigInt(a) - BigInt(b)
+  return difference < 0n ? -1 : difference > 0n ? 1 : 0
+}
+
 /** The newest instant among the messages and the one the chat already kept */
 function newestInstant(messages: BeeperMessage[], kept?: string): string | undefined {
   let best = kept
@@ -601,7 +614,7 @@ export async function syncBeeper(options: BeeperSyncOptions): Promise<BeeperSync
       .filter((message) => !seen.has(message.id))
       .map((message) => ({ message, at: instantMs(message.timestamp) }))
       .filter((entry): entry is { message: BeeperMessage; at: number } => entry.at !== null && entry.at >= boundaryMs)
-      .sort((a, b) => a.at - b.at || a.message.sortKey.localeCompare(b.message.sortKey))
+      .sort((a, b) => a.at - b.at || bySortKey(a.message.sortKey, b.message.sortKey))
     result.chats += 1
 
     // Someone with no name in the contacts, never answered: held for a look,
@@ -649,6 +662,7 @@ export async function syncBeeper(options: BeeperSyncOptions): Promise<BeeperSync
       const section: Section = {
         when,
         sender: senderOf(message, chat, account, options.names, options.ownerName),
+        own: Boolean(message.isSender),
         text: beeperText(message.text),
         lines: [],
         attachments: [],
@@ -736,8 +750,9 @@ export async function syncBeeper(options: BeeperSyncOptions): Promise<BeeperSync
         continue
       }
       const first = sections[0]
-      const from = single ? person : first.sender
-      const to = single ? selfName(account, options.ownerName) : label
+      const self = selfName(account, options.ownerName)
+      const from = single ? (first.own ? self : person) : first.sender
+      const to = single ? (first.own ? person : self) : label
       const summary = summarize(first.text || first.transcript || '', first.fallback)
       const previousPath = Object.entries(chatState.files)
         .filter(([other]) => other < date)
