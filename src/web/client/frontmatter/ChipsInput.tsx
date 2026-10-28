@@ -6,7 +6,7 @@
  */
 
 import { Combobox, Pill, PillsInput, useCombobox } from '@mantine/core'
-import { type ReactNode, useEffect, useMemo, useRef } from 'react'
+import { Fragment, type ReactNode, useEffect, useMemo, useRef } from 'react'
 
 export interface ChipOption {
   value: string
@@ -34,6 +34,16 @@ export interface ChipsInputProps {
   placeholder?: string
   autoFocus?: boolean
   className?: string
+}
+
+/** A chip's text with a break allowed after each `/`, so a long tag wraps between its parts, not inside one. */
+function breakAfterSlashes(text: string): ReactNode {
+  return text.split(/(?<=\/)/).map((part, index) => (
+    <Fragment key={index}>
+      {index > 0 ? <wbr /> : null}
+      {part}
+    </Fragment>
+  ))
 }
 
 export function ChipsInput({
@@ -115,7 +125,7 @@ export function ChipsInput({
             {chips.map((chip) => (
               <Pill key={chip} withRemoveButton onRemove={() => onChange(chips.filter((c) => c !== chip))}>
                 {chipPrefix?.(chip)}
-                {chipLabel?.(chip) ?? chip}
+                {breakAfterSlashes(chipLabel?.(chip) ?? chip)}
                 {chipAction?.(chip)}
               </Pill>
             ))}

@@ -298,13 +298,28 @@
   color: var(--sky-text);
 }
 
+/* A long chip wraps onto more lines, as it does to read, rather than ending in "…". */
 .sky-prop-tags .mantine-Pill-root {
+  flex: 0 1 auto;
   background: var(--sky-s2);
   color: var(--sky-text);
   font-size: 13.5px;
   height: auto;
   padding: 2px 8px;
   border-radius: 6px;
+  white-space: normal;
+}
+
+.sky-prop-tags .mantine-Pill-label {
+  height: auto;
+  padding-block: 3px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+/* A fixed ×: Mantine sizes it in percent, which makes even a short chip as wide as its row. */
+.sky-prop-tags .mantine-Pill-remove {
+  --cb-icon-size: 15px;
 }
 
 /* The portal owns its size: neither a long hint nor a narrow rail can squeeze the name. */
