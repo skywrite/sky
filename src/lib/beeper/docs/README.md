@@ -1,6 +1,6 @@
 ---
 created: 2026-09-16
-updated: 2026-10-27
+updated: 2026-10-28
 ---
 
 # Beeper — every chat on this Mac, saved as messages
@@ -55,8 +55,10 @@ the notebook:
   `from` and `to` follow the day's first message.
   A one-to-one chat you open reads you → them; one they open reads them → you.
   A group's `from` is its first sender and its `to` the group.
-- Your own messages are saved with the rest, under your account's display
-  name, so Outbox can see when you answered.
+- Your own messages are saved with the rest, so Outbox can see when you answered.
+  On every network they carry the full name from `me/about.md`, never the network's profile name,
+  because the day page and Outbox know you by that name.
+  The profile name stands in only when `me/about.md` has none.
 - Photos, files and voice notes are copied into the day's attachments
   folder and listed in the file. A voice note says so in its heading, after
   the name, with its length when ffprobe can measure the copy —

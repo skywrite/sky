@@ -583,6 +583,71 @@ test('beeper capture - a chat the owner opens reads owner to them, in Beeper ord
   }
 })
 
+test('beeper capture - the owner is saved under the notebook name, not the network profile name', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'sky-beeper-owner-name-'))
+  const timeDir = path.join(root, 'time')
+  const attachmentsDir = path.join(root, 'attachments')
+  const stateFile = path.join(root, 'sync.json')
+  const day = PlainDate.fromString('2026-03-11')
+  const signal = { accountID: 'signal' }
+  const world: World = {
+    asset: '',
+    accounts: [{ accountID: 'signal', network: 'Signal', user: { id: 'me', fullName: 'JD', isSelf: true } }],
+    chats: [
+      {
+        id: 's1',
+        accountID: 'signal',
+        network: 'Signal',
+        title: 'Maya Okafor',
+        type: 'single',
+        participants: {
+          items: [
+            { id: 'u1', fullName: 'Maya Okafor' },
+            { id: 'me', fullName: 'JD', isSelf: true },
+          ],
+        },
+        lastActivity: '2026-03-11T09:05:00Z',
+      },
+    ],
+    messages: {
+      s1: [
+        message('s1', '1', '2026-03-11T09:00:00Z', 'Lunch on Thursday?', {
+          ...signal,
+          isSender: true,
+          senderName: 'JD',
+        }),
+        message('s1', '2', '2026-03-11T09:05:00Z', 'Works for me!', signal),
+      ],
+    },
+  }
+  try {
+    await writeFile(
+      stateFile,
+      JSON.stringify({
+        version: 1,
+        chats: {},
+        accounts: { signal: { network: 'Signal', save: true, groups: true, holdUnknown: false, chosen: true } },
+      }),
+    )
+    const client = beeperWith(world)
+    const options = { timeDir, attachmentsDir, stateFile, client, timezone: 'UTC', dayTimezone: async () => 'UTC' }
+    await syncBeeper({ ...options, ownerName: 'Jane Doe', now: '2026-03-11T09:10:00Z' })
+    const state = await loadBeeperSyncState(stateFile)
+    const doc = MessageDocument.fromMarkdown(await readTextFile(path.join(root, state.chats.s1.files[day.toString()])))
+    assert({
+      given: 'a Signal profile that names the owner JD while the notebook names them Jane Doe',
+      should: 'save the owner as Jane Doe in from and on their messages',
+      actual: [[doc.yaml.from, doc.yaml.to], [...doc.markdown.matchAll(/- \*\*(.+?)\*\*/g)].map((m) => m[1])],
+      expected: [
+        ['Jane Doe', 'Maya Okafor'],
+        ['Jane Doe', 'Maya Okafor'],
+      ],
+    })
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
 test('beeper capture - chats land as one saved message per chat per day, then grow in place', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'sky-beeper-capture-'))
   const timeDir = path.join(root, 'time')

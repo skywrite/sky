@@ -41,7 +41,7 @@ declare module '#commands/lib/core/CommandTypesRegistry.ts' {
 
 export const BEEPER_SYNC_STATE = path.join(DIR_STATE, 'beeper', 'sync.json')
 
-/** The notebook owner's name, for the one network Beeper carries without one; nothing when about-me has none. */
+/** The notebook owner's name, written for the owner on every network; nothing when about-me has none. */
 async function ownerName(): Promise<string | undefined> {
   try {
     return AboutMeDocument.fromMarkdown(await readTextFile(FILE_ABOUT_ME)).fullName || undefined

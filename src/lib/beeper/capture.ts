@@ -60,7 +60,7 @@ export type BeeperSyncOptions = {
   attachmentLimit?: number
   /** Names for the people Beeper shows by number or address alone */
   names?: SenderNames
-  /** The notebook owner's name, for an account Beeper carries without one (iMessage) */
+  /** The notebook owner's name: the owner's side on every network, over the network's own profile name */
   ownerName?: string
   /**
    * The words of a voice note Beeper hands over without a transcription: the
@@ -356,8 +356,9 @@ function keep(message: BeeperMessage, network: string): boolean {
   return Boolean(message.text?.trim()) || Boolean(message.attachments?.length)
 }
 
+// One name for the owner on every network, so pages that know the owner by name always match
 function selfName(account: BeeperAccount | undefined, ownerName?: string): string {
-  return account?.user?.fullName?.trim() || account?.user?.username?.trim() || ownerName?.trim() || 'Me'
+  return ownerName?.trim() || account?.user?.fullName?.trim() || account?.user?.username?.trim() || 'Me'
 }
 
 function counterpart(chat: BeeperChat, account: BeeperAccount | undefined, names?: SenderNames): string {
