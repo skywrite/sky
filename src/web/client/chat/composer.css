@@ -172,6 +172,11 @@
   margin: 16px 0 6px;
 }
 
+/* Content rules need more contrast than surface borders on the shaded composer. */
+.sky-composer-editor .sky-composer-text hr {
+  border-top-color: var(--sky-dim);
+}
+
 .sky-composer-editor .sky-composer-text > :first-child {
   margin-top: 0;
 }
