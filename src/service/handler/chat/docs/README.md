@@ -357,7 +357,9 @@ a person can see and touch:
   [2026-09-06](2026-09-06-queries-beside-the-wait.md).
 - **Model, effort, and notebook context.** One centered summary above the
   composer opens a connected panel upward. Model and effort share a row; the
-  context slider is directly adjustable above. Built-in presets differing
+  context slider is directly adjustable above. A new chat opens on the Chat
+  role's preset (shipped: GPT 6.1 Sol on the Ultrafast tier); the Thinking role
+  still writes the chat summary when the chat is saved. Built-in presets differing
   only in effort share one model choice, while custom named presets stay
   distinct. A chat's effort is `default` (inherit its preset) or an explicit
   supported level; changing models resets the override. Recovery, saved
