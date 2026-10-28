@@ -809,6 +809,63 @@ test('the Slack page routes say so when the host has no channel cache, or no wor
   })
 })
 
+test('Slack capture routes validate changes and report unavailable or failed saves without hiding the reason', async () => {
+  const { host } = hostWith()
+  const app = createConnectionsRoutes(host)
+  const missing = await app.request('/slack/capture-automation')
+  const changes: unknown[] = []
+  let settings = { name: null as string | null, enabled: false, minutes: 5, schedule: 'every 5m' }
+  host.slack.captureAutomation = {
+    read: async () => settings,
+    update: async (change) => {
+      changes.push(change)
+      settings = {
+        name: 'slack-capture',
+        enabled: change.enabled ?? settings.enabled,
+        minutes: change.minutes ?? settings.minutes,
+        schedule: `every ${change.minutes ?? settings.minutes}m`,
+      }
+      return settings
+    },
+  }
+  const before = await (await app.request('/slack/capture-automation')).json()
+  const post = (body: unknown) =>
+    app.request('/slack/capture-automation', { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify(body) })
+  const invalid: number[] = []
+  for (const body of [
+    {},
+    [],
+    null,
+    { enabled: 'yes' },
+    { minutes: 0 },
+    { minutes: 1.5 },
+    { minutes: 1441 },
+    { enabled: true, run: 'day:start' },
+  ])
+    invalid.push((await post(body)).status)
+  const enabled = await (await post({ enabled: true })).json()
+  const changed = await (await post({ minutes: 15 })).json()
+  host.slack.captureAutomation.update = async () => {
+    throw new Error('The Slack capture automation could not be saved. Your current schedule is unchanged.')
+  }
+  const failure = await post({ enabled: false })
+  assert({
+    given: 'a missing host, invalid settings, valid enable/interval changes, and a write refusal',
+    should: 'keep mutations narrow, reject invalid input, and explain the affected automation on failure',
+    actual: [missing.status, before, invalid, enabled, changed, changes, failure.status, await failure.json()],
+    expected: [
+      503,
+      { name: null, enabled: false, minutes: 5, schedule: 'every 5m' },
+      [400, 400, 400, 400, 400, 400, 400, 400],
+      { name: 'slack-capture', enabled: true, minutes: 5, schedule: 'every 5m' },
+      { name: 'slack-capture', enabled: true, minutes: 15, schedule: 'every 15m' },
+      [{ enabled: true }, { minutes: 15 }],
+      409,
+      { message: 'The Slack capture automation could not be saved. Your current schedule is unchanged.' },
+    ],
+  })
+})
+
 // ── Messages on this Mac: the status behind the row, and the pane it opens ──
 
 test('the Messages-on-this-Mac routes read the status and open System Settings over a scripted host, and say so when there is none', async () => {

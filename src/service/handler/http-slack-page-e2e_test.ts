@@ -11,6 +11,7 @@ import { assert, test } from '#test'
 import { createTestHttpApp } from './httpTestHelpers.ts'
 import { type ConnectionsHost, createConnectionsRoutes, type SlackPageView } from './settings/connections.ts'
 import type { SettingsData } from './settings/mod.ts'
+import type { SlackCaptureChange, SlackCaptureSettings } from './settings/slackCapture.ts'
 
 /**
  * Slack's page under Connections, in a browser over a scripted host: the row
@@ -96,6 +97,9 @@ test(
     })
     const mutes: string[] = []
     let pulls = 0
+    let captureSettings: SlackCaptureSettings = { name: null, enabled: false, minutes: 5, schedule: 'every 5m' }
+    const captureChanges: SlackCaptureChange[] = []
+    let refuseCapture = false
     const host: ConnectionsHost = {
       secrets: new TestSecretsProvider({}),
       providers: () => [],
@@ -136,6 +140,20 @@ test(
           })
         },
         marks: () => Promise.resolve({ todos: 3, overdue: 1, saved: 12 }),
+        captureAutomation: {
+          read: async () => captureSettings,
+          update: async (change) => {
+            if (refuseCapture) throw new Error('Slack capture could not be saved. Your current schedule is unchanged.')
+            captureChanges.push(change)
+            captureSettings = {
+              name: 'slack-capture',
+              enabled: change.enabled ?? captureSettings.enabled,
+              minutes: change.minutes ?? captureSettings.minutes,
+              schedule: `every ${change.minutes ?? captureSettings.minutes}m`,
+            }
+            return captureSettings
+          },
+        },
       },
       beeper: {
         status: () => Promise.resolve({ running: false, connected: false, accounts: [], held: [] }),
@@ -191,6 +209,31 @@ test(
       return c.json({ ok: true })
     })
     app.route('/settings/_api/connections', createConnectionsRoutes(host))
+    app.get('/automations/_api/status', (c) =>
+      c.json({
+        rows: [
+          {
+            name: 'slack-capture',
+            kind: 'system',
+            run: 'slack:saved, slack:todos',
+            commands: [
+              { run: 'slack:saved', args: { captureAll: true } },
+              { run: 'slack:todos', args: { captureAll: true } },
+            ],
+            trigger: captureSettings.schedule,
+            frame: 'elapsed',
+            state: captureSettings.enabled ? 'active' : 'paused',
+            due: false,
+            brief: 'Capture my saved Slack messages and to-dos.',
+            unknownKeys: [],
+            file: 'slack-capture.md',
+            runs: [],
+          },
+        ],
+        charterErrors: [],
+        dir: '/Notebook/automations',
+      }),
+    )
     app.route('/', createTestHttpApp([path.join(root, 'journal')]))
     const server = serve({ fetch: app.fetch, hostname: '127.0.0.1', port: 0 })
     const address = server.address()
@@ -241,6 +284,57 @@ test(
       const switchesBefore = await page.locator('[aria-label^="Keep #"]').count()
       const countBefore = await page.locator('.sky-set-count').innerText()
       await capture('2-slack')
+
+      const captureSwitch = page.locator('[aria-label="Automatically capture saved Slack messages and to-dos"]')
+      await captureSwitch.waitFor()
+      const captureWritten = () =>
+        page.waitForResponse((r) => r.url().endsWith('/slack/capture-automation') && r.request().method() === 'POST')
+      const enable = captureWritten()
+      await captureSwitch.getByText('On', { exact: true }).click()
+      await enable
+      await page.getByText('Runs while the Sky service is running.').waitFor()
+      await page.getByRole('combobox', { name: 'Slack capture interval' }).click()
+      const interval = captureWritten()
+      await page.getByRole('option', { name: 'Every 15 minutes', exact: true }).click()
+      await interval
+      refuseCapture = true
+      const refused = captureWritten()
+      await captureSwitch.getByText('Off', { exact: true }).click()
+      await refused
+      await page.getByRole('alert').filter({ hasText: 'Your current schedule is unchanged.' }).waitFor()
+      const keptEnabled = await captureSwitch.locator('input[value="on"]').isChecked()
+      refuseCapture = false
+      const pause = captureWritten()
+      await captureSwitch.getByText('Off', { exact: true }).click()
+      await pause
+      await page.getByText('Automatic capture is off.').waitFor()
+      await page.getByRole('button', { name: 'View automation' }).click()
+      await page.waitForURL('**/automations/slack-capture')
+      await page.goBack()
+      await page.getByRole('heading', { name: 'Slack', exact: true }).waitFor()
+      await page.goForward()
+      await page.waitForURL('**/automations/slack-capture')
+      await page.goBack()
+      await page.getByRole('heading', { name: 'Slack', exact: true }).waitFor()
+      await page.getByRole('combobox', { name: 'Slack capture interval' }).waitFor()
+      const refreshedCapture = page.waitForResponse(
+        (r) => r.url().endsWith('/slack/capture-automation') && r.request().method() === 'GET',
+      )
+      await page.evaluate(() => window.dispatchEvent(new Event('focus')))
+      await refreshedCapture
+      assert({
+        given: 'Slack capture enabled, changed to fifteen minutes, paused, and revisited through browser history',
+        should:
+          'write the one automation, keep its setting on a failed save, and restore the Slack title and saved interval',
+        actual: [
+          captureChanges,
+          keptEnabled,
+          await page.title(),
+          await page.getByRole('combobox', { name: 'Slack capture interval' }).inputValue(),
+        ],
+        expected: [[{ enabled: true }, { minutes: 15 }, { enabled: false }], true, 'sky · Slack', 'Every 15 minutes'],
+      })
+      await capture('2b-slack-capture')
 
       // For you: a rule's switch writes the key, and the row says what is off.
       const ruleWritten = page.waitForResponse((r) => r.url().endsWith('/settings/_api/set'))

@@ -11,6 +11,7 @@ import { saveSetting } from './settings.tsx'
 import { Block, OnOff, plural, refusalOf, Row, sinceLabel } from './settingsBlocks.tsx'
 import { ConnectionPage } from './settingsConnectionPage.tsx'
 import { API, postJson, SlackRow } from './settingsConnections.tsx'
+import { SlackCaptureAutomation } from './SlackCaptureAutomation.tsx'
 
 // ── What the service answers (mirrors handler/settings/connections.ts) ──
 
@@ -273,6 +274,7 @@ export function SlackMain({ navigate }: { navigate: (to: string) => void }) {
           ))}
         </Block>
       )}
+      <SlackCaptureAutomation navigate={navigate} />
       <Block
         head="Marks in Slack"
         note="Two marks on a message, two meanings in Sky: a to-do is something to act on, saved is kept for context. sky slack:todos and sky slack:saved list them and bring them into the day."

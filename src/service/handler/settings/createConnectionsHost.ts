@@ -70,6 +70,7 @@ import {
 } from '#shared/ai/typesafe/client.ts'
 import { loadSkyConfig, slackForYou } from '#shared/config/loader.ts'
 import PeopleStore from '#shared/models/Store/PeopleStore/mod.ts'
+import { createAutomationsHost } from '../automations/createAutomationsHost.ts'
 import {
   type BeeperAccountRow,
   type BeeperConnectState,
@@ -84,6 +85,7 @@ import {
 } from './connections.ts'
 import { PROVIDER_LABEL } from './mod.ts'
 import { createProviderKeysHost } from './providerKeys.ts'
+import { createSlackCaptureHost } from './slackCapture.ts'
 
 /** A finished sign-in stays askable this long. */
 const CONNECT_KEEP_MS = 10 * 60 * 1000
@@ -552,6 +554,9 @@ export function createConnectionsHost(): ConnectionsHost {
       reconnect: slackReconnect,
       pause: (workspace) => slackConnection.pause(workspace),
       ...slackChannelCache(runPull),
+      captureAutomation: createSlackCaptureHost(createAutomationsHost(notebookConfig, env), undefined, () =>
+        Boolean(SLACK_WORKSPACE),
+      ),
     },
     beeper: beeperConnection(secrets, BEEPER_SYNC_STATE, runCheck),
     notion: notionConnection(secrets),

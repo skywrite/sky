@@ -1,6 +1,6 @@
 ---
 created: 2026-08-30
-updated: 2026-10-24
+updated: 2026-10-27
 ---
 
 # Settings — the web's settings section
@@ -116,12 +116,16 @@ Pages:
   Beeper's page points here while it cannot. Absent off a Mac.
 - **Connections → Slack** — `/settings/connections/slack`, since 2026-10-20
   (`web/client/settings/settingsSlack.tsx`; routes under `/slack/channels`,
-  `/slack/pull` and `/slack/marks` in `connections.ts`, the host's cache
-  part in `createConnectionsHost.ts`). What Sky does with Slack today is the
-  [channel cache](../../../../commands/all/slack/pull/docs/README.md), so the
+  `/slack/pull`, `/slack/marks` and `/slack/capture-automation` in `connections.ts`, the host's cache
+  part in `createConnectionsHost.ts`). The [channel cache](../../../../commands/all/slack/pull/docs/README.md)
+  and automatic capture have separate controls. The
   page carries: the workspace line (the same silent status as the row), the
   last few checks the pull made, Check now, the two marks in Slack with their
-  live counts, and every joined channel with a switch. A channel switched off
+  live counts, and every joined channel with a switch. Saved and To-dos capture uses one ordinary system automation,
+  initially every five minutes, running `slack:saved` and `slack:todos` with `captureAll: true`.
+  Its switch and interval edit that same charter; Automations owns its history and full configuration.
+  Reading settings never enables it, and an existing pause or customized charter is preserved.
+  A channel switched off
   is a mute: the pull leaves it out and its cursor follows the channel, so
   switching it back on resumes from now. Mutes live in `state/slack/rules.yaml`,
   apart from the roster the pull rewrites. The connections row leads to the

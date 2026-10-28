@@ -42,6 +42,7 @@ import { TYPESAFE_SECRET } from '#shared/ai/typesafe/client.ts'
 import type { SlackForYou } from '#shared/config/types.ts'
 import { createProviderKeyRoutes, type ProviderKeysHost } from './providerKeys.ts'
 import { secretFieldError, type SecretField } from './secretValidation.ts'
+import type { SlackCaptureChange, SlackCaptureHost } from './slackCapture.ts'
 
 export { SECRET_CATEGORY, SECRET_NAME } from './secretValidation.ts'
 
@@ -237,6 +238,8 @@ export interface ConnectionsHost {
     pull?: () => Promise<SlackPullOutcome>
     /** The To-dos and Saved piles, counted */
     marks?: () => Promise<SlackMarks>
+    /** The existing scheduler's Saved and To-dos capture charter. */
+    captureAutomation?: SlackCaptureHost
   }
   beeper: {
     status: () => Promise<BeeperStatus>
@@ -553,6 +556,40 @@ export function createConnectionsRoutes(host: ConnectionsHost): Hono {
       return c.json(await host.slack.marks())
     } catch (err) {
       return c.json(message(err), 500)
+    }
+  })
+
+  app.get('/slack/capture-automation', async (c) => {
+    if (!host.slack.captureAutomation) return c.json({ message: 'Slack capture automation is unavailable here.' }, 503)
+    try {
+      return c.json(await host.slack.captureAutomation.read())
+    } catch (err) {
+      return c.json(message(err), 500)
+    }
+  })
+  app.post('/slack/capture-automation', async (c) => {
+    if (!host.slack.captureAutomation) return c.json({ message: 'Slack capture automation is unavailable here.' }, 503)
+    const body = (await c.req.json().catch(() => null)) as Record<string, unknown> | null
+    if (
+      !body ||
+      Array.isArray(body) ||
+      Object.keys(body).some((key) => key !== 'enabled' && key !== 'minutes') ||
+      (body.enabled === undefined && body.minutes === undefined) ||
+      (body.enabled !== undefined && typeof body.enabled !== 'boolean') ||
+      (body.minutes !== undefined &&
+        (typeof body.minutes !== 'number' ||
+          !Number.isInteger(body.minutes) ||
+          body.minutes < 1 ||
+          body.minutes > 1440))
+    )
+      return c.json(
+        { message: 'Provide enabled (true or false), minutes (a whole number from 1 to 1440), or both.' },
+        400,
+      )
+    try {
+      return c.json(await host.slack.captureAutomation.update(body as SlackCaptureChange))
+    } catch (err) {
+      return c.json(message(err), 409)
     }
   })
 
