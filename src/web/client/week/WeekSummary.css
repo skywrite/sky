@@ -1,0 +1,42 @@
+.sky-week-summary {
+  display: grid;
+  gap: 16px;
+  padding: 6px 0;
+  font-size: 18px;
+  line-height: 1.6;
+}
+
+.sky-week-summary p {
+  margin: 0;
+  color: var(--sky-text-2);
+}
+
+.sky-week-summary .sky-wnote {
+  color: var(--sky-amber);
+}
+
+.sky-week-summary-gaps summary {
+  cursor: pointer;
+  color: var(--sky-text-2);
+}
+
+.sky-week-summary-gaps ul {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+}
+
+.sky-week-summary-gaps li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  padding: 8px 0;
+}
+
+.sky-week-summary-gaps small {
+  display: block;
+  color: var(--sky-dim);
+  font-size: 15px;
+}

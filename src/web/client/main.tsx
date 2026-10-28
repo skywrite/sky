@@ -608,13 +608,15 @@ function Canvas() {
             onOpenImport={openImport}
           />
         ) : isWeek ? (
-          <WeekMain
-            id={weekId}
-            onOpenDay={(ymd, today) => navigate(today ? '/' : `/${ymd}`)}
-            onOpenWeek={(id) => navigate(weekHref(id))}
-            onReview={(ymd) => navigate(`/${ymd}?review=${ymd}`)}
-            onChanged={dayChanged}
-          />
+          <Fragment key={weekId}>
+            <WeekMain
+              id={weekId}
+              onOpenDay={(ymd, today) => navigate(today ? '/' : `/${ymd}`)}
+              onOpenWeek={(id) => navigate(weekHref(id))}
+              onReview={(ymd) => navigate(`/${ymd}?review=${ymd}`)}
+              onChanged={dayChanged}
+            />
+          </Fragment>
         ) : isClock ? (
           <ClockMain back={{ label: 'Today', onClick: () => navigate('/') }} snap={clock} />
         ) : isOutbox ? (

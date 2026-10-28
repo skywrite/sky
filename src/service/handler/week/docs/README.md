@@ -33,6 +33,11 @@ Sunday's End is one step back.
 
 ## The blocks
 
+- **Weekly summary.** A completed week can run `summary:week` from the page and open its saved file.
+  Coverage uses the generator's daily-summary reader, so stubs and invalid frontmatter appear as gaps with repair links.
+  Partial coverage requires an explicit choice; an existing weekly summary is kept.
+  Generation belongs to the service, with one run per week and a restart hold, so navigation and page reloads keep it running.
+  The page polls its status and offers retry after a failure.
 - **Days.** Monday to Sunday, each in a word or two: “Summarized”; “today · started 6:20”;
   amber “Needs review” with a Review button; "not started yet" with a quiet Start button — the day
   pages carry the primary one, see the
@@ -100,6 +105,8 @@ All under `/week/_api`, mounted when the service has a notebook.
 | --- | --- |
 | `GET /` | This week's view |
 | `GET /:id` | The week's view, `2026-W36` |
+| `GET /:id/summary` | Daily coverage, saved summary path, and generation status |
+| `POST /:id/summary` | `{allowMissing?: boolean}` → start a background summary; 202 while running, 200 when already saved |
 | `POST /capture` | `{text, requestId}` → a goal in the current calendar week's plan; answers `{id, path}` |
 | `POST /:id/day/:ymd/start` | day:start for the day; answers the view |
 | `POST /:id/queue` | `{text, category, day?}` → Week-Next, or the schedule file under the day |

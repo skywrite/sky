@@ -41,9 +41,12 @@ import {
   removeItem,
   type WeekQueue,
 } from './queue.ts'
+import { type SummarizeWeek, WeekSummaries, WeekSummaryError } from './summary.ts'
 
 /** The commands the pages can run; production runs them in-process, tests script them. */
-export type WeekCommands = DayCommands
+export interface WeekCommands extends DayCommands {
+  summarizeWeek?: SummarizeWeek
+}
 
 export interface WeekRoutesOptions {
   /** The notebook root that file paths are shown relative to */
@@ -269,6 +272,11 @@ function isCategory(value: unknown): value is 'Professional' | 'Personal' {
 
 export function createWeekRoutes(options: WeekRoutesOptions): Hono {
   const app = new Hono()
+  const summaries = new WeekSummaries({
+    ...options,
+    today: () => readClock(options).calendarDay,
+    summarize: options.commands?.summarizeWeek,
+  })
 
   /** The week the request names, or the refusal to send instead. */
   const weekOf = (c: Context): Week | Response => {
@@ -325,6 +333,34 @@ export function createWeekRoutes(options: WeekRoutesOptions): Hono {
     const week = weekOf(c)
     if (week instanceof Response) return week
     return c.json(await buildWeekView(options, week.toString()))
+  })
+
+  app.get('/:id/summary', async (c) => {
+    c.header('Cache-Control', 'no-store')
+    const week = weekOf(c)
+    if (week instanceof Response) return week
+    return c.json(await summaries.read(week))
+  })
+
+  app.post('/:id/summary', async (c) => {
+    c.header('Cache-Control', 'no-store')
+    const week = weekOf(c)
+    if (week instanceof Response) return week
+    const origin = c.req.header('origin')
+    if ((origin && origin !== new URL(c.req.url).origin) || c.req.header('sec-fetch-site') === 'cross-site')
+      return c.json({ error: 'Open Sky to generate this weekly summary.' }, 403)
+    if (!c.req.header('content-type')?.startsWith('application/json'))
+      return c.json({ error: 'Expected a JSON request.' }, 415)
+    const body = await bodyOf(c)
+    if (!body || Array.isArray(body) || (body.allowMissing !== undefined && typeof body.allowMissing !== 'boolean'))
+      return c.json({ error: 'Expected {allowMissing?: boolean}.' }, 400)
+    try {
+      const { view, status } = await summaries.start(week, body.allowMissing === true)
+      return c.json(view, status)
+    } catch (error) {
+      if (error instanceof WeekSummaryError) return c.json({ error: error.message }, error.status)
+      return c.json({ error: `Could not start the summary for ${week}: ${(error as Error).message}` }, 500)
+    }
   })
 
   // Starting remains explicit; summaries do not advance the notebook clock.

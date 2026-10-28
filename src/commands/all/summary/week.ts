@@ -1,3 +1,4 @@
+import { mkdir, writeFile } from 'node:fs/promises'
 import * as path from 'node:path'
 import { generateText } from 'ai'
 import { aiEffortFlag } from '#commands/lib/aiParams.ts'
@@ -7,13 +8,13 @@ import { DIR_OUTPUT } from '#config'
 import openEditor from '#lib/shell/openEditor.ts'
 import { logAIError } from '#shared/ai/errorLog.ts'
 import { aiModelByProfile, getProfile } from '#shared/ai/models.ts'
-import { exists, readTextFile, writeTextFile } from '#shared/fs/mod.ts'
+import { exists, readTextFile } from '#shared/fs/mod.ts'
 import { estimateTokens } from '#shared/models/AI/ContextAssembler/mod.ts'
-import { dayDir, fetchNow, weekDir } from '#shared/nbfs/mod.ts'
+import { dayDir, weekDir } from '#shared/nbfs/mod.ts'
 import { readPromptFile } from '#shared/prompts/load.ts'
 import { renderPromptFile } from '#shared/prompts/mod.ts'
 import { stringify } from '#shared/yaml/mod.ts'
-import { PlainDate, Week } from '#universal/dates/nbdt/mod.ts'
+import { instantNow, PlainDate, Week } from '#universal/dates/nbdt/mod.ts'
 import { parseCsv } from '#universal/encoding/csv/mod.ts'
 import { gatherWeekHealthData, HEALTH_FILES, type WeekHealthCsv } from './_health.ts'
 import { gatherWeekPriceData, type WeekPriceCsv } from './_prices.ts'
@@ -82,12 +83,18 @@ export default class SummaryWeekTask extends Command {
     const { model, force, allowMissing, dryRun, stdout, open } = args
     const exportPdf = args.export
 
-    const now = await fetchNow()
-    const today = now.plainDateTime.plainDate
+    let now
+    try {
+      now = context.notebookNow
+    } catch {
+      now = context.systemNow
+    }
+    // Match the week page after midnight, even before Monday has been started.
+    const today = now.plainDateTime.plainDate.addDays(Math.floor(Number(now.time.split(':')[0]) / 24))
 
     let week: Week
     try {
-      week = args.week ? Week.parse(args.week, Week.of(now).year) : Week.of(now).previous()
+      week = args.week ? Week.parse(args.week, Week.of(today).year) : Week.of(today).previous()
     } catch (err) {
       return CommandResult.fail((err as Error).message)
     }
@@ -216,7 +223,7 @@ export default class SummaryWeekTask extends Command {
     const userPrompt = this.buildUserPrompt(
       week,
       dailies,
-      skipped.missing,
+      Object.values(skipped).flat().sort(PlainDate.compare),
       previous,
       plan,
       checkins,
@@ -277,7 +284,7 @@ export default class SummaryWeekTask extends Command {
       start: week.start.ymd,
       end: week.end.ymd,
       days: dailies.length,
-      generated: new Date().toISOString(),
+      generated: instantNow(),
       model: modelId,
       ...(usage ? { usage } : {}),
       tags: 'Summary/Weekly',
@@ -331,7 +338,14 @@ export default class SummaryWeekTask extends Command {
     }
 
     // Write file
-    await writeTextFile(summaryPath, outputContent)
+    await mkdir(weekDirPath, { recursive: true })
+    try {
+      await writeFile(summaryPath, outputContent, { encoding: 'utf8', flag: force ? 'w' : 'wx' })
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'EEXIST')
+        return CommandResult.fail('A weekly summary was saved while this one was generating. The saved file was kept.')
+      throw error
+    }
     output.log(`Weekly Summary written to ${summaryPath}`)
 
     // 10. Open in editor if requested

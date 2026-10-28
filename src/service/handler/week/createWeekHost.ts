@@ -19,5 +19,11 @@ export function createWeekHost(config: typeof ConfigModule, env: Record<string, 
     async startDay(day: PlainDate): Promise<void> {
       requireSuccess('day:start', await createTasks().run('day:start', { day }))
     },
+    async summarizeWeek(week, { allowMissing }): Promise<void> {
+      requireSuccess(
+        'summary:week',
+        await createTasks().run('summary:week', { week: week.toString(), allowMissing, open: false }),
+      )
+    },
   }
 }

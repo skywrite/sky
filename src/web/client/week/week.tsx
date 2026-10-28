@@ -1,8 +1,10 @@
 import { Button } from '@mantine/core'
 import { Fragment, type KeyboardEvent, useCallback, useEffect, useState } from 'react'
+import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import { Block, clock, Cross } from '../day/day.tsx'
 import { SunIcon } from '../day/dayStart.tsx'
 import { fileHref } from '../explorer/explorer.tsx'
+import { WeekSummary } from './WeekSummary.tsx'
 
 /**
  * The week is a page. Its column is the seven days and what state each is
@@ -160,7 +162,6 @@ const MONTHS = [
   'November',
   'December',
 ]
-const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
 function parts(ymd: string): { year: number; month: number; day: number } {
   const [year, month, day] = ymd.split('-').map(Number)
@@ -187,8 +188,7 @@ function rangeLabel(start: string, end: string): string {
 }
 
 function weekdayOf(ymd: string): string {
-  const { year, month, day } = parts(ymd)
-  return WEEKDAYS[new Date(year, month - 1, day).getDay()]
+  return new PlainDate(ymd).dayLong
 }
 
 function count(n: number, noun: string): string {
@@ -671,6 +671,11 @@ export function WeekMain({
       <div className="sky-scroll">
         <div className="sky-col">
           {note && <div className="sky-wnote">{note}</div>}
+          {view && (
+            <Fragment key={view.id}>
+              <WeekSummary week={view.id} onReview={onReview} />
+            </Fragment>
+          )}
           {view && (
             <DaysBlock
               days={view.days}
