@@ -41,6 +41,7 @@ export {
 
 // ── Param builders ────────────────────────────────────────────────
 export { Arg, ArgOrFlag, Flag } from '../../../src/commands/lib/params.ts'
+export { dayYesterdayArg } from '../../../src/commands/lib/standardParams.ts'
 export type {
   InferParams,
   InferParamsInput,
