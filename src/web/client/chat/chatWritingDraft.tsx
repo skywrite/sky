@@ -15,7 +15,6 @@ export function ChatWritingDraft({
   onChange,
   ...props
 }: {
-  key?: string
   chatId: string
   draft: WritingDraftView
   snapshot?: string

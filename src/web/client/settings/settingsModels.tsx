@@ -1,5 +1,5 @@
 import { Button, NumberInput, Select, Textarea, TextInput } from '@mantine/core'
-import { useState, type Key } from 'react'
+import { useState } from 'react'
 import {
   effectiveEffort,
   effortLabel,
@@ -47,7 +47,6 @@ function PresetEditor({
   onCancel,
 }: {
   initial?: ProfileRow
-  key?: Key | null
   profiles: ProfileRow[]
   providers: string[]
   onDone: () => Promise<void>

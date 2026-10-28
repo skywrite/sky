@@ -1,5 +1,5 @@
 import { Select, Slider } from '@mantine/core'
-import { useId, useState, type Key } from 'react'
+import { useId, useState } from 'react'
 import { effortLabel, type Effort, type EffortOverride } from '#universal/ai/effort.ts'
 import { reachIndex, STOPS, stopIndex } from '#universal/ai/readingBudget.ts'
 import { EffortControl } from '../lib/effortControl.tsx'
@@ -55,7 +55,6 @@ export function ChatControls({
   chat: Chat
   open: boolean
   onOpenChange: (open: boolean) => void
-  key?: Key | null
 }) {
   const [budget, setBudget] = useState<number | null>(null)
   const panelId = useId()

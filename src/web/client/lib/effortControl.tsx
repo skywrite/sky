@@ -1,4 +1,4 @@
-import { useRef, useState, type CSSProperties, type Key } from 'react'
+import { useRef, useState, type CSSProperties } from 'react'
 import { effortLabel, type Effort } from '#universal/ai/effort.ts'
 import './aiControls.css'
 
@@ -15,7 +15,6 @@ export function EffortControl({
 }: {
   value: Effort | null
   defaultValue?: Effort | null
-  key?: Key | null
   levels: readonly Effort[]
   onChange: (value: Effort | null) => void | Promise<void>
   label?: string

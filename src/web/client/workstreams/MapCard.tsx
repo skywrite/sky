@@ -1,4 +1,3 @@
-import type { Key } from 'react'
 import { CARD_HEIGHT, CARD_WIDTH } from '#lib/workstreams/layout.ts'
 import type { Point } from './camera.ts'
 import { workstreamColorStyle } from './colors.ts'
@@ -19,7 +18,6 @@ export function MapCard({
   onMenu,
   onRelate,
 }: {
-  key?: Key | null
   item: CanvasWorkstream
   point: Point
   selected: boolean

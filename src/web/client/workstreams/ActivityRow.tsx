@@ -1,5 +1,4 @@
 import { Button } from '@mantine/core'
-import type { Key } from 'react'
 import { ActivitySchema, type Activity } from '#lib/workstreams/types.ts'
 import { outboxHref } from '../outbox/outboxRoutes.ts'
 import { ActionResultEvidence } from './ActionResultEvidence.tsx'
@@ -18,7 +17,7 @@ function communicationStatus(value: WorkstreamCommunication): string {
   return value.status === 'dismissed' ? 'Dismissed' : 'Needs review'
 }
 
-export function ActivityRow({ activity }: { key?: Key | null; activity: Activity }) {
+export function ActivityRow({ activity }: { activity: Activity }) {
   const {
     item,
     all,

@@ -1,16 +1,10 @@
 import { Button } from '@mantine/core'
-import type { Key } from 'react'
 import type { Workstream } from '#lib/workstreams/types.ts'
 import { CoordinationPreview } from './CoordinationPreview.tsx'
 import { workstreamRequest } from './request.ts'
 import { useWorkstreamDetail } from './WorkstreamDetailContext.ts'
 
-export function ProposalRow({
-  proposal,
-}: {
-  key?: Key | null
-  proposal: NonNullable<Workstream['proposals']>[number]
-}) {
+export function ProposalRow({ proposal }: { proposal: NonNullable<Workstream['proposals']>[number] }) {
   const { item, busy, act, onReviewRelationship } = useWorkstreamDetail()
   return (
     <div className="sky-workstream-suggestion">

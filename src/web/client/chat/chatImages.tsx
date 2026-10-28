@@ -21,7 +21,7 @@ export function ChatImages({ images }: { images: readonly ChatImage[] }) {
   )
 }
 
-function ImageCard({ image }: { image: ChatImage; key?: string }) {
+function ImageCard({ image }: { image: ChatImage }) {
   const [failed, setFailed] = useState(false)
   return (
     <figure className="sky-chat-image">

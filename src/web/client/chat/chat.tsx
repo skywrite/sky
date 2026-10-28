@@ -180,7 +180,6 @@ export interface ThreadParent {
   /** The parent's name, when the service knows it */
   title: string | null
   kind?: 'thread'
-  key?: string
 }
 
 /** A branch filed beside this thread's file, not live on this page */

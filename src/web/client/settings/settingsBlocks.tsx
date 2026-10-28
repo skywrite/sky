@@ -4,7 +4,7 @@
  */
 
 import { SegmentedControl } from '@mantine/core'
-import type { Key, ReactNode } from 'react'
+import type { ReactNode } from 'react'
 
 export const UNREACHABLE = "Couldn't reach sky — is the service running?"
 
@@ -16,16 +16,7 @@ export async function refusalOf(r: Response | null): Promise<string | null> {
   return body.message ?? `The service answered ${r.status}.`
 }
 
-export function Block({
-  head,
-  note,
-  children,
-}: {
-  key?: Key | null
-  head?: ReactNode
-  note?: string
-  children: ReactNode
-}) {
+export function Block({ head, note, children }: { head?: ReactNode; note?: string; children: ReactNode }) {
   return (
     <div className="sky-block">
       {head && <div className="sky-block-head">{head}</div>}
@@ -43,7 +34,6 @@ export function Row({
   children,
   last,
 }: {
-  key?: Key | null
   label: ReactNode
   sub?: ReactNode
   children?: ReactNode

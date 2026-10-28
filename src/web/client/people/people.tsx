@@ -1,6 +1,6 @@
 import './people.css'
 import { ActionIcon, Button, Modal, Select, Textarea, TextInput } from '@mantine/core'
-import { type Key, type MouseEvent, type ReactNode, useCallback, useEffect, useState } from 'react'
+import { type MouseEvent, type ReactNode, useCallback, useEffect, useState } from 'react'
 import type { LinkedInImport } from '#lib/linkedin/types.ts'
 import { normalizePlaceRef } from '#shared/models/Place/reference.ts'
 import {
@@ -81,14 +81,7 @@ const orgLabel = (profile: ProfileSummary) =>
 const personLabel = (profile: ProfileSummary) =>
   [profile.title, profile.current.map((org) => org.name).join(', ')].filter(Boolean).join(' · ')
 
-function ProfileRow({
-  profile,
-  navigate,
-}: {
-  key?: Key | null
-  profile: ProfileSummary
-  navigate: (path: string) => void
-}) {
+function ProfileRow({ profile, navigate }: { profile: ProfileSummary; navigate: (path: string) => void }) {
   return (
     <AppLink href={profileHref(profile)} navigate={navigate} className="sky-people-row">
       <Avatar profile={profile} />
@@ -324,14 +317,7 @@ function ProfilePage({
   )
 }
 
-export function PeopleMain({
-  route,
-  navigate,
-}: {
-  key?: Key | null
-  route: PeopleRoute
-  navigate: (path: string) => void
-}) {
+export function PeopleMain({ route, navigate }: { route: PeopleRoute; navigate: (path: string) => void }) {
   const [index, setIndex] = useState<PeopleIndex | null>(null)
   const [profile, setProfile] = useState<ProfileDetail | null>(null)
   const [error, setError] = useState('')

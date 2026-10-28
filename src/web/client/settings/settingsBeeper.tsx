@@ -6,7 +6,7 @@
  */
 
 import { Button } from '@mantine/core'
-import { type Key, useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Block, OnOff, plural, refusalOf, Row, sinceLabel } from './settingsBlocks.tsx'
 import { ConnectionPage } from './settingsConnectionPage.tsx'
 import { API, postJson } from './settingsConnections.tsx'
@@ -199,7 +199,6 @@ function NetworkBlock({
   mac,
   toConnections,
 }: {
-  key?: Key | null
   row: AccountRow
   rule: ReturnType<typeof useBeeperPage>['rule']
   /** Whether this Mac's Contacts and Messages can be read: the names behind iMessage's numbers */

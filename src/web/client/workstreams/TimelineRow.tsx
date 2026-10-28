@@ -1,4 +1,3 @@
-import type { Key } from 'react'
 import { workstreamColorStyle } from './colors.ts'
 import { WorkstreamConnector } from './WorkstreamConnector.tsx'
 import { WorkstreamMenuButton } from './WorkstreamMenuButton.tsx'
@@ -23,7 +22,6 @@ export function TimelineRow({
   onMenu,
   onRelate,
 }: {
-  key?: Key | null
   item: CanvasWorkstream
   top: number
   height: number
@@ -122,7 +120,6 @@ function ActivityClip({
   box,
   onOpen,
 }: {
-  key?: Key | null
   workstreamId: string
   activity: CanvasActivity
   box: ActivityBox

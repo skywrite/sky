@@ -36,7 +36,6 @@ export function WritingDraftEditor<T extends WritingDraft>({
   onChange,
   onAsk,
 }: {
-  key?: string
   anchor?: string
   /** No record exists yet. The first action saves one, and its id may differ from the one shown. */
   unsaved?: boolean

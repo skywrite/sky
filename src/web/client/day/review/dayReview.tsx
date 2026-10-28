@@ -71,7 +71,7 @@ export function useReviewPrompt(open: (day: string) => void, showing: boolean) {
   }, [showing])
 }
 
-function Job({ job, retry, busy }: { key?: string; job: ReviewJob; retry: () => void; busy: boolean }) {
+function Job({ job, retry, busy }: { job: ReviewJob; retry: () => void; busy: boolean }) {
   return (
     <div className="sky-review-job">
       <span aria-hidden="true">{job.status === 'done' ? '✓' : job.status === 'error' ? '!' : '·'}</span>
@@ -102,7 +102,6 @@ function TrackingAnswers({
   onSave,
   busy,
 }: {
-  key?: string
   item: ReviewItem
   day: string
   initial: Record<string, string>
@@ -146,7 +145,6 @@ export function DayReviewDialog({
   navigate,
   onImportMeeting,
 }: {
-  key?: string
   day: string
   onClose: () => void
   onChanged: () => void

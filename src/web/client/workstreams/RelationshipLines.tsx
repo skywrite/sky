@@ -1,4 +1,3 @@
-import type { Key } from 'react'
 import { CARD_HEIGHT, CARD_WIDTH } from '#lib/workstreams/layout.ts'
 import type { Point } from './camera.ts'
 import type { ActivityBox } from './TimelineRow.tsx'
@@ -107,7 +106,6 @@ function RelationshipLine({
   onClick,
   onActivate,
 }: {
-  key?: Key | null
   relationship: CanvasRelationship
   from: CanvasWorkstream
   to: CanvasWorkstream

@@ -1,5 +1,5 @@
 import { Button, Menu } from '@mantine/core'
-import { type Key, type ReactNode, useState } from 'react'
+import { type ReactNode, useState } from 'react'
 import {
   placeHref,
   placeLabel,
@@ -25,7 +25,6 @@ export function PlaceLink({
   children: ReactNode
   className?: string
   label?: string
-  key?: Key
 }) {
   return (
     <a
@@ -54,7 +53,6 @@ export function PlaceRow({
   selected?: boolean
   onSelect?: () => void
   full?: boolean
-  key?: Key
 }) {
   const copy = (
     <>
@@ -113,7 +111,6 @@ export function PlacesDetail({
   onArchive,
   onSetup,
 }: {
-  key?: Key
   place: PlaceDetail
   maps: MapsConfig
   navigate: (href: string) => void

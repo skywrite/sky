@@ -34,7 +34,6 @@ function PlanComposer({
   onAdd,
   startTime,
 }: {
-  key?: string
   kind: DayAddKind
   opened: boolean
   categories: string[]
@@ -247,7 +246,6 @@ function NextPicker({
   onLoad,
   onMove,
 }: {
-  key?: string
   opened: boolean
   busy: boolean
   error: string | null

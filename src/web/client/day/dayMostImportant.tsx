@@ -99,7 +99,6 @@ export function DayMostImportant({
   onSaved,
   children,
 }: {
-  key?: string
   day: DayData
   onSaved: (view: DayData) => void
   children: (entry: ReactNode) => ReactNode

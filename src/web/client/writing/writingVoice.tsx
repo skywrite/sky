@@ -18,14 +18,7 @@ export async function writingVoiceRequest<T>(route: string, method = 'GET', body
 }
 
 /** One edit of a draft and what Sky learned from it. */
-function EditCard({
-  edit: example,
-  onChange,
-}: {
-  key?: string
-  edit: VoiceEditRecord
-  onChange: (edit: VoiceEditRecord) => void
-}) {
+function EditCard({ edit: example, onChange }: { edit: VoiceEditRecord; onChange: (edit: VoiceEditRecord) => void }) {
   const [own, setOwn] = useState(false)
   const [text, setText] = useState('')
   const [busy, setBusy] = useState(false)
@@ -191,7 +184,6 @@ export function WritingVoiceQuestions({
   refreshKey,
   polling = false,
 }: {
-  key?: string
   source: string
   refreshKey?: string | number
   polling?: boolean

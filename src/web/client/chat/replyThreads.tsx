@@ -75,7 +75,6 @@ export function ReplyThreadPanel({
   visible,
   onClose,
 }: {
-  key?: string
   thread: OpenReplyThread
   visible: boolean
   onClose: () => void
