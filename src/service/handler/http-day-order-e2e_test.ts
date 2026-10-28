@@ -162,7 +162,11 @@ for (const width of [1500, 390]) {
           const reminder = row('Leave space for a walk')
           await reminder.getByRole('button', { name: 'Mark done', exact: true }).click()
           await reminder.waitFor({ state: 'detached' })
-          await page.getByRole('button', { name: 'Undo', exact: true }).click()
+          await page
+            .locator('.sky-undo')
+            .filter({ hasText: 'Reminder cleared — “Leave space for a walk”' })
+            .getByRole('button', { name: 'Undo', exact: true })
+            .click()
           await reminder.waitFor()
           for (const name of ['Read Atlas brief', 'First open task', 'Final open task', 'Personal open task'])
             await toggle(name, true)

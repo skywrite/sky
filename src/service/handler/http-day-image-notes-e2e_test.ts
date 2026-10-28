@@ -108,7 +108,8 @@ test(
           await page.setViewportSize(viewport)
           await page.goto(`${origin}/${DAY}`)
           await page.waitForSelector('.sky-day button[aria-label="Add a file"]:not([disabled])')
-          const title = await page.title()
+          const title = 'sky · Tuesday, January 27, 2026 · Day record'
+          await page.waitForFunction((title) => document.title === title, title)
           if (index === 0) {
             await dispatchFileDrop(page, '.sky-day .sky-col', [
               { name: 'Atlas-1.png', type: 'image/png', text: 'synthetic page 1', lastModified: 1_700_000_000_000 },
