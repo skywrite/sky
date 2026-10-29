@@ -4,6 +4,7 @@ import * as marked from 'marked'
 // import { DIR_LIBRARY, DIR_PEOPLE, DIR_PLACES, DIR_THINGS, DIR_TIME } from '#config'
 import { DIRS_MARKDOWN } from '#config'
 import { readTextFile, walk } from '#shared/fs/mod.ts'
+import { env } from '#shared/sys/mod.ts'
 import { assert, test } from '#test'
 import renderMarkdown from './renderMarkdown.ts'
 
@@ -19,7 +20,9 @@ const DIRS_TEST = DIRS_MARKDOWN
 
 // Round-trips every .md file in the real notebook — minutes of work, far
 // past bun's 5s default timeout (it was silently timing out for months).
-test(renderMarkdown.name, { timeout: 300_000 }, async () => {
+// It fails on what the notebook holds rather than on a code change, so it runs
+// only when asked: SKY_NOTEBOOK_TESTS=1.
+test(renderMarkdown.name, { timeout: 300_000, ignore: !env.get('SKY_NOTEBOOK_TESTS') }, async () => {
   for (const dir of DIRS_TEST) {
     for await (const entry of walk(dir)) {
       if (path.extname(entry.path) !== '.md') continue

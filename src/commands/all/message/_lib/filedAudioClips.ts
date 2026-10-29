@@ -46,13 +46,12 @@ async function save(file: string, conversations: string[]): Promise<void> {
 
 /** Of these clips, the ones that already have a turn in the conversation. */
 export async function filedClips(paths: FiledClipPaths, conversation: string, hashes: string[]): Promise<Set<string>> {
-  const filed = new Set<string>()
-  await Promise.all(
-    [...new Set(hashes)].map(async (hash) => {
-      if ((await conversationsOf(recordFile(paths, hash))).includes(conversation)) filed.add(hash)
-    }),
+  const unique = [...new Set(hashes)]
+  // Read at once, kept in the order asked: a set filled as the reads finish would follow their timing.
+  const filed = await Promise.all(
+    unique.map(async (hash) => (await conversationsOf(recordFile(paths, hash))).includes(conversation)),
   )
-  return filed
+  return new Set(unique.filter((_, index) => filed[index]))
 }
 
 /** Remember that each clip now has a turn in the conversation. */

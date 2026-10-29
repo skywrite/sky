@@ -33,6 +33,17 @@ tz: America/Chicago
 - Water the plants
 `
 
+/** The day file once `wanted` holds of it: a row can show an edit before the save it sent lands on disk. */
+async function settled(file: string, wanted: (text: string) => boolean): Promise<string> {
+  let text = ''
+  for (let tries = 0; tries < 50; tries++) {
+    text = await readFile(file, 'utf8')
+    if (wanted(text)) return text
+    await new Promise((resolve) => setTimeout(resolve, 100))
+  }
+  return text
+}
+
 test(
   { name: 'day quick edits carry drafts into Details, preserve links and completion, and offer Undo', timeout: 45000 },
   async (t) => {
@@ -78,7 +89,7 @@ test(
         assert({
           given: 'a quick text edit expanded into rescheduling',
           should: 'save the entire task in its new section with notes intact',
-          actual: (await readFile(file, 'utf8')).includes(
+          actual: (await settled(file, (text) => text.includes('- 25:30 > Review the revised outline'))).includes(
             '- 25:30 > Review the revised outline\n  Keep this note with the task.',
           ),
           expected: true,
@@ -88,7 +99,7 @@ test(
         assert({
           given: 'Undo immediately after editing',
           should: 'restore the original file',
-          actual: await readFile(file, 'utf8'),
+          actual: await settled(file, (text) => text === CONTENT),
           expected: CONTENT,
         })
 
@@ -99,7 +110,9 @@ test(
         assert({
           given: 'renaming a completed task',
           should: 'keep completion',
-          actual: (await readFile(file, 'utf8')).includes('- ~~Send the final checklist~~'),
+          actual: (await settled(file, (text) => text.includes('Send the final checklist'))).includes(
+            '- ~~Send the final checklist~~',
+          ),
           expected: true,
         })
         await row('Read Atlas brief').getByRole('button', { name: 'Item details', exact: true }).click()
@@ -202,7 +215,9 @@ test(
           assert({
             given: 'a mobile edit saved from the sheet',
             should: 'write the new reminder',
-            actual: (await readFile(file, 'utf8')).includes('- Water the garden before breakfast'),
+            actual: (await settled(file, (text) => text.includes('Water the garden before breakfast'))).includes(
+              '- Water the garden before breakfast',
+            ),
             expected: true,
           })
           assert({ given: 'both mobile edit paths', should: 'produce no browser errors', actual: errors, expected: [] })

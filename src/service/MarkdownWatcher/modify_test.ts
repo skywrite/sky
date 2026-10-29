@@ -1,13 +1,13 @@
 import { rm, writeFile } from 'node:fs/promises'
 import * as path from 'node:path'
 import process from 'node:process'
+import { env } from '#shared/sys/mod.ts'
 import { assert, test } from '#test'
-import MarkdownWatcher from './mod.ts'
-import { createTempDir, delay, type MarkdownWatcherEvent } from './test-helpers.ts'
+import { createTempDir, delay, liveWatcher, PATIENCE_MS } from './test-helpers.ts'
 
-// See create_test.ts: watcher coverage is macOS-only (Bun+Linux fs.watch
-// recursive can silently deliver nothing).
-const ignore = process.platform !== 'darwin'
+// See create_test.ts: these run only when asked, SKY_WATCH_TESTS=1 on a Mac; mod_test.ts covers the
+// behavior with scripted events everywhere.
+const ignore = process.platform !== 'darwin' || !env.get('SKY_WATCH_TESTS')
 
 test('MarkdownWatcher yields modify event for updated .md file', { ignore }, async () => {
   const tempDir = await createTempDir('mdwatch-modify-')
@@ -16,24 +16,17 @@ test('MarkdownWatcher yields modify event for updated .md file', { ignore }, asy
   const filePath = path.join(tempDir, 'existing.md')
   await writeFile(filePath, '# Original')
 
-  const watcher = MarkdownWatcher.create()
-  const events: MarkdownWatcherEvent[] = []
+  const { events, stop } = await liveWatcher(tempDir, ['create', 'modify'])
 
-  const gen = watcher.run({ dirs: [tempDir], eventKinds: ['create', 'modify'] })
-  const collecting = (async () => {
-    for await (const event of gen) {
-      events.push(event)
-    }
-  })()
+  // As in create_test.ts: deliveries come in batches, seconds apart under load. Rewrite the new
+  // contents until the watcher reports them, up to a deadline.
+  const deadline = performance.now() + PATIENCE_MS
+  while (performance.now() < deadline && !events.some((e) => e.file === filePath && e.contents === '# Updated')) {
+    await writeFile(filePath, '# Updated')
+    await delay(250)
+  }
 
-  await delay(500)
-
-  await writeFile(filePath, '# Updated')
-
-  await delay(1000)
-
-  watcher.close()
-  await collecting
+  await stop()
 
   const fileEvents = events.filter((e) => e.file === filePath)
 

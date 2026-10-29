@@ -17,7 +17,6 @@ import { exists } from '#shared/fs/mod.ts'
 import MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
 import { env } from '#shared/sys/mod.ts'
 import type { ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
-import MarkdownWatcher from '../MarkdownWatcher/mod.ts'
 import { NotebookChanges } from '../notebookChanges.ts'
 import { Store } from '../store.ts'
 import type { ChatRoutesOptions } from './chat/mod.ts'
@@ -180,7 +179,7 @@ export async function runWysiwygE2e(
     people?: boolean
     /** Serve the day page too: its routes, and the import routes a drop on it needs */
     day?: boolean
-    /** Watch this isolated notebook. 'poll' also exercises the Linux harness fallback on macOS. */
+    /** Watch this isolated notebook for changes made on disk; it is polled either way, 'poll' kept for the tests that name it. */
     watch?: boolean | 'poll'
     dayReview?: import('./day/review/types.ts').ReviewRuntime
     /** Use ordinary browser popup restrictions instead of Playwright's permissive default. */
@@ -201,9 +200,7 @@ export async function runWysiwygE2e(
   let browser: Browser | undefined
   let server: RunningServer | undefined
   const notebookChanges = new NotebookChanges(notebookBaseDir, path.join(notebookBaseDir, 'time'))
-  const watcher = MarkdownWatcher.create()
   let stopPolling: (() => Promise<void>) | undefined
-  let watching: Promise<void> | undefined
   try {
     const relativePath = options.file ?? 'notes/preview.md'
     const file = path.join(notebookBaseDir, relativePath)
@@ -261,25 +258,16 @@ export async function runWysiwygE2e(
       },
     )
     if (options.watch ?? options.day) {
+      // Polled on every platform. Bun's recursive fs.watch drops events under bun test: on macOS a
+      // page's save went unheard in about one run in three, and on Linux a second watcher can stay
+      // silent. The fixture is tiny, so a 50 ms scan is cheap and certain. The production watcher
+      // keeps its own tests in service/MarkdownWatcher.
       const dirs = [...roots].map((root) => path.join(notebookBaseDir, root))
-      if (process.platform === 'linux' || options.watch === 'poll') {
-        // Bun's second recursive Linux watcher can remain silent (see MarkdownWatcher/create_test.ts).
-        // Poll only the tiny fixture on CI; macOS exercises the production watcher below.
-        stopPolling = await pollNotebookFixture(dirs, (file, contents) => {
-          if (contents === undefined) markdownStore?.delete(file)
-          else markdownStore?.set(file, contents)
-          notebookChanges.changed(file)
-        })
-      } else {
-        watching = (async () => {
-          for await (const change of watcher.run({ dirs, eventKinds: ['create', 'modify', 'remove'] })) {
-            if (!change.file) continue
-            if (change.event === 'remove') markdownStore?.delete(change.file)
-            else if (change.contents !== undefined) markdownStore?.set(change.file, change.contents)
-            notebookChanges.changed(change.file)
-          }
-        })()
-      }
+      stopPolling = await pollNotebookFixture(dirs, (file, contents) => {
+        if (contents === undefined) markdownStore?.delete(file)
+        else markdownStore?.set(file, contents)
+        notebookChanges.changed(file)
+      })
     }
     browser = await launchChromiumOrSkip(t, options.popupBlocking)
     server = startAppServer(app, store, notebookChanges)
@@ -307,8 +295,6 @@ export async function runWysiwygE2e(
     }
   } finally {
     await stopPolling?.()
-    watcher.close()
-    await watching
     notebookChanges.close()
     if (browser) await browser.close()
     if (server) await server.close()

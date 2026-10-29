@@ -25,7 +25,7 @@ export default class MarkdownWatcher {
   private static instance: MarkdownWatcher
   private _watcher: FsWatcher | null = null
 
-  private constructor() {}
+  private constructor(private readonly watch: (dirs: string[]) => FsWatcher = watchFs) {}
 
   public static getInstance(): MarkdownWatcher {
     if (!MarkdownWatcher.instance) {
@@ -34,9 +34,9 @@ export default class MarkdownWatcher {
     return MarkdownWatcher.instance
   }
 
-  /** Create a new non-singleton instance (for testing) */
-  public static create(): MarkdownWatcher {
-    return new MarkdownWatcher()
+  /** Create a new non-singleton instance (for testing); `watch` stands in for the file system's events */
+  public static create(watch?: (dirs: string[]) => FsWatcher): MarkdownWatcher {
+    return new MarkdownWatcher(watch)
   }
 
   public close(): void {
@@ -74,7 +74,7 @@ export default class MarkdownWatcher {
         // directory doesn't exist, skip it
       }
     }
-    this._watcher = watchFs(dirs)
+    this._watcher = this.watch(dirs)
     for await (const event of this._watcher) {
       if (!eventKinds?.includes(event.kind)) continue
 

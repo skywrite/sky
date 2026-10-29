@@ -467,6 +467,14 @@ test(
               display: getComputedStyle(node).display,
             })),
             viewport: { width: window.innerWidth, height: window.innerHeight },
+            // Where keyboard focus sits when a wait on it gives up
+            active: (() => {
+              const node = document.activeElement
+              if (!node) return null
+              const role = node.getAttribute('role')
+              const label = (node.getAttribute('aria-label') ?? node.textContent ?? '').trim().slice(0, 40)
+              return `${node.tagName.toLowerCase()}${role ? `[role=${role}]` : ''} ${label}`.trim()
+            })(),
             errors: [...document.querySelectorAll('[role="alert"]')].map((node) => node.textContent),
             text: document.body.innerText.slice(-5000),
           }))

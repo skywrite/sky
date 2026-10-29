@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises'
 import { walk } from '#shared/fs/mod.ts'
 
-/** The browser harness's Linux fallback: only scan the tiny temporary notebook, never real data. */
+/** The browser harness's watcher on every platform: only scan the tiny temporary notebook, never real data. */
 export async function pollNotebookFixture(
   dirs: string[],
   changed: (file: string, contents: string | undefined) => void,

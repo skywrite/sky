@@ -29,7 +29,18 @@ export interface FsWatcher extends AsyncIterable<FsEvent> {
 // On macOS this uses the native FSEvents API via libuv — efficient for
 // large directory trees, zero npm dependencies.
 
-function watchFsNode(paths: string | string[]): FsWatcher {
+/** What the node backend watches a directory with: node:fs watch, or a test's stand-in playing events. */
+export type NodeWatch = (
+  dir: string,
+  options: { recursive: boolean },
+  listener: (eventType: WatchEventType, filename: string | null) => void,
+) => { close(): void }
+
+export function watchFsNode(
+  paths: string | string[],
+  watch: NodeWatch = fsWatch,
+  exists: (file: string) => boolean = existsSync,
+): FsWatcher {
   const dirs = Array.isArray(paths) ? paths : [paths]
 
   const queue: FsEvent[] = []
@@ -45,7 +56,7 @@ function watchFsNode(paths: string | string[]): FsWatcher {
   }
 
   const watchers = dirs.map((dir) =>
-    fsWatch(dir, { recursive: true }, (eventType: WatchEventType, filename: string | null) => {
+    watch(dir, { recursive: true }, (eventType: WatchEventType, filename: string | null) => {
       if (closed || !filename) return
 
       const fullPath = path.resolve(dir, filename)
@@ -54,7 +65,7 @@ function watchFsNode(paths: string | string[]): FsWatcher {
         push('modify', fullPath)
       } else if (eventType === 'rename') {
         // 'rename' fires for create, delete, and rename — check existence to disambiguate
-        push(existsSync(fullPath) ? 'create' : 'remove', fullPath)
+        push(exists(fullPath) ? 'create' : 'remove', fullPath)
       }
     }),
   )

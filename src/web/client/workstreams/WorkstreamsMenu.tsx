@@ -60,13 +60,23 @@ export function WorkstreamsMenu({
 }) {
   const phone = useMediaQuery('(max-width: 900px)') ?? false
   const dropdown = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    if (!target || phone) return
-    const frame = requestAnimationFrame(() =>
-      dropdown.current?.querySelector<HTMLButtonElement>('[data-menu-item]:not(:disabled)')?.focus(),
-    )
-    return () => cancelAnimationFrame(frame)
-  }, [target, phone])
+  // The dropdown mounts a render after the menu opens (its portal attaches in an
+  // effect), so a frame scheduled at open can run before it exists. Focus the
+  // first item when the element attaches instead, and once more a frame later in
+  // case the renders that follow the open moved focus.
+  const attachDropdown = useCallback(
+    (node: HTMLDivElement | null) => {
+      dropdown.current = node
+      if (!node || phone) return
+      const focusFirst = () =>
+        node.querySelector<HTMLButtonElement>('[data-menu-item]:not(:disabled)')?.focus({ preventScroll: true })
+      focusFirst()
+      requestAnimationFrame(() => {
+        if (node.isConnected && !node.contains(document.activeElement)) focusFirst()
+      })
+    },
+    [phone],
+  )
   const close = useCallback(() => {
     if (!target) return
     const closingMenu = dropdown.current
@@ -161,7 +171,7 @@ export function WorkstreamsMenu({
             }}
           />
         </Menu.Target>
-        <Menu.Dropdown ref={dropdown} aria-label={`Workstream menu for ${target.title}`}>
+        <Menu.Dropdown ref={attachDropdown} aria-label={`Workstream menu for ${target.title}`}>
           <Menu.Label className="sky-workstream-menu-title">{target.title}</Menu.Label>
           <Menu.Item disabled={busy} onClick={() => choose(onOpen)}>
             Open workstream

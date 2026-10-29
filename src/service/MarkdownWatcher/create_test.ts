@@ -1,41 +1,32 @@
 import { rm, writeFile } from 'node:fs/promises'
 import * as path from 'node:path'
 import process from 'node:process'
+import { env } from '#shared/sys/mod.ts'
 import { assert, test } from '#test'
-import MarkdownWatcher from './mod.ts'
-import { createTempDir, delay, type MarkdownWatcherEvent } from './test-helpers.ts'
+import { createTempDir, delay, liveWatcher, PATIENCE_MS } from './test-helpers.ts'
 
-// fs.watch({recursive: true}) under Bun on Linux can deliver no events at all
-// (a second watcher in the same process may stay silent) — watcher coverage
-// is macOS-only until that's resolved.
-const ignore = process.platform !== 'darwin'
+// These use the file system's own events, so they run only when asked: SKY_WATCH_TESTS=1, on a Mac.
+// fs.watch({recursive: true}) under Bun on Linux can deliver no events at all (a second watcher in
+// the same process may stay silent), and on a Mac fseventsd serves every watcher on the machine:
+// while it is busy — a sync client indexing its folders, say — deliveries stall for seconds.
+// mod_test.ts covers the watcher's behavior with scripted events on every machine.
+const ignore = process.platform !== 'darwin' || !env.get('SKY_WATCH_TESTS')
 
 test('MarkdownWatcher yields create event for new .md file', { ignore }, async () => {
   const tempDir = await createTempDir('mdwatch-create-')
-  const watcher = MarkdownWatcher.create()
-  const events: MarkdownWatcherEvent[] = []
+  const { events, stop } = await liveWatcher(tempDir, ['create', 'modify'])
 
-  const gen = watcher.run({ dirs: [tempDir], eventKinds: ['create', 'modify'] })
-  const collecting = (async () => {
-    for await (const event of gen) {
-      events.push(event)
-    }
-  })()
-
-  await delay(500)
-
-  // Watcher startup and event delivery are slow on CI runners: keep re-writing
-  // (same contents) until the watcher reports the file, up to a deadline. A
-  // rewrite fires a modify event even if the watcher missed the creation.
+  // Event delivery is slow on CI runners and under load: keep re-writing (same contents) until the
+  // watcher reports the file, up to a deadline. A rewrite fires a modify event even if the watcher
+  // missed the creation.
   const filePath = path.join(tempDir, 'test.md')
-  const deadline = performance.now() + 8000
+  const deadline = performance.now() + PATIENCE_MS
   while (performance.now() < deadline && !events.some((e) => e.file === filePath)) {
     await writeFile(filePath, '# Hello')
     await delay(250)
   }
 
-  watcher.close()
-  await collecting
+  await stop()
 
   const fileEvents = events.filter((e) => e.file === filePath)
 
@@ -58,23 +49,13 @@ test('MarkdownWatcher yields create event for new .md file', { ignore }, async (
 
 test('MarkdownWatcher ignores non-.md files', { ignore }, async () => {
   const tempDir = await createTempDir('mdwatch-ignore-')
-  const watcher = MarkdownWatcher.create()
-  const events: MarkdownWatcherEvent[] = []
-
-  const gen = watcher.run({ dirs: [tempDir], eventKinds: ['create', 'modify'] })
-  const collecting = (async () => {
-    for await (const event of gen) {
-      events.push(event)
-    }
-  })()
-
-  await delay(500)
+  const { events, stop } = await liveWatcher(tempDir, ['create', 'modify'])
 
   // Same re-write loop as above: writing both files each round also gives the
   // .txt file every chance to (wrongly) emit before the negative assertion.
   const txtPath = path.join(tempDir, 'test.txt')
   const mdPath = path.join(tempDir, 'test.md')
-  const deadline = performance.now() + 8000
+  const deadline = performance.now() + PATIENCE_MS
   while (performance.now() < deadline && !events.some((e) => e.file === mdPath)) {
     await writeFile(txtPath, 'plain text')
     await writeFile(mdPath, '# Markdown')
@@ -82,8 +63,7 @@ test('MarkdownWatcher ignores non-.md files', { ignore }, async () => {
   }
   await delay(300)
 
-  watcher.close()
-  await collecting
+  await stop()
 
   const txtEvents = events.filter((e) => e.file === txtPath)
   const mdEvents = events.filter((e) => e.file === mdPath)
