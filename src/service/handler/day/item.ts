@@ -15,6 +15,7 @@ import { hash, withLock } from '#lib/outbox/files.ts'
 import { updateWorkstreamDay, workstreamDayReference, workstreamDayRemoval } from '#lib/workstreams/day.ts'
 import { writeTextFile } from '#shared/fs/mod.ts'
 import DayDocument from '#shared/models/Day/mod.ts'
+import { createItemCategoryRoutes } from './category.ts'
 import { createEditingRoutes } from './editing.ts'
 import { ItemEditError } from './editingText.ts'
 import isDay from './isDay.ts'
@@ -141,6 +142,7 @@ export function createItemRoutes(options: ItemRoutesOptions): Hono {
   })
 
   app.route('/', rows.routes)
+  app.route('/', createItemCategoryRoutes())
   app.route('/', createPlanningRoutes(options))
   const organizer = createDayOrganizer(options)
   app.route('/', organizer.routes)

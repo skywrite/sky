@@ -273,6 +273,8 @@ export async function runWysiwygE2e(
     server = startAppServer(app, store, notebookChanges)
     const context = await browser.newContext()
     const page = await context.newPage()
+    // Category suggestions are scripted per test; the default never uses a real model or keychain.
+    await page.route('**/day/*/item/category', (route) => route.fulfill({ json: { category: null } }))
     const errors: string[] = []
     page.on('pageerror', (error) => errors.push(`pageerror: ${error.message}`))
     page.on('console', (message) => {

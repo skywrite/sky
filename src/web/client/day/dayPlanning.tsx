@@ -1,5 +1,5 @@
 import './dayPlanning.css'
-import { ActionIcon, Button, Checkbox, Drawer, Modal, Select, Textarea, TextInput } from '@mantine/core'
+import { ActionIcon, Button, Checkbox, Drawer, Loader, Modal, Select, Textarea, TextInput } from '@mantine/core'
 import { useMediaQuery } from '@mantine/hooks'
 import { type FormEvent, useEffect, useRef, useState } from 'react'
 import type { ClockSnapshot } from '../../../service/handler/clock/mod.ts'
@@ -15,6 +15,7 @@ import {
 import { fileHref } from '../explorer/explorer.tsx'
 import type { DayData } from './day.tsx'
 import { LinkedText } from './dayItemText.tsx'
+import { useItemCategory } from './useItemCategory.ts'
 
 const LABELS: Record<DayAddKind, string> = {
   todos: 'to-do',
@@ -24,6 +25,7 @@ const LABELS: Record<DayAddKind, string> = {
 }
 
 function PlanComposer({
+  ymd,
   kind,
   opened,
   categories,
@@ -34,6 +36,7 @@ function PlanComposer({
   onAdd,
   startTime,
 }: {
+  ymd: string
   kind: DayAddKind
   opened: boolean
   categories: string[]
@@ -46,7 +49,16 @@ function PlanComposer({
   startTime?: () => Promise<string | null>
 }) {
   const [text, setText] = useState('')
-  const [category, setCategory] = useState('Professional')
+  const {
+    category,
+    status: categoryStatus,
+    chooseCategory,
+  } = useItemCategory({
+    text,
+    opened: opened && kind !== 'reminders',
+    busy,
+    ymd,
+  })
   const [timed, setTimed] = useState(kind === 'commitments' || kind === 'complete')
   const [time, setTime] = useState('')
   const [invalidTime, setInvalidTime] = useState(false)
@@ -108,6 +120,8 @@ function PlanComposer({
       setInvalidLength(badLength)
       return
     }
+    // Accept the visible category so a late suggestion cannot change a failed save's retry.
+    chooseCategory(category)
     const input: DayPlanInput = {
       kind: destination,
       text,
@@ -164,7 +178,10 @@ function PlanComposer({
             value={category}
             allowDeselect={false}
             disabled={busy}
-            onChange={(value) => value && setCategory(value)}
+            rightSection={
+              categoryStatus === 'pending' ? <Loader size={14} aria-label="Choosing category" /> : undefined
+            }
+            onChange={(value) => value && chooseCategory(value)}
           />
         )}
         {kind !== 'reminders' &&
@@ -224,6 +241,11 @@ function PlanComposer({
           Add {LABELS[destination]}
         </Button>
       </div>
+      {categoryStatus === 'unavailable' && (
+        <p className="sky-plan-note" role="status">
+          Automatic category selection is unavailable. Check the category above before adding this item.
+        </p>
+      )}
       {timed && kind !== 'complete' && <p className="sky-plan-note">A time makes this a commitment.</p>}
       {(invalidTime || invalidLength || error) && (
         <p className="sky-plan-error" role="alert">
@@ -532,6 +554,7 @@ export function useDayPlanning(
       enabled ? (
         <PlanComposer
           key={`${ymd}/${kind}`}
+          ymd={ymd}
           kind={kind}
           opened={active === kind}
           categories={categories}
