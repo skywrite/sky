@@ -36,7 +36,7 @@ import { ChatCalendarDraft } from './chatCalendarDraft.tsx'
 import { clearChatDraft, useChatDraft, type ChatDraft } from './chatDraft.ts'
 import { FileClips, Paperclip, type PendingChatFile, useChatFiles } from './chatFiles.tsx'
 import { ChatImages, replyImages } from './chatImages.tsx'
-import { onChatLinkClick } from './chatLinks.ts'
+import { chatLinkHref, onChatLinkClick } from './chatLinks.ts'
 import { renderChatMarkdown, renderStreamingChatMarkdown } from './chatMarkdown.ts'
 import { chatMessageId, ChatTurnNavigation } from './chatNavigation.tsx'
 import { ChatPlanBar, ChatPlanPanel } from './chatPlan.tsx'
@@ -659,7 +659,7 @@ function reduce(state: ThreadState, action: Action): ThreadState {
 /** Markdown as HTML — null on any rendering failure, leaving the raw text to stand. */
 function renderMarkdown(raw: string, reply = false): string | null {
   try {
-    return reply ? renderChatMarkdown(raw) : renderStatic(raw)
+    return reply ? renderChatMarkdown(raw) : renderStatic(raw, chatLinkHref)
   } catch {
     return null
   }

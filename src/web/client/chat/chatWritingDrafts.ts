@@ -4,6 +4,7 @@ import type { Node } from '../editor/wysiwyg/model.ts'
 import { contextFor, renderExport, renderStatic } from '../editor/wysiwyg/render.ts'
 import { serializeChildren } from '../editor/wysiwyg/serializer.ts'
 import type { Run, Turn } from './chat.tsx'
+import { chatLinkHref } from './chatLinks.ts'
 import { legacySlackDraftMarkdown, parseChatMarkdown } from './chatMarkdown.ts'
 
 export type DraftReplyPart = { html: string } | { draftId: string; text: string }
@@ -29,7 +30,8 @@ export function splitWritingDrafts(source: string, drafts: WritingDraftView[]): 
     texts: draft.versions.map((version) => normalize(version.text)),
   }))
   const flush = () => {
-    if (blocks.length) parts.push({ html: renderExport(blocks, { ...contextFor(doc), rawAsText: true }) })
+    if (blocks.length)
+      parts.push({ html: renderExport(blocks, { ...contextFor(doc), resolveLink: chatLinkHref, rawAsText: true }) })
     blocks = []
   }
   for (const block of doc.blocks) {

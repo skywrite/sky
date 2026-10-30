@@ -1,6 +1,7 @@
 import { splitChatImages } from '#universal/ai/chatImages.ts'
 import { parseDocument, parseLines } from '../editor/wysiwyg/parser.ts'
 import { contextFor, renderExport } from '../editor/wysiwyg/render.ts'
+import { chatLinkHref } from './chatLinks.ts'
 import { slackToMarkdown } from './slackMarkdown.ts'
 
 // Older chat prompts required this subject/underline pair even in drafts shown for review.
@@ -17,7 +18,7 @@ export function renderChatMarkdown(source: string): string {
 
 function renderChatBlocks(source: string): string[] {
   const doc = parseChatMarkdown(source)
-  const context = { ...contextFor(doc), rawAsText: true }
+  const context = { ...contextFor(doc), resolveLink: chatLinkHref, rawAsText: true }
   return doc.blocks.map((block) => renderExport([block], context))
 }
 

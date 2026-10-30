@@ -16,6 +16,7 @@ import { RenderedHtml } from '../lib/renderedHtml.tsx'
 import { DaySchedule, MeetingDetails, meetingClock, meetingDayLabel, meetingRequest } from '../meetings/meeting.tsx'
 import { MeetingGoogleSignIn, useMeetingBrowser } from '../meetings/meetingBrowser.tsx'
 import type { Approval } from './chat.tsx'
+import { chatLinkHref } from './chatLinks.ts'
 import '../writing/writingDraft.css'
 import './chatCalendarDraft.css'
 
@@ -234,7 +235,7 @@ function MeetingPreview({
             <span>{fields.recurrence && 'Later dates aren’t checked. '}Guests’ availability isn’t checked.</span>
           </div>
         ) : summary ? (
-          <RenderedHtml className="sky-calendar-legacy sky-rendered" html={renderStatic(summary)} />
+          <RenderedHtml className="sky-calendar-legacy sky-rendered" html={renderStatic(summary, chatLinkHref)} />
         ) : null)}
       {draft.assumptions.length > 0 && (
         <details className="sky-calendar-assumptions">

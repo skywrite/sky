@@ -3,6 +3,7 @@ import { toolDisplayName } from '#universal/ai/toolDisplay.ts'
 import { renderStatic } from '../editor/wysiwyg/render.ts'
 import { fileHref } from '../explorer/explorer.tsx'
 import { RenderedHtml } from '../lib/renderedHtml.tsx'
+import { chatLinkHref } from './chatLinks.ts'
 import { type CallEntry, GRAPHQL, graphqlTokens, humanize, parseToolLine, type ToolEntry } from './toolLines.ts'
 
 /** A notebook-relative markdown path — a file with a page of its own. */
@@ -50,7 +51,7 @@ function TextBlock({ text, className }: { text: string; className: string }) {
 
 function render(markdown: string): string | null {
   try {
-    return renderStatic(markdown)
+    return renderStatic(markdown, chatLinkHref)
   } catch {
     return null
   }

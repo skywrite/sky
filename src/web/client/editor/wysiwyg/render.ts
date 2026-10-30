@@ -160,9 +160,9 @@ export function renderExport(nodes: Node[], context: RenderContext): string {
 }
 
 /** Markdown source → export HTML with raw regions shown as text — read-only views (chat replies) that inject the result. */
-export function renderStatic(source: string): string {
+export function renderStatic(source: string, resolveLink?: RenderContext['resolveLink']): string {
   const doc = parseDocument(source)
-  return renderExport(doc.blocks, { ...contextFor(doc), rawAsText: true })
+  return renderExport(doc.blocks, { ...contextFor(doc), resolveLink, rawAsText: true })
 }
 
 function exportInline(node: Node, context: RenderContext): string {

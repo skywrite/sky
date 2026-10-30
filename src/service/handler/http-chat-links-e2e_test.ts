@@ -3,9 +3,13 @@ import { runWysiwygE2e } from './httpWysiwygE2eTestHelpers.ts'
 
 const THREAD = 'atlas-links'
 const BRIEF = 'projects/Atlas/Brief.md'
+const JOURNAL = 'time/2030/W14/04-01/journal/Reflection.md'
+const ROSTER = 'time/2030/W14/04-02/actions/messages/Guest list.md'
 const SAVED_BRANCH = 'projects/Atlas/Board-outline.md'
 const REPLY = [
   'Read [the Atlas brief](/explorer/projects/Atlas/Brief.md) and [the status page](https://example.com/status).',
+  '',
+  `The [journal entry](${JOURNAL}) and [guest list](${ROSTER.replaceAll(' ', '%20')}) have the count.`,
   '',
   'The [checklist below](#checklist) has the rest.',
 ].join('\n')
@@ -37,7 +41,11 @@ test(
         day: true,
         // A browser's ordinary rules: a page opens a tab only inside the person's click.
         popupBlocking: true,
-        files: { [BRIEF]: '# Atlas brief\n\nThe launch plan.\n' },
+        files: {
+          [BRIEF]: '# Atlas brief\n\nThe launch plan.\n',
+          [JOURNAL]: '# Reflection\n\nThe balcony holds twelve guests.\n',
+          [ROSTER]: '# Guest list\n\nJane Doe and the Atlas team.\n',
+        },
       },
       async ({ page, origin, errors }) => {
         const context = page.context()
@@ -87,6 +95,12 @@ test(
 
         const chatUrl = page.url()
         const chatTitle = await page.title()
+        assert({
+          given: 'a direct load of a chat with notebook citations',
+          should: 'identify the conversation in the browser tab',
+          actual: chatTitle,
+          expected: 'sky:chat - Where do I start?',
+        })
         const chatDocument = await page.evaluateHandle(() => document)
         const chat = async () => ({
           url: page.url(),
@@ -107,6 +121,34 @@ test(
           expected: unchanged,
         })
         await brief.close()
+
+        for (const [label, file, text] of [
+          ['journal entry', JOURNAL, 'The balcony holds twelve guests.'],
+          ['guest list', ROSTER, 'Jane Doe and the Atlas team.'],
+        ]) {
+          const link = reply.getByRole('link', { name: label!, exact: true })
+          const href = `/explorer/${file!.split('/').map(encodeURIComponent).join('/')}`
+          assert({
+            given: 'a notebook-relative citation in a chat opened from a day',
+            should: 'provide the document URL to ordinary and browser-native link actions',
+            actual: await link.getAttribute('href'),
+            expected: href,
+          })
+          const fileTab = context.waitForEvent('page')
+          await link.click()
+          const document = await fileTab
+          await document.waitForURL(`${origin}${href}`)
+          await document.getByText(text!, { exact: true }).waitFor()
+          assert({
+            given: 'a click on a notebook-relative citation',
+            should: 'open its actual document while keeping the chat and its title intact',
+            actual: { chat: await chat(), documentTitle: await document.title() },
+            expected: { chat: unchanged, documentTitle: `sky · ${file!.split('/').pop()!.replace(/\.md$/, '')}` },
+          })
+          await document.reload()
+          await document.getByText(text!, { exact: true }).waitFor()
+          await document.close()
+        }
 
         const statusTab = context.waitForEvent('page')
         await reply.getByRole('link', { name: 'the status page', exact: true }).click()
@@ -135,10 +177,10 @@ test(
         await chatDocument.dispose()
 
         assert({
-          given: 'a jump within the reply, then three links',
+          given: 'a jump within the reply, then five links',
           should: 'open one tab per link and none for the jump',
           actual: tabs,
-          expected: 3,
+          expected: 5,
         })
         assert({
           given: 'the chat and the tabs it opened',

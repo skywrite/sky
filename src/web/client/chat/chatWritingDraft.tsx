@@ -4,6 +4,7 @@ import type { WritingDraftView } from '#lib/writingVoice/draftTypes.ts'
 import { renderStatic } from '../editor/wysiwyg/render.ts'
 import { RenderedHtml } from '../lib/renderedHtml.tsx'
 import { WritingDraftEditor } from '../writing/writingDraft.tsx'
+import { chatLinkHref } from './chatLinks.ts'
 import { splitWritingDrafts, writingDraftRequest } from './chatWritingDrafts.ts'
 
 export const writingDraftAnchor = (chatId: string, id: string) => `writing-draft-${chatId}-${id}`
@@ -37,7 +38,7 @@ export function ChatWritingDraft({
 }
 
 function WritingDraftSnapshot({ draft, text }: { draft: WritingDraftView; text: string }) {
-  const html = useMemo(() => renderStatic(text), [text])
+  const html = useMemo(() => renderStatic(text, chatLinkHref), [text])
   const [copy, setCopy] = useState<'idle' | 'copied' | 'failed'>('idle')
   useEffect(() => {
     if (copy === 'idle') return

@@ -1,5 +1,13 @@
 import type { MouseEvent } from 'react'
 
+/** Notebook paths in messages are relative to the notebook root, not the thread's browser URL. */
+export function chatLinkHref(href: string): string {
+  if (/^(?:[a-z][a-z\d+.-]*:|\/|[?#])/i.test(href)) return href
+  const url = new URL(href, 'https://notebook.invalid/')
+  if (!/\.md$/i.test(url.pathname)) return href
+  return `/explorer${url.pathname}${url.search}${url.hash}`
+}
+
 /**
  * A link in a chat opens in a new tab, so the conversation stays where it is. The browser keeps the
  * rest: a click with a key held, a link that names where it opens, a download, a jump within the

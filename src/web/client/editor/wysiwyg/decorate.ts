@@ -10,6 +10,8 @@ import type { InlineNode } from './lexer.ts'
 export type DecorateMode = 'editing' | 'export'
 
 export interface DecorateContext {
+  /** Turns a link destination as written into the URL the browser opens. */
+  resolveLink?: (href: string) => string
   /** Turns an image source as written into the URL the browser loads. */
   resolveImage?: (src: string) => string
   /** Raw HTML becomes visible text — for read-only views that inject the export into the live page. */
@@ -41,8 +43,9 @@ function editing(node: InlineNode, context: DecorateContext): string {
       return `<span data-inline="${node.kind}" class="paired">${syntax(node.delim, 'before')}<${tag}>${renderInline(node.children, 'editing', context)}</${tag}>${syntax(node.delim, 'after')}</span>`
     }
     case 'link': {
+      const href = context.resolveLink ? context.resolveLink(node.href) : node.href
       const title = node.title === null ? '' : ` title="${escapeAttr(node.title)}"`
-      const inner = `<a href="${escapeAttr(node.href)}"${title} spellcheck="false">${renderInline(node.children, 'editing', context)}</a>`
+      const inner = `<a href="${escapeAttr(href)}"${title} spellcheck="false">${renderInline(node.children, 'editing', context)}</a>`
       let tail: string
       switch (node.form) {
         case 'inline':
@@ -66,7 +69,8 @@ function editing(node: InlineNode, context: DecorateContext): string {
       return `<span data-inline="image" contenteditable="false"><span class="syntax content" contenteditable="true">${escapeHtml(node.text)}</span><img src="${escapeAttr(src)}" alt="${escapeAttr(node.alt)}"${title}></span>`
     }
     case 'autolink': {
-      const anchor = `<a href="${escapeAttr(node.href)}" spellcheck="false">${escapeHtml(node.text)}</a>`
+      const href = context.resolveLink ? context.resolveLink(node.href) : node.href
+      const anchor = `<a href="${escapeAttr(href)}" spellcheck="false">${escapeHtml(node.text)}</a>`
       return node.bracketed
         ? `<span data-inline="autolink">${syntax('<', 'before')}${anchor}${syntax('>', 'after')}</span>`
         : `<span data-inline="autolink">${anchor}</span>`
@@ -109,16 +113,19 @@ function exported(node: InlineNode, context: DecorateContext): string {
       return `<${tag}>${renderInline(node.children, 'export', context)}</${tag}>`
     }
     case 'link': {
+      const href = context.resolveLink ? context.resolveLink(node.href) : node.href
       const title = node.title === null ? '' : ` title="${escapeAttr(node.title)}"`
-      return `<a href="${escapeAttr(node.href)}"${title}>${renderInline(node.children, 'export', context)}</a>`
+      return `<a href="${escapeAttr(href)}"${title}>${renderInline(node.children, 'export', context)}</a>`
     }
     case 'image': {
       const src = context.resolveImage ? context.resolveImage(node.src) : node.src
       const title = node.title === null ? '' : ` title="${escapeAttr(node.title)}"`
       return `<img src="${escapeAttr(src)}" alt="${escapeAttr(node.alt)}"${title}>`
     }
-    case 'autolink':
-      return `<a href="${escapeAttr(node.href)}">${escapeHtml(node.text)}</a>`
+    case 'autolink': {
+      const href = context.resolveLink ? context.resolveLink(node.href) : node.href
+      return `<a href="${escapeAttr(href)}">${escapeHtml(node.text)}</a>`
+    }
     case 'html':
       return context.rawAsText ? escapeHtml(node.text) : node.text
     case 'underline':

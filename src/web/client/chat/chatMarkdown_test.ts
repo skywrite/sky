@@ -2,6 +2,55 @@ import { assert, test } from '#test'
 import { renderStatic } from '../editor/wysiwyg/render.ts'
 import { renderChatMarkdown, renderStreamingChatMarkdown, settleStreamingMarkdown } from './chatMarkdown.ts'
 
+test('chat notebook links open the file page instead of a path under the thread', () => {
+  for (const [source, href] of [
+    ['[the journal](time/2030/W14/04-01/journal/Reflection.md)', '/explorer/time/2030/W14/04-01/journal/Reflection.md'],
+    ['[the roster](./projects/Atlas/Roster.md#guests)', '/explorer/projects/Atlas/Roster.md#guests'],
+    ['[the plan](<projects/Atlas/Launch plan.md>)', '/explorer/projects/Atlas/Launch%20plan.md'],
+    [
+      '[the plan](projects/Atlas/Launch%20plan.md?view=read#next)',
+      '/explorer/projects/Atlas/Launch%20plan.md?view=read#next',
+    ],
+    ['[the plan][plan]\n\n[plan]: projects/Atlas/Plan.md "Review"', '/explorer/projects/Atlas/Plan.md'],
+  ]) {
+    const finished = renderChatMarkdown(source!)
+    assert({
+      given: 'a notebook-relative Markdown link in a chat reply',
+      should: 'render an absolute Explorer URL, including when the reply is still arriving',
+      actual: {
+        finished: finished.match(/href="([^"]*)"/)?.[1],
+        streaming: renderStreamingChatMarkdown(source!)
+          .join('\n')
+          .match(/href="([^"]*)"/)?.[1],
+      },
+      expected: { finished: href, streaming: href },
+    })
+  }
+})
+
+test('chat notebook links leave web addresses, app routes, and in-page jumps intact', () => {
+  for (const href of [
+    'https://example.com/Guide.md',
+    '//example.com/Guide.md',
+    '/explorer/projects/Atlas/Brief.md',
+    '/thread/atlas',
+    '/chat/attachments/example/Plan.md',
+    '#checklist',
+    '?view=read',
+    'mailto:jane@example.com',
+    'file:///tmp/Plan.md',
+    'tel:+15555550100',
+  ]) {
+    const source = `[Read](${href})`
+    assert({
+      given: `a chat link to ${href}`,
+      should: 'keep its original destination',
+      actual: renderChatMarkdown(source),
+      expected: renderStatic(source),
+    })
+  }
+})
+
 test('chat markdown renders a legacy Slack draft as readable prose', () => {
   const source = [
     'Here is the draft:',
