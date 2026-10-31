@@ -718,6 +718,9 @@
   flex: 1;
   min-width: 0;
 }
+.sky-action-markdown > :last-child {
+  margin-bottom: 0;
+}
 .sky-action-source {
   margin-bottom: 20px;
   line-height: 1.5;
@@ -748,19 +751,6 @@
 .sky-action-place .sky-check {
   margin-top: 10px;
 }
-.sky-action-input {
-  font: inherit;
-  font-size: 18px;
-  line-height: 1.55;
-  color: var(--sky-text);
-  background: transparent;
-  border: 1px solid var(--sky-border-soft);
-  border-radius: 8px;
-  padding: 7px 10px;
-}
-.sky-action-input:focus {
-  border-color: var(--sky-accent);
-}
 .sky-action-controls {
   display: flex;
   align-items: center;
@@ -778,6 +768,14 @@
   width: 18px;
   height: 18px;
   border-radius: 6px;
+}
+.sky-placed-description {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.sky-placed-description .sky-action-markdown,
+.sky-placed-description .sky-action-markdown > p {
+  display: inline;
 }
 .sky-placed-time {
   font-variant-numeric: tabular-nums;

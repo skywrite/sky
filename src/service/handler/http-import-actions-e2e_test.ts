@@ -25,18 +25,18 @@ Keep the release small.
 
 ## Action Items (me)
 
-- Draft the checklist
-- Review the budget
+- **Draft** the [checklist](https://example.com/checklist)
+- Review the \`budget\`
 
 ## Action Items (others)
 
-- Alex Chen: check the timeline
+- **Alex Chen:** check the *timeline*
 `
 const WHEN = { date: '2026-01-28', time: null }
 
 test(
   {
-    name: 'import action review edits every item, adds tasks, and saves the source notes on desktop and phone',
+    name: 'import action review renders Markdown, edits every item, and saves the notes on desktop and phone',
     timeout: 60000,
   },
   async (t) => {
@@ -124,6 +124,7 @@ test(
           await page.goto(`${origin}/import/${job.id}`)
           if (editable) await page.getByRole('button', { name: '+ Add action item', exact: true }).waitFor()
           else await page.getByRole('button', { name: 'Accept 1', exact: true }).waitFor()
+          await page.waitForFunction((title) => document.title === `sky · ${title}`, job.title)
         }
         await page.setViewportSize({ width: 1440, height: 1100 })
         await start()
@@ -137,13 +138,35 @@ test(
             `/explorer/${FILE}`,
           ],
         })
+        assert({
+          given: 'Markdown descriptions from the meeting summary',
+          should: 'show formatted owners, emphasis, code and links without raw markup',
+          actual: [
+            await page.getByRole('textbox', { name: 'Action item 1', exact: true }).innerText(),
+            await page.getByRole('textbox', { name: 'Action item 2', exact: true }).innerText(),
+            await page.getByRole('textbox', { name: 'Action item 3', exact: true }).innerText(),
+            await page.locator('.sky-action-input strong').allTextContents(),
+            await page.locator('.sky-action-input em').allTextContents(),
+            await page.locator('.sky-action-input code').allTextContents(),
+            await page.locator('.sky-action-input a').getAttribute('href'),
+          ],
+          expected: [
+            'Draft the checklist',
+            'Review the budget',
+            'Alex Chen: check the timeline',
+            ['Draft', 'Alex Chen:'],
+            ['timeline'],
+            ['budget'],
+            'https://example.com/checklist',
+          ],
+        })
         await page
           .getByRole('textbox', { name: 'Action item 1', exact: true })
-          .fill('Draft the Atlas release checklist')
+          .fill('**Draft** the [Atlas release checklist](https://example.com/checklist)')
         await page.getByRole('textbox', { name: 'Action item 2', exact: true }).fill('Review the revised Atlas budget')
         await page
           .getByRole('textbox', { name: 'Action item 3', exact: true })
-          .fill('Alex Chen: confirm the release timeline')
+          .fill('**Alex Chen:** confirm the *release timeline*')
         await page.getByRole('button', { name: '+ Add action item', exact: true }).click()
         await page
           .getByRole('textbox', { name: 'Action item 4', exact: true })
@@ -183,13 +206,16 @@ test(
             await page.locator('.sky-placed-item').allTextContents(),
           ],
           expected: [
-            NOTES.replace('Draft the checklist', 'Draft the Atlas release checklist')
+            NOTES.replace('the [checklist]', 'the [Atlas release checklist]')
               .replace(
-                'Review the budget',
+                'Review the `budget`',
                 'Review the revised Atlas budget\n- Send the launch checklist and meeting recap to the team\n- Discuss support coverage',
               )
-              .replace('Alex Chen: check the timeline', 'Alex Chen: confirm the release timeline'),
-            ['Draft the Atlas release checklist', 'Send the launch checklist and meeting recap to the team'],
+              .replace('check the *timeline*', 'confirm the *release timeline*'),
+            [
+              '**Draft** the [Atlas release checklist](https://example.com/checklist)',
+              'Send the launch checklist and meeting recap to the team',
+            ],
             ['Draft the Atlas release checklist', 'Send the launch checklist and meeting recap to the team'],
           ],
         })
@@ -199,6 +225,32 @@ test(
           actual: routed.every((text) => text.includes(`[Atlas planning · 2026-01-27](/${FILE})`)),
           expected: true,
         })
+        assert({
+          given: 'the accepted tasks confirmation',
+          should: 'keep the description formatted with its link',
+          actual: [
+            await page.locator('.sky-placed-item strong').textContent(),
+            await page.locator('.sky-placed-item a').getAttribute('href'),
+          ],
+          expected: ['Draft', 'https://example.com/checklist'],
+        })
+
+        const importTitle = await page.title()
+        await page.getByRole('button', { name: '‹ Today', exact: true }).click()
+        await page.waitForFunction(
+          (title) => document.title.startsWith('sky · ') && document.title !== title,
+          importTitle,
+        )
+        await page.goBack()
+        await page.locator('.sky-placed').waitFor()
+        assert({
+          given: 'browser Back to the reviewed import',
+          should: 'restore its specific page title',
+          actual: await page.title(),
+          expected: importTitle,
+        })
+        await page.goForward()
+        await page.waitForFunction((title) => document.title !== title, importTitle)
 
         await writeFile(file, NOTES.split('## Action Items')[0])
         await start()

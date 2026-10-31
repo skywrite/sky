@@ -1,0 +1,32 @@
+.sky-action-input {
+  position: relative;
+  min-height: 44px;
+  font: inherit;
+  font-size: 18px;
+  line-height: 1.55;
+  color: var(--sky-text);
+  background: transparent;
+  border: 1px solid var(--sky-border-soft);
+  border-radius: 8px;
+  padding: 7px 10px;
+}
+.sky-action-input:focus {
+  border-color: var(--sky-accent);
+}
+.sky-action-input > :last-child {
+  margin-bottom: 0;
+}
+.sky-action-input[data-empty]::before {
+  content: attr(aria-placeholder);
+  position: absolute;
+  color: var(--sky-dim);
+  pointer-events: none;
+}
+.sky-action-input[aria-invalid] {
+  border-color: var(--mantine-color-red-7);
+}
+.sky-action-error {
+  margin-top: 5px;
+  font-size: 14px;
+  color: var(--mantine-color-red-7);
+}

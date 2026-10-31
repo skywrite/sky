@@ -65,6 +65,7 @@ import { expectJournalTabs, openCompletedJournals, openJournalTabs } from '../jo
 import { JournalTypesReview } from '../journal/journalTypes.tsx'
 import { RenderedHtml } from '../lib/renderedHtml.tsx'
 import { LinksInput } from '../links/links.tsx'
+import { ActionItemEditor } from './ActionItemEditor.tsx'
 import { DocumentSummaryDialog } from './documentImport.tsx'
 
 /**
@@ -2242,7 +2243,7 @@ function ActionItems({
                 )}
               </span>
             </button>
-            <span style={{ flex: 1, minWidth: 0 }}>{o.label}</span>
+            <RenderedHtml className="sky-doc-body sky-action-text sky-action-markdown" html={renderStatic(o.label)} />
             {mine && <span className="sky-action-me">me</span>}
             {dest && <span className="sky-action-dest">{dest}</span>}
           </div>
@@ -2408,22 +2409,20 @@ function PlaceItems({
               </span>
             </button>
             {editable ? (
-              <Textarea
-                classNames={{ root: 'sky-action-text', input: 'sky-action-input' }}
-                aria-label={`Action item ${index + 1}`}
-                placeholder="What needs to happen?"
-                autosize
-                minRows={1}
+              <ActionItemEditor
+                label={`Action item ${index + 1}`}
                 value={item.label}
                 autoFocus={item.value.startsWith('new-')}
-                onChange={(e) => {
-                  const label = e.currentTarget.value
+                onChange={(label) => {
                   setItems((prev) => prev.map((row) => (row.value === item.value ? { ...row, label } : row)))
                 }}
                 error={!item.label.trim() && !item.value.startsWith('new-') ? 'Add a description.' : undefined}
               />
             ) : (
-              <span className="sky-action-text">{item.label}</span>
+              <RenderedHtml
+                className="sky-doc-body sky-action-text sky-action-markdown"
+                html={renderStatic(item.label)}
+              />
             )}
             <div className="sky-action-controls">
               {item.mine && <span className="sky-action-me">me</span>}
@@ -2789,11 +2788,11 @@ function Placed({ placed, lines }: { placed: NonNullable<Derived['placed']>; lin
                   <span className="sky-check-box" data-on={row.problem === null}>
                     {row.problem === null && Tick}
                   </span>
-                  <span>
+                  <div className="sky-placed-description">
                     {row.time && <span className="sky-placed-time">{row.time} › </span>}
-                    {row.text}
+                    <RenderedHtml className="sky-doc-body sky-action-markdown" html={renderStatic(row.text)} />
                     {row.problem && <span className="sky-placed-fail"> · didn't land: {row.problem}</span>}
-                  </span>
+                  </div>
                 </div>
               ))}
             </div>
