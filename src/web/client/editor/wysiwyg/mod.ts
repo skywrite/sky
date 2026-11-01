@@ -138,6 +138,8 @@ export interface EditorHandle {
   replaceText(edits: TextEdit[], text: string): number
   /** Selects a stretch of a block and gives the editor the keys. */
   selectText(span: TextSpan): void
+  /** Finish pending saves before the host stops editing and moves the file to the Trash. */
+  savePending(): Promise<void>
   destroy(): void
 }
 
@@ -165,6 +167,7 @@ export function mountEditor(root: HTMLElement, state: EditorState, hooks: Editor
     focusEnd: () => editor.focusEnd(),
     replaceText: (edits, text) => editor.replaceText(edits, text),
     selectText: (span) => editor.selectText(span),
+    savePending: () => editor.savePending(),
     destroy: () => editor.destroy(),
   }
 }
@@ -213,6 +216,7 @@ class Editor {
   private version: number
   private dirty = false
   private saving = false
+  private saveTask: ReturnType<typeof saveDocument> | null = null
   private conflict = false
   private destroyed = false
   private composing = false
@@ -2341,6 +2345,16 @@ class Editor {
     this.saveTimer = null
   }
 
+  async savePending(): Promise<void> {
+    this.clearSaveTimer()
+    if (this.saveTask) await this.saveTask
+    this.clearSaveTimer()
+    if (this.dirty) await this.save(false)
+    this.clearSaveTimer()
+    if (this.conflict) throw new Error('Resolve the changes on disk with Reload or Overwrite, then try Delete again.')
+    if (this.dirty) throw new Error('Your latest edits could not be saved. Try Delete again once they are saved.')
+  }
+
   async save(force: boolean) {
     if (this.state.local) {
       this.hooks.onChange?.(this.content())
@@ -2356,7 +2370,8 @@ class Editor {
     this.saving = true
     this.hooks.onStatus('saving', 'Saving…')
     try {
-      const result = await saveDocument(this.state.apiPath, content, this.version, force)
+      this.saveTask = saveDocument(this.state.apiPath, content, this.version, force)
+      const result = await this.saveTask
       if (result.status === 'conflict') {
         this.conflict = true
         this.hooks.onConflict(true)
@@ -2378,6 +2393,7 @@ class Editor {
       if (!this.destroyed) this.scheduleSave(SAVE_RETRY_MS)
     } finally {
       this.saving = false
+      this.saveTask = null
     }
   }
 

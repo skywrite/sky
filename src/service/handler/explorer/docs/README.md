@@ -1,6 +1,6 @@
 ---
 created: 2026-08-30
-updated: 2026-10-26
+updated: 2026-10-31
 ---
 
 # Explorer — the notebook's files as pages
@@ -22,6 +22,8 @@ files it holds, one row per entry; `/explorer` itself lists the roots.
   aside, comments left out, relative images and file links pointed at
   the file API.
 - `remove.ts` — Delete, the last item of the ⋯ menu.
+  It is available while reading or editing and directly on a meeting's page.
+  Editing finishes pending saves before the file moves, so Undo restores the latest edits.
   `POST /explorer/_api/remove` moves the file to the Trash and takes every
   line of its day that links to it off the day file; `POST …/undo` puts
   both back while the toast still holds Undo. See

@@ -20,12 +20,14 @@
 }
 
 /* The toast after Delete sits low in the column, like the day's Files page's, and wide for the names it carries. */
-.sky-main-rail > .sky-doc-undo {
+.sky-main-rail > .sky-doc-undo,
+.sky-workspace-page > .sky-doc-undo {
   bottom: 40px;
   max-width: min(92%, 960px);
 }
 
-.sky-main-rail > .sky-doc-undo[data-failed='true'] .sky-undo-text {
+.sky-main-rail > .sky-doc-undo[data-failed='true'] .sky-undo-text,
+.sky-workspace-page > .sky-doc-undo[data-failed='true'] .sky-undo-text {
   color: var(--sky-action-danger);
 }
 

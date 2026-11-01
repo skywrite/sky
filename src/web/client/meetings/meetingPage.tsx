@@ -18,6 +18,7 @@ import { ExtensionFileActions, ExtensionFileCards } from '../extensions/extensio
 import { homeOf, railSectionOf } from '../frontmatter/kinds.ts'
 import { PropRow } from '../frontmatter/rows.tsx'
 import { type FrontmatterState, useFrontmatter } from '../frontmatter/useFrontmatter.ts'
+import type { FileRemoval } from '../lib/useFileRemoval.ts'
 import { useRail } from '../shell/rail.ts'
 import { RailToggle } from '../shell/railToggle.tsx'
 
@@ -388,10 +389,20 @@ export function MeetingRail({
 }
 
 /** The page: the day as the way back, the header, the trimmed write-up, and the column. */
-export function MeetingMain({ ymd, slug, go }: { ymd: string; slug: string; go: (to: string) => void }) {
+export function MeetingMain({
+  ymd,
+  slug,
+  go,
+  removal,
+}: {
+  ymd: string
+  slug: string
+  go: (to: string) => void
+  removal: FileRemoval
+}) {
   const { view, doc, missing } = useMeetingPage(ymd, slug)
-  const file = view?.path ?? ''
-  const frontmatter = useFrontmatter(doc?.frontmatter ? doc.frontmatter : null, file)
+  const file = view?.day === ymd && view.path.endsWith(`/${slug}.md`) ? view.path : ''
+  const frontmatter = useFrontmatter(doc?.path === file ? doc.frontmatter : null, file)
   const { open: railOpen, toggle: toggleRail } = useRail(`${ymd}/${slug}`)
   const [scale] = useDocScale()
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -399,7 +410,11 @@ export function MeetingMain({ ymd, slug, go }: { ymd: string; slug: string; go: 
     scrollRef.current?.scrollTo(0, 0)
   }, [ymd, slug])
   const day = `/${ymd}`
-  const ready = view !== null && doc !== null
+  const ready = !missing && file !== '' && view !== null && doc !== null && doc.path === file
+  const title = !missing && file && view ? view.title : `Meeting · ${ymd}`
+  useEffect(() => {
+    document.title = `sky · ${title}`
+  }, [title])
 
   return (
     <div className="sky-main sky-main-rail" data-rail={railOpen ? 'open' : 'closed'}>
@@ -430,6 +445,19 @@ export function MeetingMain({ ymd, slug, go }: { ymd: string; slug: string; go: 
                 </Menu.Target>
                 <Menu.Dropdown>
                   <Menu.Item onClick={() => go(fileHref(file))}>Open in Explorer</Menu.Item>
+                  <Menu.Divider />
+                  <Menu.Item
+                    className="sky-menu-danger"
+                    disabled={removal.removing}
+                    onClick={() =>
+                      void removal.remove(file, {
+                        after: day,
+                        restore: `${day}/meetings/${encodeURIComponent(slug)}`,
+                      })
+                    }
+                  >
+                    Delete
+                  </Menu.Item>
                 </Menu.Dropdown>
               </Menu>
             </nav>

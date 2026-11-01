@@ -1,9 +1,9 @@
 import { existsSync } from 'node:fs'
-import { readdir, readFile } from 'node:fs/promises'
+import { readdir, readFile, writeFile } from 'node:fs/promises'
 import * as path from 'node:path'
 import { env } from '#shared/sys/mod.ts'
 import { assert, test } from '#test'
-import { runWysiwygE2e } from './httpWysiwygE2eTestHelpers.ts'
+import { openEditor, placeCaret, ROOT, runWysiwygE2e } from './httpWysiwygE2eTestHelpers.ts'
 
 const DAY_DIR = 'time/2026/W05/01-28'
 const ROADMAP = `${DAY_DIR}/notes/09-15_Roadmap.md`
@@ -114,6 +114,230 @@ test(
             day: DAY_MD,
             errors: [],
           },
+        })
+      },
+    )
+  },
+)
+
+for (const doneFirst of [false, true]) {
+  test(
+    {
+      name: `explorer - Delete ${doneFirst ? 'after Done' : 'while editing'} waits for autosave and keeps the latest edits for Undo`,
+      timeout: 40000,
+    },
+    async (t) => {
+      await runWysiwygE2e(
+        t,
+        {
+          initialMarkdown: '# Roadmap\n\nDraft.',
+          tempPrefix: 'explorer-delete-editing-e2e-',
+          file: ROADMAP,
+          files: { [DAY_FILE]: DAY_MD, [OTHER]: '# Other\n' },
+        },
+        async ({ page, origin, file, trash, errors }) => {
+          const started = Promise.withResolvers<void>()
+          const release = Promise.withResolvers<void>()
+          const saves: string[] = []
+          let deletes = 0
+          page.on('request', (request) => {
+            if (request.url().endsWith('/explorer/_api/remove')) deletes++
+          })
+          await page.route('**/docs/_api/content/**', async (route) => {
+            if (route.request().method() === 'PUT') {
+              saves.push(route.request().postDataJSON().content as string)
+              if (saves.length === 1) {
+                started.resolve()
+                await release.promise
+              }
+            }
+            await route.continue()
+          })
+          try {
+            await openEditor(page, origin, ROADMAP)
+            await placeCaret(page, `${ROOT} p`, 6)
+            await page.keyboard.type(' First edit.')
+            await started.promise
+            await page.keyboard.type(' Latest edit.')
+            if (doneFirst) await page.getByRole('button', { name: 'Done', exact: true }).click()
+            await page.getByRole('button', { name: 'More', exact: true }).click()
+            await page.getByRole('menuitem', { name: 'Delete', exact: true }).click()
+            await page.locator('.sky-main[inert]').waitFor()
+            assert({
+              given: 'Delete chosen while one save is in flight and newer edits are pending',
+              should: 'wait before moving the file',
+              actual: [deletes, existsSync(file)],
+              expected: [0, true],
+            })
+            release.resolve()
+            await page.locator('.sky-dir').waitFor()
+            await page.locator('.sky-doc-undo').waitFor()
+            // Longer than the save debounce: neither unmount nor a leftover timer may recreate the file.
+            await page.waitForTimeout(1500)
+            assert({
+              given: 'the held save finishes',
+              should: 'save the newer edit before deletion, then leave only its latest content in the Trash',
+              actual: {
+                saves: saves.length,
+                latest: saves.at(-1)?.includes('First edit. Latest edit.'),
+                deletes,
+                gone: !existsSync(file),
+                trashed: (await readFile(path.join(trash, '09-15_Roadmap.md'), 'utf8')).includes(
+                  'First edit. Latest edit.',
+                ),
+              },
+              expected: { saves: 2, latest: true, deletes: 1, gone: true, trashed: true },
+            })
+            await page.getByRole('button', { name: 'Undo', exact: true }).click()
+            await page.getByRole('heading', { name: 'Roadmap', exact: true }).waitFor()
+            assert({
+              given: 'Undo after deleting from edit mode',
+              should: 'restore the latest edits and the day link without browser errors',
+              actual: [
+                (await readFile(file, 'utf8')).includes('First edit. Latest edit.'),
+                await readFile(path.join(path.dirname(trash), DAY_FILE), 'utf8'),
+                errors,
+              ],
+              expected: [true, DAY_MD, []],
+            })
+          } finally {
+            release.resolve()
+          }
+        },
+      )
+    },
+  )
+}
+
+test(
+  { name: 'explorer - a failed pending save keeps the editor and allows Delete to be retried', timeout: 40000 },
+  async (t) => {
+    await runWysiwygE2e(
+      t,
+      {
+        initialMarkdown: '# Roadmap\n\nDraft.',
+        tempPrefix: 'explorer-delete-save-failure-e2e-',
+        file: ROADMAP,
+        files: { [DAY_FILE]: DAY_MD, [OTHER]: '# Other\n' },
+      },
+      async ({ page, origin, file }) => {
+        let failSave = true
+        let deletes = 0
+        page.on('request', (request) => {
+          if (request.url().endsWith('/explorer/_api/remove')) deletes++
+        })
+        await page.route('**/docs/_api/content/**', (route) =>
+          route.request().method() === 'PUT' && failSave
+            ? route.fulfill({ status: 503, json: { message: 'Temporary save failure' } })
+            : route.continue(),
+        )
+        await openEditor(page, origin, ROADMAP)
+        await placeCaret(page, `${ROOT} p`, 6)
+        await page.keyboard.type(' Keep these edits.')
+        await page.getByRole('button', { name: 'More', exact: true }).click()
+        await page.getByRole('menuitem', { name: 'Delete', exact: true }).click()
+        await page.locator('.sky-doc-undo[data-failed="true"]').waitFor()
+        assert({
+          given: 'the pending edit cannot be saved before deleting',
+          should: 'identify the file, explain how to retry, and keep its unsaved editor content without deleting',
+          actual: [
+            deletes,
+            existsSync(file),
+            await page.locator(ROOT).textContent(),
+            await page.locator('.sky-undo-text').textContent(),
+          ],
+          expected: [
+            0,
+            true,
+            'RoadmapDraft. Keep these edits.',
+            'Could not delete “09-15_Roadmap.md”. Your latest edits could not be saved. Try Delete again once they are saved.',
+          ],
+        })
+        failSave = false
+        await page.getByRole('button', { name: 'More', exact: true }).click()
+        await page.getByRole('menuitem', { name: 'Delete', exact: true }).click()
+        await page.locator('.sky-dir').waitFor()
+        await page.getByRole('button', { name: 'Undo', exact: true }).click()
+        await page.getByRole('heading', { name: 'Roadmap', exact: true }).waitFor()
+        assert({
+          given: 'saving works on the next Delete',
+          should: 'delete once and recover all edits with Undo',
+          actual: [deletes, (await readFile(file, 'utf8')).includes('Keep these edits.')],
+          expected: [1, true],
+        })
+      },
+    )
+  },
+)
+
+test(
+  { name: 'meeting - Delete is in its own menu and Undo returns from the day to the meeting', timeout: 40000 },
+  async (t) => {
+    const slug = '09-15_Atlas-Review'
+    const meeting = `${DAY_DIR}/actions/meetings/${slug}.md`
+    const href = `/2026-01-28/meetings/${slug}`
+    const markdown =
+      '---\nsummary: Atlas review\nwhen: 2026-01-28 09:15 - 09:45\nmedium: Zoom\n---\n\n# Atlas review\n\n## Summary\n\nReview the launch plan.\n'
+    const day = DAY_MD.replace('[Roadmap](notes/09-15_Roadmap.md)', `[Atlas review](actions/meetings/${slug}.md)`)
+    await runWysiwygE2e(
+      t,
+      {
+        initialMarkdown: markdown,
+        tempPrefix: 'meeting-delete-e2e-',
+        file: meeting,
+        files: { [DAY_FILE]: day, [OTHER]: '# Other\n' },
+        store: true,
+        day: true,
+      },
+      async ({ page, origin, file, trash, errors }) => {
+        await page.goto(`${origin}${href}`)
+        await page.getByRole('heading', { name: 'Atlas review', exact: true }).waitFor()
+        assert({
+          given: 'a direct meeting page load',
+          should: 'name the meeting in the browser title',
+          actual: await page.title(),
+          expected: 'sky · Atlas review',
+        })
+        await page.getByRole('button', { name: 'More', exact: true }).click()
+        await page.getByRole('menuitem', { name: 'Delete', exact: true }).click()
+        await page.waitForURL(`${origin}/2026-01-28`)
+        await page.getByRole('button', { name: 'Undo', exact: true }).waitFor()
+        assert({
+          given: 'Delete chosen directly on the meeting page',
+          should: 'return to its day with Undo still available, the meeting in the Trash, and its day link removed',
+          actual: [
+            !existsSync(file),
+            await readdir(trash),
+            (await readFile(path.join(path.dirname(trash), DAY_FILE), 'utf8')).includes(slug),
+          ],
+          expected: [true, [`${slug}.md`], false],
+        })
+        await page.getByRole('button', { name: 'Undo', exact: true }).click()
+        await page.waitForURL(`${origin}${href}`)
+        await page.getByRole('heading', { name: 'Atlas review', exact: true }).waitFor()
+        await page.goBack()
+        await page.waitForURL(`${origin}/2026-01-28`)
+        await page.goForward()
+        await page.getByRole('heading', { name: 'Atlas review', exact: true }).waitFor()
+        assert({
+          given: 'Undo, then browser back and forward',
+          should: 'restore the meeting and day link, reopen its own page, and keep its browser title',
+          actual: [
+            await readFile(file, 'utf8'),
+            await readFile(path.join(path.dirname(trash), DAY_FILE), 'utf8'),
+            await readdir(trash),
+            await page.title(),
+            errors,
+          ],
+          expected: [markdown, day, [], 'sky · Atlas review', []],
+        })
+        await writeFile(file, markdown.replaceAll('Atlas review', 'Atlas planning'))
+        await page.getByRole('heading', { name: 'Atlas planning', exact: true }).waitFor()
+        assert({
+          given: 'the meeting title changes on disk while its page is open',
+          should: 'update the browser title on the background refresh',
+          actual: await page.title(),
+          expected: 'sky · Atlas planning',
         })
       },
     )

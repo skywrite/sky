@@ -16,11 +16,13 @@ import { useItemHelpChat } from './day/dayItemHelp.tsx'
 import { DayReviewDialog, useReviewPrompt } from './day/review/dayReview.tsx'
 import { useDay } from './day/useDay.ts'
 import { DocView, explorerFileOf, fileHref, Tree } from './explorer/explorer.tsx'
+import { RemovedToast } from './explorer/explorerDelete.tsx'
 import { ExtensionNavLinks, ExtensionPageMain, extensionRouteOf } from './extensions/extensions.tsx'
 import { useDocumentNotices } from './import/documentImport.tsx'
 import { ImportDialog, ImportMain, ImportsWaiting, useFileDrop, useImportQueue, useImports } from './import/import.tsx'
 import { JournalMain } from './journal/journal.tsx'
 import { journalRouteOf } from './journal/journalRoutes.ts'
+import { useFileRemoval } from './lib/useFileRemoval.ts'
 import { MeetingMain, meetingRouteOf } from './meetings/meetingPage.tsx'
 import { OutboxMain } from './outbox/outbox.tsx'
 import { outboxItemOf, outboxLegacyItemPath } from './outbox/outboxRoutes.ts'
@@ -108,6 +110,7 @@ function Canvas() {
     setMenu(false)
     go(to, replace)
   }
+  const removal = useFileRemoval(navigate)
   const threadId = path.match(/^\/thread\/([^/]+)/)?.[1] ?? null
   const importId = path.match(/^\/import\/([^/]+)/)?.[1] ?? null
   const dayYmd = path.match(/^\/(\d{4}-\d{2}-\d{2})$/)?.[1] ?? null
@@ -228,6 +231,7 @@ function Canvas() {
     // These screens set their own titles from the content they display.
     if (
       journalRoute ||
+      meetingRoute ||
       onDayPage ||
       isOutbox ||
       peopleRoute ||
@@ -271,6 +275,8 @@ function Canvas() {
     onDayPage,
     journalRoute?.day,
     journalRoute?.topic,
+    meetingRoute?.ymd,
+    meetingRoute?.slug,
     isWeek,
     weekTitle,
     settingsSection,
@@ -589,6 +595,7 @@ function Canvas() {
           <DocView
             file={explorerFile}
             go={navigate}
+            removal={removal}
             edit={new URLSearchParams(search).has('edit')}
             onImportConversation={queue.takeConversation}
           />
@@ -597,7 +604,7 @@ function Canvas() {
             <JournalMain route={journalRoute} search={search} navigate={navigate} />
           </Fragment>
         ) : meetingRoute ? (
-          <MeetingMain ymd={meetingRoute.ymd} slug={meetingRoute.slug} go={navigate} />
+          <MeetingMain ymd={meetingRoute.ymd} slug={meetingRoute.slug} go={navigate} removal={removal} />
         ) : filesRoute ? (
           <DayFilesMain
             ymd={filesRoute.ymd}
@@ -724,6 +731,11 @@ function Canvas() {
               navigate('/')
             }}
           />
+        )}
+        {removal.toast && (
+          <Fragment key={removal.toast.key}>
+            <RemovedToast toast={removal.toast} onUndo={() => void removal.undo()} />
+          </Fragment>
         )}
       </SearchWorkspace>
       {shownReview && (

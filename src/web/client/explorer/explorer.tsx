@@ -9,6 +9,7 @@ import {
   useRef,
   useState,
 } from 'react'
+import { flushSync } from 'react-dom'
 import { stageChatDraft } from '../chat/chatDraft.ts'
 import { highlightCodeBlocks } from '../editor/wysiwyg/highlight.ts'
 import { type EditorHandle, type EditorStatusKind, mountEditor } from '../editor/wysiwyg/mod.ts'
@@ -18,18 +19,10 @@ import { useOutline } from '../frontmatter/outline.ts'
 import { DocumentRail } from '../frontmatter/Rail.tsx'
 import { useFrontmatter } from '../frontmatter/useFrontmatter.ts'
 import { AUDIO_IMPORT_ACCEPT, useFileDrop } from '../import/import.tsx'
+import type { FileRemoval } from '../lib/useFileRemoval.ts'
 import { useRail } from '../shell/rail.ts'
 import { RailToggle } from '../shell/railToggle.tsx'
-import {
-  announceChanged,
-  removedLine,
-  RemovedToast,
-  type RemoveToast,
-  removeFile,
-  TOAST_MS,
-  undoRemove,
-  useDirChanges,
-} from './explorerDelete.tsx'
+import { TOAST_MS, useDirChanges } from './explorerDelete.tsx'
 import { FindBox, type FindRequest, ReplacedToast } from './explorerFind.tsx'
 
 /**
@@ -457,12 +450,14 @@ function focusIdentityInput() {
 function Editor({
   file,
   handle,
+  closed,
   onStatus,
   onConflict,
   onFrontmatter,
 }: {
   file: string
   handle: RefObject<EditorHandle | null>
+  closed: RefObject<{ file: string; handle: EditorHandle } | null>
   onStatus: (status: EditorStatus) => void
   onConflict: (visible: boolean) => void
   /** The front matter as the editor holds it — on open, and after undo, reload or `---` */
@@ -512,9 +507,10 @@ function Editor({
     return () => {
       alive = false
       handle.current = null
+      if (mounted) closed.current = { file, handle: mounted }
       mounted?.destroy()
     }
-  }, [file, handle, onStatus, onConflict, onFrontmatter])
+  }, [file, handle, closed, onStatus, onConflict, onFrontmatter])
   return <div className="sky-doc-body sky-wysiwyg" ref={rootRef} />
 }
 
@@ -562,11 +558,13 @@ function DirListing({ entries }: { entries: ExplorerEntry[] }) {
 export function DocView({
   file,
   go,
+  removal,
   edit = false,
   onImportConversation,
 }: {
   file: string
   go: (to: string) => void
+  removal: FileRemoval
   /** Open in the editor rather than to read — `/explorer/<path>?edit`, the meeting page's Edit */
   edit?: boolean
   onImportConversation?: (files: File[], conversation: string, day?: string) => void
@@ -575,7 +573,7 @@ export function DocView({
   const [editingFile, setEditingFile] = useState<string | null>(edit ? file : null)
   const editing = file !== '' && editingFile === file
   const { doc, listing, missing } = useDoc(file, editing)
-  const canToggleEditing = file !== '' && !missing && (editing || doc?.path === file)
+  const canToggleEditing = !removal.removing && file !== '' && !missing && (editing || doc?.path === file)
   const viewRef = useRef<HTMLDivElement>(null)
   const editButton = useRef<HTMLButtonElement>(null)
   const toggleEditing = useCallback(() => {
@@ -619,6 +617,7 @@ export function DocView({
   const [status, setStatus] = useState<EditorStatus | null>(null)
   const [conflict, setConflict] = useState(false)
   const editor = useRef<EditorHandle | null>(null)
+  const closedEditor = useRef<{ file: string; handle: EditorHandle } | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
     scrollRef.current?.scrollTo(0, 0)
@@ -724,46 +723,27 @@ export function DocView({
     else go(`/thread/${id}`)
   }
 
-  // Delete: the file goes to the Trash and its day lets go of its line; the page turns to the
-  // directory it was in, with a toast that holds Undo for a moment.
-  const [toast, setToast] = useState<RemoveToast | null>(null)
-  const [removing, setRemoving] = useState(false)
-  useEffect(() => {
-    if (!toast) return
-    const timer = window.setTimeout(() => setToast(null), TOAST_MS)
-    return () => window.clearTimeout(timer)
-  }, [toast])
-  const remove = async () => {
-    if (removing || !file) return
-    setRemoving(true)
-    try {
-      const removed = await removeFile(file)
-      announceChanged(parentOf(file))
-      setToast({ key: Date.now(), text: removedLine(file, removed.day), file, moveId: removed.moveId })
-      const dir = parentOf(file)
-      go(dir ? fileHref(dir) : '/explorer')
-    } catch (err) {
-      say(err instanceof Error ? err.message : 'Could not delete the file')
-    } finally {
-      setRemoving(false)
-    }
-  }
-  const undo = async () => {
-    const held = toast
-    if (!held?.moveId) return
-    setToast(null)
-    try {
-      await undoRemove(held.moveId)
-      announceChanged(parentOf(held.file))
-      go(fileHref(held.file))
-    } catch (err) {
-      const text = err instanceof Error ? err.message : 'Could not put the file back'
-      setToast({ key: Date.now(), text, file: held.file, moveId: null })
-    }
-  }
+  const remove = () =>
+    removal.remove(file, {
+      after: fileHref(parentOf(file)),
+      restore: fileHref(file),
+      before: async () => {
+        // Commit a focused property, finish every save, then unmount before the file moves.
+        editButton.current?.focus({ preventScroll: true })
+        // Done may already have unmounted the editor with its last save still in flight.
+        const pending = editor.current ?? (closedEditor.current?.file === file ? closedEditor.current.handle : null)
+        await pending?.savePending()
+        flushSync(() => setEditingFile(null))
+      },
+    })
 
   return (
-    <div ref={viewRef} className="sky-main sky-main-rail" data-rail={railOpen ? 'open' : 'closed'}>
+    <div
+      ref={viewRef}
+      className="sky-main sky-main-rail"
+      data-rail={railOpen ? 'open' : 'closed'}
+      inert={removal.removing || undefined}
+    >
       <div className="sky-doc-column">
         <header className="sky-head">
           {file ? (
@@ -867,15 +847,10 @@ export function DocView({
                     Export PDF
                   </Menu.Item>
                   <Menu.Item onClick={() => void copyPath()}>Copy path</Menu.Item>
-                  {/* Delete belongs to reading: while editing, Done first — the editor has the file. */}
-                  {!editing && (
-                    <>
-                      <Menu.Divider />
-                      <Menu.Item className="sky-menu-danger" disabled={removing} onClick={() => void remove()}>
-                        Delete
-                      </Menu.Item>
-                    </>
-                  )}
+                  <Menu.Divider />
+                  <Menu.Item className="sky-menu-danger" disabled={removal.removing} onClick={() => void remove()}>
+                    Delete
+                  </Menu.Item>
                 </Menu.Dropdown>
               </Menu>
             </nav>
@@ -915,6 +890,7 @@ export function DocView({
               <Editor
                 file={file}
                 handle={editor}
+                closed={closedEditor}
                 onStatus={setStatus}
                 onConflict={setConflict}
                 onFrontmatter={setEditFrontmatter}
@@ -933,11 +909,6 @@ export function DocView({
       {file && !missing && railOpen && (editing || doc) ? (
         <DocumentRail state={frontmatter} file={file} day={doc?.day ?? null} outline={outline} onToggle={toggleRail} />
       ) : null}
-      {toast && (
-        <Fragment key={toast.key}>
-          <RemovedToast toast={toast} onUndo={() => void undo()} />
-        </Fragment>
-      )}
       {replaced && (
         <Fragment key={replaced.key}>
           <ReplacedToast
