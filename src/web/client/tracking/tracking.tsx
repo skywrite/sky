@@ -218,14 +218,20 @@ export function TrackingMain({ path, navigate }: { path: string; navigate: (path
         label="From"
         aria-label="Range start"
         value={custom.start}
-        onChange={(event) => setCustom((current) => ({ ...current, start: event.currentTarget.value }))}
+        onChange={(event) => {
+          const start = event.currentTarget.value
+          setCustom((current) => ({ ...current, start }))
+        }}
         placeholder="YYYY-MM-DD"
       />
       <TextInput
         label="Through"
         aria-label="Range end"
         value={custom.end}
-        onChange={(event) => setCustom((current) => ({ ...current, end: event.currentTarget.value }))}
+        onChange={(event) => {
+          const end = event.currentTarget.value
+          setCustom((current) => ({ ...current, end }))
+        }}
         placeholder="YYYY-MM-DD"
       />
       <Button variant="primary" type="submit">
