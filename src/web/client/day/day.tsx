@@ -1640,9 +1640,31 @@ export function DayView({
                       action={!organize.active && planning.nextButton}
                     >
                       {!organize.active && planning.composer('todos')}
+                      <a
+                        className="sky-manage-recurring"
+                        href="/recurring"
+                        onClick={(event) => {
+                          if (event.button || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+                          event.preventDefault()
+                          navigate('/recurring')
+                        }}
+                      >
+                        Manage recurring
+                      </a>
                     </TodoCard>
                     <ReminderCard items={record.reminders} checkOff={checkOff} at={at}>
                       {!organize.active && planning.composer('reminders')}
+                      <a
+                        className="sky-manage-recurring"
+                        href="/recurring?category=reminders"
+                        onClick={(event) => {
+                          if (event.button || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+                          event.preventDefault()
+                          navigate('/recurring?category=reminders')
+                        }}
+                      >
+                        Manage recurring
+                      </a>
                     </ReminderCard>
 
                     <DayStreaks ymd={view!.day.ymd} onNavigate={navigate} summarized={summarized} />

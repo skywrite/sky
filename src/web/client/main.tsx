@@ -28,6 +28,7 @@ import { OutboxMain } from './outbox/outbox.tsx'
 import { outboxItemOf, outboxLegacyItemPath } from './outbox/outboxRoutes.ts'
 import { PeopleMain, peopleRouteOf } from './people/people.tsx'
 import { PlacesMain, placesRouteOf } from './places/places.tsx'
+import { RecurringMain } from './recurring/RecurringMain.tsx'
 import { SearchWorkspace } from './search/search.tsx'
 import { SettingsMain, useSettingsBoot } from './settings/settings.tsx'
 import { useAboutMeDraftGuard } from './settings/settingsAboutMe.tsx'
@@ -125,6 +126,7 @@ function Canvas() {
   const isSettings = settingsSection !== null
   const peopleRoute = peopleRouteOf(path)
   const placesRoute = placesRouteOf(path)
+  const isRecurring = path === '/recurring'
   // /extensions/<author>/<slug> is an extension's own page.
   const extensionPage = extensionRouteOf(path)
   const isClock = path === '/clock'
@@ -213,6 +215,7 @@ function Canvas() {
     !isSettings &&
     !peopleRoute &&
     placesRoute === null &&
+    !isRecurring &&
     extensionPage === null &&
     !isClock &&
     !isAutomations &&
@@ -236,6 +239,7 @@ function Canvas() {
       isOutbox ||
       peopleRoute ||
       placesRoute !== null ||
+      isRecurring ||
       isTracking ||
       importId ||
       explorerFile !== null
@@ -269,6 +273,7 @@ function Canvas() {
     isOutbox,
     peopleRoute,
     placesRoute,
+    isRecurring,
     isTracking,
     importId,
     explorerFile,
@@ -408,7 +413,7 @@ function Canvas() {
               <div className="sky-side-label">Explorer</div>
               <Tree file={explorerFile} onOpen={(file) => navigate(fileHref(file))} />
             </>
-          ) : settingsSection || peopleRoute || placesRoute !== null || extensionPage !== null ? (
+          ) : settingsSection || peopleRoute || placesRoute !== null || isRecurring || extensionPage !== null ? (
             <>
               <button type="button" className="sky-thread" onClick={() => navigate('/')}>
                 <span>‹ Today</span>
@@ -438,6 +443,19 @@ function Canvas() {
                 }}
               >
                 Places
+              </a>
+              <a
+                href="/recurring"
+                className="sky-thread sky-settings-link"
+                data-active={isRecurring}
+                aria-current={isRecurring ? 'page' : undefined}
+                onClick={(event) => {
+                  if (event.button || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+                  event.preventDefault()
+                  navigate('/recurring')
+                }}
+              >
+                Recurring
               </a>
               <ExtensionNavLinks active={extensionPage} navigate={navigate} />
               <div className="sky-side-label">Settings</div>
@@ -581,7 +599,7 @@ function Canvas() {
                 ? 'automations'
                 : explorerFile !== null
                   ? 'explorer'
-                  : isSettings || peopleRoute || placesRoute !== null
+                  : isSettings || peopleRoute || placesRoute !== null || isRecurring
                     ? 'settings'
                     : null
             }
@@ -652,6 +670,8 @@ function Canvas() {
             onOpen={(name) => navigate(`/automations/${encodeURIComponent(name)}`)}
             onNew={() => navigate('/automations/new')}
           />
+        ) : isRecurring ? (
+          <RecurringMain search={search} navigate={navigate} />
         ) : peopleRoute ? (
           <PeopleMain key={path} route={peopleRoute} navigate={navigate} />
         ) : placesRoute !== null ? (

@@ -1,6 +1,6 @@
 ---
 created: 2026-09-03
-updated: 2026-10-26
+updated: 2026-11-01
 ---
 
 # The web app's shell and client
@@ -94,6 +94,8 @@ People & Orgs uses the settings sidebar above the Settings heading; its notebook
 files and browser import follow the [profile contract](../../service/handler/people/docs/README.md).
 Places shares that sidebar; its records, hierarchy and Google Maps setup follow
 the [places contract](../../lib/places/docs/README.md#web-management-and-maps).
+Recurring shares that management sidebar; its source files and independent daily copies follow the
+[recurring contract](../../service/handler/recurring/docs/README.md).
 
 Shared foundations load before feature styles. Keep the import order
 explicit and check overlapping selectors when changing it. Properties in

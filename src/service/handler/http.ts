@@ -56,6 +56,8 @@ import { profileHref, type PeopleOptions } from './people/types.ts'
 import { createPlacesRoutes } from './places/mod.ts'
 import { createPlacesStore } from './places/store.ts'
 import type { PlacesOptions } from './places/types.ts'
+import { createRecurringRoutes } from './recurring/mod.ts'
+import { RecurringStore } from './recurring/store.ts'
 import { createSearchRoutes } from './search/mod.ts'
 import { createSettingsRoutes, type SettingsRoutesOptions } from './settings/mod.ts'
 import { createStreaksRoutes, type StreaksRoutesOptions } from './streaks/mod.ts'
@@ -170,6 +172,20 @@ export function createHttpApp(options: HttpHandlerOptions): Hono {
 
   // Sky's own pages and programs on this Mac; see localRequest.ts
   app.use('*', localRequestsOnly())
+
+  app.route(
+    '/recurring/_api',
+    createRecurringRoutes(
+      new RecurringStore(
+        {
+          notebookDir: markdownBaseDir,
+          timeDir: chat?.timeDir ?? path.join(markdownBaseDir, 'time'),
+          stateDir: path.join(userDataDir, 'state/recurring'),
+        },
+        options.now ? () => planningDate(options.now!()) : undefined,
+      ),
+    ),
+  )
 
   app.route(
     '/journal/_api',
@@ -735,6 +751,7 @@ export function createHttpApp(options: HttpHandlerOptions): Hono {
   })
 
   app.get('/places', (c) => c.html(renderAppHtml('sky · Places')))
+  app.get('/recurring', (c) => c.html(renderAppHtml('sky · Recurring')))
   app.get('/places/*', (c) =>
     c.req.path === '/places/_api' || c.req.path.startsWith('/places/_api/')
       ? c.json({ message: 'Not found.' }, 404)

@@ -1,5 +1,18 @@
 /* Today plan items, reminders, streaks, day record, swipe deletion, and undo. */
 
+.sky-manage-recurring {
+  display: inline-flex;
+  color: var(--sky-dim);
+  font-size: 14px;
+  text-decoration: none;
+  margin: 8px 0 0 42px;
+  padding: 6px 0;
+}
+.sky-manage-recurring:hover {
+  color: var(--sky-accent);
+  text-decoration: underline;
+}
+
 .sky-rec-line {
   display: flex;
   gap: 16px;
