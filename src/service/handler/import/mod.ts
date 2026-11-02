@@ -19,9 +19,11 @@ import { Hono } from 'hono'
 import { streamSSE } from 'hono/streaming'
 import type { AudioConversation } from '#commands/all/message/_lib/savedAudioConversation.ts'
 import { documentWorkWhen, isAttachmentNote } from '#commands/all/notes/lib/documentInput.ts'
+import { videoSource } from '#commands/all/video/lib/source.ts'
 import type { RunEvent } from '#commands/lib/core/runCommand.ts'
 import TagSet from '#shared/models/TagSet/mod.ts'
-import { instantNow, PlainDate, PlainDateTime } from '#universal/dates/nbdt/mod.ts'
+import { videoTranscriptPair } from '#shared/models/Video/importFiles.ts'
+import { Instant, instantNow, PlainDate, PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import { hold } from '../../activity.ts'
 import { safeAttachmentName } from '../attachments/mod.ts'
 import { linkValues } from '../links/mod.ts'
@@ -182,6 +184,28 @@ function parseStart(body: unknown, job: ImportJob): StartFields | string {
     return 'Choose a saved iMessage Audio conversation.'
   const appendTo = typeof b.appendTo === 'string' ? b.appendTo : undefined
   const kind = typeof b.kind === 'string' ? b.kind : ''
+  if (b.acceptAllReviews !== undefined && typeof b.acceptAllReviews !== 'boolean')
+    return 'acceptAllReviews must be true or false.'
+  let videoUrl: string | undefined
+  if (kind === 'video') {
+    if (b.videoUrl !== undefined && typeof b.videoUrl !== 'string') return 'Enter the source video URL as text.'
+    if (typeof b.videoUrl === 'string' && b.videoUrl.trim()) {
+      try {
+        videoUrl = videoSource(b.videoUrl.trim()).url
+      } catch (error) {
+        return (error as Error).message
+      }
+    }
+    if ((videoTranscriptPair(job.files ?? [job.file]) || readback.source === 'text') && !videoUrl)
+      return 'Enter the source video URL so Sky can find an existing entry or create the right video.'
+    if (b.recordedAt !== undefined) {
+      try {
+        Instant.from(String(b.recordedAt))
+      } catch {
+        return 'Enter a recording timestamp with a timezone.'
+      }
+    }
+  }
   if (!KINDS.includes(kind as StartFields['kind'])) return `kind must be one of ${KINDS.join(', ')}`
   if (!readback.kinds.includes(kind as StartFields['kind'])) return `this file cannot be filed as a ${kind}`
   let when = typeof b.when === 'string' ? b.when.trim() : ''
@@ -233,6 +257,13 @@ function parseStart(body: unknown, job: ImportJob): StartFields | string {
     ...(typeof b.categoryStated === 'boolean' ? { categoryStated: b.categoryStated } : {}),
     journalType,
     fresh: b.fresh === true,
+    ...(kind === 'video'
+      ? {
+          ...(videoUrl ? { videoUrl } : {}),
+          ...(typeof b.recordedAt === 'string' ? { recordedAt: b.recordedAt } : {}),
+          ...(b.acceptAllReviews === true ? { acceptAllReviews: true } : {}),
+        }
+      : {}),
     ...(audioSpeakers ? { audioSpeakers } : {}),
     ...(to ? { to } : {}),
     ...(appendTo ? { appendTo } : {}),
@@ -358,30 +389,55 @@ export function createImportRoutes(options: ImportRoutesOptions): Hono {
       throw error
     }
     const audioConversation = readbacks.every((readback) => readback.source === 'imessage-audio')
-    if (files.length > 1 && !audioConversation && readbacks.some((readback) => readback.source !== 'image')) {
+    const videoPair = videoTranscriptPair(files)
+    if (videoPair) {
+      const indices = videoPair.map((file) => files.indexOf(file))
+      const orderedReadbacks = indices.map((index) => readbacks[index])
+      files.splice(0, files.length, ...videoPair)
+      readbacks.splice(0, readbacks.length, ...orderedReadbacks)
+    }
+    if (
+      files.length > 1 &&
+      !audioConversation &&
+      !videoPair &&
+      readbacks.some((readback) => readback.source !== 'image')
+    ) {
       await rm(dir, { recursive: true, force: true })
       return c.json(
-        { message: 'Import images together or CAF audio turns together. Other files need separate imports.' },
+        {
+          message:
+            'Group images, CAF audio turns, or one video with its matching transcript. Other files need separate imports.',
+        },
         400,
       )
     }
     const file = files[0]
     const filePath = path.join(dir, file.name)
-    const refused = readbacks.findIndex((readback) => readback.refusal !== null)
+    const refused = readbacks.findIndex(
+      (readback, index) =>
+        readback.refusal !== null && !(videoPair && index === 1 && /no audio track/i.test(readback.refusal)),
+    )
     const readback: ReadBack =
       files.length === 1
         ? readbacks[0]
-        : {
-            ...readbacks[0],
-            summary: audioConversation ? `${files.length} audio turns → 1 message` : `${files.length} images`,
-            durationMinutes: audioConversation
-              ? readbacks.every((item) => item.durationMinutes !== null)
-                ? readbacks.reduce((total, item) => total + item.durationMinutes!, 0)
-                : null
-              : readbacks[0].durationMinutes,
-            kinds: refused < 0 ? (audioConversation ? ['message'] : ['message', 'note']) : [],
-            refusal: refused < 0 ? null : `${files[refused].name}: ${readbacks[refused].refusal}`,
-          }
+        : videoPair
+          ? {
+              ...readbacks[0],
+              summary: 'Video with transcript',
+              kinds: refused < 0 ? ['video'] : [],
+              refusal: refused < 0 ? null : `${files[refused].name}: ${readbacks[refused].refusal}`,
+            }
+          : {
+              ...readbacks[0],
+              summary: audioConversation ? `${files.length} audio turns → 1 message` : `${files.length} images`,
+              durationMinutes: audioConversation
+                ? readbacks.every((item) => item.durationMinutes !== null)
+                  ? readbacks.reduce((total, item) => total + item.durationMinutes!, 0)
+                  : null
+                : readbacks[0].durationMinutes,
+              kinds: refused < 0 ? (audioConversation ? ['message'] : ['message', 'note']) : [],
+              refusal: refused < 0 ? null : `${files[refused].name}: ${readbacks[refused].refusal}`,
+            }
     const captureWhen =
       readback.source === 'document' || readback.source === 'image'
         ? (options.captureWhen?.() ?? new PlainDateTime().toString())
@@ -395,7 +451,10 @@ export function createImportRoutes(options: ImportRoutesOptions): Hono {
         : proposed
     // Keyed once, now: a filed run moves the upload on, and the key must outlive it.
     const kept =
-      readback.refusal || readback.source === 'document' || (files.length > 1 && !audioConversation) || !options.record
+      readback.refusal ||
+      readback.source === 'document' ||
+      (files.length > 1 && !audioConversation && !videoPair) ||
+      !options.record
         ? null
         : await options
             .record({
@@ -429,7 +488,10 @@ export function createImportRoutes(options: ImportRoutesOptions): Hono {
       stage: null,
       tick: null,
       line: readback.refusal,
-      title: files.length > 1 && !audioConversation ? `${files.length} images` : titleOf(file, readback, suggestedWhen),
+      title:
+        files.length > 1 && !audioConversation && !videoPair
+          ? `${files.length} images`
+          : titleOf(file, readback, suggestedWhen),
       result: null,
       error: readback.refusal,
       created: instantNow(),

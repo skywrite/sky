@@ -69,6 +69,11 @@ export interface StartFields {
   to?: string
   /** Existing conversation chosen for a CAF addition; absent when creating a conversation. */
   appendTo?: string
+  /** Source identity for create-or-complete video imports. */
+  videoUrl?: string
+  recordedAt?: string
+  /** Scoped to this selected import; persisted for retries. */
+  acceptAllReviews?: boolean
 }
 
 /** The step a command says it is on, in its own words. */

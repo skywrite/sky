@@ -18,6 +18,8 @@ import {
   readIMessageAudio,
   readSrt,
   readTranscript,
+  readText,
+  readVideo,
   readUnknown,
   sourceOf,
 } from './readback.ts'
@@ -63,6 +65,82 @@ Pricing moved to the usage tier.
 `
 
 const FILED = 'time/2026/W05/01-27/actions/meetings/0931_Zoom_Jane-Doe_Atlas-pricing-sync.md'
+
+test('paired video imports retain both files, source identity and accept-all through restart and retry', async () => {
+  const w = await world()
+  const previousRead = w.options.read
+  w.options.read = async (file) =>
+    file.name.endsWith('.mp4')
+      ? readVideo(90)
+      : file.name.endsWith('.txt')
+        ? readText(await readFile(file.path, 'utf8'), file.name)
+        : previousRead(file)
+  w.script.outcome = 'failed'
+  const app = new Hono().route('/import', createImportRoutes(w.options))
+  const form = new FormData()
+  form.append('file', new File(['synthetic recording bytes'], 'Atlas-11111111111111111111111111111111.mp4'))
+  form.append(
+    'file',
+    new File(['Hello Atlas team, this is the complete transcript.'], 'Atlas-11111111111111111111111111111111.txt'),
+  )
+  const uploaded = await app.request('/import', { method: 'POST', body: form })
+  const { job } = (await uploaded.json()) as { job: ImportJob }
+  const fields = {
+    kind: 'video',
+    when: '2031-04-05 09:30',
+    videoUrl: 'https://loom.com/embed/11111111111111111111111111111111?source=sample',
+    recordedAt: '2031-04-05T09:30:45Z',
+    acceptAllReviews: true,
+  }
+  const missingUrl = await postJson(app, `/import/${job.id}/start`, { ...fields, videoUrl: '' })
+  const badFlag = await postJson(app, `/import/${job.id}/start`, { ...fields, acceptAllReviews: 'yes' })
+  const started = await postJson(app, `/import/${job.id}/start`, fields)
+  await events(
+    await app.request(`/import/${job.id}/events`),
+    (event) => event.type === 'state' && event.state === 'failed',
+  )
+  const restarted = new Hono().route('/import', createImportRoutes(w.options))
+  const { job: restored } = (await (await restarted.request(`/import/${job.id}`)).json()) as { job: ImportJob }
+  const args = startArgs(
+    { ...restored, source: restored.readback.source },
+    restored.fields!,
+    (restored.files ?? []).map((file) => path.join(w.dir, job.id, file.name)),
+  )
+  assert({
+    given: 'an MP4/TXT pair followed by a failed run and service restart',
+    should: 'preserve both source files, normalized Loom identity and explicit review approval',
+    actual: {
+      status: uploaded.status,
+      source: restored.readback.source,
+      kinds: restored.readback.kinds,
+      files: restored.files?.map((file) => path.extname(file.name)),
+      missingUrl: missingUrl.status,
+      badFlag: badFlag.status,
+      started: started.status,
+      command: args.command,
+      fromText: typeof args.args.fromText,
+      videoFile: typeof args.args.videoFile,
+      url: args.args.url,
+      acceptAll: args.args.acceptAllReviews,
+      recordedAt: args.args.recordedAt,
+    },
+    expected: {
+      status: 201,
+      source: 'text',
+      kinds: ['video'],
+      files: ['.txt', '.mp4'],
+      missingUrl: 400,
+      badFlag: 400,
+      started: 200,
+      command: 'video:new',
+      fromText: 'string',
+      videoFile: 'string',
+      url: 'https://www.loom.com/share/11111111111111111111111111111111',
+      acceptAll: true,
+      recordedAt: fields.recordedAt,
+    },
+  })
+})
 
 test('all journal results survive the event stream and reload, and selected links reach every entry', async () => {
   const w = await world()

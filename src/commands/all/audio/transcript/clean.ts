@@ -17,6 +17,7 @@ import { logger } from '#shared/log.ts'
 import { readPromptFile } from '#shared/prompts/load.ts'
 import { type RenderInput, renderPromptFile } from '#shared/prompts/mod.ts'
 import { isTerminal, readStdin, setRaw } from '#shared/sys/mod.ts'
+import { acceptSuggestedReviews } from './lib/acceptReviews.ts'
 import { applyCorrections, type DropReason } from './lib/applyCorrections.ts'
 import { transcribeAudioTurns } from './lib/audioTurns.ts'
 import { contactNameSet, landsOnContact } from './lib/contactNames.ts'
@@ -44,6 +45,7 @@ import ZoomVTT from './lib/ZoomVTT/mod.ts'
 // -----------------------------------------------------------------------------
 
 const params = {
+  acceptAllReviews: Flag.bool('Accept suggested name and term corrections for this run', { default: false }),
   fromAudioTurns: Flag.stringArray('Ordered audio files from one conversation, one turn per file', {
     optional: true,
   }),
@@ -617,7 +619,9 @@ export default class AudioTranscriptCleanTask extends Command {
       if (reviewIssues.length > 0 && context.prompt.interactive) {
         output.stage('names', 'Checking names', `${reviewIssues.length} to check`)
       }
-      const reviewed = await this.reviewIssues(context.prompt, reviewIssues)
+      const reviewed = args.acceptAllReviews
+        ? acceptSuggestedReviews(reviewIssues)
+        : await this.reviewIssues(context.prompt, reviewIssues)
       if (context.signal?.aborted) return CommandResult.fail('Cancelled')
       reviewCorrections = reviewed ?? []
 

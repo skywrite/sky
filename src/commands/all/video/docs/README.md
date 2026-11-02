@@ -1,6 +1,6 @@
 ---
 created: 2026-09-25
-updated: 2026-10-11
+updated: 2026-11-01
 ---
 
 # Video commands
@@ -21,6 +21,32 @@ file's clock.
 
 Run records (`audio/transcript/lib/transcriptRun.ts`) let a second run
 pick up what the first already paid for; `--fresh` forgets them.
+
+## Source URL imports
+
+With `--url`, the command creates or completes a recording through `lib/importVideo.ts`.
+`--video-file` supplies the recording and `--from-srt`, `--from-zoom-vtt`, or `--from-text` supplies its transcript.
+`--when` states the recording time for a new entry; optional `--recorded-at` retains the original zoned instant and
+supplies seconds for its readable filename.
+`--dry-run` reads matches and source-file presence without model calls, checkpoints, attachments, or notebook writes.
+
+Loom identity comes from the ID in existing `video.url` headers, normalized across share/embed URLs and query strings.
+Multiple matches require destination review.
+An existing entry retains its path, date, metadata, attachment annotations, and original body; only missing video,
+substantive summary, and full transcript are added.
+The short YAML `summary:` title does not establish that a summary exists in the body.
+Sources are copied during filing, preserving caller-owned originals.
+
+A source lock serializes CLI and web imports of the same URL.
+AI runs before the short document write lock; filing re-reads the document so concurrent edits survive.
+A local pending record repairs an interrupted new entry's day link, while the notebook's URL remains the duplicate key.
+Successful existing-entry updates never add another day item.
+
+`--accept-all-reviews` explicitly accepts offered name/term corrections and generated write-ups for the selected run.
+An issue without a suggested correction stays as heard.
+The review answers use the normal pipeline checkpoints and glossary behavior.
+The web carries this choice across one file selection and saves it on each started job for retry; separate selections
+start with review enabled.
 
 ## Tags and rel
 

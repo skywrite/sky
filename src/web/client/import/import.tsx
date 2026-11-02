@@ -3,6 +3,7 @@ import {
   ActionIcon,
   Autocomplete,
   Button,
+  Checkbox,
   Drawer,
   Modal,
   Popover,
@@ -43,6 +44,7 @@ import type { PlaceAnswer, PlaceItem, PlacePrompt } from '#commands/lib/prompt/P
 import { inspectAudioBlob } from '#lib/media/audioHeader.ts'
 import { VIDEO_EXTENSIONS } from '#lib/media/video.ts'
 import TagSet from '#shared/models/TagSet/mod.ts'
+import { groupVideoFiles, videoTranscriptPair } from '#shared/models/Video/importFiles.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import {
   dayLabel,
@@ -126,6 +128,8 @@ export interface ImportJob {
     audioSpeakers?: Record<string, string>
     to?: string
     appendTo?: string
+    videoUrl?: string
+    acceptAllReviews?: boolean
   } | null
   state: ImportState
   /** The steps the command announced, in the words a person reads */
@@ -654,6 +658,8 @@ interface QueuedImport {
   meeting: MeetingImport | null
   day?: string
   conversation?: string
+  /** One file selection's review choice; separate drops never inherit it. */
+  reviewChoice?: { current: boolean }
 }
 
 interface Pending extends QueuedImport {
@@ -688,6 +694,7 @@ export function useImportQueue(
 
   /** Every file dropped on the day is an import; the Files pad keeps files on its own. */
   const take = (files: File[], meeting: MeetingImport | null = null, filingDay = day, conversation?: string) => {
+    const reviewChoice = { current: false }
     const inspection = Promise.all(files.map((file) => inspectAudioBlob(file).catch(() => null)))
     // Preserve the order of separate drops even if their header reads finish out of order.
     incoming.current = incoming.current.then(async () => {
@@ -697,6 +704,9 @@ export function useImportQueue(
         (file, index) => !containers[index] && IMAGE_EXTS.some((ext) => file.name.toLowerCase().endsWith(ext)),
       )
       const imports: QueuedImport[] = []
+      const videoGroups = groupVideoFiles(
+        files.filter((file) => !screenshots.includes(file) && !audioTurns.includes(file)),
+      )
       for (const file of files) {
         if (screenshots.includes(file)) {
           if (file === screenshots[0]) imports.push({ files: screenshots, meeting: null, day: filingDay })
@@ -706,8 +716,10 @@ export function useImportQueue(
           if (file === audioTurns[0]) imports.push({ files: audioTurns, meeting: null, day: filingDay, conversation })
           continue
         }
+        const group = videoGroups.find((group) => group.includes(file)) ?? [file]
+        if (file !== files.find((candidate) => group.includes(candidate))) continue
         imports.push({
-          files: [file],
+          files: group,
           day: filingDay,
           meeting:
             ['.vtt', '.txt', ...RECORDING_EXTS].some((ext) => file.name.toLowerCase().endsWith(ext)) ||
@@ -716,6 +728,7 @@ export function useImportQueue(
               : null,
         })
       }
+      for (const queued of imports) queued.reviewChoice = reviewChoice
       setQueue((q) => [...q, ...imports])
     })
   }
@@ -725,11 +738,23 @@ export function useImportQueue(
 
   useEffect(() => {
     if (pending || again || queue.length === 0) return
-    const [{ files, text, meeting, day, conversation }, ...rest] = queue
+    const [{ files, text, meeting, day, conversation, reviewChoice }, ...rest] = queue
     setQueue(rest)
     const key = crypto.randomUUID()
     pendingKey.current = key
-    setPending({ key, files, text, meeting, day, conversation, fraction: 0, job: null, options: null, error: null })
+    setPending({
+      key,
+      files,
+      text,
+      meeting,
+      day,
+      conversation,
+      reviewChoice,
+      fraction: 0,
+      job: null,
+      options: null,
+      error: null,
+    })
     const patch = (change: (p: Pending) => Pending) => setPending((p) => (p && p.key === key ? change(p) : p))
     void audioUploadCap(files)
       .then(async (audioCap) => {
@@ -794,6 +819,8 @@ type Fields = {
   summary: string
   body: string
   tags: string[]
+  videoUrl: string
+  acceptAllReviews: boolean
 }
 
 function Pills<T extends string>({
@@ -1037,6 +1064,15 @@ function ConfirmBody({
       job?.fields?.summary ?? (documentSource ? documentTitle(job?.file.name ?? pending?.files[0]?.name ?? '') : ''),
     body: job?.fields?.body ?? '',
     tags: [...TagSet.fromString(job?.fields?.tags ?? '')],
+    videoUrl:
+      job?.fields?.videoUrl ??
+      (pending?.files.length === 2 && videoTranscriptPair(pending.files)
+        ? (() => {
+            const id = pending.files.map((file) => file.name.match(/-([a-f\d]{32})\.[^.]+$/i)?.[1]).find(Boolean)
+            return id ? `https://www.loom.com/share/${id}` : ''
+          })()
+        : ''),
+    acceptAllReviews: job?.fields?.acceptAllReviews ?? pending?.reviewChoice?.current ?? false,
   })
   const [starting, setStarting] = useState(false)
   const [started, setStarted] = useState(false)
@@ -1194,6 +1230,9 @@ function ConfirmBody({
         category: fields.category,
         categoryStated: categoryTouched.current,
         fresh: fields.fresh,
+        ...(fields.kind === 'video'
+          ? { videoUrl: fields.videoUrl.trim(), acceptAllReviews: fields.acceptAllReviews }
+          : {}),
         ...(audioConversation
           ? {
               fileOrder: files.map((file) => file.name),
@@ -1509,6 +1548,29 @@ function ConfirmBody({
             </>
           )}
           {meeting?.when && <div className="sky-when-cal">For “{meeting.title || '(untitled)'}” on your calendar</div>}
+          {fields.kind === 'video' && (
+            <>
+              <TextInput
+                label="Source video URL"
+                description="The Loom ID finds an existing entry so Sky can fill only its missing content. Confirm the original recording time above."
+                value={fields.videoUrl}
+                onChange={(event) => {
+                  const videoUrl = event.currentTarget.value
+                  setFields((current) => ({ ...current, videoUrl }))
+                }}
+              />
+              <Checkbox
+                label="Accept all reviews for the selected videos"
+                description="Apply suggested name and term corrections and accept the generated write-ups."
+                checked={fields.acceptAllReviews}
+                onChange={(event) => {
+                  const accepted = event.currentTarget.checked
+                  if (pending?.reviewChoice) pending.reviewChoice.current = accepted
+                  setFields((current) => ({ ...current, acceptAllReviews: accepted }))
+                }}
+              />
+            </>
+          )}
           {calendar && (
             <div className="sky-when-cal">
               {calendar.relation === 'matches' ? 'Matches' : 'Just after'} “{calendar.title}” on your calendar
@@ -1613,6 +1675,15 @@ export function ImportDialog({
       .catch(() => {})
   }, [again])
   const opened = pending !== null || again !== null
+  useEffect(() => {
+    if (!opened) return
+    const before = document.title
+    const title = `sky · Import ${job?.title ?? pending?.files[0]?.name ?? 'file'}`
+    document.title = title
+    return () => {
+      if (document.title === title) document.title = before
+    }
+  }, [opened, job?.title, pending?.files[0]?.name])
 
   const cancel = () => {
     // A file that never started, or was refused, leaves with the dialog.

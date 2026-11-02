@@ -197,7 +197,7 @@ export function readText(text: string, name: string): ReadBack {
   const parts = ['Notetaker text', length, stamps.length > 0 ? `${stamps.length} stamped turns` : null]
   return {
     source: 'text',
-    kinds: ['meeting', 'message'],
+    kinds: ['meeting', 'message', 'video'],
     summary: parts.filter((p): p is string => Boolean(p)).join(' · '),
     detail: null,
     durationMinutes: minutes,

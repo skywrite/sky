@@ -1,6 +1,6 @@
 ---
 created: 2026-09-02
-updated: 2026-10-21
+updated: 2026-11-01
 ---
 
 # The transcript pipeline
@@ -33,6 +33,10 @@ Each composes the one before it: `summary --from-audio` runs `clean`, which
 runs `create`. The doors — `meeting:new`, `journal:new`, `notes:new`,
 `message:new`, `event:new`, `video:new` — run one of the three and file what
 comes back.
+
+An explicit `--accept-all-reviews` accepts offered corrections in `clean` and the write-up in `summary`.
+It records the same review answers as accepting the suggestions manually; issues without suggestions stay unchanged.
+The owning video's source identity, preservation, and retry rules live in [Video commands](../../../video/docs/README.md).
 
 Meeting, note, and message voice memo imports file only the resulting document. The spoken words pass
 directly from transcription to cleaning, without a sidecar transcript or

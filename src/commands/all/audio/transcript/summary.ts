@@ -42,6 +42,9 @@ import { extractTypedNameLists } from './lib/typedNameLists.ts'
 // -----------------------------------------------------------------------------
 
 const params = {
+  acceptAllReviews: Flag.bool('Accept suggested corrections and the generated write-up for this run', {
+    default: false,
+  }),
   file: Flag.string('Path to transcript file (alternative to stdin)', {
     short: 'f',
     optional: true,
@@ -296,6 +299,7 @@ export default class AudioTranscriptSummaryTask extends Command {
       // --from-audio: transcribe → clean. --from-zoom-vtt / --from-srt / --from-text:
       // clean an existing transcript.
       const cleanResult = await tasks.run('audio:transcript:clean', {
+        acceptAllReviews: args.acceptAllReviews,
         ...(useAudioPipeline
           ? { fromAudio }
           : fromSrt !== undefined
@@ -615,7 +619,7 @@ export default class AudioTranscriptSummaryTask extends Command {
     // Ask for corrections when someone is there to answer, and ask again
     // after each round: a second thought is one more line, not a re-run.
     let rounds = 0
-    while (context.prompt.interactive) {
+    while (context.prompt.interactive && !args.acceptAllReviews) {
       const corrections = await this.askForCorrections(context.prompt, output, {
         unmatched: (matches?.unmatched.length ?? 0) > 0,
         again: rounds > 0,

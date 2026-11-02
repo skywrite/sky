@@ -238,6 +238,7 @@ test('audio cleaning keeps the words in memory without saving a transcript', asy
       args: {
         fromAudio: w.audio,
         fromAudioTurns: undefined,
+        acceptAllReviews: false,
         title,
         save: false,
         fresh: false,

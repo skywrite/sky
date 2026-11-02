@@ -215,17 +215,17 @@ test('readText', () => {
   const back = readText('[0:00] Jane: Morning.\n[0:12] Alex: Morning.\n[11:40] Jane: Done.', 'notes.txt')
   assert({
     given: 'stamped speaker lines',
-    should: 'read the stamps for the length and offer a meeting first, then a message',
+    should: 'read the stamps for the length and offer meeting, message and video workflows',
     actual: [back.summary, back.kinds, back.refusal],
-    expected: ['Notetaker text · 12 minutes · 3 stamped turns', ['meeting', 'message'], null],
+    expected: ['Notetaker text · 12 minutes · 3 stamped turns', ['meeting', 'message', 'video'], null],
   })
   assert({
     given: 'ordinary text without timestamps',
-    should: 'offer the plain-text meeting and message workflows',
+    should: 'offer the plain-text meeting, message and video workflows',
     actual: readText('Jane Doe: Let us review the Atlas plan.', 'notes.txt'),
     expected: {
       source: 'text',
-      kinds: ['meeting', 'message'],
+      kinds: ['meeting', 'message', 'video'],
       summary: 'Notetaker text',
       detail: null,
       durationMinutes: null,

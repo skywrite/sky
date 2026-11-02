@@ -1,6 +1,6 @@
 ---
 created: 2026-09-01
-updated: 2026-10-26
+updated: 2026-11-01
 ---
 
 # Meeting from a file — the import
@@ -68,7 +68,8 @@ One door for every file kind. The kind picks the command:
 | VTT contents in `.vtt` or `.txt` | the kind chosen in the dialog: `meeting:new --from-zoom-vtt`, or `video:new --from-zoom-vtt` — a Zoom Clip's; a transcript whose cues name no speaker is offered as a video first |
 | `.srt` | `video:new --from-srt` — a video's transcript; a Loom's, a caption file's |
 | video recording (`.mp4`, `.mov`, `.m4v`, `.webm`, `.mkv`) | `journal:new --from-video --split` — extracts audio, reviews names and journal types, retains the original video |
-| plain-text `.txt` | the kind chosen in the dialog: `meeting:new --from-text` (first), or `message:new --from-text` — a chat's export |
+| plain-text `.txt` | the kind chosen in the dialog: `meeting:new --from-text` (first), `message:new --from-text`, or `video:new --from-text --url` |
+| video with its SRT/VTT/TXT sidecar | one video import through `video:new --url --video-file`, using the transcript pipeline |
 | text dragged in | the same two doors on the text, staged as `selection.txt`: a message first, a meeting first when its lines carry a notetaker's stamps |
 | other audio | the kind chosen in the dialog: `meeting:new` and `event:new` with `--from-voice-memo`, or `journal:new`, `notes:new`, `message:new` with `--from-audio` |
 | CAF audio (detected from its contents) | `message:new --from-audio-turns` with medium `iMessage Audio`, or `message:append` for an existing destination; every file is one turn |
@@ -140,6 +141,14 @@ since the addition.
 Other file kinds remain separate imports. Each image retains its capture
 time so either reader can read the pages in capture order; size limits
 apply to each image, and a refused image blocks the whole group.
+
+A recording and an unambiguous matching sidecar stay together, with the transcript as the primary source.
+Conflicting Loom IDs cannot form a pair.
+Video imports offer the source URL and an explicit **Accept all reviews for the selected videos** choice.
+The choice belongs to that file selection, reaches the shared command, and persists on started jobs across retries.
+A separate selection starts with review enabled.
+Source matching, original-file retention, and completing existing entries are owned by
+[Video commands](../../../../commands/all/video/docs/README.md).
 
 Document imports open **Capture document** with a neutral, editable title suggested
 from the filename, the viewed day, the current notebook time, optional notes,

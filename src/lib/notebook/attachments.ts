@@ -9,8 +9,8 @@
  */
 
 import { createHash, randomUUID } from 'node:crypto'
-import { constants, existsSync } from 'node:fs'
-import { copyFile, link, mkdir, open, readFile, unlink } from 'node:fs/promises'
+import { constants, createReadStream, existsSync } from 'node:fs'
+import { copyFile, link, mkdir, open, unlink } from 'node:fs/promises'
 import * as path from 'node:path'
 import type { Attachment } from '#shared/models/Markdown/Document/attachment.ts'
 import dayAttachmentsDir from '#shared/nbfs/dayAttachmentsDir.ts'
@@ -24,8 +24,9 @@ export function safeAttachmentName(name: string): string {
 }
 
 export async function sha256File(filePath: string): Promise<string> {
-  const data = await readFile(filePath)
-  return createHash('sha256').update(data).digest('hex')
+  const hash = createHash('sha256')
+  for await (const chunk of createReadStream(filePath)) hash.update(chunk)
+  return hash.digest('hex')
 }
 
 async function matchesFile(filePath: string, hash: string): Promise<boolean> {
@@ -33,11 +34,9 @@ async function matchesFile(filePath: string, hash: string): Promise<boolean> {
     const file = await open(filePath, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK)
     try {
       if (!(await file.stat()).isFile()) return false
-      return (
-        createHash('sha256')
-          .update(await file.readFile())
-          .digest('hex') === hash
-      )
+      const digest = createHash('sha256')
+      for await (const chunk of file.createReadStream({ autoClose: false })) digest.update(chunk)
+      return digest.digest('hex') === hash
     } finally {
       await file.close()
     }

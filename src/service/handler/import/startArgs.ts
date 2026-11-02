@@ -22,6 +22,7 @@
 
 import { basename } from 'node:path'
 import { documentWorkWhen, isAttachmentNote } from '#commands/all/notes/lib/documentInput.ts'
+import { VIDEO_EXTENSIONS } from '#lib/media/video.ts'
 import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import type { StartFields } from './jobs.ts'
 import type { ReadBack } from './readback.ts'
@@ -145,7 +146,13 @@ export function startArgs(job: StartContext, fields: StartFields, input: string 
       return {
         command: 'video:new',
         args: {
-          ...(job.source === 'srt' ? { fromSrt: filePath } : { fromZoomVtt: filePath }),
+          ...(job.source === 'srt' ? { fromSrt: filePath } : text ? { fromText: filePath } : { fromZoomVtt: filePath }),
+          ...(fields.videoUrl ? { url: fields.videoUrl } : {}),
+          ...(filePaths.find((file) => VIDEO_EXTENSIONS.some((ext) => file.toLowerCase().endsWith(ext)))
+            ? { videoFile: filePaths.find((file) => VIDEO_EXTENSIONS.some((ext) => file.toLowerCase().endsWith(ext))) }
+            : {}),
+          ...(fields.recordedAt ? { recordedAt: fields.recordedAt } : {}),
+          ...(fields.acceptAllReviews ? { acceptAllReviews: true } : {}),
           category,
           when,
           fresh,

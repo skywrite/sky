@@ -24,8 +24,17 @@ import VideoDocument from '#shared/models/Video/mod.ts'
 import dayAttachmentsDir from '#shared/nbfs/dayAttachmentsDir.ts'
 import { actionKindRel } from '#shared/nbfs/mod.ts'
 import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
+import { importVideo, type VideoImportPlan, videoSource } from './lib/importVideo.ts'
 
 const params = {
+  url: Flag.string('Source video URL; an existing Loom ID fills only missing content', { optional: true }),
+  videoFile: Flag.string('Local recording to attach during import', { optional: true }),
+  recordedAt: Flag.string('Original recording instant, including timezone, retained with the source URL', {
+    optional: true,
+  }),
+  fromText: Flag.string('Path to a plain TXT transcript', { optional: true }),
+  acceptAllReviews: Flag.bool('Accept suggested name corrections and write-ups for this import', { default: false }),
+  dryRun: Flag.bool('Show the source match and missing content without model calls or writes', { default: false }),
   summary: ArgOrFlag.string('Summary of the video (optional with --from-srt or --from-zoom-vtt)', { short: 's' }),
   medium: Flag.string('Video platform/medium (YouTube, Vimeo, Loom, etc.)', { short: 'm' }),
   from: Flag.string('Who the communication was from', { short: 'f' }),
@@ -51,7 +60,7 @@ const params = {
 
 type Params = InferParams<typeof params>
 /** The video's absolute path: the day it went under is the pipeline's to settle, not the caller's */
-type Result = { filePath: string }
+type Result = { filePath: string | null; plan?: VideoImportPlan }
 
 const VIDEO_MEDIUMS = ['Loom', 'Zoom Clip', 'YouTube', 'Zoom Recording', 'Google Meet Recording', 'Vimeo', 'Video']
 
@@ -70,7 +79,7 @@ export default class VideoNewTask extends Command {
       "sky video:new --from-zoom-vtt               # Summarize newest .vtt on Desktop, a Zoom Clip's",
     ],
     params,
-    postProcess: [validateAnyArgFlagExists('summary', 'fromSrt', 'fromZoomVtt')],
+    postProcess: [validateAnyArgFlagExists('summary', 'fromSrt', 'fromZoomVtt', 'fromText', 'url')],
   }
 
   async run({ args, context, tasks, rawArgs }: CommandArgs<Params>): Promise<CommandResult<Result>> {
@@ -83,6 +92,94 @@ export default class VideoNewTask extends Command {
     let transcriptPath: string | null = null
     /** The pipeline's run record for the transcript, forgotten once the video is filed */
     let run: TranscriptRun | null = null
+
+    if ([args.fromSrt, args.fromZoomVtt, args.fromText].filter((value) => value !== undefined).length > 1)
+      return CommandResult.fail('Use only one of --from-srt, --from-zoom-vtt or --from-text')
+
+    if (args.url) {
+      const format = args.fromSrt !== undefined ? '.srt' : args.fromZoomVtt !== undefined ? '.vtt' : '.txt'
+      const source = args.fromSrt ?? args.fromZoomVtt ?? args.fromText
+      const resolved = source !== undefined ? await this.resolveTranscriptPath(format, source, output) : null
+      if (resolved && !resolved.ok) return CommandResult.fail(resolved.message)
+      let completedRun: string | null = null
+      try {
+        const result = await importVideo({
+          config,
+          url: args.url,
+          when,
+          recordedAt: args.recordedAt,
+          timezone: context.systemNow.timezone,
+          title: summary,
+          medium: medium || (videoSource(args.url).loomId ? 'Loom' : 'Video'),
+          from,
+          to,
+          category,
+          videoFile: args.videoFile,
+          transcriptFile: resolved?.ok ? resolved.path : undefined,
+          dryRun: args.dryRun,
+          signal: context.signal,
+          prepare: async (plan, existingTranscript) => {
+            output.plan([
+              { id: 'names', label: 'Checking names' },
+              { id: 'writeup', label: 'Writing it up' },
+              { id: 'file', label: 'Filing missing content' },
+            ])
+            const sourceArgs = existingTranscript
+              ? { text: existingTranscript }
+              : args.fromSrt !== undefined
+                ? { fromSrt: resolved!.ok ? resolved!.path : undefined }
+                : args.fromZoomVtt !== undefined
+                  ? { fromZoomVtt: resolved!.ok ? resolved!.path : undefined }
+                  : { fromText: resolved!.ok ? resolved!.path : undefined }
+            if (!plan.missing.includes('summary')) {
+              const clean = await tasks.run('audio:transcript:clean', {
+                ...sourceArgs,
+                acceptAllReviews: args.acceptAllReviews,
+                save: false,
+                fresh: args.fresh,
+              })
+              if (!clean.ok || !clean.data) throw new Error(clean.message || 'Transcript cleaning failed')
+              completedRun = clean.data.run
+              return { cleanedText: clean.data.cleanedText }
+            }
+            const result = await tasks.run('audio:transcript:summary', {
+              ...sourceArgs,
+              template: 'audio-message',
+              acceptAllReviews: args.acceptAllReviews,
+              when: plan.when,
+              fresh: args.fresh,
+              save: false,
+            })
+            if (!result.ok || !result.data) throw new Error(result.message || 'Transcript processing failed')
+            completedRun = result.data.run
+            const data = result.data
+            if (plan.action !== 'create') return data
+            const enrich = {
+              to: to || data.to || undefined,
+              from: from || data.from || undefined,
+              conversation: from || data.from || to || data.to || undefined,
+              summary: summary || data.title,
+              body: data.body,
+            }
+            const [tags, rel] = await Promise.all([
+              args.noAutoTag ? undefined : autoTagMessage(enrich, VIDEO_ENRICH),
+              args.noAutoRel ? undefined : autoRelMessage(enrich, VIDEO_ENRICH),
+            ])
+            return { ...data, tags, rel: mergeRel(data.rel, rel) }
+          },
+        })
+        if (completedRun) await (await TranscriptRun.open(completedRun, runOptionsFor(context))).clear()
+        output.log(JSON.stringify(result.plan, null, 2))
+        return CommandResult.success(result)
+      } catch (error) {
+        return CommandResult.fail((error as Error).message)
+      }
+    }
+    if (args.dryRun || args.videoFile || args.recordedAt)
+      return CommandResult.fail('Use --url to match, preview or attach a complete video import.')
+
+    if (args.fromText !== undefined)
+      return CommandResult.fail('Use --url with --from-text to identify the video import.')
 
     if (fromSrt !== undefined && fromZoomVtt !== undefined) {
       return CommandResult.fail('Use only one of --from-srt or --from-zoom-vtt')
@@ -128,6 +225,7 @@ export default class VideoNewTask extends Command {
       ])
 
       const summaryResult = await tasks.run('audio:transcript:summary', {
+        acceptAllReviews: args.acceptAllReviews,
         ...(fromSrt !== undefined ? { fromSrt: transcriptPath } : { fromZoomVtt: transcriptPath }),
         template: 'audio-message',
         run: run.key,
@@ -158,6 +256,7 @@ export default class VideoNewTask extends Command {
       // The extract prompt is tuned for calls and messages, so it offers mediums like
       // "Phone" that make no sense for a recording. Ask instead of guessing, when
       // someone is there to answer: the terminal through clack, the page through its form.
+      if (!medium && args.acceptAllReviews) medium = 'Video'
       if (!medium && context.prompt.interactive) {
         const selected = await context.prompt.select({
           message: 'Which video platform?',
@@ -297,11 +396,11 @@ export default class VideoNewTask extends Command {
    * as VTT.
    */
   private async resolveTranscriptPath(
-    ext: '.srt' | '.vtt',
+    ext: '.srt' | '.vtt' | '.txt',
     value: string,
     output: OutputHandler,
   ): Promise<{ ok: true; path: string } | { ok: false; message: string }> {
-    const flag = ext === '.srt' ? '--from-srt' : '--from-zoom-vtt'
+    const flag = ext === '.srt' ? '--from-srt' : ext === '.txt' ? '--from-text' : '--from-zoom-vtt'
     if (typeof value === 'string' && value !== 'true') {
       if (ext === '.srt' && path.extname(value).toLowerCase() !== '.srt') {
         return { ok: false, message: `--from-srt requires an .srt file, got: ${path.basename(value)}` }
