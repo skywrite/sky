@@ -22,6 +22,8 @@ export interface LinkItem {
   /** Other names the record answers to; selections retain the canonical value. */
   aliases?: string[]
   kind: LinkKind
+  /** Current organizations on a person's profile. */
+  org?: string
   date?: string
   people?: string
   summary?: string

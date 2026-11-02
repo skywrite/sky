@@ -248,6 +248,10 @@
   line-height: 1.4;
   overflow-wrap: anywhere;
 }
+.sky-link-org {
+  color: var(--sky-dim);
+  font-size: 16px;
+}
 .sky-link-meta {
   display: block;
   font-size: 14px;

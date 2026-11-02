@@ -63,7 +63,9 @@ export async function linkCatalog(
   const items: LinkItem[] = vocabulary.entities
     .filter((e) => isPathWithinRoots(path.resolve(base, e.path), dirs))
     .map((entity) => {
-      const doc = store.findByPath(path.resolve(base, entity.path))?.doc
+      const absolute = path.resolve(base, entity.path)
+      const person = entity.type === 'person' ? store.people.findByPath(absolute) : undefined
+      const doc = person ?? store.findByPath(absolute)?.doc
       const time = parseTimePath(entity.path)
       // Use the same dated references as VS Code: independent of the notebook's week layout.
       const value =
@@ -82,6 +84,7 @@ export async function linkCatalog(
         aliases: entity.aliases,
         hint: entity.type === 'place' ? entity.hint : undefined,
         kind: recordKind(entity.path, entity.type),
+        org: person ? text([...new Set([person.org, ...person.orgs.current].map(text).filter(Boolean))]) : undefined,
         date: doc ? (parseTimePath(entity.path)?.start.toString() ?? docDate(doc, entity.path)?.ymd) : undefined,
         people: doc
           ? [...new Set(['who', 'from', 'to'].map((key) => text(doc.yaml[key])).filter(Boolean))].join(' · ') ||

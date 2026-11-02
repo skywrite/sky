@@ -316,11 +316,12 @@ function Picker({
                                 : [...choices, item],
                             )
                           }
-                          aria-label={`${chosen ? 'Linked' : 'Select'} ${title}`}
+                          aria-label={`${chosen ? 'Linked' : 'Select'} ${title}${item.org ? ` · ${item.org}` : ''}`}
                           label={
                             <>
                               <span className="sky-link-title">
                                 {title}
+                                {item.org && <span className="sky-link-org"> · {item.org}</span>}
                                 {chosen ? ' · Linked' : ''}
                               </span>
                               <Detail item={item} />
