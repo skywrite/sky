@@ -3,8 +3,10 @@
 
 import { mkdir, readFile } from 'node:fs/promises'
 import * as path from 'node:path'
+import { Document } from '#shared/models/Markdown/mod.ts'
 import { env } from '#shared/sys/mod.ts'
 import { assert, test } from '#test'
+import { ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
 import { openEditor, readMarkdownFromDisk, runWysiwygE2e, waitForSettle } from './httpWysiwygE2eTestHelpers.ts'
 import { blankPlace, type MapsHost } from './places/types.ts'
 
@@ -59,6 +61,8 @@ test(
         files: { ...PLACES, 'people/2021/al/Alex-Kim.md': ALEX },
         store: true,
         places: { maps },
+        // Creating a city must use the fixture's clock, never the configured notebook's started day.
+        now: new ZonedDateTime('2031-02-12T09:34:00', 'UTC'),
       },
       async ({ page, origin, file, errors }) => {
         await page.setViewportSize({ width: 1400, height: 900 })
@@ -144,6 +148,7 @@ test(
             chosen,
             found,
             city: city.includes('parent: places/US/VT'),
+            created: Document.fromMarkdown(city).yaml.created,
             alex: await readMarkdownFromDisk(alex),
             errors,
           },
@@ -154,6 +159,7 @@ test(
             chosen: SAM.replace('location: Burlington, VT, USA', 'location: places/US/VT/Burlington'),
             found: SAM.replace('location: Burlington, VT, USA', 'location: places/US/VT/Winooski'),
             city: true,
+            created: '2031-02-12',
             alex: ALEX.replace('met: 2021\n', 'met: 2021\nlocation: places/US/VT/Burlington\n'),
             errors: [],
           },
