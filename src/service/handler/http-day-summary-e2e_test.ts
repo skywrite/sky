@@ -185,6 +185,7 @@ test(
           .getByRole('heading', { name: 'The Atlas pilot begins on Monday', exact: true })
           .waitFor({ timeout: 10000 })
         await page.getByText('Day record', { exact: true }).click()
+        await page.getByRole('button', { name: 'Completed · 1', exact: true }).click()
         await page.getByText('Prepare the Atlas checklist', { exact: true }).waitFor()
         await waitForTitle(recordTitle)
         const refreshed = page.waitForResponse(
@@ -205,6 +206,7 @@ test(
         })
 
         await page.reload()
+        await page.getByRole('button', { name: 'Completed · 1', exact: true }).click()
         await page.getByText('Prepare the Atlas checklist', { exact: true }).waitFor()
         await waitForTitle(recordTitle)
         assert({

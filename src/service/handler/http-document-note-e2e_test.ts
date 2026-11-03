@@ -223,7 +223,12 @@ test(
         await page.setViewportSize({ width: 390, height: 844 })
         await page.goto(`${origin}/${DAY}`)
         await page.getByRole('link', { name: 'Revised the Atlas report', exact: true }).waitFor()
-        await page.locator('.sky-day .sky-head input[type=file]').setInputFiles({
+        await page.getByRole('button', { name: 'Show details', exact: true }).click()
+        const choosing = page.waitForEvent('filechooser')
+        await page.getByRole('button', { name: 'Add a file', exact: true }).click()
+        await (
+          await choosing
+        ).setFiles({
           name: 'Widget-plan.pdf',
           mimeType: 'application/pdf',
           buffer: Buffer.from('%PDF-1.4 synthetic plan'),

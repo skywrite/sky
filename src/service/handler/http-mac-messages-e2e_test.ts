@@ -195,7 +195,7 @@ test(
           restartBefore,
           hint.includes('once it starts again'),
           after.includes('540 names'),
-          warn.includes('every sender would be held'),
+          warn.includes('every sender would be filtered as unknown'),
           new URL(page.url()).pathname,
           errors,
         ],

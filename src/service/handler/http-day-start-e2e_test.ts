@@ -125,9 +125,14 @@ test(
             dot: 1,
           },
           weekVariant: 'secondary',
-          own: 'Not started\n·\n0 of 2 tasks complete\n·\nStart Friday',
+          own: 'Not started\n·\n0 of 2 tasks complete\n·\nStart Friday\n·\nYesterday not reviewed\n·\nReview',
           starts: [FRIDAY.ymd],
-          after: { path: '/', statusline: '0 of 2 tasks complete', startButtons: 0, block: 0 },
+          after: {
+            path: '/',
+            statusline: '0 of 2 tasks complete\n·\nYesterday not reviewed\n·\nReview',
+            startButtons: 0,
+            block: 0,
+          },
           errors: [],
         },
       })

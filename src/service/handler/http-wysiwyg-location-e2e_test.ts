@@ -5,13 +5,7 @@ import { mkdir, readFile } from 'node:fs/promises'
 import * as path from 'node:path'
 import { env } from '#shared/sys/mod.ts'
 import { assert, test } from '#test'
-import {
-  openEditor,
-  readMarkdownFromDisk,
-  runWysiwygE2e,
-  waitForAutosave,
-  waitForSettle,
-} from './httpWysiwygE2eTestHelpers.ts'
+import { openEditor, readMarkdownFromDisk, runWysiwygE2e, waitForSettle } from './httpWysiwygE2eTestHelpers.ts'
 import { blankPlace, type MapsHost } from './places/types.ts'
 
 const SAM = '---\nname: Sam Rivera\nlocation: Burlington, VT, USA\n---\n\n# Sam Rivera\n\n## Background\n'
@@ -72,6 +66,21 @@ test(
         await page.waitForSelector('.sky-identity:not([data-readonly])')
         const row = page.locator('.sky-identity .sky-prop[data-key="location"]')
         const input = row.getByRole('textbox', { name: 'Location', exact: true })
+        const saveLocation = async (ref: string, choose: () => Promise<void>) => {
+          const saved = page.waitForResponse(
+            (response) =>
+              response.url().includes('/docs/_api/content/') &&
+              response.request().method() === 'PUT' &&
+              response.request().postData()?.includes(`location: ${ref}`) === true,
+          )
+          await choose()
+          assert({
+            given: 'a location chosen for the profile',
+            should: 'finish saving its reference before the file is read',
+            actual: (await saved).status(),
+            expected: 200,
+          })
+        }
         await row.getByText('Not linked to a saved place yet.', { exact: true }).waitFor()
         const shown = await input.inputValue()
         const capture = async (name: string) => {
@@ -93,8 +102,9 @@ test(
         await waitForSettle(page)
         const afterTyping = await readMarkdownFromDisk(file)
 
-        await row.getByRole('button', { name: 'Use Burlington, VT, USA', exact: true }).click()
-        await waitForAutosave(page)
+        await saveLocation('places/US/VT/Burlington', () =>
+          row.getByRole('button', { name: 'Use Burlington, VT, USA', exact: true }).click(),
+        )
         const chosen = await readMarkdownFromDisk(file)
 
         await input.click()
@@ -102,8 +112,9 @@ test(
         await page.getByRole('option', { name: 'Find “Winoo” on Google Maps' }).click()
         await page.getByRole('option', { name: /Winooski, VT, USA/ }).waitFor()
         await capture('02-google')
-        await page.getByRole('option', { name: /Winooski, VT, USA/ }).click()
-        await waitForAutosave(page)
+        await saveLocation('places/US/VT/Winooski', () =>
+          page.getByRole('option', { name: /Winooski, VT, USA/ }).click(),
+        )
         const found = await readMarkdownFromDisk(file)
         const city = await readFile(
           path.join(path.dirname(file), '../../../places/locations/US/VT/Winooski.md'),
@@ -119,8 +130,9 @@ test(
         await page.keyboard.press('Enter')
         await page.waitForSelector('.sky-identity .sky-prop[data-key="location"] input')
         await page.keyboard.type('Burl')
-        await page.getByRole('option', { name: /Burlington, VT, USA/ }).click()
-        await waitForAutosave(page)
+        await saveLocation('places/US/VT/Burlington', () =>
+          page.getByRole('option', { name: /Burlington, VT, USA/ }).click(),
+        )
 
         assert({
           given: 'old text, typed text, the saved place it names, a city found on Google Maps, and a new location',

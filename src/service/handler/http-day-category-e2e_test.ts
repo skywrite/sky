@@ -184,12 +184,13 @@ for (const width of [1500, 390])
               expected: beforeCancel,
             })
 
-            for (const [openLabel, formLabel] of [
-              ['Add a to-do', 'Add a to-do'],
-              ['Add a commitment', 'Add a commitment'],
-            ]) {
-              await page.getByRole('button', { name: openLabel, exact: true }).click()
-              const draft = page.getByRole('form', { name: formLabel, exact: true })
+            for (const timed of [false, true]) {
+              await page.getByRole('button', { name: 'Add a to-do', exact: true }).click()
+              const draft = page.getByRole('form', { name: 'Add a to-do', exact: true })
+              if (timed) {
+                await draft.getByRole('button', { name: 'Add a time', exact: true }).click()
+                await draft.getByRole('textbox', { name: 'To-do time', exact: true }).fill('10:00')
+              }
               await draft.getByRole('textbox', { name: 'Item text', exact: true }).fill('Water the plants')
               await selected('Personal')
               await draft.getByRole('button', { name: 'Cancel', exact: true }).click()
