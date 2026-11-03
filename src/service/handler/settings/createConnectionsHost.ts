@@ -28,9 +28,10 @@ import {
   previewBeeper,
   reconcileAccountRules,
   saveBeeperGrant,
-  saveBeeperSyncState,
   startBeeperSignIn,
   notebookSenderNames,
+  updateAccountRule,
+  updateBeeperSyncState,
 } from '#lib/beeper/mod.ts'
 import {
   buildAuthUrl,
@@ -277,10 +278,18 @@ function beeperConnection(
 ): ConnectionsHost['beeper'] {
   const states = new Map<string, BeeperConnectState>()
 
+  const reconciledState = async (accounts: BeeperAccount[]) => {
+    const state = await loadBeeperSyncState(stateFile)
+    if (!reconcileAccountRules(state, accounts)) return state
+    return updateBeeperSyncState(stateFile, (latest) => {
+      reconcileAccountRules(latest, accounts)
+      return latest
+    })
+  }
+
   /** Beeper's accounts as rows, with the rules from the state file; rules for accounts seen the first time are written. */
   const rows = async (accounts: BeeperAccount[]): Promise<BeeperAccountRow[]> => {
-    const state = await loadBeeperSyncState(stateFile)
-    if (reconcileAccountRules(state, accounts)) await saveBeeperSyncState(stateFile, state)
+    const state = await reconciledState(accounts)
     return accounts
       .filter((account) => !isSlackAccount(account))
       .map((account) => {
@@ -335,23 +344,15 @@ function beeperConnection(
       }
     },
     async rule(id, change) {
-      const state = await loadBeeperSyncState(stateFile)
-      const rule = state.accounts[id]
-      if (!rule) return false
-      if (change.save !== undefined) rule.save = change.save
-      if (change.groups !== undefined) rule.groups = change.groups
-      if (change.holdUnknown !== undefined) rule.holdUnknown = change.holdUnknown
-      if (change.holdPitches !== undefined) rule.holdPitches = change.holdPitches
-      rule.chosen = true
-      await saveBeeperSyncState(stateFile, state)
-      return true
+      return updateBeeperSyncState(stateFile, (state) => updateAccountRule(state, id, change))
     },
     async preview() {
       const client = await ready()
       if (!client) return null
-      const state = await loadBeeperSyncState(stateFile)
-      const preview = await previewBeeper({
-        client,
+      const listed = await client.accounts()
+      const state = await reconciledState(listed)
+      return previewBeeper({
+        client: { accounts: async () => listed, searchChats: (params) => client.searchChats(params) },
         state,
         now: new Date().toISOString(),
         names: notebookSenderNames(
@@ -359,14 +360,9 @@ function beeperConnection(
           await openMacSenderLookup(),
         ),
       })
-      await saveBeeperSyncState(stateFile, state)
-      return preview
     },
     async keep(chat) {
-      const state = await loadBeeperSyncState(stateFile)
-      if (!markKnown(state, chat)) return false
-      await saveBeeperSyncState(stateFile, state)
-      return true
+      return updateBeeperSyncState(stateFile, (state) => markKnown(state, chat))
     },
     async open(chat) {
       const client = await ready()

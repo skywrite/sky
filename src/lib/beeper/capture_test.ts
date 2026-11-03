@@ -7,8 +7,17 @@ import DayDocument from '#shared/models/Day/mod.ts'
 import MessageDocument from '#shared/models/Message/document/mod.ts'
 import { dayAttachmentsDir, dayDir, dayFile, writeDay } from '#shared/nbfs/mod.ts'
 import { assert, test } from '#test'
-import { PlainDate } from '#universal/dates/nbdt/mod.ts'
-import { type BeeperSource, chatLabel, loadBeeperSyncState, markKnown, syncBeeper } from './capture.ts'
+import { Instant, PlainDate } from '#universal/dates/nbdt/mod.ts'
+import {
+  type BeeperSource,
+  type BeeperSyncOptions,
+  chatLabel,
+  loadBeeperSyncState,
+  markKnown,
+  syncBeeper,
+  updateAccountRule,
+  updateBeeperSyncState,
+} from './capture.ts'
 import type { BeeperAccount, BeeperChat, BeeperMessage, ChatSearch } from './client.ts'
 
 type World = {
@@ -1463,4 +1472,390 @@ test('beeper capture - a sender whose number a people record carries is filed un
     ],
   })
   await rm(root, { recursive: true, force: true })
+})
+
+const SYNC_START = '2026-03-11T10:00:00Z'
+
+async function syncFixture(count: number, chatLimit = 3, pageSize = 2) {
+  const root = await mkdtemp(path.join(tmpdir(), 'sky-beeper-sync-'))
+  const stateFile = path.join(root, 'sync.json')
+  const chats: BeeperChat[] = []
+  const messages: Record<string, BeeperMessage[]> = {}
+  const searches: ChatSearch[] = []
+  const cursors = new Map<string, string>()
+  const key = (chat: BeeperChat) => `${chat.lastActivity}/${chat.id}`
+  for (let i = 0; i < count; i++) {
+    const id = `chat-${i}`
+    const timestamp = Instant.fromEpochMilliseconds(
+      Instant.from('2026-03-11T09:00:00Z').epochMilliseconds - i * 60_000,
+    ).toString()
+    chats.push({
+      id,
+      accountID: 'telegram',
+      network: 'Telegram',
+      title: `Contact ${i + 1}`,
+      type: 'single',
+      lastActivity: timestamp,
+    })
+    messages[id] = [
+      {
+        id: `message-${i}`,
+        chatID: id,
+        accountID: 'telegram',
+        senderID: id,
+        senderName: `Contact ${i + 1}`,
+        timestamp,
+        sortKey: String(i),
+        type: 'TEXT',
+        text: `Hello from contact ${i + 1}`,
+      },
+    ]
+  }
+  const options: BeeperSyncOptions = {
+    stateFile,
+    timeDir: path.join(root, 'time'),
+    attachmentsDir: path.join(root, 'attachments'),
+    now: SYNC_START,
+    timezone: 'UTC',
+    dayTimezone: async () => 'UTC',
+    ownerName: 'Jane Doe',
+    chatLimit,
+    client: {
+      accounts: async () => [{ accountID: 'telegram', network: 'Telegram', user: { id: 'me' } }],
+      searchChats: async (params = {}) => {
+        searches.push(params)
+        const cursor = params.cursor ? cursors.get(params.cursor) : undefined
+        if (params.cursor && !cursor) throw new Error('Synthetic cursor is invalid')
+        const eligible = chats
+          .filter(
+            (chat) =>
+              (chat.lastActivity ?? '') > (params.lastActivityAfter ?? '') &&
+              (chat.lastActivity ?? '') < (params.lastActivityBefore ?? 'z') &&
+              (!cursor || key(chat) < cursor),
+          )
+          .sort((a, b) => key(b).localeCompare(key(a)))
+        const items = eligible.slice(0, Math.min(pageSize, params.limit ?? 100))
+        const last = items.at(-1)
+        const oldestCursor = last ? `position:${last.id}` : undefined
+        if (oldestCursor && last) cursors.set(oldestCursor, key(last))
+        return { items, hasMore: eligible.length > items.length, oldestCursor }
+      },
+      messages: async (id) => ({ items: messages[id] ?? [], hasMore: false }),
+      downloadAsset: async () => {
+        throw new Error('No synthetic attachments')
+      },
+    },
+  }
+  await writeFile(
+    stateFile,
+    JSON.stringify({
+      version: 1,
+      accounts: { telegram: { network: 'Telegram', save: true, groups: false, holdUnknown: true, chosen: true } },
+    }),
+  )
+  return {
+    root,
+    stateFile,
+    chats,
+    messages,
+    searches,
+    options,
+    cleanup: () => rm(root, { recursive: true, force: true }),
+  }
+}
+
+test('Beeper resumes bounded scans across runs without skipping a partial page or advancing during a dry run', async () => {
+  const f = await syncFixture(7)
+  try {
+    const first = await syncBeeper(f.options)
+    const firstState = await loadBeeperSyncState(f.stateFile)
+    const beforeDry = await readFile(f.stateFile, 'utf8')
+    const dry = await syncBeeper({ ...f.options, now: '2026-03-11T10:01:00Z', dryRun: true })
+    const dryUnchanged = beforeDry === (await readFile(f.stateFile, 'utf8'))
+    const second = await syncBeeper({ ...f.options, now: '2026-03-11T10:01:00Z' })
+    const third = await syncBeeper({ ...f.options, now: '2026-03-11T10:02:00Z' })
+    const final = await loadBeeperSyncState(f.stateFile)
+    assert({
+      given: 'seven chats, two chats per API page, and a three-chat budget per check',
+      should: 'continue from the saved cursor, request only the remaining budget, and finish at the scan start time',
+      actual: [
+        [first.messages, second.messages, third.messages],
+        [first.complete, second.complete, third.complete],
+        [firstState.lastSync, firstState.scan?.cursor],
+        [dry.messages, dryUnchanged],
+        f.searches.slice(0, 2).map((p) => p.limit),
+        f.searches.every((p) => p.lastActivityBefore === SYNC_START),
+        [Object.keys(final.chats).length, Object.values(final.chats).map((c) => c.seen.length)],
+        [final.lastSync, final.scan],
+      ],
+      expected: [
+        [3, 3, 1],
+        [false, false, true],
+        [undefined, 'position:chat-2'],
+        [3, true],
+        [3, 1],
+        true,
+        [7, [1, 1, 1, 1, 1, 1, 1]],
+        [SYNC_START, undefined],
+      ],
+    })
+  } finally {
+    await f.cleanup()
+  }
+})
+
+test('Beeper catches a conversation that moves ahead of the cursor while a scan is running', async () => {
+  const f = await syncFixture(3, 1, 1)
+  try {
+    await syncBeeper(f.options)
+    const incoming = '2026-03-11T10:30:00Z'
+    f.chats[1].lastActivity = incoming
+    f.messages['chat-1'].push({
+      ...f.messages['chat-1'][0],
+      id: 'follow-up',
+      sortKey: '10',
+      timestamp: incoming,
+      text: 'New reply',
+    })
+    const resumed = await syncBeeper({ ...f.options, now: '2026-03-11T18:00:00Z' })
+    const afterResume = await loadBeeperSyncState(f.stateFile)
+    const fresh = await syncBeeper({ ...f.options, chatLimit: 10, now: '2026-03-11T18:01:00Z' })
+    const final = await loadBeeperSyncState(f.stateFile)
+    assert({
+      given: 'a pending chat receives a reply and moves out of a scan that finishes eight hours later',
+      should: 'finish the old window, then discover the moved chat and save both messages on the following check',
+      actual: [
+        resumed.complete,
+        afterResume.lastSync,
+        afterResume.chats['chat-1'],
+        fresh.messages,
+        final.chats['chat-1'].seen,
+        Object.keys(final.chats).length,
+      ],
+      expected: [true, SYNC_START, undefined, 2, ['message-1', 'follow-up'], 3],
+    })
+  } finally {
+    await f.cleanup()
+  }
+})
+
+test('Beeper keeps the original backfill boundary when a pending scan resumes the next day', async () => {
+  const f = await syncFixture(2, 1, 1)
+  try {
+    f.chats[1].lastActivity = '2026-03-04T10:01:00Z'
+    f.messages['chat-1'][0].timestamp = f.chats[1].lastActivity
+    await syncBeeper(f.options)
+    const resumed = await syncBeeper({ ...f.options, now: '2026-03-12T10:00:00Z' })
+    const state = await loadBeeperSyncState(f.stateFile)
+    assert({
+      given: 'a chat is just inside the seven-day window when a scan starts, then the service pauses overnight',
+      should: 'save it on resumption instead of moving the window past the unsaved message',
+      actual: [resumed.messages, resumed.complete, Object.keys(state.chats['chat-1'].files), state.lastSync],
+      expected: [1, true, ['2026-03-04'], SYNC_START],
+    })
+  } finally {
+    await f.cleanup()
+  }
+})
+
+test('Beeper retries a failed batch before advancing its cursor and does not duplicate saved messages', async () => {
+  const f = await syncFixture(3, 2)
+  try {
+    const messages = f.options.client.messages
+    let fail = true
+    f.options.client.messages = async (id, params) => {
+      if (id === 'chat-1' && fail) throw new Error('Synthetic message read failed')
+      return messages(id, params)
+    }
+    const failure = await syncBeeper(f.options).then(
+      () => '',
+      (error: Error) => error.message,
+    )
+    const partial = await loadBeeperSyncState(f.stateFile)
+    fail = false
+    const retry = await syncBeeper({ ...f.options, now: '2026-03-11T10:01:00Z' })
+    const tail = await syncBeeper({ ...f.options, now: '2026-03-11T10:02:00Z' })
+    const final = await loadBeeperSyncState(f.stateFile)
+    const contents = await Promise.all(
+      Object.values(final.chats).flatMap((chat) =>
+        Object.values(chat.files).map((file) => readFile(path.join(f.root, file), 'utf8')),
+      ),
+    )
+    assert({
+      given: 'the second chat fails after the first chat is saved',
+      should: 'retry that batch, deduplicate the first chat, and only then move to the final page',
+      actual: [
+        failure,
+        partial.scan?.cursor,
+        Object.keys(partial.chats),
+        retry.messages,
+        tail.messages,
+        final.lastSync,
+        contents.map((text) => (text.match(/^## /gm) ?? []).length),
+      ],
+      expected: ['Synthetic message read failed', undefined, ['chat-0'], 1, 1, SYNC_START, [1, 1, 1]],
+    })
+  } finally {
+    await f.cleanup()
+  }
+})
+
+test('Beeper backfills newly enabled accounts and newly allowed groups or senders', async () => {
+  for (const admission of ['account', 'group', 'unknown', 'pitch', 'keep'] as const) {
+    const f = await syncFixture(1)
+    try {
+      f.chats[0].lastActivity = '2026-03-09T09:00:00Z'
+      f.messages['chat-0'][0].timestamp = f.chats[0].lastActivity
+      if (admission === 'group') f.chats[0].type = 'group'
+      if (admission === 'unknown' || admission === 'keep') f.chats[0].title = '+15550101234'
+      await updateBeeperSyncState(f.stateFile, (state) => {
+        state.lastSync = SYNC_START
+        state.scan = {
+          startedAt: SYNC_START,
+          since: '2026-03-11T04:00:00Z',
+          boundary: '2026-03-04T10:00:00Z',
+          cursor: 'old-scan',
+        }
+        if (admission === 'account') state.accounts.telegram.save = false
+        if (admission === 'keep')
+          state.held['chat-0'] = {
+            network: 'Telegram',
+            who: f.chats[0].title,
+            first: 'Hello',
+            at: f.chats[0].lastActivity!,
+            count: 1,
+          }
+      })
+      await updateBeeperSyncState(f.stateFile, (state) => {
+        if (admission === 'keep') return markKnown(state, 'chat-0')
+        const change =
+          admission === 'account'
+            ? { save: true }
+            : admission === 'group'
+              ? { groups: true }
+              : admission === 'unknown'
+                ? { holdUnknown: false }
+                : { holdPitches: false }
+        return updateAccountRule(state, 'telegram', change)
+      })
+      const reset = await loadBeeperSyncState(f.stateFile)
+      const saved = await syncBeeper({ ...f.options, now: '2026-03-11T10:01:00Z' })
+      assert({
+        given: `a newly allowed ${admission} conversation older than the incremental checkpoint`,
+        should: 'discard the old cursor and rediscover the conversation within the normal backfill window',
+        actual: [reset.lastSync, reset.scan, saved.messages, saved.complete],
+        expected: [undefined, undefined, 1, true],
+      })
+    } finally {
+      await f.cleanup()
+    }
+  }
+})
+
+test('Beeper preserves pending progress for unchanged or more restrictive account rules', async () => {
+  const f = await syncFixture(2, 1, 1)
+  try {
+    await syncBeeper(f.options)
+    const before = await loadBeeperSyncState(f.stateFile)
+    await updateBeeperSyncState(f.stateFile, (state) =>
+      updateAccountRule(state, 'telegram', { save: true, groups: false }),
+    )
+    const unchanged = await loadBeeperSyncState(f.stateFile)
+    await updateBeeperSyncState(f.stateFile, (state) => updateAccountRule(state, 'telegram', { save: false }))
+    const disabled = await loadBeeperSyncState(f.stateFile)
+    const remaining = await syncBeeper(f.options)
+    assert({
+      given: 'an unchanged save switch followed by disabling the account during catch-up',
+      should: 'retain the continuation and finish without importing more messages from the disabled account',
+      actual: [unchanged.scan, disabled.scan, remaining.messages, remaining.complete],
+      expected: [before.scan, before.scan, 0, true],
+    })
+  } finally {
+    await f.cleanup()
+  }
+})
+
+test('Beeper reports unusable pagination without claiming completion and can recover on the next check', async () => {
+  for (const broken of ['missing', 'repeated'] as const) {
+    const f = await syncFixture(2, 10, 1)
+    try {
+      const search = f.options.client.searchChats
+      f.options.client.searchChats = async (params = {}) => {
+        const page = await search({ ...params, cursor: undefined })
+        return { ...page, ...(broken === 'missing' ? { oldestCursor: undefined } : {}) }
+      }
+      const incomplete = await syncBeeper(f.options)
+      const state = await loadBeeperSyncState(f.stateFile)
+      const attempts = f.searches.length
+      f.options.client.searchChats = search
+      const recovered = await syncBeeper({ ...f.options, now: '2026-03-11T10:01:00Z' })
+      assert({
+        given: `Beeper returns a ${broken} continuation cursor`,
+        should: 'leave the checkpoint unchanged, explain the incomplete check, and retry without losing messages',
+        actual: [
+          incomplete.complete,
+          incomplete.notes.length,
+          state.lastSync,
+          attempts <= 2,
+          recovered.complete,
+          recovered.messages,
+          Object.keys((await loadBeeperSyncState(f.stateFile)).chats).length,
+        ],
+        expected: [false, 1, undefined, true, true, 1, 2],
+      })
+    } finally {
+      await f.cleanup()
+    }
+  }
+})
+
+test('Beeper serializes a settings change with a running capture so neither the files nor backfill request are lost', async () => {
+  const f = await syncFixture(1)
+  const entered = Promise.withResolvers<void>()
+  const release = Promise.withResolvers<void>()
+  try {
+    const messages = f.options.client.messages
+    f.options.client.messages = async (id, params) => {
+      entered.resolve()
+      await release.promise
+      return messages(id, params)
+    }
+    const capture = syncBeeper(f.options)
+    await entered.promise
+    const change = updateBeeperSyncState(f.stateFile, (state) => updateAccountRule(state, 'telegram', { groups: true }))
+    release.resolve()
+    await Promise.all([capture, change])
+    const state = await loadBeeperSyncState(f.stateFile)
+    assert({
+      given: 'groups are enabled while the current capture is fetching a message',
+      should: 'keep the captured file and apply the new rule and backfill reset after the capture finishes',
+      actual: [
+        state.chats['chat-0'].seen,
+        Object.keys(state.chats['chat-0'].files).length,
+        state.accounts.telegram.groups,
+        state.lastSync,
+        state.scan,
+      ],
+      expected: [['message-0'], 1, true, undefined, undefined],
+    })
+  } finally {
+    release.resolve()
+    await f.cleanup()
+  }
+})
+
+test('overlapping Beeper checks save each message only once', async () => {
+  const f = await syncFixture(1)
+  try {
+    const results = await Promise.all([syncBeeper(f.options), syncBeeper(f.options)])
+    const state = await loadBeeperSyncState(f.stateFile)
+    assert({
+      given: 'a background check and Check now start together',
+      should: 'serialize the captures and deduplicate the second check',
+      actual: [results.map((result) => result.messages).sort(), Object.keys(state.chats['chat-0'].files).length],
+      expected: [[0, 1], 1],
+    })
+  } finally {
+    await f.cleanup()
+  }
 })

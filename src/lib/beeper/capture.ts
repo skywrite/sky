@@ -2,12 +2,12 @@ import { mkdir, readFile } from 'node:fs/promises'
 import * as path from 'node:path'
 import { z } from 'zod'
 import { writeFileDedup } from '#commands/all/email/lib/copyToAttachments.ts'
+import { withProcessLock, writeJson } from '#lib/jobs/files.ts'
 import { isIMessage, type CategorizeMessageDay } from '#lib/messageDayCategory.ts'
 import { DayDirFileWriter, ensureDay, messageFileName } from '#lib/nbfs/mod.ts'
 import withDayWrite from '#lib/nbfs/withDayWrite.ts'
 import slugify from '#lib/string/slugify.ts'
 import { exists, readTextFile, writeTextFile } from '#shared/fs/mod.ts'
-import outputFile from '#shared/fs/outputFile.ts'
 import type { Attachment } from '#shared/models/Markdown/Document/attachment.ts'
 import MessageDocument from '#shared/models/Message/document/mod.ts'
 import { computePreviousRef, dayAttachmentsDir, dayTimezone, readDay, writeDay } from '#shared/nbfs/mod.ts'
@@ -160,9 +160,19 @@ const ChatStateSchema = z.object({
   /** Day → the file that day, as `time/...` path. */
   files: z.record(z.string(), z.string()).default({}),
 })
+const SyncScanSchema = z.object({
+  startedAt: z.string().refine((value) => instantMs(value) !== null),
+  since: z.string().refine((value) => instantMs(value) !== null),
+  boundary: z.string().refine((value) => instantMs(value) !== null),
+  cursor: z.string().min(1).optional(),
+})
+type SyncScan = z.infer<typeof SyncScanSchema>
+
 export const BeeperSyncStateSchema = z.object({
   version: z.literal(1),
   lastSync: z.string().optional(),
+  /** A bounded scan resumes in the same time window after a limit, retry, or service restart. */
+  scan: SyncScanSchema.optional().catch(undefined),
   chats: z.record(z.string(), ChatStateSchema).default({}),
   /** By Beeper's account id. */
   accounts: z.record(z.string(), AccountRuleSchema).default({}),
@@ -192,9 +202,62 @@ export async function loadBeeperSyncState(file: string): Promise<BeeperSyncState
 }
 
 export async function saveBeeperSyncState(file: string, state: BeeperSyncState): Promise<void> {
-  await outputFile(file, `${JSON.stringify(state, null, 2)}\n`)
+  await writeJson(file, state, 2)
 }
 const saveState = saveBeeperSyncState
+
+async function withStateLock<T>(file: string, run: () => Promise<T>): Promise<T> {
+  try {
+    return await withProcessLock(`${file}.lock`, run)
+  } catch (error) {
+    if (error instanceof Error && error.message === 'Background job state is busy. Try again in a moment.')
+      throw new Error('Beeper is already syncing. Wait for the current check to finish, then try again.')
+    throw error
+  }
+}
+
+/** Serialize capture and settings changes so a running check cannot overwrite a newly requested backfill. */
+export async function updateBeeperSyncState<T>(
+  file: string,
+  update: (state: BeeperSyncState) => T | Promise<T>,
+): Promise<T> {
+  return withStateLock(file, async () => {
+    const state = await loadBeeperSyncState(file)
+    const result = await update(state)
+    await saveState(file, state)
+    return result
+  })
+}
+
+function restartScan(state: BeeperSyncState): void {
+  delete state.lastSync
+  delete state.scan
+}
+
+/** Newly admitted conversations need the normal backfill window, even when another account is up to date. */
+export function updateAccountRule(
+  state: BeeperSyncState,
+  id: string,
+  change: Partial<Pick<AccountRule, 'save' | 'groups' | 'holdUnknown' | 'holdPitches'>>,
+): boolean {
+  const rule = state.accounts[id]
+  if (!rule) return false
+  const before = { ...rule }
+  if (change.save !== undefined) rule.save = change.save
+  if (change.groups !== undefined) rule.groups = change.groups
+  if (change.holdUnknown !== undefined) rule.holdUnknown = change.holdUnknown
+  if (change.holdPitches !== undefined) rule.holdPitches = change.holdPitches
+  rule.chosen = true
+  if (
+    rule.save &&
+    (!before.save ||
+      (!before.groups && rule.groups) ||
+      (before.holdUnknown && !rule.holdUnknown) ||
+      (holdsFirstContactPitches(before) && !holdsFirstContactPitches(rule)))
+  )
+    restartScan(state)
+  return true
+}
 
 export function networkOf(account: BeeperAccount): string {
   return account.network?.trim() || account.accountID
@@ -235,7 +298,7 @@ export function markKnown(state: BeeperSyncState, chatID: string): boolean {
   state.chats[chatID] = { ...chat, known: true }
   delete state.held[chatID]
   // A held chat can be older than the incremental search window. Save must find it on the next check.
-  delete state.lastSync
+  restartScan(state)
   return true
 }
 
@@ -473,24 +536,36 @@ function render(section: Section): string {
 
 async function activeChats(
   client: BeeperSource,
-  since: string,
+  scan: SyncScan,
   limit: number,
-): Promise<{ items: BeeperChat[]; complete: boolean }> {
+): Promise<{ items: BeeperChat[]; complete: boolean; cursor?: string; note?: string }> {
   const items: BeeperChat[] = []
-  let cursor: string | undefined
+  let cursor = scan.cursor
+  const cursors = new Set<string>()
   for (;;) {
+    if (cursor) cursors.add(cursor)
     const page = await client.searchChats({
       inbox: 'primary',
       includeMuted: false,
       type: 'any',
-      lastActivityAfter: since,
-      limit: Math.min(200, Math.max(1, limit)),
+      lastActivityAfter: scan.since,
+      lastActivityBefore: scan.startedAt,
+      limit: Math.min(200, Math.max(1, limit - items.length)),
       ...(cursor ? { cursor, direction: 'before' } : {}),
     })
     items.push(...page.items)
-    if (!page.hasMore || !page.oldestCursor || !page.items.length) return { items, complete: true }
-    if (items.length >= limit) return { items: items.slice(0, limit), complete: false }
+    if (!page.hasMore) return { items, complete: true }
+    if (!page.oldestCursor || !page.items.length || cursors.has(page.oldestCursor)) {
+      return {
+        items,
+        complete: false,
+        cursor,
+        note: 'Beeper did not provide the next page of chats. This check is incomplete; try Check now again.',
+      }
+    }
     cursor = page.oldestCursor
+    // Keep the whole returned page even if Beeper exceeds the requested size; its cursor follows that page.
+    if (items.length >= limit) return { items, complete: false, cursor }
   }
 }
 
@@ -572,6 +647,10 @@ function newestInstant(messages: BeeperMessage[], kept?: string): string | undef
 }
 
 export async function syncBeeper(options: BeeperSyncOptions): Promise<BeeperSyncResult> {
+  return withStateLock(options.stateFile, () => syncBeeperLocked(options))
+}
+
+async function syncBeeperLocked(options: BeeperSyncOptions): Promise<BeeperSyncResult> {
   const log = options.log ?? (() => {})
   const backfillDays = options.backfillDays ?? 7
   const chatLimit = options.chatLimit ?? 100
@@ -590,11 +669,16 @@ export async function syncBeeper(options: BeeperSyncOptions): Promise<BeeperSync
   }
   const nowMs = instantMs(options.now)
   if (nowMs === null) throw new Error('The sync needs the current instant as ISO text.')
-  const boundaryMs = nowMs - backfillDays * 86_400_000
   const state = await loadBeeperSyncState(options.stateFile)
-  const sinceMs = state.lastSync
-    ? Math.max(boundaryMs, (instantMs(state.lastSync) ?? boundaryMs) - OVERLAP_MS)
-    : boundaryMs
+  const boundaryMs = state.scan ? instantMs(state.scan.boundary)! : nowMs - backfillDays * 86_400_000
+  const scan: SyncScan = state.scan ?? {
+    startedAt: options.now,
+    since: Instant.fromEpochMilliseconds(
+      state.lastSync ? Math.max(boundaryMs, (instantMs(state.lastSync) ?? boundaryMs) - OVERLAP_MS) : boundaryMs,
+    ).toString(),
+    boundary: Instant.fromEpochMilliseconds(boundaryMs).toString(),
+  }
+  state.scan = scan
   const notebookDir = path.dirname(options.timeDir)
   const zones = new Map<string, string>()
   const zoneOf = options.dayTimezone ?? ((day: string) => dayTimezone(day, options.timeDir))
@@ -610,8 +694,8 @@ export async function syncBeeper(options: BeeperSyncOptions): Promise<BeeperSync
 
   const accounts = new Map<string, BeeperAccount>()
   const listed = await options.client.accounts()
-  const rulesChanged = reconcileAccountRules(state, listed)
-  if (rulesChanged && !options.dryRun) await saveState(options.stateFile, state)
+  reconcileAccountRules(state, listed)
+  if (!options.dryRun) await saveState(options.stateFile, state)
   for (const account of listed) {
     if (isSlackAccount(account)) {
       result.accountsSkipped.push(networkOf(account))
@@ -625,8 +709,9 @@ export async function syncBeeper(options: BeeperSyncOptions): Promise<BeeperSync
     if ((instantMs(entry.at) ?? 0) < boundaryMs) delete state.held[id]
   }
 
-  const chats = await activeChats(options.client, Instant.fromEpochMilliseconds(sinceMs).toString(), chatLimit)
+  const chats = await activeChats(options.client, scan, chatLimit)
   result.complete = chats.complete
+  if (chats.note) result.notes.push(chats.note)
   for (const chat of chats.items) {
     const account = accounts.get(chat.accountID)
     const label = chatLabel(chat, account, options.names)
@@ -940,7 +1025,11 @@ export async function syncBeeper(options: BeeperSyncOptions): Promise<BeeperSync
     }
   }
   if (!options.dryRun) {
-    if (result.complete) state.lastSync = options.now
+    if (result.complete) {
+      // Changes during a multi-run scan belong to the following scan, even if they are now hours old.
+      state.lastSync = scan.startedAt
+      delete state.scan
+    } else state.scan = { ...scan, cursor: chats.cursor }
     state.lastRun = {
       at: options.now,
       chats: result.chats,

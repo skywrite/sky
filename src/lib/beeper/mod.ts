@@ -46,6 +46,8 @@ export {
   saveBeeperSyncState,
   syncBeeper,
   unknownSender,
+  updateAccountRule,
+  updateBeeperSyncState,
 } from './capture.ts'
 export type {
   AccountRule,

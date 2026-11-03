@@ -1,6 +1,6 @@
 ---
 created: 2026-09-16
-updated: 2026-10-29
+updated: 2026-11-03
 ---
 
 # Beeper — every chat on this Mac, saved as messages
@@ -107,6 +107,10 @@ the words the page shows: `Signal is off`, `groups are off for Signal`,
 `read-only`, `muted`, `archived`, `low priority`. The capture reports the
 first three chat by chat; Beeper's own filing stays quiet.
 
+Enabling an account, allowing groups, or relaxing a sender filter restarts the normal backfill window.
+An account that was off must not inherit another account's newer checkpoint and silently miss its older conversations.
+Unchanged or more restrictive settings retain the current scan's progress.
+
 `preview.ts` is the page's "Show what a check would save": every chat in
 Beeper's three piles from the last month, muted ones included, each with
 its verdict and reason. It fetches no messages and writes nothing but the
@@ -179,8 +183,17 @@ above, the held chats, the last run itself (counts, what it left out and
 why, which networks were off) for the page, and per chat the instant of the
 newest message it has shown (the next run looks from an hour before it), the
 ids of recent messages (so a re-run never writes a message twice), `known`
-once the person said Save, and the day → file map. The first run reaches back seven days (2026-10-20: a month of old texts was too much; `--days` widens it); a chat limit per run
-leaves the rest for the next tick.
+once the person said Save, and the day → file map.
+The first run reaches back seven days (2026-10-20: a month of old texts was too much; `--days` widens it).
+An incomplete `scan` persists its start time, search and capture boundaries, and opaque chat cursor.
+The next tick resumes that window instead of listing the first batch again or aging unsaved messages out of the backfill.
+The cursor advances only after the batch is processed; retries deduplicate messages already saved.
+On completion, `lastSync` advances to the scan's start, not its finish, so activity during a long catch-up is found next.
+Missing or repeated cursors leave the check incomplete and produce a retry note.
+
+Capture and settings mutations share a process lock, and state files are replaced atomically.
+A settings change must not be overwritten by an older capture snapshot; previews never write their snapshot back.
+Account discovery reconciles against the latest state under the same lock.
 
 ## Outbox
 
