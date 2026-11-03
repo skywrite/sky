@@ -2,6 +2,7 @@ import * as path from 'node:path'
 import type { TranscriptRun } from '#commands/all/audio/transcript/lib/transcriptRun.ts'
 import { CommandPlatform, CommandResult } from '#commands/mod.ts'
 import type { CommandArgs } from '#commands/mod.ts'
+import { selectedJournalTypes } from '#lib/journal/typeSelection.ts'
 import { createDayFile } from '#lib/nbfs/createDayFile.ts'
 import { copyToDayAttachments } from '#lib/notebook/attachments.ts'
 import { autoRelMessage, mergeRel, scopeRel } from '#lib/notebook/enrich/autoRel.ts'
@@ -183,10 +184,10 @@ export async function fileRecordedJournal(
                 })
                 signal?.throwIfAborted()
                 if (selected === null) throw new Error('Journal type selection was cancelled. Start again to continue.')
-                const allowed = new Set(choices.map(({ name }) => name))
-                if (!Array.isArray(selected) || selected.some((type) => !allowed.has(type)))
-                  throw new Error('Choose journal types from the list.')
-                capture.selected = [...new Set(selected)]
+                capture.selected = selectedJournalTypes(
+                  selected,
+                  choices.map(({ name }) => name),
+                )
               } else capture.selected = initial
               await persist()
             }

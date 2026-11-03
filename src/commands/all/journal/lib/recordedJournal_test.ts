@@ -189,6 +189,60 @@ test('audio and video journals review suggested types, reunite returning topics,
   }
 })
 
+test('edited journal types reach saved files and tags and survive a partially filed retry', async () => {
+  for (const kind of ['Audio', 'Video'] as const) {
+    const f = await fixture(['Atlas Notes', 'gratitude'], kind)
+    try {
+      f.models.group = async (_sections, selected) => {
+        f.calls.push(`group:${selected.join(',')}`)
+        return {
+          groups: [
+            { title: 'Atlas Notes', summary: 'Sleep and walking helped.', sections: [0, 2] },
+            { title: 'Gratitude', summary: 'Grateful for help with Atlas.', sections: [1] },
+          ],
+        }
+      }
+      let enrichments = 0
+      f.models.tags = async () => {
+        if (++enrichments === 2) throw new Error('Synthetic interrupted enrichment')
+        return undefined
+      }
+      const first = await fileRecordedJournal(f.options, f.models)
+      const checkpoint = (await f.options.run.get('journal'))?.data
+      f.models.tags = async () => undefined
+      const retry = await fileRecordedJournal(f.options, f.models)
+      const files = retry.data?.files ?? []
+      const docs = await Promise.all(
+        files.map(async (file) => JournalDocument.fromMarkdown(await readFile(file, 'utf8'))),
+      )
+      assert({
+        given: 'a suggested type changed to a new name before filing stops after its first entry',
+        should: 'resume with the chosen names in filenames and tags, without asking or regrouping again',
+        actual: [
+          first.ok,
+          checkpoint?.selected,
+          retry.ok,
+          files.map((file) => path.basename(file)),
+          docs.map((doc) => String(doc.tags)),
+          f.calls,
+          SECTIONS.every((section) => docs.filter((doc) => doc.markdown.includes(section.body)).length === 1),
+        ],
+        expected: [
+          false,
+          ['Atlas Notes', 'Gratitude'],
+          true,
+          ['Atlas-Notes_Feeling-Rested-After-Sleep-And-Walking.md', 'Gratitude_Grateful-For-Help-With-Atlas-Today.md'],
+          [`Journal/${kind}; Journal/Atlas-Notes`, `Journal/${kind}; Journal/Gratitude`],
+          ['organize', 'suggest', 'review', 'group:Atlas Notes,Gratitude', 'name'],
+          true,
+        ],
+      })
+    } finally {
+      await rm(f.base, { recursive: true, force: true })
+    }
+  }
+})
+
 test('unchecked topics remain in a separate journal and empty selections preserve the entire recording', async () => {
   for (const selection of [['Health'], []]) {
     const f = await fixture(selection)

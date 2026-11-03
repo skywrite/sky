@@ -170,8 +170,30 @@ for (const source of ['audio', 'video'] as const)
             expected: [true, true],
           })
           await types.getByRole('checkbox', { name: 'Health', exact: true }).uncheck()
+          const customType = types.getByRole('combobox', { name: 'Journal type for Gratitude', exact: true })
+          await customType.fill('')
+          await types.getByRole('button', { name: 'Create journals', exact: true }).click()
+          await types
+            .getByRole('alert')
+            .getByText('Enter a type for each selected journal, or uncheck it.', { exact: true })
+            .waitFor()
+          assert({
+            given: 'a selected journal type cleared before submission',
+            should: 'keep the review open without answering or losing the field',
+            actual: [replies, await customType.inputValue()],
+            expected: [['names'], ''],
+          })
+          await customType.pressSequentially('Atlas Notes')
+          assert({
+            given: 'the missing type has been entered',
+            should: 'clear the validation message without discarding the edit',
+            actual: [await types.getByRole('alert').count(), await customType.inputValue()],
+            expected: [0, 'Atlas Notes'],
+          })
           await types.getByText('Other journal types', { exact: true }).click()
           await types.getByRole('checkbox', { name: 'Leadership', exact: true }).check()
+          await types.getByRole('combobox', { name: 'Journal type for Leadership', exact: true }).fill('Hea')
+          await page.getByRole('option', { name: 'Health', exact: true }).click()
           await page.screenshot({ path: '/tmp/sky-journal-types-desktop.png', fullPage: true })
           await page.setViewportSize({ width: 390, height: 844 })
           await page.getByRole('button', { name: 'Navigation', exact: true }).waitFor()
@@ -232,7 +254,7 @@ for (const source of ['audio', 'video'] as const)
             ],
             expected: [
               ['names', 'types'],
-              ['Gratitude', 'Leadership'],
+              ['Atlas Notes', 'Health'],
               FILES.map((file) => `/explorer/${file}`),
               ['', ''],
               [FILES],

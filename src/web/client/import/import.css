@@ -22,6 +22,31 @@
   margin: 20px 0;
 }
 
+.sky-journal-type-option {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 12px;
+}
+
+.sky-journal-type-check {
+  padding-top: 8px;
+}
+
+.sky-journal-type-content {
+  min-width: 0;
+}
+
+.sky-journal-type-name {
+  max-width: 320px;
+}
+
+.sky-journal-types .sky-journal-type-hint {
+  margin: 5px 0 0;
+  color: var(--sky-dim);
+  font-size: 16px;
+}
+
 .sky-journal-results {
   display: flex;
   flex-direction: column;
