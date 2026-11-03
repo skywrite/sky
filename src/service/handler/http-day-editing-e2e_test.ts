@@ -103,6 +103,7 @@ test(
           expected: CONTENT,
         })
 
+        await page.getByRole('button', { name: /^Completed ·/ }).click()
         await row('Send the checklist').locator('.sky-ptext').dblclick()
         await input.fill('Send the final checklist')
         await input.press('Enter')

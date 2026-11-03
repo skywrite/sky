@@ -47,7 +47,7 @@ tz: America/Chicago
 
 for (const width of [1500, 390]) {
   test(
-    { name: `checked day items stay in their lists in completion and time order at ${width}px`, timeout: 45000 },
+    { name: `checked day items retain their source lists in the combined To-dos view at ${width}px`, timeout: 45000 },
     async (t) => {
       await runWysiwygE2e(
         t,
@@ -66,7 +66,7 @@ for (const width of [1500, 390]) {
               .locator('.sky-col > .sky-block')
               .filter({ has: page.locator('.sky-block-head').filter({ hasText: new RegExp(`^${name}`) }) })
           const todos = card('To-dos')
-          const commitments = card('Commitments')
+          const commitments = todos
           const row = (name: string) =>
             page.locator('.sky-irow').filter({ has: page.locator('.sky-ptext').filter({ hasText: name }) })
           const toggle = async (name: string, done: boolean) => {
@@ -88,24 +88,31 @@ for (const width of [1500, 390]) {
             card(name)
               .locator('.sky-ptext')
               .evaluateAll((nodes) => nodes.map((node) => node.childNodes[0]?.textContent ?? ''))
+          await todos.getByRole('button', { name: /^Show \d+ more$/ }).click()
+          await todos.getByRole('button', { name: /^Completed ·/ }).click()
           await row('Older completed task').getByRole('button', { name: 'Mark not done', exact: true }).waitFor()
           assert({
             given: 'existing checked tasks loaded from Markdown',
-            should: 'show checked items above open ones within their category and commitments by time',
+            should: 'show saved priority order and keep checked items available under Completed',
             actual: {
               todos: await labels('To-dos'),
               commitments: await commitments.locator('.sky-when').allTextContents(),
             },
             expected: {
               todos: [
-                'Older completed task',
                 'First open task',
                 'Read Atlas brief',
                 'Final open task',
-                'Personal completed task',
                 'Personal open task',
+                'Early open commitment',
+                'Late open commitment',
+                'Midday open commitment',
+                'Older completed task',
+                'Personal completed task',
+                'Later completed commitment',
+                'Earlier completed commitment',
               ],
-              commitments: ['9:00', '17:00', '7:00', '12:00', '25:30'],
+              commitments: ['7:00', '25:30', '12:00', '17:00', '9:00'],
             },
           })
           await toggle('Read Atlas brief', true)
@@ -123,12 +130,17 @@ for (const width of [1500, 390]) {
             },
             expected: {
               todos: [
-                'Older completed task',
-                'Read Atlas brief',
                 'First open task',
                 'Final open task',
-                'Personal completed task',
                 'Personal open task',
+                'Early open commitment',
+                'Late open commitment',
+                'Midday open commitment',
+                'Older completed task',
+                'Read Atlas brief',
+                'Personal completed task',
+                'Later completed commitment',
+                'Earlier completed commitment',
               ],
               link: '/explorer/projects/Atlas/brief.md',
               doneToday: ['Filed a sample report'],
@@ -142,14 +154,16 @@ for (const width of [1500, 390]) {
             },
           })
           await page.reload()
+          await todos.getByRole('button', { name: /^Show \d+ more$/ }).click()
+          await todos.getByRole('button', { name: /^Completed ·/ }).click()
           await row('Read Atlas brief').getByRole('button', { name: 'Mark not done', exact: true }).waitFor()
           await toggle('Read Atlas brief', false)
           await toggle('Late open commitment', true)
           assert({
             given: 'a late commitment checked before an early open one',
-            should: 'put all checked commitments first in time order',
+            should: 'keep open tasks first, with checked items under Completed',
             actual: await commitments.locator('.sky-when').allTextContents(),
-            expected: ['9:00', '17:00', '25:30', '7:00', '12:00'],
+            expected: ['7:00', '12:00', '9:00', '17:00', '25:30'],
           })
           await toggle('Early open commitment', true)
           await toggle('Later completed commitment', false)
@@ -157,7 +171,7 @@ for (const width of [1500, 390]) {
             given: 'an early completion followed by reopening a later completed commitment',
             should: 'keep both the completed and open groups sorted by time',
             actual: await commitments.locator('.sky-when').allTextContents(),
-            expected: ['7:00', '9:00', '25:30', '12:00', '17:00'],
+            expected: ['12:00', '17:00', '7:00', '9:00', '25:30'],
           })
           const reminder = row('Leave space for a walk')
           await reminder.getByRole('button', { name: 'Mark done', exact: true }).click()
@@ -180,7 +194,7 @@ for (const width of [1500, 390]) {
               overflow: await page.evaluate(() => document.documentElement.scrollWidth > innerWidth),
               errors,
             },
-            expected: { checked: 6, rows: 6, reminder: true, overflow: false, errors: [] },
+            expected: { checked: 9, rows: 11, reminder: true, overflow: false, errors: [] },
           })
         },
       )

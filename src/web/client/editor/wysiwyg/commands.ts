@@ -1,10 +1,11 @@
 /**
  * Block-level commands on the model (architecture §11.2, behavior FMT-7 … FMT-10): heading levels,
- * quote and list toggles. Model only; the caller re-renders.
+ * quote and list toggles, and the blocks a toolbar inserts. Model only; the caller re-renders.
  */
 
 import { renumberAfter } from './lists.ts'
 import type { ListStyle, MarkdownDocument, Node } from './model.ts'
+import { parseLines } from './parser.ts'
 
 export interface Landing {
   leaf: Node
@@ -252,4 +253,48 @@ export function moveBlock(leaf: Node, direction: -1 | 1): boolean {
   }
   if (block.type === 'table_row') block.parent!.userText = undefined
   return true
+}
+
+export type BlockInsert = 'codeblock' | 'table' | 'divider'
+
+/** What each inserted block is written as: a two-column table with an empty header row to fill in. */
+const INSERTED: Record<BlockInsert, string[]> = {
+  codeblock: ['```', '', '```'],
+  table: ['|  |  |', '| --- | --- |', '|  |  |'],
+  divider: ['---'],
+}
+
+/**
+ * Adds a code block, a table or a divider at the caret's block (INS-1). An empty paragraph of its
+ * own becomes the code block or table; any other block keeps its text and the new one follows it.
+ * The caret lands where writing goes on: the code block's line, the table's first cell, or the
+ * line under a divider, which stays empty for the next paragraph.
+ */
+export function insertBlock(doc: MarkdownDocument, leaf: Node, kind: BlockInsert): Landing | null {
+  const top = leaf.topLevel()
+  if (!top) return null
+  const [block, ...rest] = parseLines(doc, INSERTED[kind], { indentedCode: false }).nodes
+  if (!block) return null
+  for (const extra of rest) doc.removeNode(extra)
+  // Default spacing: a divider written straight under a paragraph would read as its heading underline.
+  block.ahead = undefined
+  const blank = top === leaf && leaf.type === 'paragraph' && leaf.text.length === 0
+  if (kind === 'divider') {
+    if (blank) {
+      top.addBefore(block)
+      block.ahead = top.ahead
+      top.ahead = undefined
+      return { leaf, offset: 0 }
+    }
+    const line = doc.createNode('paragraph', { text: '' })
+    top.addAfter(block)
+    block.addAfter(line)
+    return { leaf: line, offset: 0 }
+  }
+  top.addAfter(block)
+  if (blank) {
+    block.ahead = top.ahead
+    doc.removeNode(top)
+  }
+  return { leaf: block.firstLeaf(), offset: 0 }
 }

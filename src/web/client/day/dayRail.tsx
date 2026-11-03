@@ -1,8 +1,8 @@
 import { ActionIcon, Button, FileButton, Menu, UnstyledButton } from '@mantine/core'
-import { type DragEvent, Fragment, type ReactNode, useEffect, useState } from 'react'
+import { type DragEvent, Fragment, type ReactNode, useEffect, useRef, useState } from 'react'
 import { filesHref, type Kept, moveIn, readListing } from '../attachments/files.tsx'
 import { fileHref } from '../explorer/explorer.tsx'
-import { type ImportJob, importStateWord, type MeetingImport, useFileDrop } from '../import/import.tsx'
+import { acceptsImports, type ImportJob, importStateWord, type MeetingImport, useFileDrop } from '../import/import.tsx'
 import { meetingHref } from '../meetings/meetingPage.tsx'
 import { refusalOf } from '../settings/settingsBlocks.tsx'
 import { RailToggle } from '../shell/railToggle.tsx'
@@ -316,12 +316,16 @@ function ScheduleSection({
   schedule,
   ymd,
   onImportMeeting,
+  onImportFiles,
 }: {
   schedule: DaySchedule | null
   ymd: string
   onImportMeeting?: (files: File[], meeting: MeetingImport) => void
+  onImportFiles?: (files: File[]) => void
 }) {
   const drop = useFileDrop(Boolean(onImportMeeting), (files) => onImportMeeting?.(files, { day: ymd }))
+  // Reset after each pick, so the same file can be chosen again.
+  const importPicker = useRef<() => void>(null)
   const [dismissed, setDismissed] = useState<ScheduledMeeting | null>(null)
   const [undoBusy, setUndoBusy] = useState(false)
   const [undoError, setUndoError] = useState<string | null>(null)
@@ -349,16 +353,36 @@ function ScheduleSection({
         count={schedule?.meetings.length}
         drop={onImportMeeting ? drop : undefined}
         extra={
-          schedule?.classificationWarning && (
-            <UnstyledButton
-              className="sky-rail-browse"
-              title={schedule.classificationWarning}
-              aria-label="Retry calendar sorting"
-              onClick={() => window.dispatchEvent(new CustomEvent(SCHEDULE_CHANGED, { detail: ymd }))}
-            >
-              Retry sorting
-            </UnstyledButton>
-          )
+          <>
+            {schedule?.classificationWarning && (
+              <UnstyledButton
+                className="sky-rail-browse"
+                title={schedule.classificationWarning}
+                aria-label="Retry calendar sorting"
+                onClick={() => window.dispatchEvent(new CustomEvent(SCHEDULE_CHANGED, { detail: ymd }))}
+              >
+                Retry sorting
+              </UnstyledButton>
+            )}
+            {/* The day's import picker: a recording, transcript or document becomes a record of the day. */}
+            {onImportFiles && (
+              <FileButton
+                multiple
+                accept={acceptsImports()}
+                resetRef={importPicker}
+                onChange={(files) => {
+                  importPicker.current?.()
+                  if (files.length > 0) onImportFiles(files)
+                }}
+              >
+                {(props) => (
+                  <UnstyledButton className="sky-rail-browse" aria-label="Add a file" title="Add file" {...props}>
+                    Add file
+                  </UnstyledButton>
+                )}
+              </FileButton>
+            )}
+          </>
         }
       >
         {schedule && !schedule.read && (
@@ -615,6 +639,7 @@ export function DayRail({
   imports,
   onOpenImport,
   onImportMeeting,
+  onImportFiles,
   onKept,
   onToggle,
 }: {
@@ -628,6 +653,8 @@ export function DayRail({
   imports: ImportJob[]
   onOpenImport: (id: string) => void
   onImportMeeting?: (files: File[], meeting: MeetingImport) => void
+  /** Files chosen at the Meetings heading become the day's imports, as the header's picker once did */
+  onImportFiles?: (files: File[]) => void
   /** Files the pad kept — the toast's words, and what Undo reverses */
   onKept: (kept: Kept[]) => void
   /** Folds the rail away — the chevron in its corner */
@@ -640,7 +667,12 @@ export function DayRail({
         <RailToggle open onClick={onToggle} />
       </div>
       <div className="sky-rail-body">
-        <ScheduleSection schedule={schedule} ymd={ymd} onImportMeeting={onImportMeeting} />
+        <ScheduleSection
+          schedule={schedule}
+          ymd={ymd}
+          onImportMeeting={onImportMeeting}
+          onImportFiles={onImportFiles}
+        />
         <ChatsSection ymd={ymd} today={today} chats={chats} threads={threads} />
         <WorkingSection imports={imports} onOpenImport={onOpenImport} />
       </div>

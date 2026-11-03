@@ -122,6 +122,9 @@
   flex: 1;
   min-width: 0;
 }
+.sky-item-help-link {
+  align-self: flex-start;
+}
 .sky-item-footer {
   flex-direction: row;
   gap: 8px;

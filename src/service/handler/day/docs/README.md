@@ -13,8 +13,9 @@ Design notes for `src/service/handler/day/` and the page that drives it,
 The day view opens on the saved summary when `summary.md` exists, with a
 Summary / Day record switch back to the plan and record. Without a summary,
 the plan and record open directly. Conversations open on their own chat
-pages; the day has no embedded chat composer. Add a file in the header
-opens the import picker on desktop and mobile.
+pages; the day has no embedded chat composer.
+Add a file beside Meetings in Details opens the import picker on desktop and mobile.
+New note atop Notes opens a blank note under the day (see [A note written on the day](#a-note-written-on-the-day)).
 
 ## Revisiting a summarized day
 
@@ -41,15 +42,23 @@ The header’s Journal action and Reflections entry open the [focused journal](.
 
 Most Important creation uses the shared [MI workflow](../../../../lib/mostImportant/docs/README.md): ranked suggestions, a relevant interview, and an editable draft accepted into the day. Its checkbox also updates the linked MI's completion state.
 
-The plan on the page — Most important, Commitments, To-dos, Reminders — is
-the day file's own lists, read by heading (`record.ts`). Each row writes
+The plan on the page is Most important, To-dos, and Reminders.
+To-dos combines the file's Commitments and Todos lists without changing their headings or API kinds.
+To-dos and Reminders each show their five highest-priority open items; Show more reveals the rest of that list.
+Jev suggests priority from goals, the week's plan, recent journals, Most Important and linked task notes.
+Personal and professional tasks share this ranking; a time informs urgency without automatically outranking untimed work.
+Reminders rank separately by relevance to this context and the day's To-dos; habits and principles need no deadline.
+Times sit on the right, aligned with the first line on phones too, so every title starts at the same edge.
+Completed to-dos remain available under a disclosure at the bottom, expanded while organizing.
+Each row keeps its original heading, occurrence, and revision (`record.ts`), and writes
 back to the file through `item.ts`, and every write answers with the fresh
 view so the page shows what the file now says. Check, delete and restore use
 the Day model's line edits, beside `isItemDone`. Completion then orders whole
 task blocks within the list, preserving their notes, links and surrounding text.
 
-Inline forms add to-dos, reminders, and commitments, including when their
-sections are empty. A time makes a task a commitment; times accept the
+Inline forms add to-dos and reminders, including when their sections are empty.
+A to-do's optional time routes it to the existing Commitments list; the UI still calls it a to-do.
+Times accept the
 notebook's extended hours. The dated day page opens even when its file is
 missing. Opening it changes nothing; adding an item or moving one from Next
 prepares that selected day's file without starting the day, including past and
@@ -88,7 +97,8 @@ operation ID; Undo preserves unrelated later changes and refuses to overwrite
 changed task blocks. Linked workstream activities open their canonical details.
 
 **Organize** combines manual ordering and selection across the plan lists. A row
-selects for moving; its grip reorders within the same Markdown list and category.
+selects for moving; To-do grips reorder across categories and times, while other lists retain their own ordering.
+Organize reveals all To-dos and Reminders and offers Move to top for promoting a hidden item within its list.
 Desktop grips also appear on hover or keyboard focus outside Organize. Touch
 grips appear only in Organize so normal scrolling, text editing and swipe deletion
 retain their gestures. Grip arrow keys offer the same ordering without dragging.
@@ -102,13 +112,23 @@ On release the copy glides into the slot, and then the saved list takes its
 place. Escape, or a cancelled touch, puts the row back and saves nothing.
 See [2026-09-18 — a dragged row travels whole](2026-09-18-a-dragged-row-travels-whole.md).
 
-Order is the order of complete Markdown blocks, never a separate collection of
-task IDs. The day frontmatter's `manual-order` list names headings whose explicit
-order completion and editing must preserve. Commitments use a day-wide
-`commitments-order: manual` preference, with time order as the default. Switching
-back to Time sorts the file; dragging never changes a time. This preference must
-be honored by additions as well as rendering, or a later write would silently
-erase a user's order.
+The combined To-dos view cannot express its order by rearranging blocks within separate source headings.
+Its `todo-order` frontmatter stores readable heading/text/occurrence references, with `manual` marking the rows
+the person moved. Reminders use the same contract in a separate `reminder-order` field.
+Those rows keep their chosen slots while Jev fills the remaining slots in each list independently.
+Completion, edits and category/time changes rebase these references; repeated item text still has distinct occurrences.
+Clearing a reminder reveals the next one, and Undo restores its priority as well as its text and notes.
+Use Sky's order clears only that list's overrides. Most Important retains its existing block ordering.
+The older `manual-order` and `commitments-order` preferences still govern physical file ordering for existing callers.
+
+`priority.ts` caches derived Jev scores outside the notebook, separately for To-dos and Reminders and from manual order,
+so model output never rewrites a person's priorities or the source lists.
+While the day is open, the client checks each list for updated suggestions each minute; matching context, items and
+quarter-hour reuse the cache, including after restarts.
+Requests use the shared metered TypeSafe client, with bounded context, validated probability distributions and no retries.
+An answer for changed tasks, overrides, context or a summarized day is discarded.
+Missing credentials and failed requests retain the saved order with a connection or retry action.
+Before the first usable suggestion, the file's order supplies the fallback.
 
 `organizing.ts` moves whole blocks to days or schedules using the shared
 [date-routing rule](../../../../commands/all/day/docs/README.md#task-dates-choose-their-destination). It validates all selections and
@@ -166,11 +186,12 @@ Filed documents, attachments, and continuing chats remain accessible.
 
 - **The checkbox** strikes a task in the file (`~~task~~`, or for a timed
   item `HH:MM > ~~task~~`, the time kept readable). Checked tasks remain in
-  their original list and can be unchecked there. Unless manually ordered,
-  they are grouped at the top.
+  their original file list and can be unchecked there.
+  In the web app, checked to-dos appear under Completed; Most important remains its own card.
+  Unless manually ordered, the file groups checked tasks at the top.
   To-dos keep their relative order within the checked and unchecked groups,
   matching the VS Code extension's Cmd+Shift+C behavior. Commitments sort
-  by time within each group. The view and file use the same ordering;
+  by time within each group. The web To-dos list changes presentation only;
   additions and restores preserve it too. Done today shows entries from the
   separate Complete lists, without repeating checked plan items. The header's
   progress counts both. A checked reminder is deleted through the same action
@@ -192,6 +213,9 @@ Filed documents, attachments, and continuing chats remain accessible.
 | `POST /day/:ymd/item/organize/move` | `{items: [{list, raw, occurrence, revision}], date, requestId}` → move a selection to a date, answers `{view, undo, date}` |
 | `POST /day/:ymd/item/organize/reorder` | `{list, items, requestId}` → save a complete, revision-checked list permutation |
 | `POST /day/:ymd/item/organize/order` | `{order: "time" \| "manual", requestId}` → save the commitment ordering preference |
+| `POST /day/:ymd/item/organize/priority` | `{items, revision, group?: "todos" \| "reminders", moved?, reset?, requestId}` → save that group's priority overrides or restore Sky's order; defaults to To-dos |
+| `POST /day/:ymd/todo-priority` | Refresh contextual suggestions and return the view; source task files remain unchanged |
+| `POST /day/:ymd/reminder-priority` | Refresh reminder relevance independently and return the view; source lists remain unchanged |
 | `POST /day/:ymd/item/organize/undo` | `{id}` → reverse a move, reorder or ordering preference |
 | `POST /day/:ymd/item/edit` | `{list, raw, occurrence?, text, revision?, kind?, category?, time?, date?, requestId}` → edit or move a task block, answers `{view, undo, undoRoute?, item, date?}` |
 | `POST /day/:ymd/item/edit/undo` | `{id}` → undo an edit without overwriting later task changes |
@@ -236,7 +260,8 @@ Settings → Me → About me changes the idle hours live; zero disables automati
 Browser polls are not activity, and service downtime alone is not evidence of sleep.
 Every open tab, and any tab opened later, shows the prompt until the person acts on it or closes it in one tab.
 Acting in a prompted copy keeps the review in that tab's address; the other tabs drop theirs without pausing the review.
-The date is then not offered again; the day page's Review yesterday / Review this day button always reopens it.
+The date is then not offered again; the day page's status line still reaches it: `Review` while the day has no summary,
+`Open review` once it does.
 
 `review/` composes the existing day mover, streak completion, tracking store, meeting/import workflows, recap commands,
 and `summary:day`.
@@ -296,12 +321,58 @@ Narrative: [2026-10-03 — Start moves onto the day](2026-10-03-start-moves-onto
 ## Reflections and notes in the day's record
 
 In the day's record, journal entries appear in **Reflections** and notes
-appear in **Notes**, each with its own count. Empty sections stay hidden.
-Both retain their document links and times. A reflection with a nonblank
+appear in **Notes**, each with its own count. Both always show, each with
+its way to start one: Start journaling, and New note with a line saying what
+goes there while the day has none. Both retain their times; a reflection
+links its document, and a note opens its page under the day. A reflection with a nonblank
 `summary:` shows that text below its title, with line breaks preserved and
 long text wrapping on narrow screens. Entries without summaries have no
 summary placeholder. Summaries render as ordinary text so selections survive
 unrelated renders and polling.
+
+## A note written on the day
+
+New note atop the record's Notes opens
+`/<ymd>/notes/new`: a blank note on a page of the day's own. A note is a
+page under its day the way a meeting is, `/<ymd>/notes/<name>`, the file's
+name without `.md`. The day's Notes rows open it there; its ⋯ menu opens
+the same file in the explorer, which stays the file as written. The client
+is `web/client/notes/`.
+
+The page is the explorer's editor in its local mode, so the page saves and
+not the editor, under a formatting row and a "/" menu, with the explorer's
+rail beside it. A line holding only "/" and a few words offers the blocks
+those words name, each beside the markdown it writes. Every block is plain
+markdown, so the Markdown switch shows the same file, front matter included,
+as text to edit.
+
+Nothing is written until the note has something in it. The first save waits
+for a body, or for a pause on the title long enough that the title is likely
+done (2.5 s), because the file is named by the title it has then.
+`POST /day/:ymd/notes` writes it into the day's notes folder through
+`DayDirFileWriter`, `-2` on a clash. It stamps `summary`, `when` (the
+notebook clock) and `type: Notes` into the front matter and adds
+`HH:MM > Notes -> [title](actions/notes/<name>.md)` to the category's
+Complete list under the day lock: the file and line `notes:new` writes. The
+page takes the stamped front matter back and moves its address to the note's
+name without opening it again.
+
+Later saves go through `PUT /docs/_api/content/<path>` with the version the
+page holds; a 409 offers Keep mine or Use the saved one. An edit made
+elsewhere shows on the page when it has no unsaved writing of its own.
+
+Notes are named by their summary in their day's folder, not
+`YYYY-MM-DD_HHMMSS_…`: the folder already carries the date, and the
+command's notes share it in the same shape. The name is fixed at the first
+save; a later title edit changes the heading and the page, not the file name.
+
+| Route | Purpose |
+| --- | --- |
+| `POST /day/:ymd/notes` | `{content, category}`: files the note; answers its path, name, saved text and version, with `problem` when the day could not list it |
+| `GET /day/:ymd/notes/:slug` | The note's path, and the category whose Complete list names it; 404 when there is no such note |
+| `PUT /day/:ymd/notes/:slug/category` | Moves the note's line to the other Complete list, adding one when the day never listed it |
+
+The writes keep the item routes' guard: from the Sky page, as JSON.
 
 ## Videos and chats in the day's record
 

@@ -1,5 +1,5 @@
 import { assert, test } from '#test'
-import { setHeading, toggleList, toggleQuote } from './commands.ts'
+import { type BlockInsert, insertBlock, setHeading, toggleList, toggleQuote } from './commands.ts'
 import type { MarkdownDocument, Node } from './model.ts'
 import { parseDocument } from './parser.ts'
 import { serializeDocument } from './serializer.ts'
@@ -141,6 +141,41 @@ test('FMT-9 FMT-10 quote and list toggles wrap, unwrap, and rewrite', () => {
       [true, '1. a\n2. b\n'],
       [true, '1. [ ] a\n2. [ ] b\n'],
       [true, 'a\n\nb\n'],
+    ],
+  })
+})
+
+test('INS-1 a code block, table or divider takes an empty line, or follows a written one with the caret inside', () => {
+  const run = (source: string, kind: BlockInsert, blankAfter: number | null) => {
+    const doc = parseDocument(source)
+    let target = leaf(doc, 0)
+    if (blankAfter !== null) {
+      target = doc.createNode('paragraph', { text: '' })
+      leaf(doc, blankAfter).addAfter(target)
+    }
+    const landing = insertBlock(doc, target, kind)
+    return [serializeDocument(doc), landing?.leaf.type, landing?.offset]
+  }
+  assert({
+    given:
+      'an empty line between two paragraphs given a table, a code block and a divider, then a written paragraph given each',
+    should:
+      'turn the empty line into the table or code block, put a divider above it, and add each after the written paragraph',
+    actual: [
+      run('a\n\nb\n', 'table', 0),
+      run('a\n\nb\n', 'codeblock', 0),
+      run('a\n\nb\n', 'divider', 0),
+      run('a\n', 'table', null),
+      run('a\n', 'codeblock', null),
+      run('a\n', 'divider', null),
+    ],
+    expected: [
+      ['a\n\n|  |  |\n| --- | --- |\n|  |  |\n\nb\n', 'table_cell', 0],
+      ['a\n\n```\n\n```\n\nb\n', 'fence', 0],
+      ['a\n\n---\n\n\n\nb\n', 'paragraph', 0],
+      ['a\n\n|  |  |\n| --- | --- |\n|  |  |\n', 'table_cell', 0],
+      ['a\n\n```\n\n```\n', 'fence', 0],
+      ['a\n\n---\n\n\n', 'paragraph', 0],
     ],
   })
 })

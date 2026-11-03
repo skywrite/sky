@@ -19,7 +19,7 @@ import { useItemCategory } from './useItemCategory.ts'
 
 const LABELS: Record<DayAddKind, string> = {
   todos: 'to-do',
-  commitments: 'commitment',
+  commitments: 'to-do',
   reminders: 'reminder',
   complete: 'entry',
 }
@@ -188,7 +188,7 @@ function PlanComposer({
           (timed ? (
             <div className="sky-plan-time">
               <TextInput
-                aria-label={kind === 'complete' ? 'Entry time' : 'Commitment time'}
+                aria-label={kind === 'complete' ? 'Entry time' : 'To-do time'}
                 placeholder="HH:MM"
                 value={time}
                 maxLength={5}
@@ -202,7 +202,7 @@ function PlanComposer({
               {kind !== 'complete' && (
                 <ActionIcon
                   aria-label="Remove time"
-                  title="Make this a to-do"
+                  title="Remove time"
                   disabled={busy}
                   onClick={() => {
                     setTimed(false)
@@ -246,7 +246,9 @@ function PlanComposer({
           Automatic category selection is unavailable. Check the category above before adding this item.
         </p>
       )}
-      {timed && kind !== 'complete' && <p className="sky-plan-note">A time makes this a commitment.</p>}
+      {timed && kind !== 'complete' && (
+        <p className="sky-plan-note">Time appears beside your to-do. You choose its priority.</p>
+      )}
       {(invalidTime || invalidLength || error) && (
         <p className="sky-plan-error" role="alert">
           {invalidTime

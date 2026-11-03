@@ -110,7 +110,7 @@ export function createPlanningRoutes(options: ItemRoutesOptions): Hono {
     const body = await bodyOf(c)
     const input = inputOf(body)
     if (!input || typeof body?.requestId !== 'string' || !/^[a-f0-9-]{36}$/.test(body.requestId))
-      return c.json({ error: 'Enter text, a category, and a time for a commitment or completed entry.' }, 400)
+      return c.json({ error: 'Enter text and a category. Timed to-dos and completed entries also need a time.' }, 400)
     const day = await dayFileOf(c, options, true)
     if (day instanceof Response) return day
     const id = body.requestId
@@ -135,7 +135,7 @@ export function createPlanningRoutes(options: ItemRoutesOptions): Hono {
       input.kind === 'complete'
         ? `Entry added at ${input.time}`
         : input.kind === 'commitments'
-          ? `Commitment added at ${input.time}`
+          ? `To-do added at ${input.time}`
           : input.kind === 'reminders'
             ? 'Reminder added'
             : 'To-do added'

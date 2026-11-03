@@ -129,12 +129,10 @@ function normalizeDraft(input: RecurringDraft): RecurringDraft {
   let time = ''
   if (input.kind === 'commitment') {
     const match = /^(\d{1,2}):([0-5]\d)$/.exec(input.time.trim())
-    if (!match) throw new RecurringError('Enter a time for this commitment as HH:MM, for example 09:30.')
+    if (!match) throw new RecurringError('Enter a time for this to-do as HH:MM, for example 09:30.')
     time = match[1].padStart(2, '0') + ':' + match[2]
   } else if (input.kind === 'todo' && /^\d{2}:\d{2} >/.test(input.text)) {
-    throw new RecurringError(
-      'This text starts with a commitment time. Choose Commitment and put the time in its Time field.',
-    )
+    throw new RecurringError('This text starts with a time. Choose Add a time and put the time in its Time field.')
   }
   return { ...input, time, pattern, notes: input.notes.replace(/\r\n/g, '\n') }
 }

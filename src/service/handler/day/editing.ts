@@ -1,4 +1,5 @@
 import { Hono } from 'hono'
+import { setPlanOrder } from '#lib/nbfs/planOrder.ts'
 import { atomicWrite, readOptional } from '#lib/outbox/files.ts'
 import { workstreamDayReference } from '#lib/workstreams/day.ts'
 import DayDocument from '#shared/models/Day/document/mod.ts'
@@ -41,7 +42,7 @@ function fieldsOf(body: Record<string, unknown>, list: string, raw: string): Day
     (scheduling && fields.kind === 'commitments' && !time) ||
     (scheduling && ['todos', 'reminders'].includes(fields.kind) && time)
   )
-    throw new ItemEditError('Commitments need a time as HH:MM. To-dos and reminders have no time.', 400)
+    throw new ItemEditError('Enter a time as HH:MM for a timed to-do, or remove its time. Reminders have no time.', 400)
   return { text: fields.text.trim().replace(/\s+/g, ' '), kind: fields.kind, category: fields.category.trim(), time }
 }
 
@@ -153,7 +154,7 @@ export function createEditingRoutes(options: ItemRoutesOptions, organizer: DayOr
         day.content === operation.result.content
           ? undefined
           : savedRow(day.content, operation.result.content, day.file, operation.result.after)
-      const after =
+      let after =
         day.content === operation.result.content
           ? operation.before
           : replaceEditedBlock(
@@ -161,6 +162,17 @@ export function createEditingRoutes(options: ItemRoutesOptions, organizer: DayOr
               { ...operation.result.after, occurrence: row!.occurrence },
               operation.result.before,
             )
+      if (day.content !== operation.result.content) {
+        const original = DayDocument.fromMarkdown(operation.before).yaml
+        const saved = DayDocument.fromMarkdown(operation.result.content).yaml
+        const current = DayDocument.fromMarkdown(day.content).yaml
+        for (const key of ['todo-order', 'reminder-order'] as const) {
+          if (JSON.stringify(original[key]) === JSON.stringify(saved[key])) continue
+          if (JSON.stringify(current[key]) !== JSON.stringify(saved[key]))
+            throw new ItemEditError('Priority changed after this edit. Review the day before undoing.')
+          after = setPlanOrder(after, key, original[key])
+        }
+      }
       await write(day.file, day.content, after)
       operation.undone = true
     }

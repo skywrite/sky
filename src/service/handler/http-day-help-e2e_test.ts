@@ -78,7 +78,12 @@ test(
         const openHelp = async (item: { text: string }, index: number) => {
           await page.goto(`${origin}/${DAY.ymd}`)
           const row = page.locator('.sky-prow').filter({ hasText: item.text })
-          const help = row.getByRole('button', { name: 'Get Sky’s help', exact: true })
+          let help = row.getByRole('button', { name: 'Get Sky’s help', exact: true })
+          if (index === 2) {
+            await row.locator('.sky-ptext').dblclick()
+            await page.locator('.sky-item-mobile-actions').getByRole('button', { name: 'Details', exact: true }).click()
+            help = page.getByRole('dialog').getByRole('button', { name: 'Get Sky’s help', exact: true })
+          }
           await help.waitFor({ state: 'visible' })
           if (screenshot && (index === 0 || index === 2)) {
             await row.hover()

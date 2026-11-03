@@ -137,7 +137,9 @@ test(
       await dialog.getByRole('button', { name: 'Read summary' }).waitFor()
       await dialog.getByRole('button', { name: 'Read summary' }).click()
       await page.waitForURL(`**/${REVIEW_DAY}?view=summary`)
-      await page.getByRole('button', { name: 'Review this day' }).click()
+      // The summary view keeps no status line; the day record's offers the closed review.
+      await page.goto(`${origin}/${REVIEW_DAY}?view=record`)
+      await page.getByRole('button', { name: 'Open review', exact: true }).click()
       await dialog.waitFor()
       await dialog.getByRole('button', { name: 'Read summary' }).waitFor()
       assert({

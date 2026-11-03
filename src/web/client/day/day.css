@@ -269,12 +269,12 @@
     padding-right: 14px;
   }
 
-  .sky-day .sky-title {
+  /* The date and Organize share the row. Only the summary's view switch takes a row of its own, above the date. */
+  .sky-day .sky-head:has(.sky-day-view-switch) .sky-title {
     grid-area: 2 / 1 / auto / -1;
-    white-space: normal;
   }
 
-  .sky-day .sky-tabs {
+  .sky-day .sky-tabs:has(.sky-day-view-switch) {
     grid-area: 1 / 1 / auto / -1;
   }
 }
@@ -440,6 +440,106 @@
 .sky-when[data-tone='late'] {
   color: var(--sky-amber);
   font-weight: 600;
+}
+
+/* Optional times never change the title's left edge, including wrapped phone rows. */
+.sky-todo-row .sky-item-body {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.sky-todo-row .sky-item-title {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.sky-todo-row .sky-ptext {
+  flex: 1;
+}
+
+.sky-todo-time {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  align-self: flex-start;
+  width: 52px;
+  min-height: 1lh;
+  border-radius: 5px;
+  text-align: right;
+  font-size: 17px;
+  line-height: calc(var(--sky-content-font-size) * 1.6);
+}
+
+button.sky-todo-time:not(:disabled):hover {
+  color: var(--sky-accent);
+}
+
+.sky-todo-time:focus-visible,
+.sky-todos-disclosure:focus-visible {
+  outline: 2px solid var(--sky-action-focus);
+  outline-offset: 3px;
+}
+
+.sky-todos-completed {
+  margin-top: 10px;
+}
+
+.sky-todos-disclosure {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  color: var(--sky-dim);
+  font-size: 14px;
+}
+
+.sky-todo-promote {
+  align-self: flex-start;
+  min-height: 32px;
+  padding: 2px 0;
+  font-size: 14px;
+}
+
+.sky-todo-priority-status {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+  color: var(--sky-dim);
+  font-size: 14px;
+}
+
+.sky-todos-disclosure > span {
+  width: 12px;
+  font-size: 19px;
+}
+
+@media (max-width: 900px) {
+  .sky-todo-time {
+    width: 48px;
+    min-height: 44px;
+    margin-top: calc((1lh - 44px) / 2);
+    font-size: 15px;
+  }
+
+  .sky-todos-disclosure {
+    min-height: 44px;
+  }
+
+  /* Text opens the inline editor's Details; a written time opens Details directly.
+     Linked untimed items keep their separate Details control. Help remains in Details. */
+  .sky-todo-row[data-timed='true'] .sky-item-actions,
+  .sky-todo-row:not([data-linked='true']) .sky-item-actions,
+  .sky-todo-row:not([data-workstream='true']) .sky-item-help,
+  .sky-todo-row .sky-x {
+    display: none;
+  }
 }
 
 .sky-late {
@@ -916,4 +1016,39 @@ a.sky-item-link:focus-visible {
   font-size: 14px;
   line-height: 1.4;
   color: var(--sky-dim);
+}
+
+/* The review the day offers, after its count: a quiet link, with the nudge's words while the review is open. */
+.sky-day-review {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.sky-day-review-link {
+  font: inherit;
+  font-weight: 500;
+  color: var(--sky-accent);
+  border-radius: 4px;
+}
+
+.sky-day-review-link:hover {
+  text-decoration: underline;
+}
+
+.sky-day-review-link:focus-visible {
+  outline: 2px solid var(--sky-action-focus);
+  outline-offset: 3px;
+}
+
+/* Notes sits in the record like Reflections: New note first, a line saying what goes here while it is empty. */
+.sky-day-note-entry {
+  margin: 4px 0 16px;
+}
+
+.sky-day-note-hint {
+  color: var(--sky-dim);
+  font-size: 15px;
+  line-height: 1.7;
 }

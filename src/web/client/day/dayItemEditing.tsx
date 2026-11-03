@@ -18,6 +18,7 @@ import { dayItemKey } from '../../../service/handler/day/organizingTypes.ts'
 import { normalizeDayTime } from '../../../service/handler/day/planningTypes.ts'
 import type { DayData, DayItem } from './day.tsx'
 import { DayCalendarIcon, DayDatePicker, dayDateLabel } from './dayDatePicker.tsx'
+import { ItemHelpButton } from './dayItemHelp.tsx'
 
 const keyOf = dayItemKey
 const editFields = (item: DayItem, date: string) => ({ ...itemEditFields(item), date })
@@ -180,7 +181,7 @@ export function DayItemEditing({
       fields.time = time
     }
     if (draft.mode === 'details' && fields.kind === 'commitments' && !fields.time) {
-      setError('Enter a time for this commitment.')
+      setError('Enter a time for this to-do, or remove the time.')
       return
     }
     if (JSON.stringify(fields) === JSON.stringify(editFields(draft.item, ymd))) {
@@ -501,18 +502,17 @@ function ItemDetails({
           label="Type"
           data={[
             { value: 'todos', label: 'To-do' },
-            { value: 'commitments', label: 'Commitment' },
             { value: 'reminders', label: 'Reminder' },
             { value: 'important', label: 'Most important' },
           ]}
-          value={fields.kind}
+          value={fields.kind === 'commitments' ? 'todos' : fields.kind}
           allowDeselect={false}
           disabled={editor.busy || editor.readOnly}
           onChange={(kind) => {
             if (kind)
               editor.change({
-                kind: kind as DayEditKind,
-                time: ['todos', 'reminders'].includes(kind) ? '' : fields.time,
+                kind: kind === 'todos' && fields.time ? 'commitments' : (kind as DayEditKind),
+                time: kind === 'reminders' ? '' : fields.time,
               })
           }}
         />
@@ -560,6 +560,7 @@ function ItemDetails({
           <div className="sky-item-time">
             <TextInput
               label={fields.kind === 'important' ? 'Time (optional)' : 'Time'}
+              description={fields.kind === 'important' ? undefined : 'Optional. Timed to-dos appear first.'}
               placeholder="HH:MM"
               value={fields.time}
               maxLength={5}
@@ -587,6 +588,7 @@ function ItemDetails({
             </Button>
           )
         )}
+        <ItemHelpButton item={draft.item} href={null} disabled={editor.busy || editor.readOnly || dirty} label />
         {editor.error && (
           <p className="sky-plan-error" role="alert">
             {editor.error}

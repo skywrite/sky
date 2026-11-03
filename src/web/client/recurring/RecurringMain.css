@@ -1,6 +1,17 @@
 .sky-recurring-col {
   gap: 0;
 }
+
+.sky-recurring-time {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+}
+
+.sky-recurring-time > .mantine-TextInput-root {
+  flex: 1;
+  min-width: 0;
+}
 .sky-recurring-heading {
   display: flex;
   align-items: flex-start;

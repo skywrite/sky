@@ -467,3 +467,22 @@ test({ name: 'day route - a date that is not a day is not found' }, async () => 
     expected: [404, 404, 200],
   })
 })
+
+test('the view names yesterday for review and whether its summary closed it', async () => {
+  const base = await notebookWithOneChat()
+  const timeDir = path.join(base, 'time')
+  const options = { markdownBaseDir: base, timeDir, today: () => TODAY }
+  const without = await buildDayView(options)
+  const yesterday = path.join(timeDir, dayFile(TODAY.addDays(-1)))
+  await mkdir(path.dirname(yesterday), { recursive: true })
+  await writeFile(yesterday, TOGGLE_DAY_MD.replaceAll('2026-01-27', '2026-01-26'))
+  const open = await buildDayView(options)
+  await writeFile(daySummaryPath(yesterday), '---\nday: 2026-01-26\n---\n\n## Day at a Glance\n\nA quiet day.\n')
+  const closed = await buildDayView(options)
+  assert({
+    given: 'yesterday missing, then written, then summarized',
+    should: 'offer nothing, then an open review, then a closed one',
+    actual: [without.yesterday, open.yesterday, closed.yesterday],
+    expected: [null, { ymd: '2026-01-26', reviewed: false }, { ymd: '2026-01-26', reviewed: true }],
+  })
+})

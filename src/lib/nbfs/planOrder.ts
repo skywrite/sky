@@ -86,7 +86,11 @@ export function isManualPlanList(content: string, list: string): boolean {
 }
 
 /** Keep frontmatter comments, the rest of the document and its line endings intact. */
-export function setPlanOrder(content: string, key: 'manual-order' | 'commitments-order', value: unknown): string {
+export function setPlanOrder(
+  content: string,
+  key: 'manual-order' | 'commitments-order' | 'todo-order' | 'reminder-order',
+  value: unknown,
+): string {
   const eol = content.includes('\r\n') ? '\r\n' : '\n'
   const match = /^(---\r?\n)([\s\S]*?)(^---[^\S\r\n]*(?:\r?\n|$))/m.exec(content)
   if (match && match.index !== 0) throw new Error('The day frontmatter must be at the start of the file.')

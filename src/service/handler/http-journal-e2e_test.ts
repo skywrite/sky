@@ -58,7 +58,7 @@ test(
           (await (await page.request.get(`${origin}/journal/_api/${DAY.ymd}`)).json()) as JournalView
         await page.setViewportSize({ width: 1500, height: 1100 })
         await page.goto(`${origin}/${DAY.ymd}`)
-        await page.getByRole('link', { name: 'Journal', exact: true }).click()
+        await page.getByRole('link', { name: /^Start journaling/ }).click()
         const writer = page.locator('.sky-journal .sky-wysiwyg[contenteditable]').first()
         await writer.waitFor()
         await page.waitForFunction(() => document.title.includes('Health · Journal'))

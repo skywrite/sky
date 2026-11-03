@@ -47,6 +47,8 @@ function rememberFace(face: Face) {
 function useBacklinks(file: string, version: string): { items: Backlink[]; total: number } {
   const [found, setFound] = useState<{ items: Backlink[]; total: number }>({ items: [], total: 0 })
   useEffect(() => {
+    // A document with no file yet — a blank note — has nothing pointing at it.
+    if (!file) return
     let alive = true
     void fetchBacklinks(file).then((result) => {
       if (alive) setFound(result)
@@ -130,8 +132,9 @@ export function DocumentRail({
   const document = rowsOf('document')
   const present = new Set<string>(state.rows.map((row) => row.key))
   const readOnly = state.readOnly
-  // A file can be added while editing, as long as the front matter reads as rows to list it in.
-  const canAttach = !readOnly && !state.error
+  // A file can be added while editing, as long as the front matter reads as rows to list it in and
+  // there is a document to keep it beside — a note written on the day has none until its first save.
+  const canAttach = !readOnly && !state.error && file !== ''
   const row = (r: (typeof state.rows)[number]) => (
     <Fragment key={r.key}>
       <PropRow
@@ -253,7 +256,7 @@ export function DocumentRail({
             <div className="sky-prop" data-key="path" data-kind="auto">
               <span className="sky-prop-key">path</span>
               <div className="sky-prop-value">
-                <span className="sky-prop-text auto">{file}</span>
+                <span className="sky-prop-text auto">{file || 'Not saved yet'}</span>
               </div>
             </div>
             {!readOnly ? (

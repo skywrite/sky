@@ -1,5 +1,5 @@
 import './dayOrganizing.css'
-import { Button, NativeSelect } from '@mantine/core'
+import { Button } from '@mantine/core'
 import {
   createContext,
   type PointerEvent as ReactPointerEvent,
@@ -9,11 +9,13 @@ import {
   useRef,
   useState,
 } from 'react'
+import type { PriorityGroup } from '#lib/nbfs/priorityOrder.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
-import { dayItemKey, type CommitmentOrder } from '../../../service/handler/day/organizingTypes.ts'
+import { dayItemKey } from '../../../service/handler/day/organizingTypes.ts'
 import type { DayData, DayItem } from './day.tsx'
 import { DayCalendarIcon, DayDatePicker } from './dayDatePicker.tsx'
 import { useItemEditing } from './dayItemEditing.tsx'
+import { isTodoItem, organizeGroup, priorityItems, priorityGroupOf } from './priorityItems.ts'
 
 type Result = { view: DayData; undo: string; message: string; date?: string; href?: string }
 /** A place the lifted row can land: how far its slot sits from home, and the rows that make room. */
@@ -78,6 +80,12 @@ export function useDayOrganizing(
   const requestId = useRef<{ payload: string; id: string } | null>(null)
   const focusAfterSave = useRef<{ key: string; scope: string } | null>(null)
   const items = allItems(day)
+  const todos = priorityItems(items.filter(isTodoItem), (item) => item.done)
+  const reminders = priorityItems(day?.record.reminders ?? [], (item) => item.done)
+  const groups = { todos, reminders }
+  const priorityRows = (group: PriorityGroup) => [...groups[group].open, ...groups[group].completed]
+  const priorityRevision = (group: PriorityGroup) =>
+    group === 'todos' ? day?.record.todoOrderRevision : day?.record.reminderOrderRevision
   const endDrag = () => {
     drag.current = null
     cancelAnimationFrame(frame.current)
@@ -162,7 +170,7 @@ export function useDayOrganizing(
     }
     return body
   }
-  const save = async (route: 'move' | 'reorder' | 'order', input: unknown) => {
+  const save = async (route: 'move' | 'reorder' | 'priority', input: unknown) => {
     if (!enabled || pending.current) return
     pending.current = true
     setBusy(true)
@@ -211,8 +219,9 @@ export function useDayOrganizing(
   const address = ({ list, raw, occurrence, revision }: DayItem) => ({ list, raw, occurrence, revision })
   /** `keys`: the arrow keys moved the row, so its grip keeps the focus; a dropped row shows no focus ring. */
   const reorder = (item: DayItem, neighbor: DayItem, after: boolean, keys = false) => {
-    if (item.list !== neighbor.list || dayItemKey(item) === dayItemKey(neighbor)) return
-    const rows = items.filter((row) => row.list === item.list)
+    if (organizeGroup(item) !== organizeGroup(neighbor) || dayItemKey(item) === dayItemKey(neighbor)) return
+    const priority = priorityGroupOf(item)
+    const rows = priority ? priorityRows(priority) : items.filter((row) => row.list === item.list)
     const ordered = rows.filter((row) => dayItemKey(row) !== dayItemKey(item))
     ordered.splice(ordered.findIndex((row) => dayItemKey(row) === dayItemKey(neighbor)) + (after ? 1 : 0), 0, item)
     if (ordered.every((row, index) => dayItemKey(row) === dayItemKey(rows[index]))) return
@@ -221,19 +230,34 @@ export function useDayOrganizing(
           scope,
           key: dayItemKey({
             ...item,
-            occurrence: ordered
-              .slice(0, ordered.indexOf(item))
-              .filter((row) => row.raw.split(/\r?\n/)[0] === item.raw.split(/\r?\n/)[0]).length,
+            occurrence: priority
+              ? item.occurrence
+              : ordered
+                  .slice(0, ordered.indexOf(item))
+                  .filter((row) => row.raw.split(/\r?\n/)[0] === item.raw.split(/\r?\n/)[0]).length,
           }),
         }
       : null
-    return save('reorder', { list: item.list, items: ordered.map(address) })
+    return priority
+      ? save('priority', {
+          group: priority,
+          items: ordered.map(address),
+          revision: priorityRevision(priority),
+          moved: JSON.stringify([item.list, item.raw.split(/\r?\n/)[0], item.occurrence ?? 0]),
+        })
+      : save('reorder', { list: item.list, items: ordered.map(address) })
   }
-  const canReorder = (item: DayItem) =>
-    enabled &&
-    !busy &&
-    Boolean(item.revision) &&
-    (!/commitments$/i.test(item.list) || day?.record.commitmentsOrder === 'manual')
+  const canReorder = (item: DayItem) => enabled && !busy && Boolean(item.revision)
+  const canPromote = (item: DayItem) => {
+    const group = priorityGroupOf(item)
+    return (
+      enabled &&
+      group !== null &&
+      !item.done &&
+      Boolean(item.revision) &&
+      dayItemKey(groups[group].open[0] ?? item) !== dayItemKey(item)
+    )
+  }
   const shifts = (state: Drag) =>
     new Map(
       state.rows.map((key, index) => [
@@ -269,7 +293,7 @@ export function useDayOrganizing(
     state.scrolled = state.scroll?.scrollTop ?? 0
     state.landings = [HOME]
     nodes.forEach((node, index) => {
-      if (index === from || node.dataset.organizeList !== state.item.list) return
+      if (index === from || node.dataset.organizeGroup !== organizeGroup(state.item)) return
       const threshold = boxes[index].top + boxes[index].height / 2 - state.startY
       state.landings.push(
         index < from
@@ -298,6 +322,7 @@ export function useDayOrganizing(
     const copy = row.cloneNode(true) as HTMLElement
     copy.removeAttribute('data-organize-key')
     copy.removeAttribute('data-organize-list')
+    copy.removeAttribute('data-organize-group')
     for (const node of copy.querySelectorAll('[id]')) node.removeAttribute('id')
     const held = document.createElement('div')
     held.className = 'sky-sort-lift'
@@ -461,11 +486,23 @@ export function useDayOrganizing(
     sorting,
     canMove,
     canReorder,
+    canPromote,
+    priorityDay: day,
+    applyPriorityView: applyView,
+    priorityStatus: (group: PriorityGroup) =>
+      group === 'todos' ? day?.record.todoPriority : day?.record.reminderPriority,
+    hasPriorityOverrides: (group: PriorityGroup) => priorityRows(group).some((item) => item.priorityManual),
+    useSkyOrder: (group: PriorityGroup) =>
+      void save('priority', {
+        group,
+        items: priorityRows(group).map(address),
+        revision: priorityRevision(group),
+        reset: true,
+      }),
     toggle,
     finish,
     gripHandlers,
     manualOrder: day?.record.manualOrder ?? [],
-    commitmentsOrder: day?.record.commitmentsOrder ?? 'time',
     dismissUndo: () => {
       setUndo(null)
       setError(null)
@@ -495,7 +532,10 @@ export function useDayOrganizing(
                 .map((item) => [dayItemKey(item), item]),
             ),
       ),
-    changeOrder: (order: CommitmentOrder) => void save('order', { order }),
+    moveToTop: (item: DayItem) => {
+      const group = priorityGroupOf(item)
+      if (group && canPromote(item) && !pending.current) void reorder(item, groups[group].open[0], false)
+    },
     chooseDate: () => setDatePicker(true),
     moveTomorrow: () =>
       void save('move', {
@@ -509,7 +549,7 @@ export function useDayOrganizing(
     },
     step: (item: DayItem, direction: -1 | 1) => {
       const nodes = [...document.querySelectorAll<HTMLElement>('[data-organize-key]')].filter(
-        (node) => node.dataset.organizeList === item.list,
+        (node) => node.dataset.organizeGroup === organizeGroup(item),
       )
       const at = nodes.findIndex((node) => node.dataset.organizeKey === dayItemKey(item))
       const key = nodes[at + direction]?.dataset.organizeKey
@@ -565,28 +605,6 @@ export function DayOrganizeButton({ disabled }: { disabled: boolean }) {
     >
       {organize.active ? 'Organizing' : 'Organize'}
     </Button>
-  )
-}
-
-export function DayCommitmentOrder() {
-  const organize = useItemOrganizing(),
-    editor = useItemEditing()
-  if (!organize.enabled) return null
-  return (
-    <NativeSelect
-      className="sky-commitment-order"
-      aria-label="Commitment order"
-      value={organize.commitmentsOrder}
-      data={[
-        { value: 'time', label: 'Time order' },
-        { value: 'manual', label: 'Manual order' },
-      ]}
-      disabled={organize.busy || editor.busy || Boolean(editor.draft)}
-      onChange={(event) => {
-        editor.dismissUndo()
-        organize.changeOrder(event.currentTarget.value as CommitmentOrder)
-      }}
-    />
   )
 }
 

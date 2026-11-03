@@ -229,8 +229,10 @@ test(
   async (t) => {
     await runWysiwygE2e(
       t,
-      { initialMarkdown: OPEN, tempPrefix: 'day-summarized-stale-', file: FILE, day: true },
+      { initialMarkdown: OPEN, tempPrefix: 'day-summarized-stale-', file: FILE, day: true, watch: false },
       async ({ page, origin, file, errors }) => {
+        // Keep this tab stale: only the rejected write should refresh it, not background priority reads.
+        await page.route('**/todo-priority', (route) => route.fulfill({ json: {} }))
         await page.goto(`${origin}/${DAY.ymd}?view=record`)
         const priority = page.locator('.sky-day-priority')
         await priority.getByRole('button', { name: 'Mark done', exact: true }).click()

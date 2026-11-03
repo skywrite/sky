@@ -24,6 +24,8 @@ import { JournalMain } from './journal/journal.tsx'
 import { journalRouteOf } from './journal/journalRoutes.ts'
 import { useFileRemoval } from './lib/useFileRemoval.ts'
 import { MeetingMain, meetingRouteOf } from './meetings/meetingPage.tsx'
+import { NoteMain } from './notes/NoteMain.tsx'
+import { noteRouteOf } from './notes/noteRoute.ts'
 import { OutboxMain } from './outbox/outbox.tsx'
 import { outboxItemOf, outboxLegacyItemPath } from './outbox/outboxRoutes.ts'
 import { PeopleMain, peopleRouteOf } from './people/people.tsx'
@@ -120,6 +122,8 @@ function Canvas() {
   const journalRoute = journalRouteOf(path)
   // /<ymd>/meetings/<slug> is a meeting's page, under its day.
   const meetingRoute = meetingRouteOf(path)
+  // /<ymd>/notes/<name> is a note written on the day, /<ymd>/notes/new a blank one.
+  const noteRoute = noteRouteOf(path)
   const isAudition = path === '/voice/audition'
   const settingsSection = settingsSectionOf(path)
   const connectionPage = settingsSection === 'connections' ? connectionPageOf(path) : null
@@ -227,6 +231,7 @@ function Canvas() {
     !isWeek &&
     filesRoute === null &&
     meetingRoute === null &&
+    noteRoute === null &&
     journalRoute === null &&
     explorerFile === null
   const weekTitle = weekId || thisWeek?.id
@@ -235,6 +240,7 @@ function Canvas() {
     if (
       journalRoute ||
       meetingRoute ||
+      noteRoute ||
       onDayPage ||
       isOutbox ||
       peopleRoute ||
@@ -282,6 +288,8 @@ function Canvas() {
     journalRoute?.topic,
     meetingRoute?.ymd,
     meetingRoute?.slug,
+    noteRoute?.ymd,
+    noteRoute?.slug,
     isWeek,
     weekTitle,
     settingsSection,
@@ -290,8 +298,14 @@ function Canvas() {
   const isToday = dayYmd === null || dayYmd === day?.today.ymd
   const others = threads.filter((t) => !t.id.startsWith('day-'))
   const showDateNav =
-    journalRoute !== null || onDayPage || isWeek || isStreaks || filesRoute !== null || meetingRoute !== null
-  const activeDayYmd = journalRoute?.day ?? filesRoute?.ymd ?? meetingRoute?.ymd ?? dayYmd
+    journalRoute !== null ||
+    onDayPage ||
+    isWeek ||
+    isStreaks ||
+    filesRoute !== null ||
+    meetingRoute !== null ||
+    noteRoute !== null
+  const activeDayYmd = journalRoute?.day ?? filesRoute?.ymd ?? meetingRoute?.ymd ?? noteRoute?.ymd ?? dayYmd
   const dayImports = importRows.filter((job) =>
     isAttachmentNote(job.readback.source, job.fields?.kind) || job.readback.source === 'imessage-audio'
       ? (job.fields?.when ?? job.suggestedWhen).slice(0, 10) === (activeDayYmd ?? day?.today.ymd)
@@ -377,6 +391,7 @@ function Canvas() {
       !url.pathname.startsWith('/explorer/') &&
       filesRouteOf(url.pathname) === null &&
       meetingRouteOf(url.pathname) === null &&
+      noteRouteOf(url.pathname) === null &&
       journalRouteOf(url.pathname) === null
     )
       return
@@ -621,6 +636,8 @@ function Canvas() {
           <Fragment key={journalRoute.day}>
             <JournalMain route={journalRoute} search={search} navigate={navigate} />
           </Fragment>
+        ) : noteRoute ? (
+          <NoteMain ymd={noteRoute.ymd} slug={noteRoute.slug} go={navigate} />
         ) : meetingRoute ? (
           <MeetingMain ymd={meetingRoute.ymd} slug={meetingRoute.slug} go={navigate} removal={removal} />
         ) : filesRoute ? (

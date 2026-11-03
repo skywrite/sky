@@ -29,11 +29,12 @@ test(
         await text.fill('Review the launch outline')
         await text.press('Enter')
         await page.locator('.sky-ptext').filter({ hasText: 'Review the launch outline' }).waitFor()
-        await page.getByRole('button', { name: 'Add a commitment', exact: true }).click()
+        await page.getByRole('button', { name: 'Add a to-do', exact: true }).click()
+        await page.getByRole('button', { name: 'Add a time', exact: true }).click()
         await text.fill('Call Jane Doe')
-        await page.getByRole('button', { name: 'Add commitment', exact: true }).click()
+        await page.getByRole('button', { name: 'Add to-do', exact: true }).click()
         await page.getByRole('alert').filter({ hasText: 'Enter a time' }).waitFor()
-        await page.getByRole('textbox', { name: 'Commitment time' }).fill('9:30')
+        await page.getByRole('textbox', { name: 'To-do time' }).fill('9:30')
         await text.press('Enter')
         await page.locator('.sky-prow').filter({ hasText: 'Call Jane Doe' }).waitFor()
         assert({
@@ -42,7 +43,7 @@ test(
           actual: [
             (await readFile(file, 'utf8')).includes('- Review the launch outline'),
             (await readFile(file, 'utf8')).includes('- 09:30 > Call Jane Doe'),
-            await page.getByRole('button', { name: 'Add a file' }).innerText(),
+            await page.getByRole('button', { name: 'Add a file' }).getAttribute('title'),
           ],
           expected: [true, true, 'Add file'],
         })
@@ -55,13 +56,14 @@ test(
         await page.getByRole('button', { name: 'Add a to-do', exact: true }).click()
         await text.fill('Send the handoff')
         await page.getByRole('button', { name: 'Add a time', exact: true }).click()
-        await page.getByRole('textbox', { name: 'Commitment time' }).fill('25:30')
-        await page.getByRole('button', { name: 'Add commitment', exact: true }).click()
+        await page.getByRole('textbox', { name: 'To-do time' }).fill('25:30')
+        await page.getByRole('button', { name: 'Add to-do', exact: true }).click()
         await page.locator('.sky-prow').filter({ hasText: 'Send the handoff' }).waitFor()
         const toast = page.locator('.sky-plan-undo')
         await toast.getByRole('button', { name: 'Undo', exact: true }).click()
         await page.locator('.sky-prow').filter({ hasText: 'Send the handoff' }).waitFor({ state: 'detached' })
-        await page.getByRole('button', { name: 'Add a commitment', exact: true }).click()
+        await page.getByRole('button', { name: 'Add a to-do', exact: true }).click()
+        await page.getByRole('button', { name: 'Add a time', exact: true }).click()
         await text.fill('Book a desk')
         await page.getByRole('button', { name: 'Remove time' }).click()
         await page.getByRole('button', { name: 'Add to-do', exact: true }).click()
@@ -146,7 +148,7 @@ test(
           given: 'the mobile Next sheet',
           should: 'offer untimed destinations and keep the action in the viewport',
           actual: [
-            await dialog.getByRole('textbox', { name: 'Commitment time' }).count(),
+            await dialog.getByRole('textbox', { name: 'To-do time' }).count(),
             Boolean(box && box.y >= 0 && box.y + box.height <= 844),
             await page.evaluate(() => document.documentElement.scrollWidth > innerWidth),
           ],

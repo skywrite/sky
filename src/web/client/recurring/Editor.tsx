@@ -79,8 +79,7 @@ export function Editor({
     }
   }, [draft.pattern])
   const source = files.find((file) => file.source === item?.source)
-  const destination =
-    draft.kind === 'reminder' ? 'Reminders' : draft.category + (draft.kind === 'commitment' ? ' Commitments' : ' Todos')
+  const destination = draft.kind === 'reminder' ? 'Reminders' : 'To-dos'
   const save = async (remove = false) => {
     if (busy) return
     setBusy(true)
@@ -180,12 +179,15 @@ export function Editor({
           label="Type"
           data={[
             { value: 'todo', label: 'To-do' },
-            { value: 'commitment', label: 'Commitment' },
             { value: 'reminder', label: 'Reminder' },
           ]}
-          value={draft.kind}
+          value={draft.kind === 'commitment' ? 'todo' : draft.kind}
           onChange={(kind) =>
-            kind && change({ kind: kind as RecurringDraft['kind'], time: kind === 'commitment' ? draft.time : '' })
+            kind &&
+            change({
+              kind: kind === 'todo' && draft.time ? 'commitment' : (kind as RecurringDraft['kind']),
+              time: kind === 'reminder' ? '' : draft.time,
+            })
           }
           disabled={busy}
           allowDeselect={false}
@@ -202,15 +204,26 @@ export function Editor({
         )}
       </div>
       {draft.kind === 'commitment' && (
-        <TextInput
-          label="Time"
-          placeholder="09:00"
-          value={draft.time}
-          onChange={(event) => change({ time: event.currentTarget.value })}
-          disabled={busy}
-          required
-          inputMode="numeric"
-        />
+        <div className="sky-recurring-time">
+          <TextInput
+            label="Time"
+            description="Optional. Appears beside the to-do on each day."
+            placeholder="09:00"
+            value={draft.time}
+            onChange={(event) => change({ time: event.currentTarget.value })}
+            disabled={busy}
+            required
+            inputMode="numeric"
+          />
+          <Button variant="secondary" disabled={busy} onClick={() => change({ kind: 'todo', time: '' })}>
+            Remove time
+          </Button>
+        </div>
+      )}
+      {draft.kind === 'todo' && (
+        <Button variant="secondary" disabled={busy} onClick={() => change({ kind: 'commitment' })}>
+          Add a time
+        </Button>
       )}
       <RepeatFields value={draft.pattern} onChange={(pattern) => change({ pattern })} disabled={busy} />
       <div className="sky-recurring-preview" aria-live="polite">

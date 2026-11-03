@@ -1,3 +1,4 @@
+import { replacePriorityOrder } from '#lib/nbfs/priorityOrder.ts'
 import DayDocument from '#shared/models/Day/document/mod.ts'
 import { itemEditFields, type DayEditFields } from './editingTypes.ts'
 import { orderPlanList } from './order.ts'
@@ -26,7 +27,12 @@ export function replaceEditedBlock(
   if (row.block !== address.block)
     throw new ItemEditError('This item or its notes changed. Reload the day before trying again.')
   if (destination.list === address.list) {
-    return orderPlanList(content.slice(0, row.from) + destination.block + content.slice(row.to), address.list)
+    return replacePriorityOrder(
+      content,
+      orderPlanList(content.slice(0, row.from) + destination.block + content.slice(row.to), address.list),
+      address,
+      destination,
+    )
   }
   const eol = content.includes('\r\n') ? '\r\n' : '\n'
   const source = planSection(content, address.list)!
@@ -61,7 +67,12 @@ export function replaceEditedBlock(
       result = result.slice(0, last.to) + eol + block + result.slice(last.to)
     } else result = result.slice(0, target.end) + `${eol}${block}${eol}${eol}` + result.slice(target.end)
   }
-  return orderPlanList(orderPlanList(result, address.list), destination.list)
+  return replacePriorityOrder(
+    content,
+    orderPlanList(orderPlanList(result, address.list), destination.list),
+    address,
+    destination,
+  )
 }
 
 export function editPlanItem(content: string, list: string, raw: string, fields: DayEditFields, occurrence?: number) {

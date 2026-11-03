@@ -131,6 +131,7 @@ test({ name: 'duplicate moves and individual row actions work on desktop and mob
             actual: (await check).status(),
             expected: 200,
           })
+          await page.getByRole('button', { name: /^Completed ·/ }).click()
           await page.getByRole('button', { name: 'Mark not done', exact: true }).waitFor()
           assert({
             given: 'one checked duplicate',
@@ -141,7 +142,10 @@ test({ name: 'duplicate moves and individual row actions work on desktop and mob
           await page.getByRole('button', { name: 'Undo', exact: true }).click()
           await page.getByRole('button', { name: 'Mark not done', exact: true }).waitFor({ state: 'detached' })
 
-          await copies.nth(2).getByRole('button', { name: 'Item details', exact: true }).click()
+          if (mobile) {
+            await copies.nth(2).locator('.sky-ptext').tap()
+            await page.locator('.sky-item-mobile-actions').getByRole('button', { name: 'Details', exact: true }).click()
+          } else await copies.nth(2).getByRole('button', { name: 'Item details', exact: true }).click()
           const details = page.getByRole('dialog')
           await details.getByRole('textbox', { name: 'Item text', exact: true }).fill('Review the revised budget')
           const edit = page.waitForResponse((response) => response.url().endsWith('/item/edit'))
@@ -156,7 +160,10 @@ test({ name: 'duplicate moves and individual row actions work on desktop and mob
           await page.locator('.sky-item-edit-undo').getByRole('button', { name: 'Undo', exact: true }).click()
           await copies.nth(2).waitFor()
 
-          await copies.nth(2).getByRole('button', { name: 'Item details', exact: true }).click()
+          if (mobile) {
+            await copies.nth(2).locator('.sky-ptext').tap()
+            await page.locator('.sky-item-mobile-actions').getByRole('button', { name: 'Details', exact: true }).click()
+          } else await copies.nth(2).getByRole('button', { name: 'Item details', exact: true }).click()
           const deletion = page.waitForResponse((response) => response.url().endsWith('/item/delete'))
           await details.getByRole('button', { name: 'Delete', exact: true }).click()
           assert({

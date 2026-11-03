@@ -57,6 +57,7 @@ test(
         .filter({ hasText: 'Review the Atlas outline' })
         .getByRole('button', { name: 'Mark done', exact: true })
         .click()
+      await second.getByRole('button', { name: /^Completed ·/ }).click()
       await row('Review the Atlas outline').getByRole('button', { name: 'Mark not done', exact: true }).waitFor()
       assert({
         given: 'one tab saves a checkbox while the other is editing a different item',
@@ -151,6 +152,7 @@ test({ name: 'a delayed day refresh cannot undo a newer save in the browser', ti
       )
       await row.getByRole('button', { name: 'Mark done', exact: true }).click()
       await saved
+      await page.getByRole('button', { name: /^Completed ·/ }).click()
       await row.getByRole('button', { name: 'Mark not done', exact: true }).waitFor()
       await writeFile(file, `${await readFile(file, 'utf8')}\n- Added while the old read waited\n`)
       release.resolve()

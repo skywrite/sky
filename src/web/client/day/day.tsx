@@ -1,4 +1,4 @@
-import { ActionIcon, Button, Checkbox, Popover, SegmentedControl, Tooltip } from '@mantine/core'
+import { ActionIcon, Button, Checkbox, Popover, SegmentedControl, Tooltip, UnstyledButton } from '@mantine/core'
 import { Fragment, type ReactNode, useEffect, useRef, useState } from 'react'
 import { documentWorkWhen, workDurationLabel } from '#commands/all/notes/lib/documentInput.ts'
 import { PlainDate, PlainDateTime } from '#universal/dates/nbdt/mod.ts'
@@ -9,17 +9,12 @@ import type { ViewVersion } from '../../../service/viewVersion.ts'
 import { type Kept, KeptToast } from '../attachments/files.tsx'
 import { fileHref, resolvePath } from '../explorer/explorer.tsx'
 import { DocumentImportNotice } from '../import/documentImport.tsx'
-import {
-  acceptsImports,
-  type Dragged,
-  DropOverlay,
-  type ImportJob,
-  type MeetingImport,
-  useFileDrop,
-} from '../import/import.tsx'
+import { type Dragged, DropOverlay, type ImportJob, type MeetingImport, useFileDrop } from '../import/import.tsx'
 import { useJournal } from '../journal/journal.tsx'
 import { journalHref } from '../journal/journalRoutes.ts'
 import { meetingHref } from '../meetings/meetingPage.tsx'
+import { FormatIcon } from '../notes/FormatIcon.tsx'
+import { NEW_NOTE, noteHref, noteHrefOf } from '../notes/noteRoute.ts'
 import { useRail } from '../shell/rail.ts'
 import { RailToggle } from '../shell/railToggle.tsx'
 import { DayStreaks } from '../streaks/streaks.tsx'
@@ -33,7 +28,6 @@ import { DayItemNotes, itemNotes } from './dayItemNotes.tsx'
 import { ItemText } from './dayItemText.tsx'
 import { DayMostImportant } from './dayMostImportant.tsx'
 import {
-  DayCommitmentOrder,
   DayItemGrip,
   DayOrganizeButton,
   DayOrganizingBar,
@@ -48,13 +42,16 @@ import { DayRail } from './dayRail.tsx'
 import { NextDayBlock, NightStartLine, StartButton, useStartDay } from './dayStart.tsx'
 import { DaySummaryView } from './daySummary.tsx'
 import { DayTracking } from './dayTracking.tsx'
+import { organizeGroup, priorityItems } from './priorityItems.ts'
+import { PriorityStatus } from './PriorityStatus.tsx'
 import { revealOpacity, useSwipeToDelete } from './swipe.ts'
+import { useDayPriority } from './useDayPriority.ts'
 
 /**
  * The day is the page. Its column is what needs to get done — with
  * checkboxes that write back to the day file — then the day's record, the
  * conversations listed in its record. A checked
- * task stays at the top of its list; a checked reminder leaves; an item
+ * to-do stays available under Completed; a checked reminder leaves; an item
  * can also be taken off the day through Delete or a swipe on the
  * phone. Undo holds the door for eight seconds whichever way a row left.
  */
@@ -102,6 +99,8 @@ export interface DayData {
   }>
   record: DayRecord
   summary?: DaySummary | null
+  /** The calendar day before the planning day, which today's page offers for review; null without a day file */
+  yesterday?: { ymd: string; reviewed: boolean } | null
 }
 
 /** One bullet from the day file: a plan, a promise, or a thing done. */
@@ -110,6 +109,8 @@ export interface DayItem {
   done: boolean
   category: string | null
   time: string | null
+  priority?: number
+  priorityManual?: boolean
   minutes?: number
   link: { title: string; path: string } | null
   /** The exact list heading the item lives under — the write-back address */
@@ -134,6 +135,10 @@ export interface DayRecord {
   summarized: boolean
   manualOrder?: string[]
   commitmentsOrder?: CommitmentOrder
+  todoOrderRevision?: string
+  reminderOrderRevision?: string
+  todoPriority?: { source: 'sky' | 'saved'; warning?: string; connection?: boolean }
+  reminderPriority?: { source: 'sky' | 'saved'; warning?: string; connection?: boolean }
   mostImportant: DayItem[]
   commitments: DayItem[]
   todos: DayItem[]
@@ -563,6 +568,7 @@ function PlanRow({
   readOnly,
   phase,
   timed,
+  trailingTime = false,
   tone,
   chip,
   soft,
@@ -575,6 +581,8 @@ function PlanRow({
   phase: ItemPhase | undefined
   /** Render the time gutter (the card has timed items) */
   timed: boolean
+  /** Combined to-dos share a title edge; their optional time follows the body. */
+  trailingTime?: boolean
   /** 'next' | 'late' | undefined — today's emphasis on the time */
   tone: 'next' | 'late' | undefined
   /** Mark Personal — only in lists that mix categories */
@@ -608,12 +616,16 @@ function PlanRow({
   }, [phase, readOnly, locked])
   return (
     <div
-      className="sky-prow sky-irow"
+      className={'sky-prow sky-irow' + (trailingTime ? ' sky-todo-row' : '')}
+      data-timed={Boolean(item.time) || undefined}
+      data-linked={docLinked || undefined}
+      data-workstream={Boolean(item.workstream) || undefined}
       data-phase={phase}
       data-soft={soft || undefined}
       data-editing={inline || undefined}
       data-organize-key={dayItemKey(item)}
       data-organize-list={item.list}
+      data-organize-group={organizeGroup(item)}
       data-organizing={organizing || undefined}
       data-selected={(organizing && organize.selected.has(dayItemKey(item))) || undefined}
       data-sort={shift === undefined ? undefined : organize.sorting?.key === dayItemKey(item) ? 'slot' : 'row'}
@@ -706,7 +718,7 @@ function PlanRow({
             </span>
           </button>
         )}
-        {timed && (
+        {timed && !trailingTime && (
           <span className="sky-when" data-tone={struck ? undefined : tone}>
             {item.time ? clock(item.time) : '—'}
           </span>
@@ -794,6 +806,17 @@ function PlanRow({
             )}
           </div>
           {notes && <DayItemNotes source={notes} at={at} />}
+          {organizing && (trailingTime || soft) && !struck && organize.canPromote(item) && (
+            <Button
+              variant="secondary"
+              className="sky-todo-promote"
+              disabled={organize.busy}
+              onClick={() => organize.moveToTop(item)}
+              aria-label={`Move to top: ${item.text}`}
+            >
+              Move to top
+            </Button>
+          )}
           {(late || personal) && (
             <span className="sky-item-meta">
               {late && <span className="sky-late">overdue</span>}
@@ -801,12 +824,29 @@ function PlanRow({
             </span>
           )}
         </div>
+        {trailingTime &&
+          item.time &&
+          (readOnly || item.workstream || organizing ? (
+            <span className="sky-when sky-todo-time" data-tone={struck ? undefined : tone}>
+              {clock(item.time)}
+            </span>
+          ) : (
+            <UnstyledButton
+              className="sky-when sky-todo-time"
+              data-tone={struck ? undefined : tone}
+              aria-label={`Edit time: ${item.text}, ${clock(item.time)}`}
+              disabled={!editable || locked}
+              onClick={() => editor.begin(item, 'details')}
+            >
+              {clock(item.time)}
+            </UnstyledButton>
+          ))}
       </div>
     </div>
   )
 }
 
-/** A commitment-shaped card: timed rows in time order, next in ink, overdue amber. */
+/** Most important retains its own card and ordering. */
 function PlanCard({
   head,
   items,
@@ -829,10 +869,7 @@ function PlanCard({
   const organize = useItemOrganizing()
   if (items.length === 0 && !children) return null
   const timed = items.some((item) => item.time)
-  const manual =
-    head === 'Commitments'
-      ? organize.commitmentsOrder === 'manual'
-      : items.some((item) => organize.manualOrder.includes(item.list))
+  const manual = items.some((item) => organize.manualOrder.includes(item.list))
   const sorted = manual
     ? items
     : [...items].sort((a, b) =>
@@ -857,7 +894,7 @@ function PlanCard({
       head={head}
       mini={items.length && head !== 'Most important' ? mini : undefined}
       className={className}
-      action={head === 'Commitments' && items.length ? <DayCommitmentOrder /> : action}
+      action={action}
     >
       {sorted.map((item) => {
         const key = itemKey(item)
@@ -890,67 +927,114 @@ function PlanCard({
   )
 }
 
-/** To-dos, grouped by the category their heading filed them under. */
+/** Commitments and to-dos share one view; their source lists remain their write-back addresses. */
 function TodoCard({
   items,
+  today,
   checkOff,
   at,
   children,
   action,
 }: {
   items: DayItem[]
+  today: boolean
   checkOff: CheckOff
   at: string
   children?: ReactNode
   action?: ReactNode
 }) {
   const organize = useItemOrganizing()
+  const [expanded, setExpanded] = useState(false)
+  const [showAll, setShowAll] = useState(false)
+  const editor = useItemEditing()
+  const suggestions = useDayPriority(
+    organize.priorityDay,
+    'todos',
+    organize.active ||
+      organize.busy ||
+      Boolean(organize.sorting) ||
+      Boolean(editor.draft) ||
+      editor.busy ||
+      Object.keys(checkOff.phases).length > 0,
+    organize.applyPriorityView,
+  )
   if (items.length === 0 && !children) return null
-  const order: Array<string | null> = []
-  const groups = new Map<string | null, DayItem[]>()
-  for (const item of items) {
-    if (!groups.has(item.category)) {
-      groups.set(item.category, [])
-      order.push(item.category)
-    }
-    groups.get(item.category)?.push(item)
+  const { open, completed } = priorityItems(items, (item) => itemDone(item, checkOff.phases))
+  const nowMin = today && !checkOff.readOnly ? currentMinutes() : null
+  const next =
+    nowMin === null
+      ? null
+      : [...open]
+          .sort((a, b) => (minutesOf(a.time) ?? NO_TIME) - (minutesOf(b.time) ?? NO_TIME))
+          .find((item) => !checkOff.phases[itemKey(item)] && (minutesOf(item.time) ?? -1) >= nowMin)
+  const renderRow = (item: DayItem) => {
+    const key = itemKey(item)
+    const minutes = minutesOf(item.time)
+    const tone =
+      next && itemKey(next) === key
+        ? ('next' as const)
+        : nowMin !== null && minutes !== null && minutes < nowMin && !itemDone(item, checkOff.phases)
+          ? ('late' as const)
+          : undefined
+    return (
+      <PlanRow
+        key={key}
+        item={item}
+        readOnly={checkOff.readOnly}
+        phase={checkOff.phases[key]}
+        timed={false}
+        trailingTime
+        tone={tone}
+        chip={false}
+        soft={false}
+        at={at}
+        onCheck={checkOff.check}
+        onDelete={checkOff.remove}
+      />
+    )
   }
-  const doneCount = items.filter((item) => itemDone(item, checkOff.phases)).length
+  const showCompleted = expanded || organize.active
   return (
-    <Block head="To-dos" mini={items.length ? `${doneCount} of ${items.length} done` : undefined} action={action}>
-      {order.map((label) => {
-        const rows = [...(groups.get(label) ?? [])].sort((a, b) =>
-          organize.manualOrder.includes(a.list) && a.list === b.list
-            ? 0
-            : comparePlanItems(
-                { ...a, done: itemDone(a, checkOff.phases) },
-                { ...b, done: itemDone(b, checkOff.phases) },
-                false,
-              ),
-        )
-        if (rows.length === 0) return null
-        return (
-          <Fragment key={label ?? ''}>
-            {label && <div className="sky-igroup">{label}</div>}
-            {rows.map((item) => (
-              <Fragment key={itemKey(item)}>
-                <PlanRow
-                  item={item}
-                  readOnly={checkOff.readOnly}
-                  phase={checkOff.phases[itemKey(item)]}
-                  timed={false}
-                  tone={undefined}
-                  chip={false}
-                  soft={false}
-                  at={at}
-                  onCheck={checkOff.check}
-                  onDelete={checkOff.remove}
-                />
-              </Fragment>
-            ))}
-          </Fragment>
-        )
-      })}
+    <Block
+      head="To-dos"
+      mini={
+        items.length
+          ? `${open.length > 5 && !showAll && !organize.active ? 'Top 5 · ' : ''}${open.length} left`
+          : undefined
+      }
+      action={
+        <>
+          {organize.active && organize.hasPriorityOverrides('todos') && (
+            <Button variant="secondary" disabled={organize.busy} onClick={() => organize.useSkyOrder('todos')}>
+              Use Sky's order
+            </Button>
+          )}
+          {action}
+        </>
+      }
+    >
+      <PriorityStatus status={organize.priorityStatus('todos')} suggestions={suggestions} paused={organize.active} />
+      <div className="sky-todos-open">{(showAll || organize.active ? open : open.slice(0, 5)).map(renderRow)}</div>
+      {open.length > 5 && !organize.active && (
+        <UnstyledButton className="sky-todos-disclosure" aria-expanded={showAll} onClick={() => setShowAll(!showAll)}>
+          <span aria-hidden="true">{showAll ? '⌄' : '›'}</span>
+          {showAll ? 'Show top 5' : `Show ${open.length - 5} more`}
+        </UnstyledButton>
+      )}
+      {completed.length > 0 && (
+        <div className="sky-todos-completed">
+          <UnstyledButton
+            className="sky-todos-disclosure"
+            aria-expanded={showCompleted}
+            onClick={() => setExpanded(!showCompleted)}
+            disabled={organize.active}
+          >
+            <span aria-hidden="true">{showCompleted ? '⌄' : '›'}</span>
+            Completed · {completed.length}
+          </UnstyledButton>
+          {showCompleted && <div className="sky-todos-completed-list">{completed.map(renderRow)}</div>}
+        </div>
+      )}
       {children}
     </Block>
   )
@@ -968,27 +1052,64 @@ function ReminderCard({
   at: string
   children?: ReactNode
 }) {
-  const visible = items.filter((i) => !i.done || checkOff.phases[itemKey(i)])
+  const organize = useItemOrganizing()
+  const editor = useItemEditing()
+  const [showAll, setShowAll] = useState(false)
+  const suggestions = useDayPriority(
+    organize.priorityDay,
+    'reminders',
+    organize.active ||
+      organize.busy ||
+      Boolean(organize.sorting) ||
+      Boolean(editor.draft) ||
+      editor.busy ||
+      Object.keys(checkOff.phases).length > 0,
+    organize.applyPriorityView,
+  )
+  const visible = priorityItems(items, () => false).open.filter((i) => !i.done || checkOff.phases[itemKey(i)])
   if (visible.length === 0 && !children) return null
   const open = items.filter((i) => !i.done).length
   return (
-    <Block head="Reminders" mini={String(open)}>
-      {visible.map((item) => (
-        <Fragment key={itemKey(item)}>
-          <PlanRow
-            item={item}
-            readOnly={checkOff.readOnly}
-            phase={checkOff.phases[itemKey(item)]}
-            timed={false}
-            tone={undefined}
-            chip={false}
-            soft
-            at={at}
-            onCheck={checkOff.check}
-            onDelete={checkOff.remove}
-          />
-        </Fragment>
-      ))}
+    <Block
+      head="Reminders"
+      mini={`${open > 5 && !showAll && !organize.active ? 'Top 5 · ' : ''}${open} left`}
+      action={
+        organize.active && organize.hasPriorityOverrides('reminders') ? (
+          <Button variant="secondary" disabled={organize.busy} onClick={() => organize.useSkyOrder('reminders')}>
+            Use Sky's order
+          </Button>
+        ) : undefined
+      }
+    >
+      <PriorityStatus
+        status={organize.priorityStatus('reminders')}
+        suggestions={suggestions}
+        paused={organize.active}
+      />
+      <div className="sky-reminders-open">
+        {(showAll || organize.active ? visible : visible.slice(0, 5)).map((item) => (
+          <Fragment key={itemKey(item)}>
+            <PlanRow
+              item={item}
+              readOnly={checkOff.readOnly}
+              phase={checkOff.phases[itemKey(item)]}
+              timed={false}
+              tone={undefined}
+              chip={false}
+              soft
+              at={at}
+              onCheck={checkOff.check}
+              onDelete={checkOff.remove}
+            />
+          </Fragment>
+        ))}
+      </div>
+      {visible.length > 5 && !organize.active && (
+        <UnstyledButton className="sky-todos-disclosure" aria-expanded={showAll} onClick={() => setShowAll(!showAll)}>
+          <span aria-hidden="true">{showAll ? '⌄' : '›'}</span>
+          {showAll ? 'Show top 5' : `Show ${visible.length - 5} more`}
+        </UnstyledButton>
+      )}
       {children}
     </Block>
   )
@@ -1344,8 +1465,6 @@ export function DayView({
   /** Start was pressed and day:start finished: the shell re-reads the day and the week */
   onStarted?: () => void
 }) {
-  const fileRef = useRef<HTMLInputElement>(null)
-
   const ymd = view?.day.ymd
   const journal = useJournal(ymd ?? null)
   const reflectionHref = (file: string) => {
@@ -1434,7 +1553,29 @@ export function DayView({
   const completedTasks = doneToday.length + tasks.filter((item) => itemDone(item, checkOff.phases)).length
   const totalTasks = doneToday.length + tasks.length
 
-  const recordStatus = (summarized || totalTasks > 0 || waitingOwnPage) && (
+  // The review the page offers, by the calendar: a day behind the calendar's today can be reviewed, even the
+  // notebook's own open day before the next one starts. A past day's page offers its own review, today's page
+  // offers yesterday's. A review closes with the day's summary; a closed one can still be opened from its day.
+  const review = (() => {
+    if (!view || !onReview) return null
+    const calendarToday = view.planningToday ?? view.today.ymd
+    if (view.day.ymd < calendarToday) {
+      if (!view.day.dayRelativePath) return null
+      const yesterday = !trackingDate && view.day.ymd === view.yesterday?.ymd
+      return {
+        day: view.day.ymd,
+        words: yesterday ? 'Yesterday not reviewed' : 'Not reviewed',
+        name: yesterday ? 'Review yesterday' : 'Review this day',
+        reviewed: view.record.summarized,
+      }
+    }
+    const yesterday = view.day.ymd === calendarToday ? view.yesterday : null
+    return yesterday && !yesterday.reviewed
+      ? { day: yesterday.ymd, words: 'Yesterday not reviewed', name: 'Review yesterday', reviewed: false }
+      : null
+  })()
+
+  const recordStatus = (summarized || totalTasks > 0 || waitingOwnPage || review) && (
     <div className="sky-day-statusline">
       {waitingOwnPage && (
         <>
@@ -1464,56 +1605,39 @@ export function DayView({
           )}
         </>
       )}
+      {review && (
+        <>
+          {(summarized || totalTasks > 0 || waitingOwnPage) && <span aria-hidden="true">·</span>}
+          <span className="sky-day-review">
+            {!review.reviewed && (
+              <>
+                <span>{review.words}</span>
+                <span aria-hidden="true">·</span>
+              </>
+            )}
+            <UnstyledButton
+              className="sky-day-review-link"
+              aria-label={review.reviewed ? undefined : review.name}
+              title={review.reviewed ? undefined : review.name}
+              onClick={() => onReview?.(review.day)}
+            >
+              {review.reviewed ? 'Open review' : 'Review'}
+            </UnstyledButton>
+          </span>
+        </>
+      )}
     </div>
   )
 
+  // Organize is the one control that changes this page; the folded rail's chevron waits after it, at the
+  // header's end. Journal, New note and the import picker live with their results instead.
   const recordActions = (
     <>
-      {onImportFiles && (
-        <>
-          <input
-            ref={fileRef}
-            type="file"
-            hidden
-            multiple
-            accept={acceptsImports()}
-            onChange={(event) => {
-              const list = event.currentTarget.files
-              const files: File[] = list ? Array.from(list) : []
-              event.currentTarget.value = ''
-              if (files.length > 0) onImportFiles(files)
-            }}
-          />
-          <Button
-            aria-label="Add a file"
-            title="Import a file"
-            onClick={() => fileRef.current?.click()}
-            leftSection={
-              <svg
-                width="18"
-                height="18"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.6"
-                aria-hidden="true"
-              >
-                <path d="m8 13 7-7a3 3 0 0 1 4 4l-9 9a5 5 0 0 1-7-7l9-9a7 7 0 0 1 10 10l-9 9" />
-              </svg>
-            }
-          >
-            Add file
-          </Button>
-        </>
-      )}
-      {!rail.open && <RailToggle open={false} onClick={rail.toggle} disabled={!view} />}
       <DayOrganizeButton disabled={planning.editing || Object.keys(checkOff.phases).length > 0} />
+      {!rail.open && <RailToggle open={false} onClick={rail.toggle} disabled={!view} />}
     </>
   )
 
-  const calendarToday = view?.planningToday ?? PlainDate.today().ymd
-  const yesterday = new PlainDate(calendarToday).addDays(-1).ymd
-  const reviewTarget = view && view.day.ymd < calendarToday ? view.day.ymd : yesterday
   const header = (
     <header className="sky-head">
       <span className="sky-title">
@@ -1537,16 +1661,6 @@ export function DayView({
         <NightStartLine today={todayWeekday} due={due} busy={starting.busy} error={starting.error} onStart={startDue} />
       )}
       <nav className="sky-tabs">
-        {view && onReview && (
-          <Button onClick={() => onReview(reviewTarget)}>
-            {(!trackingDate && reviewTarget === yesterday) || view.day.ymd >= calendarToday
-              ? 'Review yesterday'
-              : 'Review this day'}
-          </Button>
-        )}
-        <Button component="a" href={ymd ? `${journalHref(ymd)}?start` : undefined} disabled={!ymd}>
-          Journal
-        </Button>
         {view?.summary && (
           <SegmentedControl
             className="sky-day-view-switch"
@@ -1630,11 +1744,10 @@ export function DayView({
                         </PlanCard>
                       )}
                     </DayMostImportant>
-                    <PlanCard head="Commitments" items={record.commitments} today={isToday} checkOff={checkOff} at={at}>
-                      {!organize.active && planning.composer('commitments')}
-                    </PlanCard>
                     <TodoCard
-                      items={record.todos}
+                      key={'todos-' + view!.day.ymd}
+                      items={[...record.commitments, ...record.todos]}
+                      today={isToday}
                       checkOff={checkOff}
                       at={at}
                       action={!organize.active && planning.nextButton}
@@ -1652,7 +1765,12 @@ export function DayView({
                         Manage recurring
                       </a>
                     </TodoCard>
-                    <ReminderCard items={record.reminders} checkOff={checkOff} at={at}>
+                    <ReminderCard
+                      key={`reminders-${view!.day.ymd}`}
+                      items={record.reminders}
+                      checkOff={checkOff}
+                      at={at}
+                    >
                       {!organize.active && planning.composer('reminders')}
                       <a
                         className="sky-manage-recurring"
@@ -1784,17 +1902,31 @@ export function DayView({
                       ))}
                     </Block>
 
-                    {record.notes.length > 0 && (
-                      <Block head="Notes" mini={String(record.notes.length)}>
-                        {record.notes.map((row) => (
-                          <Fragment key={row.path}>
-                            <DocLine when={row.when} tag={noteDuration(view!.day.ymd, row.when)}>
-                              <a href={fileHref(row.path)}>{row.title}</a>
-                            </DocLine>
-                          </Fragment>
-                        ))}
-                      </Block>
-                    )}
+                    {/* Always here, like Reflections: a note starts from the day, blank. */}
+                    <Block head="Notes" mini={String(record.notes.length)}>
+                      <div className="sky-day-note-entry">
+                        <Button
+                          component="a"
+                          href={noteHref(view!.day.ymd, NEW_NOTE)}
+                          variant="primary-quiet"
+                          leftSection={<FormatIcon name="note" size={18} />}
+                        >
+                          New note
+                        </Button>
+                        {record.notes.length === 0 && (
+                          <p className="sky-day-note-hint">
+                            Meeting notes, ideas, anything worth keeping with this day.
+                          </p>
+                        )}
+                      </div>
+                      {record.notes.map((row) => (
+                        <Fragment key={row.path}>
+                          <DocLine when={row.when} tag={noteDuration(view!.day.ymd, row.when)}>
+                            <a href={noteHrefOf(row.path) ?? fileHref(row.path)}>{row.title}</a>
+                          </DocLine>
+                        </Fragment>
+                      ))}
+                    </Block>
 
                     <FiledCard archive={record.messages.archive} onImport={onImportConversation} />
                   </>
@@ -1813,6 +1945,7 @@ export function DayView({
             imports={imports}
             onOpenImport={onOpenImport}
             onImportMeeting={onImportMeeting}
+            onImportFiles={onImportFiles}
             onKept={onKept}
             onToggle={rail.toggle}
           />
@@ -1878,23 +2011,21 @@ export function DayView({
     </div>
   )
   return (
-    <DayItemEditing
-      day={view}
-      applyView={setView}
-      onDelete={checkOff.remove}
-      otherUndo={checkOff.undo ?? planning.undo ?? organize.undo}
-      navigate={navigate}
-      dismissOtherUndo={() => {
-        checkOff.dismissUndo()
-        planning.dismissUndo()
-        organize.dismissUndo()
-      }}
-    >
-      <Fragment key={view?.day.ymd}>
-        <DayItemHelp day={view?.day ?? null} onStart={onHelp}>
-          <DayOrganizingContext.Provider value={organize}>{content}</DayOrganizingContext.Provider>
-        </DayItemHelp>
-      </Fragment>
-    </DayItemEditing>
+    <DayItemHelp key={view?.day.ymd} day={view?.day ?? null} onStart={onHelp}>
+      <DayItemEditing
+        day={view}
+        applyView={setView}
+        onDelete={checkOff.remove}
+        otherUndo={checkOff.undo ?? planning.undo ?? organize.undo}
+        navigate={navigate}
+        dismissOtherUndo={() => {
+          checkOff.dismissUndo()
+          planning.dismissUndo()
+          organize.dismissUndo()
+        }}
+      >
+        <DayOrganizingContext.Provider value={organize}>{content}</DayOrganizingContext.Provider>
+      </DayItemEditing>
+    </DayItemHelp>
   )
 }

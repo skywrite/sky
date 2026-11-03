@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises'
 import * as path from 'node:path'
 import type { Page, Request, Response } from 'playwright'
+import { priorityOrderRows } from '#lib/nbfs/priorityOrder.ts'
 import { exists } from '#shared/fs/mod.ts'
 import { dayFile } from '#shared/nbfs/mod.ts'
 import { assert, test } from '#test'
@@ -52,7 +53,7 @@ async function dragRow(page: Page, text: string, targetText: string, touch: bool
   const targetKey = await target.getAttribute('data-organize-key')
   const expectedOrder = await row.evaluate((node, targetKey) => {
     const rows = [...node.parentElement!.querySelectorAll<HTMLElement>(':scope > [data-organize-key]')].filter(
-      (row) => row.dataset.organizeList === (node as HTMLElement).dataset.organizeList,
+      (row) => row.dataset.organizeGroup === (node as HTMLElement).dataset.organizeGroup,
     )
     const target = rows.find((row) => row.dataset.organizeKey === targetKey)!
     const scroll = node.closest('.sky-scroll')!
@@ -85,7 +86,7 @@ async function dragRow(page: Page, text: string, targetText: string, touch: bool
   })
   const drop = async (release: () => Promise<unknown>) => {
     const [response] = await Promise.all([
-      page.waitForResponse((response) => response.url().endsWith('/item/organize/reorder')),
+      page.waitForResponse((response) => /\/item\/organize\/(?:reorder|priority)$/.test(response.url())),
       release(),
     ])
     return response
@@ -261,7 +262,9 @@ for (const { mobile, cpuRate } of [
               await pointer.send('Emulation.setCPUThrottlingRate', { rate: 1 })
               await pointer.detach()
             }
-            const savedRows = planSection(await readFile(file, 'utf8'), 'Professional Todos')!.rows
+            const savedRows = priorityOrderRows(await readFile(file, 'utf8')).filter(
+              (row) => row.list === 'Professional Todos',
+            )
             assert({
               given: `${mobile ? 'touch' : 'mouse'} reordering a task with notes`,
               should: 'save the requested task order',
@@ -302,7 +305,7 @@ for (const { mobile, cpuRate } of [
                 ['ArrowUp', 'Review the Atlas proposal'],
               ] as const) {
                 const keyboardSave = page.waitForResponse((response) =>
-                  response.url().endsWith('/item/organize/reorder'),
+                  /\/item\/organize\/(?:reorder|priority)$/.test(response.url()),
                 )
                 // Use the retained focus: locator.press would refocus the grip and hide a broken keyboard sequence.
                 await page.keyboard.press(key)
@@ -332,26 +335,10 @@ for (const { mobile, cpuRate } of [
               await keyboard.send('Emulation.setCPUThrottlingRate', { rate: 1 })
               await keyboard.detach()
             }
-            await page.getByRole('combobox', { name: 'Commitment order', exact: true }).selectOption('manual')
-            await page.getByRole('button', { name: 'Reorder Check in with Jane Doe', exact: true }).waitFor()
-            await page.locator('.sky-organize-toast').getByRole('button', { name: 'Undo', exact: true }).click()
-            await page
-              .getByRole('button', { name: 'Reorder Check in with Jane Doe', exact: true })
-              .waitFor({ state: 'detached' })
-            const repeatedOrder = page.waitForResponse((response) => response.url().endsWith('/item/organize/order'))
-            await page.getByRole('combobox', { name: 'Commitment order', exact: true }).selectOption('manual')
-            assert({
-              given: 'repeating an action after Undo',
-              should: 'save a new operation successfully',
-              actual: (await repeatedOrder).status(),
-              expected: 200,
-            })
             await page.getByRole('button', { name: 'Reorder Check in with Jane Doe', exact: true }).waitFor()
             await dragRow(page, 'Check in with Jane Doe', 'Review the launch plan', mobile)
-            await page.getByRole('combobox', { name: 'Commitment order', exact: true }).selectOption('time')
-            await page
-              .getByRole('button', { name: 'Reorder Check in with Jane Doe', exact: true })
-              .waitFor({ state: 'detached' })
+            await page.locator('.sky-organize-toast').getByRole('button', { name: 'Undo', exact: true }).click()
+            await page.getByRole('button', { name: 'Reorder Check in with Jane Doe', exact: true }).waitFor()
             for (const text of ['Review the Atlas proposal', 'Check in with Jane Doe', 'Send the venue options'])
               await page.getByRole('checkbox', { name: `Select ${text}`, exact: true }).click()
             const beforeMove = await readFile(file, 'utf8')
@@ -409,7 +396,13 @@ for (const { mobile, cpuRate } of [
 
             await page.goto(`${origin}/${DAY.ymd}`)
             const single = page.locator('.sky-prow').filter({ hasText: 'Outline the next release' })
-            await single.getByRole('button', { name: 'Item details', exact: true }).click()
+            if (mobile) {
+              await single.locator('.sky-ptext').tap()
+              await page
+                .locator('.sky-item-mobile-actions')
+                .getByRole('button', { name: 'Details', exact: true })
+                .click()
+            } else await single.getByRole('button', { name: 'Item details', exact: true }).click()
             const details = page.getByRole('dialog')
             await details.getByRole('button', { name: 'Tomorrow', exact: true }).click()
             await details.getByRole('button', { name: 'Save changes', exact: true }).click()

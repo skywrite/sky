@@ -16,6 +16,7 @@ import { WorkstreamError } from '#lib/workstreams/types.ts'
 import { exists } from '#shared/fs/mod.ts'
 import { chatActivityDays, type DayChatActivity } from '#shared/models/Chat/ChatStore/dayActivity.ts'
 import { listDayChats } from '#shared/models/Chat/ChatStore/mod.ts'
+import { hasDaySummary } from '#shared/nbfs/daySummary.ts'
 import { dayAIChatsDir, dayDir, dayFile, fetchNowSync } from '#shared/nbfs/mod.ts'
 import { PlainDate, type ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
 import { nextViewVersion, type ViewVersion } from '../../viewVersion.ts'
@@ -25,6 +26,8 @@ import isDay from './isDay.ts'
 import { createItemRoutes } from './item.ts'
 import type { ItemRoutesOptions } from './itemContext.ts'
 import { createMostImportantRoutes } from './mostImportant.ts'
+import { createNoteRoutes } from './notes.ts'
+import { createDayPriority, type DayPriorityOptions } from './priority.ts'
 import { buildDayRecord, type DayRecord, loadOwnerNames } from './record.ts'
 import { createScheduleRoutes, type ScheduleHost } from './schedule.ts'
 import { readDaySummary, type DaySummary } from './summary.ts'
@@ -56,6 +59,8 @@ export interface DayRoutesOptions {
   /** Test seam for a failed planning write. */
   writePlanning?: ItemRoutesOptions['writePlanning']
   mostImportant?: MostImportantAI
+  todoPriority?: Pick<DayPriorityOptions, 'rank' | 'context'>
+  reminderPriority?: Pick<DayPriorityOptions, 'rank' | 'context'>
 }
 
 /** The day commands the pages run in-process — each exactly as the terminal runs it. */
@@ -124,6 +129,8 @@ export interface DayView {
   record: DayRecord
   /** The saved summary's opening and meaningful moments, when the file exists. */
   summary: DaySummary | null
+  /** The calendar day before the planning day, which today's page offers for review; null without a day file. A review closes with the day's summary. */
+  yesterday: { ymd: string; reviewed: boolean } | null
 }
 
 const DAYS_BACK = 6
@@ -226,6 +233,8 @@ export async function buildDayView(options: DayRoutesOptions, ymd?: string): Pro
     }
   }
 
+  const yesterday = planningToday(options).addDays(-1)
+  const yesterdayFile = path.join(options.timeDir, dayFile(yesterday))
   return {
     version,
     today: days[0],
@@ -237,22 +246,51 @@ export async function buildDayView(options: DayRoutesOptions, ymd?: string): Pro
     chats,
     record,
     summary,
+    yesterday: (await exists(yesterdayFile))
+      ? { ymd: yesterday.ymd, reviewed: await hasDaySummary(yesterdayFile) }
+      : null,
   }
 }
 
 export function createDayRoutes(options: DayRoutesOptions): Hono {
   const app = new Hono()
+  const priority = createDayPriority({
+    markdownBaseDir: options.markdownBaseDir,
+    timeDir: options.timeDir,
+    stateDir: options.files ? path.join(options.files.userDataDir, 'state', 'todo-priority') : undefined,
+    time: () => (options.today && !options.now ? '' : (readClock(options)?.time ?? '')),
+    ...options.todoPriority,
+  })
+  const reminders = createDayPriority(
+    {
+      markdownBaseDir: options.markdownBaseDir,
+      timeDir: options.timeDir,
+      stateDir: options.files ? path.join(options.files.userDataDir, 'state', 'reminder-priority') : undefined,
+      time: () => (options.today && !options.now ? '' : (readClock(options)?.time ?? '')),
+      ...options.reminderPriority,
+    },
+    'reminders',
+  )
+  const view = async (ymd?: string) => reminders.apply(await priority.apply(await buildDayView(options, ymd)))
+  app.route(
+    '/',
+    priority.routes(async (ymd) => reminders.apply(await buildDayView(options, ymd))),
+  )
+  app.route(
+    '/',
+    reminders.routes(async (ymd) => priority.apply(await buildDayView(options, ymd))),
+  )
   app.onError((error, c) =>
     c.json(
       { error: error.message },
       error instanceof WorkstreamError || error instanceof OutboxError ? error.status : 500,
     ),
   )
-  app.get('/', async (c) => c.json(await buildDayView(options)))
+  app.get('/', async (c) => c.json(await view()))
   app.get('/:ymd', async (c) => {
     const ymd = c.req.param('ymd')
     if (!isDay(ymd)) return c.json({ error: `not a day: ${ymd}` }, 404)
-    return c.json(await buildDayView(options, ymd))
+    return c.json(await view(ymd))
   })
   // Poll just the saved file while reading; the rest of the day's record need not be rebuilt.
   app.get('/:ymd/summary', async (c) => {
@@ -289,7 +327,7 @@ export function createDayRoutes(options: DayRoutesOptions): Hono {
       stateDir: options.files ? path.join(options.files.userDataDir, 'day-planning') : undefined,
       writePlanning: options.writePlanning,
       today: () => planningToday(options),
-      view: (ymd) => buildDayView(options, ymd),
+      view: (ymd) => view(ymd),
       workstreams: options.workstreams,
     }),
   )
@@ -297,6 +335,17 @@ export function createDayRoutes(options: DayRoutesOptions): Hono {
   if (options.files) app.route('/', createDayFilesRoutes(options.files))
   // The day's schedule: the calendar's meetings against the notebook clock, for the rail.
   if (options.schedule) app.route('/', createScheduleRoutes(options.schedule))
+  // A note written on the day's page: its first save files it under the day, as notes:new does.
+  app.route(
+    '/',
+    createNoteRoutes({
+      timeDir: options.timeDir,
+      markdownBaseDir: options.markdownBaseDir,
+      stateDir: options.files ? path.join(options.files.userDataDir, 'day-planning') : undefined,
+      dayLockDir: options.workstreams?.stateDir,
+      clock: () => readClock(options),
+    }),
+  )
   app.route(
     '/',
     createMostImportantRoutes({
@@ -305,7 +354,7 @@ export function createDayRoutes(options: DayRoutesOptions): Hono {
       stateDir: options.files ? path.join(options.files.userDataDir, 'day-planning') : undefined,
       writePlanning: options.writePlanning,
       today: options.today ?? (() => fetchNowSync().plainDateTime.plainDate),
-      view: (ymd) => buildDayView(options, ymd),
+      view: (ymd) => view(ymd),
       workstreams: options.workstreams,
       ai: options.mostImportant,
     }),

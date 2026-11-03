@@ -83,7 +83,7 @@ export function RecurringMain({ search, navigate }: { search: string; navigate: 
           {report && !count(filter) && (
             <div className="sky-recurring-empty">
               <h2>{items.length ? 'Start a new rhythm' : 'A little less to remember'}</h2>
-              <p>Put regular to-dos, commitments, and reminders on your day automatically.</p>
+              <p>Put regular to-dos and reminders on your day automatically.</p>
               <Button variant="primary" onClick={add}>
                 Add your first {filter === 'reminders' ? 'reminder' : 'recurring item'}
               </Button>
@@ -110,8 +110,7 @@ export function RecurringMain({ search, navigate }: { search: string; navigate: 
                         <span className="sky-recurring-item-title">{item.text}</span>
                         <span className="sky-recurring-item-meta">
                           {recurringPatternLabel(item.pattern)}
-                          {item.time ? ' · ' + item.time : ''} ·{' '}
-                          {item.kind === 'commitment' ? 'Commitment' : item.kind === 'reminder' ? 'Reminder' : 'To-do'}
+                          {item.time ? ' · ' + item.time : ''} · {item.kind === 'reminder' ? 'Reminder' : 'To-do'}
                         </span>
                         {!item.valid && (
                           <span className="sky-recurring-invalid">

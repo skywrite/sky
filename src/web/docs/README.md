@@ -22,9 +22,9 @@ tests beside them; this folder holds everything that runs in the browser.
   mtimes are checked on each asset request instead, and the bundle rebuilds
   when one is newer. Editing the client and reloading the page is enough.
 - `client/` is the React client, laid out by feature. `main.tsx` at its
-  root is the entrypoint: it turns the path into a page — a day, a thread,
-  an import, a document in the explorer, settings, voice, automations,
-  tracking, streaks, a week. Each feature folder holds that page's
+  root is the entrypoint: it turns the path into a page — a day, a note
+  written on a day, a thread, an import, a document in the explorer,
+  settings, voice, automations, tracking, streaks, a week. Each feature folder holds that page's
   components, hooks, stylesheets, and unit tests, under the name its routes
   carry on the server: `client/chat/` with `service/handler/chat/`,
   `client/day/` with `service/handler/day/`, and so on.
@@ -88,6 +88,8 @@ The persistent search header and its preview column follow the
 [notebook search contract](../../service/handler/search/docs/README.md).
 Tracking's check-ins, history, capture review, and file mutations follow the
 [tracking workflow](../../lib/tracking/docs/README.md).
+A note written on the day follows the
+[day's note design](../../service/handler/day/docs/README.md#a-note-written-on-the-day).
 Streaks opens from the day's **View all streaks** link. Its history and day-file
 writes follow the [streaks contract](../../service/handler/streaks/docs/README.md).
 People & Orgs uses the settings sidebar above the Settings heading; its notebook
@@ -293,12 +295,20 @@ To-dos to the total. Reminders and streaks stay separate. The count follows
 the saved view after completion, deletion, or Undo, and is hidden when the
 day has no tasks. A summarized day keeps a neutral **Summarized** badge here,
 including when there are no tasks. See the [day's read-only rules](../../service/handler/day/docs/README.md#the-days-items).
+The same line offers the day's review, after the count.
+Today's page says `Yesterday not reviewed · Review` until yesterday's summary is saved.
+A past day's page says `Not reviewed · Review`, or `Open review` once its summary exists.
+The day view's `yesterday` carries that fact for today's page; a past day reads its own `summarized`.
+The return prompt that appears on its own after time away is a separate, idle-driven signal.
 
 The header lives inside the day column and shares its 1000px maximum width
-and side padding. The date and progress align with the content's left edge;
-the rail's chevron, while the rail is folded, sits at its right edge. On
-phones, the controls sit above the full date and progress so the menu
-button does not push the heading away from the content.
+and side padding. The date and progress align with the content's left edge.
+At the right sit only Organize and, while the rail is folded, the rail's chevron after it.
+A day with a summary adds the Summary / Day record switch.
+Journal, New note and the import picker live with their results instead:
+the first line of Reflections, the first line of Notes, and the Meetings heading in Details.
+On phones the date and Organize share the row; only the summary's switch takes a row of its own above the date.
+The note `2026-10-29-the-header-keeps-organize.md` tells why the three actions left.
 
 A small page icon right after the date opens the day file. The words "Day
 file" stay as its hover hint and accessible name. The note

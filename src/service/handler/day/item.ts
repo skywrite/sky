@@ -38,7 +38,7 @@ export function createItemRoutes(options: ItemRoutesOptions): Hono {
   const guard: MiddlewareHandler = async (c, next) => {
     if (
       c.req.method !== 'POST' ||
-      !/\/item(?:\/(?:delete|restore|add|pull|undo|row\/undo|edit(?:\/undo)?|organize\/(?:move|reorder|order|undo)))?$/.test(
+      !/\/item(?:\/(?:delete|restore|add|pull|undo|row\/undo|edit(?:\/undo)?|organize\/(?:move|reorder|order|priority|undo)))?$/.test(
         c.req.path,
       )
     )

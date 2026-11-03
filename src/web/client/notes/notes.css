@@ -1,0 +1,271 @@
+/* A note on the day's page: the formatting row, the line over the title, the "/" menu, and the Markdown view. */
+
+/* The row sits between the header and the page, as wide as the text under it. */
+.sky-note-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px;
+  width: calc(100% - 96px);
+  max-width: calc(1000px - 96px);
+  margin: 0 auto;
+  padding: 2px 0 6px;
+  border-bottom: 1px solid var(--sky-border-soft);
+  color: var(--sky-text-2);
+}
+
+.sky-note-tool-group {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.sky-note-tool-group::before {
+  content: '';
+  width: 1px;
+  height: 20px;
+  margin: 0 6px;
+  background: var(--sky-border-soft);
+}
+
+.sky-note-tool-end {
+  margin-left: auto;
+}
+
+.sky-note-tool-end::before {
+  display: none;
+}
+
+.sky-note-style {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  min-width: 116px;
+  height: 34px;
+  margin-left: -10px;
+  padding: 0 8px 0 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--sky-text);
+  font: inherit;
+  font-size: 15.5px;
+  cursor: pointer;
+}
+
+.sky-note-style:hover {
+  background: var(--sky-action-quiet-hover);
+}
+
+.sky-note-style:focus-visible {
+  outline: 2px solid var(--sky-action-focus);
+  outline-offset: 1px;
+}
+
+.sky-note-notice {
+  width: calc(100% - 96px);
+  max-width: calc(1000px - 96px);
+  margin: 10px auto 0;
+  font-size: 14.5px;
+  line-height: 1.5;
+  color: var(--sky-text-2);
+}
+
+.sky-note-notice[role='alert'] {
+  color: var(--mantine-color-orange-8);
+}
+
+/* When the note was written and its list, above the title like the explorer's identity line. */
+.sky-note-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  margin: 0 0 4px;
+  font-size: 15px;
+  color: var(--sky-text-2);
+}
+
+.sky-note-time {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-variant-numeric: tabular-nums;
+}
+
+.sky-note-category {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 10px 0 12px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--sky-s2);
+  color: var(--sky-text);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.sky-note-category:hover {
+  background: var(--sky-hover);
+}
+
+.sky-note-category:focus-visible {
+  outline: 2px solid var(--sky-action-focus);
+  outline-offset: 2px;
+}
+
+/* An empty title says what goes there, the caret in front of it; under a note with no body yet, a line
+   says how to start one. Neither is text: the file holds only what is written. */
+.sky-note-editor[data-untitled] > h1:first-of-type::before {
+  content: 'Untitled';
+  float: left;
+  height: 0;
+  color: var(--sky-dim);
+  pointer-events: none;
+}
+
+.sky-note-editor[data-blank] > h1:first-of-type {
+  position: relative;
+}
+
+.sky-note-editor[data-blank] > h1:first-of-type::after {
+  content: 'Start writing, or type / for headings, checklists, tables and more.';
+  position: absolute;
+  top: calc(100% + 0.6em);
+  left: 0;
+  font-size: calc(var(--sky-content-font-size) * var(--sky-doc-scale, 1));
+  font-weight: 400;
+  letter-spacing: normal;
+  line-height: 1.7;
+  white-space: nowrap;
+  color: var(--sky-dim);
+  pointer-events: none;
+}
+
+/* The "/" menu: what a line can become, each beside the markdown it writes. */
+.sky-insert-menu {
+  position: fixed;
+  z-index: 300;
+  width: 340px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 6px;
+  border: 1px solid var(--sky-border-soft);
+  border-radius: 14px;
+  /* The page's ground, not the card's: in dark mode the card and the chosen row would be one shade. */
+  background: var(--sky-bg);
+  box-shadow:
+    0 18px 48px rgba(28, 35, 43, 0.14),
+    0 2px 6px rgba(28, 35, 43, 0.05);
+}
+
+.sky-insert-option {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 44px;
+  padding: 0 10px 0 8px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--sky-text);
+  font: inherit;
+  font-size: 16px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.sky-insert-option[aria-selected='true'] {
+  background: var(--sky-s2);
+}
+
+.sky-insert-icon {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  background: var(--sky-s2);
+  color: var(--sky-text-2);
+}
+
+.sky-insert-option[aria-selected='true'] .sky-insert-icon {
+  background: var(--sky-bg);
+  box-shadow: 0 0 0 1px var(--sky-border-soft);
+}
+
+.sky-insert-label {
+  flex: 1;
+  min-width: 0;
+}
+
+.sky-insert-mark {
+  font-family: var(--mantine-font-family-monospace);
+  font-size: 12.5px;
+  line-height: 1;
+  color: var(--sky-text-2);
+  padding: 4px 6px;
+  border: 1px solid var(--sky-border-soft);
+  border-radius: 5px;
+  background: var(--sky-bg);
+  white-space: pre;
+}
+
+.sky-insert-gap {
+  height: 1px;
+  margin: 5px 8px;
+  background: var(--sky-s2);
+}
+
+/* The Markdown view: the file as written, in the editor's code face, on the same page. */
+.sky-note-file {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 4px 0 14px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--sky-border-soft);
+  color: var(--sky-dim);
+}
+
+.sky-note-file-name {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-family: var(--mantine-font-family-monospace);
+  font-size: 14px;
+  color: var(--sky-text-2);
+}
+
+.sky-note-source-input {
+  padding: 0;
+  font-family: var(--mantine-font-family-monospace);
+  font-size: calc(15.5px * var(--sky-doc-scale, 1));
+  line-height: 1.75;
+  color: var(--sky-text);
+}
+
+@media (max-width: 900px) {
+  .sky-note-tools {
+    flex-wrap: nowrap;
+    width: calc(100% - 28px);
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .sky-note-tool-end {
+    margin-left: 0;
+  }
+
+  .sky-note-notice {
+    width: calc(100% - 28px);
+  }
+}

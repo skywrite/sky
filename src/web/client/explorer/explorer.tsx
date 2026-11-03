@@ -414,7 +414,7 @@ function useNote(): [string | null, (text: string | null, holdMs?: number) => vo
 type EditorStatus = { kind: EditorStatusKind | 'loading'; text: string }
 
 /** An image source as written in a file → the URL that serves it: notebook-relative paths go through the file API. */
-function resolveImageSrc(file: string, src: string): string {
+export function resolveImageSrc(file: string, src: string): string {
   if (/^(?:[a-z][a-z0-9+.-]*:|\/|#)/i.test(src)) return src
   const parts = file.split('/').slice(0, -1)
   for (const part of src.split('/')) {

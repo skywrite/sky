@@ -1,11 +1,12 @@
 import { randomUUID } from 'node:crypto'
 import { Hono, type Context } from 'hono'
 import { setMostImportantComplete } from '#lib/mostImportant/store.ts'
+import { rebasePriorityOrder, priorityOrder, priorityGroupOf, priorityOrderKey } from '#lib/nbfs/priorityOrder.ts'
 import { atomicWrite, readOptional } from '#lib/outbox/files.ts'
 import DayDocument from '#shared/models/Day/document/mod.ts'
 import { ItemEditError, planSection, replaceEditedBlock } from './editingText.ts'
 import { bodyOf, dayFileOf, type ItemRoutesOptions } from './itemContext.ts'
-import { orderPlanList } from './order.ts'
+import { orderPlanList, setPlanOrder } from './order.ts'
 import { blockRaw, blockRevision, checkedBlock, insertBlock, removeBlock, savedRow } from './organizingText.ts'
 
 interface RowOperation {
@@ -56,6 +57,7 @@ export function createRowActions(options: ItemRoutesOptions) {
       content = orderPlanList(day.content.slice(0, row.from) + block + day.content.slice(row.to), body.list)
       changed = { list: body.list, raw, block, occurrence: nextOccurrence }
     }
+    content = rebasePriorityOrder(day.content, content, [{ before: item, after: changed }])
     const rollback =
       done === undefined
         ? undefined
@@ -121,6 +123,15 @@ export function createRowActions(options: ItemRoutesOptions) {
             insertBlock(day.content, operation.item.list, operation.item.block, operation.item.index),
             operation.item.list,
           )
+          const group = priorityGroupOf(operation.item.list)
+          if (group && priorityOrder(operation.before, group).length) {
+            if (
+              JSON.stringify(priorityOrder(day.content, group)) !==
+              JSON.stringify(priorityOrder(operation.after, group))
+            )
+              throw new ItemEditError('Priority changed after this deletion. Review the day before restoring the item.')
+            content = setPlanOrder(content, priorityOrderKey(group), priorityOrder(operation.before, group))
+          }
         }
       }
       const rollback = operation.changed

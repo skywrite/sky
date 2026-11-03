@@ -93,6 +93,268 @@ const selected = (view: DayView) =>
   )
 type Result = { view: DayView; undo: string; message: string; date?: string; undoRoute?: string }
 
+const rankedTodos = (view: DayView) =>
+  [...view.record.commitments, ...view.record.todos].sort((a, b) => a.priority! - b.priority!)
+const priorityInput = (view: DayView, rows = rankedTodos(view)) => ({
+  items: rows,
+  revision: view.record.todoOrderRevision,
+  requestId: randomUUID(),
+})
+
+test('reminder priorities survive editing, clearing and Undo without changing To-do priorities', async () => {
+  const content = CONTENT
+  await withDays(async ({ post, view, read, write }) => {
+    await write(
+      DAY,
+      content.replace(
+        '- Water the plants',
+        '- Pause before replying\n  Keep the context.\n- Leave room for a walk\n- Pause before replying\n  A different reminder context.\n- Remember the long-term goal',
+      ),
+    )
+    const initial = await view()
+    await post('organize/priority', priorityInput(initial, rankedTodos(initial).reverse()))
+    const before = await view()
+    const reminders = before.record.reminders
+    const requested = [reminders[2], reminders[1], reminders[0], ...reminders.slice(3)]
+    const response = await post('organize/priority', {
+      group: 'reminders',
+      items: requested,
+      revision: before.record.reminderOrderRevision,
+      moved: JSON.stringify([requested[0].list, requested[0].raw.split('\n')[0], requested[0].occurrence ?? 0]),
+      requestId: randomUUID(),
+    })
+    const ranked = (day: DayView) => [...day.record.reminders].sort((a, b) => a.priority! - b.priority!)
+    const first = ranked(await view())[0]
+    const edited = (await (
+      await post('edit', {
+        ...first,
+        text: 'Pause before the Atlas review',
+        kind: 'reminders',
+        category: 'Professional',
+        time: '',
+        requestId: randomUUID(),
+      })
+    ).json()) as Result
+    const afterEdit = ranked(edited.view)
+    assert({
+      given: 'an identical reminder promoted, then renamed',
+      should: 'keep the correct reminder’s notes and override without changing To-do priorities',
+      actual: [
+        response.status,
+        afterEdit[0].text,
+        afterEdit[0].priorityManual,
+        afterEdit[0].raw.includes('A different reminder context.'),
+        rankedTodos(edited.view).map((item) => item.text),
+      ],
+      expected: [200, 'Pause before the Atlas review', true, true, rankedTodos(before).map((item) => item.text)],
+    })
+    const saved = (await read())!
+    const deleted = (await (await post('delete', afterEdit[0])).json()) as { undo: string }
+    await write(DAY, (await read())! + '\nAn unrelated day note.\n')
+    assert({
+      given: 'clearing a promoted reminder and adding an unrelated note',
+      should: 'restore its original rank and notes on Undo, with the independent edit preserved',
+      actual: [(await post('row/undo', { id: deleted.undo })).status, await read(), ranked(await view())[0].text],
+      expected: [200, saved + '\nAn unrelated day note.\n', 'Pause before the Atlas review'],
+    })
+    const latest = await view()
+    const reset = (await (
+      await post('organize/priority', {
+        group: 'reminders',
+        items: latest.record.reminders,
+        revision: latest.record.reminderOrderRevision,
+        reset: true,
+        requestId: randomUUID(),
+      })
+    ).json()) as Result
+    assert({
+      given: 'Use Sky’s order applied to Reminders',
+      should: 'clear only reminder overrides and support Undo',
+      actual: [
+        reset.view.record.reminders.some((item) => item.priorityManual),
+        rankedTodos(reset.view).map((item) => item.text),
+        (await post('organize/undo', { id: reset.undo })).status,
+        ranked(await view())[0].priorityManual,
+      ],
+      expected: [false, rankedTodos(before).map((item) => item.text), 200, true],
+    })
+    const current = await view()
+    const snapshot = await read()
+    const mixed = await post('organize/priority', {
+      group: 'reminders',
+      items: [...current.record.reminders, current.record.todos[0]],
+      revision: current.record.reminderOrderRevision,
+      requestId: randomUUID(),
+    })
+    assert({
+      given: 'a priority request mixing reminders with a to-do',
+      should: 'reject it without changing either list',
+      actual: [mixed.status, await read()],
+      expected: [400, snapshot],
+    })
+    const converted = (await (
+      await post('edit', {
+        ...ranked(current)[0],
+        text: 'Share the outline',
+        kind: 'todos',
+        category: 'Professional',
+        time: '',
+        requestId: randomUUID(),
+      })
+    ).json()) as Result
+    assert({
+      given: 'a reminder converted into a to-do with the same title as an existing task',
+      should: 'keep the existing task’s priority and the converted reminder’s own notes',
+      actual: converted.view.record.todos
+        .filter((item) => item.text === 'Share the outline')
+        .map((item) => [item.raw.includes('A different reminder context.'), item.priorityManual]),
+      expected: [
+        [false, true],
+        [true, false],
+      ],
+    })
+    await write(DAY, (await read())! + '\nAnother independent note.\n')
+    const undoConversion = await post('edit/undo', { id: converted.undo })
+    const restored = await view()
+    assert({
+      given: 'Undo after converting a promoted reminder and writing another note',
+      should: 'restore its reminder priority without replacing the new note or the other list’s priorities',
+      actual: [
+        undoConversion.status,
+        ranked(restored).map((item) => [item.raw, item.priorityManual]),
+        rankedTodos(restored).map((item) => [item.raw, item.priorityManual]),
+        (await read())!.endsWith('\nAn unrelated day note.\n\nAnother independent note.\n'),
+      ],
+      expected: [
+        200,
+        ranked(current).map((item) => [item.raw, item.priorityManual]),
+        rankedTodos(current).map((item) => [item.raw, item.priorityManual]),
+        true,
+      ],
+    })
+  })
+})
+
+test('To-do priority spans source categories and time, persists through edits, and keeps Most Important separate', async () => {
+  await withDays(async ({ post, view, read }) => {
+    const original = await view()
+    const rows = rankedTodos(original)
+    const input = priorityInput(original, [rows[4], rows[0], rows[3], rows[1], rows[2]])
+    const response = await post('organize/priority', input)
+    const result = (await response.json()) as Result
+    const saved = (await read())!
+    assert({
+      given: 'an explicit priority order spanning untimed work and timed personal tasks',
+      should: 'persist the combined ranking without moving source blocks or changing Most Important',
+      actual: {
+        status: response.status,
+        order: rankedTodos(await view()).map((row) => row.text),
+        source: saved.slice(saved.indexOf('# A sample day')),
+        retry: (await post('organize/priority', input)).status,
+      },
+      expected: {
+        status: 200,
+        order: ['Call Jane Doe', 'Review [Atlas][brief]', 'Buy supplies', 'Share the outline', 'Book the room'],
+        source: CONTENT.slice(CONTENT.indexOf('# A sample day')),
+        retry: 200,
+      },
+    })
+    const first = rankedTodos(result.view)[0]
+    const edit = await post('edit', {
+      ...first,
+      text: 'Prepare the Atlas agenda',
+      kind: 'todos',
+      category: 'Professional',
+      time: '',
+      requestId: randomUUID(),
+    })
+    const edited = (await edit.json()) as Result
+    assert({
+      given: 'the top item renamed and moved from a timed personal task to an untimed professional task',
+      should: 'keep its priority through the edit and through Undo',
+      actual: [
+        edit.status,
+        rankedTodos(edited.view)[0].text,
+        (await post('edit/undo', { id: edited.undo })).status,
+        rankedTodos(await view())[0].text,
+      ],
+      expected: [200, 'Prepare the Atlas agenda', 200, 'Call Jane Doe'],
+    })
+    const latest = await view()
+    const completed = await post('', { ...rankedTodos(latest)[0], done: true })
+    const completedView = (await completed.json()) as DayView
+    await post('add', { kind: 'todos', category: 'Personal', text: 'New unranked task', requestId: randomUUID() })
+    assert({
+      given: 'completion followed by an addition that can reorder the underlying file',
+      should: 'retain the saved priority and place the new item after the manually ranked tasks',
+      actual: [
+        rankedTodos(completedView)
+          .filter((row) => !row.done)
+          .map((row) => row.text),
+        rankedTodos(await view()).at(-1)?.text,
+      ],
+      expected: [['Review [Atlas][brief]', 'Buy supplies', 'Share the outline'], 'New unranked task'],
+    })
+  })
+})
+
+test('priority follows the right duplicate through completion, deletion and Undo', async () => {
+  await withDays(async ({ post, view, read, write }) => {
+    const original = await view()
+    const rows = rankedTodos(original)
+    const ordered = [rows[2], rows[1], rows[0], rows[3]]
+    const result = (await (await post('organize/priority', priorityInput(original, ordered))).json()) as Result
+    const chosen = rankedTodos(result.view)[0]
+    const changed = (await (await post('', { ...chosen, done: true })).json()) as DayView & { itemUndo: string }
+    assert({
+      given: 'identical titles and notes, with the third copy ranked first',
+      should: 'keep that exact copy first when completion moves it within the source list',
+      actual: rankedTodos(changed).map((row) => [row.done, row.raw.includes('first copy')]),
+      expected: [
+        [true, false],
+        [false, false],
+        [false, true],
+        [false, false],
+      ],
+    })
+    await post('row/undo', { id: changed.itemUndo })
+    const before = (await read())!
+    const removed = (await (await post('delete', rankedTodos(await view())[0])).json()) as { undo: string }
+    await write(DAY, (await read())! + '\nAn unrelated note.\n')
+    assert({
+      given: 'deletion of the promoted duplicate followed by an unrelated note',
+      should: 'restore its priority and preserve the unrelated edit',
+      actual: [(await post('row/undo', { id: removed.undo })).status, await read()],
+      expected: [200, before + '\nAn unrelated note.\n'],
+    })
+  }, REPEATED)
+})
+
+test('priority saves refuse stale ordering, missing rows, notes changed elsewhere, Most Important and cross-site writes', async () => {
+  await withDays(async ({ post, view, read, write }) => {
+    const original = await view()
+    const input = priorityInput(original, rankedTodos(original).reverse())
+    await post('organize/priority', input)
+    const latest = await view()
+    const content = (await read())!
+    const stale = await post('organize/priority', priorityInput(original))
+    const missing = await post('organize/priority', priorityInput(latest, rankedTodos(latest).slice(1)))
+    const outside = await post('organize/priority', {
+      ...priorityInput(latest),
+      items: [{ ...rankedTodos(latest)[0], list: 'Most Important' }],
+    })
+    const crossSite = await post('organize/priority', priorityInput(latest), 'https://example.com')
+    await write(DAY, content.replace('Keep [these notes]', 'Updated [these notes]'))
+    const notes = await post('organize/priority', priorityInput(latest))
+    assert({
+      given: 'stale and invalid reorder requests',
+      should: 'reject them without losing newer content or accepting a cross-site mutation',
+      actual: [stale.status, missing.status, outside.status, crossSite.status, notes.status, await read()],
+      expected: [409, 409, 400, 403, 409, content.replace('Keep [these notes]', 'Updated [these notes]')],
+    })
+  })
+})
+
 const REPEATED = `---
 started: 08:00
 ended:

@@ -128,9 +128,30 @@ export function DayItemHelp({
   )
 }
 
-export function ItemHelpButton({ item, href, disabled }: { item: DayItem; href: string | null; disabled: boolean }) {
+export function ItemHelpButton({
+  item,
+  href,
+  disabled,
+  label = false,
+}: {
+  item: DayItem
+  href: string | null
+  disabled: boolean
+  label?: boolean
+}) {
   const help = useContext(HelpContext)
   if (!help) return null
+  if (label)
+    return (
+      <Button
+        variant="secondary"
+        className="sky-item-help-link"
+        disabled={disabled || help.busy}
+        onClick={() => help.start(item, href)}
+      >
+        Get Sky’s help
+      </Button>
+    )
   return (
     <Tooltip label="Get Sky’s help" withArrow events={{ hover: true, focus: true, touch: false }}>
       <ActionIcon

@@ -26,6 +26,7 @@ test(
         dayReview: {
           status: async () => ({ pending: null, supported: true }),
           acknowledge: async () => {},
+          recaps: async () => [{ id: 'slack', title: 'Slack recap', saved: true }],
           recap: async () => {},
           summarize: async () => {
             await writeFile(
@@ -73,7 +74,8 @@ test(
         await page.getByText(FILE_CHAT_REPLY, { exact: true }).waitFor()
         await page.getByRole('button', { name: '‹ Today', exact: true }).click()
         await page.waitForURL(origin + '/')
-        await page.getByRole('button', { name: 'Review yesterday', exact: true }).click()
+        // Yesterday is summarized, so today's page no longer offers its review; the address opens it.
+        await page.goto(`${origin}/?review=2026-01-27`)
         const review = page.getByRole('dialog', { name: 'Review 2026-01-27' })
         await review.getByRole('button', { name: /^Chats/ }).click()
         await review.getByRole('heading', { name: 'Keep the conversation going' }).waitFor()

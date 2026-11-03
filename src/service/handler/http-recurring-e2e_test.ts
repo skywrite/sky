@@ -108,8 +108,7 @@ test(
         expected: [true, true],
       })
       await page.getByRole('button', { name: 'Edit recurrence: Review Atlas priorities', exact: true }).click()
-      await page.getByRole('combobox', { name: 'Type', exact: true }).click()
-      await page.getByRole('option', { name: 'Commitment', exact: true }).click()
+      await page.getByRole('button', { name: 'Add a time', exact: true }).click()
       await page.getByRole('textbox', { name: /^Time/ }).fill('25:30')
       await page.getByRole('combobox', { name: 'Category', exact: true }).click()
       await page.getByRole('option', { name: 'Personal', exact: true }).click()
@@ -119,7 +118,7 @@ test(
       await page.getByRole('option', { name: 'Wednesday', exact: true }).click()
       await page.getByLabel('Next matching dates').getByText('2031-03-19', { exact: true }).waitFor()
       await page.getByRole('button', { name: 'Save changes', exact: true }).click()
-      await page.getByText('Every Wednesday · 25:30 · Commitment', { exact: true }).waitFor()
+      await page.getByText('Every Wednesday · 25:30 · To-do', { exact: true }).waitFor()
       await shot('desktop-list')
       assert({
         given: 'a recurrence changed to a personal commitment',

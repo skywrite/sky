@@ -189,6 +189,8 @@ export async function runWysiwygE2e(
     popupBlocking?: boolean
     now?: ZonedDateTime
     mostImportant?: MostImportantAI
+    todoPriority?: import('./day/mod.ts').DayRoutesOptions['todoPriority']
+    reminderPriority?: import('./day/mod.ts').DayRoutesOptions['reminderPriority']
     journal?: import('./journal/mod.ts').JournalOptions
     /** Script an import's read-back and run when testing the day import flow */
     imports?: Partial<ImportRoutesOptions>
@@ -263,6 +265,14 @@ export async function runWysiwygE2e(
             }
           : {}),
         mostImportant: options.mostImportant,
+        reminderPriority: options.reminderPriority ?? {
+          rank: async ({ tasks }) => tasks.map(() => 0),
+          context: async () => [],
+        },
+        todoPriority: options.todoPriority ?? {
+          rank: async ({ tasks }) => tasks.map(() => 0),
+          context: async () => [],
+        },
         journal: options.journal,
         dayReview: options.dayReview,
         now: options.now ? () => options.now! : undefined,

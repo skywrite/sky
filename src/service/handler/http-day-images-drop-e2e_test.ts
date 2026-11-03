@@ -47,6 +47,8 @@ test({ name: 'day — four dropped screenshots become one message on desktop and
       ]) {
         await page.setViewportSize(viewport)
         await page.goto(`${origin}/${DAY.ymd}`)
+        // Add a file sits in Details, which a phone opens from the header's chevron.
+        if (viewport.width < 1181) await page.getByRole('button', { name: 'Show details', exact: true }).click()
         await page.waitForSelector('.sky-day button[aria-label="Add a file"]:not([disabled])')
         const before = (await jobs()).length
         await dispatchFileDrop(page, '.sky-day .sky-col', SCREENSHOTS)

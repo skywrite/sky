@@ -23,7 +23,15 @@ import {
   selectedLeaf,
   textOf,
 } from './bookmark.ts'
-import { type ListKind, moveBlock, setHeading, toggleList, toggleQuote } from './commands.ts'
+import {
+  type BlockInsert,
+  insertBlock,
+  type ListKind,
+  moveBlock,
+  setHeading,
+  toggleList,
+  toggleQuote,
+} from './commands.ts'
 import { renderInline } from './decorate.ts'
 import { backspaceAtStart, deleteAcross, deleteAtEnd, widenSelection } from './delete.ts'
 import { highlightLanguage } from './highlight.ts'
@@ -105,7 +113,24 @@ export interface EditorHooks {
   onFiles?(files: File[]): void
 }
 
-export type EditorFormat = 'bold' | 'italic' | 'heading' | 'paragraph' | 'bullets' | 'undo' | 'redo'
+export type EditorFormat =
+  | 'bold'
+  | 'italic'
+  | 'strike'
+  | 'code'
+  | 'link'
+  | 'heading'
+  | 'heading1'
+  | 'heading2'
+  | 'heading3'
+  | 'paragraph'
+  | 'bullets'
+  | 'numbers'
+  | 'tasks'
+  | 'quote'
+  | BlockInsert
+  | 'undo'
+  | 'redo'
 
 /** A stretch of one block's markdown: offsets count every character, hidden syntax included. */
 export interface TextSpan {
@@ -138,6 +163,10 @@ export interface EditorHandle {
   replaceText(edits: TextEdit[], text: string): number
   /** Selects a stretch of a block and gives the editor the keys. */
   selectText(span: TextSpan): void
+  /** Writes markdown at the caret, over any selection, as one undo step — a link a host picked. */
+  insertMarkdown(markdown: string): void
+  /** Copies files beside the document through `attachPath` and links them at the caret, as a paste does. */
+  attach(files: File[], attachPath: string): void
   /** Finish pending saves before the host stops editing and moves the file to the Trash. */
   savePending(): Promise<void>
   destroy(): void
@@ -167,6 +196,8 @@ export function mountEditor(root: HTMLElement, state: EditorState, hooks: Editor
     focusEnd: () => editor.focusEnd(),
     replaceText: (edits, text) => editor.replaceText(edits, text),
     selectText: (span) => editor.selectText(span),
+    insertMarkdown: (markdown) => editor.insertMarkdown(markdown),
+    attach: (files, attachPath) => void editor.storeFiles(files, attachPath),
     savePending: () => editor.savePending(),
     destroy: () => editor.destroy(),
   }
@@ -1854,7 +1885,7 @@ class Editor {
     return true
   }
 
-  private async storeFiles(files: File[], attachPath: string) {
+  async storeFiles(files: File[], attachPath: string) {
     for (const file of files) {
       this.hooks.onStatus('saving', `Copying ${file.name}…`)
       try {
@@ -2310,11 +2341,38 @@ class Editor {
     if (!bookmarkFromSelection(this.root)) this.focusStart()
     if (command === 'bold') this.toggleInline(STYLES.strong)
     else if (command === 'italic') this.toggleInline(STYLES.em)
+    else if (command === 'strike') this.toggleInline(STYLES.strike)
+    else if (command === 'code') this.toggleInline(STYLES.code)
+    else if (command === 'link') void this.toggleLink(STYLES.link)
     else if (command === 'heading') this.heading(2)
+    else if (command === 'heading1') this.heading(1)
+    else if (command === 'heading2') this.heading(2)
+    else if (command === 'heading3') this.heading(3)
     else if (command === 'paragraph') this.heading(null)
     else if (command === 'bullets') this.listCommand('ul')
+    else if (command === 'numbers') this.listCommand('ol')
+    else if (command === 'tasks') this.listCommand('task')
+    else if (command === 'quote') this.blockCommand((leaves) => toggleQuote(this.doc, leaves))
+    else if (command === 'codeblock' || command === 'table' || command === 'divider') this.insertBlockAt(command)
     else if (command === 'undo') this.undo()
     else this.redo()
+  }
+
+  /** A code block, table or divider at the caret, as one undo step (INS-1). */
+  private insertBlockAt(kind: BlockInsert): boolean {
+    const current = this.current()
+    if (!current) return false
+    const { node, bookmark } = current
+    return this.transact(anchorsAround(node), bookmark, () => {
+      const landing = insertBlock(this.doc, node, kind)
+      return landing ? { caret: at(landing.leaf.id, landing.offset) } : null
+    })
+  }
+
+  insertMarkdown(markdown: string) {
+    this.root.focus({ preventScroll: true })
+    if (!bookmarkFromSelection(this.root)) this.focusEnd()
+    this.pasteMarkdown(markdown)
   }
 
   private markDirty() {

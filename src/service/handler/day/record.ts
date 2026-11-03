@@ -8,6 +8,7 @@
 import * as path from 'node:path'
 import { Lexer, type Token, type Tokens } from 'marked'
 import gatherDayDocs from '#commands/all/summary/lib/gatherDayDocs.ts'
+import { priorityAddressKey, priorityOrderRows, priorityOrderRevision } from '#lib/nbfs/priorityOrder.ts'
 import { readTextFile } from '#shared/fs/mod.ts'
 import AboutMeDocument from '#shared/models/AboutMe/document/mod.ts'
 import { parseMeetingEntry } from '#shared/models/Day/document/meetings.ts'
@@ -32,6 +33,9 @@ export interface DayItem {
   category: string | null
   /** `HH:MM` when the item carries one (done items usually do) */
   time: string | null
+  /** Priority within To-dos or Reminders; smaller numbers come first. */
+  priority?: number
+  priorityManual?: boolean
   /** How long a Complete entry took, from `08:30(4h) > …` — absent when it does not say */
   minutes?: number
   /** The document the item points at, when it is a link */
@@ -84,6 +88,10 @@ export interface DayRecord {
   summarized: boolean
   manualOrder?: string[]
   commitmentsOrder?: CommitmentOrder
+  todoOrderRevision?: string
+  reminderOrderRevision?: string
+  todoPriority?: { source: 'sky' | 'saved'; warning?: string; connection?: boolean }
+  reminderPriority?: { source: 'sky' | 'saved'; warning?: string; connection?: boolean }
   mostImportant: DayItem[]
   commitments: DayItem[]
   todos: DayItem[]
@@ -273,6 +281,14 @@ export async function buildDayRecord(input: DayRecordInput): Promise<DayRecord> 
     const file = path.join(input.timeDir, dayFile(input.day))
     const content = await readTextFile(file)
     const dayDoc = DayDocument.fromMarkdown(content)
+    const priorities = new Map(
+      [...priorityOrderRows(content), ...priorityOrderRows(content, 'reminders')].map((row) => [
+        priorityAddressKey(row),
+        row,
+      ]),
+    )
+    record.todoOrderRevision = priorityOrderRevision(content)
+    record.reminderOrderRevision = priorityOrderRevision(content, 'reminders')
     Object.assign(record, planOrder(content))
     Object.assign(record, await dayStatus(dayDoc, file))
     for (const meeting of dayDoc.meetings) {
@@ -302,6 +318,11 @@ export async function buildDayRecord(input: DayRecordInput): Promise<DayRecord> 
           const firstLine = raw.split(/\r?\n/)[0]
           const occurrence = occurrences.get(firstLine) ?? 0
           occurrences.set(firstLine, occurrence + 1)
+          const priority = priorities.get(priorityAddressKey({ list: heading, raw, occurrence }))
+          if (priority) {
+            item.priority = priority.priority
+            item.priorityManual = priority.manual
+          }
           try {
             const row = editableRow(content, heading, raw, occurrence)
             item.occurrence = occurrence

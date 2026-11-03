@@ -105,6 +105,8 @@ export interface HttpHandlerOptions {
   clock?: ClockRoutesOptions
   meetings?: CalendarSchedulerHost
   mostImportant?: MostImportantAI
+  todoPriority?: import('./day/mod.ts').DayRoutesOptions['todoPriority']
+  reminderPriority?: import('./day/mod.ts').DayRoutesOptions['reminderPriority']
   journal?: JournalOptions
   /** The automations page's host; absent, /automations/_api is not served */
   automations?: AutomationsRoutesOptions
@@ -236,6 +238,8 @@ export function createHttpApp(options: HttpHandlerOptions): Hono {
       }),
       workstreams: options.workstreams?.store,
       mostImportant: options.mostImportant,
+      todoPriority: options.todoPriority,
+      reminderPriority: options.reminderPriority,
     }
     const dayRoutes = createDayRoutes(dayOptions)
     app.route('/day', dayRoutes)
@@ -866,6 +870,11 @@ export function createHttpApp(options: HttpHandlerOptions): Hono {
   // A meeting's page — /2026-08-27/meetings/<slug>. Its data comes from /explorer/_api/meeting?day=&slug=.
   app.get('/:ymd{\\d{4}-\\d{2}-\\d{2}}/meetings/:slug', (c) => {
     return c.html(renderAppHtml('sky'))
+  })
+  // A note written on the day — /2026-08-27/notes/<name>, or /notes/new for a blank one. Its data
+  // lives under /day/:ymd/notes and the document API.
+  app.get('/:ymd{\\d{4}-\\d{2}-\\d{2}}/notes/:slug', (c) => {
+    return c.html(renderAppHtml(c.req.param('slug') === 'new' ? 'sky · New note' : 'sky · Note'))
   })
 
   app.get('/_assets/:name', async (c) => {

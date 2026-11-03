@@ -3,6 +3,14 @@ import { Hono, type Context } from 'hono'
 import { appendTaskBlock } from '#lib/nbfs/fileTaskItems.ts'
 import { listRow } from '#lib/nbfs/listBlocks.ts'
 import { writePlanningChanges as writeChanges } from '#lib/nbfs/planningChanges.ts'
+import {
+  priorityGroupOf,
+  priorityOrderKey,
+  rebasePriorityOrder,
+  priorityAddressKey,
+  priorityOrderRows,
+  priorityOrderRevision,
+} from '#lib/nbfs/priorityOrder.ts'
 import { emptySchedule, scheduledBlock } from '#lib/nbfs/scheduledItems.ts'
 import { taskDestination, taskFiling, type TaskFiling } from '#lib/nbfs/taskDestination.ts'
 import { readOptional, withLock } from '#lib/outbox/files.ts'
@@ -50,11 +58,11 @@ interface Operation {
 }
 
 const validId = (value: unknown): value is string => typeof value === 'string' && /^[a-f0-9-]{36}$/.test(value)
-function addresses(value: unknown): DayItemAddress[] {
+function addresses(value: unknown, limit = 100): DayItemAddress[] {
   if (
     !Array.isArray(value) ||
     !value.length ||
-    value.length > 100 ||
+    value.length > limit ||
     !value.every(
       (item) =>
         item &&
@@ -65,7 +73,7 @@ function addresses(value: unknown): DayItemAddress[] {
         /^[a-f0-9]{64}$/.test(item.revision),
     )
   )
-    throw new ItemEditError('Select up to 100 items from the current day.', 400)
+    throw new ItemEditError(`Select up to ${limit} items from the current day.`, 400)
   if (new Set(value.map((item) => dayItemKey({ ...item, raw: item.raw.split(/\r?\n/)[0] }))).size !== value.length)
     throw new ItemEditError('Select each item only once.', 400)
   return value as DayItemAddress[]
@@ -202,6 +210,11 @@ export function createDayOrganizer(options: ItemRoutesOptions) {
       // Remove later occurrences first so earlier duplicates retain their validated addresses.
       for (const { address } of [...rows].reverse())
         source = removeBlock(source, address.list, address.raw, address.occurrence)
+      source = rebasePriorityOrder(
+        day.content,
+        source,
+        rows.map(({ address }) => ({ before: address })),
+      )
       const changes = [...destinations.values(), { file: day.file, before: day.content, after: source }]
       // Keep a destination copy before removing anything from the source.
       await writeChanges(changes, options.writePlanning)
@@ -277,6 +290,49 @@ export function createDayOrganizer(options: ItemRoutesOptions) {
     return response(c, body.requestId)
   })
 
+  routes.post('/:ymd/item/organize/priority', async (c) => {
+    const body = await bodyOf(c)
+    if (
+      !body ||
+      !validId(body.requestId) ||
+      typeof body.revision !== 'string' ||
+      (body.group !== undefined && !['todos', 'reminders'].includes(String(body.group)))
+    )
+      throw new ItemEditError('Refresh the list before changing its priority.', 400)
+    const group = body.group === 'reminders' ? 'reminders' : 'todos'
+    const label = group === 'reminders' ? 'Reminders' : 'To-dos'
+    const requested = addresses(body.items, 2000)
+    if (requested.some((item) => priorityGroupOf(item.list) !== group))
+      throw new ItemEditError(`Reorder ${label} within their own list. Most Important stays separate.`, 400)
+    const day = await dayFileOf(c, options)
+    if (day instanceof Response) return day
+    const request = JSON.stringify({
+      group,
+      items: requested,
+      revision: body.revision,
+      moved: body.moved,
+      reset: body.reset,
+    })
+    if (previous(body.requestId, day.ymd, request)) return response(c, body.requestId)
+    const rows = priorityOrderRows(day.content, group)
+    if (rows.length !== requested.length || body.revision !== priorityOrderRevision(day.content, group))
+      throw new ItemEditError(`The ${label} list or its priority changed. Refresh it before reordering.`)
+    const byAddress = new Map(rows.map((row) => [priorityAddressKey(row), row]))
+    if (body.moved !== undefined && (typeof body.moved !== 'string' || !byAddress.has(body.moved)))
+      throw new ItemEditError(`Choose a current item from ${label} to change its priority.`, 400)
+    const entries = requested.map((item) => {
+      checkedBlock(day.content, day.file, item)
+      const row = byAddress.get(priorityAddressKey(item))
+      if (!row) throw new ItemEditError(`An item in ${label} changed. Refresh the list before reordering.`)
+      return { ...row.entry, manual: body.moved === undefined || body.moved === priorityAddressKey(row) || row.manual }
+    })
+    const after = setPlanOrder(day.content, priorityOrderKey(group), body.reset === true ? undefined : entries)
+    const changes = [{ file: day.file, before: day.content, after }]
+    await writeChanges(changes, options.writePlanning)
+    remember(body.requestId, { day: day.ymd, request, changes, message: `${label} priority updated` })
+    return response(c, body.requestId)
+  })
+
   routes.post('/:ymd/item/organize/undo', async (c) => {
     const body = await bodyOf(c)
     cleanup()
@@ -307,6 +363,15 @@ export function createDayOrganizer(options: ItemRoutesOptions) {
                 after = insertBlock(after, item.before.list, item.before.block, item.before.index)
               }
               after = orderAddedItems(change.before!, after, new Set(operation.moved.map((item) => item.before.list)))
+              for (const key of ['todo-order', 'reminder-order'] as const) {
+                const oldOrder = DayDocument.fromMarkdown(change.before!).yaml[key]
+                const savedOrder = DayDocument.fromMarkdown(change.after!).yaml[key]
+                if (JSON.stringify(oldOrder) !== JSON.stringify(savedOrder)) {
+                  if (JSON.stringify(DayDocument.fromMarkdown(current).yaml[key]) !== JSON.stringify(savedOrder))
+                    throw new ItemEditError('Priority changed after this move. Review the day before undoing.')
+                  after = setPlanOrder(after, key, oldOrder)
+                }
+              }
             } else {
               const rows = operation.moved
                 .filter((item) => item.after.file === change.file)
@@ -332,7 +397,7 @@ export function createDayOrganizer(options: ItemRoutesOptions) {
                 throw new ItemEditError('This list changed again. Its order cannot be undone automatically.')
               after = arrangeBlocks(after, slots, original)
             }
-            for (const key of ['manual-order', 'commitments-order'] as const) {
+            for (const key of ['manual-order', 'commitments-order', 'todo-order', 'reminder-order'] as const) {
               const oldValue = DayDocument.fromMarkdown(change.before!).yaml[key]
               const savedValue = DayDocument.fromMarkdown(change.after!).yaml[key]
               const currentValue = DayDocument.fromMarkdown(current).yaml[key]
