@@ -66,6 +66,7 @@ import { useFrontmatter } from '../frontmatter/useFrontmatter.ts'
 import { expectJournalTabs, openCompletedJournals, openJournalTabs } from '../journal/journalImportTabs.ts'
 import { JournalTypesReview } from '../journal/journalTypes.tsx'
 import { RenderedHtml } from '../lib/renderedHtml.tsx'
+import { useDialogTitle } from '../lib/useDialogTitle.ts'
 import { LinksInput } from '../links/links.tsx'
 import { ActionItemEditor } from './ActionItemEditor.tsx'
 import { DocumentSummaryDialog } from './documentImport.tsx'
@@ -1675,15 +1676,7 @@ export function ImportDialog({
       .catch(() => {})
   }, [again])
   const opened = pending !== null || again !== null
-  useEffect(() => {
-    if (!opened) return
-    const before = document.title
-    const title = `sky · Import ${job?.title ?? pending?.files[0]?.name ?? 'file'}`
-    document.title = title
-    return () => {
-      if (document.title === title) document.title = before
-    }
-  }, [opened, job?.title, pending?.files[0]?.name])
+  useDialogTitle(opened ? `sky · Import ${job?.title ?? pending?.files[0]?.name ?? 'file'}` : null)
 
   const cancel = () => {
     // A file that never started, or was refused, leaves with the dialog.

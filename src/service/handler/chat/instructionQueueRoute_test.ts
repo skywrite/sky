@@ -244,7 +244,11 @@ test('a queued message that fails acceptance is held instead of repeatedly retri
     unavailable = true
     release()
     await running
-    await until(async () => (await (await app.request('/example')).json()).queued[0]?.held)
+    await until(async () => {
+      const state = await (await app.request('/example')).json()
+      // Holding the queue is persisted before the asynchronous pause finishes.
+      return state.queued[0]?.held && state.plan.status === 'paused'
+    })
     unavailable = false
     const blocked = await (await app.request('/example')).json()
     await app.request('/example/plan', action('send-instruction', 'totals'))

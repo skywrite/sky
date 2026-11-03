@@ -11,6 +11,7 @@ import {
   type ReviewView,
 } from '../../../../service/handler/day/review/types.ts'
 import type { MeetingImport } from '../../import/import.tsx'
+import { useDialogTitle } from '../../lib/useDialogTitle.ts'
 import { ReviewSteps, steps } from './reviewSteps.tsx'
 
 const api = '/day-review/_api'
@@ -179,23 +180,7 @@ export function DayReviewDialog({
   }
   const step = view?.step ?? 'carry'
   const stepIndex = REVIEW_STEPS.indexOf(step)
-  useEffect(() => {
-    const title = `sky · Review ${day} · ${steps[step].label}`
-    let previous = document.title
-    const observer = new MutationObserver(() => {
-      if (document.title !== title) {
-        previous = document.title
-        document.title = title
-      }
-    })
-    const element = document.querySelector('title')
-    if (element) observer.observe(element, { childList: true, subtree: true, characterData: true })
-    document.title = title
-    return () => {
-      observer.disconnect()
-      document.title = previous
-    }
-  }, [day, step])
+  useDialogTitle(`sky · Review ${day} · ${steps[step].label}`)
   useEffect(() => {
     if (view?.step) heading.current?.focus()
   }, [view?.step])

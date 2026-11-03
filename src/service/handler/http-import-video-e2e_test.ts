@@ -51,12 +51,18 @@ test(
         },
       },
       async ({ page, origin, errors }) => {
+        let releaseDay!: () => void
+        const dayReady = new Promise<void>((resolve) => (releaseDay = resolve))
+        await page.route(`${origin}/day/${DAY.ymd}`, async (route) => {
+          await dayReady
+          await route.continue()
+        })
         await page.route('**/day/*/schedule', (route) =>
           route.fulfill({ json: { read: true, errors: [], meetings: [] } }),
         )
         await page.setViewportSize({ width: 1400, height: 1000 })
         await page.goto(`${origin}/${DAY.ymd}`)
-        await page.waitForSelector('.sky-day button[aria-label="Add a file"]:not([disabled])')
+        await page.waitForSelector('.sky-day .sky-col')
         await dispatchFileDrop(
           page,
           '.sky-day .sky-col',
@@ -78,6 +84,9 @@ test(
             url,
           )
           if (i === 0) {
+            // Finish loading the covered page after the dialog claims the tab title.
+            releaseDay()
+            await page.locator('.sky-day .sky-title').filter({ hasText: 'Saturday, April 5, 2031' }).waitFor()
             await page.getByRole('checkbox', { name: LABEL }).check()
             await page.getByLabel('Source video URL', { exact: true }).fill('')
             await page.getByRole('button', { name: 'Start', exact: true }).click()
@@ -94,9 +103,9 @@ test(
             actual: [
               await page.getByRole('checkbox', { name: LABEL }).isChecked(),
               await page.getByLabel('Source video URL', { exact: true }).inputValue(),
-              (await page.title()).startsWith('sky · Import '),
+              await page.title(),
             ],
-            expected: [true, url, true],
+            expected: [true, url, `sky · Import Atlas-${IDS[i]}`],
           })
           await page.locator('input[aria-label="When"]').fill(`${DAY.ymd} 09:30`)
           await page.getByRole('button', { name: 'Start', exact: true }).click()
@@ -120,6 +129,7 @@ test(
           expected: false,
         })
         await page.getByRole('button', { name: 'Cancel', exact: true }).click()
+        await page.waitForFunction(() => document.title === 'sky · Saturday, April 5, 2031 · Day record')
         await page.goto(`${origin}/import/${jobs[0].id}`)
         await page.waitForFunction((title) => document.title === title, `sky · ${jobs[0].title}`)
         await page.goto(`${origin}/import/${jobs[1].id}`)

@@ -126,6 +126,8 @@ test(
         await page.getByRole('button', { name: 'Remove notes.txt', exact: true }).waitFor()
         await send.click()
         await page.locator('.sky-turn-user .sky-chat-file-name').filter({ hasText: 'notes.txt' }).waitFor()
+        // The sent clip appears optimistically, before the model receives the attachment.
+        await page.getByText(FILE_CHAT_REPLY, { exact: true }).nth(1).waitFor()
         assert({
           given: 'a pasted file is sent without typed text',
           should: 'read it as an attachment-only message',

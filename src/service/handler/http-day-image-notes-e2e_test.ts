@@ -189,12 +189,13 @@ test(
           }
           await dialog.getByText('Notes ready', { exact: true }).waitFor()
           const previousPath = new URL(page.url()).pathname
-          const previousTitle = await page.title()
           await dialog.getByRole('link', { name: 'Open note', exact: true }).click()
           await page.waitForSelector('.sky-doc-body')
           await page.getByRole('heading', { name: 'Atlas plan', exact: true }).waitFor()
           const completed = (await (await page.request.get(`${origin}/import/${runs.at(-1)!.id}`)).json())
             .job as ImportJob
+          // Opening the note closes its dialog; Back restores the page underneath it.
+          const previousTitle = index === 0 ? `sky · ${completed.title}` : title
           const markdown = Document.fromMarkdown(await readFile(path.join(root, completed.result!.file), 'utf8'))
           assert({
             given: 'opening the completed image note',
