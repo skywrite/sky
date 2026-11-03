@@ -15,6 +15,7 @@ import { gatherContext } from '#commands/all/ai/_lib/gatherContext.ts'
 import { harvestFileRefs, SessionBlessings } from '#commands/all/ai/chat/lib/approvals.ts'
 import { calendarDraftRefusal } from '#commands/lib/chat/calendarScheduling.ts'
 import { FileGrants } from '#commands/lib/chat/fileGrants.ts'
+import { LIVE_CHAT_INSTRUCTIONS } from '#commands/lib/chat/liveChats.ts'
 import { createChatFileTools } from '#commands/lib/chat/localFileTools.ts'
 import { createMemoryTools } from '#commands/lib/chat/memoryTools.ts'
 import {
@@ -362,7 +363,16 @@ export function createChatHost(config: typeof ConfigModule, env: Record<string, 
     return held
   }
 
-  const createSession: ChatSessionFactory = async (id, onEvent, prefs, ask, restore, runs = () => [], plan) => {
+  const createSession: ChatSessionFactory = async (
+    id,
+    onEvent,
+    prefs,
+    ask,
+    restore,
+    runs = () => [],
+    plan,
+    liveChats,
+  ) => {
     const context = CommandContext.server(config, env)
     const { web_search, ...publicWebTools } = createWebTools()
     const webTools = { ...publicWebTools, ...(env.PERPLEXITY_API_KEY ? { web_search } : {}) }
@@ -482,6 +492,7 @@ export function createChatHost(config: typeof ConfigModule, env: Record<string, 
           },
           instructions: [
             PLAN_INSTRUCTIONS,
+            liveChats ? LIVE_CHAT_INSTRUCTIONS : '',
             plan?.plan
               ? `Current live plan (read_plan has the latest revision and tool evidence):\n${JSON.stringify(plan.plan)}`
               : '',
@@ -515,7 +526,7 @@ export function createChatHost(config: typeof ConfigModule, env: Record<string, 
               cwd: config.DIR_HOME,
               onAttachments,
             }),
-            ...createReadChatTool({ notebookDir: config.DIR_BASE }),
+            ...createReadChatTool({ notebookDir: config.DIR_BASE, liveChats }),
             ...createMemoryTools({
               memoryDir: config.DIR_AI_MEMORY,
               notebookDir: config.DIR_BASE,

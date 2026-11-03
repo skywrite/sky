@@ -1,6 +1,6 @@
 ---
 created: 2026-09-10
-updated: 2026-10-25
+updated: 2026-11-03
 ---
 
 # Chat prompt and tools
@@ -51,6 +51,10 @@ A session's context carries each saved chat as its card. `read_chat`
 (`readChat.ts`) opens one whole and read-only, by the path the card came
 under, in both hosts; see
 [ChatContext admission](../../../../_shared-ts/models/Chat/ChatContext/docs/README.md).
+
+The web host also supplies `find_chats` and live `read_chat` access through `liveChats.ts`.
+See [reading another open conversation](../../../../service/handler/chat/docs/README.md#reading-another-open-conversation)
+for discovery, freshness, and attribution rules.
 
 ## What the prompt rules on
 

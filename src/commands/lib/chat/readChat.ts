@@ -18,15 +18,18 @@ import { READ_CHAT_TOOL } from '#shared/models/Chat/ChatContext/chatCard.ts'
 import { Document } from '#shared/models/Markdown/mod.ts'
 import { isAIChatPath } from '#shared/nbfs/mod.ts'
 import { MAX_TEXT_CHARS } from './fileTools.ts'
+import { createFindChatsTool, liveChatId, readLiveChat, type LiveChatAccess } from './liveChats.ts'
 
 export interface ReadChatInput {
   path: string
   offset?: number
+  version?: string
 }
 
 export type ReadChatOutput =
   | { success: true; path: string; text: string; totalChars?: number; nextOffset?: number }
   | { success: false; error: string }
+  | ReturnType<typeof readLiveChat>
 
 /**
  * The file a model-supplied path names, when it is a saved chat inside the
@@ -46,7 +49,20 @@ export function resolveChatPath(input: string, notebookDir: string): string | nu
   return inside(file) && file.endsWith('.md') && isAIChatPath(file) ? file : null
 }
 
-export async function readChat(input: ReadChatInput, notebookDir: string): Promise<ReadChatOutput> {
+export async function readChat(
+  input: ReadChatInput,
+  notebookDir: string,
+  liveChats?: LiveChatAccess,
+): Promise<ReadChatOutput> {
+  const id = liveChatId(input.path)
+  if (id !== null) {
+    return liveChats
+      ? readLiveChat(liveChats, id, input)
+      : {
+          success: false,
+          error: 'Reading open chats is available in the web chat. Here, use a saved chat notebook path.',
+        }
+  }
   const file = resolveChatPath(input.path, notebookDir)
   if (!file) {
     return {
@@ -72,21 +88,26 @@ export async function readChat(input: ReadChatInput, notebookDir: string): Promi
 }
 
 /** Both chat hosts offer it beside read_file; it needs no approval. */
-export function createReadChatTool(options: { notebookDir: string }) {
+export function createReadChatTool(options: { notebookDir: string; liveChats?: LiveChatAccess }) {
   return {
+    ...(options.liveChats ? createFindChatsTool(options.liveChats) : {}),
     [READ_CHAT_TOOL]: tool({
       description:
-        "Open a saved chat in full. In your context a past chat shows only its card: frontmatter, title and summary, with a line counting the messages left out. Call this with the path the card came under (time/.../actions/ai-chats/....md) when the answer depends on what was actually said - the user's own words, a draft, figures, the reasons for a decision - rather than the gist. Returns the chat's markdown: frontmatter, title, summary, then the conversation in order. A long chat returns nextOffset; call again with it to read on. Read-only.",
+        "Open a saved chat in full by its notebook path (time/.../actions/ai-chats/....md). A past chat's context card is only a summary; read the transcript when the answer depends on the user's words, drafts, figures, or decisions. A long chat returns nextOffset; call again with it to read on. Read-only." +
+        (options.liveChats
+          ? ' Also reads another open chat using a path from find_chats, a /thread/<id> or /chat/source/<id> path, or its local Sky URL. Open chats are read fresh on each call. Continue long open chats with BOTH nextOffset and version; if the chat changed, restart at offset 0 without version. Cite the returned source link.'
+          : ''),
       inputSchema: z.object({
-        path: z.string().trim().min(1).describe("The chat's notebook path, as its card names it"),
+        path: z.string().trim().min(1).describe('A saved chat notebook path or an open chat path from find_chats'),
         offset: z
           .number()
           .int()
           .min(0)
           .optional()
           .describe("Where to continue a long chat: the previous call's nextOffset"),
+        version: z.string().optional().describe('For an open chat continuation, the version from the previous read'),
       }),
-      execute: (input: ReadChatInput) => readChat(input, options.notebookDir),
+      execute: (input: ReadChatInput) => readChat(input, options.notebookDir, options.liveChats),
     }),
   }
 }

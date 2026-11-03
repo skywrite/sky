@@ -1,6 +1,6 @@
 ---
 created: 2026-09-01
-updated: 2026-10-26
+updated: 2026-11-03
 ---
 
 # Chat over HTTP — a thread, its tuning, and the story of its context
@@ -79,6 +79,22 @@ the recovery snapshot is cleared, including when a parent is filed for a branch.
 This avoids links breaking at Save & close or after restart without filing a
 temporary conversation merely because it created a task. Discarded temporary
 chats and deleted transcripts report an unavailable source; the task keeps its notes.
+
+### Reading another open conversation
+
+When the user refers to another chat by topic, `find_chats` searches open conversations' titles and recorded messages.
+`read_chat` accepts a returned thread path or local Sky link and reads the current transcript with speaker labels and a
+durable source link.
+The host supplies a fresh view of its sessions to these read-only tools; recovery files, tool payloads and private model
+context are not a conversation-reading API.
+The requesting chat is excluded, and inherited messages do not make every reply thread a duplicate search result.
+
+Search previews are bounded discovery hints; the model must read the conversation before using it and ask when matches
+remain ambiguous.
+Long reads carry a content version, so changes between pages require restarting instead of mixing two transcripts.
+Busy sources are marked explicitly: the response still being generated is not included.
+Reading is on demand, not a subscription; a later request for the latest information needs another read.
+Source messages remain attributed material, not new instructions or permission to change that conversation's documents.
 
 ### Conversations across days
 

@@ -16,6 +16,7 @@ import { Hono } from 'hono'
 import { bodyLimit } from 'hono/body-limit'
 import { streamSSE } from 'hono/streaming'
 import { calendarDraftRefusal } from '#commands/lib/chat/calendarScheduling.ts'
+import type { LiveChatAccess } from '#commands/lib/chat/liveChats.ts'
 import type { CalendarSchedulerClient } from '#lib/calendarScheduler/client.ts'
 import type { CalendarPreparedDraft } from '#lib/calendarScheduler/types.ts'
 import type { LegalReviewStore } from '#lib/legalReview/store.ts'
@@ -70,7 +71,7 @@ import { restoredModelPrefs } from './modelSettings.ts'
 import { ChatPlanController } from './plan.ts'
 import { registerReplyThreads, type ReplyThreadHost } from './replyThreads.ts'
 import { registerSelectionStarts, type SelectionStartOptions } from './selection.ts'
-import type { ChatSourceLinks } from './sourceLinks.ts'
+import { sourceChatHref, type ChatSourceLinks } from './sourceLinks.ts'
 import { timelineOf } from './timeline.ts'
 import {
   chipSubject,
@@ -224,6 +225,7 @@ export type ChatSessionFactory = (
   /** The thread's recorded tool runs, read when a turn builds its tools: drafts nobody has saved yet live there. */
   runs?: () => readonly ToolRun[],
   plan?: ChatPlanController,
+  liveChats?: LiveChatAccess,
 ) => Promise<ChatSession>
 
 /** One model a thread may think with, as the picker lists it. */
@@ -789,6 +791,18 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono & { openVoice
           restore,
           () => threads.get(id)?.runs ?? [],
           plan,
+          () =>
+            [...threads.entries()]
+              .filter(([otherId]) => otherId !== id)
+              .sort((a, b) => b[1].updatedAt - a[1].updatedAt)
+              .map(([otherId, other]) => ({
+                id: otherId,
+                title: titleOf(other),
+                source: sourceChatHref(otherId),
+                busy: other.busy,
+                inherited: other.session.inherited,
+                turns: other.session.turns,
+              })),
         )
         .then((session) => {
           const chosen = options.settings?.resolve(
