@@ -24,6 +24,8 @@ export interface LinkedInImport {
   elapsedSeconds?: number
   draft?: LinkedInDraft
   error?: string
+  /** The person dismissed this import's notice or saved its draft, so the People list stops offering it. */
+  dismissed?: boolean
 }
 
 export type LinkedInImportPhase =
@@ -39,6 +41,7 @@ export interface LinkedInImportHost {
   start: (url: string) => Promise<LinkedInImport>
   status: () => Promise<LinkedInImport | null>
   cancel: (id: string) => Promise<void>
+  dismiss: (id: string) => Promise<void>
 }
 
 /** The user selects one public-facing LinkedIn page, never an arbitrary browser destination. */

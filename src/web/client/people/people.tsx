@@ -327,6 +327,7 @@ export function PeopleMain({ route, navigate }: { route: PeopleRoute; navigate: 
   const [editing, setEditing] = useState(false)
   const [job, setJob] = useState<LinkedInImport | undefined>()
   const [resume, setResume] = useState<LinkedInImport | undefined>()
+  const [dismissError, setDismissError] = useState<{ id: string; message: string }>()
   const [noteOpen, setNoteOpen] = useState(false)
   const [note, setNote] = useState('')
   const [noteError, setNoteError] = useState('')
@@ -371,11 +372,7 @@ export function PeopleMain({ route, navigate }: { route: PeopleRoute; navigate: 
     const abort = new AbortController()
     const refreshImport = () => {
       void peopleApi<LinkedInImport | null>('/linkedin', undefined, abort.signal)
-        .then((value) => {
-          if (value && value.id !== sessionStorage.getItem('sky-people-import-handled') && value.status !== 'failed')
-            setJob(value)
-          else setJob(undefined)
-        })
+        .then((value) => setJob(value && !value.dismissed && value.status !== 'failed' ? value : undefined))
         .catch(() => {})
     }
     refreshImport()
@@ -561,12 +558,24 @@ export function PeopleMain({ route, navigate }: { route: PeopleRoute; navigate: 
                 <Button
                   size="compact-sm"
                   onClick={() => {
-                    sessionStorage.setItem('sky-people-import-handled', job.id)
-                    setJob(undefined)
+                    setDismissError(undefined)
+                    void peopleApi('/linkedin/dismiss', { id: job.id })
+                      .then(() => setJob(undefined))
+                      .catch((error) =>
+                        setDismissError({
+                          id: job.id,
+                          message: `Couldn’t dismiss this notice. ${error instanceof Error ? error.message : 'Try again.'}`,
+                        }),
+                      )
                   }}
                 >
                   Dismiss
                 </Button>
+                {dismissError?.id === job.id && (
+                  <p className="sky-people-error" role="alert">
+                    {dismissError.message}
+                  </p>
+                )}
               </div>
             )}
             {rows.length > 0 && (

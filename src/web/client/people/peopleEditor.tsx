@@ -264,7 +264,8 @@ export function PeopleEditor({
         notes: profile ? undefined : notes,
         allowNamesake: namesake,
       })
-      if (job) sessionStorage.setItem('sky-people-import-handled', job.id)
+      // The person is saved either way; if this fails, the notice can still be dismissed on the People list.
+      if (job) await peopleApi('/linkedin/dismiss', { id: job.id }).catch(() => {})
       onSaved(saved)
     } catch (error) {
       setError(errorText(error))

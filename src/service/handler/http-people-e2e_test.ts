@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import * as path from 'node:path'
 import { serve } from '@hono/node-server'
 import { Hono } from 'hono'
-import { chromium } from 'playwright'
+import { chromium, type Page } from 'playwright'
 import { TRANSCRIPTION_MODELS } from '#commands/all/audio/transcript/lib/models.ts'
 import { readProfileEvidence } from '#lib/linkedin/extract.ts'
 import type { LinkedInImport, LinkedInImportHost } from '#lib/linkedin/types.ts'
@@ -63,6 +63,9 @@ test(
       },
       cancel: async () => {
         if (job) job = { ...job, status: 'failed', error: 'Import cancelled.' }
+      },
+      dismiss: async (id) => {
+        if (job?.id === id) job = { ...job, dismissed: true }
       },
     }
     const settings: SettingsData = {
@@ -440,6 +443,29 @@ test(
           redirected: '/people/jane-doe',
           errors: [],
         },
+      })
+      // Each new page is a new tab with its own browser storage, where a per-tab dismissal used to be forgotten.
+      const openPeople = async (tab: Page) => {
+        tab.on('pageerror', (error) => errors.push(error.message))
+        const checked = tab.waitForResponse((response) => response.url() === `${base}/people/_api/linkedin`)
+        await tab.goto(`${base}/people`)
+        await checked
+        await tab.waitForTimeout(100)
+        return tab.locator('.sky-people-resume')
+      }
+      const savedImport = job?.dismissed
+      const afterSave = await (await openPeople(await browser.newPage())).count()
+      job = { ...job!, id: '22222222-2222-4222-8222-222222222222', dismissed: false }
+      const notice = await openPeople(await browser.newPage())
+      await notice.getByText('Your LinkedIn draft is ready.', { exact: true }).waitFor()
+      await notice.getByRole('button', { name: 'Dismiss', exact: true }).click()
+      await notice.waitFor({ state: 'hidden' })
+      const afterDismiss = await (await openPeople(await browser.newPage())).count()
+      assert({
+        given: 'an imported draft saved as a person, then a newer draft dismissed',
+        should: 'keep each import notice gone in a new tab',
+        actual: { savedImport, afterSave, dismissed: job?.dismissed, afterDismiss, errors },
+        expected: { savedImport: true, afterSave: 0, dismissed: true, afterDismiss: 0, errors: [] },
       })
     } finally {
       await browser?.close()

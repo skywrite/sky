@@ -1,6 +1,6 @@
 ---
 created: 2026-09-23
-updated: 2026-10-08
+updated: 2026-11-03
 ---
 
 # People & Orgs
@@ -96,10 +96,13 @@ name a file lists, and the model's people list shows each person once.
 It honors the selected existing-Brave connection and website sign-ins, with
 Sky's persistent browser profile used otherwise. Verification happens in the
 visible browser and the task resumes automatically when credential entry ends.
-The service only starts, polls, or requests cancellation, so a service reload
-does not kill an import. Job progress and cancellation files stay in local
-user-data state, outside the notebook. The task tab closes before model extraction;
-the browser profile and saved sign-ins persist. The HTTP response exposes only progress and the draft.
+The service only starts, polls, requests cancellation, or records a dismissal,
+so a service reload does not kill an import. Job progress, cancellation, and
+dismissal files stay in local user-data state, outside the notebook.
+The People list offers the latest import until Dismiss or Save records it as dismissed there.
+A browser tab's storage is not enough: the notice would come back in every new tab.
+The task tab closes before model extraction;
+the browser profile and saved sign-ins persist. The HTTP response exposes only progress, the draft, and the dismissal.
 
 The worker reads the selected person's main page content and visible company
 links, then asks the configured balanced model for an editable suggestion. Source

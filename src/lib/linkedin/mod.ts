@@ -22,10 +22,13 @@ export function createLinkedInHost(
     module: new URL('./worker.ts', import.meta.url),
     env: { ...env, SKY_DIR: config.DIR_BASE, SKY_CODE_DIR: config.DIR_CODE, SKY_DATA_DIR: config.DIR_USER_DATA },
   })
+  // Kept with the job state, not in a browser tab, so a dismissed notice stays gone in new tabs and after restarts.
+  const dismissedFile = path.join(dir, 'dismissed.json')
   const view = async (job: JobRecord<LinkedInDraft, LinkedInInput>): Promise<LinkedInImport> => {
-    const progress = await readJson<{ stage: string; phase?: LinkedInImportPhase; startedAt?: number }>(
-      job.input.progressFile,
-    )
+    const [progress, dismissed] = await Promise.all([
+      readJson<{ stage: string; phase?: LinkedInImportPhase; startedAt?: number }>(job.input.progressFile),
+      readJson<{ id: string }>(dismissedFile),
+    ])
     return {
       id: job.id,
       url: job.input.url,
@@ -38,6 +41,7 @@ export function createLinkedInHost(
           : undefined,
       ...(job.result ? { draft: job.result } : {}),
       ...(job.error ? { error: job.error } : {}),
+      ...(dismissed?.id === job.id ? { dismissed: true } : {}),
     }
   }
   return {
@@ -60,6 +64,11 @@ export function createLinkedInHost(
     async cancel(id) {
       const job = await jobs.status()
       if (job?.id === id && job.status === 'running') await writeJson(job.input.cancelFile, { cancelled: true })
+    },
+    async dismiss(id) {
+      const job = await jobs.status()
+      // An older tab dismissing an earlier import must not bring back a newer one that was dismissed.
+      if (job?.id === id) await writeJson(dismissedFile, { id })
     },
   }
 }

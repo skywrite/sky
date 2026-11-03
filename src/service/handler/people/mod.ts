@@ -106,5 +106,10 @@ export function createPeopleRoutes(
     await options.linkedIn?.cancel(id)
     return c.json({ ok: true })
   })
+  app.post('/linkedin/dismiss', async (c) => {
+    const { id } = z.object({ id: z.string().uuid() }).parse(await c.req.json())
+    await options.linkedIn?.dismiss(id)
+    return c.json({ ok: true })
+  })
   return app
 }
