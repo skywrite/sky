@@ -8,6 +8,7 @@ import { TRANSCRIPTION_MODELS } from '#commands/all/audio/transcript/lib/models.
 import { TestSecretsProvider } from '#lib/secrets/TestSecretsProvider.ts'
 import { env } from '#shared/sys/mod.ts'
 import { assert, test } from '#test'
+import { Instant, ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
 import { createTestHttpApp } from './httpTestHelpers.ts'
 import { type BeeperStatus, type ConnectionsHost, createConnectionsRoutes } from './settings/connections.ts'
 import type { SettingsData } from './settings/mod.ts'
@@ -49,22 +50,34 @@ test(
         chosen: false,
         chats: 0,
       },
+      {
+        id: 'tg1',
+        network: 'Telegram',
+        status: 'connected',
+        save: true,
+        groups: false,
+        holdUnknown: true,
+        holdPitches: true,
+        chosen: true,
+        chats: 0,
+      },
     ]
     const held = [
       {
         chat: '!held1',
-        network: 'iMessage',
-        who: '+1 (555) 010-2277',
-        first: 'Hi, this is Dana with the Atlas campaign. Can we count on you?',
-        at: new Date(Date.now() - 3 * 3_600_000).toISOString(),
+        network: 'Telegram',
+        who: 'Alex Example',
+        first: 'Hi Jane, we help teams grow with targeted campaigns. Open to a quick call?',
+        at: Instant.fromEpochMilliseconds(ZonedDateTime.now().epochMilliseconds - 3 * 3_600_000).toString(),
         count: 2,
+        reason: 'first-time pitch' as const,
       },
       {
         chat: '!held2',
         network: 'iMessage',
         who: '+1 (555) 010-8302',
         first: 'Hey it’s Sam, new number! Still on for Saturday?',
-        at: new Date(Date.now() - 26 * 3_600_000).toISOString(),
+        at: Instant.fromEpochMilliseconds(ZonedDateTime.now().epochMilliseconds - 26 * 3_600_000).toString(),
         count: 1,
       },
     ]
@@ -75,7 +88,7 @@ test(
       accounts: accounts.map((row) => ({ ...row })),
       held: held.map((entry) => ({ ...entry })),
       lastRun: {
-        at: new Date(Date.now() - 2 * 60_000).toISOString(),
+        at: Instant.fromEpochMilliseconds(ZonedDateTime.now().epochMilliseconds - 2 * 60_000).toString(),
         chats: 2,
         messages: 3,
         files: 2,
@@ -228,6 +241,7 @@ test(
       await capture('1-connections-list')
       await beeperRow.getByRole('button', { name: 'Beeper settings' }).click()
       await page.getByRole('heading', { name: 'Beeper', exact: true }).waitFor()
+      await page.waitForFunction(() => document.title === 'sky · Beeper')
       await page.getByText('2 minutes ago').waitFor()
       const url = new URL(page.url()).pathname
       const networks = await page
@@ -240,6 +254,35 @@ test(
         )
       const leftOut = await page.locator('.sky-set-row', { hasText: 'left out' }).locator('.sky-set-sub').innerText()
       await capture('2-beeper')
+
+      const filtered = page.getByRole('list', { name: 'Filtered conversations' })
+      await filtered
+        .getByRole('listitem')
+        .filter({ hasText: 'Alex Example' })
+        .getByText('Likely cold outreach', { exact: false })
+        .waitFor()
+      const filteredBlock = page.locator('.sky-block', { has: filtered })
+      if (screenshots) {
+        await filteredBlock.screenshot({ path: path.join(screenshots, 'filtered-light.png'), animations: 'disabled' })
+        await page.evaluate(() => document.documentElement.setAttribute('data-mantine-color-scheme', 'dark'))
+        await filteredBlock.screenshot({ path: path.join(screenshots, 'filtered-dark.png'), animations: 'disabled' })
+        await page.evaluate(() => document.documentElement.setAttribute('data-mantine-color-scheme', 'light'))
+        await page.setViewportSize({ width: 390, height: 1000 })
+        await filteredBlock.screenshot({ path: path.join(screenshots, 'filtered-phone.png'), animations: 'disabled' })
+        await page.setViewportSize({ width: 1280, height: 1000 })
+      }
+      await filtered
+        .getByRole('listitem')
+        .filter({ hasText: 'Alex Example' })
+        .getByRole('button', { name: 'Open in Beeper' })
+        .click()
+      for (const label of ['Off', 'On']) {
+        const written = page.waitForResponse(
+          (r) => r.url().includes('/beeper/accounts/tg1') && r.request().method() === 'POST',
+        )
+        await page.locator('[aria-label="Filter Telegram cold outreach"]').getByText(label, { exact: true }).click()
+        await written
+      }
 
       // iMessage on: the rule goes to the service, its groups switch wakes, the list's summary follows.
       const groupsSwitch = page.locator('[aria-label="Save iMessage groups"] input').first()
@@ -254,16 +297,14 @@ test(
       await capture('3-beeper-imessage-on')
 
       // The held card: Save takes a sender out of it and runs a check.
-      const heldBefore = await page
-        .locator('.sky-block', { hasText: 'Held for a look' })
-        .locator('.sky-set-row')
-        .count()
-      await page
-        .locator('.sky-set-row', { hasText: '010-8302' })
-        .getByRole('button', { name: 'Save', exact: true })
+      const heldBefore = await filtered.getByRole('listitem').count()
+      await filtered
+        .getByRole('listitem')
+        .filter({ hasText: '010-8302' })
+        .getByRole('button', { name: 'Add to notebook', exact: true })
         .click()
-      await page.locator('.sky-set-row', { hasText: '010-8302' }).waitFor({ state: 'hidden' })
-      const heldAfter = await page.locator('.sky-block', { hasText: 'Held for a look' }).locator('.sky-set-row').count()
+      await filtered.getByRole('listitem').filter({ hasText: '010-8302' }).waitFor({ state: 'hidden' })
+      const heldAfter = await filtered.getByRole('listitem').count()
 
       await page.getByRole('button', { name: 'Show what a check would save' }).click()
       await page.locator('.sky-block-head', { hasText: 'What a check would save' }).waitFor()
@@ -276,14 +317,21 @@ test(
       await page.getByRole('button', { name: 'Check now' }).click()
       await page.getByRole('status').filter({ hasText: 'saved' }).waitFor()
       const checkedLine = await page.getByRole('status').filter({ hasText: 'saved' }).innerText()
+      const titleAfterRefresh = await page.title()
 
       await page.getByRole('button', { name: '‹ Connections' }).click()
       await beeperRow.getByRole('button', { name: 'Beeper settings' }).waitFor()
       const rowAfter = await beeperRow.locator('.sky-set-sub').innerText()
+      await page.waitForFunction(() => document.title === 'sky · Connections')
+      await page.goBack()
+      await page.waitForFunction(() => document.title === 'sky · Beeper')
+      await page.goForward()
+      await page.waitForFunction(() => document.title === 'sky · Connections')
 
       await page.setViewportSize({ width: 390, height: 900 })
       await page.goto(`${base}/settings/connections/beeper`)
       await page.getByRole('heading', { name: 'Beeper', exact: true }).waitFor()
+      await page.waitForFunction(() => document.title === 'sky · Beeper')
       const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1)
       await capture('5-beeper-phone')
 
@@ -303,21 +351,30 @@ test(
           checks,
           checkedLine,
           rowAfter,
+          titleAfterRefresh,
           overflow,
           errors,
         ],
         expected: [
-          'Saving Signal. iMessage is new and waits for you.',
+          'Saving Signal, Telegram. iMessage is new and waits for you.',
           '/settings/connections/beeper',
-          ['Save Signal=on', 'Save Signal groups=on', 'Save iMessage=off', 'Save iMessage groups=off'],
+          [
+            'Save Signal=on',
+            'Save Signal groups=on',
+            'Save iMessage=off',
+            'Save iMessage groups=off',
+            'Save Telegram=on',
+            'Save Telegram groups=off',
+          ],
           'groups are off for Signal (1) · read-only (1)',
-          ['im1 {"save":true}', 'keep !held2'],
+          ['open !held1', 'tg1 {"holdPitches":false}', 'tg1 {"holdPitches":true}', 'im1 {"save":true}', 'keep !held2'],
           [true, false],
           [2, 1],
           'Maya Okafor (Signal) · Priya Natarajan (iMessage)',
           2,
           '3 messages in 2 chats saved.',
-          'Saving Signal, iMessage.',
+          'Saving Signal, iMessage, Telegram.',
+          'sky · Beeper',
           false,
           [],
         ],

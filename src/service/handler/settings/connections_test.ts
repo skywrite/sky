@@ -645,6 +645,16 @@ test('connections - the Beeper page changes a rule, previews a check, and runs o
     headers,
     body: JSON.stringify({ groups: false }),
   })
+  const pitches = await app.request('/beeper/accounts/wa1', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ holdPitches: true }),
+  })
+  const invalidPitches = await app.request('/beeper/accounts/wa1', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ holdPitches: 'yes' }),
+  })
   const empty = await app.request('/beeper/accounts/wa1', {
     method: 'POST',
     headers,
@@ -673,7 +683,7 @@ test('connections - the Beeper page changes a rule, previews a check, and runs o
         status.lastRun?.accountsOff,
         status.held.map((entry) => entry.who),
       ],
-      [on.status, groups.status, empty.status, unknown.status],
+      [on.status, groups.status, pitches.status, invalidPitches.status, empty.status, unknown.status],
       beeperRules,
       [preview.status, ((await preview.json()) as { rows: unknown[] }).rows.length],
       [check.status, await check.json()],
@@ -682,10 +692,11 @@ test('connections - the Beeper page changes a rule, previews a check, and runs o
     ],
     expected: [
       [['WhatsApp on', 'Signal off holds'], ['Signal'], ['+1 (555) 010-2277']],
-      [200, 200, 400, 404],
+      [200, 200, 200, 400, 400, 404],
       [
         'sg1 {"save":true}',
         'wa1 {"groups":false}',
+        'wa1 {"holdPitches":true}',
         'nope {"save":true}',
         'check',
         'keep !held1',

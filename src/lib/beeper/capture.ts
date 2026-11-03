@@ -14,6 +14,11 @@ import { computePreviousRef, dayAttachmentsDir, dayTimezone, readDay, writeDay }
 import { toTimeRef } from '#shared/nbfs/timeRef.ts'
 import { calendarLocal, Instant, PlainDate, type PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import type { BeeperAccount, BeeperAttachment, BeeperChat, BeeperClient, BeeperMessage, BeeperUser } from './client.ts'
+import {
+  holdsFirstContactPitches,
+  PitchScreenReceiptSchema,
+  type FirstContactPitchScreen,
+} from './firstContactPitch.ts'
 import { beeperText } from './text.ts'
 
 /**
@@ -73,6 +78,8 @@ export type BeeperSyncOptions = {
   category?: string
   /** Chooses only the new day entry's section; existing entries and saved message metadata keep their values. */
   categorizeIMessage?: CategorizeMessageDay
+  /** Jev screens initial outreach before any notebook files or attachments are saved. */
+  screenFirstContactPitch?: FirstContactPitchScreen
   dryRun?: boolean
   log?: (line: string) => void
 }
@@ -105,6 +112,8 @@ export const AccountRuleSchema = z.object({
   groups: z.boolean().default(false),
   /** A one-to-one chat from someone with no name in the contacts is held for a look, not saved. */
   holdUnknown: z.boolean().default(true),
+  /** Defaults to on for Telegram; other networks can opt in. Independent of unknown-sender holding. */
+  holdPitches: z.boolean().optional(),
   chosen: z.boolean().default(false),
 })
 export type AccountRule = z.infer<typeof AccountRuleSchema>
@@ -112,7 +121,7 @@ export type AccountRule = z.infer<typeof AccountRuleSchema>
 /** A chat held back: who wrote, what they opened with, and how much has come. */
 export const HeldChatSchema = z.object({
   network: z.string().default(''),
-  /** How Beeper names the sender: a number or a handle, since there is no contact */
+  /** How Beeper names the sender, including named senders making first-time pitches */
   who: z.string().default(''),
   /** The newest message's first line */
   first: z.string().default(''),
@@ -120,6 +129,7 @@ export const HeldChatSchema = z.object({
   at: z.string(),
   /** Messages in the last month */
   count: z.number().default(0),
+  reason: z.literal('first-time pitch').optional(),
 })
 export type HeldChat = z.infer<typeof HeldChatSchema>
 
@@ -132,6 +142,7 @@ export const LastRunSchema = z.object({
   skipped: z.array(z.object({ chat: z.string(), reason: z.string() })).default([]),
   accountsOff: z.array(z.string()).default([]),
   complete: z.boolean().default(true),
+  notes: z.array(z.string()).optional(),
 })
 export type LastRun = z.infer<typeof LastRunSchema>
 
@@ -140,6 +151,9 @@ const ChatStateSchema = z.object({
   network: z.string().default(''),
   /** The person said Save on a held chat: its sender counts as known from then on */
   known: z.boolean().optional(),
+  /** An owner reply found in available history rules out first-contact screening on later runs. */
+  replied: z.boolean().optional(),
+  pitchScreen: PitchScreenReceiptSchema.optional().catch(undefined),
   /** The instant of the newest message the chat has shown; the next run looks from an hour before it */
   newest: z.string().optional(),
   seen: z.array(z.string()).default([]),
@@ -220,6 +234,8 @@ export function markKnown(state: BeeperSyncState, chatID: string): boolean {
   const chat = state.chats[chatID] ?? { title: held.who, network: held.network, seen: [], files: {} }
   state.chats[chatID] = { ...chat, known: true }
   delete state.held[chatID]
+  // A held chat can be older than the incremental search window. Save must find it on the next check.
+  delete state.lastSync
   return true
 }
 
@@ -496,23 +512,40 @@ async function newMessages(
   chatState: ChatState,
   boundaryMs: number,
   limit: number,
-): Promise<{ messages: BeeperMessage[]; unreached: boolean }> {
+  readHistory = false,
+): Promise<{ messages: BeeperMessage[]; unreached: boolean; history: BeeperMessage[]; historyComplete: boolean }> {
   const mark = chatState.newest ? instantMs(chatState.newest) : null
   const floorMs = mark === null ? boundaryMs : Math.max(boundaryMs, mark - LOOK_BACK_MS)
   const collected: BeeperMessage[] = []
+  const history: BeeperMessage[] = []
+  const messageIDs = new Set<string>()
+  const cursors = new Set<string>()
   let page = await client.messages(chat.id)
   for (;;) {
     let reachedFloor = false
     for (const message of page.items) {
+      if (messageIDs.has(message.id)) continue
+      messageIDs.add(message.id)
+      history.push(message)
       const at = instantMs(message.timestamp)
       if (at !== null && at < floorMs) reachedFloor = true
       else collected.push(message)
     }
-    if (reachedFloor || !page.hasMore || !page.oldestCursor || collected.length >= limit) {
-      return { messages: collected, unreached: false }
+    // The capture window is not the relationship history. A previous reply may be months older.
+    const needHistory = readHistory && !history.some((message) => message.isSender)
+    if (
+      (reachedFloor && !needHistory) ||
+      !page.hasMore ||
+      !page.oldestCursor ||
+      collected.length >= limit ||
+      (readHistory && history.length >= limit) ||
+      cursors.has(page.oldestCursor)
+    ) {
+      return { messages: collected, unreached: false, history, historyComplete: !page.hasMore }
     }
+    cursors.add(page.oldestCursor)
     const older = await client.messages(chat.id, { cursor: page.oldestCursor, direction: 'before' })
-    if (!older.items.length) return { messages: collected, unreached: true }
+    if (!older.items.length) return { messages: collected, unreached: true, history, historyComplete: false }
     page = older
   }
 }
@@ -604,7 +637,17 @@ export async function syncBeeper(options: BeeperSyncOptions): Promise<BeeperSync
     }
     const chatState: ChatState = state.chats[chat.id] ?? { title: '', network: '', seen: [], files: {} }
     const network = chat.network.trim() || account?.network?.trim() || 'Beeper'
-    const fetched = await newMessages(options.client, chat, chatState, boundaryMs, messageLimit)
+    const rule = state.accounts[chat.accountID]
+    const contact = lookedUp(otherSide(chat, account), options.names)
+    const screenPitches = holdsFirstContactPitches(rule) && Boolean(options.screenFirstContactPitch)
+    const needsScreen =
+      screenPitches &&
+      chat.type === 'single' &&
+      !chatState.known &&
+      !chatState.replied &&
+      !contact?.known &&
+      !contact?.name
+    const fetched = await newMessages(options.client, chat, chatState, boundaryMs, messageLimit, needsScreen)
     const newest = newestInstant(fetched.messages, chatState.newest)
     if (fetched.unreached) {
       result.notes.push(`${label}: Beeper gave no older page; messages before the oldest shown were not reached.`)
@@ -618,21 +661,47 @@ export async function syncBeeper(options: BeeperSyncOptions): Promise<BeeperSync
       .sort((a, b) => a.at - b.at || bySortKey(a.message.sortKey, b.message.sortKey))
     result.chats += 1
 
+    const replied = fetched.history.some(
+      (message) => message.isSender || (account?.user?.id && message.senderID === account.user.id),
+    )
+    if (screenPitches && replied) chatState.replied = true
+    let pitch = false
+    if (needsScreen && !replied && fresh.length && options.screenFirstContactPitch) {
+      const assessment = await options.screenFirstContactPitch(
+        {
+          account: chat.accountID,
+          chat: chat.id,
+          network,
+          sender: label,
+          owner: options.ownerName,
+          historyComplete: fetched.historyComplete,
+          messages: fetched.history
+            .filter((message) => keep(message, network))
+            .sort((a, b) => a.timestamp.localeCompare(b.timestamp) || bySortKey(a.sortKey, b.sortKey)),
+        },
+        chatState.pitchScreen,
+      )
+      pitch = assessment.hold
+      if (assessment.receipt) chatState.pitchScreen = assessment.receipt
+      if (assessment.note) result.notes.push(`${label}: ${assessment.note}`)
+    }
+
     // Someone with no name in the contacts, never answered: held for a look,
     // nothing written, nothing kept — so a Save later pulls the whole window.
-    const rule = state.accounts[chat.accountID]
     const who = rule?.holdUnknown && !chatState.known ? unknownSender(chat, account, options.names) : null
-    if (who && !fetched.messages.some((message) => message.isSender)) {
+    if (pitch || (who && !replied && !chatState.replied)) {
       const newest = fresh.at(-1)?.message ?? kept[0]
       if (newest) {
         state.held[chat.id] = {
           network,
-          who,
+          who: pitch ? label : who!,
           first: summarize(beeperText(newest.text), 'Message'),
           at: newest.timestamp,
           count: kept.length,
+          ...(pitch ? { reason: 'first-time pitch' as const } : {}),
         }
-        result.held.push({ chat: who, network })
+        if (chatState.pitchScreen) state.chats[chat.id] = { ...chatState, title: chat.title, network }
+        result.held.push({ chat: pitch ? label : who!, network })
         if (!options.dryRun) await saveState(options.stateFile, state)
       }
       continue
@@ -859,6 +928,7 @@ export async function syncBeeper(options: BeeperSyncOptions): Promise<BeeperSync
     if (!options.dryRun) {
       const ids = [...chatState.seen, ...fresh.map(({ message }) => message.id)]
       state.chats[chat.id] = {
+        ...chatState,
         title: chat.title,
         network,
         ...(chatState.known ? { known: true } : {}),
@@ -879,6 +949,7 @@ export async function syncBeeper(options: BeeperSyncOptions): Promise<BeeperSync
       skipped: result.skipped.slice(0, SKIPPED_LIMIT),
       accountsOff: result.accountsOff,
       complete: result.complete,
+      ...(result.notes.length ? { notes: result.notes.slice(0, SKIPPED_LIMIT) } : {}),
     }
     await saveState(options.stateFile, state)
   }

@@ -1,0 +1,147 @@
+.sky-filtered-count {
+  display: inline-grid;
+  place-items: center;
+  min-width: 26px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--sky-s2);
+  color: var(--sky-text-2);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.sky-filtered-messages {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sky-filtered-message {
+  --filtered-tone: var(--sky-accent);
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  gap: 16px;
+  padding: 20px;
+  border: 1px solid color-mix(in srgb, var(--filtered-tone) 16%, var(--sky-border-soft));
+  border-radius: var(--mantine-radius-lg);
+  background: color-mix(in srgb, var(--filtered-tone) 3%, var(--sky-bg));
+}
+
+.sky-filtered-message[data-reason='pitch'] {
+  --filtered-tone: var(--sky-amber);
+}
+
+.sky-filtered-avatar {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 14px;
+  color: var(--filtered-tone);
+  background: color-mix(in srgb, var(--filtered-tone) 10%, var(--sky-bg));
+}
+
+.sky-filtered-avatar svg {
+  width: 24px;
+  height: 24px;
+}
+
+.sky-filtered-content {
+  min-width: 0;
+}
+
+.sky-filtered-heading {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+
+.sky-filtered-heading h3 {
+  margin: 0;
+  color: var(--sky-text);
+  font-size: 18px;
+  line-height: 1.4;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.sky-filtered-reason {
+  padding: 3px 10px;
+  border-radius: 999px;
+  color: var(--filtered-tone);
+  background: color-mix(in srgb, var(--filtered-tone) 10%, var(--sky-bg));
+  font-size: 13px;
+  line-height: 1.5;
+  font-weight: 550;
+}
+
+.sky-filtered-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  margin-top: 6px;
+  color: var(--sky-dim);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.sky-filtered-network {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--sky-text-2);
+}
+
+.sky-filtered-network svg {
+  width: 14px;
+  height: 14px;
+  flex: none;
+}
+
+.sky-filtered-preview {
+  margin: 10px 0 0;
+  color: var(--sky-text-2);
+  font-size: 16px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.sky-filtered-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  margin-top: 12px;
+}
+
+.sky-filtered-actions svg {
+  flex: none;
+}
+
+@media (max-width: 600px) {
+  .sky-filtered-message {
+    grid-template-columns: 32px minmax(0, 1fr);
+    gap: 12px;
+    padding: 16px;
+  }
+
+  .sky-filtered-avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 10px;
+  }
+
+  .sky-filtered-avatar svg {
+    width: 20px;
+    height: 20px;
+  }
+
+  .sky-filtered-actions {
+    margin-left: -44px;
+    gap: 8px;
+  }
+}

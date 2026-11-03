@@ -19,6 +19,7 @@ import {
   beeperInfo,
   deleteBeeperGrant,
   grantExpired,
+  holdsFirstContactPitches,
   isSlackAccount,
   loadBeeperGrant,
   loadBeeperSyncState,
@@ -292,6 +293,7 @@ function beeperConnection(
           save: rule?.save ?? false,
           groups: rule?.groups ?? false,
           holdUnknown: rule?.holdUnknown ?? true,
+          holdPitches: holdsFirstContactPitches(rule),
           chosen: rule?.chosen ?? false,
           chats: Object.values(state.chats).filter((chat) => chat.network === network).length,
         }
@@ -339,6 +341,7 @@ function beeperConnection(
       if (change.save !== undefined) rule.save = change.save
       if (change.groups !== undefined) rule.groups = change.groups
       if (change.holdUnknown !== undefined) rule.holdUnknown = change.holdUnknown
+      if (change.holdPitches !== undefined) rule.holdPitches = change.holdPitches
       rule.chosen = true
       await saveBeeperSyncState(stateFile, state)
       return true

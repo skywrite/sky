@@ -130,6 +130,7 @@ export type BeeperAccountRow = {
   groups: boolean
   /** A one-to-one chat from someone with no name in the contacts is held for a look */
   holdUnknown: boolean
+  holdPitches?: boolean
   /** The person has decided at least once; until then the row reads as new */
   chosen: boolean
   /** Chats of this account the notebook holds */
@@ -157,7 +158,7 @@ export type BeeperStatus = {
 }
 
 /** What the person may change about one account. */
-export type BeeperRuleChange = { save?: boolean; groups?: boolean; holdUnknown?: boolean }
+export type BeeperRuleChange = { save?: boolean; groups?: boolean; holdUnknown?: boolean; holdPitches?: boolean }
 
 /** What a check-now run came to. */
 export type BeeperCheckOutcome =
@@ -639,13 +640,16 @@ export function createConnectionsRoutes(host: ConnectionsHost): Hono {
       save?: unknown
       groups?: unknown
       holdUnknown?: unknown
+      holdPitches?: unknown
     } | null
     const change: BeeperRuleChange = {
       ...(typeof body?.save === 'boolean' ? { save: body.save } : {}),
       ...(typeof body?.groups === 'boolean' ? { groups: body.groups } : {}),
       ...(typeof body?.holdUnknown === 'boolean' ? { holdUnknown: body.holdUnknown } : {}),
+      ...(typeof body?.holdPitches === 'boolean' ? { holdPitches: body.holdPitches } : {}),
     }
-    if (!Object.keys(change).length) return c.json({ message: 'expected { save }, { groups } or { holdUnknown }' }, 400)
+    if (!Object.keys(change).length)
+      return c.json({ message: 'expected { save }, { groups }, { holdUnknown } or { holdPitches }' }, 400)
     try {
       const known = await host.beeper.rule(c.req.param('id'), change)
       return known ? c.json({ ok: true }) : c.json({ message: 'Beeper does not carry that account.' }, 404)

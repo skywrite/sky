@@ -97,8 +97,9 @@ Pages:
   connection with a page of its own (`web/client/settings/settingsBeeper.tsx` in
   the shell `settingsConnectionPage.tsx`; routes under `/beeper/…` in
   `connections.ts`). A connection's page carries what Sky does with it:
-  status, a card per network with three switches (save, groups, hold
-  texts from unknown senders), the chats held for a look with Save and
+  status, a card per network with switches for saving, groups, holding unknown senders,
+  and screening first-time pitches (see the [capture design](../../../../lib/beeper/docs/README.md#first-time-pitches)),
+  the chats held for a look with Save and
   Open in Beeper, the last check with what it left out and why, Check now,
   and a preview of what the next check would save. The rules live beside the
   capture's state in `state/beeper/sync.json`, not in `config.jsonc`,

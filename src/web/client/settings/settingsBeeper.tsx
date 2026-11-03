@@ -7,6 +7,7 @@
 
 import { Button } from '@mantine/core'
 import { useCallback, useEffect, useState } from 'react'
+import { FilteredMessages, type FilteredMessage } from './FilteredMessages.tsx'
 import { Block, OnOff, plural, refusalOf, Row, sinceLabel } from './settingsBlocks.tsx'
 import { ConnectionPage } from './settingsConnectionPage.tsx'
 import { API, postJson } from './settingsConnections.tsx'
@@ -20,17 +21,9 @@ type AccountRow = {
   save: boolean
   groups: boolean
   holdUnknown: boolean
+  holdPitches?: boolean
   chosen: boolean
   chats: number
-}
-
-type HeldRow = {
-  chat: string
-  network: string
-  who: string
-  first: string
-  at: string
-  count: number
 }
 
 type LastRun = {
@@ -41,6 +34,7 @@ type LastRun = {
   skipped: { chat: string; reason: string }[]
   accountsOff: string[]
   complete: boolean
+  notes?: string[]
 }
 
 type BeeperPageStatus = {
@@ -51,7 +45,7 @@ type BeeperPageStatus = {
   accounts: AccountRow[]
   error?: string
   lastRun?: LastRun
-  held: HeldRow[]
+  held: FilteredMessage[]
 }
 
 type PreviewRow = {
@@ -61,6 +55,7 @@ type PreviewRow = {
   pile: 'primary' | 'low-priority' | 'archive'
   save: boolean
   reason?: string
+  pendingScreen?: boolean
 }
 
 type Preview = { rows: PreviewRow[]; complete: boolean }
@@ -100,7 +95,7 @@ function useBeeperPage() {
   }, [reload])
 
   const rule = useCallback(
-    async (id: string, change: { save?: boolean; groups?: boolean; holdUnknown?: boolean }) => {
+    async (id: string, change: { save?: boolean; groups?: boolean; holdUnknown?: boolean; holdPitches?: boolean }) => {
       // The row moves at once; the service's answer settles it.
       setStatus(
         (current) =>
@@ -230,7 +225,7 @@ function NetworkBlock({
       {nameless && (
         <p className="sky-set-warn" role="alert">
           Beeper shows iMessage senders by number alone, and Sky cannot read this Mac’s Contacts to name them, so every
-          sender would be held as unknown.{' '}
+          sender would be filtered as unknown.{' '}
           <Button size="compact-xs" variant="subtle" onClick={toConnections}>
             Fix it under Connections
           </Button>
@@ -260,65 +255,34 @@ function NetworkBlock({
         />
       </Row>
       <Row
-        label="Hold texts from unknown senders"
+        label="Filter unknown senders"
         sub={
           !row.save
             ? `Stays as it is while ${row.network} is off.`
             : row.holdUnknown
-              ? 'Someone with no name in your contacts, whom you never answered, is held below for a look instead of saved.'
+              ? 'Keep messages from unnamed senders you haven’t replied to out of your notebook. You can review and add them below.'
               : 'Saved like everyone else.'
         }
-        last
       >
         <OnOff
           value={row.holdUnknown}
-          label={`Hold unknown ${row.network} senders`}
+          label={`Filter unknown ${row.network} senders`}
           disabled={!row.save}
           onChange={(holdUnknown) => void rule(row.id, { holdUnknown })}
         />
       </Row>
-    </Block>
-  )
-}
-
-function HeldBlock({
-  held,
-  busy,
-  keep,
-  open,
-}: {
-  held: HeldRow[]
-  busy: ReturnType<typeof useBeeperPage>['busy']
-  keep: (chat: string) => void
-  open: (chat: string) => void
-}) {
-  return (
-    <Block
-      head="Held for a look"
-      note="Texts from senders you have no contact for. Nothing is saved until you say so; they stay in Beeper as they are, and drop off here after a month."
-    >
-      {held.map((entry, index) => (
-        <Row
-          key={entry.chat}
-          label={
-            <>
-              <span className="sky-set-mono">{entry.who}</span>
-              <span className="sky-set-chips">
-                <span className="sky-set-chip">{entry.network}</span>
-              </span>
-            </>
-          }
-          sub={`“${entry.first}” · ${plural(entry.count, 'text')} · ${sinceLabel(entry.at)}`}
-          last={index === held.length - 1}
-        >
-          <Button size="compact-sm" disabled={busy !== null} onClick={() => keep(entry.chat)}>
-            Save
-          </Button>
-          <Button size="compact-sm" disabled={busy !== null} onClick={() => open(entry.chat)}>
-            Open in Beeper
-          </Button>
-        </Row>
-      ))}
+      <Row
+        label="Filter cold outreach"
+        sub="Keep likely unsolicited pitches from first-time contacts out of your notebook. Review them under Filtered messages. Requires TypeSafe under Connections."
+        last
+      >
+        <OnOff
+          value={row.holdPitches ?? /^telegram$/i.test(row.network)}
+          label={`Filter ${row.network} cold outreach`}
+          disabled={!row.save}
+          onChange={(holdPitches) => void rule(row.id, { holdPitches })}
+        />
+      </Row>
     </Block>
   )
 }
@@ -365,6 +329,11 @@ function LastCheck({
               ))}
             </ul>
           )}
+          {lastRun.notes?.map((note) => (
+            <p className="sky-set-warn" key={note}>
+              {note}
+            </p>
+          ))}
         </>
       ) : (
         <p className="sky-set-sub">No check has run yet. One runs every five minutes while Beeper Desktop is open.</p>
@@ -389,12 +358,13 @@ const PILE_LABEL: Record<PreviewRow['pile'], string> = {
 }
 
 function PreviewBlock({ preview, hide }: { preview: Preview; hide: () => void }) {
-  const saved = preview.rows.filter((row) => row.save)
+  const saved = preview.rows.filter((row) => row.save && !row.pendingScreen)
+  const screening = preview.rows.filter((row) => row.save && row.pendingScreen)
   const left = preview.rows.filter((row) => !row.save)
   return (
     <Block
       head="What a check would save"
-      note="Every chat Beeper filed in the last month, and what the next check does with it. Nothing is saved by looking."
+      note="Every chat Beeper filed in the last month. Cold outreach filtering runs during a check; this preview uses the last decision when available. Nothing is saved by looking."
     >
       <Row
         label={`${plural(saved.length, 'chat')} would be saved`}
@@ -404,6 +374,12 @@ function PreviewBlock({ preview, hide }: { preview: Preview; hide: () => void })
             : 'Nothing, with the switches as they are.'
         }
       />
+      {screening.length > 0 && (
+        <Row
+          label={`${plural(screening.length, 'chat')} to check for cold outreach`}
+          sub={screening.map((row) => `${row.chat} (${row.network})`).join(' · ')}
+        />
+      )}
       <Row
         label={`${plural(left.length, 'chat')} left out`}
         sub={left.length ? reasonSummary(left) : 'Nothing.'}
@@ -510,7 +486,12 @@ export function BeeperMain({ navigate }: { navigate: (to: string) => void }) {
           <NetworkBlock key={row.id} row={row} rule={rule} mac={mac.status} toConnections={toConnections} />
         ))}
       {status && live && status.held.length > 0 && (
-        <HeldBlock held={status.held} busy={busy} keep={(chat) => void keep(chat)} open={(chat) => void open(chat)} />
+        <FilteredMessages
+          messages={status.held}
+          busy={busy !== null}
+          onAdd={(chat) => void keep(chat)}
+          onOpen={(chat) => void open(chat)}
+        />
       )}
       {status && live && (
         <LastCheck

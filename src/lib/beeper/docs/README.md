@@ -1,6 +1,6 @@
 ---
 created: 2026-09-16
-updated: 2026-10-28
+updated: 2026-10-29
 ---
 
 # Beeper — every chat on this Mac, saved as messages
@@ -9,8 +9,8 @@ Beeper Desktop keeps WhatsApp, iMessage, Signal, Telegram, Instagram,
 LinkedIn and the rest behind one local API on this Mac. `lib/beeper/`
 connects Sky to that app, saves its chats into the notebook the way Slack
 and Gmail captures are saved, and lets Outbox place a reply into a chat's
-composer. Nothing here reaches the network: the app answers on
-`127.0.0.1:23373`, only while it is running.
+composer. Message access stays local: the app answers on `127.0.0.1:23373`, only while it is running.
+Optional pitch screening sends conversation evidence to TypeSafe's Jev before capture.
 
 ## The pieces
 
@@ -146,6 +146,33 @@ Unknown handles remain visible, and custom group titles are preserved.
 The owner's side comes from `me/about.md`. Without the
 lookup — the service lacking Full Disk Access — every iMessage sender would
 be held, and the network's card says so.
+
+## First-time pitches
+
+`firstContactPitch.ts` uses Jev to ask separately whether an exchange is initial outreach, whether it is an
+unsolicited pitch, and whether material uncertainty remains.
+The `holdPitches` account rule defaults on for Telegram and off elsewhere, independently of the saving switch and
+the unknown-sender rule.
+A display name does not bypass pitch screening.
+Known contacts, chats explicitly saved from the held list, groups, and chats with an owner reply bypass it.
+
+The capture window is not relationship history: screening walks older Beeper pages beyond that window.
+A reply months earlier rules out first contact, without importing those older messages.
+If paging stops before the available history ends, speakers are unclear, input is too large, or Jev is unavailable,
+pitch screening leaves the ordinary saving rules in charge.
+Even complete Beeper history cannot establish that the people have never met or spoken elsewhere; the judgment is
+about likely initial outreach, and the questions treat references to earlier contact as contrary evidence.
+Only probabilities of at least 0.9 for both first contact and unsolicited pitching, with uncertainty at most 0.3,
+hold a chat. These are conservative initial cutoffs, not measured accuracy.
+
+Held pitches get a visible reason and the existing Save and Open in Beeper actions, before attachments or notebook
+files are written. Nothing is deleted or sent.
+Save resets the incremental search window so an older held conversation is found again.
+Per-chat receipts key the full evidence, questions, thresholds and model; follow-ups are reassessed, including a pitch
+that arrives after an innocuous greeting. A later owner reply releases the hold.
+The preview does not read messages or run Jev: it shows the last hold or says screening is still needed.
+
+## State
 
 State lives in `state/beeper/sync.json`: the last run's instant, the rules
 above, the held chats, the last run itself (counts, what it left out and

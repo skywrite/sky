@@ -8,6 +8,7 @@ import {
   unknownSender,
 } from './capture.ts'
 import type { BeeperAccount, BeeperChat, BeeperClient, ChatSearch } from './client.ts'
+import { holdsFirstContactPitches } from './firstContactPitch.ts'
 
 /**
  * What a check would do, chat by chat, before anything is saved: every chat
@@ -27,6 +28,7 @@ export type PreviewRow = {
   pile: PreviewPile
   save: boolean
   reason?: string
+  pendingScreen?: boolean
 }
 
 export type BeeperPreview = {
@@ -81,7 +83,14 @@ function row(
   let verdict = judgeChat(chat, account, rule)
   // The capture also asks whether the person ever wrote there; the preview cannot without the messages.
   if (verdict.save && rule?.holdUnknown && !state.chats[chat.id]?.known && unknownSender(chat, account, names))
-    verdict = { save: false, reason: 'held: unknown sender' }
+    verdict = { save: false, reason: 'filtered: unknown sender' }
+  const screening =
+    holdsFirstContactPitches(rule) &&
+    chat.type === 'single' &&
+    !state.chats[chat.id]?.known &&
+    !state.chats[chat.id]?.replied
+  if (verdict.save && screening && state.held[chat.id]?.reason === 'first-time pitch')
+    verdict = { save: false, reason: 'filtered: likely cold outreach (last check)' }
   return {
     chat: chatLabel(chat, account, names),
     network: chat.network.trim() || account?.network?.trim() || 'Beeper',
@@ -89,5 +98,6 @@ function row(
     pile,
     save: verdict.save,
     ...(verdict.save ? {} : { reason: verdict.reason }),
+    ...(verdict.save && screening ? { pendingScreen: true } : {}),
   }
 }

@@ -1,5 +1,5 @@
 import { assert, test } from '#test'
-import type { BeeperSyncState } from './capture.ts'
+import { BeeperSyncStateSchema, type BeeperSyncState } from './capture.ts'
 import type { BeeperChat, ChatSearch } from './client.ts'
 import { previewBeeper } from './preview.ts'
 
@@ -8,6 +8,41 @@ const chat = (extra: Partial<BeeperChat> & Pick<BeeperChat, 'id' | 'accountID' |
   type: 'single',
   lastActivity: '2026-03-11T08:00:00Z',
   ...extra,
+})
+
+test('pitch preview distinguishes a previous hold from conversations still needing screening', async () => {
+  const state = BeeperSyncStateSchema.parse({
+    version: 1,
+    accounts: { telegram: { network: 'Telegram', save: true } },
+    chats: { allowed: { known: true }, answered: { replied: true } },
+    held: {
+      pitch: { network: 'Telegram', who: 'Alex Example', at: '2026-03-11T08:00:00Z', reason: 'first-time pitch' },
+    },
+  })
+  const client = {
+    accounts: async () => [{ accountID: 'telegram', network: 'Telegram' }],
+    searchChats: async (params: ChatSearch = {}) => ({
+      items:
+        params.inbox === 'primary'
+          ? ['pitch', 'new', 'allowed', 'answered'].map((id) =>
+              chat({ id, accountID: 'telegram', title: `Alex Example ${id}` }),
+            )
+          : [],
+      hasMore: false,
+    }),
+  }
+  const preview = await previewBeeper({ client, state, now: '2026-03-11T10:00:00Z' })
+  assert({
+    given: 'a held pitch, an unchecked chat, an explicitly allowed sender and an answered chat',
+    should: 'show the last hold, pending screening, and allowed conversations without reading messages',
+    actual: preview.rows.map(({ save, pendingScreen, reason }) => [save, pendingScreen, reason]),
+    expected: [
+      [false, undefined, 'filtered: likely cold outreach (last check)'],
+      [true, true, undefined],
+      [true, undefined, undefined],
+      [true, undefined, undefined],
+    ],
+  })
 })
 
 test('beeper preview - every pile, every chat, with the capture’s verdict and reason', async () => {
@@ -72,7 +107,7 @@ test('beeper preview - every pile, every chat, with the capture’s verdict and 
           group: false,
           pile: 'primary',
           save: false,
-          reason: 'held: unknown sender',
+          reason: 'filtered: unknown sender',
         },
         {
           chat: 'Atlas launch team',
@@ -161,7 +196,7 @@ test('beeper preview - a name from this Mac stands in for the number Beeper show
         group: false,
         pile: 'primary',
         save: false,
-        reason: 'held: unknown sender',
+        reason: 'filtered: unknown sender',
       },
     ],
   })

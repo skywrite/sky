@@ -60,4 +60,5 @@ export type {
 } from './capture.ts'
 export { previewBeeper } from './preview.ts'
 export { notebookSenderNames } from './senders.ts'
+export { createFirstContactPitchScreen, holdsFirstContactPitches } from './firstContactPitch.ts'
 export type { BeeperPreview, BeeperPreviewSource, PreviewPile, PreviewRow } from './preview.ts'
