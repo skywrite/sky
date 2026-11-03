@@ -15,6 +15,7 @@ import { exists } from '#shared/fs/mod.ts'
 import { dayFile } from '#shared/nbfs/mod.ts'
 import { assert, test } from '#test'
 import { ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
+import * as wording from './lib/reminderText.ts'
 import SlackTodosTask from './mod.ts'
 
 type Args = Parameters<SlackTodosTask['run']>[0]['args']
@@ -41,6 +42,8 @@ async function fixture(
     displayed: capture.LaterCaptureRow[]
     fetchArgs: () => unknown[][]
     reminderFile: string
+    rewrites: capture.LaterCaptureRow[]
+    description: { text: string | undefined }
   }) => Promise<void>,
   counts: AgentSlackLaterList['counts'] = { in_progress: 162, saved: 69, todo: 93, overdue: 1 },
 ) {
@@ -59,11 +62,17 @@ async function fixture(
   ).fork({ output })
   const captured: capture.LaterCaptureRow[] = []
   const displayed: capture.LaterCaptureRow[] = []
+  const rewrites: capture.LaterCaptureRow[] = []
+  const description: { text: string | undefined } = { text: undefined }
   const render = list.renderLaterRow
   const fetch = spyOn(list, 'fetchSavedItems').mockResolvedValue({
     list: { items, counts },
   })
   const spies = [
+    spyOn(wording, 'reminderText').mockImplementation(async (row) => {
+      rewrites.push(row)
+      return description.text
+    }),
     fetch,
     spyOn(list, 'backfillMissingMessages').mockResolvedValue(undefined),
     spyOn(list, 'resolveRowMentions').mockResolvedValue(undefined),
@@ -110,6 +119,8 @@ async function fixture(
       displayed,
       fetchArgs: () => fetch.mock.calls.map((call) => [...call]),
       reminderFile: path.join(context.config.DIR_TIME, dayFile('2025-06-15')),
+      rewrites,
+      description,
     })
   } finally {
     for (const spy of spies) spy.mockRestore()
@@ -149,6 +160,37 @@ test('slack:todos lists the To-dos pile soonest due first, overdue flagged, and 
       assert({ given: 'the result', should: 'report the pile total', actual: result.data?.pileTotal, expected: 93 })
     },
   )
+})
+
+test('slack:todos rewrites only new captured reminders into friendly language', async () => {
+  await fixture([todo(1, -3600)], async ({ invoke, reminderFile, rewrites, description }) => {
+    description.text = 'Read the Atlas proposal and send Jane feedback on pricing.'
+    await invoke()
+    const afterListing = rewrites.length
+    await invoke({ captureAll: true })
+    const captured = await readFile(reminderFile, 'utf8')
+    await invoke({ captureAll: true })
+    assert({
+      given: 'a listing followed by capture and a retry of the same Slack to-do',
+      should: 'generate wording only once when capturing, keep the source link, and leave the retry unchanged',
+      actual: [
+        afterListing,
+        rewrites.length,
+        planSections(captured)
+          .find((section) => section.title === 'Reminders')
+          ?.rows.map((row) => row.raw),
+        (await readFile(reminderFile, 'utf8')) === captured,
+      ],
+      expected: [
+        0,
+        1,
+        [
+          '[Read the Atlas proposal and send Jane feedback on pricing.](https://atlas.slack.com/archives/C0ATLAS/p1740000001000100)',
+        ],
+        true,
+      ],
+    })
+  })
 })
 
 test("slack:todos capture adds old messages with any due date to today's Reminders once", async () => {

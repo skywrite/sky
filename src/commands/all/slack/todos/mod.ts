@@ -2,6 +2,7 @@ import { type PileResult, runPile } from '#commands/all/slack/saved/lib/pile.ts'
 import { Command, type CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { addTodoReminder } from './lib/remind.ts'
+import { reminderText } from './lib/reminderText.ts'
 
 const params = {
   channel: Flag.string(
@@ -68,7 +69,9 @@ export default class SlackTodosTask extends Command {
       'before gets only its new replies, and an archived one that has come',
       'back to life is followed again. Summary, auto-tags, and auto-rel apply',
       "either way. Each captured to-do is added to today's Reminders with a",
-      'link to its Slack message, regardless of the message or reminder date,',
+      'short, plain-language reminder and a link to its Slack message, using',
+      'the fast AI model (Haiku by default). If rewriting is unavailable, the',
+      'message preview is kept. This applies regardless of the message or reminder date,',
       'including when the conversation was already captured. Retries preserve',
       'an existing reminder for that message. Only after the reminder is saved',
       'is the to-do marked complete in Slack. Captured files open in the editor',
@@ -104,7 +107,12 @@ export default class SlackTodosTask extends Command {
         context,
         tasks,
         addReminder: async (row) => {
-          if (await addTodoReminder(row, context)) context.output.log("  Added to today's Reminders")
+          const added = await addTodoReminder(row, context, async () => {
+            const text = await reminderText(row, tasks, { signal: context.signal })
+            if (!text) context.output.log('  Reminder wording unavailable — keeping the Slack message preview')
+            return text
+          })
+          if (added) context.output.log("  Added to today's Reminders")
         },
       },
     )

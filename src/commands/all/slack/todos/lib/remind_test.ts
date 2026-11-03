@@ -54,7 +54,9 @@ test('Slack to-do retries preserve edited, completed and moved reminders with ei
       for (const source of [`[Slack](${row().link})`, '[Source][atlas-message]']) {
         const contents = `---\ncreated: 2031-03-16\n---\n\n# Keep this plan\n\n## ${section}\n\n- ~~Edited action ${source}~~\n  Keep these notes.\n\n[atlas-message]: ${row().link}\n`
         await outputFile(file, contents)
-        const added = await addTodoReminder(row(), context)
+        const added = await addTodoReminder(row(), context, async () => {
+          throw new Error('An existing reminder must not be rewritten')
+        })
         assert({
           given: 'the source message already belongs to an edited, completed or moved action',
           should: 'preserve the whole day byte for byte instead of recreating the reminder',
@@ -63,6 +65,77 @@ test('Slack to-do retries preserve edited, completed and moved reminders with ei
         })
       }
     }
+  })
+})
+
+test('Slack reminder wording is prepared outside the day lock and keeps its source link', async () => {
+  await withDayNotebook(async ({ context }) => {
+    await addTodoReminder(row(), context, async () => {
+      await addTodoReminder(row(2), context)
+      return 'Read the Atlas proposal and send Jane feedback on pricing.'
+    })
+    const contents = await readFile(path.join(context.config.DIR_TIME, dayFile('2031-03-16')), 'utf8')
+    assert({
+      given: 'another day write completes while the model prepares a friendly reminder',
+      should: 'preserve both entries and the exact Slack source without holding the write lock during generation',
+      actual: planSections(contents)
+        .find((section) => section.title === 'Reminders')
+        ?.rows.map((item) => item.raw)
+        .sort(),
+      expected: [
+        `[Read the Atlas proposal and send Jane feedback on pricing.](${row().link})`,
+        `[Review the Atlas proposal](${row(2).link})`,
+      ],
+    })
+  })
+})
+
+test('a Slack reminder added while wording is generated wins over the late rewrite', async () => {
+  await withDayNotebook(async ({ context }) => {
+    const started = Promise.withResolvers<void>()
+    const release = Promise.withResolvers<void>()
+    const pending = addTodoReminder(row(), context, async () => {
+      started.resolve()
+      await release.promise
+      return 'Read the Atlas proposal and send Jane feedback.'
+    })
+    await started.promise
+    try {
+      await addTodoReminder(row(), context)
+    } finally {
+      release.resolve()
+    }
+    const added = await pending
+    const contents = await readFile(path.join(context.config.DIR_TIME, dayFile('2031-03-16')), 'utf8')
+    assert({
+      given: 'the same source was saved before a slow model answered',
+      should: 'retain the saved wording and avoid creating a second reminder',
+      actual: [
+        added,
+        planSections(contents)
+          .find((section) => section.title === 'Reminders')
+          ?.rows.map((item) => item.raw),
+      ],
+      expected: [false, [`[Review the Atlas proposal](${row().link})`]],
+    })
+  })
+})
+
+test('an unavailable Slack reminder rewrite keeps capture working', async () => {
+  await withDayNotebook(async ({ context }) => {
+    const added = await addTodoReminder(row(), context, async () => undefined)
+    const contents = await readFile(path.join(context.config.DIR_TIME, dayFile('2031-03-16')), 'utf8')
+    assert({
+      given: 'no usable model wording',
+      should: 'save the original preview and source link',
+      actual: [
+        added,
+        planSections(contents)
+          .find((section) => section.title === 'Reminders')
+          ?.rows.map((item) => item.raw),
+      ],
+      expected: [true, [`[Review the Atlas proposal](${row().link})`]],
+    })
   })
 })
 
