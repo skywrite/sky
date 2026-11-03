@@ -1,4 +1,6 @@
 export { default as PlainDate } from '../../../src/_shared-ts/universal/dates/nbdt/PlainDate/mod.ts'
+export { default as Instant } from '../../../src/_shared-ts/universal/dates/nbdt/Instant/mod.ts'
+export { instantNow } from '../../../src/_shared-ts/universal/dates/nbdt/instantNow.ts'
 
 export {
   default as PlainDateTime,
