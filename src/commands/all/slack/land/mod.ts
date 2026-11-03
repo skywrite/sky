@@ -156,7 +156,7 @@ export default class SlackLandTask extends Command {
         if (/not found|channel_not_found|not_in_channel|thread_not_found/i.test(message)) return { status: 'gone' }
         return { status: 'failed', message: message || 'the capture failed' }
       },
-      landConversation: async (channelId, kind, since) => {
+      landConversation: async (channelId, kind, since, threads) => {
         try {
           const members = await memberNames(channelId)
           const record: DmRecord = (await readDmRecord(DIR_STATE_SLACK_DMS, channelId)) ?? {
@@ -165,7 +165,7 @@ export default class SlackLandTask extends Command {
             label: members.join(', ') || (await membership()).conversations?.get(channelId)?.name || channelId,
             docs: [],
           }
-          const raw = (await listConversation(workspace, channelId, record.cursor ?? since)).filter(
+          const raw = (await listConversation(workspace, channelId, record.cursor ?? since, threads)).filter(
             (message) => !isHousekeeping(message),
           )
           if (raw.length === 0) return { status: 'landed', messages: 0, docs: 0 }

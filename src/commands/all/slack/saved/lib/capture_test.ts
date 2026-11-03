@@ -156,3 +156,108 @@ test('captureLaterItems does not add reminders for failed or deleted captures', 
     expected: 0,
   })
 })
+
+const dmRow = (): LaterCaptureRow => ({
+  item: { channel_id: 'D0JANE', ts: '1750000000.000100' },
+  timeLabel: '09:30',
+  link: 'https://atlas.slack.com/archives/D0JANE/p1750000000000100',
+})
+const DAY_FILE = '2031-03-16/actions/messages/09-30_slack_Jane-to-JP_Atlas-launch-plan.md'
+
+/** Records each command run; the capture writes one file, the landing nothing */
+const recordingTasks = (calls: string[], onRun?: (name: string) => void) =>
+  ({
+    run: async (name: string) => {
+      calls.push(name)
+      onRun?.(name)
+      return CommandResult.success({ slackFiles: ['time/2031/W11/03-16/Atlas.md'], followed: false })
+    },
+  }) as unknown as CommandService
+
+test('captureLaterItems does not capture a saved message its direct conversation already holds', async () => {
+  const events: string[] = []
+  const complete = spyOn(agentSlack, 'runAgentSlack').mockImplementation(async (args) => {
+    events.push(`complete ${args[2]}`)
+    return { success: true, code: 0, stdout: '', stderr: '' }
+  })
+  try {
+    const calls: string[] = []
+    const lines: string[] = []
+    const outcome = await captureLaterItems([dmRow()], {
+      tasks: recordingTasks(calls),
+      output: stubOutput(lines),
+      addReminder: async () => {
+        events.push('reminder')
+      },
+      findInConversation: async () => ({ kept: true, doc: DAY_FILE }),
+    })
+    assert({
+      given: "a saved message already in its conversation's day file",
+      should: 'capture nothing, then save its reminder and complete it in Slack',
+      actual: [calls, events, outcome.captured, outcome.completed, outcome.failures],
+      expected: [[], ['reminder', `complete ${dmRow().link}`], [], 1, []],
+    })
+    assert({
+      given: 'the same skip',
+      should: 'name the file that holds it',
+      actual: lines.some((line) => line.includes(DAY_FILE) && line.includes('skipping capture')),
+      expected: true,
+    })
+  } finally {
+    complete.mockRestore()
+  }
+})
+
+test('captureLaterItems lands a kept conversation first, and captures only what is still not there', async () => {
+  const complete = spyOn(agentSlack, 'runAgentSlack').mockImplementation(async () => ({
+    success: true,
+    code: 0,
+    stdout: '',
+    stderr: '',
+  }))
+  try {
+    const fresh: string[] = []
+    let landed = false
+    const saved = await captureLaterItems([dmRow()], {
+      tasks: recordingTasks(fresh, (name) => {
+        if (name === 'slack:land') landed = true
+      }),
+      output: stubOutput([]),
+      findInConversation: async () => (landed ? { kept: true, doc: DAY_FILE } : { kept: true }),
+    })
+    assert({
+      given: 'a message saved before the landing reached it',
+      should: 'run the landing once, then find it there and capture nothing',
+      actual: [fresh, saved.captured, saved.completed],
+      expected: [['slack:land'], [], 1],
+    })
+
+    const old: string[] = []
+    const older = await captureLaterItems([dmRow()], {
+      tasks: recordingTasks(old),
+      output: stubOutput([]),
+      findInConversation: async () => ({ kept: true }),
+    })
+    assert({
+      given: 'a saved message the landing never wrote, from before it kept the conversation',
+      should: 'capture it as before, after the landing',
+      actual: [old, older.captured],
+      expected: [['slack:land', 'slack:follow:message'], ['time/2031/W11/03-16/Atlas.md']],
+    })
+
+    const channel: string[] = []
+    await captureLaterItems([row()], {
+      tasks: recordingTasks(channel),
+      output: stubOutput([]),
+      findInConversation: async () => ({ kept: false }),
+    })
+    assert({
+      given: 'a saved channel message',
+      should: 'capture it without running the landing',
+      actual: channel,
+      expected: ['slack:follow:message'],
+    })
+  } finally {
+    complete.mockRestore()
+  }
+})

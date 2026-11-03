@@ -1,6 +1,6 @@
 ---
 created: 2026-10-20
-updated: 2026-10-20
+updated: 2026-11-03
 ---
 
 # Slack landings
@@ -29,8 +29,8 @@ fresh on every pass. Reactions and bot DMs are not landed.
 
 ## How each kind lands
 
-A thread (a mention, a reply in the owner's thread, an own message in a
-channel) goes through `slack:follow:message --landing`: the thread is
+A thread in a channel (a mention, a reply in the owner's thread, an own
+message) goes through `slack:follow:message --landing`: the thread is
 captured whole with its summary, tags and rel, a follow keeps landing its
 later replies with the follow check's backoff and expiry, and the follow
 ledger is the identity, so a thread already captured by hand is brought up
@@ -46,6 +46,20 @@ a follow lands replies, through the same `syncSlackFollow`: one document per
 notebook day, appended to on later passes, earlier days never rewritten. Each
 day's document gets its own summary; `to` is the other people, or the owner
 when one of them wrote.
+
+Slack reports a reply or a mention inside a direct or group conversation as
+thread activity (`thread_v2`, `at_user`), never as the conversation moving:
+its `dm` entry follows top-level messages only. Those entries land with the
+conversation, so its threads stay in the day's one document instead of
+becoming thread captures beside it
+([2026-11-02](2026-11-02-dm-threads-split.md)). A reply under a message
+already landed never shows in the conversation's history either, so the pass
+also reads each thread that the activity or the owner's own replies name,
+and keeps only what is newer than the record's cursor.
+A message saved for later in Slack from such a conversation is not captured
+again: the saved capture (`saved/lib/capture.ts`) looks in the record's day
+documents first, running a landing pass when the message may not have landed
+yet, and captures only what is still missing.
 
 ## Cursors and failures
 

@@ -44,8 +44,10 @@ function fake(input: {
       state.calls.push(`thread ${link}`)
       return input.thread?.(link) ?? { status: 'landed', docs: 1 }
     },
-    landConversation: async (id, kind, since) => {
-      state.calls.push(`conversation ${id} ${kind} ${since}`)
+    landConversation: async (id, kind, since, threads) => {
+      state.calls.push(
+        `conversation ${id} ${kind} ${since}${threads.length > 0 ? ` threads ${threads.join(',')}` : ''}`,
+      )
       return input.conversation?.(id) ?? { status: 'landed', messages: 2, docs: 1 }
     },
   }
@@ -205,5 +207,82 @@ test('the rules choose the kinds, a dry run only plans, and an empty first pass 
     should: 'leave the cursors at now so the next pass asks for less',
     actual: [empty.calls[0], empty.state?.feedCursor, empty.state?.ownCursor],
     expected: ['feed 1759913600.000000 at_user,keyword,thread_v2,dm', '1760000000.000000', '1760000000.000000'],
+  })
+})
+
+test('a reply or a mention inside a direct or group conversation lands with that conversation, never as a thread capture', async () => {
+  const f = fake({
+    entries: [
+      { type: 'dm', feed_ts: '1759900000.000100', channel_id: 'D0JANE', ts: '1759900000.000100' },
+      {
+        type: 'thread_v2',
+        feed_ts: '1759910000.000100',
+        channel_id: 'D0JANE',
+        ts: '1759910000.000100',
+        thread_ts: '1759900000.000100',
+      },
+      {
+        type: 'thread_v2',
+        feed_ts: '1759920000.000100',
+        channel_id: 'D0JANE',
+        ts: '1759920000.000100',
+        thread_ts: '1759800000.000100',
+      },
+      {
+        type: 'at_user',
+        feed_ts: '1759930000.000100',
+        channel_id: 'G0TEAM',
+        ts: '1759930000.000100',
+        thread_ts: '1759925000.000100',
+      },
+    ],
+    own: [
+      {
+        channel_id: 'D0JOHN',
+        ts: '1759935000.000100',
+        permalink: `${WS}/archives/D0JOHN/p1759935000000100?thread_ts=1759700000.000100&cid=D0JOHN`,
+      },
+      { channel_id: 'D0JANE', ts: '1759915000.000100', permalink: `${WS}/archives/D0JANE/p1759915000000100` },
+    ],
+    kinds: { G0TEAM: 'group' },
+  })
+  const result = await landActivity(f.host)
+  assert({
+    given: 'replies in two threads of a direct message, a mention in a group thread, and your own reply in another DM',
+    should: 'land each conversation once, naming the threads that moved, and capture no thread on its own',
+    actual: f.calls.filter((call) => call.startsWith('conversation') || call.startsWith('thread')),
+    expected: [
+      `conversation D0JANE dm ${WEEK_AGO} threads 1759900000.000100,1759800000.000100`,
+      `conversation G0TEAM group ${WEEK_AGO} threads 1759925000.000100`,
+      `conversation D0JOHN dm ${WEEK_AGO} threads 1759700000.000100`,
+    ],
+  })
+  assert({
+    given: 'the plan',
+    should: 'keep the first reason each conversation moved, and plan no threads',
+    actual: [result.plan.conversations.map((c) => `${c.id}: ${c.why}`), result.plan.threads.length],
+    expected: [['D0JANE: a direct message', 'G0TEAM: a mention', 'D0JOHN: your own message'], 0],
+  })
+
+  const failing = fake({
+    state: { feedCursor: '1759905000.000000', ownCursor: '1759940000.000000', runs: [] },
+    entries: [
+      {
+        type: 'thread_v2',
+        feed_ts: '1759910000.000100',
+        channel_id: 'D0JANE',
+        ts: '1759910000.000100',
+        thread_ts: '1759900000.000100',
+      },
+      { type: 'at_user', feed_ts: '1759960000.000100', channel_id: 'C0ATLAS', ts: '1759960000.000100' },
+    ],
+    conversation: () => ({ status: 'failed', message: 'rate_limited' }),
+  })
+  await landActivity(failing.host)
+  assert({
+    given: 'a reply in a direct message whose landing fails',
+    should: 'hold the feed cursor just before that reply, so the next pass lands it',
+    actual: failing.state?.feedCursor,
+    expected: '1759910000.000099',
   })
 })

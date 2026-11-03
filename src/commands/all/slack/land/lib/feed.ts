@@ -61,23 +61,60 @@ export async function searchOwnMessages(
   return (data.messages ?? []).filter((message) => message.channel_id && message.ts)
 }
 
+/** How a conversation is read: its history newer than a ts, and one thread whole. */
+export type ConversationReader = {
+  history: (oldest: string) => Promise<AgentSlackMessage[]>
+  thread: (root: string) => Promise<AgentSlackMessage[]>
+}
+
+/** Slack's answer for a thread whose root was deleted since its activity named it */
+const GONE = /\b(thread_not_found|message_not_found)\b/
+
 /**
- * A conversation's messages newer than `oldest`, files downloaded for the
- * day, with the replies of any thread that moved since; a moved thread's
- * root comes along for context. Oldest first.
+ * A conversation's messages newer than `oldest`, with the new replies of
+ * every thread that moved: a root in the history whose latest reply is
+ * newer, and each thread named in `threads`. A reply under an older message
+ * never shows in the history, so the threads Slack's activity names are
+ * read too. Only messages newer than `oldest` come back, an older root
+ * included: it was landed with its day, and that day is not rewritten.
+ * Oldest first.
  */
-export async function listConversation(
+export async function readConversation(
+  reader: ConversationReader,
+  oldest: string,
+  threads: readonly string[] = [],
+): Promise<AgentSlackMessage[]> {
+  const history = await reader.history(oldest)
+  const messages = new Map(history.map((message) => [message.ts, message]))
+  const moved = history
+    .filter((root) => root.latest_reply && compareTs(root.latest_reply, oldest) > 0)
+    .map((root) => root.ts)
+  for (const root of new Set([...moved, ...threads])) {
+    let thread: AgentSlackMessage[]
+    try {
+      thread = await reader.thread(root)
+    } catch (error) {
+      if (GONE.test(error instanceof Error ? error.message : String(error))) continue
+      throw error
+    }
+    for (const message of thread) if (compareTs(message.ts, oldest) > 0) messages.set(message.ts, message)
+  }
+  return [...messages.values()].sort((a, b) => compareTs(a.ts, b.ts))
+}
+
+/** A conversation's new messages and thread replies from Slack, files downloaded for the day. */
+export function listConversation(
   workspace: string,
   channelId: string,
   oldest: string,
+  threads: readonly string[] = [],
 ): Promise<AgentSlackMessage[]> {
-  const history = await listChannelHistory(workspace, channelId, oldest, { downloads: true })
-  const messages = new Map(history.map((message) => [message.ts, message]))
-  for (const root of history) {
-    if (!root.latest_reply || compareTs(root.latest_reply, oldest) <= 0) continue
-    for (const message of await listThread(workspace, channelId, root.ts, { downloads: true })) {
-      if (message.ts === root.ts || compareTs(message.ts, oldest) > 0) messages.set(message.ts, message)
-    }
-  }
-  return [...messages.values()].sort((a, b) => compareTs(a.ts, b.ts))
+  return readConversation(
+    {
+      history: (from) => listChannelHistory(workspace, channelId, from, { downloads: true }),
+      thread: (root) => listThread(workspace, channelId, root, { downloads: true }),
+    },
+    oldest,
+    threads,
+  )
 }

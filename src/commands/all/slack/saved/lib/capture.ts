@@ -1,12 +1,16 @@
 import * as path from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import type { AgentSlackLaterItem } from '#commands/all/slack/cli/lib/agent-slack/types.ts'
+import { readDmRecord } from '#commands/all/slack/land/lib/dms.ts'
 import { runAgentSlack } from '#commands/all/slack/lib/agentSlack.ts'
 import { oneLine } from '#commands/all/slack/lib/mod.ts'
 import type { OutputHandler } from '#commands/lib/output/OutputHandler.ts'
 import type { CommandService } from '#commands/mod.ts'
-import { DIR_BASE } from '#config'
+import { DIR_BASE, DIR_STATE_SLACK_DMS } from '#config'
+import { readOptional } from '#lib/outbox/files.ts'
 import { runCommand } from '#lib/sys/mod.ts'
+import { slackMessageId } from '#shared/models/Message/slack/write.ts'
+import { resolveTimeRef } from '#shared/nbfs/mod.ts'
 import { laterBrowserLink, type LaterRowContext, renderLaterRow } from './list.ts'
 
 /** One queue row as the capture and open flows consume it */
@@ -26,15 +30,49 @@ export type LaterCaptureOutcome = {
   failures: string[]
 }
 
+/** A saved message's direct or group conversation, as the Slack landing keeps it */
+export type ConversationHit = {
+  /** The landing keeps this conversation, so its messages belong in the conversation's day files */
+  kept: boolean
+  /** The day file (time ref) that already holds the message */
+  doc?: string
+}
+
+/** Find a saved message in the day files the Slack landing wrote for its direct or group conversation. */
+export async function findInConversation(item: AgentSlackLaterItem): Promise<ConversationHit> {
+  const record = await readDmRecord(DIR_STATE_SLACK_DMS, item.channel_id)
+  if (!record) return { kept: false }
+  let anchor: string
+  try {
+    anchor = `id="${slackMessageId(item.channel_id, item.ts)}"`
+  } catch {
+    return { kept: true }
+  }
+  for (const doc of record.docs.toReversed()) {
+    const text = await readOptional(path.join(DIR_BASE, resolveTimeRef(doc.path)))
+    if (text?.includes(anchor)) return { kept: true, doc: doc.path }
+  }
+  return { kept: true }
+}
+
 /**
  * Capture later items through slack:follow:message and mark each complete in
- * Slack — the Later list stays the ledger of what remains.
+ * Slack — the Later list stays the ledger of what remains. A message the
+ * notebook already holds is not captured again: a thread Sky follows, or a
+ * direct or group conversation's day file.
  */
 export async function captureLaterItems(
   rows: LaterCaptureRow[],
-  deps: { tasks: CommandService; output: OutputHandler; addReminder?: (row: LaterCaptureRow) => Promise<void> },
+  deps: {
+    tasks: CommandService
+    output: OutputHandler
+    addReminder?: (row: LaterCaptureRow) => Promise<void>
+    /** Test seam: where a saved message's conversation already holds it */
+    findInConversation?: (item: AgentSlackLaterItem) => Promise<ConversationHit>
+  },
 ): Promise<LaterCaptureOutcome> {
   const { tasks, output } = deps
+  const find = deps.findInConversation ?? findInConversation
   const captured: string[] = []
   const openTargets: string[] = []
   const openRows: LaterCaptureRow[] = []
@@ -53,10 +91,39 @@ export async function captureLaterItems(
     }
   }
 
+  /** The saved message is in the notebook already: save its reminder, then complete it in Slack */
+  const known = async (row: LaterCaptureRow) => {
+    if (!(await remind(row))) return
+    const done = await runAgentSlack(['later', 'complete', row.link])
+    if (done.success) {
+      completed++
+      openRows.push(row)
+    } else {
+      failures.push(`${row.link}: already captured; complete failed — ${oneLine(done.stderr || done.stdout, 120)}`)
+    }
+  }
+
+  // A direct or group conversation lands whole into its day file, so a message
+  // saved from one is already there. One saved minutes after it arrived may not
+  // have landed yet: the landing runs first, so it is there before the check.
+  const hits = new Map<LaterCaptureRow, ConversationHit>()
+  for (const row of rows) hits.set(row, await find(row.item))
+  if ([...hits.values()].some((hit) => hit.kept && !hit.doc)) {
+    const landed = await tasks.run('slack:land', {})
+    if (!landed.ok) output.log(`Slack landing did not run first: ${landed.message ?? 'no reason given'}`)
+    for (const [row, hit] of hits) if (hit.kept && !hit.doc) hits.set(row, await find(row.item))
+  }
+
   for (const row of rows) {
     const { link } = row
     output.log('')
     output.log(`Capturing ${link}`)
+    const inConversation = hits.get(row)?.doc
+    if (inConversation) {
+      output.log(`  Already in the notebook (${inConversation}) — skipping capture`)
+      await known(row)
+      continue
+    }
     const result = await tasks.run('slack:follow:message', { link, noEditor: true })
 
     if (!result.ok) {
@@ -66,14 +133,7 @@ export async function captureLaterItems(
       // still the right move
       if (result.message?.includes('Duplicate follow') || result.message?.includes('Already captured')) {
         output.log('  Thread already in the notebook — skipping capture')
-        if (!(await remind(row))) continue
-        const done = await runAgentSlack(['later', 'complete', link])
-        if (done.success) {
-          completed++
-          openRows.push(row)
-        } else {
-          failures.push(`${link}: already captured; complete failed — ${oneLine(done.stderr || done.stdout, 120)}`)
-        }
+        await known(row)
         continue
       }
       // A message Slack no longer serves (deleted since it was saved) is an

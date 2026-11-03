@@ -37,8 +37,16 @@ export type LandHost = {
   kindOf: (channelId: string) => Promise<ConversationKind>
   /** Capture a thread into the day, or bring its capture up to date */
   captureThread: (link: string) => Promise<ThreadOutcome>
-  /** Land a direct or group conversation's messages newer than a ts into the day */
-  landConversation: (channelId: string, kind: 'dm' | 'group', since: string) => Promise<ConversationOutcome>
+  /**
+   * Land a direct or group conversation's messages newer than a ts into the
+   * day, with the new replies of the threads named (their roots' ts)
+   */
+  landConversation: (
+    channelId: string,
+    kind: 'dm' | 'group',
+    since: string,
+    threads: readonly string[],
+  ) => Promise<ConversationOutcome>
 }
 
 export type LandOptions = {
@@ -52,7 +60,12 @@ export const LAND_DEFAULTS: LandOptions = { backfillDays: 7 }
 
 type Planned = { why: string; feedAt?: string; ownAt?: string }
 type PlannedThread = Planned & { link: string }
-type PlannedConversation = Planned & { id: string; kind: 'dm' | 'group' }
+type PlannedConversation = Planned & {
+  id: string
+  kind: 'dm' | 'group'
+  /** Roots of the threads in it that moved: their replies never show in its history */
+  threads: string[]
+}
 
 export type LandPlan = { threads: PlannedThread[]; conversations: PlannedConversation[] }
 
@@ -87,19 +100,29 @@ export async function planLanding(
 ): Promise<LandPlan> {
   const threads = new Map<string, PlannedThread>()
   const conversations = new Map<string, PlannedConversation>()
+  const conversation = (
+    id: string,
+    kind: 'dm' | 'group',
+    why: string,
+    at: Pick<Planned, 'feedAt' | 'ownAt'>,
+    thread?: string,
+  ) => {
+    const planned = conversations.get(id) ?? { id, kind, why, threads: [] }
+    conversations.set(id, planned)
+    planned.feedAt = planned.feedAt ?? at.feedAt
+    planned.ownAt = planned.ownAt ?? at.ownAt
+    if (thread && !planned.threads.includes(thread)) planned.threads.push(thread)
+  }
   for (const entry of entries) {
     if (!entry.channel_id) continue
-    if (entry.type === 'dm') {
-      const kind = (await host.kindOf(entry.channel_id)) === 'group' ? 'group' : 'dm'
-      const known = conversations.get(entry.channel_id)
-      if (known) known.feedAt = known.feedAt ?? entry.feed_ts
-      else
-        conversations.set(entry.channel_id, {
-          id: entry.channel_id,
-          kind,
-          why: 'a direct message',
-          feedAt: entry.feed_ts,
-        })
+    const reply = entry.type === 'thread_v2'
+    const kind = await host.kindOf(entry.channel_id)
+    if (entry.type === 'dm' || kind !== 'channel') {
+      // Slack reports a reply or a mention inside a direct or group conversation as thread
+      // activity, not as the conversation moving. It lands with the conversation, into the
+      // day's one document, never as a thread capture of its own.
+      const why = entry.type === 'dm' ? 'a direct message' : reply ? 'a reply in your thread' : 'a mention'
+      conversation(entry.channel_id, kind === 'group' ? 'group' : 'dm', why, { feedAt: entry.feed_ts }, entry.thread_ts)
       continue
     }
     const ts = entry.ts ?? entry.thread_ts
@@ -111,7 +134,6 @@ export async function planLanding(
       known.feedAt = known.feedAt ?? entry.feed_ts
       continue
     }
-    const reply = entry.type === 'thread_v2'
     threads.set(key, {
       link: reply
         ? messageLink(host.workspace, entry.channel_id, root)
@@ -122,19 +144,17 @@ export async function planLanding(
   }
   for (const message of own) {
     const kind = await host.kindOf(message.channel_id)
+    const root = (message.permalink ? parseMessageLink(message.permalink) : undefined)?.rootTs ?? message.ts
     if (kind !== 'channel') {
-      const known = conversations.get(message.channel_id)
-      if (known) known.ownAt = known.ownAt ?? message.ts
-      else
-        conversations.set(message.channel_id, {
-          id: message.channel_id,
-          kind,
-          why: 'your own message',
-          ownAt: message.ts,
-        })
+      conversation(
+        message.channel_id,
+        kind,
+        'your own message',
+        { ownAt: message.ts },
+        root === message.ts ? undefined : root,
+      )
       continue
     }
-    const root = (message.permalink ? parseMessageLink(message.permalink) : undefined)?.rootTs ?? message.ts
     const key = `${message.channel_id}:${root}`
     const known = threads.get(key)
     if (known) {
@@ -195,7 +215,7 @@ export async function landActivity(host: LandHost, options: LandOptions = LAND_D
   for (const conversation of plan.conversations) {
     if (host.signal?.aborted) break
     // The conversation's own record knows how far it got; the pass only says it moved
-    const outcome = await host.landConversation(conversation.id, conversation.kind, feedSince)
+    const outcome = await host.landConversation(conversation.id, conversation.kind, feedSince, conversation.threads)
     result.conversations.push({ id: conversation.id, outcome })
     if (outcome.status === 'failed') failed(conversation, `${conversation.id}: ${outcome.message}`)
     else {
