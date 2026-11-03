@@ -394,3 +394,119 @@ test('Places HTTP validates writes, origins and notebook boundaries', async () =
     await f.close()
   }
 })
+
+test('Locations: saved places and countries to choose, Google Maps cities saved inside their state, never a venue', async () => {
+  const f = await fixture()
+  try {
+    await f.seed(
+      'places/locations/US/VT.md',
+      '---\nname: Vermont\nkind: region\nref: places/US/VT\nlocation:\n  country: US\n  region: VT\n---\n',
+    )
+    await f.seed('places/locations/US/VT/drink/Sample-Cafe.md', '---\nname: Sample Cafe\ntype: drink\n---\n')
+    const lookups: string[] = []
+    const app = createTestHttpApp([path.join(f.root, 'places')], {
+      markdownStore: f.store,
+      places: {
+        ...f.options,
+        maps: {
+          config: async () => ({ browserKey: '', mapId: '', searchAvailable: true, configurable: true }),
+          configure: async () => {
+            throw new Error('Unused in this test.')
+          },
+          search: async () => [
+            {
+              id: 'sample_city',
+              name: 'Winooski',
+              address: 'Winooski, VT, USA',
+              kind: 'city',
+              category: 'visit',
+              coordinates: null,
+              attributions: [],
+            },
+            {
+              id: 'sample_shop',
+              name: 'Winooski Shop',
+              address: '1 Main St, Winooski',
+              kind: 'venue',
+              category: 'shop',
+              coordinates: null,
+              attributions: [],
+            },
+          ],
+          detail: async () => blankPlace(),
+          locate: async (id) => {
+            lookups.push(id)
+            return {
+              kind: 'city',
+              name: 'Winooski',
+              country: 'US',
+              region: { code: 'VT', name: 'Vermont' },
+              coordinates: { latitude: 44.49, longitude: -73.19 },
+              googlePlaceId: id,
+              googleMapsUrl: '',
+            }
+          },
+        },
+      },
+    })
+    const post = async (route: string, body: unknown) => {
+      const response = await app.request(`/places/_api${route}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      return { status: response.status, body: await response.json() }
+    }
+    const listed = (await (await app.request('/places/_api/locations')).json()) as {
+      choices: Array<{ ref: string; label: string }>
+      searchAvailable: boolean
+    }
+    assert({
+      given: 'a saved state, a saved venue and the recognized countries',
+      should: 'list the state and the countries, described, and say Google Maps can find more, never the venue',
+      actual: [
+        listed.choices.find((choice) => choice.ref === 'places/US/VT')?.label,
+        listed.choices.some((choice) => choice.label.startsWith('Sample Cafe')),
+        listed.choices.find((choice) => choice.ref === 'places/FR')?.label,
+        listed.searchAvailable,
+      ],
+      expected: ['Vermont, USA', false, 'France', true],
+    })
+    const searched = await post('/locations/search', { query: 'Winooski' })
+    const added = await post('/locations/add', { googlePlaceId: 'sample_city' })
+    const matched = await post('/locations/match', { text: 'Winooski, Vermont' })
+    assert({
+      given: 'a Google Maps search, adding its city, then matching text that names it',
+      should: 'offer only the city, save it inside its saved state, and match the text to it',
+      actual: [
+        searched.body,
+        added.body,
+        lookups,
+        (await readFile(path.join(f.root, 'places/locations/US/VT/Winooski.md'), 'utf8')).includes(
+          'parent: places/US/VT',
+        ),
+        matched.body?.ref,
+      ],
+      expected: [
+        [{ id: 'sample_city', label: 'Winooski, VT, USA', kind: 'city' }],
+        { ref: 'places/US/VT/Winooski', label: 'Winooski, VT, USA', name: 'Winooski', aliases: [], kind: 'city' },
+        ['sample_city'],
+        true,
+        'places/US/VT/Winooski',
+      ],
+    })
+    const manual = await post('/locations/add', { name: 'Harbor City', inside: 'places/FR' })
+    const venue = await post('/locations/add', { name: 'Nowhere', inside: 'places/US/VT/drink/Sample-Cafe' })
+    assert({
+      given: 'a city typed by hand inside a country with no record, and one inside a venue',
+      should: 'save the first with its country, and refuse the second with what to choose',
+      actual: [manual.body.label, venue],
+      expected: [
+        'Harbor City, France',
+        { status: 409, body: { message: 'Choose the country, region, or area this city is in.' } },
+      ],
+    })
+  } finally {
+    await f.close()
+  }
+})

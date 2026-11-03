@@ -20,12 +20,15 @@ import { withProcessLock } from '#lib/jobs/files.ts'
 import { linkedInUrl } from '#lib/linkedin/types.ts'
 import { createNumberedFile } from '#lib/nbfs/createNumberedFile.ts'
 import { atomicWrite, hash } from '#lib/outbox/files.ts'
+import { describePlace } from '#lib/places/describe.ts'
+import { countryPlace, ensurePlaceRef } from '#lib/places/geography.ts'
 import type Document from '#shared/models/Markdown/Document/mod.ts'
 import type MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
 import addDatedNote from '#shared/models/Markdown/util/addDatedNote.ts'
 import splitYamlMarkdown from '#shared/models/Markdown/util/splitYamlMarkdown.ts'
 import OrganizationDocument from '#shared/models/Organization/mod.ts'
 import PersonDocument from '#shared/models/Person/mod.ts'
+import { normalizePlaceRef } from '#shared/models/Place/mod.ts'
 import { fetchNowSync } from '#shared/nbfs/mod.ts'
 import { changeLinks } from '../links/content.ts'
 import { MarkdownSaveConflictError, readMarkdownContent, saveMarkdownContent } from '../markdown-preview/content.ts'
@@ -143,8 +146,36 @@ export function createPeopleStore(store: MarkdownStore, baseDir: string, dirs: s
           .filter((date): date is string => Boolean(date))
           .sort()
           .at(-1)
-        return { ...fields(type, doc), id, ...(lastInteraction ? { lastInteraction } : {}) }
+        const profile = fields(type, doc)
+        return { ...profile, ...place(profile.location), id, ...(lastInteraction ? { lastInteraction } : {}) }
       })
+  }
+
+  /** How a location reads, `Burlington, VT, USA`, and the saved place it links to; text from before places reads as written. */
+  function place(location: string): Pick<ProfileSummary, 'locationLabel' | 'locationRef'> {
+    const saved = normalizePlaceRef(location) ? store.places.findByPlacePath(location) : undefined
+    return { locationLabel: location ? describePlace(store.places, location) : '', locationRef: saved?.placePath ?? '' }
+  }
+
+  /**
+   * A location as it is saved: a saved place's reference, a recognized country (created the first
+   * time someone is located there), or nothing. Text that names no place is refused, so the
+   * person can choose or add the place; a location the edit leaves unchanged is kept as it is.
+   */
+  async function savedLocation(value: string, previous: string): Promise<string> {
+    const text = value.trim()
+    if (!text || text === previous.trim()) return text
+    const ref = normalizePlaceRef(text)
+    const saved = ref ? store.places.findByPlacePath(ref) : undefined
+    if (saved) return saved.placePath
+    if (ref && countryPlace(ref)) {
+      const country = await ensurePlaceRef(store.places, ref)
+      store.set(country.filePath, await readFile(country.filePath, 'utf8'))
+      return country.ref
+    }
+    throw new ProfileError(
+      `“${text}” is not a saved place. Choose it from the Location list, or add it there as a new place.`,
+    )
   }
 
   const resolveChoices = (choices: OrganizationChoice[], orgs: ProfileSummary[]) =>
@@ -507,6 +538,8 @@ export function createPeopleStore(store: MarkdownStore, baseDir: string, dirs: s
             409,
           )
       }
+      const previous = current ? fields(input.type, current.doc) : blankProfile(input.type)
+      const location = await savedLocation(input.location, previous.location)
       const date = today()
       const resolve = async (choices: OrganizationChoice[]): Promise<OrganizationChoice[]> => {
         const resolved: OrganizationChoice[] = []
@@ -520,8 +553,7 @@ export function createPeopleStore(store: MarkdownStore, baseDir: string, dirs: s
         }
         return resolved
       }
-      const next = { ...input, current: await resolve(input.current), past: await resolve(input.past) }
-      const previous = current ? fields(input.type, current.doc) : blankProfile(input.type)
+      const next = { ...input, location, current: await resolve(input.current), past: await resolve(input.past) }
       const aliases = unique([
         ...input.aliases,
         ...(current && previous.name !== input.name ? [previous.name] : []),
@@ -530,7 +562,7 @@ export function createPeopleStore(store: MarkdownStore, baseDir: string, dirs: s
       if (!current) {
         const id =
           input.type === 'person'
-            ? await createPerson(input, next, aliases, date)
+            ? await createPerson(next, next, aliases, date)
             : await createOrganization(
                 {
                   name: input.name,
@@ -538,7 +570,7 @@ export function createPeopleStore(store: MarkdownStore, baseDir: string, dirs: s
                   sector: input.sector,
                   kind: input.kind,
                   aliases,
-                  location: input.location,
+                  location,
                   notes: input.notes,
                 },
                 date,
@@ -562,7 +594,7 @@ export function createPeopleStore(store: MarkdownStore, baseDir: string, dirs: s
           yaml.delete('who')
         }
       }
-      for (const key of ['title', 'location', 'sector'] as const) if (input[key] !== previous[key]) set(key, input[key])
+      for (const key of ['title', 'location', 'sector'] as const) if (next[key] !== previous[key]) set(key, next[key])
       if (input.met !== previous.met) set('met', input.met ? metValue(input.met) : undefined)
       for (const [key, values, old] of [
         ['personal', input.emailPersonal, previous.emailPersonal],

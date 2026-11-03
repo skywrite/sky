@@ -7,6 +7,7 @@ import { Autocomplete, Textarea, TextInput } from '@mantine/core'
 import { Fragment, type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 import { When } from '#universal/dates/nbdt/mod.ts'
 import { LinksInput } from '../links/links.tsx'
+import { LocationPicker } from '../places/LocationPicker.tsx'
 import { addPerson, AddPersonError, canAddPerson } from './addPerson.ts'
 import { ChipsInput } from './ChipsInput.tsx'
 import { type Completion, fetchCompletions, fetchSuggestions, type Resolved, serves, timeZones } from './complete.ts'
@@ -242,6 +243,9 @@ export function Chip({
   )
 }
 
+/** Folders whose `location` is one saved place: where a person or organization is. */
+const PROFILE_DIRS: ReadonlySet<string> = new Set(['people', 'people-old', 'orgs'])
+
 export function ChipsRow({
   row,
   file,
@@ -252,6 +256,7 @@ export function ChipsRow({
   onCommit,
   onResolved,
   onSwap,
+  onPlace,
 }: {
   row: Row
   file: string
@@ -264,6 +269,8 @@ export function ChipsRow({
   onResolved?: (name: string, hit: Resolved) => void
   /** Puts a person's name in place of a chip's, in the file; without it no chip offers who it may mean */
   onSwap?: (name: string, to: string) => Promise<void>
+  /** Writes a profile's location: one saved place, as one value */
+  onPlace?: (ref: string) => void
 }) {
   const chips = Array.isArray(row.value) ? row.value : []
   const entityKind = ENTITY_KINDS[row.kind] ?? null
@@ -271,6 +278,22 @@ export function ChipsRow({
   const items = useCompletions(readOnly ? null : entityKind, search, { dir })
   const [problem, setProblem] = useState<ChipProblem | null>(null)
   if (row.kind === 'rel') return <LinksInput values={chips} file={file} readOnly={readOnly} onChange={onCommit} />
+  // A person's or organization's location is one saved place, chosen or added, never typed text
+  if (
+    !readOnly &&
+    onPlace &&
+    row.key === 'location' &&
+    PROFILE_DIRS.has(dir) &&
+    (row.shape !== 'seq' || chips.length <= 1)
+  )
+    return (
+      <LocationPicker
+        compact
+        autoFocus={autoFocus}
+        value={row.shape === 'seq' ? (chips[0] ?? '') : chips.join(', ')}
+        onChange={onPlace}
+      />
+    )
   // A name no profile has: the chip offers to add the person, the row who the name may mean.
   const unknown = (chip: string) =>
     onResolved !== undefined && row.kind === 'people' && resolved[chip] === null && canAddPerson(chip)
@@ -653,6 +676,7 @@ export function PropRow({
         onCommit={(chips) => commit(writeValue(body, row.key, row.kind, chips))}
         onResolved={onResolved}
         onSwap={amend ? (name, to) => amend((text) => swapChip(text, row.key, name, to)) : undefined}
+        onPlace={(ref) => commit(writeValue(body, row.key, row.kind, ref))}
       />
     )
   } else {

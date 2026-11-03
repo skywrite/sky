@@ -29,13 +29,17 @@ export interface PlaceMatch {
 }
 
 export function normalizePlaceName(value: string): string {
-  return value
-    .normalize('NFKD')
-    .replace(/\p{M}/gu, '')
-    .toLowerCase()
-    .replace(/\./g, '')
-    .replace(/[^\p{L}\p{N}]+/gu, ' ')
-    .trim()
+  return (
+    value
+      .normalize('NFKD')
+      .replace(/\p{M}/gu, '')
+      .toLowerCase()
+      .replace(/\./g, '')
+      // Trinidad & Tobago is also written Trinidad and Tobago
+      .replace(/&/g, ' and ')
+      .replace(/[^\p{L}\p{N}]+/gu, ' ')
+      .trim()
+  )
 }
 
 /** One roster for automatic subject resolution and manual selection, including unsaved countries. */

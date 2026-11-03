@@ -874,6 +874,8 @@ test('saveChat - person facts curate the profile, report outcomes, and land in t
     endTime: END,
     people: true,
     personIO,
+    resolveLocation: async (text) =>
+      text === 'Lisbon' ? { ref: 'places/PT/Lisbon', label: 'Lisbon, Portugal' } : { reason: 'not saved' },
     enricher: stubEnricher({
       distillPersonFacts: async (transcript) => {
         sawTranscript = transcript
@@ -917,7 +919,7 @@ test('saveChat - person facts curate the profile, report outcomes, and land in t
         summary: 'Vendor lead on the Atlas rollout. · Based in Lisbon.',
         outcome: 'applied',
       },
-      { op: 'field', person: 'Alex Rivera', summary: 'location: Lisbon', outcome: 'applied' },
+      { op: 'field', person: 'Alex Rivera', summary: 'location: Lisbon, Portugal', outcome: 'applied' },
       {
         op: 'unknown',
         person: 'Sam Note',
@@ -935,7 +937,7 @@ test('saveChat - person facts curate the profile, report outcomes, and land in t
     actual: {
       overviewFirst: profile.indexOf('## Overview') < profile.indexOf('## Background'),
       overview: profile.includes('- Vendor lead on the Atlas rollout.\n- Based in Lisbon.'),
-      location: profile.includes('location: Lisbon'),
+      location: profile.includes('location: places/PT/Lisbon'),
       updated: profile.includes('updated: 2026-01-27'),
       background: profile.includes('Met through the Atlas vendor search.'),
     },

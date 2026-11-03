@@ -48,6 +48,10 @@ the file's spacing after the frontmatter. A field emptied by an edit is left out
 never written as `[]`. An organization keeps one website in `site`, several in
 `sites`, never both.
 
+Location is a saved place, chosen in the form's place picker and shown as it reads,
+linked to its page in Places; typed text is refused. The rules live in the
+[places README](../../../../lib/places/docs/README.md#where-people-and-organizations-are).
+
 New profiles come from the same code as `person:new` and `org:new`
 (`commands/all/person/lib/create.ts`, `commands/all/org/lib/`). A person goes under
 `people/<year>/<first two letters>/Name.md` with the command's fields and headings.

@@ -1,0 +1,46 @@
+.sky-location-option {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+.sky-location-option > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.sky-location-option small {
+  flex: none;
+  color: var(--sky-dim);
+  font-size: 12px;
+}
+.sky-location-action {
+  color: var(--sky-accent);
+}
+.sky-location-note {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  margin: 8px 0 0;
+  color: var(--sky-text-2);
+  font-size: 14px;
+  line-height: 1.45;
+}
+.sky-location-add {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 10px;
+  padding: 14px 16px;
+  border: 1px solid var(--sky-border-soft);
+  border-radius: 12px;
+}
+.sky-location-add-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.sky-location-add small {
+  color: var(--sky-dim);
+  font-size: 13px;
+}

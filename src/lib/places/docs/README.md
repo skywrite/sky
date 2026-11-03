@@ -1,6 +1,6 @@
 ---
 created: 2026-09-08
-updated: 2026-10-24
+updated: 2026-11-03
 ---
 
 # Places
@@ -155,6 +155,30 @@ geographic `.md` files can be completed beside their child directories.
 
 Descendant-place GraphQL query filters remain future work.
 
+## Where people and organizations are
+
+A person's or organization's `location` is a saved place's reference, never text.
+`describe.ts` gives the words people see: the place's name, the places containing
+it, then the country as people write it — `Burlington, VT, USA`, `Paris, France`.
+US, Canadian and Australian states show their codes after a city; other regions
+show their names. A reference with no record reads from its path, so a broken link
+still says where it meant.
+
+The People form's Location picker lists saved geography and every recognized
+country (`locations.ts`). A city that is not saved is found on Google Maps and saved
+with the state and country containing it, reusing every record that exists; only
+the chosen place keeps Google's coordinates. Without Google Maps, a city is typed
+by hand inside a country or state. The People save refuses text that names no
+saved place; text from before places stays until someone replaces it, and the
+picker offers the saved place it names. A LinkedIn import's location text becomes
+the saved place it names when exactly one does. In the explorer, a person's or
+organization's `location` uses the same picker and is written as one value; the
+`location` and `where` of other documents still take any place or text.
+
+AI profile updates fill an empty location only with a saved place the text names
+(`notebookLocations.ts`); anything else is skipped with the reason. Google Maps is
+never asked from a conversation, so a model's guess never becomes a place.
+
 ## Web management and maps
 
 `/places` shares the People & Orgs settings sidebar. The HTTP owner is
@@ -200,6 +224,12 @@ Manual creation, geographic records, notes, and list browsing work without eithe
 key. Tests use temporary notebooks and scripted Google responses, never live keys.
 
 ## Verification
+
+`../describe_test.ts` and `../locations_test.ts` cover descriptions, matching written
+locations, and saving a found city inside its state without duplicating records.
+`service/handler/http-people-location-e2e_test.ts` drives the Location picker:
+Google Maps, text from before places, a city added by hand, and the place link.
+`http-wysiwyg-location-e2e_test.ts` does the same for a profile in the explorer.
 
 `../places_test.ts` covers geographic records, moves, aliases, duplicate names,
 reference conflicts and repeatable repair. The Links route tests cover the

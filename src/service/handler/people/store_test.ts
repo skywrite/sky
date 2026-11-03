@@ -765,3 +765,100 @@ test('Two organizations never share a name, alternate names and punctuation incl
     await f.close()
   }
 })
+
+test('A location is saved as a place and reads as one; text that names no place is refused', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'sky-people-places-'))
+  try {
+    const peopleDir = path.join(root, 'people')
+    const orgsDir = path.join(root, 'orgs')
+    const placesDir = path.join(root, 'places')
+    await Promise.all([peopleDir, orgsDir, placesDir].map((dir) => mkdir(dir)))
+    const store = await MarkdownStore.build({ peopleDirs: [peopleDir], orgDirs: [orgsDir], placesDir, timeDirs: [] })
+    const seed = async (file: string, raw: string) => {
+      const target = path.join(root, file)
+      await mkdir(path.dirname(target), { recursive: true })
+      await writeFile(target, raw)
+      store.set(target, raw)
+    }
+    await seed('places/locations/US.md', '---\nname: United States\nkind: country\nref: places/US\n---\n')
+    await seed(
+      'places/locations/US/VT.md',
+      '---\nname: Vermont\nkind: region\nref: places/US/VT\nparent: places/US\nlocation:\n  country: US\n  region: VT\n---\n',
+    )
+    await seed(
+      'places/locations/US/VT/Burlington.md',
+      '---\nname: Burlington\nkind: city\nref: places/US/VT/Burlington\nparent: places/US/VT\n---\n',
+    )
+    await seed('people/2020/sa/Sam-Rivera.md', '---\nname: Sam Rivera\nlocation: Burlington VT\n---\n\n# Sam Rivera\n')
+    const profiles = createPeopleStore(store, root, [peopleDir, orgsDir, placesDir], {
+      peopleDir,
+      orgsDir,
+      stateDir: path.join(root, '.state'),
+      now: () => new ZonedDateTime('2026-02-12 09:34', 'America/Chicago'),
+    })
+    const read = (id: string) => readFile(path.join(root, id), 'utf8')
+    const refused = async (location: string, profile = blankProfile('person')) => {
+      try {
+        await profiles.save({ ...profile, name: profile.name || 'Riley Voss', location })
+        return 'saved'
+      } catch (error) {
+        return (error as Error).message
+      }
+    }
+
+    const jane = await profiles.save({
+      ...blankProfile('person'),
+      name: 'Jane Doe',
+      location: 'places/us/vt/burlington',
+    })
+    const alex = await profiles.save({ ...blankProfile('person'), name: 'Alex Kim', location: 'places/SE' })
+    assert({
+      given: 'a new person in a saved city, and one in a country with no record yet',
+      should: 'save each place, creating the country once, and read them as places that link to their pages',
+      actual: [
+        (await read(jane.id)).includes('\nlocation: places/US/VT/Burlington\n'),
+        [jane.locationLabel, jane.locationRef],
+        (await read(alex.id)).includes('\nlocation: places/SE\n'),
+        [alex.locationLabel, alex.locationRef],
+        (await read('places/locations/SE.md')).includes('name: Sweden'),
+      ],
+      expected: [true, ['Burlington, VT, USA', 'places/US/VT/Burlington'], true, ['Sweden', 'places/SE'], true],
+    })
+
+    const sam = await profiles.detail('person', 'people/2020/sa/Sam-Rivera.md')
+    const edited = await profiles.save({ ...sam, title: 'Engineer' })
+    assert({
+      given: 'a profile whose location is text from before places, edited elsewhere',
+      should: 'keep that text as written and read it unlinked',
+      actual: [
+        (await read(edited.id)).includes('\nlocation: Burlington VT\n'),
+        [edited.locationLabel, edited.locationRef],
+      ],
+      expected: [true, ['Burlington VT', '']],
+    })
+
+    assert({
+      given: 'typed text, a link to a place with no record, and new text replacing old text',
+      should: 'refuse each, saying what to do, and write no new person',
+      actual: [
+        await refused('Winooski, VT'),
+        await refused('places/US/VT/Winooski'),
+        await refused('Burlington, Vermont', edited),
+        (await readFile(path.join(root, edited.id), 'utf8')).includes('\nlocation: Burlington VT\n'),
+        store.people
+          .getAll()
+          .toArray()
+          .some(({ path: file }) => file.includes('Riley')),
+      ],
+      expected: [
+        '“Winooski, VT” is not a saved place. Choose it from the Location list, or add it there as a new place.',
+        '“places/US/VT/Winooski” is not a saved place. Choose it from the Location list, or add it there as a new place.',
+        '“Burlington, Vermont” is not a saved place. Choose it from the Location list, or add it there as a new place.',
+        true,
+        false,
+      ],
+    })
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})

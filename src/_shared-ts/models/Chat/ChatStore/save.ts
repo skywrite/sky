@@ -31,6 +31,7 @@ import {
 } from '#lib/notebook/enrich/documentRel.ts'
 import { partyNames } from '#lib/notebook/enrich/parties.ts'
 import { summarizeTranscript } from '#lib/notebook/enrich/summarize.ts'
+import { notebookLocations } from '#lib/places/notebookLocations.ts'
 import { serviceDocumentIO } from '#lib/service/documents.ts'
 import { AI_ERROR_LOG_PATH, logAIError } from '#shared/ai/errorLog.ts'
 import { exists, readTextFile, writeTextFile } from '#shared/fs/mod.ts'
@@ -41,6 +42,7 @@ import { loadMemories, type MemoryEntry } from '#shared/models/Memory/mod.ts'
 import { applyMemoryOps, type MemoryOp, type MemoryOpOutcome } from '#shared/models/Memory/write.ts'
 import {
   applyPersonFacts,
+  type ApplyPersonFactsInput,
   type DocumentIO,
   type PersonFacts,
   type PersonOpOutcome,
@@ -336,6 +338,8 @@ export interface SaveChatInput {
   people?: boolean
   /** Test seam: the document transport profile writes go through */
   personIO?: DocumentIO
+  /** Test seam: the saved places a profile's location is chosen from; the notebook's by default */
+  resolveLocation?: ApplyPersonFactsInput['resolveLocation']
   /** Where a refused write-back parks its transcript; defaults beside the AI error log */
   recoveryDir?: string
   onProgress?: (event: SaveProgress) => void
@@ -573,6 +577,7 @@ export async function saveChat(input: SaveChatInput): Promise<SaveChatReport> {
       subjects: personDistill.subjects,
       today: endTime.plainDate.ymd,
       io: input.personIO ?? serviceDocumentIO(),
+      resolveLocation: input.resolveLocation ?? notebookLocations(),
     })
   }
   if ((memoryOutcomes && memoryOutcomes.length > 0) || (personOutcomes && personOutcomes.length > 0)) {

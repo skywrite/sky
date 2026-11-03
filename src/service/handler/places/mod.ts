@@ -4,7 +4,7 @@ import { z } from 'zod'
 import { hold } from '../../activity.ts'
 import { SavePlaceSchema } from './schema.ts'
 import type { createPlacesStore } from './store.ts'
-import { PlaceError, type PlacesOptions } from './types.ts'
+import { PlaceError, type LocationSearchResult, type LocationsIndex, type PlacesOptions } from './types.ts'
 
 export function createPlacesRoutes(places: ReturnType<typeof createPlacesStore> | null, options: PlacesOptions): Hono {
   const app = new Hono()
@@ -92,6 +92,51 @@ export function createPlacesRoutes(places: ReturnType<typeof createPlacesStore> 
       .object({ browserKey: key.optional(), serverKey: key.optional(), mapId: key.optional() })
       .parse(await c.req.json())
     return c.json(await maps().configure(input))
+  })
+  // Where a person or organization is located: a saved place's reference, never free text.
+  app.get('/locations', async (c) =>
+    c.json({
+      choices: places!.locations(),
+      searchAvailable: options.maps ? (await options.maps.config()).searchAvailable : false,
+    } satisfies LocationsIndex),
+  )
+  app.post('/locations/match', async (c) => {
+    const { text } = z.object({ text: z.string().trim().min(1).max(300) }).parse(await c.req.json())
+    return c.json(places!.matchText(text))
+  })
+  app.post('/locations/search', async (c) => {
+    const { query } = z.object({ query: z.string().trim().min(2).max(300) }).parse(await c.req.json())
+    const saved = places!.index()
+    return c.json(
+      (await maps().search(query))
+        .filter((result) => result.kind !== 'venue')
+        .map(
+          (result): LocationSearchResult => ({
+            id: result.id,
+            label: result.address || result.name,
+            kind: result.kind,
+            savedRef: saved.find((place) => place.googlePlaceId === result.id)?.ref,
+          }),
+        ),
+    )
+  })
+  app.post('/locations/add', async (c) => {
+    const input = z
+      .union([
+        z.object({
+          googlePlaceId: z
+            .string()
+            .min(1)
+            .max(300)
+            .regex(/^[A-Za-z0-9_-]+$/),
+        }),
+        z.object({ name: z.string().trim().min(1).max(200), inside: z.string().trim().min(1).max(2048) }),
+      ])
+      .parse(await c.req.json())
+    // Ask Google before taking the write lock, so a slow lookup never holds other saves
+    if ('googlePlaceId' in input)
+      return c.json(await places!.addLocation({ found: await maps().locate(input.googlePlaceId) }))
+    return c.json(await places!.addLocation(input))
   })
   return app
 }

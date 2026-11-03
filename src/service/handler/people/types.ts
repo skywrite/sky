@@ -36,6 +36,10 @@ export interface ProfileFields {
 export interface ProfileSummary extends ProfileFields {
   /** Notebook-relative filename, including its extension; used by the editor. */
   id: string
+  /** How the location reads: Burlington, VT, USA. Text from before places reads as written. */
+  locationLabel: string
+  /** The saved place the location links to; empty when it names none. */
+  locationRef: string
   /** Public route, independent of the notebook folder hierarchy. */
   slug: string
   score: number

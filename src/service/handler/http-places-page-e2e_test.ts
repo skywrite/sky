@@ -162,6 +162,9 @@ test(
           },
           search: async () => [],
           detail: async () => blankPlace(),
+          locate: async () => {
+            throw new Error('Unused in this test.')
+          },
         },
       },
     })
@@ -456,6 +459,9 @@ test(
         googlePlaceId: id,
         coordinates: { latitude: 48.85837, longitude: 2.294481 },
       }),
+      locate: async () => {
+        throw new Error('Unused in this test.')
+      },
     }
     const app = createTestHttpApp(dirs, {
       markdownStore: store,

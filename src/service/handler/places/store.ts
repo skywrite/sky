@@ -6,6 +6,14 @@ import { withProcessLock } from '#lib/jobs/files.ts'
 import { createDayFile } from '#lib/nbfs/createDayFile.ts'
 import { atomicWrite, hash } from '#lib/outbox/files.ts'
 import { countryPlaces } from '#lib/places/geography.ts'
+import {
+  ensureCityIn,
+  ensureGeography,
+  locationChoices,
+  matchLocation,
+  type FoundGeography,
+  type LocationChoice,
+} from '#lib/places/locations.ts'
 import { placeCreationPath } from '#lib/places/paths.ts'
 import { workstreamIdentityTime } from '#lib/workstreams/identities.ts'
 import type MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
@@ -369,5 +377,43 @@ export function createPlacesStore(store: MarkdownStore, baseDir: string, dirs: s
       return detail(id)
     })
   }
-  return { index, resolveRef, detail, save, addNote, archive }
+  /** Saved geography and every recognized country, described, for a location picker. */
+  function locations(): LocationChoice[] {
+    return locationChoices(store.places).filter((choice) => {
+      const saved = store.places.findByPlacePath(choice.ref)
+      return !saved || allowed(saved.path)
+    })
+  }
+  /** The one saved place or country that written text names: Burlington, VT, USA. */
+  function matchText(text: string): LocationChoice | null {
+    const choice = matchLocation(store.places, text)
+    return choice && locations().some((item) => item.ref === choice.ref) ? choice : null
+  }
+  /**
+   * Save a location: a place found on Google Maps with the country and state containing it, or a
+   * city typed by hand inside a saved place or country. Records that exist are reused, never changed.
+   */
+  async function addLocation(
+    input: { found: FoundGeography } | { name: string; inside: string },
+  ): Promise<LocationChoice> {
+    return withProcessLock(lock, async () => {
+      const date = String(today())
+      let ref: string
+      try {
+        const result =
+          'found' in input
+            ? await ensureGeography(store.places, options.placesDir, input.found, date)
+            : await ensureCityIn(store.places, options.placesDir, input.name, input.inside, date)
+        for (const file of result.created) store.set(file, await readFile(file, 'utf8'))
+        ref = result.ref
+      } catch (error) {
+        if (error instanceof PlaceError) throw error
+        throw new PlaceError((error as Error).message, 409)
+      }
+      const choice = locations().find((item) => item.ref === ref)
+      if (!choice) throw new PlaceError('The place was saved outside your notebook folders.', 403)
+      return choice
+    })
+  }
+  return { index, resolveRef, detail, save, addNote, archive, locations, matchText, addLocation }
 }

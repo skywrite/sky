@@ -12,6 +12,9 @@ import {
   type ProfileFields,
   type ProfileType,
 } from '../../../service/handler/people/types.ts'
+import type { LocationChoice } from '../../../service/handler/places/types.ts'
+import { LocationPicker } from '../places/LocationPicker.tsx'
+import { placesApi } from '../places/placesApi.ts'
 import { peopleApi } from './peopleApi.ts'
 import { PeopleImportProgress } from './peopleImportProgress.tsx'
 
@@ -216,6 +219,13 @@ export function PeopleEditor({
     setNotes((old) => [old, imported.about, `Source: [LinkedIn](${imported.url})`].filter(Boolean).join('\n\n'))
     setNotice(imported.warning || 'The profile is ready to review. Edit anything before saving.')
     setMore(true)
+    // LinkedIn writes a location as text; use the saved place it names, when exactly one does
+    if (imported.location)
+      void placesApi<LocationChoice | null>('/locations/match', { text: imported.location })
+        .then((match) => {
+          if (match) setDraft((old) => (old.location === imported.location ? { ...old, location: match.ref } : old))
+        })
+        .catch(() => {})
   }, [job, index.orgs])
 
   const close = () => {
@@ -451,10 +461,10 @@ export function PeopleEditor({
         </button>
         {more && (
           <>
-            <TextInput
-              label="Location"
+            <LocationPicker
               value={draft.location}
-              onChange={(event) => set('location', event.currentTarget.value)}
+              valueLabel={profile?.location === draft.location ? profile.locationLabel : ''}
+              onChange={(value) => set('location', value)}
             />
             <TagsInput
               label="Also known as"

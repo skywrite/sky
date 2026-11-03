@@ -81,8 +81,8 @@ export type PersonOp =
   | { op: 'note'; section: AppendSection; text: string }
   /** Swap one existing line, quoted verbatim, for a corrected one */
   | { op: 'replace'; section: AppendSection; old: string; text: string }
-  /** Fill an empty frontmatter field */
-  | { op: 'field'; field: FillField; value: string }
+  /** Fill an empty frontmatter field; a location's value is a saved place's reference, and its label how it reads */
+  | { op: 'field'; field: FillField; value: string; label?: string }
   /** Add a URL to sites: (deduped) */
   | { op: 'site'; url: string }
   /** Reorder the name list so this is index 0 — explicit "goes by" evidence only */
@@ -342,6 +342,9 @@ export interface PersonSubjectRef {
   markdown?: string
 }
 
+/** The saved place written text names, and how it reads; or why none can be used. */
+export type LocationResolution = { ref: string; label: string } | { reason: string }
+
 export interface ApplyPersonFactsInput {
   facts: PersonFacts[]
   unlisted: UnlistedPerson[]
@@ -351,6 +354,11 @@ export interface ApplyPersonFactsInput {
   today: string
   /** The document transport — the notebook service in production */
   io: DocumentIO
+  /**
+   * Turns a location the conversation wrote (Burlington, VT, USA) into a saved place. A location is
+   * written only as a saved place's reference; one that names none is skipped, never saved as text.
+   */
+  resolveLocation: (text: string) => Promise<LocationResolution>
 }
 
 /**
@@ -393,7 +401,7 @@ export async function applyPersonFacts(input: ApplyPersonFactsInput): Promise<Pe
       continue
     }
 
-    outcomes.push(...(await applyToPerson(subject, facts.ops, input.today, input.io)))
+    outcomes.push(...(await applyToPerson(subject, facts.ops, input.today, input.io, input.resolveLocation)))
   }
 
   for (const u of input.unlisted.slice(0, MAX_UNLISTED_PER_SAVE)) {
@@ -452,11 +460,39 @@ function truncate(text: string, max = 80): string {
   return line.length > max ? `${line.slice(0, max - 1)}…` : line
 }
 
+/**
+ * Location fills become saved places' references before they apply. One that names no saved
+ * place is skipped with the reason; an occupied location is left to skip as any filled field does.
+ */
+async function placeLocations(
+  ops: PersonOp[],
+  markdown: string,
+  person: string,
+  resolve: ApplyPersonFactsInput['resolveLocation'],
+): Promise<{ ops: PersonOp[]; skipped: PersonOpOutcome[] }> {
+  const occupied = hasValue(PersonDocument.fromMarkdown(markdown).yaml['location'])
+  const placed: PersonOp[] = []
+  const skipped: PersonOpOutcome[] = []
+  for (const op of ops) {
+    if (op.op !== 'field' || op.field !== 'location' || occupied || !op.value.trim()) {
+      placed.push(op)
+      continue
+    }
+    const found = await resolve(op.value.trim()).catch(
+      (err: Error): LocationResolution => ({ reason: `place lookup failed: ${err.message}` }),
+    )
+    if ('ref' in found) placed.push({ ...op, value: found.ref, label: found.label })
+    else skipped.push({ op: op.op, person, summary: opGist(op), outcome: 'skipped', reason: found.reason })
+  }
+  return { ops: placed, skipped }
+}
+
 async function applyToPerson(
   subject: PersonSubjectRef,
   ops: PersonOp[],
   today: string,
   io: DocumentIO,
+  resolveLocation: ApplyPersonFactsInput['resolveLocation'],
 ): Promise<PersonOpOutcome[]> {
   const skippedAll = (reason: string): PersonOpOutcome[] =>
     ops.map((op) => ({ op: op.op, person: subject.name, summary: opGist(op), outcome: 'skipped', reason }))
@@ -465,20 +501,21 @@ async function applyToPerson(
     const snapshot = await io.read(subject.path)
     if (!snapshot) return skippedAll('profile not found')
 
+    const placed = await placeLocations(ops, snapshot.content, subject.name, resolveLocation)
     const baseline = subject.markdown ?? snapshot.content
-    let attempt = applyOpsToMarkdown(snapshot.content, ops, subject.name, today, baseline)
-    if (attempt.applied === 0) return attempt.outcomes
+    let attempt = applyOpsToMarkdown(snapshot.content, placed.ops, subject.name, today, baseline)
+    if (attempt.applied === 0) return [...placed.skipped, ...attempt.outcomes]
 
     let result = await io.save(subject.path, attempt.markdown, snapshot.version)
     if (!result.saved) {
       // Re-apply safe ops, keeping the original baseline so a concurrent
       // Overview edit is skipped. A second conflict yields to the writer.
-      attempt = applyOpsToMarkdown(result.current.content, ops, subject.name, today, baseline)
-      if (attempt.applied === 0) return attempt.outcomes
+      attempt = applyOpsToMarkdown(result.current.content, placed.ops, subject.name, today, baseline)
+      if (attempt.applied === 0) return [...placed.skipped, ...attempt.outcomes]
       result = await io.save(subject.path, attempt.markdown, result.current.version)
       if (!result.saved) return skippedAll('write conflict — the profile is being edited')
     }
-    return attempt.outcomes
+    return [...placed.skipped, ...attempt.outcomes]
   } catch (err) {
     return skippedAll(`service error: ${(err as Error).message}`)
   }
@@ -565,7 +602,7 @@ function applyOp(
       const occupied = op.field === 'org' ? Boolean(doc.org) : hasValue(doc.yaml[op.field])
       if (occupied) return skipped(opGist(op), `${op.field} already set`)
       doc.yaml[op.field] = value
-      return applied(`${op.field}: ${value}`)
+      return applied(`${op.field}: ${op.label ?? value}`)
     }
 
     case 'site': {

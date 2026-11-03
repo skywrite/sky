@@ -153,3 +153,72 @@ test('Google lookup supports existing Places projects and does not reflect crede
     expected: [true, 'city', false, true],
   })
 })
+
+test('Maps locates a city, a county or a country with the places containing it, and refuses a business', async () => {
+  const places: Record<string, object> = {
+    sample_city: {
+      id: 'sample_city',
+      displayName: { text: 'Winooski' },
+      types: ['locality', 'political'],
+      location: { latitude: 44.49, longitude: -73.19 },
+      googleMapsUri: 'https://maps.google.com/?cid=1',
+      addressComponents: [
+        { longText: 'Winooski', shortText: 'Winooski', types: ['locality', 'political'] },
+        { longText: 'Chittenden County', shortText: 'Chittenden County', types: ['administrative_area_level_2'] },
+        { longText: 'Vermont', shortText: 'VT', types: ['administrative_area_level_1', 'political'] },
+        { longText: 'United States', shortText: 'US', types: ['country', 'political'] },
+      ],
+    },
+    sample_county: {
+      id: 'sample_county',
+      displayName: { text: 'Chittenden County' },
+      types: ['administrative_area_level_2', 'political'],
+      addressComponents: [
+        { longText: 'Vermont', shortText: 'VT', types: ['administrative_area_level_1', 'political'] },
+        { longText: 'United States', shortText: 'US', types: ['country', 'political'] },
+      ],
+    },
+    sample_shop: {
+      id: 'sample_shop',
+      displayName: { text: 'Winooski Books' },
+      types: ['book_store', 'store'],
+      addressComponents: [{ longText: 'United States', shortText: 'US', types: ['country'] }],
+    },
+  }
+  const request = (async (url: string | URL | Request) =>
+    Response.json(places[String(url).split('/').at(-1) ?? ''] ?? {})) as typeof fetch
+  const host = createMapsHost({ GOOGLE_MAPS_KEY: 'sample-key' }, new TestSecretsProvider(), request)
+  let refused = ''
+  try {
+    await host.locate('sample_shop')
+  } catch (error) {
+    refused = (error as Error).message
+  }
+  assert({
+    given: 'a city, a county, and a business',
+    should: 'return the city and county with their state and country, and refuse the business',
+    actual: [await host.locate('sample_city'), await host.locate('sample_county'), refused],
+    expected: [
+      {
+        kind: 'city',
+        name: 'Winooski',
+        country: 'US',
+        region: { code: 'VT', name: 'Vermont' },
+        city: 'Winooski',
+        coordinates: { latitude: 44.49, longitude: -73.19 },
+        googlePlaceId: 'sample_city',
+        googleMapsUrl: 'https://maps.google.com/?cid=1',
+      },
+      {
+        kind: 'area',
+        name: 'Chittenden County',
+        country: 'US',
+        region: { code: 'VT', name: 'Vermont' },
+        coordinates: null,
+        googlePlaceId: 'sample_county',
+        googleMapsUrl: '',
+      },
+      'Choose a city, region, or country, not a business or address.',
+    ],
+  })
+})

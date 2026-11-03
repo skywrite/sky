@@ -18,6 +18,7 @@ import { normalizeActionItems, parseActionItemsSection, type TranscriptActionIte
 import { autoRelMessage, mergeRel } from '#lib/notebook/enrich/autoRel.ts'
 import { autoTagMessage } from '#lib/notebook/enrich/autoTag.ts'
 import { distillPersonFactsFromText } from '#lib/notebook/enrich/distillPersonFacts.ts'
+import { notebookLocations } from '#lib/places/notebookLocations.ts'
 import { serviceDocumentIO, toNotebookRelative } from '#lib/service/documents.ts'
 import slugify from '#lib/string/slugify.ts'
 import { userSpeakerLabel } from '#shared/models/Chat/document/mod.ts'
@@ -409,6 +410,7 @@ export default class MeetingNewTask extends Command {
             subjects: distilled.subjects,
             today: String(context.notebookNow.date),
             io: serviceDocumentIO(),
+            resolveLocation: notebookLocations(context.config.DIR_PLACES),
           })
           if (outcomes.length > 0) output.log('')
           for (const o of outcomes) {

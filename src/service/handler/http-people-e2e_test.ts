@@ -24,9 +24,23 @@ test(
   async () => {
     const root = await mkdtemp(path.join(tmpdir(), 'sky-people-browser-'))
     const peopleDir = path.join(root, 'people'),
-      orgsDir = path.join(root, 'orgs')
-    await Promise.all([mkdir(peopleDir), mkdir(orgsDir)])
-    const store = await MarkdownStore.build({ peopleDirs: [peopleDir], orgDirs: [orgsDir] })
+      orgsDir = path.join(root, 'orgs'),
+      placesDir = path.join(root, 'places')
+    await Promise.all([
+      mkdir(peopleDir),
+      mkdir(orgsDir),
+      mkdir(path.join(placesDir, 'locations/US/OR'), { recursive: true }),
+    ])
+    // The imported draft's location names this saved city
+    await writeFile(
+      path.join(placesDir, 'locations/US/OR.md'),
+      '---\nname: Oregon\nkind: region\nref: places/US/OR\nlocation:\n  country: US\n  region: OR\n---\n',
+    )
+    await writeFile(
+      path.join(placesDir, 'locations/US/OR/Portland.md'),
+      '---\nname: Portland\nkind: city\nref: places/US/OR/Portland\nparent: places/US/OR\n---\n',
+    )
+    const store = await MarkdownStore.build({ peopleDirs: [peopleDir], orgDirs: [orgsDir], placesDir })
     const scores = new Store()
     let job: LinkedInImport | null = null
     let polls = 0
@@ -98,9 +112,14 @@ test(
     app.get('/settings/_api/settings', (c) => c.json(settings))
     app.route(
       '/',
-      createTestHttpApp([peopleDir, orgsDir], {
+      createTestHttpApp([peopleDir, orgsDir, placesDir], {
         store: scores,
         markdownStore: store,
+        places: {
+          placesDir,
+          stateDir: path.join(root, '.state'),
+          now: () => new ZonedDateTime('2026-02-12 09:34', 'America/Chicago'),
+        },
         people: {
           peopleDir,
           orgsDir,
@@ -222,10 +241,20 @@ test(
         .getByRole('option', { name: 'Atlas · https://www.linkedin.com/company/atlas-old-example/', exact: true })
         .click()
       await page.getByRole('textbox', { name: 'Role', exact: true }).fill('Head of design')
+      // LinkedIn wrote the location as text; the draft holds the saved place it names
+      const location = page.getByRole('dialog').getByLabel('Location', { exact: true })
+      await page.waitForFunction(
+        (input) => (input as HTMLInputElement).value === 'Portland, OR, USA',
+        await location.elementHandle(),
+      )
       await capture('02-import-review')
       await page.getByRole('dialog').getByRole('button', { name: 'Add person', exact: true }).click()
       await page.getByRole('heading', { name: 'Jane Doe', exact: true }).waitFor()
       const personPath = new URL(page.url()).pathname
+      const savedLocation = [
+        (await readFile(store.people.getAll().paths[0]!, 'utf8')).includes('\nlocation: places/US/OR/Portland\n'),
+        await page.getByRole('link', { name: 'Portland, OR, USA', exact: true }).getAttribute('href'),
+      ]
       await capture('03-person')
       await page.reload()
       await page.getByRole('heading', { name: 'Jane Doe', exact: true }).waitFor()
@@ -337,6 +366,7 @@ test(
           overflow,
           evidence: evidence.text.includes('Unrelated person') || evidence.text.includes('Another person'),
           name: evidence.name,
+          savedLocation,
           errors,
         },
         expected: {
@@ -356,6 +386,7 @@ test(
           overflow: false,
           evidence: false,
           name: 'Jane Doe',
+          savedLocation: [true, '/places/US/OR/Portland'],
           errors: [],
         },
       })

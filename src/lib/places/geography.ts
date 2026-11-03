@@ -15,18 +15,32 @@ export function countryPlace(raw: string): PlaceDocument | undefined {
   const ref = normalizePlaceRef(raw)
   const code = ref?.match(/^places\/([A-Z]{2})$/)?.[1]
   if (!code || EXCLUDED_CODES.has(code)) return undefined
-  const name = countryNames.of(code)
-  if (!name || name === code) return undefined
-  const aliases = [...new Set([code, shortCountryNames.of(code), ...(COUNTRY_ALIASES[code] ?? [])])].filter(
+  const icuName = countryNames.of(code)
+  if (!icuName || icuName === code) return undefined
+  const name = COUNTRY_NAMES[code] ?? icuName
+  const aliases = [...new Set([code, icuName, shortCountryNames.of(code), ...(COUNTRY_ALIASES[code] ?? [])])].filter(
     (alias): alias is string => !!alias && alias !== name,
   )
   return PlaceDocument.createGeographic({ name, aliases, ref: ref!, kind: 'country', location: { country: code } })
 }
 
+/** How a country ends a place's description, `Burlington, VT, USA`; undefined for a code no country has. */
+export function countryEnding(code: string): string | undefined {
+  if (!countryPlace(`places/${code}`)) return undefined
+  return COUNTRY_ENDINGS[code] ?? COUNTRY_NAMES[code] ?? shortCountryNames.of(code)
+}
+
 const COUNTRY_ALIASES: Record<string, string[]> = {
   US: ['USA', 'U.S.', 'U.S.A.', 'United States of America'],
   GB: ['UK', 'U.K.', 'United Kingdom'],
+  AE: ['UAE', 'U.A.E.'],
 }
+
+/** The runtime's ICU data names CN "China mainland"; people write China. */
+const COUNTRY_NAMES: Record<string, string> = { CN: 'China' }
+
+/** Where people end an address with a form other than the country's short name. */
+const COUNTRY_ENDINGS: Record<string, string> = { US: 'USA', AE: 'UAE' }
 
 let countries: PlaceDocument[] | undefined
 

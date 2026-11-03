@@ -7,6 +7,7 @@ import {
   type DocumentIO,
   type DocumentSnapshot,
   joinBodySections,
+  type LocationResolution,
   MAX_OPS_PER_PERSON,
   MAX_PEOPLE_PER_SAVE,
   MAX_UNLISTED_PER_SAVE,
@@ -18,6 +19,15 @@ import {
 const TODAY = '2026-02-01'
 const PATH = 'people/2026/ta/Taylor-Quinn.md'
 const SUBJECT = { name: 'Taylor Quinn', path: PATH }
+
+/** The saved places these tests know: Lisbon and Porto. Any other location names none. */
+const SAVED_PLACES: Record<string, { ref: string; label: string }> = {
+  Lisbon: { ref: 'places/PT/Lisbon', label: 'Lisbon, Portugal' },
+  Porto: { ref: 'places/PT/Porto', label: 'Porto, Portugal' },
+}
+async function resolveLocation(text: string): Promise<LocationResolution> {
+  return SAVED_PLACES[text] ?? { reason: `“${text}” is not a saved place (add it in Places)` }
+}
 
 const PROFILE = [
   '---',
@@ -87,6 +97,7 @@ async function applyOps(ops: PersonOp[], contents = PROFILE) {
     subjects: [SUBJECT],
     today: TODAY,
     io,
+    resolveLocation,
   })
   return { outcomes, after: io.content(PATH), io }
 }
@@ -341,7 +352,7 @@ test('applyPersonFacts - fields fill only when empty; sites dedupe', async () =>
     given: 'the rewritten frontmatter',
     should: 'hold the filled location and both sites',
     actual: { location: doc.location, sites: Array.from(doc.sites) },
-    expected: { location: 'Lisbon', sites: ['https://example.com/taylor', 'https://example.org/tq'] },
+    expected: { location: 'places/PT/Lisbon', sites: ['https://example.com/taylor', 'https://example.org/tq'] },
   })
 })
 
@@ -389,6 +400,49 @@ test('applyPersonFacts - nothing is deleted unquoted', async () => {
       family: after.includes('## Family'),
     },
     expected: { kept: true, missing: [], family: true },
+  })
+})
+
+test('applyPersonFacts - a location is saved as the place it names, never as text', async () => {
+  const saved = await applyOps([{ op: 'field', field: 'location', value: 'Lisbon' }])
+  const unsaved = await applyOps([{ op: 'field', field: 'location', value: 'Harbor City, CA, USA' }])
+  assert({
+    given: 'a location naming a saved place, and one naming no saved place',
+    should: 'write the saved place and show how it reads; skip the other with why, writing nothing',
+    actual: {
+      saved: saved.outcomes.map((o) => o.summary),
+      written: PersonDocument.fromMarkdown(saved.after).location,
+      unsaved: unsaved.outcomes.map((o) => ({ outcome: o.outcome, reason: o.reason })),
+      unsavedSaves: unsaved.io.saves,
+    },
+    expected: {
+      saved: ['location: Lisbon, Portugal'],
+      written: 'places/PT/Lisbon',
+      unsaved: [{ outcome: 'skipped', reason: '“Harbor City, CA, USA” is not a saved place (add it in Places)' }],
+      unsavedSaves: 0,
+    },
+  })
+})
+
+test('applyPersonFacts - a filled location skips without looking the new one up', async () => {
+  const lookups: string[] = []
+  const io = memoryIO({ [PATH]: PROFILE.replace('location:', 'location: places/PT/Porto') })
+  const outcomes = await applyPersonFacts({
+    facts: [{ name: SUBJECT.name, ops: [{ op: 'field', field: 'location', value: 'Lisbon' }] }],
+    unlisted: [],
+    subjects: [SUBJECT],
+    today: TODAY,
+    io,
+    resolveLocation: async (text) => {
+      lookups.push(text)
+      return resolveLocation(text)
+    },
+  })
+  assert({
+    given: 'a profile whose location is already set',
+    should: 'skip the fill as any filled field skips, without a place lookup',
+    actual: { reasons: outcomes.map((o) => o.reason), lookups },
+    expected: { reasons: ['location already set'], lookups: [] },
   })
 })
 
@@ -446,6 +500,7 @@ test('applyPersonFacts - an overview added while the model was thinking survives
     subjects: [{ ...SUBJECT, markdown: PROFILE }],
     today: TODAY,
     io,
+    resolveLocation,
   })
   assert({
     given: 'discovery saw no overview but another writer added one before the model finished',
@@ -455,7 +510,7 @@ test('applyPersonFacts - an overview added while the model was thinking survives
       reason: outcomes[0].reason,
       currentRole: io.content(PATH).includes('Confirmed role at Example Corp.'),
       staleRole: io.content(PATH).includes('An older picture'),
-      location: io.content(PATH).includes('location: Lisbon'),
+      location: io.content(PATH).includes('location: places/PT/Lisbon'),
     },
     expected: {
       outcomes: ['skipped', 'applied'],
@@ -488,6 +543,7 @@ test('applyPersonFacts - a conflict never replays a stale overview over a newer 
       subjects: [{ ...SUBJECT, markdown: seeded.after }],
       today: TODAY,
       io,
+      resolveLocation,
     })
     assert({
       given: `an overview conflict ${withField ? 'with' : 'without'} an independent field fill`,
@@ -497,7 +553,7 @@ test('applyPersonFacts - a conflict never replays a stale overview over a newer 
         outcomes: outcomes.map((o) => o.outcome),
         currentRole: savedContent.includes('Now leading the Atlas team.'),
         staleRole: savedContent.includes('Working on Widget-V2.'),
-        location: savedContent.includes('location: Lisbon'),
+        location: savedContent.includes('location: places/PT/Lisbon'),
       },
       expected: {
         attempts: withField ? 2 : 1,
@@ -534,6 +590,7 @@ test('applyPersonFacts - a version conflict re-applies against the fresh content
     subjects: [SUBJECT],
     today: TODAY,
     io,
+    resolveLocation,
   })
 
   assert({
@@ -544,7 +601,7 @@ test('applyPersonFacts - a version conflict re-applies against the fresh content
       conflicts,
       saves: io.saves,
       keptHandEdit: savedContent.includes('Hand-added while saving.'),
-      keptOp: savedContent.includes('location: Lisbon'),
+      keptOp: savedContent.includes('location: places/PT/Lisbon'),
     },
     expected: { outcomes: ['applied'], conflicts: 1, saves: 1, keptHandEdit: true, keptOp: true },
   })
@@ -558,6 +615,7 @@ test('applyPersonFacts - unknown and unlisted people become person:new hints, ne
     subjects: [SUBJECT],
     today: TODAY,
     io,
+    resolveLocation,
   })
   assert({
     given: 'a fact for a name outside the subjects and an unlisted person',
@@ -581,6 +639,7 @@ test('applyPersonFacts - an unlisted name existing profiles answer to reports th
     subjects: [SUBJECT],
     today: TODAY,
     io,
+    resolveLocation,
   })
 
   assert({
@@ -603,7 +662,14 @@ test('applyPersonFacts - unlisted lines past the cap fold into one', async () =>
     name: `Person ${i}`,
     gist: `gist ${i}`,
   }))
-  const outcomes = await applyPersonFacts({ facts: [], unlisted, subjects: [SUBJECT], today: TODAY, io })
+  const outcomes = await applyPersonFacts({
+    facts: [],
+    unlisted,
+    subjects: [SUBJECT],
+    today: TODAY,
+    io,
+    resolveLocation,
+  })
 
   assert({
     given: `${MAX_UNLISTED_PER_SAVE + 2} unlisted people`,
@@ -641,7 +707,14 @@ test('applyPersonFacts - the people and per-person op caps skip the excess visib
   }))
   facts[0] = { name: subjects[0].name, ops: overOps }
 
-  const outcomes = await applyPersonFacts({ facts, unlisted: [], subjects, today: TODAY, io: memoryIO(files) })
+  const outcomes = await applyPersonFacts({
+    facts,
+    unlisted: [],
+    subjects,
+    today: TODAY,
+    io: memoryIO(files),
+    resolveLocation,
+  })
   assert({
     given: 'one person over the op cap and one person over the people cap',
     should: 'apply up to each cap and skip the rest with the cap named',

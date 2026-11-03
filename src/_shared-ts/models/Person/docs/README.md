@@ -1,6 +1,6 @@
 ---
 created: 2026-08-29
-updated: 2026-10-20
+updated: 2026-11-03
 ---
 
 # Person profiles — what the AI may write, and how it must read
@@ -58,7 +58,7 @@ Frontmatter, then `# Name`, then `##` sections.
 | `## Info` | hand + AI | Same. |
 | `## Notes` | hand | Nothing. The People page files notes here under a `### YYYY-MM-DD` heading per day, newest day first. |
 | Lead prose under `# Name`, `###` sub-sections, dated or one-off sections | hand | Nothing. Passes through verbatim. |
-| `location`, `title`, `org` | hand + AI | Fill when empty. Never overwrite. |
+| `location`, `title`, `org` | hand + AI | Fill when empty. Never overwrite. A location is written only as a saved place's reference; one that names no saved place is skipped. |
 | `sites:` | hand + AI | Add a URL, deduped. |
 | `email:`, `phone:` | hand | Nothing. A value, a list, or `personal:` and `business:` lines holding either. Captures match a sender's address or number against them, so a message from that number is filed under this record's name on every network (`lib/beeper/senders.ts`). |
 | `name:` list | hand + AI | Move a name to index 0 on explicit "goes by" evidence. Drop nothing. |

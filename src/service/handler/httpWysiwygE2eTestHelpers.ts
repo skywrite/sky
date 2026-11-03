@@ -23,6 +23,7 @@ import type { ChatRoutesOptions } from './chat/mod.ts'
 import { createTestHttpApp } from './httpTestHelpers.ts'
 import type { ImportRoutesOptions } from './import/mod.ts'
 import { readText, readTranscript, readUnknown, sourceOf } from './import/readback.ts'
+import type { MapsHost } from './places/types.ts'
 import { pollNotebookFixture } from './pollNotebookFixture.ts'
 import { createWebSocketHandler } from './websocket.ts'
 import type { WeekCommands } from './week/mod.ts'
@@ -177,6 +178,8 @@ export async function runWysiwygE2e(
     store?: boolean
     /** Serve the People page's routes over that store, so a profile can be saved */
     people?: boolean
+    /** Serve the places routes over that store, with scripted Google Maps answers */
+    places?: { maps?: MapsHost }
     /** Serve the day page too: its routes, and the import routes a drop on it needs */
     day?: boolean
     /** Watch this isolated notebook for changes made on disk; it is polled either way, 'poll' kept for the tests that name it. */
@@ -246,6 +249,16 @@ export async function runWysiwygE2e(
                 orgsDir: path.join(notebookBaseDir, 'orgs'),
                 stateDir: path.join(userDataDir, 'state'),
                 now: options.now ? () => options.now! : undefined,
+              },
+            }
+          : {}),
+        ...(options.places
+          ? {
+              places: {
+                placesDir: path.join(notebookBaseDir, 'places'),
+                stateDir: path.join(userDataDir, 'state'),
+                now: options.now ? () => options.now! : undefined,
+                maps: options.places.maps,
               },
             }
           : {}),

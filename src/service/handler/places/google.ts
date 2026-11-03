@@ -4,6 +4,7 @@ import {
   selectGooglePlaceType,
   type GoogleAddressComponent,
 } from '#commands/all/places/_google.ts'
+import type { FoundGeography } from '#lib/places/locations.ts'
 import { createSecret } from '#lib/secrets/marshal.ts'
 import type { SecretsProvider } from '#lib/secrets/SecretsProvider.ts'
 import {
@@ -42,7 +43,29 @@ const geography = (types: string[]): PlaceKind => {
   if (types.includes('administrative_area_level_1')) return 'region'
   if (types.includes('locality') || types.includes('postal_town')) return 'city'
   if (types.includes('neighborhood') || types.some((type) => type.startsWith('sublocality'))) return 'neighborhood'
+  // A county, or a metro area such as a city's greater area
+  if (types.includes('administrative_area_level_2') || types.includes('colloquial_area')) return 'area'
   return 'venue'
+}
+/** A geographic place with the country, state and city containing it, as Google names them. */
+function found(place: GooglePlace): FoundGeography {
+  const kind = geography([place.primaryType, ...(place.types ?? [])].filter((type): type is string => Boolean(type)))
+  if (kind === 'venue') throw new PlaceError('Choose a city, region, or country, not a business or address.', 422)
+  const part = (type: string) => place.addressComponents?.find((item) => item.types.includes(type))
+  const country = part('country')?.shortText ?? ''
+  if (!/^[A-Z]{2}$/.test(country)) throw new PlaceError('Google did not say which country this place is in.', 422)
+  const region = part('administrative_area_level_1')
+  const city = part('locality') ?? part('postal_town')
+  return {
+    kind,
+    name: place.displayName?.text ?? '',
+    country,
+    ...(region ? { region: { code: region.shortText, name: region.longText } } : {}),
+    ...(city ? { city: city.longText } : {}),
+    coordinates: place.location ?? null,
+    googlePlaceId: place.id,
+    googleMapsUrl: place.googleMapsUri ?? '',
+  }
 }
 function result(place: GooglePlace): GooglePlaceResult {
   const types = [place.primaryType, ...(place.types ?? [])].filter((type): type is string => Boolean(type))
@@ -220,6 +243,11 @@ export function createMapsHost(
       const place = (await lookup(id))[0]
       if (!place?.id) throw new PlaceError('That Google place could not be found. Search again.', 404)
       return draft(place)
+    },
+    locate: async (id) => {
+      const place = (await lookup(id))[0]
+      if (!place?.id) throw new PlaceError('That Google place could not be found. Search again.', 404)
+      return found(place)
     },
   }
 }

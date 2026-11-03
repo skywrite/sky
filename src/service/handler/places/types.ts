@@ -1,8 +1,9 @@
+import type { FoundGeography, LocationChoice } from '#lib/places/locations.ts'
 import type { PlaceKind } from '#shared/models/Place/document/types.ts'
 import type { ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
 import type { Backlink } from '../vocabulary/mod.ts'
 
-export type { PlaceKind }
+export type { FoundGeography, LocationChoice, PlaceKind }
 
 export const placeKinds = {
   venue: 'Venue or address',
@@ -108,6 +109,20 @@ export interface MapsHost {
   configure(input: { browserKey?: string; serverKey?: string; mapId?: string }): Promise<MapsConfig>
   search(query: string): Promise<GooglePlaceResult[]>
   detail(id: string): Promise<PlaceFields>
+  /** A city, region or country with the places containing it; a business or address is refused. */
+  locate(id: string): Promise<FoundGeography>
+}
+/** A Google Maps result for the location picker; one already saved carries its reference. */
+export interface LocationSearchResult {
+  id: string
+  label: string
+  kind: PlaceKind
+  savedRef?: string
+}
+export interface LocationsIndex {
+  choices: LocationChoice[]
+  /** Whether Google Maps can find places that are not saved yet */
+  searchAvailable: boolean
 }
 export interface PlacesOptions {
   placesDir: string
