@@ -39,6 +39,7 @@ import type { ConversationMessage } from '../type.d.ts'
 import { RepetitionGuard, guardTools } from './repetitionGuard.ts'
 import { requestBudgetMiddleware, type RequestNotebook } from './requestBudget.ts'
 import { stoppedReply, stoppedToolMessages, untilAborted } from './stop.ts'
+import { streamRetryMiddleware } from './streamRetry.ts'
 import { observeTools, ToolProgress, type ToolExecutionEvent } from './toolExecution.ts'
 import { apiErrorMessage } from './turnErrorMessage.ts'
 import { WorkingContext } from './workingContext.ts'
@@ -526,12 +527,15 @@ export default class ChatEngine {
         ? this.model.model
         : wrapLanguageModel({
             model: this.model.model,
-            middleware: requestBudgetMiddleware({
-              contextWindow: this.model.contextWindow,
-              notebook: opts.notebook,
-              workingContext: this.workingContext,
-              onAdjustment: (adjustment) => emit({ type: 'context-adjusted', adjustment }),
-            }),
+            middleware: [
+              streamRetryMiddleware({ maxRetries: this.model.maxRetries }),
+              requestBudgetMiddleware({
+                contextWindow: this.model.contextWindow,
+                notebook: opts.notebook,
+                workingContext: this.workingContext,
+                onAdjustment: (adjustment) => emit({ type: 'context-adjusted', adjustment }),
+              }),
+            ],
           })
     const invoke: ModelInvoker =
       this.invokeModel ??

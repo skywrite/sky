@@ -687,6 +687,14 @@
   text-decoration: none;
 }
 
+.sky-turn-error {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  overflow-wrap: anywhere;
+}
+
 /* Query disclosures stay with their user message; progress follows the current reply. */
 .sky-chat-activity {
   min-width: 0;

@@ -1,6 +1,6 @@
 ---
 created: 2026-09-01
-updated: 2026-10-12
+updated: 2026-11-03
 ---
 
 # Chat model — the pieces under every chat host
@@ -200,6 +200,13 @@ to settle and retains completed call/result pairs before dropping unfinished
 calls. Retrying can therefore inspect completed effects. Host polling and
 reloads read the same failure as the live stream; a failed reply is not a
 successful branch point.
+
+Provider-marked transient stream failures retry the current model request up to twice by default, with backoff.
+`ChatEngine/streamRetry.ts` holds only its metadata and reasoning until text or tool activity starts.
+Failed attempts discard that prefix; completed earlier steps and their tool results remain intact.
+Once text, tool arguments, or provider tool activity has appeared, the failure surfaces without replaying the step.
+The SDK's broader `streamRetries` option can replay partial text and provider tools, so it is not enabled here.
+Stop cancels the backoff, and an explicit model `maxRetries` also bounds these retries.
 
 ## When the engine ends a turn
 

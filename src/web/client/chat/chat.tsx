@@ -2999,12 +2999,12 @@ export function TurnView({
         {turn.sources && turn.sources.length > 0 && !streaming && <SourcesFold sources={turn.sources} />}
         {runs && runs.length > 0 && <RunList runs={runs} folded={!streaming} />}
         {turn.error && (
-          <div role="alert" className="sky-fate">
-            turn failed — {turn.error}
+          <div role="alert" className="sky-fate sky-turn-error">
+            <span>turn failed — {turn.error}</span>
             {onRetry && (
-              <button type="button" className="sky-act" onClick={onRetry}>
+              <Button variant="primary-quiet" size="compact-sm" onClick={onRetry}>
                 Retry reply
-              </button>
+              </Button>
             )}
           </div>
         )}
