@@ -12,6 +12,8 @@ const WAKE_GAP_HOURS = 3
 const MORNING_FROM_HOUR = 3
 const MORNING_TO_HOUR = 12
 
+const isMorning = (hour: number) => hour >= MORNING_FROM_HOUR && hour < MORNING_TO_HOUR
+
 /**
  * Find where a day's activity ends at a wake gap, or null when it doesn't.
  *
@@ -21,21 +23,31 @@ const MORNING_TO_HOUR = 12
  * Returns the last instant before that gap; everything after belongs to the
  * next day.
  *
+ * `from` is the day's start. Given, it stands in for the signal before the
+ * first instant, so a quiet day whose only signals are the next morning's
+ * ends where it began instead of claiming them.
+ *
  * The instants should be presence signals (typed prompts, authored commits),
  * not machine activity — an autonomous run churning overnight is not the
  * user's day continuing.
  */
-export default function findWakeCutoff(instants: Instant[], day: PlainDate, timezone: string): Instant | null {
+export default function findWakeCutoff(
+  instants: Instant[],
+  day: PlainDate,
+  timezone: string,
+  from?: Instant,
+): Instant | null {
   const gapMs = WAKE_GAP_HOURS * 3_600_000
 
-  for (let i = 1; i < instants.length; i++) {
-    const before = instants[i - 1]
+  for (let i = 0; i < instants.length; i++) {
+    const before = i > 0 ? instants[i - 1] : from
+    if (!before) continue
     const after = instants[i]
     if (after.epochMilliseconds - before.epochMilliseconds < gapMs) continue
 
     const wall = wallClockParts(after, timezone)
     if (wall.ymd <= day.ymd) continue
-    if (wall.hour >= MORNING_FROM_HOUR && wall.hour < MORNING_TO_HOUR) return before
+    if (isMorning(wall.hour)) return before
   }
 
   return null
@@ -47,6 +59,10 @@ export default function findWakeCutoff(instants: Instant[], day: PlainDate, time
  * before the ceremony, the LAST wake gap resuming on this day's own morning
  * marks the true start — everything before the gap was the previous day's
  * late night. Null when the ceremony start stands (no qualifying gap).
+ *
+ * The scan's first instant follows at least the caller's lookback of silence,
+ * so it is a resumption too: a lone early-morning signal before the ceremony
+ * still opens the day.
  */
 export function findWakeStart(
   instants: Instant[],
@@ -57,15 +73,14 @@ export function findWakeStart(
   const gapMs = WAKE_GAP_HOURS * 3_600_000
   let resumption: Instant | null = null
 
-  for (let i = 1; i < instants.length; i++) {
-    const before = instants[i - 1]
+  for (let i = 0; i < instants.length; i++) {
     const after = instants[i]
-    if (after.epochMilliseconds - before.epochMilliseconds < gapMs) continue
+    if (i > 0 && after.epochMilliseconds - instants[i - 1].epochMilliseconds < gapMs) continue
     if (Instant.compare(after, ceremonyStart) >= 0) break
 
     const wall = wallClockParts(after, timezone)
     if (wall.ymd !== day.ymd) continue
-    if (wall.hour >= MORNING_FROM_HOUR && wall.hour < MORNING_TO_HOUR) resumption = after
+    if (isMorning(wall.hour)) resumption = after
   }
 
   return resumption

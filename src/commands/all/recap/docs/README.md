@@ -1,6 +1,6 @@
 ---
 created: 2026-09-01
-updated: 2026-10-25
+updated: 2026-10-29
 ---
 
 # Recap commands
@@ -53,8 +53,10 @@ recap doc under `actions/recaps/`. Its rules:
 - **The day runs wake to wake.** The fetch starts twelve hours before the
   day's `started:` and ends at the next day's. A silence of three hours
   or more that resumes on a later calendar morning is read as sleep, and
-  the activity is clamped to that span. `lib/dayWindow.ts` and
-  `lib/wakeGap.ts` hold both rules.
+  the activity is clamped to that span. The silence before a scan's first
+  signal counts as a gap too, so a lone early commit before a late
+  `day:start` opens that day, and a quiet day never takes the next
+  morning's. `lib/dayWindow.ts` and `lib/wakeGap.ts` hold both rules.
 - **Commits are found by when they were written, never by when they
   were pushed.** Two sources, folded by sha in `foldCommits`:
 

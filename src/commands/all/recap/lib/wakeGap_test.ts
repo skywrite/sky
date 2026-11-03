@@ -105,3 +105,60 @@ test('findWakeStart returns null without a qualifying pre-ceremony gap', () => {
     actual: start,
   })
 })
+
+test('findWakeStart opens the day at a lone morning signal before the ceremony', () => {
+  const day9 = PlainDate.from('2026-02-09')
+  const start = findWakeStart(
+    // Nothing in the lookback, then a 07:02 session before the 09:04 day:start
+    instants('2026-02-09T07:02:00Z', '2026-02-09T07:30:00Z'),
+    day9,
+    'UTC',
+    Instant.from('2026-02-09T09:04:00Z'),
+  )
+
+  assert({
+    given: "the scan's first signal on the day's own morning, before the ceremony",
+    should: 'open the day there',
+    expected: '2026-02-09T07:02:00.000Z',
+    actual: start?.toString({ smallestUnit: 'millisecond' }),
+  })
+})
+
+test('findWakeStart leaves a lone late-night signal to the previous day', () => {
+  const day9 = PlainDate.from('2026-02-09')
+  const start = findWakeStart(instants('2026-02-09T01:00:00Z'), day9, 'UTC', Instant.from('2026-02-09T09:04:00Z'))
+
+  assert({
+    given: 'one 01:00 signal before the ceremony',
+    should: 'keep the ceremony start',
+    expected: null,
+    actual: start,
+  })
+})
+
+test('findWakeCutoff ends a quiet day where it began when its only signals are the next morning', () => {
+  const cutoff = findWakeCutoff(instants('2026-02-09T07:02:00Z'), DAY, 'UTC', Instant.from('2026-02-08T09:04:00Z'))
+
+  assert({
+    given: "the day's start and one signal the next morning",
+    should: 'cut at the start, claiming nothing',
+    expected: '2026-02-08T09:04:00.000Z',
+    actual: cutoff?.toString({ smallestUnit: 'millisecond' }),
+  })
+})
+
+test("findWakeCutoff with the day's start still ends at the last signal before the wake gap", () => {
+  const cutoff = findWakeCutoff(
+    instants('2026-02-08T10:00:00Z', '2026-02-09T07:02:00Z'),
+    DAY,
+    'UTC',
+    Instant.from('2026-02-08T09:04:00Z'),
+  )
+
+  assert({
+    given: "a signal within three hours of the start, then the next morning's",
+    should: "cut at the day's own last signal",
+    expected: '2026-02-08T10:00:00.000Z',
+    actual: cutoff?.toString({ smallestUnit: 'millisecond' }),
+  })
+})

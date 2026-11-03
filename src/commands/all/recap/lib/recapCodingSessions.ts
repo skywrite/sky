@@ -100,6 +100,7 @@ export async function recapCodingSessions(
     activitySignal.filter((instant) => Instant.compare(instant, start) >= 0),
     day,
     window.timezone,
+    start,
   )
   const end = cutoff ? cutoff.add({ minutes: 1 }) : window.end
 

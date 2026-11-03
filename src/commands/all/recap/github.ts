@@ -89,6 +89,7 @@ export default class RecapGithubTask extends Command {
       instants.filter((instant) => Instant.compare(instant, start) >= 0),
       day,
       window.timezone,
+      start,
     )
     repos = clampActivity(repos, start, cutoff ?? window.end)
 
