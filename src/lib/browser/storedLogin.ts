@@ -1,12 +1,14 @@
 import { setTimeout as delay } from 'node:timers/promises'
 import type { BrowserContext, ElementHandle, Page } from 'playwright'
 import { secureOrigin, type LoginValues } from '#lib/credentials/login.ts'
+import type { PageProtocol } from './existing/connection.ts'
 import { guardBrowserRequests } from './signIn/network.ts'
 import { LoginRedactor } from './signIn/redaction.ts'
+import { prepareStoredLoginPage } from './storedLoginPage.ts'
 
 // A sign-in with a login the person stored for one integration — the batch
 // counterpart of the private worker's `sign_in`, for a feature that owns a
-// persistent profile of its own (see persistentContext.ts) and runs with no
+// task tab in the selected browser or a persistent profile and runs with no
 // one watching. The grant is the stored login itself: a `login` entry the
 // person saved under the integration's own category in Sky's keychain, read
 // through the same background path as every API token Sky holds. Nothing here
@@ -51,6 +53,12 @@ export interface StoredLoginOptions {
   verificationWaitMs?: number
 }
 
+/** A tab owned by this integration, optionally attached through the person's browser extension. */
+export interface StoredLoginTarget {
+  page: Page
+  protocol?(page: Page): Promise<PageProtocol>
+}
+
 // A framework's controls appear after the first paint; look again for a while.
 const HYDRATION_TRIES = 25
 const HYDRATION_PAUSE_MS = 200
@@ -68,7 +76,7 @@ interface Guard {
 // the redactor accumulate, they are never installed twice.
 const guards = new WeakMap<Page, Guard>()
 
-async function guardFor(page: Page): Promise<Guard> {
+async function guardFor(page: Page, protocol?: StoredLoginTarget['protocol']): Promise<Guard> {
   let guard = guards.get(page)
   if (guard) return guard
   guard = { redactor: new LoginRedactor() }
@@ -76,6 +84,7 @@ async function guardFor(page: Page): Promise<Guard> {
   await guardBrowserRequests(page, {
     origin: () => guards.get(page)?.origin,
     containsLogin: (text) => guards.get(page)?.redactor.contains(text) ?? false,
+    protocol,
   })
   return guard
 }
@@ -158,13 +167,13 @@ async function captureControls(
 }
 
 /**
- * Sign in on a page of the integration's own persistent profile with a login
+ * Sign in on the integration's owned page with a login
  * the person stored for it. Returns how it went; the caller decides what to
  * say and what to do next. A session is `signed_in` only when the caller's own
  * check says so.
  */
 export async function signInWithStoredLogin(
-  context: BrowserContext,
+  target: BrowserContext | StoredLoginTarget,
   form: StoredLoginForm,
   login: LoginValues,
   options: StoredLoginOptions,
@@ -176,8 +185,9 @@ export async function signInWithStoredLogin(
   const loginPath = normalPath(new URL(form.loginUrl).pathname)
   const values = login
 
-  const page = context.pages()[0] ?? (await context.newPage())
-  const guard = await guardFor(page)
+  const page = 'page' in target ? target.page : (target.pages()[0] ?? (await target.newPage()))
+  await prepareStoredLoginPage(page)
+  const guard = await guardFor(page, 'page' in target ? target.protocol : undefined)
   guard.redactor.remember(values)
   const say = (line: string) => options.log?.(guard.redactor.text(line))
   const outcome = (status: StoredLoginStatus, reason: string): StoredLoginResult => {
@@ -273,6 +283,11 @@ export async function signInWithStoredLogin(
     if (await codeVisible(page)) return outcome('needs_person', 'The site asked for a verification code.')
     if (await refusalVisible(page))
       return outcome('rejected', 'The site turned the login away: the stored email or password is wrong.')
+    if (await failureVisible(page))
+      return outcome(
+        'needs_person',
+        'The site did not accept the sign-in attempt; a person should look at the sign-in page.',
+      )
   }
   return outcome('needs_person', 'The site did not sign in; a person should look at the sign-in page.')
 }
@@ -287,13 +302,18 @@ async function codeVisible(page: Page): Promise<boolean> {
   )
 }
 
+const ERROR_ELEMENTS = '[role="alert"]:visible, [aria-live]:visible, [class*="error" i]:visible'
+// What a site says about the login itself. A generic failure — "try again",
+// "something went wrong", a rate limit — is the site's, not the login's, and
+// reading it as a wrong password dead-ends the person's own sign-in.
+const REFUSAL =
+  /incorrect|invalid (?:e-?mail|username|password|credentials|login)|(?:e-?mail|username|password|credentials|login) (?:is |was |are |were )?(?:wrong|invalid)|does not match|doesn.t match|not recogni[sz]ed|no account/i
+const FAILURE = /try again|something went wrong|too many|temporarily|unavailable|error occurred/i
+
 async function refusalVisible(page: Page): Promise<boolean> {
-  return (
-    (await page
-      .locator('[role="alert"]:visible, [aria-live]:visible, [class*="error" i]:visible')
-      .filter({
-        hasText: /incorrect|invalid|wrong|does not match|doesn.t match|not recogni[sz]ed|no account|try again/i,
-      })
-      .count()) > 0
-  )
+  return (await page.locator(ERROR_ELEMENTS).filter({ hasText: REFUSAL }).count()) > 0
+}
+
+async function failureVisible(page: Page): Promise<boolean> {
+  return (await page.locator(ERROR_ELEMENTS).filter({ hasText: FAILURE }).count()) > 0
 }

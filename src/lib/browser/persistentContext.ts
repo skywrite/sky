@@ -64,9 +64,9 @@ export interface BrowserSession {
     opts?: { waitUntil?: 'load' | 'domcontentloaded' | 'networkidle'; timeoutMs?: number },
   ): Promise<string>
   /**
-   * GET JSON through the browser's own network stack (APIRequestContext) —
-   * carries the profile's cookies, is exempt from CORS, and takes custom
-   * headers (a Bearer token), so it reaches an authenticated app JSON API.
+   * GET JSON with custom headers (such as a Bearer token). A connected browser
+   * fetches through its owned tab, using same-origin cookies and normal CORS.
+   * A dedicated profile uses APIRequestContext with the profile's cookies.
    * Never throws on HTTP status; inspect `ok`. Caveat: a response that
    * *redirects* while setting a cookie can trip a Set-Cookie parse bug in
    * playwright and reject — use {@link navigateForJson} to probe endpoints
@@ -94,6 +94,42 @@ function parseJson<T>(text: string): T | null {
     return JSON.parse(text) as T
   } catch {
     return null
+  }
+}
+
+/** Bind every navigation and read to the integration's own page, never a person's existing tab. */
+export function browserSessionForPage(page: Page, fetchInPage = false): BrowserSession {
+  return {
+    async visit(url, opts) {
+      await page.goto(url, { waitUntil: opts?.waitUntil ?? 'domcontentloaded', timeout: opts?.timeoutMs ?? 60_000 })
+      return page.url()
+    },
+    async getJson<T = unknown>(url: string, headers?: Record<string, string>): Promise<JsonResponse<T>> {
+      if (fetchInPage) {
+        const response = await page.evaluate(
+          async ({ url, headers }) => {
+            const result = await fetch(url, {
+              headers,
+              credentials: 'same-origin',
+              signal: AbortSignal.timeout(60_000),
+            })
+            return { status: result.status, ok: result.ok, url: result.url, text: await result.text() }
+          },
+          { url, headers },
+        )
+        return { ...response, json: parseJson<T>(response.text) }
+      }
+      const result = await page.context().request.get(url, { headers, failOnStatusCode: false })
+      const text = await result.text()
+      return { status: result.status(), ok: result.ok(), url: result.url(), text, json: parseJson<T>(text) }
+    },
+    async navigateForJson<T = unknown>(url: string): Promise<JsonResponse<T>> {
+      const response = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60_000 })
+      const status = response?.status() ?? 0
+      const text = response ? await response.text() : ''
+      return { status, ok: status >= 200 && status < 300, url: page.url(), text, json: parseJson<T>(text) }
+    },
+    currentUrl: () => page.url(),
   }
 }
 
@@ -207,27 +243,7 @@ export async function withPersistentBrowser<T>(
 
   try {
     const page: Page = context.pages()[0] ?? (await context.newPage())
-    const session: BrowserSession = {
-      async visit(url, o) {
-        await page.goto(url, { waitUntil: o?.waitUntil ?? 'domcontentloaded', timeout: o?.timeoutMs ?? 60_000 })
-        return page.url()
-      },
-      async getJson<R = unknown>(url: string, headers?: Record<string, string>): Promise<JsonResponse<R>> {
-        const res = await context.request.get(url, { headers, failOnStatusCode: false })
-        const text = await res.text()
-        return { status: res.status(), ok: res.ok(), url: res.url(), json: parseJson<R>(text), text }
-      },
-      async navigateForJson<R = unknown>(url: string): Promise<JsonResponse<R>> {
-        const resp = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60_000 })
-        const status = resp?.status() ?? 0
-        const text = resp ? await resp.text() : ''
-        return { status, ok: status >= 200 && status < 300, url: page.url(), json: parseJson<R>(text), text }
-      },
-      currentUrl() {
-        return page.url()
-      },
-    }
-    return await fn(session, context)
+    return await fn(browserSessionForPage(page), context)
   } finally {
     await context.close().catch(() => undefined)
   }

@@ -19,8 +19,8 @@ const FORM: StoredLoginForm = {
 }
 
 type Site = {
-  /** How the page behaves: the check passes, never passes, the script is missing, or a code step follows. */
-  mode: 'passes' | 'stuck' | 'no-script' | 'code'
+  /** How the page behaves: the check passes, never passes, the script is missing, a code step follows, or the site fails. */
+  mode: 'passes' | 'stuck' | 'no-script' | 'code' | 'failure'
   posts: { email: string; password: string; token: string }[]
   /** Every URL any request was made to, as the site saw it. */
   urls: string[]
@@ -38,7 +38,7 @@ function loginPage(site: Site): string {
     event.preventDefault()
     const body = new URLSearchParams({ email: email.value, password: password.value, token: document.querySelector('input[name=cf-turnstile-response]').value })
     const response = await fetch('/api/auth/callback/credentials', { method: 'POST', body })
-    if (!response.ok) { document.getElementById('alert').textContent = 'Incorrect email or password.'; return }
+    if (!response.ok) { document.getElementById('alert').textContent = ${site.mode === 'failure' ? "'Something went wrong. Please try again.'" : "'Incorrect email or password.'"}; return }
     ${
       site.mode === 'code'
         ? 'document.querySelector("form").innerHTML = "<label>Code <input name=\\"verificationCode\\" autocomplete=\\"one-time-code\\"></label>"'
@@ -74,9 +74,13 @@ async function serve(context: BrowserContext, site: Site): Promise<void> {
         token: fields.get('token') ?? '',
       }
       site.posts.push(post)
-      const ok = post.email === USERNAME && post.password === PASSWORD && post.token !== ''
+      const ok = site.mode !== 'failure' && post.email === USERNAME && post.password === PASSWORD && post.token !== ''
       if (ok) site.sessions++
-      return route.fulfill({ status: ok ? 200 : 401, contentType: 'application/json', body: '{}' })
+      return route.fulfill({
+        status: ok ? 200 : site.mode === 'failure' ? 429 : 401,
+        contentType: 'application/json',
+        body: '{}',
+      })
     }
     if (url.pathname === '/user/auth_token')
       return route.fulfill({
@@ -159,6 +163,14 @@ test('a stored login signs in on its own site and never leaves it', { timeout: 1
       should: 'report the refusal without a second try',
       actual: [wrong.result.status, wrong.site.posts.length, wrong.site.sessions],
       expected: ['rejected', 1, 0],
+    })
+
+    const failing = await run('failure')
+    assert({
+      given: 'a site that fails the attempt for a reason other than the login',
+      should: 'hand the page to the person instead of calling the password wrong',
+      actual: [failing.result.status, failing.site.posts.length, failing.site.sessions],
+      expected: ['needs_person', 1, 0],
     })
 
     const code = await run('code')

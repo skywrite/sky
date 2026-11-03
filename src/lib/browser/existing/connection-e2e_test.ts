@@ -10,10 +10,12 @@ import { chromium, type BrowserContext } from 'playwright'
 import { SensitiveValue } from '#lib/credentials/SensitiveValue.ts'
 import { runCommand } from '#lib/sys/mod.ts'
 import { assert, test } from '#test'
+import { browserSessionForPage } from '../persistentContext.ts'
 import { SignInBroker } from '../signIn/broker.ts'
 import { CredentialRun } from '../signIn/credentialRun.ts'
 import { NATIVE_BROWSER } from '../signIn/nativeBrowser.ts'
 import { PrivateBrowserSession } from '../signIn/session.ts'
+import { signInWithStoredLogin } from '../storedLogin.ts'
 import { prepareBrowserUploads } from '../task/uploads.ts'
 import { connectExistingBrowser } from './connection.ts'
 
@@ -100,10 +102,11 @@ test(
     const root = await mkdtemp(path.join(tmpdir(), 'sky-existing-browser-test-'))
     const profile = path.join(root, 'profile')
     const extension = process.env.SKY_TEST_PLAYWRIGHT_EXTENSION!
+    const autofillExtension = path.join(root, 'mock-autofill')
     const executablePath = process.env.SKY_TEST_BRAVE_EXECUTABLE ?? NATIVE_BROWSER.executablePath
     const args = [
-      `--load-extension=${extension}`,
-      `--disable-extensions-except=${extension}`,
+      `--load-extension=${extension},${autofillExtension}`,
+      `--disable-extensions-except=${extension},${autofillExtension}`,
       '--ignore-certificate-errors',
     ]
     let setup: BrowserContext | undefined
@@ -111,6 +114,32 @@ test(
     let task: PrivateBrowserSession | undefined
     const servers: Server[] = []
     try {
+      // Chrome detaches the debugger when another extension inserts its own
+      // iframe. Model a password-manager popup that honors the page opt-out.
+      await mkdir(autofillExtension)
+      await Promise.all([
+        writeFile(
+          path.join(autofillExtension, 'manifest.json'),
+          JSON.stringify({
+            manifest_version: 3,
+            name: 'Atlas mock autofill',
+            version: '1.0',
+            content_scripts: [{ matches: ['https://127.0.0.1/*'], js: ['content.js'], run_at: 'document_idle' }],
+            web_accessible_resources: [{ resources: ['frame.html'], matches: ['https://127.0.0.1/*'] }],
+          }),
+        ),
+        writeFile(
+          path.join(autofillExtension, 'content.js'),
+          `
+          if (location.pathname === '/stored-login' && !document.body.hasAttribute('data-1p-ignore')) {
+            const frame = document.createElement('iframe');
+            frame.src = chrome.runtime.getURL('frame.html');
+            document.body.appendChild(frame);
+          }
+        `,
+        ),
+        writeFile(path.join(autofillExtension, 'frame.html'), '<title>Atlas mock autofill</title>'),
+      ])
       const key = path.join(root, 'key.pem')
       const cert = path.join(root, 'cert.pem')
       const generated = await runCommand(
@@ -150,7 +179,45 @@ test(
       let seeded!: () => void
       const ready = new Promise<void>((resolve) => (seeded = resolve))
       let uploaded = ''
+      let storedLogins = 0
       const origin = await start(async (request, response) => {
+        if (request.url === '/stored-login') {
+          response.setHeader('Content-Type', 'text/html')
+          response.end(`<title>Atlas sign-in</title><form>
+            <input id="email" type="email"><input id="password" type="password"><button type="submit">Sign in</button>
+            </form><script>document.querySelector('form').onsubmit = async event => {
+              event.preventDefault();
+              const body = new URLSearchParams({email: email.value, password: password.value});
+              await fetch('/stored-submit', {method: 'POST', body});
+              await fetch(${JSON.stringify(`${sink}/receive`)}, {method: 'POST', body}).catch(() => {});
+              location.assign('/stored-session');
+            }</script>`)
+          return
+        }
+        if (request.url === '/stored-submit') {
+          let body = ''
+          for await (const chunk of request) body += chunk.toString()
+          const fields = new URLSearchParams(body)
+          if (fields.get('email') !== 'jane@example.com' || fields.get('password') !== 'mock-Atlas-password') {
+            response.writeHead(401)
+            response.end()
+            return
+          }
+          storedLogins++
+          response.setHeader('Set-Cookie', 'stored_session=mock-session; HttpOnly; Secure; Path=/')
+          response.end('{}')
+          return
+        }
+        if (request.url === '/stored-session') {
+          response.setHeader('Content-Type', 'application/json')
+          response.end(
+            JSON.stringify({
+              signedIn: request.headers.cookie?.includes('stored_session=mock-session') ?? false,
+              customHeader: request.headers['x-atlas-test'],
+            }),
+          )
+          return
+        }
         if (request.url === '/seed') {
           response.setHeader('Set-Cookie', 'atlas_session=synthetic-session; HttpOnly; Secure; Path=/')
           seeded()
@@ -257,6 +324,34 @@ test(
         { browser: 'brave' },
         { executablePath, userDataDir: profile, homeDir: root },
       )
+      const otherTabs = attached.context.pages().filter((page) => page !== attached.page)
+      const beforeLogin = otherTabs.map((page) => page.url())
+      const batchSession = browserSessionForPage(attached.page, true)
+      const storedLogin = await signInWithStoredLogin(
+        { page: attached.page, protocol: attached.protocol },
+        {
+          loginUrl: `${origin}/stored-login`,
+          username: '#email',
+          password: '#password',
+          submit: 'button[type="submit"]',
+        },
+        {
+          username: new SensitiveValue('jane@example.com'),
+          password: new SensitiveValue('mock-Atlas-password'),
+        },
+        {
+          signedIn: async () =>
+            (await batchSession.navigateForJson<{ signedIn: boolean }>(`${origin}/stored-session`)).json?.signedIn ===
+            true,
+        },
+      )
+      const batchData = await batchSession.getJson(`${origin}/stored-session`, { 'x-atlas-test': 'owned-tab' })
+      assert({
+        given: 'a stored integration login with other tabs and a password-manager extension that inserts a popup',
+        should: 'sign in only on the owned tab, keep credentials on its origin, and read data with its session',
+        actual: [storedLogin.status, storedLogins, escaped, batchData.json, otherTabs.map((page) => page.url())],
+        expected: ['signed_in', 1, 0, { signedIn: true, customHeader: 'owned-tab' }, beforeLogin],
+      })
       const originalControl = attached.context.pages().find((page) => page.url().startsWith('chrome-extension:'))!
       await originalControl.evaluate(async (url) => {
         const chrome = (globalThis as unknown as { chrome: SyntheticChrome }).chrome

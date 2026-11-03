@@ -328,7 +328,19 @@ export function PeopleEditor({
                 </Button>
               </div>
             )}
-            {job?.status === 'failed' && <p role="alert">{job.error} You can still add this person manually.</p>}
+            {job?.status === 'failed' && (
+              <p role="alert">
+                {job.error}{' '}
+                {job.error?.includes('Settings → Browser automation') && (
+                  <>
+                    <a href="/settings/browser-automation" target="_blank" rel="noreferrer">
+                      Manage browser connection
+                    </a>{' '}
+                  </>
+                )}
+                You can still add this person manually.
+              </p>
+            )}
           </div>
         )}
         {notice && (

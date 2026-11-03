@@ -2,8 +2,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import * as path from 'node:path'
 import type { BrowserContext, Page } from 'playwright'
-
-const CONNECT_PAGE = 'chrome-extension://mmlmfjhmonkocbjadbfplnigmagldckm/connect.html'
+import { EXTENSION_CONNECT_PAGE } from './settings.ts'
 
 interface ExtensionTab {
   id: number
@@ -39,7 +38,7 @@ export function connectionPage(context: BrowserContext): Page {
   const url = new URL(page.url())
   if (
     url.protocol !== 'chrome-extension:' ||
-    url.hostname !== new URL(CONNECT_PAGE).hostname ||
+    url.hostname !== new URL(EXTENSION_CONNECT_PAGE).hostname ||
     url.pathname !== '/connect.html'
   )
     throw new Error('Unexpected extension page')

@@ -2,6 +2,7 @@ import { access } from 'node:fs/promises'
 import * as path from 'node:path'
 import { DIR_STATE } from '#config'
 import { ExistingBrowserSettingsStore } from '#lib/browser/existing/settings.ts'
+import { verifyExistingBrowser } from '#lib/browser/existing/verification.ts'
 import { prepareAppleExtension } from '#lib/browser/signIn/applePasswords.ts'
 import { nativeBrowserAvailable } from '#lib/browser/signIn/nativeBrowser.ts'
 import { connectOnePassword } from '#lib/credentials/connect.ts'
@@ -13,6 +14,7 @@ import { BrowserAutomationHost } from './browserAutomation/host.ts'
 export function createBrowserAutomationHost(): BrowserAutomationHost {
   return new BrowserAutomationHost({
     existingBrowser: new ExistingBrowserSettingsStore(),
+    verifyExistingBrowser,
     // Preserve the existing account identities and exclusions without migrating stored credentials.
     settingsFile: path.join(DIR_STATE, 'credentials', 'sources.json'),
     discover: () => discoverOnePasswordAccounts({ helperDir: path.join(DIR_STATE, 'credentials', 'helpers') }),

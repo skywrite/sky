@@ -28,7 +28,7 @@ const schemas = {
   'disconnect-browser': z.object({}).strict(),
 }
 
-/** Setup metadata only. Credential use and browser execution must never be routed through this API. */
+/** Explicit setup may verify an owned blank tab; website actions and credential use stay in task workers. */
 export function createBrowserAutomationRoutes(host: BrowserAutomationHost): Hono {
   const app = new Hono()
   app.use('*', async (c, next) => {

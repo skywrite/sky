@@ -1,5 +1,5 @@
 import { EventEmitter } from 'node:events'
-import { mkdir, mkdtemp, readFile, readdir, realpath, rm, symlink, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, readdir, realpath, rename, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import * as path from 'node:path'
 import { assert, test } from '#test'
@@ -83,9 +83,11 @@ test('native completion waits for the final filename to appear', async () =>
   fixture(async (directory) => {
     const f = await capture(directory)
     try {
+      const partial = path.join(directory, 'Atlas.pdf.crdownload')
+      await writeFile(partial, 'new')
       f.begin()
       f.complete('new')
-      await writeFile(path.join(directory, 'Atlas.pdf'), 'new')
+      await rename(partial, path.join(directory, 'Atlas.pdf'))
       await f.settle()
       assert({
         given: 'completion before the file is visible',

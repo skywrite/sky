@@ -5,9 +5,10 @@ import { DIR_HOME } from '#config'
 import { createSecret, KeychainSecretsProvider, type SecretsProvider } from '#lib/secrets/mod.ts'
 
 export const EXISTING_BROWSER_FILE = path.join(DIR_HOME, '.sky', 'browser', 'connection.json')
-export const EXTENSION_URL =
-  'https://chromewebstore.google.com/detail/playwright-extension/mmlmfjhmonkocbjadbfplnigmagldckm'
-const schema = z
+export const EXTENSION_ID = 'mmlmfjhmonkocbjadbfplnigmagldckm'
+export const EXTENSION_CONNECT_PAGE = `chrome-extension://${EXTENSION_ID}/connect.html`
+export const EXTENSION_URL = `https://chromewebstore.google.com/detail/playwright-extension/${EXTENSION_ID}`
+export const existingBrowserSettingsSchema = z
   .object({
     browser: z.literal('brave'),
     profileDirName: z
@@ -16,9 +17,16 @@ const schema = z
       .optional(),
   })
   .strict()
-export type ExistingBrowserSettings = z.infer<typeof schema>
+export type ExistingBrowserSettings = z.infer<typeof existingBrowserSettingsSchema>
 
 export class ExistingBrowserError extends Error {}
+
+export function connectionToken(token: string): string {
+  const value = token.trim().replace(/^PLAYWRIGHT_MCP_EXTENSION_TOKEN=/, '')
+  if (!/^[A-Za-z0-9_-]{32,256}$/.test(value))
+    throw new ExistingBrowserError('Paste the connection token shown by the Playwright extension in Brave.')
+  return value
+}
 
 /** The connection grant is in Keychain; this machine-local file contains preferences only. */
 export class ExistingBrowserSettingsStore {
@@ -29,7 +37,7 @@ export class ExistingBrowserSettingsStore {
 
   async read(): Promise<ExistingBrowserSettings | undefined> {
     try {
-      return schema.parse(JSON.parse(await readFile(this.file, 'utf8')))
+      return existingBrowserSettingsSchema.parse(JSON.parse(await readFile(this.file, 'utf8')))
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined
       throw new ExistingBrowserError(
@@ -53,16 +61,14 @@ export class ExistingBrowserSettingsStore {
   }
 
   async connect(token: string, settings: ExistingBrowserSettings = { browser: 'brave' }): Promise<void> {
-    const value = token.trim().replace(/^PLAYWRIGHT_MCP_EXTENSION_TOKEN=/, '')
-    if (!/^[A-Za-z0-9_-]{32,256}$/.test(value))
-      throw new ExistingBrowserError('Paste the connection token shown by the Playwright extension in Brave.')
-    const parsed = schema.parse(settings)
+    const value = connectionToken(token)
+    const parsed = existingBrowserSettingsSchema.parse(settings)
     await this.secrets.set('browser', 'playwright-extension', createSecret(value))
     await this.enable(parsed)
   }
 
   async enable(settings: ExistingBrowserSettings): Promise<void> {
-    const parsed = schema.parse(settings)
+    const parsed = existingBrowserSettingsSchema.parse(settings)
     await mkdir(path.dirname(this.file), { recursive: true, mode: 0o700 })
     const temporary = `${this.file}.${crypto.randomUUID()}.tmp`
     try {

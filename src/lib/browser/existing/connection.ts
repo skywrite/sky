@@ -4,6 +4,7 @@ import { setTimeout as delay } from 'node:timers/promises'
 import type { Browser, BrowserContext, CDPSession, Page } from 'playwright'
 import { resolveDownloadLocations } from '../downloadLocations.ts'
 import { NATIVE_BROWSER } from '../signIn/nativeBrowser.ts'
+import { resolveExtensionProfile } from './profile.ts'
 import { ExistingBrowserError, type ExistingBrowserSettings } from './settings.ts'
 import { backgroundTaskPage, closeTaskTabs, connectionPage, taskWindowLauncher } from './taskWindow.ts'
 
@@ -11,6 +12,7 @@ export type PageProtocol = Pick<CDPSession, 'send' | 'on' | 'off'>
 export interface ExistingBrowserConnection {
   context: BrowserContext
   page: Page
+  profileDirName?: string
   downloadDirectories?: readonly string[]
   protocol(page: Page): Promise<PageProtocol>
   /** Select only the owned task tab, preserving the foreground window. */
@@ -54,13 +56,15 @@ export async function connectExistingBrowser(
   const previousToken = process.env.PLAYWRIGHT_MCP_EXTENSION_TOKEN
   try {
     options.signal?.throwIfAborted()
+    const profileDirName = await resolveExtensionProfile({ ...options, profileDirName: settings.profileDirName })
+    options.signal?.throwIfAborted()
     process.env.PLAYWRIGHT_MCP_EXTENSION_TOKEN = token
     const executablePath = options.executablePath ?? NATIVE_BROWSER.executablePath
     if (options.background) launcher = await taskWindowLauncher(executablePath)
     const args = {
       extension: true,
       executablePath: launcher?.executablePath ?? executablePath,
-      profileDirName: settings.profileDirName,
+      profileDirName,
       ...(options.userDataDir ? { userDataDir: options.userDataDir } : {}),
     }
     const config = await tools.resolveCLIConfigForMCP(args, {})
@@ -77,10 +81,11 @@ export async function connectExistingBrowser(
     const ownedPage = page
     const ownedControl = control
     const connected = browser
-    const downloads = await resolveDownloadLocations({ ...options, profileDirName: settings.profileDirName })
+    const downloads = await resolveDownloadLocations({ ...options, profileDirName })
     return {
       context,
       page,
+      profileDirName,
       downloadDirectories: downloads.locations.map((location) => location.path),
       protocol: existingPageProtocol,
       ...('activateTaskTab' in task
@@ -99,11 +104,17 @@ export async function connectExistingBrowser(
         await connected.close().catch(() => {})
       },
     }
-  } catch {
+  } catch (error) {
     if (closePages || control)
       await Promise.race([closePages?.() ?? closeTaskTabs(control!), delay(2000, undefined, { ref: false })])
     else await page?.close().catch(() => {})
     await browser?.close().catch(() => {})
+    options.signal?.throwIfAborted()
+    if (error instanceof ExistingBrowserError) throw error
+    if (error instanceof Error && error.message.startsWith('Playwright extension did not connect within'))
+      throw new ExistingBrowserError(
+        'Sky’s Brave connection timed out. Repairing or reinstalling the Playwright Extension can reset its token. Update the connection in Settings → Browser automation, then retry. Your browser task has not started.',
+      )
     throw new ExistingBrowserError(
       'Sky could not connect to your Brave browser. Open Brave with the Playwright extension enabled in the connected profile. If its token changed, reconnect in Settings → Browser automation. Your browser task has not started.',
     )

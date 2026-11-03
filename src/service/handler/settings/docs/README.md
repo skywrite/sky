@@ -1,6 +1,6 @@
 ---
 created: 2026-08-30
-updated: 2026-10-27
+updated: 2026-11-02
 ---
 
 # Settings — the web's settings section
@@ -311,8 +311,11 @@ machine: config snapshot, voices, model rows, editor detection, memory
 count, git build, write, reveal (`open`, macOS), and `connections` — a
 `ConnectionsHost`: the keychain (`SecretsProvider`), the environment,
 the keyed providers, Google's sign-in, agent-slack. Its `browserAutomation` host
-owns password manager setup metadata only. Tests
-script every part; route and browser tests use fake SDK clients and
+owns browser and password manager setup.
+Explicit browser connection setup verifies an owned blank tab in the private worker before saving;
+ordinary settings reads remain metadata-only.
+The [browser connection contract](../../../../lib/browser/docs/README.md#existing-brave) owns verification and recovery.
+Tests script every part; route and browser tests use fake SDK clients and
 `TestSecretsProvider`, never real accounts or the real Keychain.
 
 ## Where each kind of setting lives (ruled 2026-08-30)

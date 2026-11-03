@@ -1,6 +1,7 @@
 import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import * as path from 'node:path'
+import { ExistingBrowserError } from '#lib/browser/existing/settings.ts'
 import { CredentialError } from '#lib/credentials/errors.ts'
 import { assert, test } from '#test'
 import { createSettingsRoutes, type SettingsRoutesOptions } from '../mod.ts'
@@ -367,5 +368,85 @@ test('existing browser setup saves an explicit connection grant without revealin
         f.counts.read,
       ],
       expected: [400, 200, { browser: 'brave' }, false, false, false, 200, undefined, 0],
+    })
+  }))
+
+test('browser setup verifies the candidate before replacing a working connection', async () =>
+  fixture(async (f, dir) => {
+    const previous = 'mock_Atlas_previous_browser_token_12345678'
+    const candidate = 'mock_Atlas_repaired_browser_token_12345678'
+    const store = f.options.existingBrowser!
+    await store.connect(previous, { browser: 'brave', profileDirName: 'Profile 2' })
+    const original = await readFile(path.join(dir, 'browser-connection.json'), 'utf8')
+    let checked = 0
+    f.options.verifyExistingBrowser = async (token, settings) => {
+      checked++
+      assert({
+        given: 'an updated token with no profile override',
+        should: 'check the supplied token against the previously selected profile',
+        actual: [token, settings],
+        expected: [candidate, { browser: 'brave', profileDirName: 'Profile 2' }],
+      })
+      throw new ExistingBrowserError('The Playwright Extension token is no longer accepted.')
+    }
+    await f.host.snapshot()
+    const app = createBrowserAutomationRoutes(f.host)
+    const failed = await app.request('http://localhost/existing-browser', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ token: `PLAYWRIGHT_MCP_EXTENSION_TOKEN=${candidate}` }),
+    })
+    assert({
+      given: 'a repaired extension with a rejected candidate token',
+      should: 'reject Save with a useful error while preserving the existing grant and profile',
+      actual: [
+        failed.status,
+        await failed.json(),
+        checked,
+        await store.token(),
+        await readFile(path.join(dir, 'browser-connection.json'), 'utf8'),
+      ],
+      expected: [400, { message: 'The Playwright Extension token is no longer accepted.' }, 1, previous, original],
+    })
+    f.options.verifyExistingBrowser = async (_token, settings) => settings
+    await f.host.connectExistingBrowser(candidate)
+    assert({
+      given: 'a successful retry of connection setup',
+      should: 'replace the token while preserving the verified browser identity',
+      actual: [await store.token(), (await f.host.snapshot()).existingBrowser],
+      expected: [candidate, { browser: 'brave', profileDirName: 'Profile 2' }],
+    })
+  }))
+
+test('first browser setup saves the verified profile and settings reads never verify a browser', async () =>
+  fixture(async (f) => {
+    let checks = 0
+    f.options.verifyExistingBrowser = async () => {
+      checks++
+      return { browser: 'brave', profileDirName: 'Default' }
+    }
+    await f.host.snapshot()
+    const before = checks
+    await f.host.connectExistingBrowser('mock_Atlas_browser_connection_token_12345678')
+    const snapshot = await f.host.snapshot()
+    await f.host.snapshot()
+    assert({
+      given: 'an explicit first connection followed by ordinary settings reads',
+      should: 'pin the successfully verified profile and reserve browser checks for the setup action',
+      actual: [before, checks, snapshot.existingBrowser],
+      expected: [0, 1, { browser: 'brave', profileDirName: 'Default' }],
+    })
+  }))
+
+test('explicit verified reconnection repairs unreadable browser preferences', async () =>
+  fixture(async (f, dir) => {
+    await writeFile(path.join(dir, 'browser-connection.json'), '{invalid')
+    f.options.verifyExistingBrowser = async () => ({ browser: 'brave', profileDirName: 'Default' })
+    await f.host.connectExistingBrowser('mock_Atlas_browser_connection_token_12345678')
+    assert({
+      given: 'an explicit connection after saved browser preferences became unreadable',
+      should: 'recover using the verified selection instead of trapping the user in a reconnect error',
+      actual: (await f.host.snapshot()).existingBrowser,
+      expected: { browser: 'brave', profileDirName: 'Default' },
     })
   }))

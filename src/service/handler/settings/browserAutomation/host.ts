@@ -1,4 +1,8 @@
-import type { ExistingBrowserSettingsStore } from '#lib/browser/existing/settings.ts'
+import {
+  connectionToken,
+  type ExistingBrowserSettings,
+  type ExistingBrowserSettingsStore,
+} from '#lib/browser/existing/settings.ts'
 import { CredentialError } from '#lib/credentials/errors.ts'
 import type { OnePasswordAccount } from '#lib/credentials/onePasswordDesktop.ts'
 import type { CredentialContainer } from '#lib/credentials/types.ts'
@@ -15,6 +19,7 @@ export interface BrowserAutomationHostOptions {
   prepareNativeBrowser?: (applePasswords: boolean) => Promise<void>
   openAutofillSettings?: () => Promise<void>
   existingBrowser?: ExistingBrowserSettingsStore
+  verifyExistingBrowser?: (token: string, settings: ExistingBrowserSettings) => Promise<ExistingBrowserSettings>
 }
 
 /** The settings host owns preferences, not permission to sign in or access a browser session. */
@@ -61,10 +66,16 @@ export class BrowserAutomationHost {
 
   async connectExistingBrowser(token: string, profileDirName?: string): Promise<void> {
     if (!this.options.existingBrowser) throw new CredentialError('unsupported')
-    await this.options.existingBrowser.connect(token, {
+    const value = connectionToken(token)
+    // An explicit reconnection can repair unreadable preferences after verifying the new selection.
+    const previous = await this.options.existingBrowser.read().catch(() => undefined)
+    const profile = profileDirName ?? previous?.profileDirName
+    const settings: ExistingBrowserSettings = {
       browser: 'brave',
-      ...(profileDirName ? { profileDirName } : {}),
-    })
+      ...(profile ? { profileDirName: profile } : {}),
+    }
+    const verified = await this.options.verifyExistingBrowser?.(value, settings)
+    await this.options.existingBrowser.connect(value, verified ?? settings)
   }
 
   async disconnectExistingBrowser(): Promise<void> {

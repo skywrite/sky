@@ -65,8 +65,13 @@ export function ExistingBrowserSettings({
         </p>
         <p>
           Saving this connection lets Sky use that browser for tasks you request without asking you to approve each
-          browser connection. The token is stored in this Mac’s Keychain.
+          browser connection. Sky checks the connection before saving its token in this Mac’s Keychain.
         </p>
+        {connected && (
+          <p>
+            Repairing or reinstalling the extension can reset its token. Update the connection with its current token.
+          </p>
+        )}
         <PasswordInput
           label={connected ? 'New connection token' : 'Connection token'}
           value={token}

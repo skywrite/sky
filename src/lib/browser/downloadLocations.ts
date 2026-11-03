@@ -1,7 +1,7 @@
 import { readFile, readdir, realpath } from 'node:fs/promises'
 import * as os from 'node:os'
 import * as path from 'node:path'
-import process from 'node:process'
+import { braveUserDataDir } from './existing/profile.ts'
 import { ExistingBrowserSettingsStore } from './existing/settings.ts'
 
 export interface DownloadLocation {
@@ -22,18 +22,10 @@ export interface DownloadLocationOptions {
   additionalDirectories?: readonly string[]
 }
 
-function braveDataDir(home: string): string {
-  if (process.platform === 'darwin')
-    return path.join(home, 'Library', 'Application Support', 'BraveSoftware', 'Brave-Browser')
-  if (process.platform === 'win32')
-    return path.join(process.env.LOCALAPPDATA ?? path.join(home, 'AppData', 'Local'), 'BraveSoftware', 'Brave-Browser')
-  return path.join(process.env.XDG_CONFIG_HOME ?? path.join(home, '.config'), 'BraveSoftware', 'Brave-Browser')
-}
-
 /** Preferences and folder paths only: no browser connection, history, cookies or Keychain access. */
 export async function resolveDownloadLocations(options: DownloadLocationOptions = {}): Promise<DownloadLocations> {
   const home = options.homeDir ?? os.homedir()
-  const root = options.userDataDir ?? braveDataDir(home)
+  const root = options.userDataDir ?? braveUserDataDir(home)
   const result: DownloadLocations = { locations: [], configuredDirectories: [], issues: [] }
   const add = async (directory: string, source: string) => {
     const location = await realpath(directory).catch(() => path.resolve(directory))

@@ -6,7 +6,12 @@ import { DIR_STATE } from '#config'
 import { connectOnePassword } from '#lib/credentials/connect.ts'
 import { PasswordManagerSettingsStore } from '#lib/credentials/passwordManagers.ts'
 import { connectExistingBrowser } from '../existing/connection.ts'
-import { ExistingBrowserError, ExistingBrowserSettingsStore } from '../existing/settings.ts'
+import {
+  connectionToken,
+  ExistingBrowserError,
+  ExistingBrowserSettingsStore,
+  existingBrowserSettingsSchema,
+} from '../existing/settings.ts'
 import { CredentialRun } from './credentialRun.ts'
 import { nativeAuthenticationApproval, nativeRunApproval } from './nativeApproval.ts'
 import { nativeBrowserAvailable, NATIVE_BROWSER } from './nativeBrowser.ts'
@@ -68,6 +73,26 @@ async function request(method: string, params: unknown, signal: AbortSignal) {
     .strict()
     .parse(params)
   // Host-only lifecycle operations are never listed among model tools.
+  if (call.name === 'sky_verify_existing_browser' && !session && !starting) {
+    starting = true
+    const input = z
+      .object({ token: z.string().min(1).max(300), settings: existingBrowserSettingsSchema })
+      .strict()
+      .parse(call.arguments)
+    const attached = await connectExistingBrowser(connectionToken(input.token), input.settings, {
+      signal: lifetime.signal,
+      background: true,
+    })
+    try {
+      return {
+        content: [],
+        isError: false,
+        structuredContent: { browser: 'brave', profileDirName: attached.profileDirName },
+      }
+    } finally {
+      await attached.close()
+    }
+  }
   if (call.name === 'sky_finish' && Object.keys(call.arguments).length === 0) {
     await session?.close()
     session = undefined

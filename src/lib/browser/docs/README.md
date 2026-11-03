@@ -1,6 +1,6 @@
 ---
 created: 2026-09-25
-updated: 2026-10-22
+updated: 2026-11-02
 ---
 
 # Sky's browser
@@ -31,6 +31,13 @@ as `browser/playwright-extension`; `~/.sky/browser/connection.json` holds only
 machine-local browser/profile preferences. Reading Settings never reads the token
 or connects a browser. Saving the connection is an explicit grant to use existing
 website sessions for requested browser tasks, including across task restarts.
+
+Explicit connection setup verifies an owned blank tab in the private worker before replacing the saved token.
+The verified profile is saved with the connection; updating its token preserves that profile.
+Reading Settings still performs no verification or token read.
+Before opening an extension connection page, `existing/profile.ts` checks the selected profile's extension metadata.
+Missing, disabled and corrupted extensions fail with a named recovery action instead of opening a blocked extension URL.
+Repairing the extension can reset its token; reconnect explicitly rather than harvesting a replacement from browser storage.
 
 The same task worker connects through Playwright's official extension relay.
 Each connection gets a tab group, and Sky creates its own page rather than
@@ -558,9 +565,25 @@ signed-in profile, run a callback, close. External batch commands that
 sync from a site with no open API use it. LinkedIn import uses the private
 worker above.
 
+`configuredBrowser.ts` lets integrations such as MyFitnessPal honor the selected existing-browser connection,
+including unattended recaps.
+It binds navigation, data reads and stored-login handling to an owned task tab and disconnects without quitting Brave.
+A selected connection failure is reported rather than opening another profile.
+The integration's existing persistent profile is used only when no browser connection is selected.
+
+`storedLoginPage.ts` opts the owned integration page out of 1Password's browser offers before its first navigation.
+The body-level `data-1p-ignore` attribute is necessary even before filling: an auth probe can redirect to a login
+page, where the extension inserts its sign-in iframe.
+Chrome detaches the Playwright debugger when a page hosts another extension's iframe, leaving a disposed page even
+though the browser tab remains open.
+Field-level opt-outs do not prevent that popup.
+The page opt-out preserves the selected browser and its sessions without changing password-manager settings.
+See [1Password's page opt-out](https://www.1password.dev/web/compatible-website-design) and
+[Playwright's diagnosis](https://github.com/microsoft/playwright/issues/43230).
+
 ### Stored logins
 
-`storedLogin.ts` signs such a profile back in when its session has lapsed,
+`storedLogin.ts` signs the integration's browser back in when its session has lapsed,
 with a login the person keeps for that one integration.
 `lib/credentials/batchLogin.ts` finds it wherever they keep it, in this
 order: the pick remembered for the purpose; the Login item in a connected
@@ -592,12 +615,26 @@ same redactor covers every line said about the attempt. A bot wall's
 invisible check is waited for through the hidden token it fills; a check
 that wants a person, a verification code, or a form other than the one
 expected ends the attempt as `needs_person`, and the integration's own
-command opens the window for the person. The session counts only once the
+command opens the window for the person. So does any other error the site
+shows after the login is sent, a rate limit or an outage: only the site's
+own words about the login (incorrect, invalid, no account) read as a wrong
+password, because that verdict dead-ends a sign-in the person could finish. The session counts only once the
 caller's own check says so, a token read rather than a submitted form.
-Only a batch feature with a dedicated profile may use it: never Sky's
-shared browser, never the private task worker.
+Only a fixed-site batch integration may use it, with a dedicated profile or an explicitly owned task tab in the
+selected browser.
+Connected sessions must supply their owned page and extension protocol; choosing the context's first page could
+navigate an unrelated personal tab.
+The private task worker retains its separate credential authorization flow.
 
 ## Verified
+
+- 2026-10-30, the synthetic login site failing the attempt for a reason
+  other than the login (a 429 and "Something went wrong. Please try
+  again."): handed to the person as `needs_person` after one post, no
+  session, and no longer read as a wrong password; the wrong-password case
+  still reads as refused. The live trigger: MyFitnessPal answered a sent
+  login with such a page, Sky called the stored password wrong, and the
+  auth command gave up without opening its window.
 
 - 2026-10-13, live through the person's Brave, in a background task window,
   on an analytics dashboard report whose table scrolls inside a panel:
