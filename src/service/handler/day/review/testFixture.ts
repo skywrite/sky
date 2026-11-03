@@ -100,6 +100,8 @@ tz: America/Chicago
   const runtime: ReviewRuntime = {
     status: () => idle.status(),
     acknowledge: (day) => idle.acknowledge(day),
+    recaps: async () =>
+      ['slack', 'github', 'codex', 'claude-code'].map((id) => ({ id, title: `${id} recap`, saved: true })),
     recap: async (id) => {
       calls.push(id)
       return 'Saved recap.'

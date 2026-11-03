@@ -18,7 +18,8 @@ export interface ReviewItem {
   meeting?: { title: string; when: string }
 }
 
-export type JobStatus = 'waiting' | 'running' | 'done' | 'error' | 'skipped'
+/** A recap is `missing` with no file and no run here, `skipped` when the person let the summary go ahead without it. */
+export type JobStatus = 'waiting' | 'running' | 'done' | 'error' | 'stopped' | 'skipped' | 'missing'
 export interface ReviewJob {
   id: string
   title: string
@@ -55,17 +56,13 @@ export interface ReviewChat {
   busy: boolean
 }
 
-export const RECAPS = [
-  { id: 'slack', title: 'Slack recap' },
-  { id: 'github', title: 'GitHub recap' },
-  { id: 'codex', title: 'Codex recap' },
-  { id: 'claude-code', title: 'Claude Code recap' },
-] as const
-export type RecapId = (typeof RECAPS)[number]['id']
-
 export interface ReviewRuntime {
   status(): Promise<{ pending: string | null; supported: boolean }>
   acknowledge(day: string): Promise<void>
-  recap(id: RecapId, day: string): Promise<string | void>
-  summarize(day: string): Promise<void>
+  /** Every installed recap in display order, `saved` when the day has its file; `id` is the app, run as `recap:<id>`. */
+  recaps(day: string): Promise<{ id: string; title: string; saved: boolean }[]>
+  /** Runs one recap; a message says why no file came of it. */
+  recap(id: string, day: string): Promise<string | void>
+  /** The signal is the person's Stop: the run ends before it writes. */
+  summarize(day: string, signal: AbortSignal): Promise<void>
 }

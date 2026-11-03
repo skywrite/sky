@@ -49,6 +49,10 @@ const PREVIOUS_HOPS = 2
 // consumer — worth the top-tier model.
 const DEFAULT_PROFILE = 'default-fable-5.1'
 
+// What a run ended by the host's Stop (context.signal) reports; nothing
+// reaches summary.md.
+const STOPPED = 'Stopped before the summary was written.'
+
 const params = {
   effort: aiEffortFlag(),
   day: dayNoFutureArg(),
@@ -304,6 +308,7 @@ export default class SummaryDayTask extends Command {
     let usage = ''
     try {
       const result = await generateText({
+        abortSignal: context.signal,
         ...aiModelByProfile(model, { effort: args.effort }),
         instructions: promptTemplate,
         prompt: userPrompt,
@@ -314,6 +319,8 @@ export default class SummaryDayTask extends Command {
         usage = `${inputTokens} in, ${outputTokens} out`
       }
     } catch (err) {
+      // A stop is the person's choice, not an AI failure, so it is not logged as one.
+      if (context.signal?.aborted) return CommandResult.fail(STOPPED)
       await logAIError({
         source: 'summary:day',
         stage: 'generate',
@@ -378,7 +385,8 @@ export default class SummaryDayTask extends Command {
       return CommandResult.success({ stdout: true })
     }
 
-    // Write file
+    // Write file, unless the stop landed as the model finished.
+    if (context.signal?.aborted) return CommandResult.fail(STOPPED)
     await writeTextFile(summaryPath, outputContent)
     output.log(`Daily Summary written to ${summaryPath}`)
 

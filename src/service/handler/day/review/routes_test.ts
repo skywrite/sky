@@ -1,4 +1,5 @@
 import { readFile, writeFile } from 'node:fs/promises'
+import { exists } from '#shared/fs/mod.ts'
 import { daySummaryPath } from '#shared/nbfs/daySummary.ts'
 import { assert, test } from '#test'
 import { reviewFixture, REVIEW_DAY, REVIEW_TODAY } from './testFixture.ts'
@@ -8,7 +9,6 @@ test('real review actions carry duplicate todos and reminders, check streaks and
   const f = await reviewFixture()
   try {
     await f.post(`${REVIEW_DAY}/open`)
-    await f.waitFor((view) => view.recaps.every((job) => job.status === 'done'))
     const initial = await f.view()
     const ids = initial.items.filter((i) => i.kind === 'carry').map((i) => i.id)
     const first = await f.post(`${REVIEW_DAY}/move`, { ids })
@@ -51,15 +51,7 @@ test('real review actions carry duplicate todos and reminders, check streaks and
         report.metrics[0].entries.map((entry) => [entry.date, entry.values.hours]),
         f.calls,
       ],
-      expected: [
-        2,
-        true,
-        false,
-        false,
-        true,
-        [[REVIEW_DAY, '3.5']],
-        ['slack', 'github', 'codex', 'claude-code', 'summary'],
-      ],
+      expected: [2, true, false, false, true, [[REVIEW_DAY, '3.5']], ['summary']],
     })
   } finally {
     await f.dispose()
@@ -107,7 +99,6 @@ test('wizard navigation saves its place and skips a visible selection atomically
   const f = await reviewFixture()
   try {
     await f.post(`${REVIEW_DAY}/open`)
-    await f.waitFor((view) => view.recaps.every((job) => job.status === 'done'))
     const before = await f.readDay(REVIEW_DAY)
     const initial = await f.view()
     const carry = initial.items.filter((item) => item.kind === 'carry')
@@ -195,6 +186,56 @@ test('the return prompt stays offered to every tab until a person acts on it', a
       should: 'keep offering the day until the choice, then stop',
       actual: [shown, acknowledged.status, await pending()],
       expected: [REVIEW_DAY, 200, null],
+    })
+  } finally {
+    await f.dispose()
+  }
+})
+
+test('Stop refuses while no summary runs, ends a running one without a file, and Start again finishes it', async () => {
+  const f = await reviewFixture()
+  const summarize = f.runtime.summarize
+  const started = Promise.withResolvers<void>()
+  let summaries = 0
+  f.runtime.summarize = (ymd, signal) => {
+    if (++summaries > 1) return summarize(ymd, signal)
+    started.resolve()
+    return new Promise<void>((_, reject) => {
+      signal.addEventListener('abort', () => reject(new Error('The operation was aborted.')))
+    })
+  }
+  try {
+    await f.post(`${REVIEW_DAY}/open`)
+    const idle = await f.post(`${REVIEW_DAY}/stop`, { id: 'summary' })
+    for (const item of (await f.view()).items) await f.post(`${REVIEW_DAY}/answer`, { id: item.id, action: 'skip' })
+    await started.promise
+    const stopped = await f.post(`${REVIEW_DAY}/stop`, { id: 'summary' })
+    const view = (await stopped.json()) as ReviewView
+    assert({
+      given: 'Stop before the summary starts and again while it runs',
+      should: 'refuse while nothing runs, then end the run with no file written',
+      actual: [
+        idle.status,
+        ((await idle.json()) as { message: string }).message,
+        stopped.status,
+        view.summary,
+        await exists(daySummaryPath(f.file(REVIEW_DAY))),
+      ],
+      expected: [
+        409,
+        'The summary is not running.',
+        200,
+        { id: 'summary', title: 'Daily summary', status: 'stopped', message: 'Stopped. Nothing was written.' },
+        false,
+      ],
+    })
+    await f.post(`${REVIEW_DAY}/retry`, { id: 'summary' })
+    const done = await f.waitFor((view) => view.summary.status === 'done')
+    assert({
+      given: 'Start again',
+      should: 'write the summary and offer it',
+      actual: [summaries, done.summaryHref],
+      expected: [2, `/${REVIEW_DAY}?view=summary`],
     })
   } finally {
     await f.dispose()

@@ -1,4 +1,5 @@
 import * as path from 'node:path'
+import { getManifest } from '#commands/all/cli/_commandsManifest.ts'
 import { findRecapFile } from '#commands/all/recap/lib/writeRecapFile.ts'
 import CommandContext from '#commands/lib/core/CommandContext.ts'
 import CommandService from '#commands/lib/core/CommandService.ts'
@@ -9,6 +10,7 @@ import { exists } from '#shared/fs/mod.ts'
 import { dayDir, fetchNow } from '#shared/nbfs/mod.ts'
 import { Instant, instantNow, PlainDate } from '#universal/dates/nbdt/mod.ts'
 import { ReviewIdle } from './idle.ts'
+import { installedRecaps } from './recaps.ts'
 import type { ReviewRuntime } from './types.ts'
 
 export function createReviewRuntime(config: typeof ConfigModule, env: Record<string, string>): ReviewRuntime {
@@ -39,9 +41,9 @@ export function createReviewRuntime(config: typeof ConfigModule, env: Record<str
   setInterval(() => {
     void sample()
   }, 30_000).unref()
-  const run = async (command: string, args: Record<string, unknown>) => {
+  const run = async (command: string, args: Record<string, unknown>, signal?: AbortSignal) => {
     const tasks = new CommandService(CommandContext.server(config, env))
-    const result = await tasks.run(command, args)
+    const result = await (signal ? tasks.withSignal(signal) : tasks).run(command, args)
     if (result.status !== 'success') throw new Error(result.message ?? `${command} did not finish.`)
   }
   return {
@@ -50,6 +52,15 @@ export function createReviewRuntime(config: typeof ConfigModule, env: Record<str
       ...(loadSkyConfig().dayReview?.idleHours === 0 ? { pending: null } : {}),
     }),
     acknowledge: (day) => idle.acknowledge(day),
+    recaps: async (ymd) => {
+      const day = new PlainDate(ymd)
+      return Promise.all(
+        installedRecaps(await getManifest()).map(async (recap) => ({
+          ...recap,
+          saved: Boolean(await findRecapFile(day, recap.id, config.DIR_TIME)),
+        })),
+      )
+    },
     recap: async (id, ymd) => {
       const day = new PlainDate(ymd)
       if (await findRecapFile(day, id, config.DIR_TIME)) return 'Already saved.'
@@ -66,11 +77,13 @@ export function createReviewRuntime(config: typeof ConfigModule, env: Record<str
         if (!(await runCommand('gh', ['auth', 'status'])).success) return 'GitHub CLI is not signed in.'
       }
       await run(`recap:${id}`, { day, noEditor: true })
+      // A quiet day writes no file, and the row should say so rather than show missing with no reason.
+      if (!(await findRecapFile(day, id, config.DIR_TIME))) return 'Nothing to recap for this day.'
     },
-    summarize: async (ymd) => {
+    summarize: async (ymd, signal) => {
       const day = new PlainDate(ymd)
       if (await exists(path.join(config.DIR_TIME, dayDir(day), 'summary.md'))) return
-      await run('summary:day', { day, open: false })
+      await run('summary:day', { day, open: false }, signal)
     },
   }
 }

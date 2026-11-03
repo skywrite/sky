@@ -1,6 +1,6 @@
 ---
 created: 2026-09-03
-updated: 2026-10-28
+updated: 2026-11-03
 ---
 
 # The day's items, the day's rail, and the day's files
@@ -250,9 +250,14 @@ Older reviews without a saved step open at their first unfinished section, then 
 or Summary when nothing is pending.
 Continuing chats offers optional Save & close; conversations carry forward without blocking the summary.
 
-Recaps run when the review opens, independently reporting failures and supporting Retry.
-The summary runs only after all recaps succeed and every current review item is resolved or skipped.
+The review lists every installed `recap:<app>` command that takes a day: ready when the day has its file, else missing.
+Nothing runs on its own. Run starts a missing recap, or all of them at once, and Retry a failed one;
+a run that writes no file says why.
+The summary runs once every current review item is resolved or skipped and every recap is ready, has run, or was skipped.
+Until then it offers Run missing recaps, or Write summary without them, which skips the missing and failed ones.
 Closing pauses completion, while already-running recaps can finish; reopening resumes without repeating saved work.
+Stop ends a running summary before it writes (the command's abort signal reaches the model call);
+the summary then waits for Start again, through closing and reopening.
 A saved summary is reused, never automatically overwritten, and an interrupted job offers Retry after restart.
 Deleting the file pauses a completed review so background polling cannot silently recreate it.
 Explicitly reopening that review can generate a new summary while retaining its previous choices and recap results.

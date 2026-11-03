@@ -2,12 +2,11 @@ import * as path from 'node:path'
 import { readJson, withProcessLock, writeJson } from '#lib/jobs/files.ts'
 import { hold } from '../../../activity.ts'
 import {
-  RECAPS,
   REVIEW_STEPS,
   reviewItemStep,
-  type RecapId,
   type ReviewItem,
   type ReviewChat,
+  type ReviewJob,
   type ReviewRuntime,
   type ReviewState,
   type ReviewStep,
@@ -33,6 +32,8 @@ export interface ReviewHost {
 export class DayReviewStore {
   private readonly workers = new Map<string, Promise<void>>()
   private readonly requested = new Set<string>()
+  /** The running summary's Stop, by day. */
+  private readonly summaries = new Map<string, AbortController>()
   constructor(
     private readonly dir: string,
     private readonly host: ReviewHost,
@@ -41,6 +42,7 @@ export class DayReviewStore {
   private file(day: string) {
     return path.join(this.dir, `${day}.json`)
   }
+  /** Saved recaps are the runs a person started here; whether a recap exists is its file's to say. */
   private async read(day: string): Promise<ReviewState> {
     return (
       (await readJson<ReviewState>(this.file(day))) ?? {
@@ -48,7 +50,7 @@ export class DayReviewStore {
         paused: true,
         answers: {},
         drafts: {},
-        recaps: RECAPS.map((job) => ({ ...job, status: 'waiting' })),
+        recaps: [],
         summary: { id: 'summary', title: 'Daily summary', status: 'waiting' },
       }
     )
@@ -62,12 +64,25 @@ export class DayReviewStore {
     })
   }
   async view(day: string): Promise<ReviewView> {
-    const [state, inventory] = await Promise.all([this.read(day), this.host.inventory(day)])
+    const [state, inventory, recaps] = await Promise.all([
+      this.read(day),
+      this.host.inventory(day),
+      this.host.runtime.recaps(day),
+    ])
     const missingSummary = !inventory.summaryHref && state.summary.status === 'done'
     const items = inventory.items.filter((item) => !state.answers[item.id])
     return {
       ...state,
       ...inventory,
+      // A run in progress shows as one; otherwise the file decides, then what the person did here.
+      recaps: recaps.map(({ id, title, saved }): ReviewJob => {
+        const job = state.recaps.find((job) => job.id === id)
+        if (job?.status === 'waiting' || job?.status === 'running') return { ...job, title }
+        if (saved) return { id, title, status: 'done' }
+        if (job?.status === 'done') return { ...job, title, message: job.message ?? 'Nothing to recap for this day.' }
+        if (job?.status === 'error' || job?.status === 'skipped') return { ...job, title }
+        return { id, title, status: 'missing' }
+      }),
       // Deleting a summary reopens editing; only explicitly reopening review regenerates it.
       paused: missingSummary || state.paused,
       items,
@@ -196,11 +211,46 @@ export class DayReviewStore {
   async retry(day: string, id: string) {
     await this.change(day, (state) => {
       const job = [...state.recaps, state.summary].find((job) => job.id === id)
-      if (!job || job.status !== 'error') throw new Error('Only a failed job can be retried.')
+      if (!job || (job.status !== 'error' && job.status !== 'stopped'))
+        throw new Error('Only a failed or stopped job can be retried.')
       job.status = 'waiting'
       delete job.message
     })
     this.kick(day)
+    return this.view(day)
+  }
+  /** Starts the listed recaps that are missing, failed or skipped; nothing runs on its own. */
+  runRecaps(day: string, ids: string[]) {
+    return this.markRecaps(day, ids, 'waiting')
+  }
+  /** Lets the summary go ahead without the listed missing or failed recaps. */
+  skipRecaps(day: string, ids: string[]) {
+    return this.markRecaps(day, ids, 'skipped')
+  }
+  private async markRecaps(day: string, ids: string[], status: 'waiting' | 'skipped') {
+    const rows = (await this.view(day)).recaps.filter(
+      (job) => ids.includes(job.id) && (job.status === 'missing' || job.status === 'error' || job.status === 'skipped'),
+    )
+    await this.change(day, (state) => {
+      for (const row of rows) {
+        const started = state.recaps.find((job) => job.id === row.id)
+        // Started in another tab meanwhile: it keeps running.
+        if (started?.status === 'waiting' || started?.status === 'running') continue
+        state.recaps = [...state.recaps.filter((job) => job.id !== row.id), { id: row.id, title: row.title, status }]
+      }
+    })
+    this.kick(day)
+    return this.view(day)
+  }
+  /** Stop ends the running summary before it writes; it then waits for Start again, through closing and reopening. */
+  async stop(day: string, id: string) {
+    await this.change(day, (state) => {
+      if (id !== state.summary.id) throw new Error('Only the summary can be stopped.')
+      if (state.summary.status !== 'running') throw new Error('The summary is not running.')
+      state.summary.status = 'stopped'
+      state.summary.message = 'Stopped. Nothing was written.'
+    })
+    this.summaries.get(day)?.abort()
     return this.view(day)
   }
   private kick(day: string) {
@@ -238,7 +288,7 @@ export class DayReviewStore {
     await Promise.all(
       recaps.map(async (recap) => {
         try {
-          const message = await this.host.runtime.recap(recap.id as RecapId, day)
+          const message = await this.host.runtime.recap(recap.id, day)
           await this.change(day, (state) => {
             Object.assign(
               state.recaps.find((job) => job.id === recap.id)!,
@@ -256,11 +306,12 @@ export class DayReviewStore {
       }),
     )
     // Re-read after all recaps finish, including any intervening choices or pause.
+    // Every recap is ready, ran with nothing to recap, or was skipped by the person before the summary starts.
     view = await this.view(day)
     if (
       view.paused ||
       view.items.length ||
-      view.recaps.some((job) => job.status !== 'done') ||
+      view.recaps.some((job) => job.status !== 'done' && job.status !== 'skipped') ||
       view.summary.status !== 'waiting'
     )
       return
@@ -272,17 +323,23 @@ export class DayReviewStore {
       return true
     })
     if (!start) return
+    const abort = new AbortController()
+    this.summaries.set(day, abort)
     try {
-      await this.host.runtime.summarize(day)
+      await this.host.runtime.summarize(day, abort.signal)
       await this.change(day, (state) => {
         state.summary.status = 'done'
         delete state.summary.message
       })
     } catch (error) {
+      // A stopped run's outcome is the stop's; the state already says so.
+      if (abort.signal.aborted) return
       await this.change(day, (state) => {
         state.summary.status = 'error'
         state.summary.message = (error as Error).message
       })
+    } finally {
+      this.summaries.delete(day)
     }
   }
 }

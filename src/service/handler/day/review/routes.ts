@@ -320,5 +320,16 @@ export function createReviewRoutes(options: Options) {
     const body = z.object({ id: z.string().max(100) }).parse(await c.req.json())
     return c.json(await store.retry(reviewDay(c), body.id))
   })
+  app.post('/:day/recaps', async (c) => {
+    const body = z
+      .object({ action: z.enum(['run', 'skip']), ids: z.array(z.string().max(100)).min(1).max(50) })
+      .parse(await c.req.json())
+    const day = reviewDay(c)
+    return c.json(await (body.action === 'run' ? store.runRecaps(day, body.ids) : store.skipRecaps(day, body.ids)))
+  })
+  app.post('/:day/stop', async (c) => {
+    const body = z.object({ id: z.string().max(100) }).parse(await c.req.json())
+    return c.json(await store.stop(reviewDay(c), body.id))
+  })
   return app
 }

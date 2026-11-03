@@ -69,7 +69,24 @@ export function useReviewPrompt(): [string | null, (day: string) => void] {
   return [pending === dismissed ? null : pending, setDismissed]
 }
 
-function Job({ job, retry, busy }: { job: ReviewJob; retry: () => void; busy: boolean }) {
+const JOB_LABELS: Partial<Record<ReviewJob['status'], string>> = {
+  done: 'Ready',
+  missing: 'Missing',
+  skipped: 'Skipped',
+}
+
+function Job({
+  job,
+  retry,
+  stop,
+  busy,
+}: {
+  job: ReviewJob
+  retry: () => void
+  /** Offered while the job runs; a job without one runs to its end. */
+  stop?: () => void
+  busy: boolean
+}) {
   return (
     <div className="sky-review-job">
       <span aria-hidden="true">{job.status === 'done' ? '✓' : job.status === 'error' ? '!' : '·'}</span>
@@ -80,12 +97,17 @@ function Job({ job, retry, busy }: { job: ReviewJob; retry: () => void; busy: bo
             ? 'Running…'
             : job.status === 'waiting'
               ? 'Waiting'
-              : (job.message ?? (job.status === 'done' ? 'Ready' : ''))}
+              : (job.message ?? JOB_LABELS[job.status] ?? '')}
         </span>
       </div>
-      {job.status === 'error' && (
+      {job.status === 'running' && stop && (
+        <Button size="compact-sm" loading={busy} onClick={stop}>
+          Stop
+        </Button>
+      )}
+      {(job.status === 'error' || job.status === 'stopped' || job.status === 'missing' || job.status === 'skipped') && (
         <Button size="compact-sm" loading={busy} onClick={retry}>
-          Retry
+          {job.status === 'stopped' ? 'Start again' : job.status === 'error' ? 'Retry' : 'Run'}
         </Button>
       )}
     </div>
@@ -288,6 +310,10 @@ export function DayReviewDialog({
   const pending = view?.items.length ?? 0
   const recapsDone = view?.recaps.filter((job) => job.status === 'done').length ?? 0
   const recapFailed = view?.recaps.some((job) => job.status === 'error') ?? false
+  // What holds the summary back until the person runs or skips it.
+  const recapsHolding = view?.recaps.filter((job) => job.status === 'missing' || job.status === 'error') ?? []
+  const runRecaps = (action: 'run' | 'skip', ids: string[]) =>
+    void run(`recaps-${action}`, () => reviewRequest(`${day}/recaps`, { action, ids }))
   const goTo = (next: ReviewStep, skip = false) =>
     void run('step', () =>
       reviewRequest(`${day}/step`, { step: next, ...(skip ? { skipIds: items.map((item) => item.id) } : {}) }),
@@ -410,17 +436,47 @@ export function DayReviewDialog({
                       <h3>
                         {pending
                           ? 'A few things still need a decision'
-                          : recapFailed
-                            ? 'A recap needs another try'
+                          : recapsHolding.length
+                            ? 'Some recaps aren’t ready'
                             : 'Bringing your day together'}
                       </h3>
                       <p>
                         {pending
                           ? 'Handle or skip the remaining items, and Sky will generate your summary automatically.'
-                          : recapFailed
-                            ? 'Retry the failed recap below so it can be included in your summary.'
-                            : 'Your summary will start automatically as soon as the recaps finish.'}
+                          : recapsHolding.length
+                            ? 'Run them so your summary includes them, or write the summary without them.'
+                            : 'Your summary will start automatically as soon as the running recaps finish.'}
                       </p>
+                      {!pending && recapsHolding.length > 0 && (
+                        <div className="sky-review-actions">
+                          <Button
+                            variant="primary"
+                            disabled={Boolean(busy)}
+                            loading={busy === 'recaps-run'}
+                            onClick={() =>
+                              runRecaps(
+                                'run',
+                                recapsHolding.map((job) => job.id),
+                              )
+                            }
+                          >
+                            Run missing recaps ({recapsHolding.length})
+                          </Button>
+                          <Button
+                            variant="secondary"
+                            disabled={Boolean(busy)}
+                            loading={busy === 'recaps-skip'}
+                            onClick={() =>
+                              runRecaps(
+                                'skip',
+                                recapsHolding.map((job) => job.id),
+                              )
+                            }
+                          >
+                            Write summary without them
+                          </Button>
+                        </div>
+                      )}
                       {pending > 0 && (
                         <Button
                           variant="primary"
@@ -436,6 +492,7 @@ export function DayReviewDialog({
                       job={view.summary}
                       busy={Boolean(busy)}
                       retry={() => void run('summary', () => reviewRequest(`${day}/retry`, { id: 'summary' }))}
+                      stop={() => void run('stop', () => reviewRequest(`${day}/stop`, { id: 'summary' }))}
                     />
                   )}
                 </section>
@@ -447,12 +504,7 @@ export function DayReviewDialog({
                     </span>
                   </h3>
                   {view.recaps.map((job) => (
-                    <Job
-                      key={job.id}
-                      job={job}
-                      busy={Boolean(busy)}
-                      retry={() => void run(job.id, () => reviewRequest(`${day}/retry`, { id: job.id }))}
-                    />
+                    <Job key={job.id} job={job} busy={Boolean(busy)} retry={() => runRecaps('run', [job.id])} />
                   ))}
                 </section>
               </>
@@ -609,7 +661,7 @@ export function DayReviewDialog({
                   ? 'Recap needs attention'
                   : recapsDone === view.recaps.length
                     ? 'Recaps ready'
-                    : `Preparing recaps · ${recapsDone}/${view.recaps.length}`}{' '}
+                    : `Recaps · ${recapsDone} of ${view.recaps.length} ready`}{' '}
                 →
               </button>
             )}
