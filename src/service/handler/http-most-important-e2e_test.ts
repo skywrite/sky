@@ -263,7 +263,8 @@ test(
         contextReady.resolve()
         await dialog.getByText('24 notes and plans in context', { exact: true }).waitFor()
         const beforeCaption = await dialog.getByRole('status').locator('strong').innerText()
-        await page.clock.fastForward(7500)
+        await page.clock.runFor(8000)
+        await dialog.getByRole('status').locator('strong').filter({ hasNotText: beforeCaption }).waitFor()
         assert({
           given: 'a slow model after the notebook context is ready',
           should: 'show animated placeholders, changing copy and real stages while writing your own stays available',
@@ -293,15 +294,9 @@ test(
         await page.setViewportSize({ width: 1280, height: 900 })
         suggestionsReady.resolve()
         await dialog.getByText('Writing your shortlist…', { exact: true }).waitFor()
-        await page.clock.fastForward(7500)
-        // The writing stage starts its caption clock in an effect after its first render. A jump that lands
-        // before that effect moves the first new caption one period later, so allow for that period.
-        await dialog
-          .getByRole('status')
-          .locator('strong')
-          .filter({ hasNotText: 'Writing your shortlist…' })
-          .waitFor({ timeout: 10000 })
-          .catch(() => {})
+        // Run each tick through the seven-second caption period and the elapsed counter's next refresh.
+        await page.clock.runFor(8000)
+        await dialog.getByRole('status').locator('strong').filter({ hasNotText: 'Writing your shortlist…' }).waitFor()
         assert({
           given: 'a slow response after writing starts',
           should: 'rotate writing captions without resetting elapsed time or advancing the real stage',
