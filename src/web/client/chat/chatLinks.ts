@@ -2,10 +2,21 @@ import type { MouseEvent } from 'react'
 
 /** Notebook paths in messages are relative to the notebook root, not the thread's browser URL. */
 export function chatLinkHref(href: string): string {
+  if (/^\/(?!\/)/.test(href)) return dayFileOf(href) ?? href
   if (/^(?:[a-z][a-z\d+.-]*:|\/|[?#])/i.test(href)) return href
   const url = new URL(href, 'https://notebook.invalid/')
   if (!/\.md$/i.test(url.pathname)) return href
   return `/explorer${url.pathname}${url.search}${url.hash}`
+}
+
+/**
+ * A day's file named by its full path on this Mac, such as `…/attachments/2030/04/01/Brief.pdf`. The browser
+ * cannot open a path on the Mac, so the link opens the file as the day's files page serves it. Null for any other path.
+ */
+function dayFileOf(filePath: string): string | null {
+  const url = new URL(filePath, 'https://notebook.invalid/')
+  const file = /\/attachments\/(\d{4})\/(\d{2})\/(\d{2})\/(.+)$/.exec(url.pathname)
+  return file ? `/day/${file[1]}-${file[2]}-${file[3]}/files/${file[4]}${url.search}${url.hash}` : null
 }
 
 /**

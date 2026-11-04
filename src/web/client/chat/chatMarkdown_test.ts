@@ -28,9 +28,34 @@ test('chat notebook links open the file page instead of a path under the thread'
   }
 })
 
+test("chat links to a day's file by its full path open the file the day serves", () => {
+  for (const [source, href] of [
+    [
+      '[the contract](</Users/jane/Media/attachments/2030/04/01/2030-04-01_Atlas Contract.pdf>)',
+      '/day/2030-04-01/files/2030-04-01_Atlas%20Contract.pdf',
+    ],
+    [
+      '[page 3](/Users/jane/Media/attachments/2030/04/01/Atlas%20Brief.pdf#page=3)',
+      '/day/2030-04-01/files/Atlas%20Brief.pdf#page=3',
+    ],
+    [
+      '[the rows](</Users/jane/Media/attachments/2030/04/01/2030-04-01_slack_Atlas/rows.csv>)',
+      '/day/2030-04-01/files/2030-04-01_slack_Atlas/rows.csv',
+    ],
+  ]) {
+    assert({
+      given: "a chat link to a file in a day's attachments folder, by its full path on the Mac",
+      should: "link the day's served copy, which the browser can open",
+      actual: renderChatMarkdown(source!).match(/href="([^"]*)"/)?.[1],
+      expected: href,
+    })
+  }
+})
+
 test('chat notebook links leave web addresses, app routes, and in-page jumps intact', () => {
   for (const href of [
     'https://example.com/Guide.md',
+    'https://example.com/attachments/2030/04/01/Brief.pdf',
     '//example.com/Guide.md',
     '/explorer/projects/Atlas/Brief.md',
     '/thread/atlas',
