@@ -25,11 +25,16 @@ See the [memory store's write contract](../../../../_shared-ts/models/Memory/doc
 
 ## Local file organization
 
-The terminal and web chat use `createChatFileTools` for reading documents,
-listing folders, creating folders, and moving files or folders. The browser
-task retains `createFileTools`, its restricted document reader; adding a chat
-capability must not expand the private browser worker's filesystem access.
+The terminal and web chat, including voice, use `createChatFileTools` for reading documents,
+writing text files, listing folders, creating folders, and moving files or folders.
+The browser task retains `createFileTools`, its restricted document reader; adding a chat capability must not expand
+the private browser worker's filesystem access.
 Already requested folder changes run directly through structured tools.
+
+`write_file` saves exact UTF-8 text at a requested path and creates missing parents.
+It stages and verifies the bytes on the destination volume before exclusively linking the complete file into place.
+Existing files, directories and symlinks are never replaced, including when writers race for the same name.
+An interrupted write publishes no partial destination; temporary-copy cleanup problems are reported separately.
 
 `find_downloads` discovers the selected browser's configured download folder and
 checks it together with Desktop, Downloads, and requested task/destination folders.

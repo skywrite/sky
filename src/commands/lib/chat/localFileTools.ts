@@ -1,6 +1,20 @@
+import { Buffer } from 'node:buffer'
 import { createHash } from 'node:crypto'
 import { constants, createReadStream, type Stats } from 'node:fs'
-import { copyFile, link, lstat, mkdir, readdir, readFile, realpath, rmdir, unlink } from 'node:fs/promises'
+import {
+  copyFile,
+  link,
+  lstat,
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  realpath,
+  rm,
+  rmdir,
+  unlink,
+  writeFile,
+} from 'node:fs/promises'
 import * as path from 'node:path'
 import { tool } from 'ai'
 import { z } from 'zod'
@@ -109,6 +123,53 @@ export async function createDirectory(input: { path: string }, cwd: string, sign
   } catch (error) {
     return { success: false, path: location, error: problem(error) }
   }
+}
+
+type WriteTextFileOutput = (
+  | { success: true; path: string; bytes: number }
+  | { success: false; path: string; error: string }
+) & { warning?: string; temporaryPath?: string }
+
+/** Publish complete, verified UTF-8 bytes without replacing a destination another call might have claimed. */
+export async function writeTextFile(
+  input: { path: string; content: string },
+  cwd: string,
+  signal?: AbortSignal,
+): Promise<WriteTextFileOutput> {
+  let location = input.path
+  let staging: string | undefined
+  let output: WriteTextFileOutput
+  try {
+    signal?.throwIfAborted()
+    location = resolve(input.path, cwd)
+    if (input.path.trim().endsWith(path.sep)) throw new Error('Name a file path, including its filename.')
+    if (await present(location)) throw Object.assign(new Error('Destination exists'), { code: 'EEXIST' })
+    const content = Buffer.from(input.content, 'utf8')
+    await mkdir(path.dirname(location), { recursive: true })
+    signal?.throwIfAborted()
+    staging = await mkdtemp(path.join(path.dirname(location), '.sky-write-'))
+    const temporaryFile = path.join(staging, 'content')
+    await writeFile(temporaryFile, content, { flag: 'wx', mode: 0o600, signal })
+    if (!(await readFile(temporaryFile)).equals(content))
+      throw new Error(
+        'The written text could not be verified. No destination file was created. Check the disk and retry.',
+      )
+    signal?.throwIfAborted()
+    // Same-volume linking publishes the complete file and atomically refuses existing files, folders and symlinks.
+    await link(temporaryFile, location)
+    output = { success: true, path: location, bytes: content.length }
+  } catch (error) {
+    output = { success: false, path: location, error: problem(error) }
+  }
+  if (staging) {
+    try {
+      await rm(staging, { recursive: true, force: true })
+    } catch (error) {
+      output.warning = `A temporary copy could not be removed: ${problem(error)} Inspect temporaryPath before removing it.`
+      output.temporaryPath = staging
+    }
+  }
+  return output
 }
 
 /** Resolve existing ancestors before checking whether a destination is inside its source. */
@@ -225,6 +286,16 @@ export async function movePath(input: { source: string; destination: string }, c
 export function createChatFileTools(options: Omit<FileToolsOptions, 'allowedRoot'>) {
   return {
     ...createFileTools(options),
+    write_file: tool({
+      description:
+        'Create a local UTF-8 text file for the user’s requested work, including .diff, .patch, .md, .txt, .csv, or .json files. Pass the exact file content; no shell, browser, or Google agent is needed. Creates missing parent folders, preserves the text exactly, verifies the bytes, and returns the actual path and byte count. Refuses existing files, folders, and symlinks without overwriting them; choose another filename if the destination is taken. Use the requested destination; ~ and relative paths work. This writes text only, not binary formats such as PDF or Office files.',
+      inputSchema: z.object({
+        path: filePath.describe('Exact destination file path, including its filename and extension.'),
+        content: z.string().describe('The complete text to save verbatim, without added Markdown fences or escaping.'),
+      }),
+      execute: (input: Parameters<typeof writeTextFile>[0], execution?: { abortSignal?: AbortSignal }) =>
+        writeTextFile(input, options.cwd, execution?.abortSignal),
+    }),
     find_downloads: tool({
       description:
         'Find local downloads before declaring a browser download missing. Reads the selected browser’s configured download folder and checks it plus Desktop, Downloads, and any additional task/destination folders you supply. Searches direct children only, without reading file contents or following child symlinks. Returns newest candidates first, incomplete downloads marked separately, checked folders, access errors, and nextOffset. Use read_file to verify candidates before organizing them. If results are truncated, narrow the filters; never infer disk-wide absence from an incomplete search.',

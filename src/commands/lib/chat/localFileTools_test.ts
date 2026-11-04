@@ -1,3 +1,4 @@
+import { Buffer } from 'node:buffer'
 import { chmod, lstat, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import * as path from 'node:path'
@@ -5,7 +6,7 @@ import process from 'node:process'
 import { assert, test } from '#test'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import { createFileTools } from './fileTools.ts'
-import { createChatFileTools, createDirectory, listDirectory, movePath } from './localFileTools.ts'
+import { createChatFileTools, createDirectory, listDirectory, movePath, writeTextFile } from './localFileTools.ts'
 
 const call = { toolCallId: 'example-file-call', messages: [], context: {} }
 const exists = (location: string) =>
@@ -27,6 +28,125 @@ const options = (root: string) => ({
   attachmentsRoot: path.join(root, 'attachments'),
   onAttachments: () => {},
 })
+
+test('chat writes an exact UTF-8 diff to the requested file and creates its parent folders', async () =>
+  fixture(async (root) => {
+    const content = '--- a/Atlas.md\n+++ b/Atlas.md\n@@ -1 +1 @@\n-Long café description\n+Short café description\n'
+    const tools = createChatFileTools(options(root))
+    const result = await tools.write_file.execute!({ path: 'Desktop/Exports/Atlas.diff', content }, call)
+    assert({
+      given: 'a diff with literal headers, Unicode and a trailing newline, saved through the chat tool',
+      should: 'publish exactly those bytes at the requested path and leave no staging copies',
+      actual: [
+        result,
+        await readFile(path.join(root, 'Desktop/Exports/Atlas.diff'), 'utf8'),
+        await readdir(path.join(root, 'Desktop/Exports')),
+      ],
+      expected: [
+        { success: true, path: path.join(root, 'Desktop/Exports/Atlas.diff'), bytes: Buffer.byteLength(content) },
+        content,
+        ['Atlas.diff'],
+      ],
+    })
+    const empty = await writeTextFile({ path: path.join(root, 'empty.txt'), content: '' }, root)
+    const noNewline = await writeTextFile({ path: 'no-newline.txt', content: 'Atlas' }, root)
+    assert({
+      given: 'empty content and content with no trailing newline',
+      should: 'accept an absolute path and preserve both forms without adding text',
+      actual: [
+        empty.success,
+        noNewline.success,
+        await readFile(empty.path, 'utf8'),
+        await readFile(noNewline.path, 'utf8'),
+      ],
+      expected: [true, true, '', 'Atlas'],
+    })
+  }))
+
+test('text writes preserve existing files, folders and symbolic links', async () =>
+  fixture(async (root) => {
+    await writeFile(path.join(root, 'keep.txt'), 'original')
+    await mkdir(path.join(root, 'folder'))
+    await symlink('keep.txt', path.join(root, 'linked.txt'))
+    await symlink('missing.txt', path.join(root, 'broken.txt'))
+    const results = await Promise.all(
+      ['keep.txt', 'folder', 'linked.txt', 'broken.txt'].map((name) =>
+        writeTextFile({ path: name, content: 'replacement' }, root),
+      ),
+    )
+    assert({
+      given: 'a file, folder, live symlink and broken symlink at requested destinations',
+      should: 'refuse every write with its destination and a remedy, leaving all existing content intact',
+      actual: [
+        results.every((result) => !result.success && result.error.includes('Choose a different destination')),
+        results.map((result) => result.path),
+        await readFile(path.join(root, 'keep.txt'), 'utf8'),
+        await readdir(path.join(root, 'folder')),
+        (await lstat(path.join(root, 'linked.txt'))).isSymbolicLink(),
+        (await lstat(path.join(root, 'broken.txt'))).isSymbolicLink(),
+        await exists(path.join(root, 'missing.txt')),
+        (await readdir(root)).sort(),
+      ],
+      expected: [
+        true,
+        ['keep.txt', 'folder', 'linked.txt', 'broken.txt'].map((name) => path.join(root, name)),
+        'original',
+        [],
+        true,
+        true,
+        false,
+        ['broken.txt', 'folder', 'keep.txt', 'linked.txt'],
+      ],
+    })
+  }))
+
+test('concurrent text writes never overwrite each other or leave a partial file', async () =>
+  fixture(async (root) => {
+    const contents = ['Atlas one\n'.repeat(1000), 'Atlas two\n'.repeat(1000)]
+    const results = await Promise.all(contents.map((content) => writeTextFile({ path: 'result.txt', content }, root)))
+    const winner = results.findIndex((result) => result.success)
+    assert({
+      given: 'two writers claiming the same new filename simultaneously',
+      should: 'publish one complete result, refuse the other and clean both staging copies',
+      actual: [
+        results.filter((result) => result.success).length,
+        await readFile(path.join(root, 'result.txt'), 'utf8'),
+        await readdir(root),
+      ],
+      expected: [1, contents[winner], ['result.txt']],
+    })
+  }))
+
+test('cancelled and invalid text writes report failure without creating files', async () =>
+  fixture(async (root) => {
+    const tools = createChatFileTools(options(root))
+    const stopped = await tools.write_file.execute!(
+      { path: 'new/Atlas.txt', content: 'Atlas' },
+      { ...call, abortSignal: AbortSignal.abort() },
+    )
+    const invalid = await writeTextFile({ path: 'bad\0path', content: 'Atlas' }, root)
+    const folder = await writeTextFile({ path: 'folder/', content: 'Atlas' }, root)
+    assert({
+      given: 'Stop before a chat write, a null byte in a path and a folder path without a filename',
+      should: 'return useful errors without creating files or parent folders',
+      actual: [
+        stopped,
+        invalid.success,
+        !invalid.success && invalid.error.includes('nonempty local path'),
+        folder.success,
+        !folder.success && folder.error.includes('including its filename'),
+        await readdir(root),
+      ],
+      expected: [
+        { success: false, path: 'new/Atlas.txt', error: 'The operation was aborted.' },
+        false,
+        true,
+        false,
+        true,
+        [],
+      ],
+    })
+  }))
 
 test('chat organizes verified documents through tools and leaves the other owner’s folder alone', async () =>
   fixture(async (root) => {
@@ -273,8 +393,11 @@ test('full chats expose file management while browser file tools remain read-onl
     const browser = createFileTools({ ...options(root), allowedRoot: root })
     assert({
       given: 'the factories used by chat hosts and the private browser task',
-      should: 'add folder operations only to full chat',
+      should: 'add file writing and folder operations only to full chat',
       actual: [Object.keys(full).sort(), Object.keys(browser)],
-      expected: [['create_directory', 'find_downloads', 'list_directory', 'move_path', 'read_file'], ['read_file']],
+      expected: [
+        ['create_directory', 'find_downloads', 'list_directory', 'move_path', 'read_file', 'write_file'],
+        ['read_file'],
+      ],
     })
   }))
