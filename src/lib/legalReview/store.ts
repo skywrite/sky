@@ -1,9 +1,8 @@
 import { randomUUID } from 'node:crypto'
 import { copyFile, lstat, mkdir } from 'node:fs/promises'
 import * as path from 'node:path'
-import { atomicWrite, hash, missing, readOptional, withLock } from '#lib/outbox/files.ts'
+import { atomicWrite, missing, readOptional, withLock } from '#lib/outbox/files.ts'
 import Document from '#shared/models/Markdown/Document/mod.ts'
-import dayDir from '#shared/nbfs/dayDir.ts'
 import { PlainDate, ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
 import {
   DecisionSchema,
@@ -17,23 +16,23 @@ import {
 export const reviewNow = (): string => ZonedDateTime.now().toUTC().normalize().toString()
 const ID = /^\d{4}-\d{2}-\d{2}_[a-f0-9-]{36}$/
 
-/** One readable notebook record; its companion folder holds immutable source versions. */
+/**
+ * One readable record per review, in Sky's state rather than the notebook: a day's folder holds the
+ * person's own files, and chats read the day's files as context. Its companion folder holds immutable
+ * source versions.
+ */
 export class LegalReviewStore {
-  constructor(
-    readonly notebookDir: string,
-    readonly timeDir: string,
-    readonly stateDir: string,
-  ) {}
+  constructor(readonly dir: string) {}
 
   file(id: string): string {
     if (!ID.test(id)) throw new Error('Invalid legal review ID.')
-    return path.join(this.timeDir, dayDir(new PlainDate(id.slice(0, 10))), 'legal-reviews', `${id}.md`)
+    return path.join(this.dir, `${id}.md`)
   }
 
   async safe(file: string): Promise<string> {
-    const relative = path.relative(this.notebookDir, file)
+    const relative = path.relative(this.dir, file)
     if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) throw new Error('Invalid review path.')
-    let cursor = this.notebookDir
+    let cursor = this.dir
     for (const part of relative.split(path.sep)) {
       cursor = path.join(cursor, part)
       try {
@@ -64,8 +63,7 @@ export class LegalReviewStore {
   }
 
   async lock<T>(id: string, run: () => Promise<T>): Promise<T> {
-    this.file(id)
-    return withLock(path.join(this.stateDir, hash(this.notebookDir), `${id}.lock`), run)
+    return withLock(`${this.file(id).slice(0, -3)}.lock`, run)
   }
 
   async create(input: ReviewInput): Promise<LegalReview> {
@@ -98,11 +96,11 @@ export class LegalReviewStore {
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
     }
-    return path.relative(this.notebookDir, target)
+    return path.relative(this.dir, target)
   }
 
   async sourceFile(review: LegalReview, document: ReviewDocument): Promise<string> {
-    const file = path.resolve(this.notebookDir, document.file)
+    const file = path.resolve(this.dir, document.file)
     if (!file.startsWith(this.file(review.id).slice(0, -3) + path.sep)) throw new Error('Invalid review source.')
     return this.safe(file)
   }
@@ -112,7 +110,7 @@ export class LegalReviewStore {
     const lines = [`# ${review.title}`, '', review.comparison.summary, '', '## Agreements', '']
     for (const doc of review.documents) {
       const link = path
-        .relative(path.dirname(this.file(review.id)), path.join(this.notebookDir, doc.file))
+        .relative(path.dirname(this.file(review.id)), path.join(this.dir, doc.file))
         .split(path.sep)
         .map(encodeURIComponent)
         .join('/')

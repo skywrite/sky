@@ -1,6 +1,6 @@
 ---
 created: 2026-08-09
-updated: 2026-10-01
+updated: 2026-11-03
 ---
 
 # Agreement review
@@ -20,8 +20,12 @@ specific ambiguity only when it affects the conclusions.
 ## A related set across messages
 
 A review has a stable ID and one Markdown record at
-`time/<configured-day>/legal-reviews/<date>_<uuid>.md`. YAML `review` is its
-structured source of truth; the readable body projects its document map,
+`<DIR_STATE>/legal-reviews/<date>_<uuid>.md`, in Sky's state, never in the notebook.
+It is Sky's working record, not a note: a day's folder holds the person's own files,
+and chats read a day's files as context.
+Records kept in the day cluttered it and spent chat context on review YAML.
+The chat links a review by ID only.
+YAML `review` is the record's structured source of truth; the readable body projects its document map,
 findings and decisions. Original bytes are retained under the record's
 companion `sources/` directory, named by content hash. They survive deletion
 of an incoming file or closure of the chat. An explicit replacement preserves

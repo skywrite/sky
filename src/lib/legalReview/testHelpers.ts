@@ -94,7 +94,7 @@ export function scriptedAnalysis(input: Parameters<ReviewIntelligence>[0]): Anal
 
 export async function reviewFixture(analyze: ReviewIntelligence = async (input) => scriptedAnalysis(input)) {
   const root = await mkdtemp(path.join(os.tmpdir(), 'sky-legal-test-'))
-  const store = new LegalReviewStore(root, path.join(root, 'time'), path.join(root, 'state'))
+  const store = new LegalReviewStore(path.join(root, 'state', 'legal-reviews'))
   const reviewer = new LegalReviewer(store, analyze)
   const sourceDir = path.join(root, 'incoming')
   await mkdir(sourceDir)

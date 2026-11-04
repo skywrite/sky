@@ -30,7 +30,7 @@ const params = {
   }),
 }
 type Params = InferParams<typeof params>
-type Result = { report: string; reviewId: string; artifact: string; review: LegalReview }
+type Result = { report: string; reviewId: string; review: LegalReview }
 
 declare module '#commands/lib/core/CommandTypesRegistry.ts' {
   interface CommandTypesRegistry {
@@ -168,7 +168,7 @@ export default class LegalReviewTask extends Command {
       const report = reviewReport(review)
       context.output.log(report)
       context.output.log(`Review: ${review.id}`)
-      return CommandResult.success({ report, reviewId: review.id, artifact: reviewer.store.file(review.id), review })
+      return CommandResult.success({ report, reviewId: review.id, review })
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       if (!accepted) chat?.rejected?.()
