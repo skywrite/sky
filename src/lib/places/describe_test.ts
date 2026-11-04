@@ -2,7 +2,8 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import * as path from 'node:path'
 import PlaceStore from '#shared/models/Store/PlaceStore/mod.ts'
 import { assert, test } from '#test'
-import { describePlace } from './describe.ts'
+import { describeFound, describePlace } from './describe.ts'
+import type { FoundGeography } from './locations.ts'
 
 const RECORDS: Record<string, string> = {
   'US.md': 'name: United States\nkind: country\nref: places/US\nlocation:\n  country: US',
@@ -81,4 +82,39 @@ test('a place reads as its name, the places containing it, then its country', as
   } finally {
     await rm(dir, { recursive: true, force: true })
   }
+})
+
+test('a place found on Google Maps reads as it will once saved, never in its postal form', () => {
+  const found = (input: Partial<FoundGeography>): FoundGeography => ({
+    kind: 'city',
+    name: 'Winooski',
+    country: 'US',
+    region: { code: 'VT', name: 'Vermont' },
+    ...input,
+  })
+  assert({
+    given:
+      'a US city, a neighborhood, a county, a state, a country, a UK city, and a city whose region is not part of its places',
+    should: 'read with the state code in the US, the region name in the UK, and only the country elsewhere',
+    actual: [
+      describeFound(found({})),
+      describeFound(found({ kind: 'neighborhood', name: 'Old North End', city: 'Burlington' })),
+      describeFound(found({ kind: 'area', name: 'Chittenden County' })),
+      describeFound(found({ kind: 'region', name: 'Vermont' })),
+      describeFound(found({ kind: 'country', name: 'United States', region: undefined })),
+      describeFound(found({ name: 'Manchester', country: 'GB', region: { code: 'England', name: 'England' } })),
+      describeFound(found({ name: 'Verona', country: 'IT', region: { code: 'Veneto', name: 'Veneto' } })),
+      describeFound(found({ name: 'Monaco', country: 'MC', region: undefined })),
+    ],
+    expected: [
+      'Winooski, VT, USA',
+      'Old North End, Burlington, VT, USA',
+      'Chittenden County, VT, USA',
+      'Vermont, USA',
+      'United States',
+      'Manchester, England, UK',
+      'Verona, Italy',
+      'Monaco',
+    ],
+  })
 })

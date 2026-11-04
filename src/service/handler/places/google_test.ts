@@ -222,3 +222,36 @@ test('Maps locates a city, a county or a country with the places containing it, 
     ],
   })
 })
+
+test('Maps search results that are a city carry the places containing it; a business carries none', async () => {
+  const request = (async () =>
+    Response.json({
+      places: [
+        {
+          id: 'sample_city',
+          displayName: { text: 'Winooski' },
+          formattedAddress: 'Winooski, Chittenden County, Vermont 05404, USA',
+          types: ['locality', 'political'],
+          addressComponents: [
+            { longText: 'Winooski', shortText: 'Winooski', types: ['locality', 'political'] },
+            { longText: 'Vermont', shortText: 'VT', types: ['administrative_area_level_1', 'political'] },
+            { longText: 'United States', shortText: 'US', types: ['country', 'political'] },
+          ],
+        },
+        {
+          id: 'sample_shop',
+          displayName: { text: 'Winooski Books' },
+          types: ['book_store'],
+          addressComponents: [{ longText: 'United States', shortText: 'US', types: ['country'] }],
+        },
+      ],
+    })) as unknown as typeof fetch
+  const host = createMapsHost({ GOOGLE_MAPS_KEY: 'sample-key' }, new TestSecretsProvider(), request)
+  const [city, shop] = await host.search('Winooski')
+  assert({
+    given: 'a search answering a city and a business',
+    should: 'give the city its country and state, and the business nothing more',
+    actual: [city?.geography?.region, city?.geography?.country, shop?.geography],
+    expected: [{ code: 'VT', name: 'Vermont' }, 'US', undefined],
+  })
+})

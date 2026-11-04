@@ -103,6 +103,8 @@ export interface GooglePlaceResult {
   coordinates: Coordinates | null
   savedRef?: string
   attributions: Array<{ name: string; uri: string }>
+  /** A city, region or country with the places containing it, when Google says */
+  geography?: FoundGeography
 }
 export interface MapsHost {
   config(): Promise<MapsConfig>

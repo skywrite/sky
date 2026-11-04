@@ -35,7 +35,7 @@ export function normalizePlaceName(value: string): string {
       .replace(/\p{M}/gu, '')
       .toLowerCase()
       .replace(/\./g, '')
-      // Trinidad & Tobago is also written Trinidad and Tobago
+      // Bosnia & Herzegovina is also written Bosnia and Herzegovina
       .replace(/&/g, ' and ')
       .replace(/[^\p{L}\p{N}]+/gu, ' ')
       .trim()

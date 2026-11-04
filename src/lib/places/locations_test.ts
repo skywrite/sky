@@ -150,7 +150,7 @@ test('a place found on Google Maps is saved inside its state and country, reusin
     const neighbor = await ensureGeography(
       store,
       dir,
-      found({ name: 'Riverside Flats', kind: 'neighborhood', city: 'Winooski', googlePlaceId: 'sample_neighborhood' }),
+      found({ name: 'Mill Flats', kind: 'neighborhood', city: 'Winooski', googlePlaceId: 'sample_neighborhood' }),
       TODAY,
     )
     assert({
@@ -159,7 +159,7 @@ test('a place found on Google Maps is saved inside its state and country, reusin
       actual: [again, { ...neighbor, created: neighbor.created.map(relative) }],
       expected: [
         { ref: 'places/US/VT/Winooski', created: [] },
-        { ref: 'places/US/VT/Winooski/Riverside-Flats', created: ['US/VT/Winooski/Riverside-Flats.md'] },
+        { ref: 'places/US/VT/Winooski/Mill-Flats', created: ['US/VT/Winooski/Mill-Flats.md'] },
       ],
     })
     const country = await ensureGeography(store, dir, found({ kind: 'country', name: 'France', country: 'FR' }), TODAY)

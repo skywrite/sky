@@ -1,7 +1,8 @@
-import { normalizePlaceRef, PLACE_TYPES } from '#shared/models/Place/mod.ts'
+import { COUNTRIES_WITH_REGIONS, normalizePlaceRef, PLACE_TYPES } from '#shared/models/Place/mod.ts'
 import type PlaceStore from '#shared/models/Store/PlaceStore/mod.ts'
 import type { PlaceEntry } from '#shared/models/Store/PlaceStore/mod.ts'
 import { countryEnding, countryPlace } from './geography.ts'
+import type { FoundGeography } from './locations.ts'
 
 /** Countries whose state and province codes read naturally after a city: Burlington, VT, USA. */
 export const REGION_CODE_COUNTRIES: ReadonlySet<string> = new Set(['US', 'CA', 'AU'])
@@ -99,4 +100,23 @@ export function describePlace(store: PlaceStore, raw: string): string {
   const country = chain.find((item) => item.value.kind === 'country')
   const ending = code ? countryEnding(code) : country?.value.name
   return distinct(ending ? [...parts, ending] : parts).join(', ')
+}
+
+/**
+ * A place found on Google Maps, read as it will once saved: its name, its city, its state where
+ * the saved place will sit inside one, then its country — never Google's postal form
+ * (`37121 Verona, Province of Verona, Italy` reads `Verona, Italy`).
+ */
+export function describeFound(found: FoundGeography): string {
+  const ending = countryEnding(found.country) ?? found.country
+  if (found.kind === 'country') return countryPlace(`places/${found.country}`)?.name ?? found.name
+  if (found.kind === 'region') return distinct([found.name, ending]).join(', ')
+  const region =
+    found.region && COUNTRIES_WITH_REGIONS.has(found.country)
+      ? REGION_CODE_COUNTRIES.has(found.country)
+        ? found.region.code
+        : found.region.name
+      : undefined
+  const city = found.kind === 'city' ? undefined : found.city
+  return distinct([found.name, city, region, ending].filter((part): part is string => !!part)).join(', ')
 }

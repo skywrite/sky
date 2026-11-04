@@ -198,7 +198,7 @@ export function createMapsHost(
     try {
       const mask = id
         ? 'id,displayName,formattedAddress,location,types,primaryType,addressComponents,websiteUri,googleMapsUri,attributions'
-        : 'places.id,places.displayName,places.formattedAddress,places.location,places.types,places.primaryType,places.attributions'
+        : 'places.id,places.displayName,places.formattedAddress,places.location,places.types,places.primaryType,places.addressComponents,places.attributions'
       const response = await request(
         `https://places.googleapis.com/v1/places${id ? `/${encodeURIComponent(id)}` : ':searchText'}`,
         {
@@ -238,7 +238,18 @@ export function createMapsHost(
       return config()
     },
     search: async (query) =>
-      (await lookup(undefined, query)).filter((place) => place.id && place.displayName?.text).map(result),
+      (await lookup(undefined, query))
+        .filter((place) => place.id && place.displayName?.text)
+        .map((place) => {
+          // A city, region or country also carries the places containing it, to read as Sky describes it
+          let geography: FoundGeography | undefined
+          try {
+            geography = place.addressComponents?.length ? found(place) : undefined
+          } catch {
+            geography = undefined
+          }
+          return { ...result(place), ...(geography ? { geography } : {}) }
+        }),
     detail: async (id) => {
       const place = (await lookup(id))[0]
       if (!place?.id) throw new PlaceError('That Google place could not be found. Search again.', 404)

@@ -168,7 +168,9 @@ export function createPlacesStore(store: MarkdownStore, baseDir: string, dirs: s
     if (yaml.errors.length || (yaml.contents && !isMap(yaml.contents)) || doc.yamlError)
       throw new PlaceError('This file has invalid frontmatter. Fix it in the notebook before editing here.', 409)
     if (find(id).value.toMarkdown() !== doc.toMarkdown()) store.set(file, raw)
-    return { file, raw, yaml, body: split.markdown, doc, revision: hash(raw) }
+    // The line breaks between the closing `---` and the body, kept as the file has them
+    const gap = raw.slice(0, raw.length - split.markdown.length).match(/\n*$/)?.[0] || '\n'
+    return { file, raw, yaml, gap, body: split.markdown, doc, revision: hash(raw) }
   }
   async function detail(id: string): Promise<PlaceDetail> {
     const current = await snapshot(id)
@@ -248,7 +250,7 @@ export function createPlacesStore(store: MarkdownStore, baseDir: string, dirs: s
     await safeFile(current.file)
     if (hash(await readFile(current.file, 'utf8')) !== current.revision)
       throw new PlaceError('This place changed while saving. Reload it before trying again.', 409)
-    const content = `---\n${current.yaml.toString()}---\n${body}`
+    const content = `---\n${current.yaml.toString()}---${current.gap}${body}`
     await atomicWrite(current.file, content)
     store.set(current.file, content)
   }

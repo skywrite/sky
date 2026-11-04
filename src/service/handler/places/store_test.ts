@@ -109,7 +109,8 @@ test('Places preserve legacy references, YAML comments and prose through metadat
         raw.includes('# Keep this comment'),
         raw.includes('nested: preserve me'),
         raw.includes('plusCode: sample'),
-        raw.endsWith(original.split('---\n').at(-1)!),
+        // The blank line after the frontmatter included
+        raw.endsWith(`---${original.split('---').at(-1)!}`),
       ],
       expected: [id, 'places/FR/Paris/drink/Joes-Cafe', ['Joe’s Cafe'], true, true, true, true],
     })
@@ -417,11 +418,12 @@ test('Locations: saved places and countries to choose, Google Maps cities saved 
             {
               id: 'sample_city',
               name: 'Winooski',
-              address: 'Winooski, VT, USA',
+              address: 'Winooski, Chittenden County, Vermont 05404, USA',
               kind: 'city',
               category: 'visit',
               coordinates: null,
               attributions: [],
+              geography: { kind: 'city', name: 'Winooski', country: 'US', region: { code: 'VT', name: 'Vermont' } },
             },
             {
               id: 'sample_shop',

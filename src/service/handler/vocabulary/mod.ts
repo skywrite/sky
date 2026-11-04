@@ -5,6 +5,7 @@
  */
 
 import * as path from 'node:path'
+import { describePlace } from '#lib/places/describe.ts'
 import { matchScore, normalizeMatchText as plain } from '#lib/string/matchScore.ts'
 import type Document from '#shared/models/Markdown/Document/mod.ts'
 import type MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
@@ -252,9 +253,19 @@ export function buildVocabulary(store: MarkdownStore, base: string): Vocabulary 
   for (const { placePath, path: absolute, value: doc } of store.places.getEntries()) {
     // A colliding ref cannot be selected safely until the records are repaired.
     if (store.places.findByPlacePath(placePath)?.path !== absolute) continue
-    const entity = entityOf('place', placePath, toNotebookRelativePath(base, absolute), doc, doc.aliases)
-    entity.label = doc.name
-    entity.hint = [doc.kind, doc.toLocationDisplayString() || doc.parent || placePath].filter(Boolean).join(' · ')
+    // A city, region or country reads as where it is, Burlington, VT, USA; a venue by its name
+    const geographic = doc.kind !== 'venue'
+    const entity = entityOf(
+      'place',
+      placePath,
+      toNotebookRelativePath(base, absolute),
+      doc,
+      geographic ? [doc.name, ...doc.aliases] : doc.aliases,
+    )
+    entity.label = geographic ? describePlace(store.places, placePath) : doc.name
+    entity.hint = geographic
+      ? doc.kind
+      : [doc.kind, doc.toLocationDisplayString() || doc.parent || placePath].filter(Boolean).join(' · ')
     entities.push(entity)
   }
   for (const [type, s] of [
@@ -441,6 +452,13 @@ function typeOfResolved(type: string, path: string): EntityType | null {
   }
 }
 
+/** How a place chip reads: a city, region or country as where it is, Burlington, VT, USA; a venue by its name. */
+function placeLabel(store: MarkdownStore, file: string): string {
+  const entry = store.places.getEntries().find((item) => item.path === file)
+  if (!entry) return store.places.findByPath(file)?.name ?? ''
+  return entry.value.kind === 'venue' ? entry.value.name : describePlace(store.places, entry.placePath)
+}
+
 /** Where each name points, for the chips of a document: null when the notebook has no such thing. */
 export async function resolveNames(
   store: MarkdownStore,
@@ -463,7 +481,7 @@ export async function resolveNames(
     }
     const path = toNotebookRelativePath(base, ref.path)
     const type = typeOfResolved(ref.type, path)
-    out[name] = type ? { type, path, ...(ref.type === 'place' ? { label: ref.value.name } : {}) } : null
+    out[name] = type ? { type, path, ...(ref.type === 'place' ? { label: placeLabel(store, ref.path) } : {}) } : null
   }
   return out
 }

@@ -1,6 +1,7 @@
 import { Hono } from 'hono'
 import { bodyLimit } from 'hono/body-limit'
 import { z } from 'zod'
+import { describeFound } from '#lib/places/describe.ts'
 import { hold } from '../../activity.ts'
 import { SavePlaceSchema } from './schema.ts'
 import type { createPlacesStore } from './store.ts'
@@ -113,7 +114,8 @@ export function createPlacesRoutes(places: ReturnType<typeof createPlacesStore> 
         .map(
           (result): LocationSearchResult => ({
             id: result.id,
-            label: result.address || result.name,
+            // As the saved place will read: Burlington, VT, USA, not Google's postal form
+            label: result.geography ? describeFound(result.geography) : result.address || result.name,
             kind: result.kind,
             savedRef: saved.find((place) => place.googlePlaceId === result.id)?.ref,
           }),

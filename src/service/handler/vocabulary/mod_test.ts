@@ -373,3 +373,56 @@ test({ name: 'vocabulary - the suggestion route answers who a name may mean' }, 
     ],
   })
 })
+
+test({ name: 'vocabulary - a city, region or country reads as where it is; a venue by its name' }, async () => {
+  const base = await mkdtemp(path.join(os.tmpdir(), 'sky-vocabulary-places-'))
+  try {
+    const places = path.join(base, 'places')
+    const write = async (file: string, yaml: string) => {
+      await mkdir(path.dirname(path.join(places, file)), { recursive: true })
+      await writeFile(path.join(places, file), `---\n${yaml}\n---\n`)
+    }
+    await write(
+      'locations/US/VT.md',
+      'name: Vermont\nkind: region\nref: places/US/VT\nlocation:\n  country: US\n  region: VT',
+    )
+    await write(
+      'locations/US/VT/Burlington.md',
+      'name: Burlington\nkind: city\nref: places/US/VT/Burlington\nparent: places/US/VT',
+    )
+    await write('locations/US/VT/Burlington/drink/Sample-Cafe.md', 'name: Sample Cafe\ntype: drink')
+    const store = await MarkdownStore.build({ peopleDirs: [], orgDirs: [], placesDir: places, timeDirs: [] })
+    const vocabulary = await vocabularyOf(store, base)
+    const offered = complete(vocabulary, { kind: 'places', query: 'burl' }).find(
+      (item) => item.value === 'places/US/VT/Burlington',
+    )
+    assert({
+      given: 'a saved city, a venue inside it, and a search by the city’s first letters',
+      should: 'show the city as where it is in its chip and its suggestion, and the venue by its name',
+      actual: {
+        chips: await resolveNames(store, base, [
+          'places/US/VT/Burlington',
+          'places/US/VT/Burlington/drink/Sample-Cafe',
+        ]),
+        offered: [offered?.label, offered?.hint],
+      },
+      expected: {
+        chips: {
+          'places/US/VT/Burlington': {
+            type: 'place',
+            path: 'places/locations/US/VT/Burlington.md',
+            label: 'Burlington, VT, USA',
+          },
+          'places/US/VT/Burlington/drink/Sample-Cafe': {
+            type: 'place',
+            path: 'places/locations/US/VT/Burlington/drink/Sample-Cafe.md',
+            label: 'Sample Cafe',
+          },
+        },
+        offered: ['Burlington, VT, USA', 'city'],
+      },
+    })
+  } finally {
+    await rm(base, { recursive: true, force: true })
+  }
+})

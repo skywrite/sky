@@ -175,6 +175,11 @@ the saved place it names when exactly one does. In the explorer, a person's or
 organization's `location` uses the same picker and is written as one value; the
 `location` and `where` of other documents still take any place or text.
 
+Everywhere a place shows as a chip or a suggestion, a city, region or country reads
+as its description and a venue by its name. A Google Maps result in the picker is
+described the same way from Google's address parts (`describeFound`), never in
+Google's postal form.
+
 AI profile updates fill an empty location only with a saved place the text names
 (`notebookLocations.ts`); anything else is skipped with the reason. Google Maps is
 never asked from a conversation, so a model's guess never becomes a place.
