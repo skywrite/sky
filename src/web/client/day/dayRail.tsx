@@ -8,6 +8,7 @@ import { refusalOf } from '../settings/settingsBlocks.tsx'
 import { RailToggle } from '../shell/railToggle.tsx'
 import type { DayData, ThreadSummary } from './day.tsx'
 import { chatState, chatTurnCount, dayChatRows } from './dayChats.ts'
+import { meetingImports } from './meetingImports.ts'
 
 /**
  * The rail beside a day: what is around the day rather than in its
@@ -188,14 +189,41 @@ function Section({
   )
 }
 
+/**
+ * A meeting's import in its row: a breathing dot while sky works, amber
+ * while it waits on the person — either opens the import — then the record
+ * it filed, until the schedule reads it.
+ */
+function ImportMark({ job, name, onOpen }: { job: ImportJob; name: string; onOpen: (id: string) => void }) {
+  if (job.state === 'done' && job.result)
+    return <a href={meetingHref(job.result.file) ?? fileHref(job.result.file)}>filed</a>
+  const waiting = job.state === 'needs-you'
+  return (
+    <UnstyledButton
+      className="sky-dr-importing"
+      data-state={job.state}
+      title={job.line ?? importStateWord(job)}
+      aria-label={waiting ? `${name} needs you` : `Importing ${name}`}
+      onClick={() => onOpen(job.id)}
+    >
+      {waiting ? 'needs you' : 'importing'}
+    </UnstyledButton>
+  )
+}
+
 function MeetingRow({
   meeting: m,
   ymd,
+  importing,
+  onOpenImport,
   onImportMeeting,
   onDismiss,
 }: {
   meeting: ScheduledMeeting
   ymd: string
+  /** The import filing this meeting, while it runs or waits */
+  importing?: ImportJob
+  onOpenImport?: (id: string) => void
   onImportMeeting?: (files: File[], meeting: MeetingImport) => void
   onDismiss?: (meeting: ScheduledMeeting) => void
 }) {
@@ -231,6 +259,8 @@ function MeetingRow({
         <span className="sky-dr-mark">
           {drop.dragging ? (
             'drop to import'
+          ) : importing && onOpenImport ? (
+            <ImportMark job={importing} name={m.title || 'this meeting'} onOpen={onOpenImport} />
           ) : notification ? (
             m.state === 'now' ? (
               'now'
@@ -315,15 +345,20 @@ function MeetingRow({
 function ScheduleSection({
   schedule,
   ymd,
+  imports,
+  onOpenImport,
   onImportMeeting,
   onImportFiles,
 }: {
   schedule: DaySchedule | null
   ymd: string
+  imports: ImportJob[]
+  onOpenImport: (id: string) => void
   onImportMeeting?: (files: File[], meeting: MeetingImport) => void
   onImportFiles?: (files: File[]) => void
 }) {
   const drop = useFileDrop(Boolean(onImportMeeting), (files) => onImportMeeting?.(files, { day: ymd }))
+  const importing = schedule ? meetingImports(schedule.meetings, imports, ymd) : new Map<ScheduledMeeting, ImportJob>()
   // Reset after each pick, so the same file can be chosen again.
   const importPicker = useRef<() => void>(null)
   const [dismissed, setDismissed] = useState<ScheduledMeeting | null>(null)
@@ -397,6 +432,8 @@ function ScheduleSection({
             <MeetingRow
               meeting={m}
               ymd={ymd}
+              importing={importing.get(m)}
+              onOpenImport={onOpenImport}
               onImportMeeting={onImportMeeting}
               onDismiss={(meeting) => {
                 setDismissed(meeting)
@@ -649,7 +686,7 @@ export function DayRail({
   chats: DayData['chats']
   /** Today keeps every live thread; historical days keep the ones associated with that day. */
   threads: ThreadSummary[]
-  /** Imports, when the day is today */
+  /** Every import on today's page; another day's own meeting imports and notes */
   imports: ImportJob[]
   onOpenImport: (id: string) => void
   onImportMeeting?: (files: File[], meeting: MeetingImport) => void
@@ -670,6 +707,8 @@ export function DayRail({
         <ScheduleSection
           schedule={schedule}
           ymd={ymd}
+          imports={imports}
+          onOpenImport={onOpenImport}
           onImportMeeting={onImportMeeting}
           onImportFiles={onImportFiles}
         />

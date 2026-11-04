@@ -449,6 +449,9 @@ scrolls; its foot is anchored.
   slot. The section heading and the blank space below its rows, before Chats, import an
   unscheduled meeting on the viewed day, with an editable suggested time;
   hovering there turns the whole section blue. See [the meeting import flow](../../import/docs/README.md#dropping-on-a-meeting).
+  While a meeting import runs, the row says `importing` with a breathing dot, or `needs you` in amber; either opens it.
+  `meetingImports.ts` ties the import's chosen time to a row by the same fifteen-minute rule, so it marks the row
+  the record will land on; a filed import links its record until the next schedule read lists it.
 - **Chats** — only live conversations from the main column's chat hierarchy,
   with a count of live chats, time, and current state. A branch names its parent
   and the turn it left from. Saved-only chats remain in the main column.

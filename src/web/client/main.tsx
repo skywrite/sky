@@ -306,10 +306,11 @@ function Canvas() {
     meetingRoute !== null ||
     noteRoute !== null
   const activeDayYmd = journalRoute?.day ?? filesRoute?.ymd ?? meetingRoute?.ymd ?? noteRoute?.ymd ?? dayYmd
+  // Another day keeps its own meeting imports too, so each meeting's row can show its import.
   const dayImports = importRows.filter((job) =>
     isAttachmentNote(job.readback.source, job.fields?.kind) || job.readback.source === 'imessage-audio'
       ? (job.fields?.when ?? job.suggestedWhen).slice(0, 10) === (activeDayYmd ?? day?.today.ymd)
-      : isToday,
+      : isToday || (job.fields?.kind === 'meeting' && job.fields.when.slice(0, 10) === activeDayYmd),
   )
   const todayActive = isStreaks || (onDayPage && isToday) || (showDateNav && !isWeek && activeDayYmd === day?.today.ymd)
   const tomorrowYmd = day ? new PlainDate(day.today.ymd).addDays(1).ymd : null

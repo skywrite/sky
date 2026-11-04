@@ -197,6 +197,48 @@
   vertical-align: 1px;
 }
 
+/* A meeting being imported: a breathing dot while sky works, amber while it waits on the person. */
+.sky-dr-mark .sky-dr-importing {
+  font: inherit;
+  color: var(--sky-accent);
+}
+
+.sky-dr-mark .sky-dr-importing:hover {
+  text-decoration: underline;
+}
+
+.sky-dr-mark .sky-dr-importing::before {
+  content: '';
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: currentColor;
+  margin-right: 5px;
+  vertical-align: 1px;
+  animation: sky-dr-breathe 1.8s ease-in-out infinite;
+}
+
+.sky-dr-mark .sky-dr-importing[data-state='needs-you'] {
+  color: var(--sky-amber);
+}
+
+.sky-dr-mark .sky-dr-importing[data-state='needs-you']::before {
+  animation: none;
+}
+
+@keyframes sky-dr-breathe {
+  50% {
+    opacity: 0.3;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sky-dr-mark .sky-dr-importing::before {
+    animation: none;
+  }
+}
+
 /* work in hand: an import running, waiting, or stopped */
 .sky-dr-work {
   display: flex;
