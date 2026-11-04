@@ -1,6 +1,6 @@
 ---
 created: 2026-09-04
-updated: 2026-10-27
+updated: 2026-11-04
 ---
 
 # Workstreams — from a loose objective to work that moves forward
@@ -901,6 +901,9 @@ accurate results, and fewer repeated explanations. Track duplicated work,
 unnecessary interruptions, and effort consumed alongside useful artifacts.
 
 ## Practical limits and further work
+
+The [Roles proposal](../../todo/roles.md) explores reusable expertise and ongoing responsibility within and across
+workstreams, including a way to begin using a role through conversation before organizing work.
 
 Observation covers the workstream record, related work, selected notebook
 sources, and saved artifacts. The model's input and effort are capped, and

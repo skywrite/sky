@@ -1,6 +1,6 @@
 ---
 created: 2026-09-06
-updated: 2026-10-27
+updated: 2026-11-04
 ---
 
 # Open work
@@ -10,6 +10,8 @@ what it trades. Written when the item is named, not when it is built.
 When an item ships, its file goes, and the subsystem's own docs carry the
 story from there.
 
+- [Reusable roles for expertise and ongoing responsibility](roles.md) — GTM specialists, COOs, and brand directors
+  with reusable methods and memory, assigned within or across workstreams and accessible through conversation.
 - [The client build's retry leaves with Bun's resolver fix](bundle-retry-leaves-with-bun-fix.md) —
   `web/bundle.ts` builds the client once more when a build only failed to
   resolve files, around a `bun test` bug (oven-sh/bun#22941); it goes once
