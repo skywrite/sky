@@ -8,6 +8,7 @@ import {
   type ReviewChat,
   type ReviewJob,
   type ReviewRuntime,
+  type ReviewStart,
   type ReviewState,
   type ReviewStep,
   type ReviewView,
@@ -20,11 +21,15 @@ export interface ReviewInventory {
   summarized: boolean
   summaryHref: string | null
   chats?: ReviewChat[]
+  /** The day waiting to begin, once the calendar has moved past the open day; null when none waits. */
+  due?: { ymd: string; weekday: string } | null
 }
 export interface ReviewHost {
   inventory(day: string): Promise<ReviewInventory>
   apply(day: string, item: ReviewItem, values?: Record<string, string>): Promise<void>
   move?(day: string, items: ReviewItem[], today: string): Promise<void>
+  /** day:start for the waiting day, as Start runs it; rejects with the reason it did not start. */
+  startDay?(ymd: string): Promise<void>
   runtime: ReviewRuntime
 }
 
@@ -34,6 +39,8 @@ export class DayReviewStore {
   private readonly requested = new Set<string>()
   /** The running summary's Stop, by day. */
   private readonly summaries = new Map<string, AbortController>()
+  /** The day each review's return prompt started, by reviewed day; the day file itself records the start. */
+  private readonly starts = new Map<string, ReviewStart>()
   constructor(
     private readonly dir: string,
     private readonly host: ReviewHost,
@@ -71,9 +78,11 @@ export class DayReviewStore {
     ])
     const missingSummary = !inventory.summaryHref && state.summary.status === 'done'
     const items = inventory.items.filter((item) => !state.answers[item.id])
+    const { due: _due, ...shown } = inventory
     return {
       ...state,
-      ...inventory,
+      ...shown,
+      start: this.starts.get(day) ?? null,
       // A run in progress shows as one; otherwise the file decides, then what the person did here.
       recaps: recaps.map(({ id, title, saved }): ReviewJob => {
         const job = state.recaps.find((job) => job.id === id)
@@ -108,6 +117,8 @@ export class DayReviewStore {
     const inventory = await this.host.inventory(day)
     if (day >= inventory.today) throw new Error('Review a previous day. Today is still in progress.')
     if (!prompted) await this.host.runtime.acknowledge(day)
+    // The prompt shows after hours away across a calendar date: the morning, so the waiting day starts, once.
+    else if (!this.starts.has(day)) this.startWaitingDay(day, inventory.due)
     await this.change(day, (state) => {
       state.paused = false
       if (inventory.summaryHref) {
@@ -137,6 +148,32 @@ export class DayReviewStore {
     await this.change(day, (state) => {
       state.paused = true
     })
+  }
+  /** Try again after the prompt's start failed: whichever day waits now. */
+  async startAgain(day: string) {
+    const failed = this.starts.get(day)
+    if (failed?.status !== 'error') throw new Error('Only a start that failed can be tried again.')
+    const { due } = await this.host.inventory(day)
+    // Another tab may have tried again meanwhile.
+    if (this.starts.get(day) === failed) {
+      this.starts.delete(day)
+      this.startWaitingDay(day, due)
+    }
+    return this.view(day)
+  }
+  /** Runs in the background, as Start would, while the review shows it running, done, or why it failed. */
+  private startWaitingDay(day: string, due: ReviewInventory['due']) {
+    if (!this.host.startDay || !due) return
+    const job: ReviewStart = { ymd: due.ymd, weekday: due.weekday, status: 'running' }
+    this.starts.set(day, job)
+    const release = hold('starting the day')
+    void this.host
+      .startDay(due.ymd)
+      .then(
+        () => this.starts.set(day, { ...job, status: 'done' }),
+        (error: unknown) => this.starts.set(day, { ...job, status: 'error', message: (error as Error).message }),
+      )
+      .finally(release)
   }
   async draft(day: string, id: string, values: Record<string, string>) {
     await this.change(day, (state) => {

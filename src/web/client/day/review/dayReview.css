@@ -258,6 +258,19 @@
 .sky-review-history small {
   display: block;
 }
+.sky-review-start {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0 0 18px;
+  font-size: 15px;
+  color: var(--sky-dim);
+}
+/* Level with the first line when the words wrap on a phone. */
+.sky-review-start svg {
+  flex-shrink: 0;
+  margin-top: 4px;
+}
 .sky-review-error {
   padding: 15px;
   border: 1px solid var(--sky-border-soft);

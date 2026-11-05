@@ -182,6 +182,7 @@ export function createReviewRoutes(options: Options) {
       hasDay,
       summarized,
       today: view.planningToday ?? PlainDate.today().ymd,
+      due: view.due ? { ymd: view.due.ymd, weekday: view.due.weekday } : null,
       summaryHref: view.summary ? `/${ymd}?view=summary` : null,
       chats: ((await options.chats?.list()) ?? [])
         .filter((thread) => !thread.id.startsWith('day-') && thread.day <= ymd)
@@ -218,6 +219,20 @@ export function createReviewRoutes(options: Options) {
         )
       }
     },
+    // Start's own route keeps its checks: a started day never starts twice, and none ahead of the calendar.
+    startDay: options.day.commands
+      ? async (ymd) => {
+          const response = await options.dayRoutes.request(`/${ymd}/start`, { method: 'POST' })
+          if (response.ok) return
+          const body = (await response.json().catch(() => ({}))) as {
+            error?: string
+            view?: { record?: { started?: unknown } }
+          }
+          // Started meanwhile from a page or the terminal: the morning's start has happened.
+          if (body.view?.record?.started) return
+          throw new Error(body.error ?? `Sky could not start ${new PlainDate(ymd).dayLong}.`)
+        }
+      : undefined,
     apply: async (ymd, item, values) => {
       if (item.kind === 'streak' && item.name && options.streaks) {
         await options.streaks.completion(item.name, { date: ymd, done: true, expectedDone: false })
@@ -264,6 +279,7 @@ export function createReviewRoutes(options: Options) {
     await store.close(reviewDay(c))
     return c.json({ ok: true })
   })
+  app.post('/:day/start', async (c) => c.json(await store.startAgain(reviewDay(c))))
   app.post('/:day/refresh', async (c) => {
     calendars.delete(reviewDay(c))
     return c.json(await store.open(reviewDay(c)))

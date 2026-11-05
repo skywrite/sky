@@ -27,6 +27,15 @@ export interface ReviewJob {
   message?: string
 }
 
+/** The waiting day the return prompt starts as it shows; `message` says why it did not start. */
+export interface ReviewStart {
+  ymd: string
+  /** Monday … Sunday */
+  weekday: string
+  status: 'running' | 'done' | 'error'
+  message?: string
+}
+
 export interface ReviewState {
   day: string
   paused: boolean
@@ -45,6 +54,8 @@ export interface ReviewView extends ReviewState {
   summarized: boolean
   summaryHref: string | null
   chats: ReviewChat[]
+  /** The day this review's return prompt started, or null when it started none. */
+  start: ReviewStart | null
 }
 
 export interface ReviewChat {

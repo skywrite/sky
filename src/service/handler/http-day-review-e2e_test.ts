@@ -10,7 +10,7 @@ import { createTestHttpApp } from './httpTestHelpers.ts'
 
 test(
   {
-    name: 'morning review resumes real saved choices on desktop and phone, without starting or ending a day',
+    name: 'morning review resumes real saved choices on desktop and phone, starting the waiting day once and ending none',
     ignore: env.get('SKY_BROWSER_TESTS') !== '1',
     timeout: 120000,
   },
@@ -144,13 +144,13 @@ test(
       await dialog.getByRole('button', { name: 'Read summary' }).waitFor()
       assert({
         given: 'completed review reopened from the original day',
-        should: 'preserve choices and run one summary, with no lifecycle command',
+        should: 'preserve choices and run one summary, with only the prompt’s start and no end',
         actual: [
           await dialog.getByRole('button', { name: 'Move to today (3)' }).count(),
           f.calls.filter((c) => ['start', 'end', 'summary'].includes(c)),
           errors,
         ],
-        expected: [0, ['summary'], []],
+        expected: [0, ['start', 'summary'], []],
       })
       await dialog.getByRole('button', { name: 'Close for now' }).click()
       await dialog.waitFor({ state: 'detached' })

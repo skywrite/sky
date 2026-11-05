@@ -1,6 +1,6 @@
 ---
 created: 2026-09-03
-updated: 2026-11-04
+updated: 2026-11-05
 ---
 
 # The day's items, the day's rail, and the day's files
@@ -254,10 +254,12 @@ height cap. See [2026-09-05 — larger type without clipped tasks](2026-09-05-la
 
 ## Reviewing a previous day
 
-The morning review is independent of Start; opening or completing it never starts a day.
 An OS input monitor offers the last notebook day's review after returning from five idle hours across a calendar date.
 Settings → Me → About me changes the idle hours live; zero disables automatic prompts.
 Browser polls are not activity, and service downtime alone is not evidence of sleep.
+The prompt showing is the morning, so it also starts the waiting day with no press, through Start's own route,
+once however many tabs show it.
+The dialog says the day has started, or why it couldn't, with Try again; a review opened from a page starts nothing.
 Every open tab, and any tab opened later, shows the prompt until the person acts on it or closes it in one tab.
 Acting in a prompted copy keeps the review in that tab's address; the other tabs drop theirs without pausing the review.
 The date is then not offered again; the day page's status line still reaches it: `Review` while the day has no summary,
@@ -304,7 +306,7 @@ Each button runs `day:start` at the moment it is pressed; `createWeekHost` runs 
   Start. The week page keeps its Start too, as a quiet button. 04:00 is the
   boundary a day with no start is assumed to begin at (recap's day window),
   so a late night and a morning differ only in how loudly the page speaks;
-  nothing starts without a press. After `day:start` finishes, the shell
+  only the morning review's prompt starts a day without a press. After `day:start` finishes, the shell
   re-reads today, the week list and the clock, and opens Today, which is the
   started day now.
 The week page offers Review for a past day with a record and no summary.

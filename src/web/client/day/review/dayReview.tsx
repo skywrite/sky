@@ -7,11 +7,13 @@ import {
   reviewItemStep,
   type ReviewItem,
   type ReviewJob,
+  type ReviewStart,
   type ReviewStep,
   type ReviewView,
 } from '../../../../service/handler/day/review/types.ts'
 import type { MeetingImport } from '../../import/import.tsx'
 import { useDialogTitle } from '../../lib/useDialogTitle.ts'
+import { SunIcon } from '../dayStart.tsx'
 import { ReviewSteps, steps } from './reviewSteps.tsx'
 
 const api = '/day-review/_api'
@@ -114,6 +116,27 @@ function Job({
   )
 }
 
+/** The prompt starts the waiting day as it shows, so the dialog says that it did, or why it could not. */
+function StartLine({ start, busy, retry }: { start: ReviewStart; busy: boolean; retry: () => void }) {
+  if (start.status === 'error')
+    return (
+      <div className="sky-review-error" role="alert">
+        Sky couldn’t start {start.weekday}: {start.message ?? 'day:start did not finish.'}
+        <Button size="compact-sm" loading={busy} onClick={retry}>
+          Try again
+        </Button>
+      </div>
+    )
+  return (
+    <p className="sky-review-start" role="status">
+      <SunIcon size={15} />
+      {start.status === 'running'
+        ? `Starting ${start.weekday}…`
+        : `${start.weekday} has started. Anything you add now goes there.`}
+    </p>
+  )
+}
+
 function TrackingAnswers({
   item,
   day,
@@ -206,6 +229,11 @@ export function DayReviewDialog({
   useEffect(() => {
     if (view?.step) heading.current?.focus()
   }, [view?.step])
+  const startStatus = view?.start?.status
+  useEffect(() => {
+    // The new day has begun: the shell re-reads today, the week and the clock.
+    if (startStatus === 'done') onChanged()
+  }, [startStatus])
   useEffect(() => {
     let alive = true
     const read = async (open: boolean) => {
@@ -340,6 +368,13 @@ export function DayReviewDialog({
       />
       {view?.hasDay && <ReviewSteps view={view} busy={Boolean(busy)} goTo={goTo} />}
       <div className="sky-review-body">
+        {view?.start && (
+          <StartLine
+            start={view.start}
+            busy={busy === 'start'}
+            retry={() => void run('start', () => reviewRequest(`${day}/start`, {}))}
+          />
+        )}
         {error && (
           <div className="sky-review-error" role="alert">
             {error}

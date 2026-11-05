@@ -1,6 +1,6 @@
 ---
 created: 2026-10-03
-updated: 2026-10-27
+updated: 2026-11-05
 ---
 
 # Days start and close by themselves
@@ -21,7 +21,9 @@ mostly answer for itself: have you slept, and is this day's record done.
 
 The buttons moved onto the day pages on 2026-10-03 (see the day handler's
 docs). That makes the acts findable. This note is the direction past them,
-agreed on 2026-10-03 and parked: not yet.
+agreed on 2026-10-03 and parked: not yet. Since 2026-11-05 the morning
+review's prompt starts the waiting day when it shows, which covers the
+first rung for mornings after five idle hours; the rest is still parked.
 
 ## The shape of the fix
 
@@ -72,3 +74,5 @@ same page.
 - 2026-10-03: for people new to Sky, starting and ending a day by hand is
   weird; days that start and close by themselves is the direction.
 - 2026-10-03: not yet. The buttons first.
+- 2026-11-05: the morning review's prompt starts the waiting day as it
+  shows. Edge cases such as flights are handled as they come up.

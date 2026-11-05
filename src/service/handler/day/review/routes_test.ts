@@ -241,3 +241,62 @@ test('Stop refuses while no summary runs, ends a running one without a file, and
     await f.dispose()
   }
 })
+
+test('the return prompt starts the waiting day once as it shows, and a review opened by hand starts none', async () => {
+  const f = await reviewFixture()
+  try {
+    await f.post(`${REVIEW_DAY}/open`)
+    const byHand = (await f.view()).start
+    await Promise.all([
+      f.post(`${REVIEW_DAY}/open`, { prompted: true }),
+      f.post(`${REVIEW_DAY}/open`, { prompted: true }),
+    ])
+    const started = await f.waitFor((view) => view.start?.status === 'done')
+    await f.post(`${REVIEW_DAY}/open`, { prompted: true })
+    assert({
+      given: 'a review opened by hand, then the prompt showing in two tabs at once and once more after a reload',
+      should: 'start the waiting day once, as Start does, and name it',
+      actual: [byHand, started.start, f.calls.filter((call) => call === 'start').length],
+      expected: [null, { ymd: REVIEW_TODAY, weekday: 'Tuesday', status: 'done' }, 1],
+    })
+  } finally {
+    await f.dispose()
+  }
+})
+
+test('a start that fails says why, and Try again starts the waiting day', async () => {
+  const f = await reviewFixture()
+  const commands = f.dayOptions.commands!
+  const startDay = commands.startDay
+  commands.startDay = async () => {
+    throw new Error('The weather service did not answer.')
+  }
+  try {
+    const early = await f.post(`${REVIEW_DAY}/start`)
+    await f.post(`${REVIEW_DAY}/open`, { prompted: true })
+    const failed = await f.waitFor((view) => view.start?.status === 'error')
+    commands.startDay = startDay
+    const again = await f.post(`${REVIEW_DAY}/start`)
+    const started = await f.waitFor((view) => view.start?.status === 'done')
+    assert({
+      given: 'Try again before any start, then a prompt whose start fails, then Try again',
+      should: 'refuse the first, show which day did not start and why, then start it',
+      actual: [
+        early.status,
+        failed.start,
+        again.status,
+        started.start,
+        f.calls.filter((call) => call === 'start').length,
+      ],
+      expected: [
+        409,
+        { ymd: REVIEW_TODAY, weekday: 'Tuesday', status: 'error', message: 'The weather service did not answer.' },
+        200,
+        { ymd: REVIEW_TODAY, weekday: 'Tuesday', status: 'done' },
+        1,
+      ],
+    })
+  } finally {
+    await f.dispose()
+  }
+})
