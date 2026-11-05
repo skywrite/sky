@@ -118,13 +118,19 @@ export async function captureLaterItems(
     const { link } = row
     output.log('')
     output.log(`Capturing ${link}`)
-    const inConversation = hits.get(row)?.doc
-    if (inConversation) {
-      output.log(`  Already in the notebook (${inConversation}) — skipping capture`)
+    const hit = hits.get(row)
+    if (hit?.doc) {
+      output.log(`  Already in the notebook (${hit.doc}) — skipping capture`)
       await known(row)
       continue
     }
-    const result = await tasks.run('slack:follow:message', { link, noEditor: true })
+    // In a conversation the landing keeps, later replies land in its day file:
+    // following the thread too would write them a second time
+    const result = await tasks.run('slack:follow:message', {
+      link,
+      noEditor: true,
+      ...(hit?.kept ? { noFollow: true } : {}),
+    })
 
     if (!result.ok) {
       // slack:follow:message declines a thread captured before only once its

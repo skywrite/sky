@@ -164,11 +164,11 @@ const dmRow = (): LaterCaptureRow => ({
 })
 const DAY_FILE = '2031-03-16/actions/messages/09-30_slack_Jane-to-JP_Atlas-launch-plan.md'
 
-/** Records each command run; the capture writes one file, the landing nothing */
+/** Records each command run, and a capture that will not follow its thread; the capture writes one file */
 const recordingTasks = (calls: string[], onRun?: (name: string) => void) =>
   ({
-    run: async (name: string) => {
-      calls.push(name)
+    run: async (name: string, params?: { noFollow?: boolean }) => {
+      calls.push(params?.noFollow ? `${name} without a follow` : name)
       onRun?.(name)
       return CommandResult.success({ slackFiles: ['time/2031/W11/03-16/Atlas.md'], followed: false })
     },
@@ -240,9 +240,9 @@ test('captureLaterItems lands a kept conversation first, and captures only what 
     })
     assert({
       given: 'a saved message the landing never wrote, from before it kept the conversation',
-      should: 'capture it as before, after the landing',
+      should: 'capture it after the landing, without following its thread: its replies land with the conversation',
       actual: [old, older.captured],
-      expected: [['slack:land', 'slack:follow:message'], ['time/2031/W11/03-16/Atlas.md']],
+      expected: [['slack:land', 'slack:follow:message without a follow'], ['time/2031/W11/03-16/Atlas.md']],
     })
 
     const channel: string[] = []
@@ -253,7 +253,7 @@ test('captureLaterItems lands a kept conversation first, and captures only what 
     })
     assert({
       given: 'a saved channel message',
-      should: 'capture it without running the landing',
+      should: 'capture and follow it, without running the landing',
       actual: channel,
       expected: ['slack:follow:message'],
     })

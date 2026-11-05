@@ -54,6 +54,10 @@ const params = {
     hidden: true,
     default: false,
   }),
+  noFollow: Flag.bool(
+    'Capture without following: the ledger record is born closed, and a closed record stays closed. For a conversation the Slack landing keeps, whose replies land in its day file',
+    { hidden: true, default: false },
+  ),
 }
 
 type Params = InferParams<typeof params>
@@ -135,7 +139,7 @@ export default class SlackFollowMessageTask extends Command {
       }
     }
 
-    const refresh = { tasks, output, signal: context.signal, expires }
+    const refresh = { tasks, output, signal: context.signal, expires, noFollow: args.noFollow }
 
     // 0. A thread captured before is brought up to date, never copied again.
     //    Identity is channel + root ts — never link strings, one thread wears
@@ -231,9 +235,11 @@ export default class SlackFollowMessageTask extends Command {
       status: 'active',
       landed: args.landing,
     })
-    if (!args.force && candidate.isExpired(now)) {
+    if (args.noFollow || (!args.force && candidate.isExpired(now))) {
       output.log(
-        `  Thread inactive since ${lastActivity.date} (over ${Follow.DEFAULT_MAX_INACTIVE}) — archiving without a follow (--force to follow anyway).`,
+        args.noFollow
+          ? '  Captured without a follow — new replies land with the conversation.'
+          : `  Thread inactive since ${lastActivity.date} (over ${Follow.DEFAULT_MAX_INACTIVE}) — archiving without a follow (--force to follow anyway).`,
       )
       const slackResult = await tasks.run('slack:new', {
         from,
@@ -459,6 +465,8 @@ export async function refreshCapturedThread(
     output: OutputHandler
     signal?: AbortSignal
     expires?: PlainDateTime
+    /** A closed record stays closed even when the thread has come back to life */
+    noFollow?: boolean
     // Test seams: the clock, the Slack poll, and where active records live
     now?: PlainDateTime
     poll?: typeof pollSlackFollow
@@ -495,13 +503,20 @@ export async function refreshCapturedThread(
     return decline()
   }
 
-  const settled = await settleRefreshedFollow(hit, poll.follow, { now, expires, activeDir: deps.activeDir })
+  const settled = await settleRefreshedFollow(hit, poll.follow, {
+    now,
+    expires,
+    noFollow: deps.noFollow,
+    activeDir: deps.activeDir,
+  })
   output.log(`  Saved ${poll.newReplies} new ${poll.newReplies === 1 ? 'reply' : 'replies'}`)
   if (hit.ledger === 'archive') {
     output.log(
       settled.followed
         ? '  Following again — the thread is live'
-        : `  Still quiet past ${Follow.DEFAULT_MAX_INACTIVE} — kept in the archive`,
+        : deps.noFollow
+          ? '  Kept in the archive — new replies land with the conversation'
+          : `  Still quiet past ${Follow.DEFAULT_MAX_INACTIVE} — kept in the archive`,
     )
   }
   return CommandResult.success({
@@ -522,9 +537,10 @@ export async function refreshCapturedThread(
 async function settleRefreshedFollow(
   hit: CapturedThread,
   follow: Follow,
-  opts: { now: PlainDateTime; expires?: PlainDateTime; activeDir?: string },
+  opts: { now: PlainDateTime; expires?: PlainDateTime; noFollow?: boolean; activeDir?: string },
 ): Promise<{ path: string; followed: boolean }> {
   if (hit.ledger === 'active') return { path: hit.path, followed: true }
+  if (opts.noFollow) return { path: hit.path, followed: false }
   const reopened = follow.withExpires(opts.expires).updateStatus('active')
   if (reopened.isExpired(opts.now)) return { path: hit.path, followed: false }
   const activePath = path.join(opts.activeDir ?? DIR_STATE_FOLLOW_SLACK_ACTIVE, `${hit.fileName}.yaml`)

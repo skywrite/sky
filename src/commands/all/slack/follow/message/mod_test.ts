@@ -372,3 +372,39 @@ test('refreshCapturedThread() reports a failed poll instead of throwing', async 
 
   await f.cleanup()
 })
+
+test('refreshCapturedThread() keeps a revived archived thread closed when it is not to be followed', async () => {
+  const dirs = await makeLedgers()
+  await writeYaml(dirs.archive, 'quiet.yaml', QUIET_YAML)
+  const hit = { fileName: 'quiet', path: path.join(dirs.archive, 'quiet.yaml'), summary: 'Widget rollout thread' }
+  const result = await refreshCapturedThread(
+    { ...hit, ledger: 'archive' },
+    {
+      tasks: {} as unknown as CommandService,
+      output: { log: () => {} } as unknown as OutputHandler,
+      now: NOW,
+      poll: savesReplyOn('2026-04-24'),
+      noFollow: true,
+      activeDir: dirs.active,
+    },
+  )
+
+  assert({
+    given: 'a link into an archived thread with a fresh reply, in a conversation whose replies land elsewhere',
+    should: 'save the reply and leave the record closed in the archive',
+    actual: {
+      ok: result.ok,
+      data: result.data,
+      archived: await exists(hit.path),
+      active: await exists(path.join(dirs.active, 'quiet.yaml')),
+    },
+    expected: {
+      ok: true,
+      data: { file: hit.path, followed: false, slackFiles: [resolveTimeRef(replyRef('2026-04-24'))] },
+      archived: true,
+      active: false,
+    },
+  })
+
+  await rm(path.dirname(dirs.active), { recursive: true })
+})

@@ -1,6 +1,6 @@
 ---
 created: 2026-10-20
-updated: 2026-11-03
+updated: 2026-11-04
 ---
 
 # Slack landings
@@ -59,7 +59,8 @@ and keeps only what is newer than the record's cursor.
 A message saved for later in Slack from such a conversation is not captured
 again: the saved capture (`saved/lib/capture.ts`) looks in the record's day
 documents first, running a landing pass when the message may not have landed
-yet, and captures only what is still missing.
+yet, and captures only what is still missing, without following its thread
+whose later replies land in the day file (`slack:follow:message --no-follow`).
 
 ## Cursors and failures
 
