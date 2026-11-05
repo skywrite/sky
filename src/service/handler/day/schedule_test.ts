@@ -326,8 +326,14 @@ test('schedule - family and direct contact qualify for short names, while mentio
     actual: [mentioned.score, mentioned.familiarityScore],
     expected: [120, 0],
   })
-  scanners.forgetFile('/notebook/people/Contact-0.md')
-  scanners.readFileAndUpdatePeople('---\nname: [Jane Doe, Janie]\n---\n', '/notebook/people/Contact-0.md')
+  const family = store.getPeopleWithScores().find((person) => person.name === 'Jane Doe')!
+  assert({
+    given: 'a family member with no logged contact',
+    should: 'earn no points for the family tag: the calendar reads the tag itself',
+    actual: [family.score, family.familiarityScore],
+    expected: [0, 0],
+  })
+  people.set('/notebook/people/Contact-0.md', '---\nname: [Jane Doe, Janie]\nemail: jane@example.com\n---\n')
   scanners.forgetFile('/nb/time/2026/W05/01-27/actions/meetings/09-00_Zoom_Planning-0.md')
   assert({
     given: 'a family tag removed and direct contact falling below the threshold while the route remains alive',

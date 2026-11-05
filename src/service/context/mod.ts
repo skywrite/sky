@@ -8,14 +8,31 @@
 
 import DomainCollection from '#shared/models/DomainCollection/mod.ts'
 import { executeQuery } from '#shared/models/DomainCollection/query/execute.ts'
+import type { DomainResolverOptions } from '#shared/models/DomainCollection/query/resolvers/mod.ts'
 import _stripHtmlComments from '#shared/models/Markdown/Document/_stripHtmlComments.ts'
 import type { Document } from '#shared/models/Markdown/mod.ts'
 import type MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
+import { contactLine, type PersonContact } from '#shared/models/Person/contact.ts'
 
 export interface ContextDocument {
   path: string
   type: string
   markdown: string
+  /** For a person: where they stand among your contacts */
+  contact?: PersonContact
+}
+
+export interface ContextOptions {
+  /** Interaction score by name, so people come most active first */
+  scoreFor?: (name: string) => number
+  /** A person's standing by any of their names, to show beside their profile */
+  contactOf?: (names: readonly string[]) => PersonContact | null
+}
+
+/** A person's markdown with the contact line right after its frontmatter. */
+function withContactLine(markdown: string, line: string): string {
+  const front = markdown.match(/^---\n[\s\S]*?\n---\n/)
+  return front ? `${front[0]}\n${line}\n${markdown.slice(front[0].length)}` : `${line}\n\n${markdown}`
 }
 
 export interface ContextResult {
@@ -51,11 +68,30 @@ function extractPaths(data: unknown): string[] {
  * Execute a GraphQL query, resolve relationships to the given depth,
  * and return all documents in the resulting collection.
  */
-export async function resolveContext(query: string, depth: number, store: MarkdownStore): Promise<ContextResult> {
+const resolverOptionsCache = new WeakMap<(name: string) => number, DomainResolverOptions>()
+
+/** The same options object for the same score lookup: the query runner caches resolvers by it. */
+function resolverOptions(options: ContextOptions): DomainResolverOptions | undefined {
+  const scoreFor = options.scoreFor
+  if (!scoreFor) return undefined
+  let cached = resolverOptionsCache.get(scoreFor)
+  if (!cached) {
+    cached = { scoreFor }
+    resolverOptionsCache.set(scoreFor, cached)
+  }
+  return cached
+}
+
+export async function resolveContext(
+  query: string,
+  depth: number,
+  store: MarkdownStore,
+  options: ContextOptions = {},
+): Promise<ContextResult> {
   const t0 = performance.now()
 
   // 1. Execute GraphQL query
-  const result = await executeQuery<Record<string, unknown>>(query, store)
+  const result = await executeQuery<Record<string, unknown>>(query, store, resolverOptions(options))
   const t1 = performance.now()
 
   if (result.errors?.length) {
@@ -98,11 +134,19 @@ export async function resolveContext(query: string, depth: number, store: Markdo
   // Document.stripHtmlComments() re-parses the whole doc to build a new
   // Document, and parse is superlinear on huge list-heavy files — seconds
   // per doc at hundreds of KB, per request.
-  const documents: ContextDocument[] = collection.allItems.map((item) => ({
-    path: item.path,
-    type: item.type,
-    markdown: _stripHtmlComments(item.doc.toMarkdown()),
-  }))
+  const documents: ContextDocument[] = collection.allItems.map((item) => {
+    const markdown = _stripHtmlComments(item.doc.toMarkdown())
+    if (item.type !== 'person' || !options.contactOf) return { path: item.path, type: item.type, markdown }
+    const raw = item.doc.yaml['name']
+    const names = (Array.isArray(raw) ? raw : [raw]).filter((name): name is string => typeof name === 'string')
+    const contact = options.contactOf(names)
+    return {
+      path: item.path,
+      type: item.type,
+      markdown: withContactLine(markdown, contactLine(contact)),
+      ...(contact ? { contact } : {}),
+    }
+  })
   const t4 = performance.now()
 
   console.log(

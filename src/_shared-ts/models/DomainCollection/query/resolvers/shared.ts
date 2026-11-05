@@ -282,6 +282,10 @@ export interface ResolverContext {
   readonly resolveNames: NameResolver
   /** The Day row for a dated document, for the nested `day` field. */
   dayFor(doc: Document, path: string): MappedDay | null
+  /** Whether a location is the place written as `place` (Burlington, Vermont, places/...) or inside it. */
+  isLocatedIn(location: unknown, place: string): boolean
+  /** A person's interaction score by the names their profile lists; 0 when the service gave no scores. */
+  scoreOfPerson(doc: Document): number
 }
 
 /** A filtered, sorted, limited slice of the collection, ready to map. */
@@ -309,6 +313,8 @@ export interface EntitySpec<F, R> {
    * bare root-field query stays restricted to the class.
    */
   selects?: (doc: Document, path: string) => boolean
+  /** The order when a query names none, before the limit: the entity's own sense of most relevant. */
+  rank?: (entries: Entries, ctx: ResolverContext) => Entries
   matches(doc: Document, filter: F, path: string, ctx: ResolverContext): boolean
   mapper(ctx: ResolverContext): (entries: Entries) => R[]
 }
@@ -394,6 +400,7 @@ export function listResolver<F, R>(spec: EntitySpec<F, R>, ctx: ResolverContext)
     // newest (relevance.ts). Everything else keeps newest-first.
     if (args.orderBy === 'RELEVANCE') results = sortByRelevance(results, args.where, total)
     else if (spec.sortByDate) results = sortByDateDesc(results)
+    else if (spec.rank) results = spec.rank(results, ctx)
     const cap = args.limit ?? (hasDateBounds(args.where) ? Infinity : DEFAULT_QUERY_LIMIT)
     if (results.length > cap) {
       const sink = gqlCtx as TruncationSink | undefined

@@ -1,7 +1,7 @@
 import { contactEmails } from '#lib/calendarScheduler/people.ts'
 import { normalizeName } from '#shared/models/Store/normalize.ts'
 import type PeopleStore from '#shared/models/Store/PeopleStore/mod.ts'
-import { FAMILIAR_NAME_THRESHOLD } from '../../scoring/familiarity.ts'
+import { FAMILIAR_NAME_THRESHOLD, isFamily } from '../../scoring/familiarity.ts'
 import type { PersonScore } from '../../scoring/ScoringStore.ts'
 
 interface AttendeeName {
@@ -57,7 +57,9 @@ export function createAttendeeNames(
         .filter((name) => owners.get(name)?.size === 1)
         .map((name) => byName.get(name) ?? 0),
     )
-    const name = full && familiar ? { full, familiar, shorten: familiarity >= FAMILIAR_NAME_THRESHOLD } : null
+    // Family go by their first names whatever contact is logged; everyone else earns it by contact
+    const shorten = familiarity >= FAMILIAR_NAME_THRESHOLD || isFamily(doc.tags)
+    const name = full && familiar ? { full, familiar, shorten } : null
     for (const email of contactEmails(doc.yaml['email'])) {
       // A shared address identifies no single person, regardless of profile order or interaction score.
       byEmail.set(email, byEmail.has(email) ? null : name)

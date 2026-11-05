@@ -523,8 +523,11 @@ async function runQuery(
   }
 }
 
+/** A scoring store with no interactions logged yet */
+const NO_SCORES = { getPeopleWithScores: () => [] } as unknown as Store
+
 test('service yoga executes every DomainCollection root field with the filter applied', async (t) => {
-  const yoga = createYogaInstance({} as Store, createMockMarkdownStore())
+  const yoga = createYogaInstance(NO_SCORES, createMockMarkdownStore())
 
   for (const { field, query, expectPaths } of CASES) {
     await t.step(field, async () => {
@@ -548,7 +551,7 @@ test('service yoga executes every DomainCollection root field with the filter ap
 })
 
 test('service yoga returns project folder files via Project.files', async () => {
-  const yoga = createYogaInstance({} as Store, createMockMarkdownStore())
+  const yoga = createYogaInstance(NO_SCORES, createMockMarkdownStore())
 
   const result = await runQuery(yoga, '{ projects(where: { nameContains: "Widget-Launch" }) { path files } }')
 
@@ -568,7 +571,7 @@ test('service yoga returns project folder files via Project.files', async () => 
 })
 
 test('service yoga surfaces capped results as response extensions', async () => {
-  const yoga = createYogaInstance({} as Store, createMockMarkdownStore())
+  const yoga = createYogaInstance(NO_SCORES, createMockMarkdownStore())
 
   const capped = await runQuery(yoga, '{ journals(limit: 1) { path } }')
   const complete = await runQuery(yoga, '{ journals { path } }')
@@ -616,7 +619,7 @@ test('service yoga tracks MarkdownStore mutations via version bumps', async () =
       return version
     },
   } as unknown as MarkdownStore
-  const yoga = createYogaInstance({} as Store, mdStore)
+  const yoga = createYogaInstance(NO_SCORES, mdStore)
 
   const before = await runQuery(yoga, '{ journals { path } }')
 
@@ -655,7 +658,7 @@ test('service yoga allPeople lists every profile, past the default query cap', a
     path: `/test/people/person-${i}.md`,
   }))
   const mdStore = { ...createMockMarkdownStore(), people: createMockCollection(many) } as unknown as MarkdownStore
-  const yoga = createYogaInstance({} as Store, mdStore)
+  const yoga = createYogaInstance(NO_SCORES, mdStore)
 
   const all = await runQuery(yoga, '{ allPeople { path } }')
   const bare = await runQuery(yoga, '{ people { path } }')

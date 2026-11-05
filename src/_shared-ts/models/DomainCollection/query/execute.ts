@@ -8,7 +8,7 @@
 import { buildSchema, graphql, type GraphQLSchema } from 'graphql'
 import { readTextFile } from '#shared/fs/mod.ts'
 import type MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
-import { createDomainResolvers } from './resolvers/mod.ts'
+import { createDomainResolvers, type DomainResolverOptions } from './resolvers/mod.ts'
 import type { QueryTruncation } from './resolvers/shared.ts'
 
 // Cache the schema string and built schema
@@ -71,19 +71,32 @@ export interface ExecuteResult<T = unknown> {
 // (liveDc() in service/graphql/schema.ts) — both compare against the same
 // store counter, which is why it is a counter and not a dirty flag one cache
 // would clear for the other.
+const NO_OPTIONS: DomainResolverOptions = {}
 let cachedResolversStore: MarkdownStore | null = null
 let cachedResolversVersion = -1
 let cachedResolvers: ReturnType<typeof createDomainResolvers> | null = null
+let cachedResolversOptions: DomainResolverOptions | null = null
 
-export async function executeQuery<T = unknown>(query: string, store: MarkdownStore): Promise<ExecuteResult<T>> {
+export async function executeQuery<T = unknown>(
+  query: string,
+  store: MarkdownStore,
+  /** The notebook service's interaction scores, when the caller has them; keep one object per caller */
+  options: DomainResolverOptions = NO_OPTIONS,
+): Promise<ExecuteResult<T>> {
   const schema = await getSchema()
 
   // Reuse resolvers while the same store instance sits at the same version;
   // any set()/delete() moves the version and forces a rebuild here.
-  if (store !== cachedResolversStore || store.version !== cachedResolversVersion || !cachedResolvers) {
-    cachedResolvers = createDomainResolvers(store)
+  if (
+    store !== cachedResolversStore ||
+    store.version !== cachedResolversVersion ||
+    options !== cachedResolversOptions ||
+    !cachedResolvers
+  ) {
+    cachedResolvers = createDomainResolvers(store, options)
     cachedResolversStore = store
     cachedResolversVersion = store.version
+    cachedResolversOptions = options
   }
 
   // Resolvers report capped root fields here; see QueryTruncation.

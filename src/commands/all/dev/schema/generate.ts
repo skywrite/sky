@@ -483,6 +483,7 @@ const FILTER_TYPES: Record<string, FilterDef> = {
       org: 'String',
       orgContains: 'String',
       titleContains: 'String',
+      locatedIn: 'String',
       tagsContains: 'String',
       tagsContainsAny: '[String!]',
       tagsContainsAll: '[String!]',

@@ -2,6 +2,9 @@
  * Tests for GraphQL query execution against DomainCollection.
  */
 
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import * as path from 'node:path'
 import { Document } from '#shared/models/Markdown/mod.ts'
 import MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
 import { assert, test } from '#test'
@@ -596,4 +599,70 @@ test('executeQuery - orderBy: RELEVANCE keeps the titled match inside the limit'
     actual: { newest: names(newest), relevant: names(relevant) },
     expected: { newest: ['Weekly-sync.md', 'Standup.md'], relevant: ['Widget-launch-plan.md', 'Weekly-sync.md'] },
   })
+})
+
+test('people(where: { locatedIn }) finds people in a place and the places inside it', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'sky-located-in-'))
+  try {
+    const write = async (file: string, yaml: string) => {
+      await mkdir(path.dirname(path.join(root, file)), { recursive: true })
+      await writeFile(path.join(root, file), `---\n${yaml}\n---\n`)
+    }
+    await write(
+      'places/locations/US/VT.md',
+      'name: Vermont\nkind: region\nref: places/US/VT\nlocation:\n  country: US\n  region: VT',
+    )
+    await write(
+      'places/locations/US/VT/Burlington.md',
+      'name: Burlington\nalt: [BTV]\nkind: city\nref: places/US/VT/Burlington\nparent: places/US/VT',
+    )
+    await write(
+      'places/locations/US/VT/Burlington/Old-North-End.md',
+      'name: Old North End\nkind: neighborhood\nref: places/US/VT/Burlington/Old-North-End\nparent: places/US/VT/Burlington',
+    )
+    await write('people/ja/Jane-Doe.md', 'name: Jane Doe\ntitle: Banker\nlocation: places/US/VT/Burlington')
+    await write(
+      'people/sa/Sam-Rivera.md',
+      'name: Sam Rivera\ntitle: Designer\nlocation: places/US/VT/Burlington/Old-North-End',
+    )
+    await write('people/al/Alex-Kim.md', 'name: Alex Kim\ntitle: Banker\nlocation: places/FR')
+    await write('people/ri/Riley-Voss.md', 'name: Riley Voss\nlocation: Somewhere, VT')
+    const store = await MarkdownStore.build({
+      peopleDirs: [path.join(root, 'people')],
+      orgDirs: [],
+      placesDir: path.join(root, 'places'),
+      timeDirs: [],
+    })
+    const names = async (where: string) => {
+      const result = await executeQuery<{ people: Array<{ name: string }> }>(
+        `{ people(where: ${where}) { name } }`,
+        store,
+      )
+      if (result.errors?.length) throw new Error(result.errors[0]!.message)
+      return result.data!.people.map((person) => person.name).sort()
+    }
+    assert({
+      given:
+        'a city by name and by another name, its state, a place link, a role in the city, and a place no one is in',
+      should: 'find the people there and in its neighborhood, never text that only names it',
+      actual: [
+        await names('{ locatedIn: "Burlington" }'),
+        await names('{ locatedIn: "BTV" }'),
+        await names('{ locatedIn: "Vermont" }'),
+        await names('{ locatedIn: "places/US/VT/Burlington/Old-North-End" }'),
+        await names('{ locatedIn: "Burlington", titleContains: "banker" }'),
+        await names('{ locatedIn: "Atlantis" }'),
+      ],
+      expected: [
+        ['Jane Doe', 'Sam Rivera'],
+        ['Jane Doe', 'Sam Rivera'],
+        ['Jane Doe', 'Sam Rivera'],
+        ['Sam Rivera'],
+        ['Jane Doe'],
+        [],
+      ],
+    })
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
 })

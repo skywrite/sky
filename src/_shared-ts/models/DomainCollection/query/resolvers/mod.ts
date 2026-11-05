@@ -12,6 +12,7 @@
  * one line in the object returned below.
  */
 
+import { isLocatedIn, placesNamed } from '#lib/places/locations.ts'
 import type MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
 import DomainCollection from '../../mod.ts'
 import { createNameResolver } from '../nameResolver.ts'
@@ -77,6 +78,7 @@ export function createDomainResolvers(store: MarkdownStore, options: DomainResol
   // Day index for resolving meeting.day, message.day, journal.day, ...
   const lookupDay = createDayLookup(domain)
 
+  const located = new Map<string, { version: number; places: string[] }>()
   const ctx: ResolverContext = {
     domain,
     // Resolve a name to all known aliases via PeopleStore, with token + score
@@ -86,6 +88,23 @@ export function createDomainResolvers(store: MarkdownStore, options: DomainResol
     dayFor(doc, path) {
       const dateStr = getDateForDocument(doc, path)
       return dateStr ? lookupDay(dateStr) : null
+    },
+    isLocatedIn(location, place) {
+      // A place's name is read once per query, not once per document
+      let hit = located.get(place)
+      if (!hit || hit.version !== store.version) {
+        hit = { version: store.version, places: placesNamed(store.places, place) }
+        if (located.size >= 100) located.clear()
+        located.set(place, hit)
+      }
+      return isLocatedIn(store.places, location, hit.places)
+    },
+    scoreOfPerson(doc) {
+      const scoreFor = options.scoreFor
+      if (!scoreFor) return 0
+      const raw = doc.yaml['name']
+      const names = (Array.isArray(raw) ? raw : [raw]).filter((name): name is string => typeof name === 'string')
+      return Math.max(0, ...names.map(scoreFor))
     },
   }
 

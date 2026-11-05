@@ -11,13 +11,13 @@ import { createSchema, createYoga, type YogaServerInstance } from 'graphql-yoga'
 import { readTextFileSync } from '#shared/fs/mod.ts'
 import { createDomainResolvers } from '#shared/models/DomainCollection/query/resolvers/mod.ts'
 import type MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
-import { normalizeName } from '#shared/models/Store/normalize.ts'
 import {
   MarkdownSaveConflictError,
   readMarkdownContent,
   saveMarkdownContent,
 } from '../handler/markdown-preview/content.ts'
 import { resolveMarkdownPreviewRequest } from '../handler/markdown-preview/request.ts'
+import { createScoreLookup } from '../scoring/contacts.ts'
 import type { Store } from '../store.ts'
 import * as resolvers from './resolvers/mod.ts'
 
@@ -145,29 +145,6 @@ type Subscription {
   tagsWithScoresUpdated: [TagWithScore!]!
 }
 `
-
-/**
- * Interaction-score lookup for fuzzy person-name resolution, keyed by
- * normalized name. Rebuilt lazily so score updates flow through without
- * event wiring; scores shift slowly, so brief staleness is harmless.
- */
-function createScoreLookup(store: Store): (name: string) => number {
-  const TTL_MS = 60_000
-  let cache: Map<string, number> | null = null
-  let builtAt = 0
-
-  return (name: string): number => {
-    if (!cache || Date.now() - builtAt > TTL_MS) {
-      cache = new Map()
-      for (const p of store.getPeopleWithScores()) {
-        const key = normalizeName(p.name)
-        cache.set(key, (cache.get(key) ?? 0) + p.score)
-      }
-      builtAt = Date.now()
-    }
-    return cache.get(normalizeName(name)) ?? 0
-  }
-}
 
 /**
  * Create GraphQL resolvers bound to store instances.

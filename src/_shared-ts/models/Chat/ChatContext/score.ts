@@ -17,6 +17,8 @@
  *                               conversation is about)
  *         + provenance         (0–11: how deliberately queries
  *                               retrieved it)
+ *         + contact            (0–3, people only: how much you're in
+ *                               touch, from the profile's contact line)
  *
  * Embeddings were considered and deferred: the observed failure mode is
  * ranking, not semantic recall, and a scalar the log can explain wins on
@@ -26,6 +28,7 @@
 import { estimateTokens, type Scorer, scored } from '#shared/models/AI/ContextAssembler/mod.ts'
 import { createRecencyTypeScorer } from '#shared/models/AI/ContextAssembler/scorers.ts'
 import type DomainCollection from '#shared/models/DomainCollection/mod.ts'
+import { contactRank } from '#shared/models/Person/contact.ts'
 import type { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import type { RetrievalTier } from '../document/ContextLog/mod.ts'
 
@@ -93,6 +96,18 @@ export const CHAT_SCORE = {
    */
   sweepReserveDocs: 5,
   sweepReserveTokens: 5_000,
+  /**
+   * A person's place among your contacts (Sky's interaction scores, read from
+   * the contact line the service puts on each profile): when context is full,
+   * the people you're in touch with stay over the ones you're not. Small next
+   * to provenance — the question decides who is relevant; contact breaks the
+   * near-ties among them.
+   */
+  contactBoost: [
+    { within: 25, boost: 3 },
+    { within: 100, boost: 2 },
+    { within: 500, boost: 1 },
+  ],
 } as const
 
 /**
@@ -101,9 +116,10 @@ export const CHAT_SCORE = {
  * interpretable against the semantics that produced them ('s4' = composed
  * scorer + relevance floor + per-turn provenance decay; 's5' = the same
  * scorer with admission by evidence in place of the relative floor; 's6' =
- * 's5' with a saved chat scored, and shipped, as its card — chatCard.ts).
+ * 's5' with a saved chat scored, and shipped, as its card — chatCard.ts; 's7' =
+ * 's6' plus the contact term for people).
  */
-export const SCORING = 's6'
+export const SCORING = 's7'
 
 // -----------------------------------------------------------------------------
 // Provenance — retrieval evidence accumulated by ChatContext
@@ -477,6 +493,18 @@ function countMatches(text: string, counter: RegExp, cap = 32): number {
 }
 
 // -----------------------------------------------------------------------------
+// Contact — how much you're in touch with a person
+// -----------------------------------------------------------------------------
+
+/** The boost a person's place among your contacts earns; nothing for other documents. */
+export function contactBoost(item: { type: string; doc: { markdown: string } }): number {
+  if (item.type !== 'person') return 0
+  const rank = contactRank(item.doc.markdown)
+  if (rank === undefined) return 0
+  return CHAT_SCORE.contactBoost.find((tier) => rank <= tier.within)?.boost ?? 0
+}
+
+// -----------------------------------------------------------------------------
 // The composed scorer
 // -----------------------------------------------------------------------------
 
@@ -509,7 +537,7 @@ export function createChatScorer(opts: ChatScorerOptions): {
     if (ambient.keep !== 'scored') return ambient
     const lex = lexical(item.path)
     lexicalByPath.set(item.path, lex)
-    return scored(ambient.score + lex + provenanceBoost(opts.provenance.get(item.path), opts.turn))
+    return scored(ambient.score + lex + provenanceBoost(opts.provenance.get(item.path), opts.turn) + contactBoost(item))
   }
 
   return { scorer, lexicalByPath }

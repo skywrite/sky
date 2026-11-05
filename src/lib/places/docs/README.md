@@ -153,7 +153,10 @@ when reopening older saved links or resuming an import.
 VS Code's directory completion continues to emit the existing logical paths;
 geographic `.md` files can be completed beside their child directories.
 
-Descendant-place GraphQL query filters remain future work.
+`people(where: { locatedIn })` finds people located in a place or anywhere inside it
+(`placesNamed` and `isLocatedIn` in `locations.ts`): a state covers its cities, a city
+its neighborhoods, and a bare name includes every namesake. Chat's query rules
+teach it. Other descendant-place filters remain future work.
 
 ## Where people and organizations are
 

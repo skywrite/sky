@@ -1,4 +1,5 @@
 import MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
+import type { PersonContact } from '#shared/models/Person/contact.ts'
 import { assert, test } from '#test'
 import { FIXTURE_PATHS } from '../fixtures/mod.ts'
 import { resolveContext } from './mod.ts'
@@ -219,5 +220,44 @@ test('resolveContext - deduplicates documents across queries', async () => {
     should: 'deduplicate - Lisa Chen appears only once',
     actual: lisaDocs.length,
     expected: 1,
+  })
+})
+
+test('resolveContext - people come most active first, each with a line on how much you are in touch', async () => {
+  const store = await buildStore()
+  const scores: Record<string, number> = { 'kai hansen': 40, 'lisa chen': 90 }
+  const contacts: Record<string, PersonContact> = {
+    'lisa chen': { rank: 1, lastContact: '2026-10-28' },
+    'kai hansen': { rank: 12, lastContact: null },
+  }
+  const result = await resolveContext('{ people(where: { nameContains: "a" }) { path } }', 0, store, {
+    scoreFor: (name) => scores[name.toLowerCase()] ?? 0,
+    contactOf: (names) => contacts[names[0]!.toLowerCase()] ?? null,
+  })
+  const people = result.documents.filter((doc) => doc.type === 'person')
+  const lineOf = (name: string) => {
+    const doc = people.find((item) => item.path.endsWith(`/${name}.md`))!
+    return doc.markdown.split('\n').find((line) => line.startsWith('> Contact:'))
+  }
+  assert({
+    given: 'people with interaction scores, one with none, and the contact lines the service would show',
+    should: 'put the most active first and open each profile with how much you are in touch',
+    actual: {
+      first: people.slice(0, 2).map((doc) => doc.path.split('/').at(-1)),
+      lisa: [lineOf('Lisa-Chen'), people.find((doc) => doc.path.endsWith('/Lisa-Chen.md'))?.contact],
+      kai: lineOf('Kai-Hansen'),
+      casey: lineOf('Casey-Arden'),
+      frontmatterFirst: people.every((doc) => doc.markdown.startsWith('---\n')),
+    },
+    expected: {
+      first: ['Lisa-Chen.md', 'Kai-Hansen.md'],
+      lisa: [
+        '> Contact: your 1st most active contact · last in touch 2026-10-28',
+        { rank: 1, lastContact: '2026-10-28' },
+      ],
+      kai: '> Contact: your 12th most active contact',
+      casey: '> Contact: no contact logged',
+      frontmatterFirst: true,
+    },
   })
 })

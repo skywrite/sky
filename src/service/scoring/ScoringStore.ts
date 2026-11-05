@@ -7,7 +7,6 @@
  * - weight: determined by interaction type (meeting=10, email=5, slack=3, day=2)
  * - recencyMultiplier: decays over time (1.0 → 0.05 at two years, then halving yearly)
  * Person mentions earn discounted relevance and no familiarity.
- * Profile bonuses are applied once when the person's aliases are combined.
  *
  * Scores are cumulative - frequent interactions compound.
  */
@@ -54,9 +53,9 @@ export const RECENCY_THRESHOLDS = {
 
 export interface PersonScore {
   name: string
-  /** Relevance: direct contact, discounted mentions, and any family bonus. */
+  /** Relevance: direct contact and discounted mentions. */
   score: number
-  /** Direct contact and family only; absent means familiarity is unknown. */
+  /** Direct contact only; absent means familiarity is unknown. */
   familiarityScore?: number
   lastInteraction: string | null // ISO date
   /** The latest direct contact (ISO date); a mention never moves it. */
@@ -383,14 +382,9 @@ export class ScoringStore extends EventEmitter {
    *
    * @param allPeople - All known people names (includes those without scores)
    * @param spellingsOf - The other names a person goes by; absent = the name alone
-   * @param bonusOf - Permanent profile bonus, applied once after combining aliases
    * @returns Sorted array with all people, zero-scored ones included
    */
-  getPeopleWithScores(
-    allPeople: Iterable<string>,
-    spellingsOf?: (name: string) => Iterable<string>,
-    bonusOf?: (name: string) => number,
-  ): PersonScore[] {
+  getPeopleWithScores(allPeople: Iterable<string>, spellingsOf?: (name: string) => Iterable<string>): PersonScore[] {
     // A person is one person however a file spelled them: entries whose
     // names match case-insensitively add up, and so do the entries for the
     // other spellings `spellingsOf` gives — a profile's `name:` list. Two
@@ -413,11 +407,7 @@ export class ScoringStore extends EventEmitter {
       for (const spelling of spellingsOf?.(name) ?? []) spellings.add(normalizeName(spelling))
       const entries = new Set<PersonScore>()
       for (const spelling of spellings) for (const entry of byNormalized.get(spelling) ?? []) entries.add(entry)
-      const person = asOnePerson(name, entries)
-      const bonus = bonusOf?.(name) ?? 0
-      person.score += bonus
-      person.familiarityScore = (person.familiarityScore ?? 0) + bonus
-      result.push(person)
+      result.push(asOnePerson(name, entries))
     }
 
     // Sort by score descending, then by name ascending for ties
@@ -455,12 +445,8 @@ export class ScoringStore extends EventEmitter {
   /**
    * Emit person scores updated event.
    */
-  emitPersonScoresUpdated(
-    allPeople: Iterable<string>,
-    spellingsOf?: (name: string) => Iterable<string>,
-    bonusOf?: (name: string) => number,
-  ): void {
-    this.emit('personScoresUpdated', this.getPeopleWithScores(allPeople, spellingsOf, bonusOf))
+  emitPersonScoresUpdated(allPeople: Iterable<string>, spellingsOf?: (name: string) => Iterable<string>): void {
+    this.emit('personScoresUpdated', this.getPeopleWithScores(allPeople, spellingsOf))
   }
 
   /**

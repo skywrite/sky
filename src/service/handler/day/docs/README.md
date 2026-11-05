@@ -1,6 +1,6 @@
 ---
 created: 2026-09-03
-updated: 2026-11-03
+updated: 2026-11-04
 ---
 
 # The day's items, the day's rail, and the day's files
@@ -434,11 +434,12 @@ scrolls; its foot is anchored.
   and a link to Connections. See the [Keychain contract](../../../../lib/secrets/docs/README.md).
   Calendar attendees resolve by exact email against the current notebook
   contacts, ignoring address case. At a shared familiarity score of at least
-  100, known people use their recorded short name, or the first word of their
-  preferred `name:` entry; otherwise they use their full recorded name.
+  100, or when tagged family, known people use their recorded short name, or
+  the first word of their preferred `name:` entry; otherwise they use their
+  full recorded name.
   [Person scoring](../../../scanner/docs/README.md#relevance-and-familiarity)
-  combines direct contact with the family bonus and excludes mentions from
-  familiarity. Explicit compound given names are kept; attendees with the
+  counts direct contact toward familiarity and excludes mentions. Explicit
+  compound given names are kept; attendees with the
   same short name use their full recorded names. Scoped aliases such as
   `atlas/sam` are not display names. Unmatched or shared addresses retain
   the calendar's display name, falling back to the address. Names are never

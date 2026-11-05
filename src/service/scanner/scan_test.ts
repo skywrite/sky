@@ -169,45 +169,26 @@ test('person scoring distinguishes participants from related names and counts al
   })
 })
 
-test('family scoring uses the exact tag hierarchy once per profile, survives rebuilds, and follows edits', () => {
+test('a family tag adds no points: scores count logged contact and mentions only', () => {
   const store = new Store()
   const scanners = createScanners(store, entityChecker, { referenceDate: new PlainDate('2026-02-01') })
   const profiles = [
     { name: ['Jane Doe', 'Janie'], tags: ['Person/Family', 'Person/Family/Daughter'] },
     { name: ['Sam Park'], tags: ['Person/Family/Spouse'] },
-    { name: ['Riley Ng'], tags: ['Person/Family/Son'], met: 'Never' },
     { name: ['Alex Chen'], tags: ['Person/FamilyFriends'] },
-    { name: ['Taylor Quinn'], tags: ['Person/Spouse'] },
-    { name: ['Pat Morgan'], tags: ['Organization/Family'] },
   ]
   profiles.forEach((profile, index) => {
     scanners.readFileAndUpdatePeople(`---\n${JSON.stringify(profile)}\n---\n`, `/nb/people/Contact-${index}.md`)
   })
-  const score = (name: string) => {
-    const person = store.getPeopleWithScores().find((person) => person.name === name)
-    return person && [person.score, person.familiarityScore, person.interactionCount]
-  }
   assert({
-    given: 'family and descendant tags, several aliases, lookalike tags, and a stale met flag',
-    should: 'award one lasting bonus only through Person/Family, without inventing interactions',
-    actual: ['Jane Doe', 'Janie', 'Sam Park', 'Riley Ng', 'Alex Chen', 'Taylor Quinn', 'Pat Morgan'].map(score),
-    expected: [[100, 100, 0], undefined, [100, 100, 0], [100, 100, 0], [0, 0, 0], [0, 0, 0], [0, 0, 0]],
-  })
-  const replacement = new Store()
-  replacement.replaceFrom(store)
-  assert({
-    given: 'the scanned store installed by a rebuild',
-    should: 'keep the relationship bonus',
-    actual: replacement.getPeopleWithScores().find((person) => person.name === 'Jane Doe')?.familiarityScore,
-    expected: 100,
-  })
-  scanners.readFileAndUpdatePeople('---\nname: [Jane Doe, Janie]\n---\n', '/nb/people/Contact-0.md')
-  scanners.forgetFile('/nb/people/Contact-1.md')
-  assert({
-    given: 'one family tag removed and another profile forgotten',
-    should: 'remove both bonuses immediately',
-    actual: [score('Jane Doe'), score('Janie'), score('Sam Park')],
-    expected: [[0, 0, 0], undefined, [0, 0, 0]],
+    given: 'family and lookalike tags on profiles with no logged contact',
+    should: 'score every one of them by contact alone',
+    actual: store.getPeopleWithScores().map((person) => [person.name, person.score, person.familiarityScore]),
+    expected: [
+      ['Alex Chen', 0, 0],
+      ['Jane Doe', 0, 0],
+      ['Sam Park', 0, 0],
+    ],
   })
 })
 

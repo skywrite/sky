@@ -3,7 +3,15 @@ import * as path from 'node:path'
 import PlaceDocument from '#shared/models/Place/mod.ts'
 import PlaceStore from '#shared/models/Store/PlaceStore/mod.ts'
 import { assert, test } from '#test'
-import { ensureCityIn, ensureGeography, locationChoices, matchLocation, type FoundGeography } from './locations.ts'
+import {
+  ensureCityIn,
+  ensureGeography,
+  isLocatedIn,
+  locationChoices,
+  matchLocation,
+  placesNamed,
+  type FoundGeography,
+} from './locations.ts'
 
 const TODAY = '2026-02-12'
 
@@ -262,4 +270,37 @@ test('a city typed by hand is saved inside the country or state chosen for it', 
       expected: 'Choose the country, region, or area this city is in.',
     })
   })
+})
+
+test('a search for people in a place includes the places inside it, and every namesake', async () => {
+  await notebook(
+    {
+      ...VERMONT,
+      'US/VT/Burlington/Old-North-End.md':
+        'name: Old North End\nkind: neighborhood\nref: places/US/VT/Burlington/Old-North-End\nparent: places/US/VT/Burlington',
+      'US/NH.md': 'name: New Hampshire\nkind: region\nref: places/US/NH\nparent: places/US',
+      'US/NH/Burlington.md': 'name: Burlington\nkind: city\nref: places/US/NH/Burlington\nparent: places/US/NH',
+    },
+    async (_dir, store) => {
+      const inside = (location: string, place: string) => isLocatedIn(store, location, placesNamed(store, place))
+      assert({
+        given: 'people in a city, a neighborhood of it, its state, and a namesake city in another state',
+        should: 'find each in every place containing it, and both namesakes for a bare name',
+        actual: [
+          inside('places/US/VT/Burlington/Old-North-End', 'Burlington, VT'),
+          inside('places/US/VT/Burlington', 'Vermont'),
+          inside('places/US/VT/Burlington', 'USA'),
+          inside('places/US/NH/Burlington', 'Burlington'),
+          inside('places/US/VT/Burlington', 'Burlington'),
+          inside('places/US/NH/Burlington', 'Vermont'),
+          inside('places/US/VT/Burlington', 'places/us/vt'),
+          // A link to a place with no record still sits inside the places its path names
+          inside('places/US/VT/Winooski', 'Vermont'),
+          inside('Burlington, VT, USA', 'Vermont'),
+          inside('places/US/VT/Burlington', 'Atlantis'),
+        ],
+        expected: [true, true, true, true, true, false, true, true, false, false],
+      })
+    },
+  )
 })

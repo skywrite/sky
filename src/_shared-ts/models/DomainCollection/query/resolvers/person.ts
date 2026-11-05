@@ -3,6 +3,7 @@ import { matchesContains, matchesExact } from '../filters/mod.ts'
 import {
   type ActivityFilter,
   type EntitySpec,
+  type ResolverContext,
   type TagFilter,
   type TextFilter,
   docBase,
@@ -20,9 +21,12 @@ export interface PersonFilter extends TagFilter, TextFilter, ActivityFilter {
   org?: string
   orgContains?: string
   titleContains?: string
+  /** A place by name or reference: people located there or anywhere inside it */
+  locatedIn?: string
 }
 
-export function matchesPersonFilter(doc: Document, filter: PersonFilter): boolean {
+export function matchesPersonFilter(doc: Document, filter: PersonFilter, ctx?: ResolverContext): boolean {
+  if (filter.locatedIn && !ctx?.isLocatedIn(doc.yaml['location'], filter.locatedIn)) return false
   if (filter.name && !matchesExact(doc, 'name', filter.name)) return false
   if (filter.nameContains && !matchesContains(doc, 'name', filter.nameContains)) return false
   if (filter.org && !matchesExact(doc, 'org', filter.org)) return false
@@ -84,6 +88,12 @@ export function docToPerson(doc: Document, path: string) {
 
 export default {
   type: 'person',
-  matches: (doc, filter) => matchesPersonFilter(doc, filter),
+  // Most active contacts first, so a limit cuts the people you're least in touch with
+  rank: (entries, ctx) =>
+    entries
+      .map((entry) => ({ entry, score: ctx.scoreOfPerson(entry.doc) }))
+      .sort((a, b) => b.score - a.score)
+      .map(({ entry }) => entry),
+  matches: (doc, filter, _path, ctx) => matchesPersonFilter(doc, filter, ctx),
   mapper: () => perRow(docToPerson),
 } satisfies EntitySpec<PersonFilter, ReturnType<typeof docToPerson>>

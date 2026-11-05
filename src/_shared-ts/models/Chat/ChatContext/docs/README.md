@@ -1,6 +1,6 @@
 ---
 created: 2026-08-15
-updated: 2026-10-12
+updated: 2026-11-04
 ---
 
 # ChatContext admission — evidence in, budget as a cap
@@ -123,6 +123,13 @@ most of the chat tokens were. A chat the person pins by hand comes in whole,
 replacing its card; it leaves the shipped set first, so it arrives as an
 addition rather than vanishing into a segment the model already read.
 Scoring `s6` marks logs whose chat scores and tokens are the card's.
+
+A person's profile reaches chat with a contact line from the notebook service
+(`> Contact: your 12th most active contact · last in touch 2026-10-28`, from
+Sky's interaction scores; `models/Person/contact.ts` writes and reads it). The
+model weighs it, and when the budget caps the admitted set the line adds a
+small boost by place (`CHAT_SCORE.contactBoost`), so people you're in touch
+with stay over people you're not. Scoring `s7` marks logs with that term.
 
 The scorer never changes — s3 answers "how much evidence does this one doc
 carry?", which no policy needs re-answered. What changes is the set-level

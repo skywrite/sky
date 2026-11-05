@@ -8,6 +8,7 @@ import { assert, test } from '#test'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import {
   CHAT_SCORE,
+  contactBoost,
   createChatScorer,
   type DocProvenance,
   extractTopicTerms,
@@ -378,5 +379,43 @@ test('createChatScorer - stale retrieval decays toward the prior', async () => {
     should: 'carry the boost at ×0.49 instead of holding +10 forever',
     actual: Math.round(verdictScore(scorer(itemFor(collection, FIX.person))) * 100) / 100,
     expected: 10.9,
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Contact
+// ---------------------------------------------------------------------------
+
+test('contactBoost - people you are in touch with stay over people you are not', () => {
+  const person = (line: string) => ({ type: 'person', doc: { markdown: `${line}\n\n# Jane Doe\n` } })
+  assert({
+    given: 'profiles placed 1st, 100th, 400th and 900th among your contacts, one with none logged, and a meeting',
+    should: 'boost by place, most for your closest contacts, and leave everything else alone',
+    actual: [
+      contactBoost(person('> Contact: your 1st most active contact · last in touch 2026-01-20')),
+      contactBoost(person('> Contact: your 100th most active contact')),
+      contactBoost(person('> Contact: your 400th most active contact')),
+      contactBoost(person('> Contact: your 900th most active contact')),
+      contactBoost(person('> Contact: no contact logged')),
+      contactBoost({ type: 'meeting', doc: { markdown: '> Contact: your 1st most active contact\n' } }),
+    ],
+    expected: [3, 2, 1, 0, 0, 0],
+  })
+})
+
+test('createChatScorer - the contact term adds to a person profile’s score', async () => {
+  const collection = await fixtureCollection([FIX.person])
+  const item = itemFor(collection, FIX.person)
+  const scoreOf = (markdown: string) => {
+    const { scorer } = createChatScorer({ today: TODAY, collection, terms: [], provenance: new Map(), turn: 1 })
+    return verdictScore(scorer({ ...item, doc: Document.fromMarkdown(markdown) }))
+  }
+  const profile = '---\nname: Jane Doe\n---\n\n# Jane Doe\n'
+  const close = scoreOf(profile.replace('\n\n# Jane', '\n\n> Contact: your 3rd most active contact\n\n# Jane'))
+  assert({
+    given: 'the same profile with and without a top contact line',
+    should: 'score the close contact higher by the contact boost',
+    actual: close - scoreOf(profile),
+    expected: CHAT_SCORE.contactBoost[0].boost,
   })
 })

@@ -1,6 +1,6 @@
 ---
 created: 2026-08-30
-updated: 2026-10-01
+updated: 2026-11-04
 ---
 
 # Scanner
@@ -52,22 +52,19 @@ mention. Organization weights are unchanged.
 
 Each reported person has two deterministic totals:
 
-- `score` is relevance: direct contact, discounted mentions, and a family
-  bonus. Existing ranking consumers continue to use it.
-- `familiarityScore` includes direct contact and the family bonus. Mentions
-  contribute zero, however numerous. It is available in the same GraphQL
-  `peopleWithScores` query and score subscriptions.
+- `score` is relevance: direct contact and discounted mentions. Every
+  ranking uses it.
+- `familiarityScore` is direct contact only. Mentions contribute zero,
+  however numerous. It is available in the same GraphQL `peopleWithScores`
+  query and score subscriptions.
 
 `lastInteraction` is the newest record of any kind, mentions included.
 `lastContact` is the newest direct contact only; the link picker shows it.
 Removing a file recomputes both from the files that remain.
 
-A profile tagged `Person/Family` or any descendant such as
-`Person/Family/Spouse` receives a permanent 100 points in both totals.
-Matching is case-insensitive and respects slash boundaries; `Person/Spouse`,
-`Person/FamilyFriends`, and unrelated tags containing `Family` do not qualify.
-The bonus is applied once after combining aliases, never once per tag or
-alias, and does not create an interaction or a last-interaction date.
+Being family earns no points: both totals count logged activity only, so
+rankings reflect real contact. The calendar reads the family tag itself
+(below).
 
 A valid profile `met` date contributes one introduction worth five points
 before recency decay. Multiple aliases do not multiply it. Missing dates
@@ -75,9 +72,13 @@ and `met: Never` create neither contact evidence nor a penalty; these fields
 can be incomplete or stale.
 
 Calendar attendee labels use short names at a familiarity score of at least
-100; see [the day schedule](../../handler/day/docs/README.md) for name
-selection and collision handling. A missing familiarity score uses the full
-name. Policy constants live in `../scoring/familiarity.ts`.
+100, or for anyone tagged `Person/Family` or a tag under it such as
+`Person/Family/Spouse`. Tag matching is case-insensitive and respects slash
+boundaries; `Person/Spouse`, `Person/FamilyFriends`, and unrelated tags
+containing `Family` do not qualify. See [the day schedule](../../handler/day/docs/README.md)
+for name selection and collision handling. A missing familiarity score uses
+the full name unless the person is family. Policy lives in
+`../scoring/familiarity.ts`.
 
 ## Edits and rebuilds
 
@@ -111,6 +112,9 @@ another contact's familiarity for a short calendar label.
 
 ## History
 
+- `2026-11-04-family-is-a-rule-not-points.md` — the family bonus ranked
+  family among the most active contacts by points alone; the calendar now
+  reads the family tag directly and scores count contact only.
 - `2026-10-01-old-contact-keeps-fading.md` — contact older than a year kept
   5% of its weight forever, so a long-dormant namesake could outrank one
   met yesterday; past two years the weight now halves every year.

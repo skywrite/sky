@@ -359,3 +359,30 @@ export async function ensureCityIn(
   )
   return { ref: entry.placePath, created }
 }
+
+/**
+ * Every place written text could mean — a name, another name, or a reference — for a search:
+ * namesakes are all included rather than guessed between. Each comes with every reference it
+ * answers to, so a link written another way still counts.
+ */
+export function placesNamed(store: PlaceStore, text: string): string[] {
+  const value = text.trim()
+  if (!value) return []
+  const choices = placeChoices(store).filter(geographic)
+  const named = normalizePlaceRef(value)
+    ? [placeChoiceForRef(value, choices)].filter((choice): choice is PlaceChoice => !!choice)
+    : matchPlace({ name: value }, choices).candidates
+  return [...new Set(named.flatMap((choice) => [choice.ref, ...choice.refs]))]
+}
+
+/** Whether a location — a place reference — is one of `places`, or a place inside one of them. */
+export function isLocatedIn(store: PlaceStore, location: unknown, places: readonly string[]): boolean {
+  const ref = typeof location === 'string' ? normalizePlaceRef(location) : undefined
+  if (!ref || places.length === 0) return false
+  const wanted = places.map((place) => place.toLowerCase())
+  const entry = store.findByPlacePath(ref)
+  const chain = entry ? placeChain(store, entry).flatMap((item) => [item.placePath, ...item.value.refAliases]) : [ref]
+  if (chain.some((item) => wanted.includes(item.toLowerCase()))) return true
+  // A link to a place with no record is still inside the places its path names
+  return wanted.some((place) => ref.toLowerCase().startsWith(`${place}/`))
+}

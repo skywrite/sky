@@ -19,6 +19,7 @@ import { getThemeAsset, renderAppHtml } from '../../web/bundle.ts'
 import { parseDocumentPageRequests, readDocumentPages } from '../context/document.ts'
 import { resolveContext } from '../context/mod.ts'
 import * as jsend from '../jsend.ts'
+import { createContactLookup, createScoreLookup } from '../scoring/contacts.ts'
 import type { Store } from '../store.ts'
 import type { KeepOptions } from './attachments/keep.ts'
 import { attachmentCandidates } from './attachments/mod.ts'
@@ -354,7 +355,9 @@ export function createHttpApp(options: HttpHandlerOptions): Hono {
   )
   if (importRoutes) app.route('/import', importRoutes)
 
-  // Context resolution endpoint (GraphQL query + relationship traversal)
+  // Context resolution endpoint (GraphQL query + relationship traversal).
+  // People come ranked by interaction score, each with a line on how much you're in touch.
+  const contextScores = { scoreFor: createScoreLookup(options.store), contactOf: createContactLookup(options.store) }
   app.post('/context', async (c) => {
     if (!markdownStore) {
       return c.json(jsend.fail({ message: 'MarkdownStore not ready' }), 503)
@@ -366,7 +369,7 @@ export function createHttpApp(options: HttpHandlerOptions): Hono {
         return c.json(jsend.fail({ message: 'Missing required field: query' }), 400)
       }
 
-      const result = await resolveContext(query, depth, markdownStore)
+      const result = await resolveContext(query, depth, markdownStore, contextScores)
       return c.json(jsend.success(result))
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)

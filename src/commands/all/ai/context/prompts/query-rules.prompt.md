@@ -2,7 +2,7 @@
 name: query-rules
 schema: 0.2.0
 created: 2026-10-05
-updated: 2026-10-05
+updated: 2026-11-04
 description: The notebook query-writing rules shared by the chat's query writer, its evolve step, and the research agent — filters by entity, tags, past chats, text search ordering, and time
 ---
 
@@ -29,6 +29,14 @@ Use the correct filter for each entity type. Do NOT guess — only use filters t
 - Multiple people, either involved: `involvesAny: ["<name>", "<name>"]` (OR). One block with one shared `limit` — when you want balanced per-person context, use separate aliased blocks instead
 - Multiple people, all involved: `involvesAll: ["<name>", "<name>"]` (AND) — the docs shared by specific people, e.g. `messages(where: { involvesAll: ["Alice Smith", "Bob Jones"] }, limit: 10)` for their conversation with each other
 - When the question or conversation centers on a specific person, ALSO fetch their profile document: `people(where: { nameContains: "<canonical-name>" }, limit: 3) { name title org markdown path }` — use the FULL canonical name from the Active People list, never a short alias (short fragments substring-match unrelated names)
+
+**People in a place** → `people(where: { locatedIn: "<place>" })`
+- For "who do I know in X", "people in X", "who lives in X": a city, state, country or neighborhood by name (`"Burlington"`, `"Vermont"`, `"Japan"`, `"Old North End"`) or a `places/...` reference
+- Includes everyone in places inside it: a state covers its cities, a city its neighborhoods
+- Combine with other filters for "<role> in X": `people(where: { locatedIn: "Burlington", titleContains: "banker" })`
+- Select `location` to see where each person is; it holds a place reference such as `places/US/VT/Burlington`
+- People come most active first, so a `limit` keeps the ones the user is most in touch with
+- Do NOT use `bodyContains` for where someone lives — a person's location is not in their body text
 
 **Slack channels** → `toContains: "#channel-name"`
 - Works on: messages, videos

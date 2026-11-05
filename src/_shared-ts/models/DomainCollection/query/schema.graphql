@@ -7,7 +7,7 @@
 #
 # To modify the schema, edit generate.ts and re-run the generator.
 #
-# Generated at: 2026-10-06T01:24:02.329Z
+# Generated at: 2026-11-04T13:30:32.194Z
 # =============================================================================
 
 type Query {
@@ -479,6 +479,7 @@ input PersonFilter {
   org: String
   orgContains: String
   titleContains: String
+  locatedIn: String
   tagsContains: String
   tagsContainsAny: [String!]
   tagsContainsAll: [String!]

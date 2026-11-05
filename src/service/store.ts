@@ -32,7 +32,6 @@ import { EventEmitter } from 'node:events'
 import { normalizeName } from '#shared/models/Store/normalize.ts'
 import TagSet from '#shared/models/TagSet/mod.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
-import { FAMILY_SCORE_BONUS, isFamily } from './scoring/familiarity.ts'
 import {
   INTERACTION_WEIGHTS,
   type OrgScore,
@@ -65,7 +64,6 @@ export class Store extends EventEmitter {
   /** Each person file's `name:` list by the file's path — the spellings one person goes by */
   private _personFiles = new Map<string, string[]>()
   /** Family is a property of a profile, not another contribution for each alias. */
-  private _familyFiles = new Set<string>()
   /** Normalized name → the person files listing it; rebuilt when the lists change */
   private _filesByName: Map<string, Set<string>> | null = null
 
@@ -132,18 +130,14 @@ export class Store extends EventEmitter {
       const own = this._personFiles.get([...listed][0]!) ?? []
       return normalizeName(own[0] ?? '') === normalizeName(name)
     })
-    return this._scoring.getPeopleWithScores(
-      reported,
-      (name) => this.spellingsOf(name),
-      (name) => this.familyBonusOf(name),
-    )
+    return this._scoring.getPeopleWithScores(reported, (name) => this.spellingsOf(name))
   }
 
   /**
    * Remember a person file's `name:` list: these names are one person's, so
    * an interaction recorded under any of them counts for that person.
    */
-  rememberPersonNames(file: string, names: unknown[], tags: Iterable<string> = []): void {
+  rememberPersonNames(file: string, names: unknown[]): void {
     const group = [
       ...new Set(
         names
@@ -154,15 +148,7 @@ export class Store extends EventEmitter {
     ]
     if (group.length === 0) this._personFiles.delete(file)
     else this._personFiles.set(file, group)
-    if (group.length > 0 && isFamily(tags)) this._familyFiles.add(file)
-    else this._familyFiles.delete(file)
     this._filesByName = null
-  }
-
-  private familyBonusOf(name: string): number {
-    const files = this.filesByName().get(normalizeName(name))
-    if (!files || files.size !== 1) return 0
-    return this._familyFiles.has([...files][0]!) ? FAMILY_SCORE_BONUS : 0
   }
 
   /**
@@ -221,8 +207,7 @@ export class Store extends EventEmitter {
    * or after it is gone. Returns whether the file had contributed.
    */
   forgetFile(file: string): boolean {
-    const family = this._familyFiles.delete(file)
-    return this._scoring.forgetSource(file) || family
+    return this._scoring.forgetSource(file)
   }
 
   /**
@@ -238,11 +223,7 @@ export class Store extends EventEmitter {
    * Emit person scores updated event
    */
   emitPersonScoresUpdated(): void {
-    this._scoring.emitPersonScoresUpdated(
-      this._people,
-      (name) => this.spellingsOf(name),
-      (name) => this.familyBonusOf(name),
-    )
+    this._scoring.emitPersonScoresUpdated(this._people, (name) => this.spellingsOf(name))
   }
 
   /**
@@ -311,7 +292,6 @@ export class Store extends EventEmitter {
   replaceFrom(other: Store): void {
     this._people = new Set(other._people)
     this._personFiles = new Map(other._personFiles)
-    this._familyFiles = new Set(other._familyFiles)
     this._filesByName = null
     this._organizations = new Set(other._organizations)
     this._tags = other._tags

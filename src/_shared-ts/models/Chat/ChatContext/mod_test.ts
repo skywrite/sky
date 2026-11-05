@@ -474,7 +474,7 @@ test('ChatContext.firstTurn - admission by evidence sizes context to the questio
       floored: 2,
       bar: 4,
       budget: 300_000,
-      scoring: 's6',
+      scoring: 's7',
     },
   })
 })
