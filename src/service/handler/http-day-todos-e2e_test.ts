@@ -47,7 +47,7 @@ tz: UTC
 
 test(
   {
-    name: 'combined To-dos align titles and right-hand times, edit optional times, and preserve the day title',
+    name: 'grouped To-dos keep five priorities overall, align right-hand times, and preserve editing and overrides',
     timeout: 90000,
   },
   async (t) => {
@@ -114,6 +114,14 @@ test(
               priority: await page.locator('.sky-day-priority .sky-ptext').innerText(),
               collapsed: await page.locator('.sky-todos-completed-list').count(),
               hidden: await page.getByRole('button', { name: 'Show 3 more', exact: true }).count(),
+              groups: await open
+                .locator('.sky-todos-group')
+                .evaluateAll((groups) =>
+                  groups.map((group) => [
+                    group.querySelector('.sky-igroup')?.textContent,
+                    group.querySelectorAll('.sky-todo-row').length,
+                  ]),
+                ),
               tags: await open.locator('.sky-pchip').count(),
               overflow: await page.evaluate(() => document.documentElement.scrollWidth > innerWidth),
               title: await page.title(),
@@ -121,9 +129,9 @@ test(
             expected: {
               titles: [
                 'Draft the Atlas project brief',
-                'Book annual checkup',
                 'Review Atlas launch plan with Jane Doe',
                 'Atlas planning',
+                'Book annual checkup',
                 'Evening walk',
               ],
               aligned: 1,
@@ -133,6 +141,10 @@ test(
               priority: 'Decide the launch scope for Atlas',
               collapsed: 0,
               hidden: 1,
+              groups: [
+                ['Professional', 3],
+                ['Personal', 2],
+              ],
               tags: 0,
               overflow: false,
               title: 'sky · Monday, March 17, 2031 · Day record',
@@ -185,11 +197,57 @@ test(
         })
         await page.getByRole('button', { name: 'Show top 5', exact: true }).click()
         await page.getByRole('button', { name: 'Organize', exact: true }).click()
+        const personal = page.locator('.sky-todos-open .sky-todos-group').filter({
+          has: page.getByRole('heading', { name: 'Personal', exact: true }),
+        })
+        let priorityWrites = 0
+        page.on('request', (request) => {
+          if (request.url().endsWith('/item/organize/priority')) priorityWrites++
+        })
+        const keyboardSave = page.waitForResponse((response) => response.url().endsWith('/item/organize/priority'))
+        await page.getByRole('button', { name: 'Reorder Evening walk', exact: true }).press('ArrowUp')
+        await (await keyboardSave).finished()
+        await personal
+          .locator('.sky-ptext')
+          .first()
+          .filter({ hasText: /^Evening walk$/ })
+          .waitFor()
+        await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === 'Reorder Evening walk')
+        await page.keyboard.press('ArrowUp')
+        await page.waitForTimeout(200)
+        assert({
+          given: 'a personal task moved above its category neighbor, then up again at the category boundary',
+          should: 'reorder within the category and stop at its heading',
+          actual: {
+            personal: await personal.locator('.sky-ptext').allTextContents(),
+            headings: await page.locator('.sky-todos-open .sky-igroup').allTextContents(),
+            priorityWrites,
+          },
+          expected: {
+            personal: [
+              'Evening walk',
+              'Book annual checkup',
+              'Send the garden plan',
+              'Review supplies',
+              'Replace the porch light',
+            ],
+            headings: ['Professional', 'Personal'],
+            priorityWrites: 1,
+          },
+        })
+        await page.locator('.sky-organize-toast').getByRole('button', { name: 'Undo', exact: true }).click()
+        await personal
+          .locator('.sky-ptext')
+          .first()
+          .filter({ hasText: /^Book annual checkup$/ })
+          .waitFor()
         const promoted = page.locator('.sky-todos-open .sky-todo-row').filter({ hasText: 'Review supplies' })
         await promoted.getByRole('button', { name: 'Move to top: Review supplies', exact: true }).click()
-        await page.waitForFunction(
-          () => document.querySelector('.sky-todos-open .sky-ptext')?.textContent === 'Review supplies',
-        )
+        await personal
+          .locator('.sky-ptext')
+          .first()
+          .filter({ hasText: /^Review supplies$/ })
+          .waitFor()
         assert({
           given: 'manual priority controls at 320px',
           should: 'fit the viewport while all tasks are available',
@@ -201,12 +259,21 @@ test(
         await promoted.waitFor()
         assert({
           given: 'a lower-priority task promoted above Jev’s suggestions, followed by reload',
-          should: 'preserve the override and return to five visible tasks',
+          should: 'preserve the override above both categories and return to five visible tasks',
           actual: [
-            await page.locator('.sky-todos-open .sky-ptext').first().textContent(),
-            await page.locator('.sky-todos-open .sky-ptext').count(),
+            await page.locator('.sky-todos-open .sky-igroup').allTextContents(),
+            await page.locator('.sky-todos-open .sky-ptext').allTextContents(),
           ],
-          expected: ['Review supplies', 5],
+          expected: [
+            ['Professional', 'Personal'],
+            [
+              'Draft the Atlas project brief',
+              'Review Atlas launch plan with Jane Doe',
+              'Atlas planning',
+              'Review supplies',
+              'Book annual checkup',
+            ],
+          ],
         })
         await promoted.getByRole('button', { name: 'Mark done', exact: true }).click()
         await promoted.waitFor({ state: 'detached' })
@@ -221,6 +288,16 @@ test(
             errors,
           ],
           expected: [5, 'Draft the Atlas project brief', 'Decide the launch scope for Atlas', false, []],
+        })
+        await page.getByRole('button', { name: 'Completed · 2', exact: true }).click()
+        assert({
+          given: 'completed tasks from both categories',
+          should: 'identify their categories with headings too',
+          actual: {
+            headings: await page.locator('.sky-todos-completed-list .sky-igroup').allTextContents(),
+            tags: await page.locator('.sky-todos-completed-list .sky-pchip').count(),
+          },
+          expected: { headings: ['Professional', 'Personal'], tags: 0 },
         })
         await page.getByRole('button', { name: 'Organize', exact: true }).click()
         await page.getByRole('button', { name: "Use Sky's order", exact: true }).click()

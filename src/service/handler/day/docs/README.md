@@ -46,7 +46,9 @@ The plan on the page is Most important, To-dos, and Reminders.
 To-dos combines the file's Commitments and Todos lists without changing their headings or API kinds.
 To-dos and Reminders each show their five highest-priority open items; Show more reveals the rest of that list.
 Jev suggests priority from goals, the week's plan, recent journals, Most Important and linked task notes.
-Personal and professional tasks share this ranking; a time informs urgency without automatically outranking untimed work.
+Personal and professional tasks share this ranking; select the top five overall before grouping them by category.
+Each group keeps priority order; Professional and Personal headings keep their positions as tasks are completed.
+A time informs urgency without automatically outranking untimed work.
 Reminders rank separately by relevance to this context and the day's To-dos; habits and principles need no deadline.
 Times sit on the right, aligned with the first line on phones too, so every title starts at the same edge.
 Completed to-dos remain available under a disclosure at the bottom, expanded while organizing.
@@ -97,8 +99,10 @@ operation ID; Undo preserves unrelated later changes and refuses to overwrite
 changed task blocks. Linked workstream activities open their canonical details.
 
 **Organize** combines manual ordering and selection across the plan lists. A row
-selects for moving; To-do grips reorder across categories and times, while other lists retain their own ordering.
-Organize reveals all To-dos and Reminders and offers Move to top for promoting a hidden item within its list.
+selects for moving; To-do grips reorder within their category, across timed and untimed items.
+Other lists retain their own ordering.
+Organize reveals all To-dos and Reminders and offers Move to top for promoting a hidden item within its list,
+including above other categories in the shared To-do ranking.
 Desktop grips also appear on hover or keyboard focus outside Organize. Touch
 grips appear only in Organize so normal scrolling, text editing and swipe deletion
 retain their gestures. Grip arrow keys offer the same ordering without dragging.

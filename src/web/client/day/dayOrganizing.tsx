@@ -548,7 +548,12 @@ export function useDayOrganizing(
       if (undo?.date) navigate(undo.href ?? `/${undo.date}`)
     },
     step: (item: DayItem, direction: -1 | 1) => {
-      const nodes = [...document.querySelectorAll<HTMLElement>('[data-organize-key]')].filter(
+      const row = [...document.querySelectorAll<HTMLElement>('[data-organize-key]')].find(
+        (node) => node.dataset.organizeKey === dayItemKey(item),
+      )
+      if (!row?.parentElement) return
+      // Match pointer dragging: category headings bound the visible list, while Move to top remains global.
+      const nodes = [...row.parentElement.querySelectorAll<HTMLElement>(':scope > [data-organize-key]')].filter(
         (node) => node.dataset.organizeGroup === organizeGroup(item),
       )
       const at = nodes.findIndex((node) => node.dataset.organizeKey === dayItemKey(item))

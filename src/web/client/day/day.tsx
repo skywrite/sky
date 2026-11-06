@@ -585,7 +585,7 @@ function PlanRow({
   trailingTime?: boolean
   /** 'next' | 'late' | undefined — today's emphasis on the time */
   tone: 'next' | 'late' | undefined
-  /** Mark Personal — only in lists that mix categories */
+  /** Show the category in lists that mix personal and professional items. */
   chip: boolean
   /** The lighter reminder voice */
   soft: boolean
@@ -603,7 +603,7 @@ function PlanRow({
   const locked = Boolean(editor.draft) || editor.busy || organize.busy || organizing
   const editable = !readOnly && !phase && !item.workstream && !organizing && !organize.busy
   const late = tone === 'late' && !struck
-  const personal = chip && item.category === 'Personal'
+  const category = chip ? item.category : null
   // A notebook link takes the whole text; web addresses sit beside the words as chips, which stay editable.
   const docLinked = itemDocLinked(item)
   const pointer = useRef<{ x: number; y: number; at: number } | null>(null)
@@ -817,10 +817,10 @@ function PlanRow({
               Move to top
             </Button>
           )}
-          {(late || personal) && (
+          {(late || category) && (
             <span className="sky-item-meta">
               {late && <span className="sky-late">overdue</span>}
-              {personal && <span className="sky-pchip">Personal</span>}
+              {category && <span className="sky-pchip">{category}</span>}
             </span>
           )}
         </div>
@@ -993,6 +993,25 @@ function TodoCard({
       />
     )
   }
+  const renderGroups = (rows: DayItem[]) => {
+    const categories = [...new Set(['Professional', 'Personal', ...items.map((item) => item.category)])]
+    const groups = new Map<string | null, DayItem[]>(categories.map((category) => [category, []]))
+    for (const item of rows) {
+      groups.get(item.category)!.push(item)
+    }
+    return [...groups]
+      .filter(([, group]) => group.length)
+      .map(([category, group]) => (
+        <div className="sky-todos-group" key={category ?? ''}>
+          {category && (
+            <div className="sky-igroup" role="heading" aria-level={3}>
+              {category}
+            </div>
+          )}
+          {group.map(renderRow)}
+        </div>
+      ))
+  }
   const showCompleted = expanded || organize.active
   return (
     <Block
@@ -1014,7 +1033,7 @@ function TodoCard({
       }
     >
       <PriorityStatus status={organize.priorityStatus('todos')} suggestions={suggestions} paused={organize.active} />
-      <div className="sky-todos-open">{(showAll || organize.active ? open : open.slice(0, 5)).map(renderRow)}</div>
+      <div className="sky-todos-open">{renderGroups(showAll || organize.active ? open : open.slice(0, 5))}</div>
       {open.length > 5 && !organize.active && (
         <UnstyledButton className="sky-todos-disclosure" aria-expanded={showAll} onClick={() => setShowAll(!showAll)}>
           <span aria-hidden="true">{showAll ? '⌄' : '›'}</span>
@@ -1032,7 +1051,7 @@ function TodoCard({
             <span aria-hidden="true">{showCompleted ? '⌄' : '›'}</span>
             Completed · {completed.length}
           </UnstyledButton>
-          {showCompleted && <div className="sky-todos-completed-list">{completed.map(renderRow)}</div>}
+          {showCompleted && <div className="sky-todos-completed-list">{renderGroups(completed)}</div>}
         </div>
       )}
       {children}
