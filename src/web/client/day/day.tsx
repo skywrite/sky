@@ -4,6 +4,7 @@ import { documentWorkWhen, workDurationLabel } from '#commands/all/notes/lib/doc
 import { PlainDate, PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import { dayItemKey, type CommitmentOrder } from '../../../service/handler/day/organizingTypes.ts'
 import { comparePlanItems } from '../../../service/handler/day/planningTypes.ts'
+import type { DayPriorityStatus } from '../../../service/handler/day/record.ts'
 import type { DaySummary } from '../../../service/handler/day/summary.ts'
 import type { ViewVersion } from '../../../service/viewVersion.ts'
 import { type Kept, KeptToast } from '../attachments/files.tsx'
@@ -137,8 +138,8 @@ export interface DayRecord {
   commitmentsOrder?: CommitmentOrder
   todoOrderRevision?: string
   reminderOrderRevision?: string
-  todoPriority?: { source: 'sky' | 'saved'; warning?: string; connection?: boolean }
-  reminderPriority?: { source: 'sky' | 'saved'; warning?: string; connection?: boolean }
+  todoPriority?: DayPriorityStatus
+  reminderPriority?: DayPriorityStatus
   mostImportant: DayItem[]
   commitments: DayItem[]
   todos: DayItem[]

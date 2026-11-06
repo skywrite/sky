@@ -127,10 +127,22 @@ The older `manual-order` and `commitments-order` preferences still govern physic
 
 `priority.ts` caches derived Jev scores outside the notebook, separately for To-dos and Reminders and from manual order,
 so model output never rewrites a person's priorities or the source lists.
-While the day is open, the client checks each list for updated suggestions each minute; matching context, items and
-quarter-hour reuse the cache, including after restarts.
+The day file and the bounded context supplied to Jev determine each list's input revision.
+Sources include the weekly plan, goals, shared commitments, About Me, recent journals and summaries, Most Important notes,
+and documents linked from the day's open items.
+The day response names those sources so the existing notebook notifications also catch context from other dates.
+Missing files and eligible context folders are included to notice creation and deletion.
+The client waits for edits to settle before requesting a ranking; unrelated changes leave the input revision unchanged.
+Completing, clearing or restoring known items keeps the remaining sequence, including manual priorities.
+The cached ranking retains its resolved order and a snapshot of its evidence, so progress filters that order instead of
+asking Jev again or recalculating manual slots against the source file's different order.
+New or edited items, other day content, and changed context still request a fresh ranking.
+Manual reorder and reset actions use the saved suggestions without a new model call.
+Unchanged inputs reuse their ranking across tab activation, reloads and service restarts; time alone never expires it.
+Each new ranking captures the current context and time, with no periodic priority checks.
+Changes received during editing, organizing or in a hidden tab wait until ranking can resume.
 Requests use the shared metered TypeSafe client, with bounded context, validated probability distributions and no retries.
-An answer for changed tasks, overrides, context or a summarized day is discarded.
+An answer for changed inputs or a summarized day is discarded.
 Missing credentials and failed requests retain the saved order with a connection or retry action.
 Before the first usable suggestion, the file's order supplies the fallback.
 

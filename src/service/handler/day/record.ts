@@ -82,6 +82,17 @@ export interface VideoRow extends DayDocRow {
   medium: string | null
 }
 
+export interface DayPriorityStatus {
+  source: 'sky' | 'saved'
+  /** The ranking's saved input revision, distinct from the current inputs. */
+  revision?: string
+  inputRevision?: string
+  /** Notebook-relative files; a trailing slash watches direct Markdown children. */
+  sources?: string[]
+  warning?: string
+  connection?: boolean
+}
+
 export interface DayRecord {
   /** `HH:MM` the day started; null for a day that never did. */
   started: string | null
@@ -90,8 +101,8 @@ export interface DayRecord {
   commitmentsOrder?: CommitmentOrder
   todoOrderRevision?: string
   reminderOrderRevision?: string
-  todoPriority?: { source: 'sky' | 'saved'; warning?: string; connection?: boolean }
-  reminderPriority?: { source: 'sky' | 'saved'; warning?: string; connection?: boolean }
+  todoPriority?: DayPriorityStatus
+  reminderPriority?: DayPriorityStatus
   mostImportant: DayItem[]
   commitments: DayItem[]
   todos: DayItem[]

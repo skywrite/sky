@@ -79,6 +79,45 @@ test('day reads coalesce, follow changes during a read, and never overwrite a ne
   }
 })
 
+test('priority sources on other dates refresh the day, including newly created context files', async () => {
+  let reads = 0
+  const state = new DayState(
+    DAY,
+    async () => {
+      const next = view(++reads)
+      next.record.todoPriority = {
+        source: 'sky',
+        sources: ['time/previous-day/journal/', 'time/previous-day/summary.md', 'projects/Atlas/brief.md'],
+      }
+      return next
+    },
+    5,
+  )
+  state.start()
+  try {
+    await wait()
+    for (let i = 0; i < 8; i++)
+      state.notice({ type: 'changed', paths: ['time/previous-day/journal/Reflection.md'], days: ['2030-04-07'] })
+    await wait()
+    assert({
+      given: 'a burst of saves to a new journal on an earlier day',
+      should: 'read the current day once because that folder supplies its priority context',
+      actual: reads,
+      expected: 2,
+    })
+    state.notice({ type: 'changed', paths: ['time/previous-day/journal/assets/image.png'], days: ['2030-04-07'] })
+    state.notice({ type: 'changed', paths: ['time/previous-day/journal/archive/Old.md'], days: ['2030-04-07'] })
+    state.notice({ type: 'changed', paths: ['time/previous-day/unrelated.md'], days: ['2030-04-07'] })
+    await wait()
+    assert({ given: 'files outside the selected context', should: 'avoid extra reads', actual: reads, expected: 2 })
+    state.notice({ type: 'changed', paths: ['time/previous-day/summary.md'], days: ['2030-04-07'] })
+    await wait()
+    assert({ given: 'a selected earlier summary changes', should: 'read the current day', actual: reads, expected: 3 })
+  } finally {
+    state.stop()
+  }
+})
+
 test('a restart accepts its new sequence, rejects old replies, and a failed read preserves the day', async () => {
   let next = view(1)
   let fail = false

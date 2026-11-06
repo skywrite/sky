@@ -56,10 +56,22 @@ export class DayState {
       this.refresh()
     } else {
       const day = this.ymd ?? this.value?.day.ymd
+      const sources = [
+        ...(this.value?.record.todoPriority?.sources ?? []),
+        ...(this.value?.record.reminderPriority?.sources ?? []),
+      ]
+      const contextChanged = change.paths?.some((file) =>
+        sources.some((source) =>
+          source.endsWith('/')
+            ? file.startsWith(source) && file.endsWith('.md') && !file.slice(source.length).includes('/')
+            : file === source,
+        ),
+      )
       if (
         change.days === null ||
         !day ||
         change.days.includes(day) ||
+        contextChanged ||
         // A new day file can move the notebook's Today pointer.
         (!this.ymd && change.paths?.some((file) => file.endsWith('/day.md')))
       )

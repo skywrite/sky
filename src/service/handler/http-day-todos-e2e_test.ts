@@ -1,5 +1,6 @@
 import { mkdir, readFile } from 'node:fs/promises'
 import * as path from 'node:path'
+import { setTimeout as delay } from 'node:timers/promises'
 import { dayFile } from '#shared/nbfs/mod.ts'
 import { env } from '#shared/sys/mod.ts'
 import { assert, test } from '#test'
@@ -314,3 +315,62 @@ test(
     )
   },
 )
+
+test({ name: 'To-dos say Sky is prioritizing only while it asks the model', timeout: 60000 }, async (t) => {
+  let asked = 0
+  await runWysiwygE2e(
+    t,
+    {
+      initialMarkdown: CONTENT,
+      file: 'time/' + dayFile(DAY),
+      tempPrefix: 'day-todos-status-',
+      day: true,
+      todoPriority: {
+        context: async () => [],
+        // Stands in for a model call slow enough to be worth a status line
+        rank: async ({ tasks }) => {
+          asked++
+          await delay(1500)
+          return tasks.map(() => 1)
+        },
+      },
+    },
+    async ({ page, origin, errors }) => {
+      // Counts every moment the line is on screen, even one too brief for a wait to catch
+      await page.addInitScript(() => {
+        const seen = { count: 0 }
+        ;(window as unknown as { prioritizing: typeof seen }).prioritizing = seen
+        new MutationObserver(() => {
+          const lines = [...document.querySelectorAll('.sky-todo-priority-status')]
+          if (lines.some((line) => line.textContent?.includes('prioritizing'))) seen.count++
+        }).observe(document, { subtree: true, childList: true, characterData: true })
+      })
+      const status = page.getByText('Sky is prioritizing…', { exact: true })
+      await page.goto(`${origin}/${DAY.ymd}?view=record`)
+      await status.waitFor()
+      await status.waitFor({ state: 'detached' })
+      const askedFirst = asked
+      let priorityChecks = 0
+      page.on('request', (request) => {
+        if (request.url().endsWith('/todo-priority')) priorityChecks++
+      })
+      await page.reload()
+      await page.locator('.sky-todos-open .sky-ptext').first().waitFor()
+      await page.waitForTimeout(300)
+      assert({
+        given: 'a first ranking that asks the model, then a reload that reuses it',
+        should: 'show the status line only while the model is asked',
+        actual: {
+          askedFirst,
+          askedAgain: asked - askedFirst,
+          priorityChecks,
+          shownAfterReload: await page.evaluate(
+            () => (window as unknown as { prioritizing: { count: number } }).prioritizing.count,
+          ),
+          errors,
+        },
+        expected: { askedFirst: 1, askedAgain: 0, priorityChecks: 0, shownAfterReload: 0, errors: [] },
+      })
+    },
+  )
+})
