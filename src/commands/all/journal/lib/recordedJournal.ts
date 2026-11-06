@@ -23,9 +23,12 @@ import { summarizeJournals } from './summaries.ts'
 
 const ENRICH = { mediums: ['journal'], kind: 'journal entry', maxTags: 5 }
 
+/** What the journal was recorded as; a transcript arrives with its words already written. */
+export type RecordedJournalKind = 'Audio' | 'Video' | 'Transcript'
+
 /** Kept with the transcription until all entries have been published. Never stored in journal frontmatter. */
 export interface RecordedJournalState {
-  kind: 'Audio' | 'Video'
+  kind: RecordedJournalKind
   when: string
   stamp: string
   recording: RecordingSections
@@ -39,7 +42,7 @@ export interface RecordedJournalState {
 }
 
 export interface RecordedJournalOptions {
-  kind: 'Audio' | 'Video'
+  kind: RecordedJournalKind
   source: string
   cleanedText: string
   rel: string[]
@@ -67,7 +70,7 @@ const defaults = {
 
 /** New notebooks have a useful menu; existing notebooks retain their custom types. */
 export function recordingTypeMenu(observed: { name: string; count: number }[]) {
-  const menu = observed.filter(({ name }) => !['audio', 'video', 'misc'].includes(name.toLowerCase()))
+  const menu = observed.filter(({ name }) => !['audio', 'video', 'transcript', 'misc'].includes(name.toLowerCase()))
   const key = (name: string) => name.replaceAll(' ', '-').toLowerCase()
   const known = new Set(menu.map(({ name }) => key(name)))
   return [
@@ -88,19 +91,24 @@ function validGroups(groups: EntryGroup[], count: number) {
   return [...groups].sort((a, b) => Math.min(...a.sections) - Math.min(...b.sections))
 }
 
-export function recordedJournalPlan(kind: 'Audio' | 'Video', split?: string) {
+/** What is saved beside the entries: the recording, or the transcript that stands in for one. */
+function retained(kind: RecordedJournalKind): string {
+  return kind === 'Transcript' ? 'transcript' : 'recording'
+}
+
+export function recordedJournalPlan(kind: RecordedJournalKind, split?: string) {
   return [
     ...(kind === 'Video' ? [{ id: 'extract-audio', label: 'Extracting audio' }] : []),
-    { id: 'transcribe', label: 'Transcribing' },
+    ...(kind === 'Transcript' ? [] : [{ id: 'transcribe', label: 'Transcribing' }]),
     { id: 'names', label: 'Checking names' },
     { id: 'sections', label: 'Organizing the journal' },
     ...(split ? [{ id: 'journal-types', label: 'Choosing journal types' }] : []),
     { id: 'journal-summary', label: 'Naming the journal entries' },
-    { id: 'file', label: 'Saving journals and recording' },
+    { id: 'file', label: `Saving journals and ${retained(kind)}` },
   ]
 }
 
-/** Audio and video share the corrected-text → types → entries → retained recording pipeline. */
+/** Audio, video and transcripts share the corrected-text → types → entries → retained source pipeline. */
 export async function fileRecordedJournal(
   options: RecordedJournalOptions,
   dependencies = defaults,
@@ -243,7 +251,7 @@ export async function fileRecordedJournal(
           await persist()
         }
         const when = new PlainDateTime(capture.when)
-        output.stage('file', 'Saving journals and recording')
+        output.stage('file', `Saving journals and ${retained(options.kind)}`)
         signal?.throwIfAborted()
         if (!capture.attachment) {
           const slug =
@@ -255,7 +263,10 @@ export async function fileRecordedJournal(
             day: when.plainDate,
             fileName: `${capture.stamp}_${slug}${path.extname(options.source).toLowerCase()}`,
           })
-          if (!kept) throw new Error('The recording could not be retained. The journal import is kept for retry.')
+          if (!kept)
+            throw new Error(
+              `The ${retained(options.kind)} could not be retained. The journal import is kept for retry.`,
+            )
           capture.attachment = kept.attachment.file
           await persist()
         }

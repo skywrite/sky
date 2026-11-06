@@ -1,6 +1,6 @@
 ---
 created: 2026-09-01
-updated: 2026-11-01
+updated: 2026-11-06
 ---
 
 # Meeting from a file — the import
@@ -48,8 +48,8 @@ it lives in Details. Persistence and reference rules are documented in
 [Links between notebook records](../../links/docs/README.md).
 
 Journal recordings choose their types after transcription and names review.
-Start runs `journal:new --from-audio --split` or `--from-video --split`; the checked type suggestions
-arrive as a multiselect under `journal-types`. Each selected type becomes an
+Start runs `journal:new --from-audio --split`, `--from-video --split` or `--from-zoom-vtt --split`;
+the checked type suggestions arrive as a multiselect under `journal-types`. Each selected type becomes an
 entry, with a remainder for other content, a content-based name, and the same
 retained recording attachment. Results carry `file` for existing single-document
 consumers and `files` for the full set; explicit links reach every entry.
@@ -65,7 +65,7 @@ One door for every file kind. The kind picks the command:
 
 | Dropped | Door |
 | --- | --- |
-| VTT contents in `.vtt` or `.txt` | the kind chosen in the dialog: `meeting:new --from-zoom-vtt`, or `video:new --from-zoom-vtt` — a Zoom Clip's; a transcript whose cues name no speaker is offered as a video first |
+| VTT contents in `.vtt` or `.txt` | the kind chosen in the dialog: `meeting:new --from-zoom-vtt`, `video:new --from-zoom-vtt` — a Zoom Clip's, or `journal:new --from-zoom-vtt --split` — a recorded journal, offered last; a transcript whose cues name no speaker is offered as a video first |
 | `.srt` | `video:new --from-srt` — a video's transcript; a Loom's, a caption file's |
 | video recording (`.mp4`, `.mov`, `.m4v`, `.webm`, `.mkv`) | `journal:new --from-video --split` — extracts audio, reviews names and journal types, retains the original video |
 | plain-text `.txt` | the kind chosen in the dialog: `meeting:new --from-text` (first), `message:new --from-text`, or `video:new --from-text --url` |

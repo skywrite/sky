@@ -11,7 +11,12 @@ import dayAttachmentsDir from '#shared/nbfs/dayAttachmentsDir.ts'
 import dayDir from '#shared/nbfs/dayDir.ts'
 import { assert, test } from '#test'
 import { Instant, PlainDateTime, ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
-import { fileRecordedJournal, recordingTypeMenu } from './recordedJournal.ts'
+import {
+  fileRecordedJournal,
+  type RecordedJournalKind,
+  recordedJournalPlan,
+  recordingTypeMenu,
+} from './recordedJournal.ts'
 import { sectionsFromStarts } from './recordedSections.ts'
 
 const WHEN = new PlainDateTime('2031-03-16 08:00')
@@ -27,9 +32,9 @@ const GROUPS = [
   { title: 'Support', summary: 'Grateful for help with Atlas.', journalType: 'Gratitude', sections: [1] },
 ]
 
-async function fixture(answer: string[] | null = ['Health', 'Gratitude'], kind: 'Audio' | 'Video' = 'Audio') {
+async function fixture(answer: string[] | null = ['Health', 'Gratitude'], kind: RecordedJournalKind = 'Audio') {
   const base = await makeTempDir({ prefix: 'sky-recorded-journal-' })
-  const source = path.join(base, kind === 'Video' ? 'recording.mp4' : 'recording.m4a')
+  const source = path.join(base, { Audio: 'recording.m4a', Video: 'recording.mp4', Transcript: 'recording.vtt' }[kind])
   await writeFile(source, 'synthetic audio bytes')
   const calls: string[] = []
   let review: MultiselectPrompt | undefined
@@ -135,7 +140,7 @@ test('sections are cut from the corrected recording without rewriting or losing 
 })
 
 test('audio and video journals review suggested types, reunite returning topics, name each entry and keep one recording', async () => {
-  for (const kind of ['Audio', 'Video'] as const) {
+  for (const kind of ['Audio', 'Video', 'Transcript'] as const) {
     const f = await fixture(undefined, kind)
     const attachment = `2031-03-16_091234_Rest-And-Help-With-Atlas${path.extname(f.source)}`
     try {
@@ -190,7 +195,7 @@ test('audio and video journals review suggested types, reunite returning topics,
 })
 
 test('edited journal types reach saved files and tags and survive a partially filed retry', async () => {
-  for (const kind of ['Audio', 'Video'] as const) {
+  for (const kind of ['Audio', 'Video', 'Transcript'] as const) {
     const f = await fixture(['Atlas Notes', 'gratitude'], kind)
     try {
       f.models.group = async (_sections, selected) => {
@@ -346,6 +351,21 @@ test('journal naming failure has a descriptive fallback and never overwrites an 
   } finally {
     await rm(f.base, { recursive: true, force: true })
   }
+})
+
+test('a transcript journal has nothing to extract or transcribe, and keeps the transcript', () => {
+  assert({
+    given: 'a recorded journal that arrives as its transcript',
+    should: 'skip extracting and transcribing, and say the transcript is saved with the journals',
+    actual: recordedJournalPlan('Transcript', 'auto').map((step) => step.label),
+    expected: [
+      'Checking names',
+      'Organizing the journal',
+      'Choosing journal types',
+      'Naming the journal entries',
+      'Saving journals and transcript',
+    ],
+  })
 })
 
 test('journal type detection works for an empty notebook and retains custom types', () => {

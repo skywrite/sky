@@ -135,16 +135,16 @@ test('readTranscript', () => {
       detail: 'Jane Doe, Alex Chen',
       minutes: 47,
       clock: null,
-      kinds: ['meeting', 'video'],
+      kinds: ['meeting', 'video', 'journal'],
       refusal: null,
     },
   })
   const clip = readTranscript(CLIP, 'atlas-update.vtt')
   assert({
     given: "a Zoom Clip's transcript, whose cues name no speaker",
-    should: 'read a turn for each cue and offer it as a video first, then a meeting',
+    should: 'read a turn for each cue and offer it as a video first, then a meeting, then a journal',
     actual: [clip.summary, clip.detail, clip.kinds, clip.refusal],
-    expected: ['Zoom transcript · 2 minutes · 3 turns', null, ['video', 'meeting'], null],
+    expected: ['Zoom transcript · 2 minutes · 3 turns', null, ['video', 'meeting', 'journal'], null],
   })
   assert({
     given: 'a .vtt that is not WebVTT',
@@ -193,11 +193,11 @@ test('readText', () => {
   })
   assert({
     given: 'a WebVTT body in a .txt',
-    should: 'offer a meeting first, then a video, with its transcript length, speakers and turns',
+    should: 'offer a meeting first, then a video, then a journal, with its transcript length, speakers and turns',
     actual: readText(VTT, 'notes.txt'),
     expected: {
       source: 'transcript',
-      kinds: ['meeting', 'video'],
+      kinds: ['meeting', 'video', 'journal'],
       summary: 'Zoom transcript · 47 minutes · 3 turns',
       detail: 'Jane Doe, Alex Chen',
       durationMinutes: 47,
@@ -403,7 +403,14 @@ test('readTranscript, a transcript without a header', () => {
     given: "a captioner's .vtt with no WEBVTT line and clock times",
     should: 'read it as a transcript, its length and its start from the first cue, and not call it Zoom',
     actual: [back.summary, back.detail, back.durationMinutes, back.clockStartSeconds, back.kinds, back.refusal],
-    expected: ['Transcript · 41 minutes · 3 turns', 'Jane Doe, Alex Chen', 41, 32400, ['meeting', 'video'], null],
+    expected: [
+      'Transcript · 41 minutes · 3 turns',
+      'Jane Doe, Alex Chen',
+      41,
+      32400,
+      ['meeting', 'video', 'journal'],
+      null,
+    ],
   })
   assert({
     given: 'the same body in a .txt',

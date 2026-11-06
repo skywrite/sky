@@ -20,6 +20,15 @@ test('typeMenuFrom derives the journal-type vocabulary from records', () => {
   })
 })
 
+test('typeMenuFrom withholds recording provenance', () => {
+  assert({
+    given: 'entries tagged with how they were recorded',
+    should: 'offer none of Audio, Video or Transcript as a journal type',
+    actual: typeMenuFrom([{ date: '2026-01-07', tags: ['Journal/Audio', 'Journal/Video', 'Journal/Transcript'] }]),
+    expected: [],
+  })
+})
+
 test('typeMenuFrom withholds Misc, Video, deeper paths, and the pre-2025 era', () => {
   const menu = typeMenuFrom([
     { date: '2026-01-07', tags: ['Journal/Misc', 'Journal/Video', 'Journal/Markets/Bearish', 'Health/Sleep'] },

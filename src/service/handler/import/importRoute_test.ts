@@ -758,7 +758,7 @@ test('POST /import stages a transcript and reads it back', async () => {
       state: 'new',
       summary: 'Zoom transcript · 47 minutes · 2 turns',
       detail: 'Jane Doe, Alex Chen',
-      kinds: ['meeting', 'video'],
+      kinds: ['meeting', 'video', 'journal'],
       title: 'atlas-pricing-sync',
       when: '2026-01-27 09:31',
       lastModified: 1_700_000_000_000,
@@ -978,7 +978,7 @@ test("POST /import offers a Zoom Clip's .vtt as a video first, and starts it as 
     },
     expected: {
       summary: 'Zoom transcript · 2 minutes · 2 turns',
-      kinds: ['video', 'meeting'],
+      kinds: ['video', 'meeting', 'journal'],
       video: 200,
       started: ['video'],
     },

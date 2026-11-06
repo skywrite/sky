@@ -167,8 +167,8 @@ function toGroups(
  * The journal-type vocabulary from a set of records: every `Journal/<Type>`
  * name with its use count, so a new genre exists as a bucket the day its first
  * entry lands. Misc is withheld (it is the no-bucket-fits label; freeform
- * titles serve that case) and Video is provenance, stamped on every recorded
- * entry already.
+ * titles serve that case) and Audio, Video and Transcript are provenance,
+ * stamped on every recorded entry already.
  */
 export function typeMenuFrom(records: { date: string; tags: string[] }[]): { name: string; count: number }[] {
   const counts = new Map<string, number>()
@@ -176,7 +176,7 @@ export function typeMenuFrom(records: { date: string; tags: string[] }[]): { nam
     if (record.date < '2025-01-01') continue
     for (const tag of record.tags) {
       const m = tag.match(/^Journal\/([^/]+)$/)
-      if (!m || m[1] === 'Misc' || m[1] === 'Video' || m[1] === 'Audio') continue
+      if (!m || ['Misc', 'Video', 'Audio', 'Transcript'].includes(m[1])) continue
       counts.set(m[1], (counts.get(m[1]) ?? 0) + 1)
     }
   }

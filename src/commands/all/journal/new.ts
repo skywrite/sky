@@ -12,6 +12,7 @@ import { JournalTypes } from '#shared/models/Journal/mod.ts'
 import type { JournalType, Question } from '#shared/models/Journal/type.d.ts'
 import { type GeneratedQuestion, generateQuestions, generateQuestionsForTypes } from './_lib/generateQuestions.ts'
 import { journalFromAudio } from './lib/fromAudio.ts'
+import { journalFromTranscript } from './lib/fromTranscript.ts'
 import { journalFromVideo } from './lib/fromVideo.ts'
 import { CONTEXT_TOKENS_TRIPWIRE, gatherContext, type JournalContext } from './lib/gatherContext.ts'
 
@@ -41,11 +42,15 @@ const params = {
     'Path to a recorded video journal, or omit path to search Desktop. Reviews suggested journal types before filing.',
     { optional: true },
   ),
+  fromZoomVtt: Flag.string(
+    "Path to a recorded journal's Zoom transcript (.vtt), or omit path to use the newest .vtt on the Desktop. Reviews suggested journal types before filing.",
+    { optional: true },
+  ),
   noAutoTag: Flag.bool('Skip automatic tagging from the archived-journal tag corpus', { default: false }),
   noAutoRel: Flag.bool('Skip automatic rel suggestion from the entity graph', { default: false }),
   fresh: Flag.bool('Start over: forget what an earlier run of the recording already produced', { default: false }),
   split: Flag.stringOrBool(
-    'Split an audio or video journal into one entry per type: bare --split groups automatically, --split="Health, Faith" extracts those entries plus a remainder',
+    'Split an audio, video or transcript journal into one entry per type: bare --split groups automatically, --split="Health, Faith" extracts those entries plus a remainder',
     { bareValue: 'auto' },
   ),
   types: Flag.stringArray(typesDescription, {
@@ -78,7 +83,7 @@ export default class JournalNewTask extends Command {
 
   async run({ args, context, tasks, rawArgs }: CommandArgs<Params>): Promise<CommandResult> {
     const { config, output } = context
-    const { when, all, ai, inspectInitialContext, dryRun, fromAudio, fromVideo } = args
+    const { when, all, ai, inspectInitialContext, dryRun, fromAudio, fromVideo, fromZoomVtt } = args
     const types = args.types
 
     // Both recordings share organization and filing after the clean pass;
@@ -92,6 +97,20 @@ export default class JournalNewTask extends Command {
         videoPath,
         when,
         whenStated: rawArgs.when !== undefined,
+        context,
+        tasks,
+        noAutoTag: args.noAutoTag,
+        noAutoRel: args.noAutoRel,
+        split: args.split,
+        fresh: args.fresh,
+      })
+    }
+
+    // A transcript skips straight to the clean pass; the .vtt is what is kept.
+    if (fromZoomVtt !== undefined) {
+      return await journalFromTranscript({
+        fromZoomVtt,
+        when,
         context,
         tasks,
         noAutoTag: args.noAutoTag,

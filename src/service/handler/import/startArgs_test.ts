@@ -50,6 +50,16 @@ test('a recorded video starts the reviewed journal split through the video door'
   })
 })
 
+test('a transcript chosen as a journal starts the reviewed journal split from the transcript', () => {
+  const start = startArgs({ ...memo, source: 'transcript' }, fields({ kind: 'journal' }), '/tmp/atlas-reflection.vtt')
+  assert({
+    given: 'a .vtt dropped on the day and filed as a journal',
+    should: 'clean the transcript instead of transcribing, and review detected journal types before filing',
+    actual: [start.command, start.args.fromZoomVtt, start.args.fromAudio, start.args.split, start.rawArgs],
+    expected: ['journal:new', '/tmp/atlas-reflection.vtt', undefined, 'auto', { _: [] }],
+  })
+})
+
 test('an existing conversation sends new audio to append without creating a day entry', () => {
   const file = 'time/2026/W05/01-27/actions/messages/09-30_iMessage-Audio_Atlas.md'
   const start = startArgs(

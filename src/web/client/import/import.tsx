@@ -927,7 +927,7 @@ function nextLine(kind: ImportKind, source: ImportJob['readback']['source'], cou
     case 'meeting':
       return `${heard}, writes the meeting up, and files it under the day with its action items.`
     case 'journal':
-      return `${heard}, then suggests journal types for you to choose. Each entry is named and saved with the original recording.`
+      return `${heard}, then suggests journal types for you to choose. Each entry is named and saved with the original ${source === 'transcript' ? 'transcript' : 'recording'}.`
     case 'note':
       return `${heard}, and files it as a note under the day, transcript and all.`
     case 'message':
