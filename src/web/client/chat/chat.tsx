@@ -19,6 +19,7 @@ import { splitChatImages } from '#universal/ai/chatImages.ts'
 import type { ChatPlan, QueuedChatInstruction } from '#universal/ai/chatPlan.ts'
 import { contextAdjustmentText, type ContextAdjustment } from '#universal/ai/contextAdjustment.ts'
 import { effortLabel, type Effort, type EffortOverride } from '#universal/ai/effort.ts'
+import { imageMarkupInstructions, type ImageMarkup } from '#universal/ai/imageMarkup.ts'
 import { splitSources, withSources } from '#universal/ai/sources.ts'
 import type { TokenUsage } from '#universal/ai/tokenUsage.ts'
 import { toolDisplayName } from '#universal/ai/toolDisplay.ts'
@@ -48,6 +49,7 @@ import { splitWritingDrafts, useWritingDrafts, writingDraftReplies, writingDraft
 import { ComposerEditor, type ComposerEditorHandle } from './composerEditor.tsx'
 import { ContextPanel } from './context.tsx'
 import { ChatControls, TemporaryControl, type ThreadSettings } from './controls.tsx'
+import { ImageMarkupEditor } from './ImageMarkupEditor.tsx'
 import { LegalReviewSummary } from './legalReview.tsx'
 import { ReplyDetails } from './replyDetails.tsx'
 import {
@@ -963,11 +965,18 @@ export function useChat(id: string) {
   const setSaves = useCallback((saves: boolean) => tune({ saves }), [tune])
 
   const queuePosting = useRef(false)
-  const queuedRequest = useRef<{ id: string; thread: string; content: string; files: File[] } | null>(null)
+  const queuedRequest = useRef<{
+    id: string
+    thread: string
+    content: string
+    files: File[]
+    markupKey: string
+  } | null>(null)
   const queueInstruction = async (
     content: string,
     files: File[],
     onAccepted?: () => void,
+    markups: (ImageMarkup | null)[] = [],
   ): Promise<{ ok: boolean; error?: string }> => {
     if (queuePosting.current || !state.settings) return { ok: false }
     queuePosting.current = true
@@ -975,10 +984,17 @@ export function useChat(id: string) {
       !queuedRequest.current ||
       queuedRequest.current.thread !== state.id ||
       queuedRequest.current.content !== content ||
+      queuedRequest.current.markupKey !== JSON.stringify(markups) ||
       files.length !== queuedRequest.current.files.length ||
       files.some((file, index) => file !== queuedRequest.current!.files[index])
     ) {
-      queuedRequest.current = { id: crypto.randomUUID(), thread: state.id, content, files: [...files] }
+      queuedRequest.current = {
+        id: crypto.randomUUID(),
+        thread: state.id,
+        content,
+        files: [...files],
+        markupKey: JSON.stringify(markups),
+      }
     }
     const body = JSON.stringify({
       message: content,
@@ -994,6 +1010,7 @@ export function useChat(id: string) {
     if (form) {
       form.set('message', body)
       for (const file of files) form.append('files', file)
+      form.set('markups', JSON.stringify(markups))
     }
     try {
       const response = await fetch(`/chat/${state.id}/messages`, {
@@ -1027,10 +1044,15 @@ export function useChat(id: string) {
   }
 
   const send = useCallback(
-    async (content: string, files: File[] = [], onAccepted?: () => void): Promise<{ ok: boolean; error?: string }> => {
+    async (
+      content: string,
+      files: File[] = [],
+      onAccepted?: () => void,
+      markups: (ImageMarkup | null)[] = [],
+    ): Promise<{ ok: boolean; error?: string }> => {
       const message = content.trim()
       if (state.phase === 'busy' && state.plan && (message || files.length))
-        return queueInstruction(message, files, onAccepted)
+        return queueInstruction(message, files, onAccepted, markups)
       if (
         (!message && files.length === 0) ||
         !state.id ||
@@ -1054,6 +1076,7 @@ export function useChat(id: string) {
       if (form) {
         form.set('message', body)
         for (const file of files) form.append('files', file)
+        form.set('markups', JSON.stringify(markups))
       }
       // Attached before the phase turns busy, or the follow-by-poll would
       // start and overwrite the streaming reply with the service's read-back.
@@ -2311,6 +2334,12 @@ export function Composer({
 }) {
   const { state, send } = chat
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [markupFile, setMarkupFile] = useState<File | null>(null)
+  const [submitting, setSubmitting] = useState(false)
+  useEffect(() => {
+    setMarkupFile(null)
+    setSubmitting(false)
+  }, [state.id])
   useEffect(() => setSettingsOpen(false), [state.id])
   const inputRef = useRef<ComposerEditorHandle>(null)
   useEffect(() => {
@@ -2337,7 +2366,13 @@ export function Composer({
     input.focusEnd()
   }, [state.id, autoFocus, hidden, draft.loading, busy])
   const canSend =
-    !inputBusy && !chat.tuning && state.settings !== null && !sendDisabled && !draft.loading && !draft.missingFiles
+    !inputBusy &&
+    !submitting &&
+    !chat.tuning &&
+    state.settings !== null &&
+    !sendDisabled &&
+    !draft.loading &&
+    !draft.missingFiles
 
   const submit = () => {
     if (!canSend) return
@@ -2346,15 +2381,38 @@ export function Composer({
     const text = el.content()
     const files = attach?.files ?? []
     if (!text.trim() && files.length === 0) return
+    const unexplained =
+      !text.trim() &&
+      files.find((file) => {
+        const markup = draft.markups.get(file)
+        return (
+          markup?.marks.length && !markup.instruction.trim() && !markup.marks.some((mark) => mark.instruction.trim())
+        )
+      })
+    if (unexplained) {
+      setSendError(
+        `Describe what should change in ${unexplained.name}. Add an instruction in Mark up or write a message before sending.`,
+      )
+      return
+    }
     setSendError(null)
     if (onSend) {
       draft.accepted(text, files)
       onSend(text)
     } else {
       const id = state.id
-      void send(text, files, () => {
-        draft.accepted(text, files)
-      }).then((result) => {
+      const markups = files.map((file) => draft.markups.get(file) ?? null)
+      setSubmitting(true)
+      void send(
+        imageMarkupInstructions(text, files, markups),
+        files,
+        () => {
+          draft.accepted(text, files)
+          if (threadId.current === id) setSubmitting(false)
+        },
+        markups,
+      ).then((result) => {
+        if (threadId.current === id) setSubmitting(false)
         if (!result.ok && threadId.current === id) setSendError(result.error ?? 'Wait a moment and try again.')
       })
     }
@@ -2362,6 +2420,16 @@ export function Composer({
 
   return (
     <div className="sky-composer-zone" hidden={hidden} style={hidden ? { display: 'none' } : undefined}>
+      {markupFile && draft.files.includes(markupFile) && (
+        <ImageMarkupEditor
+          file={markupFile}
+          markup={draft.markups.get(markupFile)}
+          onChange={(markup) => draft.setMarkup(markupFile, markup)}
+          onClose={() => setMarkupFile(null)}
+          saving={draft.saving}
+          error={draft.error}
+        />
+      )}
       <ChatControls key={state.id} chat={chat} open={settingsOpen} onOpenChange={setSettingsOpen} />
       <div className="sky-composer">
         {status}
@@ -2398,8 +2466,10 @@ export function Composer({
           <FileClips
             files={attach?.files ?? []}
             onRemove={attach?.onRemove}
-            disabled={inputBusy || sendDisabled}
+            disabled={inputBusy || submitting || sendDisabled}
             pending
+            markups={draft.markups}
+            onMarkup={setMarkupFile}
           />
           <div className="sky-composer-row">
             {attach && (
@@ -2702,7 +2772,7 @@ export function ChatMain({
           {attachments.dragging && (
             <div className="sky-chat-drop" role="status">
               <Paperclip />
-              <span>Drop files to read in this chat</span>
+              <span>Drop files to attach. You can mark up photos before sending.</span>
             </div>
           )}
           <div className="sky-chat-viewport" hidden={voiceMode}>

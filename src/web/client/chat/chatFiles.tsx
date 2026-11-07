@@ -2,8 +2,10 @@ import { ActionIcon } from '@mantine/core'
 import { type DragEvent, useEffect, useId, useRef, useState } from 'react'
 import { chatFileError, type ChatFileRef } from '#universal/ai/chatFiles.ts'
 import { imagePreviewUrl, isChatImage } from '#universal/ai/chatImages.ts'
+import type { ImageMarkup } from '#universal/ai/imageMarkup.ts'
 import type { ChatDraft } from './chatDraft.ts'
 import { ChatFileIcon } from './chatFileIcon.tsx'
+import { ImageMarkupOverlay } from './ImageMarkupOverlay.tsx'
 
 export function Paperclip() {
   return (
@@ -23,7 +25,13 @@ export function Paperclip() {
   )
 }
 
-function FileThumbnail({ file }: { file: { name: string; url?: string; type?: string } }) {
+function FileThumbnail({
+  file,
+  markup,
+}: {
+  file: { name: string; url?: string; type?: string }
+  markup?: ImageMarkup
+}) {
   const image =
     file instanceof File &&
     (file.type.startsWith('image/') || /\.(png|jpe?g|webp|gif|avif|bmp|ico|heic|heif)$/i.test(file.name))
@@ -37,18 +45,21 @@ function FileThumbnail({ file }: { file: { name: string; url?: string; type?: st
     setPreview({ file: image, url })
     return () => URL.revokeObjectURL(url)
   }, [image])
-  const saved = isChatImage(file) && /\.(png|jpe?g|webp)$/i.test(file.name) ? imagePreviewUrl(file) : undefined
+  const saved = isChatImage(file) && /\.(png|jpe?g|webp|gif)$/i.test(file.name) ? imagePreviewUrl(file) : undefined
   const src = saved ?? (preview?.file === image ? preview?.url : undefined)
   if (!src || src === failed) return <ChatFileIcon file={file} />
   return (
-    <img
-      className="sky-chat-file-thumbnail"
-      src={src}
-      alt=""
-      loading="lazy"
-      decoding="async"
-      onError={() => setFailed(src)}
-    />
+    <span className="sky-chat-markup-thumb">
+      <img
+        className="sky-chat-file-thumbnail"
+        src={src}
+        alt=""
+        loading="lazy"
+        decoding="async"
+        onError={() => setFailed(src)}
+      />
+      {markup && <ImageMarkupOverlay markup={markup} aria-hidden="true" />}
+    </span>
   )
 }
 
@@ -57,11 +68,15 @@ export function FileClips({
   onRemove,
   disabled = false,
   pending = false,
+  markups,
+  onMarkup,
 }: {
-  files: readonly { name: string; url?: string; size?: number; type?: string }[]
+  files: readonly { name: string; url?: string; size?: number; type?: string; markup?: ChatFileRef['markup'] }[]
   onRemove?: (index: number) => void
   disabled?: boolean
   pending?: boolean
+  markups?: ReadonlyMap<File, ImageMarkup>
+  onMarkup?: (file: File) => void
 }) {
   const listId = useId()
   const [expanded, setExpanded] = useState(true)
@@ -95,11 +110,13 @@ export function FileClips({
       )}
       <div id={listId} className="sky-chat-files" role="list" aria-label="Attached files" hidden={pending && !expanded}>
         {files.map((file, index) => {
+          const markup = file instanceof File ? markups?.get(file) : undefined
+          const count = markup?.marks.length ?? file.markup?.count ?? 0
           const type = file.name.includes('.') ? file.name.split('.').at(-1)!.toUpperCase() : 'File'
           const size = file.size === undefined ? '' : ` · ${fileSize(file.size)}`
           const label = (
             <>
-              <FileThumbnail file={file} />
+              <FileThumbnail file={file} markup={markup} />
               <span className="sky-chat-file-label">
                 <span className="sky-chat-file-name" title={file.name}>
                   {file.name}
@@ -107,6 +124,12 @@ export function FileClips({
                 <span className="sky-chat-file-meta">
                   {type}
                   {size}
+                  {count > 0 && (
+                    <span className="sky-chat-markup-count">
+                      {' '}
+                      · {count} {count === 1 ? 'mark' : 'marks'}
+                    </span>
+                  )}
                 </span>
               </span>
             </>
@@ -119,6 +142,28 @@ export function FileClips({
                 </a>
               ) : (
                 <span className="sky-chat-file-content">{label}</span>
+              )}
+              {onMarkup && file instanceof File && /\.(png|jpe?g|webp)$/i.test(file.name) && (
+                <button
+                  type="button"
+                  className="sky-chat-markup-button"
+                  disabled={disabled}
+                  onClick={() => onMarkup(file)}
+                  aria-label={`${markup ? 'Edit markup for' : 'Mark up'} ${file.name}`}
+                >
+                  <svg
+                    width="15"
+                    height="15"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.7"
+                    aria-hidden="true"
+                  >
+                    <path d="m16 3 5 5L8 21H3v-5L16 3Z M13 6l5 5" />
+                  </svg>
+                  {markup ? 'Edit markup' : 'Mark up'}
+                </button>
               )}
               {onRemove && (
                 <ActionIcon

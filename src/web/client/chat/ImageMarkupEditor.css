@@ -1,0 +1,196 @@
+.sky-markup-intro {
+  margin: 0 0 22px;
+  color: var(--sky-text-2);
+}
+.sky-markup-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.8fr) minmax(260px, 1fr);
+  gap: 28px;
+}
+.sky-markup-workspace,
+.sky-markup-instructions {
+  min-width: 0;
+}
+.sky-markup-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.sky-markup-stage {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 180px;
+  padding: 12px;
+  border-radius: 16px;
+  background: var(--sky-s2);
+}
+.sky-markup-photo {
+  position: relative;
+  width: 100%;
+  line-height: 0;
+}
+.sky-markup-photo > img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  border-radius: 6px;
+}
+.sky-markup-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+  cursor: crosshair;
+}
+.sky-markup-help {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 8px;
+  font-size: 14px;
+  color: var(--sky-dim);
+}
+.sky-markup-instructions {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  max-height: min(65vh, calc(100dvh - 300px));
+  overflow-y: auto;
+  padding: 0 4px 4px;
+}
+.sky-markup-instructions h3 {
+  font-size: 20px;
+  font-weight: 600;
+  margin: 0;
+}
+.sky-markup-empty {
+  color: var(--sky-dim);
+  line-height: 1.5;
+  margin: 0;
+}
+.sky-markup-note {
+  border: 1px solid var(--sky-border-soft);
+  border-radius: 14px;
+  padding: 14px;
+}
+.sky-markup-note[data-selected] {
+  border-color: var(--sky-accent);
+}
+.sky-markup-note-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+  font-size: 16px;
+}
+.sky-markup-note-head strong {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.sky-markup-note-head strong span {
+  display: inline-grid;
+  place-items: center;
+  border-radius: 50%;
+  background: #e34f46;
+  color: white;
+  width: 25px;
+  height: 25px;
+  font-size: 14px;
+}
+.sky-markup-format-note {
+  font-size: 14px;
+  margin: -8px 0 0;
+  color: var(--sky-dim);
+}
+.sky-markup-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  margin-top: 24px;
+  position: sticky;
+  bottom: 0;
+  background: var(--sky-bg);
+  padding-block: 14px;
+}
+.sky-markup-footer > button {
+  flex-shrink: 0;
+}
+.sky-markup-footer p {
+  margin: 0;
+  font-size: 14px;
+  color: var(--sky-dim);
+}
+.sky-markup-footer p[role='alert'] {
+  color: var(--mantine-color-red-6);
+}
+.sky-chat-markup-button {
+  border: 0;
+  background: none;
+  padding: 7px 4px;
+  color: var(--sky-accent);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.sky-chat-markup-button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.sky-chat-markup-button:focus-visible {
+  outline: 2px solid var(--sky-accent);
+  outline-offset: 2px;
+  border-radius: 5px;
+}
+.sky-chat-markup-thumb {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 56px;
+  height: 56px;
+}
+.sky-chat-markup-thumb > svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+.sky-chat-markup-count {
+  color: var(--sky-accent);
+}
+.sky-composer-shell .sky-chat-markup-thumb {
+  width: 42px;
+  height: 42px;
+}
+@media (max-width: 700px) {
+  .sky-markup-layout {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 22px;
+  }
+  .sky-markup-instructions {
+    max-height: none;
+    overflow: visible;
+  }
+  .sky-markup-tools {
+    gap: 6px;
+  }
+  .sky-markup-tools button {
+    padding-inline: 12px;
+  }
+  .sky-markup-body {
+    padding-bottom: max(24px, env(safe-area-inset-bottom));
+  }
+}

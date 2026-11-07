@@ -5,6 +5,7 @@ export const MAX_CHAT_FILES = 10
 export interface ChatFileRef {
   name: string
   url: string
+  markup?: { url: string; count: number }
 }
 
 export function chatFileError(files: readonly { name: string; size: number }[]): string | null {
@@ -17,7 +18,10 @@ export function chatFileError(files: readonly { name: string; size: number }[]):
 }
 
 export function withChatFiles(message: string, files: readonly ChatFileRef[]): string {
-  const links = files.map(({ name, url }) => `[📎 ${name.replace(/[\\[\]]/g, '\\$&')}](${url})`)
+  const links = files.map(
+    ({ name, url, markup }) =>
+      `[📎 ${name.replace(/[\\[\]]/g, '\\$&')}](${url})${markup ? ` [Markup: ${markup.count}](${markup.url})` : ''}`,
+  )
   return [message.trim(), ...links].filter(Boolean).join('\n\n')
 }
 
@@ -25,9 +29,14 @@ export function withChatFiles(message: string, files: readonly ChatFileRef[]): s
 export function splitChatFiles(message: string): { text: string; files: ChatFileRef[] } {
   let text = message.trimEnd()
   const files: ChatFileRef[] = []
-  const link = /(?:^|\n\n)\[📎 ((?:\\.|[^\]\\\n])*)\]\((\/chat\/files\/\d{4}-\d{2}-\d{2}\/[^\s/()?#]+)\)$/
+  const link =
+    /(?:^|\n\n)\[📎 ((?:\\.|[^\]\\\n])*)\]\((\/chat\/files\/\d{4}-\d{2}-\d{2}\/[^\s/()?#]+)\)(?: \[Markup: ([1-9]|1\d|20)\]\((\/chat\/files\/\d{4}-\d{2}-\d{2}\/[^\s/()?#]+)\))?$/
   for (let match = link.exec(text); match; match = link.exec(text)) {
-    files.unshift({ name: match[1]!.replace(/\\([\\[\]])/g, '$1'), url: match[2]! })
+    files.unshift({
+      name: match[1]!.replace(/\\([\\[\]])/g, '$1'),
+      url: match[2]!,
+      ...(match[4] ? { markup: { url: match[4], count: Number(match[3]) } } : {}),
+    })
     text = text.slice(0, match.index).trimEnd()
   }
   return { text, files }

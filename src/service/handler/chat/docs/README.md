@@ -1,6 +1,6 @@
 ---
 created: 2026-09-01
-updated: 2026-11-03
+updated: 2026-11-05
 ---
 
 # Chat over HTTP — a thread, its tuning, and the story of its context
@@ -156,6 +156,20 @@ thumbnails and documents have format icons. Hovering a shortened filename
 reveals its full name.
 See [2026-09-07 — Clips belong to the composer](2026-09-07-clips-belong-to-the-composer.md).
 
+PNG/JPEG/WebP clips offer **Mark up** before sending, including files added by drop, paste or picker.
+The dialog edits circles, arrows and freehand strokes in oriented image coordinates with numbered instructions.
+Done returns to the unsent draft; only Send submits the edit.
+Geometry, instructions and output format are retained with the photo in the same IndexedDB revision.
+File identity, rather than filename, associates marks with an attachment, including duplicate filenames and removals.
+The shared `imageMarkup` geometry generates both the browser overlay and the server's transparent PNG.
+The server checks dimensions against the normalized original before retaining the annotation layer.
+The original bytes stay unchanged, and the retained layer is a separate `ai:image` markup input, never another reference
+or an alpha mask.
+Numbered instructions appear in the user message; a paired `[Markup: N](attachment-url)` link on its file clip preserves
+the overlay through queued instructions, resends and saved transcripts without showing a second attachment card.
+Photo edits offer PNG, JPEG and WebP; new GIF/SVG requests go through chat's image tool.
+The dialog's page title names the photo and restores the current chat title on close.
+
 The message route accepts multipart uploads with the same model, budget, and
 filing settings as text messages. It reads through the console's `read_file`
 implementation: PDFs and images become native model inputs, and supported
@@ -177,7 +191,7 @@ and durable local paths for subsequent edits. Completed tool results display
 immediately; the session also appends ordinary image Markdown to the assistant
 reply so previews survive filing and branching without provider history.
 This happens even if generation succeeds and the final model reply fails.
-Only validated PNG, JPEG, and WebP bytes are served inline; the original
+Only validated PNG, JPEG, WebP and GIF bytes are served inline; the original
 download URL remains an attachment. Server image commands do not open a
 desktop viewer. The rendering lives in `web/client/chat/chatImages.tsx`.
 Photo sizing, automatic edit masks and pixel preservation belong to the

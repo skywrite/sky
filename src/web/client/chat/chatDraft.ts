@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useSyncExternalStore } from 'react'
+import { hasImageMarkup, type ImageMarkup } from '#universal/ai/imageMarkup.ts'
 import { readDraftFiles, writeDraftFiles } from './chatDraftFiles.ts'
 
 interface DraftMetadata {
@@ -9,6 +10,7 @@ interface DraftMetadata {
 
 interface DraftState extends DraftMetadata {
   files: File[]
+  markups: ReadonlyMap<File, ImageMarkup>
   loading: boolean
   saving: boolean
   textError: string | null
@@ -47,6 +49,7 @@ class Draft {
     this.state = {
       ...metadata,
       files: [],
+      markups: new Map(),
       loading: Boolean(metadata.filesRevision),
       saving: false,
       textError,
@@ -70,8 +73,8 @@ class Draft {
     this.update({ loading: true, filesError: null })
     // A draft cleared while its files were loading stays cleared.
     void readDraftFiles(this.id, revision).then(
-      (files) => {
-        if (this.state.filesRevision === revision) this.update({ files, loading: false })
+      ({ files, markups }) => {
+        if (this.state.filesRevision === revision) this.update({ files, markups, loading: false })
       },
       () => {
         if (this.state.filesRevision === revision)
@@ -95,10 +98,15 @@ class Draft {
   }
 
   private saveFiles() {
-    const { files, filesRevision } = this.state
+    const { files, filesRevision, markups } = this.state
     this.update({ saving: true, filesError: null })
     // Add, remove and acceptance must reach storage in that order, including after navigation.
-    this.writes = this.writes.catch(() => {}).then(() => writeDraftFiles(this.id, filesRevision, files))
+    this.writes = this.writes
+      .catch(() => {})
+      .then(() => {
+        // Fast typing need not clone every photo for an already superseded revision.
+        if (this.state.filesRevision === filesRevision) return writeDraftFiles(this.id, filesRevision, files, markups)
+      })
     void this.writes.then(
       () => {
         if (this.state.filesRevision === filesRevision) this.update({ saving: false })
@@ -121,7 +129,21 @@ class Draft {
     const files = change(this.state.files)
     if (files.length === this.state.files.length && files.every((file, index) => file === this.state.files[index]))
       return
-    this.update({ files, filesRevision: files.length ? crypto.randomUUID() : null })
+    this.update({
+      files,
+      markups: new Map([...this.state.markups].filter(([file]) => files.includes(file))),
+      filesRevision: files.length ? crypto.randomUUID() : null,
+    })
+    this.saveMetadata()
+    this.saveFiles()
+  }
+
+  setMarkup = (file: File, markup: ImageMarkup) => {
+    if (this.state.loading || !this.state.files.includes(file)) return
+    const markups = new Map(this.state.markups)
+    if (hasImageMarkup(markup)) markups.set(file, markup)
+    else markups.delete(file)
+    this.update({ markups, filesRevision: crypto.randomUUID() })
     this.saveMetadata()
     this.saveFiles()
   }
@@ -133,7 +155,15 @@ class Draft {
 
   /** The thread is gone: nothing drafted for it stays in this browser. */
   clear = () => {
-    this.update({ text: '', files: [], filesRevision: null, loading: false, textError: null, filesError: null })
+    this.update({
+      text: '',
+      files: [],
+      markups: new Map(),
+      filesRevision: null,
+      loading: false,
+      textError: null,
+      filesError: null,
+    })
     this.saveMetadata()
     this.saveFiles()
   }
@@ -187,6 +217,7 @@ export function useChatDraft(id: string) {
   return {
     text: state.text,
     files: state.files,
+    markups: state.markups,
     loading: state.loading,
     saving: state.saving,
     error: state.textError ?? state.filesError,
@@ -195,6 +226,7 @@ export function useChatDraft(id: string) {
     present: Boolean(state.text || state.filesRevision),
     setText: draft.setText,
     setFiles: draft.setFiles,
+    setMarkup: draft.setMarkup,
     accepted: draft.accepted,
     retry: draft.retry,
   }

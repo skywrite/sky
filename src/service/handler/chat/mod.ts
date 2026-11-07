@@ -64,7 +64,7 @@ import { branchPoints } from './branchPoint.ts'
 import { recoverCalendarApprovals, restoreAnsweredApprovals, type ReviseCalendarApproval } from './calendarApproval.ts'
 import { callSubject } from './callSubject.ts'
 import { registerWritingDraftRoutes } from './drafts.ts'
-import { createChatFileRoutes, readChatFiles } from './files.ts'
+import { createChatFileRoutes, readChatFiles, readUploadMarkups } from './files.ts'
 import type { InterruptedTurn } from './interrupted.ts'
 import { registerLegalReviewRoutes } from './legalReview.ts'
 import { restoredModelPrefs } from './modelSettings.ts'
@@ -1173,6 +1173,12 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono & { openVoice
     if (uploads.some((file) => !(file instanceof File))) return c.json({ message: 'Expected file attachments.' }, 400)
     const uploadError = chatFileError(uploads as File[])
     if (uploadError) return c.json({ message: uploadError }, 400)
+    let markups: ReturnType<typeof readUploadMarkups>
+    try {
+      markups = readUploadMarkups(multipart?.get('markups'), uploads.length)
+    } catch (error) {
+      return c.json({ message: (error as Error).message }, 400)
+    }
     let rawBody: unknown
     try {
       rawBody = multipart ? JSON.parse(String(multipart.get('message') ?? 'null')) : await c.req.json()
@@ -1260,6 +1266,7 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono & { openVoice
               linked.files,
               target.session.startTime.plainDate,
               options.attachmentsRoot!,
+              markups,
             )
           ).message
         } catch (error) {
@@ -1320,6 +1327,7 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono & { openVoice
             linked.files,
             thread.session.startTime.plainDate,
             options.attachmentsRoot!,
+            markups,
           )
           message = read.message
           files = read.files
