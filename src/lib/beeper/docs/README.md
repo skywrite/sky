@@ -1,6 +1,6 @@
 ---
 created: 2026-09-16
-updated: 2026-11-03
+updated: 2026-11-05
 ---
 
 # Beeper — every chat on this Mac, saved as messages
@@ -60,7 +60,9 @@ the notebook:
   because the day page and Outbox know you by that name.
   The profile name stands in only when `me/about.md` has none.
 - Photos, files and voice notes are copied into the day's attachments
-  folder and listed in the file. A voice note says so in its heading, after
+  folder and listed in the file.
+  Beeper flags iMessage's voice notes but sends Signal's as plain audio, so audio it leaves unflagged counts as one.
+  A voice note says so in its heading, after
   the name, with its length when ffprobe can measure the copy —
   `**Maya Okafor** (voice note, 0:42)` — and its day line starts with
   "Voice note:". It keeps its words inline:

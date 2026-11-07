@@ -470,8 +470,16 @@ function senderOf(
   return lookedUp(person, names)?.name || named || person?.fullName?.trim() || person?.username?.trim() || 'Unknown'
 }
 
+/**
+ * A voice note. Beeper flags iMessage's, but Signal's arrive as plain audio with no flag (measured 2026-11-05),
+ * so audio Beeper leaves unflagged counts as one. An explicit `false` keeps a shared audio file a file.
+ */
+function voiceNote(attachment: BeeperAttachment): boolean {
+  return attachment.isVoiceNote ?? (attachment.type === 'audio' || Boolean(attachment.mimeType?.startsWith('audio/')))
+}
+
 function attachmentKind(attachment: BeeperAttachment): string {
-  if (attachment.isVoiceNote) return 'Voice note'
+  if (voiceNote(attachment)) return 'Voice note'
   if (attachment.isSticker) return 'Sticker'
   if (attachment.isGif) return 'GIF'
   if (attachment.type === 'img') return 'Photo'
@@ -825,6 +833,7 @@ async function syncBeeperLocked(options: BeeperSyncOptions): Promise<BeeperSyncR
       }
       for (const attachment of message.attachments ?? []) {
         const kind = attachmentKind(attachment)
+        const voice = voiceNote(attachment)
         section.fallback = kind
         let transcript = attachment.transcription?.transcription?.trim() || undefined
         const name = attachment.fileName?.trim() || `${kind.toLowerCase().replace(/\s+/g, '-')}`
@@ -847,7 +856,7 @@ async function syncBeeperLocked(options: BeeperSyncOptions): Promise<BeeperSyncR
             )
           }
           // A voice note Beeper hands over without words: Sky's own provider listens
-          if (data && attachment.isVoiceNote && !transcript && options.transcribe) {
+          if (data && voice && !transcript && options.transcribe) {
             try {
               transcript = (await options.transcribe(data, name)).trim() || undefined
             } catch (error) {
@@ -858,7 +867,7 @@ async function syncBeeperLocked(options: BeeperSyncOptions): Promise<BeeperSyncR
           }
         }
         if (saved) section.attachments.push({ file: saved })
-        if (attachment.isVoiceNote) {
+        if (voice) {
           let seconds: number | null = null
           if (saved && options.duration) {
             try {
@@ -871,7 +880,7 @@ async function syncBeeperLocked(options: BeeperSyncOptions): Promise<BeeperSyncR
           }
           section.voice ??= { seconds }
         }
-        if (attachment.isVoiceNote && transcript) {
+        if (voice && transcript) {
           section.lines.push(`🎤 ${transcript}`)
           section.transcript ??= transcript
         } else section.lines.push(`📎 ${saved ?? name}`)

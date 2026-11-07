@@ -1371,6 +1371,119 @@ test('beeper capture - a voice note without words from Beeper is transcribed by 
   await rm(root, { recursive: true, force: true })
 })
 
+test('beeper capture - a Signal voice note, which Beeper sends as plain audio, is transcribed like a flagged one', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'sky-beeper-signal-voice-'))
+  const timeDir = path.join(root, 'time')
+  const attachmentsDir = path.join(root, 'attachments')
+  const stateFile = path.join(root, 'state', 'beeper', 'sync.json')
+  const asset = path.join(root, 'beeper-cache', 'voice.m4a')
+  await mkdir(path.dirname(asset), { recursive: true })
+  await writeFile(asset, new Uint8Array([1, 2, 3, 4]))
+  const signal = { accountID: 'signal', type: 'AUDIO' }
+  const world: World = {
+    asset,
+    accounts: [{ accountID: 'signal', network: 'Signal', user: { id: 'me', fullName: 'Jane Doe', isSelf: true } }],
+    chats: [
+      {
+        id: 's1',
+        accountID: 'signal',
+        network: 'Signal',
+        title: 'Maya Okafor',
+        type: 'single',
+        lastActivity: '2026-03-11T09:00:00Z',
+        participants: {
+          items: [
+            { id: 'u1', fullName: 'Maya Okafor' },
+            { id: 'me', fullName: 'Jane Doe', isSelf: true },
+          ],
+        },
+      },
+    ],
+    messages: {
+      // Beeper's Signal shape: audio with no isVoiceNote and no duration; a shared song says false outright
+      s1: [
+        message('s1', '0001', '2026-03-11T08:05:00Z', '', {
+          ...signal,
+          attachments: [
+            {
+              id: 'localmxc://signal/1',
+              type: 'audio',
+              mimeType: 'audio/aac',
+              fileName: 'signal-2026-03-11-08-05-00-000.m4a',
+            },
+          ],
+        }),
+        message('s1', '0002', '2026-03-11T08:06:00Z', '', {
+          ...signal,
+          attachments: [
+            {
+              id: 'localmxc://signal/2',
+              type: 'audio',
+              mimeType: 'audio/mpeg',
+              isVoiceNote: false,
+              fileName: 'atlas-theme.mp3',
+            },
+          ],
+        }),
+      ],
+    },
+  }
+  await writeDay(DayDocument.createPastDay(PlainDate.fromString('2026-03-11')), timeDir)
+  await mkdir(path.dirname(stateFile), { recursive: true })
+  await writeFile(
+    stateFile,
+    JSON.stringify({
+      version: 1,
+      chats: {},
+      accounts: { signal: { network: 'Signal', save: true, groups: true, holdUnknown: false, chosen: true } },
+    }),
+  )
+  const heard: string[] = []
+  try {
+    await syncBeeper({
+      client: beeperWith(world),
+      timeDir,
+      attachmentsDir,
+      stateFile,
+      timezone: 'UTC',
+      dayTimezone: async () => 'UTC',
+      now: '2026-03-11T10:00:00Z',
+      transcribe: async (audio, fileName) => {
+        heard.push(`${fileName}:${audio.byteLength}`)
+        return 'Running late, start the kickoff without me'
+      },
+      duration: async () => 4,
+    })
+    const dir = path.join(timeDir, dayDir(PlainDate.fromString('2026-03-11')), 'actions', 'messages')
+    const [file] = (await readdir(dir)).sort()
+    const text = await readTextFile(path.join(dir, file))
+    const dayText = await readTextFile(path.join(timeDir, dayFile(PlainDate.fromString('2026-03-11'))))
+    assert({
+      given: 'a Signal voice note Beeper sends as unflagged audio, and a song marked as not a voice note',
+      should:
+        'transcribe the voice note, write its words inline with voice note and its length after the name, name the file and day line by them, and keep the song a file',
+      actual: [
+        heard,
+        file,
+        (text.match(/\*\* \(voice note, 0:04\)$/gm) ?? []).length,
+        text.includes('🎤 Running late, start the kickoff without me'),
+        /📎 .*atlas-theme\.mp3/.test(text),
+        dayText.includes('08:05 > Maya Signal -> [Voice note: Running late, start the kickoff without me]('),
+      ],
+      expected: [
+        ['signal-2026-03-11-08-05-00-000.m4a:4'],
+        '08-05_signal_Maya_Running-late-start-the-kickoff.md',
+        1,
+        true,
+        true,
+        true,
+      ],
+    })
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
 test('beeper capture - a sender whose number a people record carries is filed under the record’s name on any network', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'sky-beeper-people-'))
   const timeDir = path.join(root, 'time')
