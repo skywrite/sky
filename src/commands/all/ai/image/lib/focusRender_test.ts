@@ -61,7 +61,7 @@ test('Focused rendering uploads a crop-aligned mask, retains full context and re
       brief: 'Retain the surrounding pattern and use the style reference palette.',
       refs: [canvas, style],
       edit,
-      model: 'gpt-image-2.5-sunburst',
+      model: 'gpt-image-2.6-sunburst',
       quality: 'max',
       count: 1,
       size: '2048x1536',

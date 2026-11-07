@@ -12,7 +12,7 @@ import { compositeImageEdit } from './mask.ts'
 import type { MaskedImageEdit } from './mask.ts'
 import { planMixedImage } from './mixed.ts'
 import type { MixedImagePlan } from './mixed.ts'
-import type { ImageBackground } from './options.ts'
+import { validateImageOutput, type ImageBackground, type ImageOutputOptions } from './options.ts'
 import type { ImageSelection, ImageMethod } from './preflight.ts'
 import type { ImageReference } from './references.ts'
 import { refineImageMask } from './refine.ts'
@@ -20,7 +20,7 @@ import { renderImages } from './render.ts'
 import type { RenderedImage } from './render.ts'
 import { graphicEditSize } from './resolution.ts'
 
-export interface ImageWorkflowRequest {
+export interface ImageWorkflowRequest extends ImageOutputOptions {
   prompt: string
   brief?: string
   selection: ImageSelection
@@ -28,6 +28,7 @@ export interface ImageWorkflowRequest {
   count: number
   size?: string
   edit?: MaskedImageEdit
+  markup?: Uint8Array
   background?: ImageBackground
   maxAttempts?: number
   budgetMs?: number
@@ -79,6 +80,16 @@ export async function runImageWorkflow(
   overrides: Partial<ImageWorkflowDependencies> = {},
 ): Promise<WorkflowImage[]> {
   const deps = { ...dependencies, ...overrides }
+  const problem = validateImageOutput({
+    ...request,
+    format: request.format ?? 'png',
+    references: request.refs.length,
+    markup: !!request.markup,
+    mask: !!request.edit,
+    reviewed: request.maxAttempts !== undefined,
+    method: request.selection.method,
+  })
+  if (problem) throw new Error(problem)
   const start = performance.now()
   const budgetMs = request.budgetMs ?? 15 * 60_000
   const maxAttempts = request.maxAttempts ?? (request.selection.complexity === 'complex' ? 5 : 3)
@@ -252,6 +263,11 @@ async function produceImage(
       background: request.background,
       size,
       edit,
+      markup: request.markup,
+      format: request.format,
+      complexity: request.complexity,
+      frameCount: request.frameCount,
+      frameDurationMs: request.frameDurationMs,
       signal: request.signal,
       onProgress: request.onProgress,
       finish: false,

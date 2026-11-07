@@ -10,7 +10,7 @@ const selection: ImageSelection = {
   layout: 'landscape',
   intent: 'create',
   complexity: 'complex',
-  model: 'gpt-image-2.5-flare',
+  model: 'gpt-image-2.6-flare',
   quality: 'high',
   reason: 'Explicit vector request.',
 }
@@ -64,7 +64,7 @@ test('OpenAI generation and editing errors retain the real provider stage and di
       await renderImages(
         {
           prompt: 'Create a beautiful Atlas illustration.',
-          model: 'gpt-image-2.5-flare',
+          model: 'gpt-image-2.6-flare',
           quality: 'high',
           count: 1,
           refs: editing ? [{ name: 'synthetic.png', mediaType: 'image/png', data: new Uint8Array([1]) }] : [],

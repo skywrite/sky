@@ -12,7 +12,6 @@ import { slugify } from '#lib/string/mod.ts'
 import { logAIError } from '#shared/ai/errorLog.ts'
 import { hasKey } from '#shared/ai/keychainAuthFetch.ts'
 import { OPENAI_SECRET } from '#shared/ai/llm/openaiProvider.ts'
-import { exists } from '#shared/fs/mod.ts'
 import { actionKindRel } from '#shared/nbfs/mod.ts'
 import { writeImageArtifact } from './lib/artifact.ts'
 import type { AttemptSummary } from './lib/attempts.ts'
@@ -22,6 +21,7 @@ import type { PreparedImageEdit } from './lib/edit.ts'
 import { writeImageEvidence } from './lib/evidence.ts'
 import { imageFailureMessage, ImageStageError } from './lib/failure.ts'
 import type { ImageReviewSummary } from './lib/finish.ts'
+import { validateImageMarkup } from './lib/markup.ts'
 import {
   imageModelName,
   MAX_COUNT,
@@ -33,8 +33,9 @@ import {
   validateModel,
   validateQuality,
   validateSize,
+  validateImageOutput,
 } from './lib/options.ts'
-import type { ImageBackground, ImageQuality } from './lib/options.ts'
+import type { ImageBackground, ImageQuality, ImageFormat, ImageOutputOptions } from './lib/options.ts'
 import { selectImageSettings } from './lib/preflight.ts'
 import type { ImageMethod } from './lib/preflight.ts'
 import { prepareReferenceImage, referencePreview } from './lib/references.ts'
@@ -69,6 +70,20 @@ const params = {
   mask: Flag.string(
     'Omit for full-image generation/editing; drawing/mixed methods automatically preserve local edits. Only when the user requests masking, use auto to plan a mask or a local PNG alpha mask: transparent edits, opaque protects. Use none to disable masking in any method.',
   ),
+  markup: Flag.string(
+    'Transparent PNG annotation layer for the first reference. Must match its oriented dimensions; cannot be combined with a mask. Keep numbered edit instructions in prompt.',
+  ),
+  format: Flag.string(
+    'Output format: png, jpeg, webp, gif, or svg. GIF and native SVG create new images only; SVG count must be 1. Photo edits support PNG/JPEG/WebP.',
+    { default: 'png' },
+  ),
+  complexity: Flag.string(
+    'Image planning effort: low, medium, or high. Independent of rendering quality; omit to use the model default.',
+  ),
+  frameCount: Flag.number('GIF animation frame count (2–16; provider default 9). Only with format gif.'),
+  frameDurationMs: Flag.number(
+    'GIF frame delay in milliseconds (20–2000, rounded to 10 ms; provider default 200). Only with format gif.',
+  ),
   quality: Flag.string(
     'Rendering quality: auto (Astra selects), low, medium, high, xhigh, or max; set only for an explicit user choice',
     {
@@ -99,6 +114,7 @@ type Result = {
   images: string[]
   artifact?: string
   model: string
+  format?: ImageFormat
   quality?: ImageQuality
   method: ImageMethod
   selectionReason: string
@@ -125,9 +141,11 @@ export default class AiImageTask extends Command {
   static override description: CommandDescription = {
     name: 'ai:image',
     description:
-      'Create or edit images with OpenAI GPT Image 2.5, including illustrations, diagrams, charts, icons and designs with text. OpenAI image generation is the default; Astra selects image settings, never the production method. Preserve the user’s requested visual style, detail and finish. Use drawing only for an explicit request for SVG/vector drawing, or mixed only for an explicit request for generated artwork with SVG overlays. Never substitute either method after a failure without the user requesting the change. Pass local references for edits (base first). For photo edits, keep the requested change concise and faithful. The default sends full references and returns the full generated image directly. Photo preservation uses Sunburst/max and about 8 MP. Leave model/quality/size automatic; omit mask and attempts unless explicitly requested. Drawing/mixed retain their review workflow and save editable SVG. Include the original request and priorities in brief. Report the actual method and any failures or review caveats accurately.',
+      'Create or edit images with OpenAI GPT Image 2.6, including photographs, illustrations, diagrams, charts, icons and text. The default image method supports format png, jpeg, webp, gif, or svg. Use format svg for a requested native vector image and format gif for a new animation; both require no refs and SVG requires count 1. Photo edits support PNG/JPEG/WebP. Pass local references for edits, base first. When the user supplies markup, pass the transparent PNG path as markup, keep numbered instructions in prompt, and do not combine it with a mask. Photo preservation uses Sunburst/max and about 8 MP; leave model/quality automatic unless explicitly chosen. The default returns full provider output directly. Use method drawing only for an explicit request for the custom SVG drawing workflow, and mixed only for generated artwork with SVG overlays. Never switch methods after a failure without the user requesting it. Omit mask and attempts unless requested. Include the original request and priorities in brief. Report the actual method and any failures accurately.',
     descriptionLong: [
-      'Creates a PNG with OpenAI image generation by default, including diagrams and text.',
+      'Creates a PNG by default. Use --format jpeg, webp, gif, or svg for native output.',
+      'GIF and native SVG are generation-only; use PNG/JPEG/WebP for reference edits.',
+      'Use --markup for a transparent PNG annotation layer matching the first reference.',
       'SVG drawing and mixed artwork with SVG overlays require an explicit method choice.',
       'Saves to the Desktop',
       '(or --out), opens it in Preview, and records prompt + settings in the',
@@ -168,6 +186,8 @@ export default class AiImageTask extends Command {
       'sky ai:image "Replace the center icon; keep the lettering and layout unchanged" -r ~/Pictures/atlas-logo.png',
       'sky ai:image "A rough pencil sketch of a lighthouse" -m flare -q low',
       'sky ai:image "A blue five-point star icon" --method drawing -s 64x64',
+      'sky ai:image "A blue five-point star icon" --format svg',
+      'sky ai:image "A lantern swaying gently in a seamless loop" --format gif --frameCount 9',
     ],
     params,
   }
@@ -216,6 +236,22 @@ export default class AiImageTask extends Command {
     }
     const log = (line: string) => output.log(colors.dim(`◦ ${line}`))
     const requestedMask = args.mask?.trim() || undefined
+    const format = (args.format ?? 'png') as ImageFormat
+    const outputProblem = validateImageOutput({
+      format,
+      complexity: args.complexity,
+      frameCount: args.frameCount,
+      frameDurationMs: args.frameDurationMs,
+      references: refPaths.length,
+      count,
+      markup: !!args.markup,
+      mask: !!requestedMask && requestedMask !== 'none',
+      reviewed: args.attempts !== undefined,
+      method: requestedMethod,
+      background: args.background,
+      size: args.size,
+    })
+    if (outputProblem) return CommandResult.fail(outputProblem)
     if (requestedMask && requestedMask !== 'auto' && requestedMask !== 'none' && !refPaths.length) {
       return CommandResult.fail('A mask requires --refs with the base image first.')
     }
@@ -257,6 +293,16 @@ export default class AiImageTask extends Command {
       }
     }
 
+    let markup: Uint8Array | undefined
+    if (args.markup) {
+      try {
+        markup = new Uint8Array(await readFile(expandHome(args.markup)))
+        await validateImageMarkup(markup, refImages[0]!)
+      } catch (error) {
+        return CommandResult.fail(`Could not use markup ${path.basename(args.markup)}: ${(error as Error).message}`)
+      }
+    }
+
     if (needsPreflight) {
       log('Choosing image settings with Astra…')
     }
@@ -281,7 +327,7 @@ export default class AiImageTask extends Command {
       return CommandResult.error(`Image selection failed: ${message}. Retry when the selection service is available.`)
     }
     const { model, quality, method, reason: selectionReason } = selection
-    if (method !== 'drawing' && args.size) {
+    if (method !== 'drawing' && format !== 'gif' && args.size) {
       const problem = validateSize(args.size)
       if (problem) return CommandResult.fail(problem)
     }
@@ -336,6 +382,11 @@ export default class AiImageTask extends Command {
         count,
         size,
         edit: prepared.edit,
+        markup,
+        format,
+        complexity: args.complexity as ImageOutputOptions['complexity'],
+        frameCount: args.frameCount,
+        frameDurationMs: args.frameDurationMs,
         background: args.background as ImageBackground | undefined,
         maxAttempts: args.attempts,
         budgetMs: budgetMinutes * 60_000 - (performance.now() - started),
@@ -369,15 +420,22 @@ export default class AiImageTask extends Command {
     const svgs: string[] = []
     let maskPath: string | undefined
     for (const image of generated) {
-      let fileName = `${now.date}_image_${slug}.png`
-      let n = 1
-      while (await exists(path.join(outDir, fileName))) {
-        n += 1
-        fileName = `${now.date}_image_${slug}-${n}.png`
+      // Notebook time has minute precision; retain that creation time in the standard seconds field.
+      const stamp = `${now.time.replace(':', '').padStart(4, '0')}00`
+      const stem = `${now.date}_${stamp}_${slug || 'Image'}`
+      let filePath = ''
+      for (let suffix = 1; ; suffix++) {
+        filePath = path.join(outDir, `${stem}${suffix === 1 ? '' : `-${suffix}`}.${format}`)
+        try {
+          await writeFile(filePath, image.data, { flag: 'wx' })
+          break
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
+        }
       }
-      const filePath = path.join(outDir, fileName)
-      await writeFile(filePath, image.data)
+      const fileName = path.basename(filePath)
       saved.push(filePath)
+      if (format === 'svg') svgs.push(filePath)
       log(`Saved ${fileName} (${Math.round(image.data.length / 1024)} KB)`)
       if (image.review) {
         reviews.push(image.review)
@@ -392,6 +450,10 @@ export default class AiImageTask extends Command {
             quality: method === 'drawing' ? 'vector' : quality,
             size,
             method,
+            format,
+            complexity: args.complexity,
+            frameCount: args.frameCount,
+            frameDurationMs: args.frameDurationMs,
           })
           evidence.push(retained.directory)
           maskPath ??= retained.mask
@@ -407,7 +469,7 @@ export default class AiImageTask extends Command {
     }
 
     const report = [
-      `Created ${saved.length} image${saved.length === 1 ? '' : 's'} with ${production}${size ? `, ${size}` : ''}.`,
+      `Created ${saved.length} ${format.toUpperCase()} image${saved.length === 1 ? '' : 's'} with ${production}${size ? `, ${size}` : ''}.`,
       `Selection: ${selectionReason}`,
       ...(preservation ? [`Preservation: ${preservation}`] : []),
       ...(maskPath ? [`Edit mask: ${maskPath}`] : []),
@@ -439,7 +501,7 @@ export default class AiImageTask extends Command {
           evidence,
           reviews: reviews.map((review) => `${review.status}: ${review.reason}`),
           refs: refPaths.map((refPath) => path.basename(refPath)),
-          files: [...saved, ...svgs],
+          files: [...new Set([...saved, ...svgs])],
           report,
         },
       )
@@ -452,7 +514,8 @@ export default class AiImageTask extends Command {
     output.log(report)
     return CommandResult.success({
       report,
-      images: saved,
+      images: format === 'svg' ? [] : saved,
+      format,
       artifact,
       model: method === 'drawing' ? 'svg-astra' : model,
       quality: method === 'drawing' ? undefined : quality,

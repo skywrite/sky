@@ -27,7 +27,7 @@ test('Fidelity-preserving photo edits enforce Sunburst/max after classification'
     given: 'a preservation classification paired with an insufficient model recommendation',
     should: 'enforce Sunburst/max and explain the preservation requirement',
     actual: [selected.model, selected.quality, selected.reason.includes('fidelity')],
-    expected: ['gpt-image-2.5-sunburst', 'max', true],
+    expected: ['gpt-image-2.6-sunburst', 'max', true],
   })
 })
 
@@ -40,7 +40,7 @@ test('Graphic preservation retains its own quality selection and geometric compl
     given: 'a precise graphic edit that needs preservation and careful geometry',
     should: 'enable preservation without forcing the photo quality rule',
     actual: [selected.intent, selected.complexity, selected.model, selected.quality],
-    expected: ['preserve_image', 'complex', 'gpt-image-2.5-sunburst', 'xhigh'],
+    expected: ['preserve_image', 'complex', 'gpt-image-2.6-sunburst', 'xhigh'],
   })
 })
 
@@ -53,7 +53,7 @@ test('Photo-to-illustration transformations use the general selection', async ()
     given: 'a photo reference intended for creative transformation',
     should: 'keep Flare/high instead of forcing photographic fidelity',
     actual: [selected.model, selected.quality],
-    expected: ['gpt-image-2.5-flare', 'high'],
+    expected: ['gpt-image-2.6-flare', 'high'],
   })
 })
 
@@ -68,7 +68,7 @@ test('General selection supports drafts and demanding creations', async () => {
       given: `a creative brief judged to need ${decision.model}/${decision.quality}`,
       should: 'use that concrete choice and its reason',
       actual: [selected.model, selected.quality, selected.reason],
-      expected: [`gpt-image-2.5-${decision.model}`, decision.quality, decision.reason],
+      expected: [`gpt-image-2.6-${decision.model}`, decision.quality, decision.reason],
     })
   }
 })
@@ -79,7 +79,7 @@ test('A preservation classification without an original cannot trigger the photo
     given: 'a prompt without a reference photograph',
     should: 'avoid promoting it solely on the preservation classification',
     actual: [selected.model, selected.quality],
-    expected: ['gpt-image-2.5-flare', 'high'],
+    expected: ['gpt-image-2.6-flare', 'high'],
   })
 })
 
@@ -91,7 +91,7 @@ test('Explicit settings override automatic preservation settings independently',
     given: 'a deliberate model or quality choice on a preservation edit',
     should: 'honor that choice while selecting the remaining setting',
     actual: [model.model, model.quality, quality.model, quality.quality],
-    expected: ['gpt-image-2.5-flare', 'max', 'gpt-image-2.5-sunburst', 'medium'],
+    expected: ['gpt-image-2.6-flare', 'max', 'gpt-image-2.6-sunburst', 'medium'],
   })
   assert({
     given: 'an override of the default preservation recommendation',
@@ -112,7 +112,7 @@ test('Two explicit settings skip the paid preflight', async () => {
     given: 'both settings chosen explicitly',
     should: 'return them without calling the selector',
     actual: [selected.model, selected.quality, selected.reason.includes('skipped')],
-    expected: ['gpt-image-2.5-flare', 'low', true],
+    expected: ['gpt-image-2.6-flare', 'low', true],
   })
 })
 
@@ -129,7 +129,7 @@ test('Explicit model and quality still classify reference edits for resolution a
     given: 'both model settings explicitly selected for an edit with a reference',
     should: 'honor the settings while still identifying the photo preservation workflow',
     actual: [called, selected.intent, selected.model, selected.quality],
-    expected: [true, 'preserve_photo', 'gpt-image-2.5-flare', 'medium'],
+    expected: [true, 'preserve_photo', 'gpt-image-2.6-flare', 'medium'],
   })
 })
 

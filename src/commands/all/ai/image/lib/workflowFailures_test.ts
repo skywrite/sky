@@ -11,7 +11,7 @@ const selection: ImageSelection = {
   layout: 'square',
   intent: 'create',
   complexity: 'simple',
-  model: 'gpt-image-2.5-flare',
+  model: 'gpt-image-2.6-flare',
   quality: 'medium',
   reason: 'Synthetic test image.',
 }

@@ -47,7 +47,7 @@ test('Image edits send named multipart files with their MIME types and exact byt
     const images = await renderImages(
       {
         prompt: 'Change the red test tile to blue.',
-        model: 'gpt-image-2.5-sunburst',
+        model: 'gpt-image-2.6-sunburst',
         quality: 'max',
         size: 'auto',
         background: 'auto',
@@ -86,7 +86,7 @@ test('Image edits send named multipart files with their MIME types and exact byt
           type: ref.mediaType,
           bytes: [...ref.data],
         })),
-        settings: ['gpt-image-2.5-sunburst', 'max', 'auto', 'auto', '1', 'png'],
+        settings: ['gpt-image-2.6-sunburst', 'max', 'auto', 'auto', '1', 'png'],
         output: true,
       },
     })
@@ -99,7 +99,7 @@ test('Image creation supports omitted, automatic, and explicit sizes without ref
     await renderImages(
       {
         prompt: 'A test landscape.',
-        model: 'gpt-image-2.5-flare',
+        model: 'gpt-image-2.6-flare',
         quality: 'medium',
         size,
         background: 'transparent',
@@ -116,7 +116,7 @@ test('Image creation supports omitted, automatic, and explicit sizes without ref
       expected: {
         endpoint: '/v1/images/generations',
         body: {
-          model: 'gpt-image-2.5-flare',
+          model: 'gpt-image-2.6-flare',
           prompt: 'A test landscape.',
           n: 2,
           size: size ?? 'auto',
@@ -141,7 +141,7 @@ test('Rejected and cancelled image requests cannot become successful images', as
   ] as const) {
     try {
       await renderImages(
-        { prompt: 'A test landscape.', model: 'gpt-image-2.5-flare', quality: 'low', count: 1, refs: [], signal },
+        { prompt: 'A test landscape.', model: 'gpt-image-2.6-flare', quality: 'low', count: 1, refs: [], signal },
         api.client,
       )
     } catch (error) {
@@ -197,7 +197,7 @@ test('Masked edits send aligned named PNG parts and return the composited image,
   const outputs = await renderImages(
     {
       prompt: 'Change only the center tile.',
-      model: 'gpt-image-2.5-sunburst',
+      model: 'gpt-image-2.6-sunburst',
       quality: 'max',
       size: '80x80',
       count: 1,
@@ -261,7 +261,7 @@ test('Masked graphics request real output transparency without overriding opaque
         refs: [canvas],
         edit: { canvas, mask, description: 'Center symbol.' },
         size: '80x80',
-        model: 'gpt-image-2.5-sunburst',
+        model: 'gpt-image-2.6-sunburst',
         quality: 'max',
         background,
         count: 1,

@@ -99,7 +99,7 @@ test('validateQuality', () => {
 })
 
 test('validateModel accepts both aliases and full API IDs', () => {
-  for (const model of ['auto', 'flare', 'sunburst', 'gpt-image-2.5-flare', 'gpt-image-2.5-sunburst']) {
+  for (const model of ['auto', 'flare', 'sunburst', 'gpt-image-2.6-flare', 'gpt-image-2.6-sunburst']) {
     assert({ given: model, should: 'accept it', actual: validateModel(model), expected: null })
   }
   assert({
@@ -111,7 +111,7 @@ test('validateModel accepts both aliases and full API IDs', () => {
   assert({
     given: 'a full API model ID',
     should: 'resolve the same explicit choice as the short name',
-    actual: imageModelName('gpt-image-2.5-sunburst'),
+    actual: imageModelName('gpt-image-2.6-sunburst'),
     expected: 'sunburst',
   })
 })

@@ -12,6 +12,7 @@ export function chatImageMediaType(data: Uint8Array): string | null {
   if (data[0] === 0xff && data[1] === 0xd8 && data[2] === 0xff) return 'image/jpeg'
   const header = Buffer.from(data.subarray(0, 12)).toString('ascii')
   if (header.startsWith('RIFF') && header.slice(8) === 'WEBP') return 'image/webp'
+  if (header.startsWith('GIF87a') || header.startsWith('GIF89a')) return 'image/gif'
   return null
 }
 
@@ -88,7 +89,7 @@ export function prepareChatImageResult(options: {
           }
         : {}),
       display:
-        'The web chat displays imageArtifacts automatically. For follow-up edits, pass the chosen image artifact path as refs. When drawingArtifacts is nonempty, include its URLs as ordinary Markdown links labeled Download editable SVG; the PNG remains the inline preview. Do not embed SVG or local filesystem paths as browser images.',
+        'The web chat displays imageArtifacts automatically, including GIF animations. For follow-up photo edits, pass the chosen PNG/JPEG/WebP artifact path as refs. When drawingArtifacts is nonempty, include its URLs as ordinary Markdown links labeled Download editable SVG. Native SVG is a download. For custom drawing, the PNG remains the inline preview. Do not embed SVG or local filesystem paths as browser images.',
     }
   }
 }

@@ -30,6 +30,10 @@ export interface ImageEvidenceSettings {
   quality: string
   size?: string
   method?: WorkflowImage['method']
+  format?: string
+  complexity?: string
+  frameCount?: number
+  frameDurationMs?: number
 }
 
 export interface SavedImageEvidence {
@@ -149,8 +153,9 @@ async function saveVersion(
     files[key] = relative
   }
   const json = (value: unknown) => (value === undefined ? undefined : JSON.stringify(value, null, 2) + '\n')
-  await asset('image', prefix ? 'image.png' : 'selected.png', image.data)
-  await asset('generated', 'generated.png', image.generated)
+  const extension = image.outputFormat ?? 'png'
+  await asset('image', `${prefix ? 'image' : 'selected'}.${extension}`, image.data)
+  await asset('generated', `generated.${extension}`, image.generated)
   await asset('providerGenerated', 'provider-generated.png', image.providerGenerated)
   if (image.focus && edit) {
     const { source, padding } = image.focus.geometry

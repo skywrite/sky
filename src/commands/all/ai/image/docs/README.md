@@ -1,6 +1,6 @@
 ---
 created: 2026-09-10
-updated: 2026-10-06
+updated: 2026-11-05
 ---
 
 # Image creation: production methods, geometry and preservation
@@ -12,8 +12,9 @@ OpenAI image generation is the default for all image requests, including precise
 diagrams, icons and lettering. Omitted method, `image` and legacy `auto` all use
 it. Astra at low reasoning effort selects image settings, intent and geometric
 complexity from the brief and references; it cannot change the production method.
-SVG drawing requires an explicit user request for vector/editable output and
-`--method drawing`. Mixed artwork with precise SVG layers requires an explicit
+Native SVG uses `--format svg` with the default image method.
+The custom SVG drawing workflow requires an explicit `--method drawing`.
+Mixed artwork with precise SVG layers requires an explicit
 `--method mixed`. A failed image request never authorizes a fallback to drawing
 or a reduction in the requested style or finish. The method is separate from
 image model and quality. Fidelity intent applies across photos,
@@ -43,6 +44,33 @@ to the source. Compositing through fixed source contours can then splice differe
 edges, colors or textures and create visible seams. Every protected pixel can be
 exact while the overall edit looks worse. Pixel equality alone does not establish
 edit quality; masks are an optional control over where the result may change.
+
+## Native output and markup
+
+Image generation uses GPT Image 2.6 Flare or Sunburst.
+`format` selects PNG (default), JPEG, WebP, GIF or native SVG; preserve the provider's bytes and extension,
+including in retained evidence.
+GIF and native SVG are generation-only and reject references before a paid call; SVG requires count 1.
+GIF accepts 2–16 frames and 20–2000 ms per frame (rounded to 10 ms by the API).
+Its per-frame size can be smaller than the static-image minimum; `auto` delegates the total pixel budget to the provider.
+Transparent raster output requires PNG or WebP.
+The optional masked, reviewed and custom drawing/mixed workflows currently require PNG output.
+Native SVG stays a downloadable file; chat never serves it as inline active content.
+
+`complexity` is the provider's low/medium/high planning effort, independent of rendering quality.
+It is also independent of the selector's simple/complex geometric classification for optional review workflows.
+Omitting it preserves the provider default.
+
+`markup` is a separate transparent PNG annotation layer aligned to the first reference after orientation.
+Validate its dimensions, alpha and upload limits before generation: each image may contain at most 16,777,216 pixels,
+and the overlay must fit the 50 MB limit.
+Keep the original reference and overlay separate; never crop, resize or flatten the overlay independently.
+Numbered instructions stay in the prompt, and the final image must omit the annotation strokes and numbers.
+Markup cannot be combined with a mask or custom drawing/mixed production.
+It guides the edit; it does not guarantee exact preservation of every unmarked pixel.
+Photo fidelity still selects Sunburst/max.
+The web composer owns editable geometry and upload pairing; see
+[chat attachments](../../../../../service/handler/chat/docs/README.md#files-in-the-conversation).
 
 ## Optional masked editing
 
@@ -179,7 +207,7 @@ The notebook artifact records resolved dimensions, enabled preservation and revi
 and evidence paths. In masked workflows the API mask guides generation and
 deterministic compositing enforces pixel preservation. Visual review remains a
 model judgment and is absent from default image-method results. Web chat
-shows the final PNG and retains SVG as a downloadable attachment.
+shows raster images and animated GIFs, and retains SVG as a downloadable attachment.
 
 ## Repeatable visual evaluation
 

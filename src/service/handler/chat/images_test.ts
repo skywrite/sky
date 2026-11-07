@@ -16,6 +16,41 @@ const png = Buffer.from(
   'base64',
 )
 
+test('Generated GIFs retain animation bytes and use an image preview without conversion', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'sky-chat-gif-'))
+  try {
+    const gif = Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 'base64')
+    const source = path.join(root, 'Atlas-loop.gif')
+    const attachmentsRoot = path.join(root, 'attachments')
+    await writeFile(source, gif)
+    const images: ChatImage[] = []
+    const prepare = prepareChatImageResult({
+      today: new PlainDate('2026-01-27'),
+      attachmentsRoot,
+      onAttachments: () => {},
+      onImages: (added) => images.push(...added),
+    })
+    const result = await prepare('ai:image', { success: true, images: [source], format: 'gif' })
+    const app = new Hono().route('/chat/files', createChatFileRoutes(attachmentsRoot))
+    const preview = await app.request(imagePreviewUrl(images[0]!))
+    const download = await app.request(images[0]!.url)
+    assert({
+      given: 'a native GIF result',
+      should: 'retain every byte and serve the animation with the correct preview MIME type',
+      actual: [
+        result.success,
+        images[0]?.name,
+        preview.headers.get('content-type'),
+        Buffer.from(await preview.arrayBuffer()).equals(gif),
+        Buffer.from(await download.arrayBuffer()).equals(gif),
+      ],
+      expected: [true, 'Atlas-loop.gif', 'image/gif', true, true],
+    })
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
 test('Generated image results retain downloadable copies and edit references after the original moves', async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), 'sky-chat-images-'))
   try {

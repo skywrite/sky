@@ -49,9 +49,9 @@ test('An explicit image model implies raster production unless the production me
       [mixed.method, mixed.model],
     ],
     expected: [
-      ['image', 'gpt-image-2.5-sunburst'],
-      ['drawing', 'gpt-image-2.5-sunburst'],
-      ['mixed', 'gpt-image-2.5-flare'],
+      ['image', 'gpt-image-2.6-sunburst'],
+      ['drawing', 'gpt-image-2.6-sunburst'],
+      ['mixed', 'gpt-image-2.6-flare'],
     ],
   })
 })
@@ -93,9 +93,9 @@ test('Photographic preservation retains its quality rule while graphic drawing s
       [restyle.method, restyle.model, restyle.quality],
     ],
     expected: [
-      ['image', 'gpt-image-2.5-sunburst', 'max'],
-      ['drawing', 'gpt-image-2.5-flare', 'medium'],
-      ['image', 'gpt-image-2.5-flare', 'medium'],
+      ['image', 'gpt-image-2.6-sunburst', 'max'],
+      ['drawing', 'gpt-image-2.6-flare', 'medium'],
+      ['image', 'gpt-image-2.6-flare', 'medium'],
     ],
   })
 })

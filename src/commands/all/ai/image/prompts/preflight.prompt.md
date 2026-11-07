@@ -1,7 +1,7 @@
 ---
 created: 2026-09-08
-updated: 2026-10-06
-description: Choose GPT Image 2.5 model and quality from the creative brief and references.
+updated: 2026-11-05
+description: Choose GPT Image 2.6 model and quality from the creative brief and references.
 ---
 
 Select image settings for the supplied production method; do not choose or

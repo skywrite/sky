@@ -5,14 +5,22 @@ import { runImageStage } from './failure.ts'
 import { finishImageEdit } from './finish.ts'
 import type { ImageReviewSummary } from './finish.ts'
 import { focusImageEdit } from './focus.ts'
+import { validateImageMarkup } from './markup.ts'
 import { validateEditMask } from './mask.ts'
 import type { MaskedImageEdit } from './mask.ts'
-import { MAX_REF_IMAGES } from './options.ts'
-import type { IMAGE_MODELS, ImageBackground, ImageModelName, ImageQuality } from './options.ts'
+import { MAX_REF_IMAGES, validateImageOutput } from './options.ts'
+import type {
+  IMAGE_MODELS,
+  ImageBackground,
+  ImageModelName,
+  ImageQuality,
+  ImageOutputOptions,
+  ImageFormat,
+} from './options.ts'
 import type { ImageReference } from './references.ts'
 import { reviewImageEdit } from './review.ts'
 
-export interface ImageRenderRequest {
+export interface ImageRenderRequest extends ImageOutputOptions {
   prompt: string
   brief?: string
   model: (typeof IMAGE_MODELS)[ImageModelName]
@@ -22,6 +30,7 @@ export interface ImageRenderRequest {
   count: number
   refs: readonly ImageReference[]
   edit?: MaskedImageEdit
+  markup?: Uint8Array
   signal?: AbortSignal
   onProgress?: (message: string) => void
   finish?: boolean
@@ -35,6 +44,7 @@ export interface RenderedImage {
   generated: Uint8Array
   generationPrompt: string
   background?: ImageBackground
+  outputFormat?: ImageFormat
   mask?: ImageReference
   review?: ImageReviewSummary
   providerGenerated?: Uint8Array
@@ -48,17 +58,30 @@ export interface RenderedImage {
   }
 }
 
-/** Both endpoints return PNG bytes; reference uploads must carry a filename and MIME type. */
+/** Preserve native output bytes; reference and markup uploads carry filenames and MIME types. */
 export async function renderImages(
   request: ImageRenderRequest,
   client?: OpenAI,
   reviewer: typeof reviewImageEdit = reviewImageEdit,
 ): Promise<RenderedImage[]> {
   request.signal?.throwIfAborted()
+  const format = request.format ?? 'png'
+  const problem = validateImageOutput({
+    ...request,
+    format,
+    references: request.refs.length,
+    markup: !!request.markup,
+    mask: !!request.edit,
+  })
+  if (problem) throw new Error(problem)
+  if (request.markup) await validateImageMarkup(request.markup, request.refs[0]!)
   const api = client ?? new OpenAI({ apiKey: await openaiKey() })
   let refs = [...request.refs]
   let prompt = request.prompt
   let background = request.background
+  if (request.markup)
+    prompt +=
+      '\nThe separate markup layer annotates image 1. Follow the numbered instructions, preserve the rest of the photo, and remove all annotation strokes and numbers from the finished image.'
   if (request.edit) {
     if (!refs.length) throw new Error('A masked edit requires a reference image.')
     await validateEditMask(request.edit.mask.data, request.edit.canvas)
@@ -104,7 +127,9 @@ export async function renderImages(
     size: focused?.size ?? request.size ?? 'auto',
     quality: request.quality,
     background,
-    output_format: 'png' as const,
+    output_format: format,
+    ...(request.complexity ? { complexity: request.complexity } : {}),
+    ...(format === 'gif' ? { frame_count: request.frameCount, frame_duration_ms: request.frameDurationMs } : {}),
   }
   const options = { signal: request.signal }
   const response = await runImageStage(refs.length ? 'image:edit' : 'image:generate', async () =>
@@ -112,6 +137,8 @@ export async function renderImages(
       ? await api.images.edit(
           {
             ...params,
+            output_format: format === 'svg' ? 'png' : format,
+            ...(request.markup ? { markup: await toFile(request.markup, 'markup.png', { type: 'image/png' }) } : {}),
             // The AI SDK image adapter converts inputs to unnamed Blobs.
             // Bun serializes those with filename="", which OpenAI rejects.
             image: await Promise.all(refs.map((ref) => toFile(ref.data, ref.name, { type: ref.mediaType }))),
@@ -134,7 +161,7 @@ export async function renderImages(
   const images: RenderedImage[] = []
   for (const image of response.data ?? []) {
     request.signal?.throwIfAborted()
-    if (!image.b64_json) throw new Error('OpenAI returned an image without PNG data.')
+    if (!image.b64_json) throw new Error(`OpenAI returned an image without ${format.toUpperCase()} data.`)
     const providerGenerated = new Uint8Array(Buffer.from(image.b64_json, 'base64'))
     const bytes = focused ? await focused.restore(providerGenerated, request.signal) : providerGenerated
     const finished =
@@ -156,6 +183,7 @@ export async function renderImages(
       generated: bytes,
       generationPrompt: prompt,
       background,
+      outputFormat: format,
       ...(focused
         ? {
             providerGenerated,
