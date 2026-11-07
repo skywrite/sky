@@ -153,8 +153,10 @@ export default class SummaryDayTask extends Command {
         output.log(`Slack recap missing: run sky recap:slack ${day.ymd} first for the full input`)
       } else {
         output.log('Writing the Slack recap first...')
+        // The Slack step inherits context.signal, so a Stop ends it before it writes too.
         const recap = await tasks.run('recap:slack', { day, noEditor: true })
-        if (recap.status !== 'success') return CommandResult.fail(`Slack recap failed: ${recap.message}`)
+        if (recap.status !== 'success')
+          return CommandResult.fail(context.signal?.aborted ? STOPPED : `Slack recap failed: ${recap.message}`)
       }
     }
 

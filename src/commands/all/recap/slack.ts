@@ -37,6 +37,8 @@ const PROMPT_FILE = new URL('./prompts/slack.prompt.md', import.meta.url).pathna
 
 // What the tag and rel classifiers are told they are labeling.
 const KIND = 'daily Slack channel recap'
+// What a run ended by the host's Stop (context.signal) reports; no recap file is written.
+const STOPPED = 'Stopped before the Slack recap was written.'
 
 // The recap's tags: the model reads the recap against every tag in the
 // notebook, most-scored first. The recap archives hold only the other
@@ -197,6 +199,7 @@ export default class RecapSlackTask extends Command {
     let usage = ''
     try {
       const result = await generateText({
+        abortSignal: context.signal,
         ...aiModelByProfile(args.model, { effort: args.effort ?? DEFAULT_EFFORT }),
         instructions,
         prompt: input,
@@ -205,6 +208,8 @@ export default class RecapSlackTask extends Command {
       const { inputTokens, outputTokens } = result.usage
       if (inputTokens !== undefined && outputTokens !== undefined) usage = `${inputTokens} in, ${outputTokens} out`
     } catch (err) {
+      // A stop is the person's choice, not an AI failure, so it is not logged as one.
+      if (context.signal?.aborted) return CommandResult.fail(STOPPED)
       await logAIError({
         source: 'recap:slack',
         stage: 'generate',
@@ -213,6 +218,7 @@ export default class RecapSlackTask extends Command {
       return CommandResult.error(err as Error, 'Failed to call the model')
     }
 
+    if (context.signal?.aborted) return CommandResult.fail(STOPPED)
     const { when, first } = slackRecapWhen(day, docs.span)
     const relList = args.rel
       ?.split(',')
@@ -247,6 +253,8 @@ export default class RecapSlackTask extends Command {
       { ...doc.yaml, model: profile.model, ...(usage ? { usage } : {}) },
       doc.markdown,
     ).toMarkdown()
+    // The stop can land while the classifiers run; nothing is written after it.
+    if (context.signal?.aborted) return CommandResult.fail(STOPPED)
     const file = await writeRecapFile({ day, app: SLACK_APP, prefix: clockPrefix(first), contents, timeDir })
     output.log(`Recapped ${docs.channels.length} Slack channel(s) → ${file}`)
 

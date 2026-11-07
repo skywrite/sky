@@ -1,6 +1,6 @@
 ---
 created: 2026-09-03
-updated: 2026-11-05
+updated: 2026-11-07
 ---
 
 # The day's items, the day's rail, and the day's files
@@ -299,7 +299,8 @@ a run that writes no file says why.
 The summary runs once every current review item is resolved or skipped and every recap is ready, has run, or was skipped.
 Until then it offers Run missing recaps, or Write summary without them, which skips the missing and failed ones.
 Closing pauses completion, while already-running recaps can finish; reopening resumes without repeating saved work.
-Stop ends a running summary before it writes (the command's abort signal reaches the model call);
+Stop ends a running summary before it writes (the command's abort signal reaches the model call,
+and the Slack recap `summary:day` writes first when the day lacks one, which also stops before it writes);
 the summary then waits for Start again, through closing and reopening.
 A saved summary is reused, never automatically overwritten, and an interrupted job offers Retry after restart.
 Deleting the file pauses a completed review so background polling cannot silently recreate it.
