@@ -510,7 +510,7 @@ type Section = {
   lines: string[]
   attachments: Attachment[]
   fallback: string
-  /** The words of a voice note, which name a message that has no text of its own */
+  /** The words of a voice note on one line, which name a message that has no text of its own */
   transcript?: string
   /** The message is a voice note; its length when known */
   voice?: { seconds: number | null }
@@ -882,7 +882,8 @@ async function syncBeeperLocked(options: BeeperSyncOptions): Promise<BeeperSyncR
         }
         if (voice && transcript) {
           section.lines.push(`🎤 ${transcript}`)
-          section.transcript ??= transcript
+          // On one line: a transcriber breaks lines between sentences, and a summary takes only the first line
+          section.transcript ??= transcript.replace(/\s*\n\s*/g, ' ')
         } else section.lines.push(`📎 ${saved ?? name}`)
       }
       const list = days.get(when.date) ?? []
