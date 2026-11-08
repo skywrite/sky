@@ -439,6 +439,18 @@
   justify-content: flex-end;
 }
 
+/* A phone can't fit the details and every action on one row, so the details take their own. */
+@media (max-width: 640px) {
+  .sky-reply-foot {
+    flex-wrap: wrap;
+    row-gap: 0;
+  }
+
+  .sky-reply-foot > .sky-reply-details {
+    flex-basis: 100%;
+  }
+}
+
 /* A question and its menu share a row. The menu sits at the bubble's foot, so it opens below the words. */
 .sky-question {
   display: flex;

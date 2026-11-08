@@ -49,6 +49,7 @@ import { splitWritingDrafts, useWritingDrafts, writingDraftReplies, writingDraft
 import { ComposerEditor, type ComposerEditorHandle } from './composerEditor.tsx'
 import { ContextPanel } from './context.tsx'
 import { ChatControls, TemporaryControl, type ThreadSettings } from './controls.tsx'
+import { CopyResponseButton } from './CopyResponseButton.tsx'
 import { ImageMarkupEditor } from './ImageMarkupEditor.tsx'
 import { LegalReviewSummary } from './legalReview.tsx'
 import { ReplyDetails } from './replyDetails.tsx'
@@ -3027,6 +3028,7 @@ export function TurnView({
   // Voice replies keep these speaker labels when saved and reopened.
   const branch = /^(?:Sky|Sonny): /.test(turn.content) ? undefined : onBranch
   const content = splitChatImages(turn.content).text
+  const copyable = content.trim() !== ''
   const images = replyImages(
     turn.content,
     runs?.map((run) => run.output),
@@ -3085,7 +3087,7 @@ export function TurnView({
             )}
           </div>
         )}
-        {!streaming && (turn.usage || turn.timing || branch || onReplyThread) && (
+        {!streaming && (turn.usage || turn.timing || branch || onReplyThread || copyable) && (
           <div className="sky-reply-foot">
             <ReplyDetails
               usage={turn.usage}
@@ -3096,8 +3098,9 @@ export function TurnView({
               }
               timing={turn.timing}
             />
-            {(branch || onReplyThread) && (
+            {(branch || onReplyThread || copyable) && (
               <div className="sky-reply-acts">
+                {copyable && <CopyResponseButton text={content} />}
                 {onReplyThread && (
                   <ReplyThreadLink
                     thread={replyThread}
