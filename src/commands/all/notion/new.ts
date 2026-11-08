@@ -1,12 +1,10 @@
 /**
  * notion:new — make a page in the connected Notion workspace: private, under
  * a page, at the top of a teamspace, or as a row in a table. In ai:chat it
- * asks first, and the card shows the page as it will be made.
+ * runs without asking: it only makes something new.
  */
 
-import colors from 'picocolors'
 import { AIChatTool } from '#commands/lib/AIChatTool.ts'
-import type { OutputHandler } from '#commands/lib/output/OutputHandler.ts'
 import { Arg, Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { NOTION_NOT_CONNECTED, NotionError, openNotion } from '#lib/notion/mod.ts'
@@ -41,13 +39,13 @@ declare module '#commands/lib/core/CommandTypesRegistry.ts' {
   }
 }
 
-@AIChatTool({ needsApproval: true })
+@AIChatTool({ needsApproval: false })
 export default class NotionNewTask extends Command {
   static override description: CommandDescription = {
     name: 'notion:new',
     description:
       'Create a page in the connected Notion workspace: a private page, a sub-page, a page at the top of a ' +
-      'teamspace, or a row in a table. The user approves it first. `parent` takes a page’s link or id, a table’s ' +
+      'teamspace, or a row in a table. `parent` takes a page’s link or id, a table’s ' +
       'link (the page becomes a row: read the table with notion:read first for its columns, and give them in ' +
       '`properties`), or a teamspace’s name; left out, the page is private. `content` is Markdown — headings, ' +
       'lists, to-dos, quotes, tables, code — and for Notion’s own blocks (callouts, toggles, tabs, columns, colors) ' +
@@ -60,26 +58,6 @@ export default class NotionNewTask extends Command {
       'sky notion:new "Atlas" --parent <table-link> --properties \'{"Status": "Done"}\'',
     ],
     params,
-  }
-
-  static formatApproval(input: Record<string, unknown>, output: OutputHandler): void {
-    const text = (key: string) => (typeof input[key] === 'string' ? (input[key] as string).trim() : '')
-    const columns = text('properties') ? columnsOf(text('properties')) : {}
-    output.log('')
-    output.log(colors.bold('Create this Notion page?'))
-    output.log('')
-    output.log(`  Title: ${text('title')}`)
-    output.log(`  In:    ${text('parent') || 'your private pages, where only you can see it'}`)
-    if (text('icon')) output.log(`  Icon:  ${text('icon')}`)
-    if (typeof columns === 'string') output.log(`  Properties: ${text('properties')}`)
-    else for (const [name, value] of Object.entries(columns)) output.log(`  ${name}: ${JSON.stringify(value)}`)
-    if (text('content')) {
-      output.log('')
-      output.log(colors.dim('---'))
-      output.log(text('content').replace(/^/gm, '  '))
-      output.log(colors.dim('---'))
-    }
-    output.log('')
   }
 
   async run({ args, context }: CommandArgs<Params>): Promise<CommandResult<Result>> {
