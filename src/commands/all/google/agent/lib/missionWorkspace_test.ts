@@ -12,7 +12,11 @@ import { createAgentTools, createMissionState } from './tools.ts'
 const PROMPT_FILES = { doc: 'docs', slides: 'slides', sheet: 'sheets' }
 const prompt = (name: string) => readFile(new URL(`../prompts/${name}.prompt.md`, import.meta.url), 'utf8')
 
-async function workspace(initial: WorkspaceKind[], loadPrompt = (kind: WorkspaceKind) => prompt(PROMPT_FILES[kind])) {
+async function workspace(
+  initial: WorkspaceKind[],
+  loadPrompt = (kind: WorkspaceKind) => prompt(PROMPT_FILES[kind]),
+  readOnly = false,
+) {
   const client = new GoogleClient({
     secrets: new TestSecretsProvider(),
     email: 'jane@example.com',
@@ -30,7 +34,14 @@ async function workspace(initial: WorkspaceKind[], loadPrompt = (kind: Workspace
     deckCritiquePrompt: '',
     docCritiquePrompt: '',
   })
-  return createMissionWorkspace({ tools, initial, commonPrompt: await prompt('agent'), loadPrompt, log: () => {} })
+  return createMissionWorkspace({
+    tools,
+    initial,
+    commonPrompt: await prompt('agent'),
+    loadPrompt,
+    log: () => {},
+    readOnly,
+  })
 }
 
 function model(partsByStep: LanguageModelV3StreamPart[][] = []) {
@@ -228,6 +239,39 @@ test('a model cannot execute an unloaded workspace tool by guessing its name', a
     should: 'require an explicit workspace load before any Google request or mutation',
     actual: [String(result).includes('call load_workspace_tools'), selected.activeTools().includes('create_doc')],
     expected: [true, false],
+  })
+})
+
+test('a read-only mission is offered only the tools that read', async () => {
+  const selected = await workspace(['sheet'], undefined, true)
+  await selected.tools.load_workspace_tools.execute({ formats: ['doc'] })
+  const active: string[] = selected.activeTools()
+  const refused = await selected.tools.set_values.execute({ spreadsheetId: 'sheet-1', range: 'Data!A1', csv: 'a,b' })
+  const changing = [
+    'set_values',
+    'batch_update_spreadsheet',
+    'create_doc',
+    'batch_update_doc',
+    'add_comment',
+    'reply_to_comment',
+    'share_file',
+    'rename_file',
+    'copy_file',
+    'upload_image',
+  ]
+  assert({
+    given: 'a read-only mission on a sheet that also loads Docs',
+    should:
+      'offer the reading tools of both formats and none that change a file, refuse a changing tool named anyway before any Google request, and say so in its instructions',
+    actual: {
+      reads: ['read_file', 'list_comments', 'get_values', 'get_spreadsheet_outline', 'get_doc_outline'].every((name) =>
+        active.includes(name),
+      ),
+      changes: active.filter((name) => changing.includes(name)),
+      refused: String(refused).includes('this mission only reads'),
+      told: selected.instructions().some((message) => String(message.content).includes('# This mission only reads')),
+    },
+    expected: { reads: true, changes: [], refused: true, told: true },
   })
 })
 

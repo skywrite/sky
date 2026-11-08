@@ -41,6 +41,43 @@ const TOOL_WORKSPACES = {
   get_doc_outline: 'doc',
 } satisfies Record<keyof AgentTools, WorkspaceKind | 'shared'>
 
+// Every tool also declares whether it only reads, so a new one cannot slip into a read-only mission.
+const TOOL_ONLY_READS = {
+  find_files: true,
+  read_file: true,
+  create_doc: false,
+  replace_doc_content: false,
+  batch_update_doc: false,
+  inspect_doc_visually: true,
+  create_presentation: false,
+  get_presentation_outline: true,
+  batch_update_slides: false,
+  inspect_slide_visually: true,
+  inspect_deck_visually: true,
+  upload_image: false,
+  render_svg: false,
+  copy_file: false,
+  rename_file: false,
+  share_file: false,
+  add_comment: false,
+  list_comments: true,
+  add_anchored_comment: false,
+  suggest_doc_edit: false,
+  list_doc_suggestions: true,
+  delete_comment: false,
+  reply_to_comment: false,
+  create_spreadsheet: false,
+  set_values: false,
+  get_values: true,
+  batch_update_spreadsheet: false,
+  get_spreadsheet_outline: true,
+  restyle_doc: false,
+  get_doc_outline: true,
+} satisfies Record<keyof AgentTools, boolean>
+
+const READ_ONLY_NOTE =
+  '# This mission only reads\n\nTools that create, change, comment on, share or delete files are not available. Read what the mission asks for and report it in your final answer.'
+
 const WORKSPACES: WorkspaceKind[] = ['doc', 'slides', 'sheet']
 const WORKSPACE_NAMES: Record<WorkspaceKind, string> = { doc: 'Docs', slides: 'Slides', sheet: 'Sheets' }
 const FORMAT_WORDS: Record<WorkspaceKind, RegExp> = {
@@ -76,7 +113,11 @@ export async function createMissionWorkspace(deps: {
   commonPrompt: string
   loadPrompt: (kind: WorkspaceKind) => Promise<string>
   log: (line: string) => void
+  /** Offer only the tools that read: the mission changes nothing */
+  readOnly?: boolean
 }) {
+  // A read-only mission is never offered a tool that changes a file, and one it names anyway refuses.
+  const offered = (name: keyof AgentTools) => !deps.readOnly || TOOL_ONLY_READS[name]
   const loaded = new Map<WorkspaceKind, string>()
   const enable = async (formats: WorkspaceKind[]) => {
     const added = [...new Set(formats)].filter((kind) => !loaded.has(kind))
@@ -93,6 +134,11 @@ export async function createMissionWorkspace(deps: {
     Object.entries(deps.tools).map(([name, tool]) => [name, { ...tool }]),
   ) as AgentTools
   for (const [name, tool] of Object.entries(workspaceTools)) {
+    if (!offered(name as keyof AgentTools)) {
+      tool.execute = (async () =>
+        `Error: this mission only reads; ${name} changes files and is not available.`) as typeof tool.execute
+      continue
+    }
     const kind = TOOL_WORKSPACES[name as keyof AgentTools]
     if (kind === 'shared') continue
     const execute = tool.execute as (...args: unknown[]) => Promise<unknown>
@@ -129,6 +175,7 @@ export async function createMissionWorkspace(deps: {
   }
   const activeTools = (): Array<keyof typeof tools> => [
     ...(Object.keys(deps.tools) as Array<keyof AgentTools>).filter((name) => {
+      if (!offered(name)) return false
       const kind = TOOL_WORKSPACES[name]
       return kind === 'shared' || loaded.has(kind)
     }),
@@ -138,7 +185,7 @@ export async function createMissionWorkspace(deps: {
     const messages = cachedInstructions([
       deps.commonPrompt,
       ...loaded.values(),
-      `# Enabled Workspace formats\n\n${loaded.size ? [...loaded.keys()].map((kind) => WORKSPACE_NAMES[kind]).join(', ') : 'Shared Drive tools only'}. If this mission needs another format, call load_workspace_tools before using its editing tools.`,
+      `# Enabled Workspace formats\n\n${loaded.size ? [...loaded.keys()].map((kind) => WORKSPACE_NAMES[kind]).join(', ') : 'Shared Drive tools only'}. If this mission needs another format, call load_workspace_tools before using its editing tools.${deps.readOnly ? `\n\n${READ_ONLY_NOTE}` : ''}`,
     ])
     // Anthropic permits four breakpoints total. Cache the common prefix and
     // assembled instructions, leaving room for the moving history breakpoint.

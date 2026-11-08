@@ -7,13 +7,16 @@ import { findOwningGoogleClient, newItemAccountEmail } from '../../lib/resolveCl
  *
  * A mission that only creates — a doc from the mission's own content, a
  * deck, a sheet — touches nothing of the person's, so it runs without
- * asking. A mission aimed at an existing file (`file`) changes something
- * that already exists, and an import uploads a local file to Drive; both
- * ask. A go for a targeted mission covers that file: later missions on the
- * same file id run without asking, in this chat and every other.
+ * asking. A read-only mission (`readOnly`) is given no tool that changes a
+ * file, so it runs without asking even on an existing one. A mission that
+ * can change an existing file (`file`) asks, and so does an import: it
+ * uploads a local file to Drive. A go for a targeted mission covers that
+ * file: later missions on the same file id run without asking, in this
+ * chat and every other.
  */
 export function missionNeedsApproval(input: Record<string, unknown>): boolean {
-  return typeof input.file === 'string' || typeof input.import === 'string'
+  if (typeof input.import === 'string') return true
+  return typeof input.file === 'string' && input.readOnly !== true
 }
 
 /** The stable key a targeted mission's approval scopes to — its file id. */

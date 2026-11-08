@@ -1,6 +1,6 @@
 ---
 created: 2026-09-01
-updated: 2026-11-05
+updated: 2026-11-06
 ---
 
 # Chat over HTTP — a thread, its tuning, and the story of its context
@@ -711,7 +711,7 @@ turns ago is not pushed out again; a broken turn keeps its errors.
   process only. The tool approval config consults it, so a granted call
   runs inline with no card. Deleting a key from the file revokes the grant.
   A tool may also exempt calls outright (`needsApprovalFor`) —
-  `google_agent` runs create-only missions without asking on every surface
+  `google_agent` runs create-only and read-only missions without asking on every surface
   ([2026-09-03](2026-09-03-the-go-you-already-gave.md),
   [2026-10-08](2026-10-08-one-go-stands-for-every-chat.md)).
 

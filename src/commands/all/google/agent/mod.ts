@@ -86,6 +86,10 @@ const params = {
     },
   ),
   noOpen: Flag.bool('Do not open touched files in the browser', { default: false }),
+  readOnly: Flag.bool(
+    'The mission only reads and reports: it gets no tool that changes a file, so it runs without asking, even on an existing file',
+    { default: false },
+  ),
 }
 
 type Params = InferParams<typeof params>
@@ -121,7 +125,7 @@ export default class GoogleAgentTask extends Command {
   static override description: CommandDescription = {
     name: 'google:agent',
     description:
-      'Create or modify Google Docs, Slides and Sheets from a natural-language mission. Include all needed content in the mission itself. An existing file is worked on as the connected account that can open it; something new is made in the work account unless `account` names another. `account` in the result says which.',
+      'Create or modify Google Docs, Slides and Sheets from a natural-language mission. Include all needed content in the mission itself. A mission that only reads and reports — every tab of a Sheet, comments, a visual review — sets `readOnly` and runs without asking. An existing file is worked on as the connected account that can open it; something new is made in the work account unless `account` names another. `account` in the result says which.',
     descriptionLong: [
       'Runs a focused sub-agent that executes one Google Workspace mission end',
       'to end: find/read files, import local documents (PDF, docx) as Docs,',
@@ -141,6 +145,7 @@ export default class GoogleAgentTask extends Command {
       'sky google:agent "Tighten the Outlook section" -f <doc-url>',
       'sky google:agent "Review this contract; leave anchored comments on risky clauses" --import ~/deals/atlas-msa.pdf',
       'sky google:agent "Suggest edits fixing passive voice" -f <doc-url>',
+      'sky google:agent "List every tab with its full contents" -f <sheet-url> --read-only',
       'sky google:agent "..." -a work',
     ],
     params,
@@ -161,8 +166,8 @@ export default class GoogleAgentTask extends Command {
   }
 
   /**
-   * A create-only mission runs without a go; one aimed at an existing file, or
-   * importing one, asks. A mission whose account cannot be resolved — no
+   * A create-only or read-only mission runs without a go; one that can change
+   * an existing file, or imports one, asks. A mission whose account cannot be resolved — no
    * connected account opens the file, or the choice for a new one is open —
    * needs no go either: the run stops at that before anything is touched.
    */
@@ -387,6 +392,7 @@ export default class GoogleAgentTask extends Command {
         commonPrompt: systemPrompt,
         loadPrompt: (kind) => readPromptFile(path.join(promptDir, workspacePrompts[kind])),
         log,
+        readOnly: args.readOnly,
       })
       log(
         `Workspace tools: ${workspace.formats.join(', ') || 'shared Drive'} · ${workspace.activeTools().length} enabled`,

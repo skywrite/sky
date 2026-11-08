@@ -31,6 +31,37 @@ test('missionNeedsApproval', async (t) => {
       expected: true,
     })
   })
+  await t.step('a read-only mission on an existing file runs without a go', () => {
+    assert({
+      given: 'a targeted mission marked read-only',
+      should: 'need no approval',
+      actual: missionNeedsApproval({ mission: 'List every tab with its contents', file: DOC_ID, readOnly: true }),
+      expected: false,
+    })
+  })
+  await t.step('only a real read-only mark exempts a targeted mission', () => {
+    assert({
+      given: 'a targeted mission whose read-only mark is false or not a boolean',
+      should: 'need approval',
+      actual: [
+        missionNeedsApproval({ mission: 'Tighten the Outlook section', file: DOC_ID, readOnly: false }),
+        missionNeedsApproval({ mission: 'Tighten the Outlook section', file: DOC_ID, readOnly: 'true' }),
+      ],
+      expected: [true, true],
+    })
+  })
+  await t.step('a read-only import still asks', () => {
+    assert({
+      given: 'a read-only mission importing a local file',
+      should: 'need approval, since the import uploads the file to Drive',
+      actual: missionNeedsApproval({
+        mission: 'Summarize this contract',
+        import: '~/deals/atlas-msa.pdf',
+        readOnly: true,
+      }),
+      expected: true,
+    })
+  })
 })
 
 test('missionApprovalKey', async (t) => {
