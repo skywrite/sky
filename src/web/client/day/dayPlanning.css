@@ -7,9 +7,7 @@
 }
 
 .sky-plan-next {
-  padding-inline: var(--sky-space-2);
-  font-size: 0.8rem;
-  font-weight: 500;
+  margin-left: var(--sky-space-5);
 }
 
 .sky-plan-composer {
@@ -229,9 +227,5 @@
   .sky-next-move-controls > button {
     width: 100%;
     min-height: 44px;
-  }
-
-  .sky-plan-next {
-    font-size: 0.75rem;
   }
 }

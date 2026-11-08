@@ -1,16 +1,33 @@
 /* Today plan items, reminders, streaks, day record, swipe deletion, and undo. */
 
+/* The To-dos and Reminders heads' link, in the same style as the Streaks head's "View all streaks →". */
 .sky-manage-recurring {
   display: inline-flex;
-  color: var(--sky-dim);
-  font-size: 14px;
+  align-items: center;
+  gap: 8px;
+  margin-left: 14px;
+  color: var(--sky-accent);
+  font-size: 14.5px;
+  font-weight: 400;
   text-decoration: none;
-  margin: 8px 0 0 42px;
-  padding: 6px 0;
+  white-space: nowrap;
 }
 .sky-manage-recurring:hover {
-  color: var(--sky-accent);
   text-decoration: underline;
+}
+.sky-manage-recurring svg {
+  flex: none;
+}
+.sky-manage-recurring-short {
+  display: none;
+}
+@media (max-width: 600px) {
+  .sky-manage-recurring-full {
+    display: none;
+  }
+  .sky-manage-recurring-short {
+    display: inline;
+  }
 }
 
 .sky-rec-line {

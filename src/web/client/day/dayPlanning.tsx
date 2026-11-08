@@ -571,11 +571,19 @@ export function useDayPlanning(
           startTime={kind === 'complete' ? startNow : undefined}
         />
       ) : null,
-    nextButton: enabled ? (
-      <Button variant="secondary" className="sky-plan-next" disabled={busy} onClick={() => open('next')}>
-        From next lists
-      </Button>
-    ) : null,
+    // Sits beside "＋ Add a to-do" and looks like it; hidden while the to-do form is open.
+    nextButton:
+      enabled && active !== 'todos' ? (
+        <Button
+          variant="secondary"
+          className="sky-plan-add sky-plan-next"
+          disabled={busy}
+          onClick={() => open('next')}
+          leftSection={<span aria-hidden="true">↓</span>}
+        >
+          From next lists
+        </Button>
+      ) : null,
     picker: enabled ? (
       <NextPicker
         key={ymd}

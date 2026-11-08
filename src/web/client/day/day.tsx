@@ -1066,11 +1066,13 @@ function ReminderCard({
   checkOff,
   at,
   children,
+  action,
 }: {
   items: DayItem[]
   checkOff: CheckOff
   at: string
   children?: ReactNode
+  action?: ReactNode
 }) {
   const organize = useItemOrganizing()
   const editor = useItemEditing()
@@ -1087,18 +1089,21 @@ function ReminderCard({
     organize.applyPriorityView,
   )
   const visible = priorityItems(items, () => false).open.filter((i) => !i.done || checkOff.phases[itemKey(i)])
-  if (visible.length === 0 && !children) return null
+  if (visible.length === 0 && !children && !action) return null
   const open = items.filter((i) => !i.done).length
   return (
     <Block
       head="Reminders"
       mini={`${open > 5 && !showAll && !organize.active ? 'Top 5 · ' : ''}${open} left`}
       action={
-        organize.active && organize.hasPriorityOverrides('reminders') ? (
-          <Button variant="secondary" disabled={organize.busy} onClick={() => organize.useSkyOrder('reminders')}>
-            Use Sky's order
-          </Button>
-        ) : undefined
+        <>
+          {organize.active && organize.hasPriorityOverrides('reminders') && (
+            <Button variant="secondary" disabled={organize.busy} onClick={() => organize.useSkyOrder('reminders')}>
+              Use Sky's order
+            </Button>
+          )}
+          {action}
+        </>
       }
     >
       <PriorityStatus
@@ -1132,6 +1137,41 @@ function ReminderCard({
       )}
       {children}
     </Block>
+  )
+}
+
+/**
+ * A card head's link to the recurring manager, in the same style as "View all streaks →".
+ * Phones show "Recurring" so the head stays on one line; the link's name stays "Manage recurring".
+ */
+function RecurringLink({ href, navigate }: { href: string; navigate: (path: string) => void }) {
+  return (
+    <a
+      className="sky-manage-recurring"
+      href={href}
+      aria-label="Manage recurring"
+      onClick={(event) => {
+        if (event.button || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+        event.preventDefault()
+        navigate(href)
+      }}
+    >
+      <span className="sky-manage-recurring-full">Manage recurring</span>
+      <span className="sky-manage-recurring-short">Recurring</span>
+      <svg
+        width="17"
+        height="17"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden="true"
+      >
+        <path d="M4 12h15m-5-5 5 5-5 5" />
+      </svg>
+    </a>
   )
 }
 
@@ -1770,39 +1810,21 @@ export function DayView({
                       today={isToday}
                       checkOff={checkOff}
                       at={at}
-                      action={!organize.active && planning.nextButton}
+                      action={!organize.active && <RecurringLink href="/recurring" navigate={navigate} />}
                     >
                       {!organize.active && planning.composer('todos')}
-                      <a
-                        className="sky-manage-recurring"
-                        href="/recurring"
-                        onClick={(event) => {
-                          if (event.button || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
-                          event.preventDefault()
-                          navigate('/recurring')
-                        }}
-                      >
-                        Manage recurring
-                      </a>
+                      {!organize.active && planning.nextButton}
                     </TodoCard>
                     <ReminderCard
                       key={`reminders-${view!.day.ymd}`}
                       items={record.reminders}
                       checkOff={checkOff}
                       at={at}
+                      action={
+                        !organize.active && <RecurringLink href="/recurring?category=reminders" navigate={navigate} />
+                      }
                     >
                       {!organize.active && planning.composer('reminders')}
-                      <a
-                        className="sky-manage-recurring"
-                        href="/recurring?category=reminders"
-                        onClick={(event) => {
-                          if (event.button || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
-                          event.preventDefault()
-                          navigate('/recurring?category=reminders')
-                        }}
-                      >
-                        Manage recurring
-                      </a>
                     </ReminderCard>
 
                     <DayStreaks ymd={view!.day.ymd} onNavigate={navigate} summarized={summarized} />
