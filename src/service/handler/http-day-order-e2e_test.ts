@@ -60,13 +60,19 @@ for (const width of [1500, 390]) {
         },
         async ({ page, origin, file, errors }) => {
           await page.setViewportSize({ width, height: 1000 })
+          // Finish the fixture's initial ranking before completion starts preserving that order.
+          const ranked = page.waitForResponse((response) => response.url().endsWith(`/day/${DAY.ymd}/todo-priority`))
           await page.goto(`${origin}/${DAY.ymd}`)
+          await (await ranked).finished()
           const card = (name: string) =>
             page
               .locator('.sky-col > .sky-block')
               .filter({ has: page.locator('.sky-block-head').filter({ hasText: new RegExp(`^${name}`) }) })
           const todos = card('To-dos')
-          const commitments = todos
+          const sections = {
+            open: todos.locator('.sky-todos-open'),
+            completed: todos.locator('.sky-todos-completed-list'),
+          }
           const row = (name: string) =>
             page.locator('.sky-irow').filter({ has: page.locator('.sky-ptext').filter({ hasText: name }) })
           const toggle = async (name: string, done: boolean) => {
@@ -82,37 +88,74 @@ for (const width of [1500, 390]) {
               actual: (await response).status(),
               expected: 200,
             })
-            await row(name).locator('.sky-check:not(:disabled)').waitFor()
+            await sections[done ? 'completed' : 'open']
+              .locator('.sky-irow')
+              .filter({ has: page.getByText(name, { exact: true }) })
+              .getByRole('button', { name: done ? 'Mark not done' : 'Mark done', exact: true })
+              .and(page.locator(':enabled'))
+              .waitFor()
           }
-          const labels = async (name: string) =>
-            card(name)
-              .locator('.sky-ptext')
-              .evaluateAll((nodes) => nodes.map((node) => node.childNodes[0]?.textContent ?? ''))
+          const labels = async (section: keyof typeof sections) =>
+            sections[section].locator('.sky-todos-group').evaluateAll((groups) =>
+              groups.map((group) => ({
+                category: group.querySelector('[role="heading"]')?.textContent,
+                items: [...group.querySelectorAll('.sky-ptext')].map((node) => node.childNodes[0]?.textContent ?? ''),
+              })),
+            )
+          const timedItems = async (section: keyof typeof sections) =>
+            sections[section]
+              .locator('.sky-irow')
+              .filter({ has: page.locator('.sky-when') })
+              .evaluateAll((rows) =>
+                rows.map((row) => [
+                  row.querySelector('.sky-ptext')?.childNodes[0]?.textContent,
+                  row.querySelector('.sky-when')?.textContent,
+                ]),
+              )
           await todos.getByRole('button', { name: /^Show \d+ more$/ }).click()
           await todos.getByRole('button', { name: /^Completed ·/ }).click()
           await row('Older completed task').getByRole('button', { name: 'Mark not done', exact: true }).waitFor()
           assert({
             given: 'existing checked tasks loaded from Markdown',
-            should: 'show saved priority order and keep checked items available under Completed',
+            should: 'keep priority order within each category, with checked items under Completed',
             actual: {
-              todos: await labels('To-dos'),
-              commitments: await commitments.locator('.sky-when').allTextContents(),
+              open: await labels('open'),
+              completed: await labels('completed'),
+              times: { open: await timedItems('open'), completed: await timedItems('completed') },
             },
             expected: {
-              todos: [
-                'First open task',
-                'Read Atlas brief',
-                'Final open task',
-                'Personal open task',
-                'Early open commitment',
-                'Late open commitment',
-                'Midday open commitment',
-                'Older completed task',
-                'Personal completed task',
-                'Later completed commitment',
-                'Earlier completed commitment',
+              open: [
+                {
+                  category: 'Professional',
+                  items: [
+                    'First open task',
+                    'Read Atlas brief',
+                    'Final open task',
+                    'Early open commitment',
+                    'Late open commitment',
+                    'Midday open commitment',
+                  ],
+                },
+                { category: 'Personal', items: ['Personal open task'] },
               ],
-              commitments: ['7:00', '25:30', '12:00', '17:00', '9:00'],
+              completed: [
+                {
+                  category: 'Professional',
+                  items: ['Older completed task', 'Later completed commitment', 'Earlier completed commitment'],
+                },
+                { category: 'Personal', items: ['Personal completed task'] },
+              ],
+              times: {
+                open: [
+                  ['Early open commitment', '7:00'],
+                  ['Late open commitment', '25:30'],
+                  ['Midday open commitment', '12:00'],
+                ],
+                completed: [
+                  ['Later completed commitment', '17:00'],
+                  ['Earlier completed commitment', '9:00'],
+                ],
+              },
             },
           })
           await toggle('Read Atlas brief', true)
@@ -120,7 +163,8 @@ for (const width of [1500, 390]) {
             given: 'a newly completed linked to-do',
             should: 'stay visible after the existing completed task, retain its link, and avoid duplicating Done today',
             actual: {
-              todos: await labels('To-dos'),
+              open: await labels('open'),
+              completed: await labels('completed'),
               link: await row('Read Atlas brief').getByRole('link').getAttribute('href'),
               doneToday: await card('Done today').locator('.sky-ptext').allTextContents(),
               progress: await page.locator('.sky-day-progress').innerText(),
@@ -129,18 +173,30 @@ for (const width of [1500, 390]) {
               )?.items,
             },
             expected: {
-              todos: [
-                'First open task',
-                'Final open task',
-                'Personal open task',
-                'Early open commitment',
-                'Late open commitment',
-                'Midday open commitment',
-                'Older completed task',
-                'Read Atlas brief',
-                'Personal completed task',
-                'Later completed commitment',
-                'Earlier completed commitment',
+              open: [
+                {
+                  category: 'Professional',
+                  items: [
+                    'First open task',
+                    'Final open task',
+                    'Early open commitment',
+                    'Late open commitment',
+                    'Midday open commitment',
+                  ],
+                },
+                { category: 'Personal', items: ['Personal open task'] },
+              ],
+              completed: [
+                {
+                  category: 'Professional',
+                  items: [
+                    'Older completed task',
+                    'Read Atlas brief',
+                    'Later completed commitment',
+                    'Earlier completed commitment',
+                  ],
+                },
+                { category: 'Personal', items: ['Personal completed task'] },
               ],
               link: '/explorer/projects/Atlas/brief.md',
               doneToday: ['Filed a sample report'],
@@ -162,16 +218,36 @@ for (const width of [1500, 390]) {
           assert({
             given: 'a late commitment checked before an early open one',
             should: 'keep open tasks first, with checked items under Completed',
-            actual: await commitments.locator('.sky-when').allTextContents(),
-            expected: ['7:00', '12:00', '9:00', '17:00', '25:30'],
+            actual: { open: await timedItems('open'), completed: await timedItems('completed') },
+            expected: {
+              open: [
+                ['Early open commitment', '7:00'],
+                ['Midday open commitment', '12:00'],
+              ],
+              completed: [
+                ['Earlier completed commitment', '9:00'],
+                ['Later completed commitment', '17:00'],
+                ['Late open commitment', '25:30'],
+              ],
+            },
           })
           await toggle('Early open commitment', true)
           await toggle('Later completed commitment', false)
           assert({
             given: 'an early completion followed by reopening a later completed commitment',
-            should: 'keep both the completed and open groups sorted by time',
-            actual: await commitments.locator('.sky-when').allTextContents(),
-            expected: ['12:00', '17:00', '7:00', '9:00', '25:30'],
+            should: 'keep the open priority order and retain each time on its task in the correct section',
+            actual: { open: await timedItems('open'), completed: await timedItems('completed') },
+            expected: {
+              open: [
+                ['Midday open commitment', '12:00'],
+                ['Later completed commitment', '17:00'],
+              ],
+              completed: [
+                ['Early open commitment', '7:00'],
+                ['Earlier completed commitment', '9:00'],
+                ['Late open commitment', '25:30'],
+              ],
+            },
           })
           const reminder = row('Leave space for a walk')
           await reminder.getByRole('button', { name: 'Mark done', exact: true }).click()

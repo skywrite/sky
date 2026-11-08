@@ -35,9 +35,11 @@ test(
           return data
         })
         const surface = page.locator('.sky-chat-drop-target')
+        const dropIndicator = surface.locator('.sky-chat-drop[role="status"]')
         await surface.dispatchEvent('dragenter', { dataTransfer: transfer })
-        await page.getByText('Drop files to read in this chat', { exact: true }).waitFor()
+        await dropIndicator.waitFor()
         await surface.dispatchEvent('drop', { dataTransfer: transfer })
+        await dropIndicator.waitFor({ state: 'hidden' })
         await page.getByRole('button', { name: 'Remove Atlas [proposal].md', exact: true }).waitFor()
         assert({
           given: 'a file dropped anywhere in the conversation',
