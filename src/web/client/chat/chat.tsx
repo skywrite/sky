@@ -1611,7 +1611,9 @@ function RunView({ run }: { run: Run }) {
   const progressLabel = stopping
     ? 'Stopping'
     : (calendarLabel ??
-      (run.phase === 'preparing' ? 'Preparing inputs' : run.phase === 'waiting' ? 'Waiting for approval' : 'Running'))
+      (run.phase === 'preparing' ? 'Preparing inputs' : run.phase === 'waiting' ? 'Needs your go' : 'Running'))
+  // A run waiting on the person's go reads amber, like the card above it.
+  const waiting = running && !stopping && run.phase === 'waiting'
   // Keep an explicitly opened inspector and its text selection through completion.
   const seconds = useElapsed(run.started, running)
   const took = run.finished === undefined ? undefined : Math.max(0, Math.floor((run.finished - run.started) / 1000))
@@ -1621,7 +1623,12 @@ function RunView({ run }: { run: Run }) {
   const last = lastLine === undefined ? undefined : compactLine(lastLine)
   const folded = !running && count > 0
   return (
-    <div className="sky-tool-run" data-running={running} data-status={run.status ?? undefined}>
+    <div
+      className="sky-tool-run"
+      data-running={running}
+      data-status={run.status ?? undefined}
+      data-waiting={waiting || undefined}
+    >
       {folded ? (
         <button
           type="button"

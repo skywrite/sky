@@ -83,7 +83,13 @@ test(
         input: { task: 'Read the sample.' },
         started: new ZonedDateTime().epochMilliseconds,
       })
-      await first.getByText('Waiting for approval', { exact: true }).waitFor()
+      await first.getByText('Needs your go', { exact: true }).waitFor()
+      assert({
+        given: 'a tool waiting on the person',
+        should: 'mark only its run as waiting, which turns its chip amber',
+        actual: await page.locator('.sky-tool-run[data-waiting]').count(),
+        expected: 1,
+      })
       recordToolExecution(runs, 1, {
         type: 'tool-execution-start',
         toolCallId: 'future_tool',
