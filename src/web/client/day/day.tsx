@@ -1899,7 +1899,7 @@ export function DayView({
                     />
 
                     {(doneToday.length > 0 || entryComposer) && (
-                      <Block head="Done today" mini={String(doneToday.length)}>
+                      <Block head={isToday ? 'Done today' : 'Done'} mini={String(doneToday.length)}>
                         {doneToday.length === 0 && <p className="sky-plan-note">Record something from your day.</p>}
                         <Fold
                           rows={doneToday}
