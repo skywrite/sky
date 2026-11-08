@@ -14,6 +14,7 @@ const icons = {
   ),
   plus: <path d="M12 5v14M5 12h14" />,
   chevron: <path d="m9 5 7 7-7 7" />,
+  arrow: <path d="M4 12h15m-5-5 5 5-5 5" />,
   check: <path d="m5 12 4 4L19 6" />,
   edit: <path d="m15 4 5 5-10 10-6 1 1-6L15 4ZM13 6l5 5" />,
   dots: (

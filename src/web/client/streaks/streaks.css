@@ -673,16 +673,22 @@
 .sky-streaks-day .sky-streaks-section-head {
   margin-bottom: 4px;
 }
-.sky-streaks-day h2 {
-  font-size: 17px;
+/* The same type as the day page's other section heads (.sky-bhead and .sky-count) and the Tracking head,
+   at every width: the section-head selector outranks the Streaks page's phone-size h2 rule. */
+.sky-streaks-day .sky-streaks-section-head h2 {
+  font-size: 15.5px;
+  color: var(--sky-text-2);
   display: flex;
   align-items: baseline;
   gap: 15px;
 }
 .sky-streaks-quiet-count {
   font-weight: 400;
-  font-size: 14px;
+  font-size: 14.5px;
   color: var(--sky-dim);
+}
+.sky-streaks-day .sky-streaks-text-link {
+  font-size: 14.5px;
 }
 .sky-streaks-compact .sky-streaks-habit-row {
   grid-template-columns: minmax(0, 1fr) 130px;
@@ -1066,15 +1072,8 @@
     background: var(--sky-bg);
     z-index: 1;
   }
-  .sky-streaks-day h2 {
+  .sky-streaks-day .sky-streaks-section-head h2 {
     gap: 9px;
-    font-size: 16px;
-  }
-  .sky-streaks-quiet-count {
-    font-size: 12px;
-  }
-  .sky-streaks-day .sky-streaks-text-link {
-    font-size: 12px;
   }
   .sky-streaks-day .sky-streaks-section-head {
     gap: 8px;

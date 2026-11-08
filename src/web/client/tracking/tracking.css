@@ -22,8 +22,7 @@
   letter-spacing: -0.025em;
   font-weight: 650;
 }
-.sky-tracking h2,
-.sky-tracking-day h2 {
+.sky-tracking h2 {
   font-size: 22px;
   line-height: 1.4;
   letter-spacing: -0.012em;
@@ -637,18 +636,29 @@
   gap: 16px;
   margin-bottom: 18px;
 }
+/* The same type as the day page's other section heads (.sky-bhead and .sky-count) and the Streaks head. */
+.sky-tracking-day-heading h2 {
+  font-size: 15.5px;
+  line-height: 1.4;
+  font-weight: 600;
+  color: var(--sky-text-2);
+}
 .sky-tracking-day-heading p {
   margin-top: 3px;
-  font-size: 15px;
+  font-size: 14.5px;
   color: var(--sky-dim);
 }
 .sky-tracking-text-link {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  font-size: 15px;
+  font-size: 14.5px;
   text-decoration: none;
   white-space: nowrap;
+}
+.sky-tracking-text-link .sky-tracking-icon {
+  width: 17px;
+  height: 17px;
 }
 .sky-tracking-text-link:hover {
   text-decoration: underline;
@@ -1095,16 +1105,6 @@
   }
   .sky-tracking-footnote {
     font-size: 13px;
-  }
-  .sky-tracking-day-heading h2 {
-    font-size: 21px;
-  }
-  .sky-tracking-day-heading p {
-    font-size: 14px;
-  }
-  .sky-tracking-text-link {
-    font-size: 14px;
-    gap: 4px;
   }
   .sky-tracking-log-row {
     gap: 11px;

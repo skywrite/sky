@@ -146,7 +146,7 @@ export function DayTracking({
           </p>
         </div>
         <TrackingLink to="/tracking" navigate={navigate} className="sky-tracking-text-link">
-          View trends <TrackingIcon name="chevron" />
+          View trends <TrackingIcon name="arrow" />
         </TrackingLink>
       </header>
       {data.error && (
