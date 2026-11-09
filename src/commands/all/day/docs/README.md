@@ -1,6 +1,6 @@
 ---
 created: 2026-08-29
-updated: 2026-10-26
+updated: 2026-11-08
 ---
 
 # Day commands
@@ -152,7 +152,8 @@ An empty move or reminder copy creates no destination. Failure to create a
 destination leaves the source untouched. Reminder moves save the destination
 before removing the source items.
 
-The review moves unfinished tasks before generating the summary.
+The review copies unfinished to-dos, which keeps them in that day's Not Done, and moves unfinished reminders,
+all before generating the summary.
 The standalone incomplete commands remain available for an explicit sweep; no End action runs them.
 See the [summary cutoff](../../../../service/handler/day/docs/README.md#the-days-items) for the app's read-only rules.
 

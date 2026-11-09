@@ -2,6 +2,7 @@ import * as path from 'node:path'
 import { readJson, withProcessLock, writeJson } from '#lib/jobs/files.ts'
 import { hold } from '../../../activity.ts'
 import {
+  isReminder,
   REVIEW_STEPS,
   reviewItemStep,
   type ReviewItem,
@@ -27,7 +28,7 @@ export interface ReviewInventory {
 export interface ReviewHost {
   inventory(day: string): Promise<ReviewInventory>
   apply(day: string, item: ReviewItem, values?: Record<string, string>): Promise<void>
-  move?(day: string, items: ReviewItem[], today: string): Promise<void>
+  carry?(day: string, items: ReviewItem[], today: string, how: 'copy' | 'move'): Promise<void>
   /** day:start for the waiting day, as Start runs it; rejects with the reason it did not start. */
   startDay?(ymd: string): Promise<void>
   runtime: ReviewRuntime
@@ -199,20 +200,22 @@ export class DayReviewStore {
     if (skipIds.length) this.kick(day)
     return this.view(day)
   }
-  async move(day: string, ids: string[]) {
+  /** A to-do is copied, so its day keeps it unfinished; a reminder is moved, since it lives on one day at a time. */
+  async carry(day: string, ids: string[], how: 'copy' | 'move') {
     await this.change(day, async (state) => {
       const pending = ids.filter((id) => !state.answers[id])
       if (!pending.length) return
       const inventory = await this.host.inventory(day)
       const items = pending.map((id) => inventory.items.find((item) => item.id === id))
-      if (items.some((item) => !item || item.kind !== 'carry'))
-        throw new Error('The selected tasks changed. Refresh the review before moving them.')
+      if (items.some((item) => !item || item.kind !== 'carry' || isReminder(item) !== (how === 'move')))
+        throw new Error('The selected tasks changed. Refresh the review before bringing them to today.')
       const selected = items as ReviewItem[]
       const blocked = selected.filter((item) => item.blocked)
       if (blocked.length) throw new Error(blocked.map((item) => `${item.title}: ${item.blocked}`).join('\n'))
-      if (!this.host.move) throw new Error('Moving tasks is unavailable.')
-      await this.host.move(day, selected, inventory.today)
-      for (const item of selected) state.answers[item.id] = { item, result: 'moved', target: inventory.today }
+      if (!this.host.carry) throw new Error('Bringing tasks to today is unavailable.')
+      await this.host.carry(day, selected, inventory.today, how)
+      const result = how === 'copy' ? 'copied' : 'moved'
+      for (const item of selected) state.answers[item.id] = { item, result, target: inventory.today }
     })
     this.kick(day)
     return this.view(day)
@@ -235,11 +238,7 @@ export class DayReviewStore {
           throw new Error(`${item.title}: ${(error as Error).message}`)
         }
       }
-      state.answers[id] = {
-        item,
-        result: action === 'skip' ? 'skipped' : item.kind === 'carry' ? 'moved' : 'done',
-        ...(action === 'apply' && item.kind === 'carry' ? { target: inventory.today } : {}),
-      }
+      state.answers[id] = { item, result: action === 'skip' ? 'skipped' : 'done' }
       delete state.drafts[id]
     })
     this.kick(day)

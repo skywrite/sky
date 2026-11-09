@@ -7,10 +7,16 @@ import {
 
 export const steps: Record<ReviewStep, { label: string; title: string; description: string; empty: string }> = {
   carry: {
-    label: 'Tasks',
+    label: 'Todos',
     title: 'What’s coming with you?',
-    description: 'Bring unfinished todos and reminders into today, or skip anything you want to leave on this day.',
-    empty: 'No unfinished todos or reminders to move.',
+    description: 'Mark what you finished and skip what you’re leaving behind. Copy the rest to today.',
+    empty: 'No unfinished todos to bring forward.',
+  },
+  reminder: {
+    label: 'Reminders',
+    title: 'Which reminders still matter?',
+    description: 'Mark what’s taken care of and skip what you’re leaving behind. Move the rest to today.',
+    empty: 'No reminders to bring forward.',
   },
   streak: {
     label: 'Streaks',

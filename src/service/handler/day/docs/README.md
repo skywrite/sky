@@ -287,8 +287,15 @@ The date is then not offered again; the day page's status line still reaches it:
 and `summary:day`.
 Review progress, the current wizard step, drafts, job outcomes and the prompt's pending and offered dates live under
 the local user-data `state/day-review` directory, keyed by the reviewed date.
-Moving a selection uses the day planner's revision checks and locks, can create today's unstarted plan, and records receipts
-in the review state; the saved-summary cutoff still applies.
+Todos and Reminders are separate steps because they carry differently.
+A to-do is copied: the reviewed day keeps it, still unfinished, and today gets its own row unless it already has one.
+A reminder is moved, matching `day:reminders:move-*`: it lives on one day at a time and leaves no record behind.
+The review's routes refuse the wrong action for either.
+Both use the day planner's revision checks and locks, can create today's unstarted plan, and record receipts
+in the review state.
+Done is the day page's checkbox: a to-do is struck on the reviewed day and a reminder leaves its list.
+The saved-summary cutoff applies to all of these, and linked workstream activities are finished or scheduled
+from their workstream.
 Skip changes only review state, so a skipped historical streak remains missed under the existing streak rules.
 Navigating steps never skips items implicitly; Skip remaining saves the visible choices and the next step together.
 Older reviews without a saved step open at their first unfinished section, then Continuing chats if any remain open,

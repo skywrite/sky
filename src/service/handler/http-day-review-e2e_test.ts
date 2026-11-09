@@ -62,7 +62,7 @@ test(
         await mkdir(shots, { recursive: true })
         await page.screenshot({ path: path.join(shots, 'desktop.png'), fullPage: true })
       }
-      await page.waitForFunction((day) => document.title === `sky · Review ${day} · Tasks`, REVIEW_DAY)
+      await page.waitForFunction((day) => document.title === `sky · Review ${day} · Todos`, REVIEW_DAY)
       assert({
         given: 'the first wizard step',
         should: 'focus on tasks while later decisions stay out of the way',
@@ -72,9 +72,41 @@ test(
         ],
         expected: [1, 0],
       })
-      await dialog.getByRole('button', { name: 'Move to today (3)' }).click()
-      await dialog.getByRole('button', { name: 'Move to today (3)' }).waitFor({ state: 'detached' })
+      const todos = dialog.getByRole('region', { name: 'Todos' })
+      assert({
+        given: 'to-dos and a reminder waiting',
+        should: 'open on the to-dos alone, offering to copy them',
+        actual: [
+          await todos.locator('.sky-review-item').count(),
+          await dialog.getByRole('button', { name: 'Copy to today (2)' }).count(),
+          await dialog.getByText('Water the plants').count(),
+        ],
+        expected: [2, 1, 0],
+      })
+      await todos.getByRole('button', { name: 'Done', exact: true }).first().click()
+      await dialog.getByRole('button', { name: 'Copy to today (1)' }).click()
+      await dialog.getByRole('button', { name: 'Copy to today (1)' }).waitFor({ state: 'detached' })
       await dialog.getByRole('button', { name: 'Continue', exact: true }).click()
+      await dialog.getByRole('heading', { name: 'Which reminders still matter?' }).waitFor()
+      await page.waitForFunction((day) => document.title === `sky · Review ${day} · Reminders`, REVIEW_DAY)
+      await dialog.getByRole('button', { name: 'Move to today (1)' }).click()
+      await dialog.getByRole('button', { name: 'Move to today (1)' }).waitFor({ state: 'detached' })
+      const [reviewed, nextDay] = [await f.readDay(REVIEW_DAY), await f.readDay(REVIEW_TODAY)]
+      assert({
+        given: 'one to-do marked done, the other copied to today and the reminder moved there',
+        should: 'strike the first, keep the copied one unfinished on its own day, and take the reminder off it',
+        actual: [
+          reviewed.includes('- ~~Review Atlas outline~~\n  Keep the attached notes.'),
+          reviewed.includes('- Review Atlas outline\n  Keep this separate copy.'),
+          reviewed.includes('Water the plants'),
+          nextDay.includes('- Review Atlas outline\n  Keep this separate copy.'),
+          nextDay.includes('Keep the attached notes.'),
+          nextDay.includes('- Water the plants'),
+        ],
+        expected: [true, true, false, true, false, true],
+      })
+      await dialog.getByRole('button', { name: 'Continue', exact: true }).click()
+      await dialog.getByRole('heading', { name: 'Did you do these?' }).waitFor()
       await dialog.getByRole('button', { name: 'Done', exact: true }).click()
       await dialog.getByRole('button', { name: 'Done', exact: true }).waitFor({ state: 'detached' })
       await dialog.getByRole('button', { name: 'Continue', exact: true }).click()
@@ -146,7 +178,7 @@ test(
         given: 'completed review reopened from the original day',
         should: 'preserve choices and run one summary, with only the prompt’s start and no end',
         actual: [
-          await dialog.getByRole('button', { name: 'Move to today (3)' }).count(),
+          await dialog.getByRole('button', { name: / to today/ }).count(),
           f.calls.filter((c) => ['start', 'end', 'summary'].includes(c)),
           errors,
         ],
@@ -241,7 +273,7 @@ test(
       )
       await second.dialog.getByRole('button', { name: 'Skip this step' }).click()
       await acknowledged
-      await second.dialog.getByRole('heading', { name: 'Did you do these?' }).waitFor()
+      await second.dialog.getByRole('heading', { name: 'Which reminders still matter?' }).waitFor()
       await first.page.bringToFront()
       await first.page.evaluate(() => window.dispatchEvent(new Event('focus')))
       await first.dialog.waitFor({ state: 'detached' })

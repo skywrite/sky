@@ -26,7 +26,7 @@
 }
 .sky-review-steps ol {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(7, minmax(0, 1fr));
   list-style: none;
   padding: 0;
   margin: 0;
@@ -315,6 +315,10 @@
   .sky-review-steps button {
     font-size: 13px;
     gap: 6px;
+  }
+  /* Seven labels can't share a phone's width: the current step is named, the others stay numbered. */
+  .sky-review-steps button:not([aria-current='step']) > span:last-child {
+    display: none;
   }
   .sky-review-step-head h2 {
     font-size: 26px;

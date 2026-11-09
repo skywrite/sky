@@ -4,6 +4,7 @@ import { TrackingStore } from '#lib/tracking/store.ts'
 import { makeTempDir } from '#shared/fs/mod.ts'
 import { dayDir, dayFile } from '#shared/nbfs/mod.ts'
 import { PlainDate, PlainDateTime, ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
+import { holding } from '../../../activity.ts'
 import type { ThreadSummary } from '../../chat/mod.ts'
 import { StreaksStore } from '../../streaks/store.ts'
 import { createDayRoutes, type DayRoutesOptions } from '../mod.ts'
@@ -200,6 +201,10 @@ tz: America/Chicago
     view,
     waitFor,
     readDay: (ymd: string) => readFile(file(ymd), 'utf8'),
-    dispose: () => rm(root, { recursive: true, force: true }),
+    // The review keeps working after a request answers, so its state directory has to outlive that work.
+    dispose: async () => {
+      for (let attempt = 0; attempt < 500 && holding().includes('reviewing a day'); attempt++) await Bun.sleep(10)
+      await rm(root, { recursive: true, force: true })
+    },
   }
 }

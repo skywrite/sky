@@ -14,7 +14,7 @@ import { dayItemKey } from '../organizingTypes.ts'
 import { buildReviewRecords } from '../reviewRecords.ts'
 import type { ScheduleHost } from '../schedule.ts'
 import { DayReviewStore } from './store.ts'
-import { REVIEW_STEPS, type ReviewItem, type ReviewRuntime } from './types.ts'
+import { isReminder, REVIEW_STEPS, type ReviewItem, type ReviewRuntime } from './types.ts'
 
 interface Options {
   day: DayRoutesOptions
@@ -62,9 +62,9 @@ export function createReviewRoutes(options: Options) {
           address: { list: item.list, raw: item.raw, occurrence: item.occurrence, revision: item.revision },
           href: item.workstream ? `/workstreams/${encodeURIComponent(item.workstream.id)}` : `/${ymd}?view=record`,
           blocked: summarized
-            ? 'This day has a saved summary. Remove its summary to move tasks again.'
+            ? 'This day has a saved summary. Remove its summary to finish or bring tasks forward again.'
             : item.workstream
-              ? 'Move this activity from its workstream.'
+              ? 'Finish or schedule this activity from its workstream.'
               : undefined,
         })
       }
@@ -199,23 +199,26 @@ export function createReviewRoutes(options: Options) {
         })),
     }
   }
+  const itemRequest = (ymd: string, route: string, body: unknown) =>
+    options.dayRoutes.request(`/${ymd}/item${route}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
   const store = new DayReviewStore(options.stateDir, {
     inventory,
     runtime: options.runtime,
-    move: async (ymd, items, date) => {
-      const response = await options.dayRoutes.request(`/${ymd}/item/organize/move`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          items: items.map((item) => item.address),
-          date,
-          requestId: operationId(`${ymd}:${items.map((item) => item.id).join(':')}:${date}`),
-        }),
+    carry: async (ymd, items, date, how) => {
+      const response = await itemRequest(ymd, '/organize/move', {
+        items: items.map((item) => item.address),
+        date,
+        copy: how === 'copy',
+        requestId: operationId(`${ymd}:${items.map((item) => item.id).join(':')}:${date}`),
       })
       if (!response.ok) {
         const body = (await response.json()) as { error?: string }
         throw new Error(
-          `${items.map((item) => item.title).join(', ')}: ${body.error ?? 'Could not move these items. Refresh and try again.'}`,
+          `${items.map((item) => item.title).join(', ')}: ${body.error ?? `Could not ${how} these items. Refresh and try again.`}`,
         )
       }
     },
@@ -234,7 +237,16 @@ export function createReviewRoutes(options: Options) {
         }
       : undefined,
     apply: async (ymd, item, values) => {
-      if (item.kind === 'streak' && item.name && options.streaks) {
+      if (item.kind === 'carry' && item.address) {
+        // What the day page's checkbox does: a to-do is struck, a reminder leaves the list.
+        const response = isReminder(item)
+          ? await itemRequest(ymd, '/delete', item.address)
+          : await itemRequest(ymd, '', { ...item.address, done: true })
+        if (!response.ok) {
+          const body = (await response.json()) as { error?: string }
+          throw new Error(body.error ?? 'Could not mark this done. Refresh and try again.')
+        }
+      } else if (item.kind === 'streak' && item.name && options.streaks) {
         await options.streaks.completion(item.name, { date: ymd, done: true, expectedDone: false })
       } else if (item.kind === 'tracking' && item.tracker && options.tracking) {
         await options.tracking.saveEntry(item.tracker.name, {
@@ -303,7 +315,7 @@ export function createReviewRoutes(options: Options) {
     }
     return c.json(await store.refresh(day))
   })
-  app.post('/:day/move', async (c) => {
+  const carryRoute = (how: 'copy' | 'move') => async (c: Context) => {
     const body = z
       .object({
         ids: z
@@ -313,8 +325,10 @@ export function createReviewRoutes(options: Options) {
           .refine((ids) => new Set(ids).size === ids.length),
       })
       .parse(await c.req.json())
-    return c.json(await store.move(reviewDay(c), body.ids))
-  })
+    return c.json(await store.carry(reviewDay(c), body.ids, how))
+  }
+  app.post('/:day/copy', carryRoute('copy'))
+  app.post('/:day/move', carryRoute('move'))
   app.post('/:day/answer', async (c) => {
     const body = z
       .object({

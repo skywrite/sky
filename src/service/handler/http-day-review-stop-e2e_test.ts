@@ -68,6 +68,7 @@ test(
       await dialog.waitFor()
       for (const heading of [
         'What’s coming with you?',
+        'Which reminders still matter?',
         'Did you do these?',
         'Fill in the missing pieces',
         'Anything worth keeping?',

@@ -1,23 +1,26 @@
-import { readFile, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import * as path from 'node:path'
 import { exists } from '#shared/fs/mod.ts'
 import { daySummaryPath } from '#shared/nbfs/daySummary.ts'
 import { assert, test } from '#test'
 import { reviewFixture, REVIEW_DAY, REVIEW_TODAY } from './testFixture.ts'
-import type { ReviewView } from './types.ts'
+import { isReminder, reviewItemStep, type ReviewView } from './types.ts'
 
 test('real review actions carry duplicate todos and reminders, check streaks and save dated tracking without start or end', async () => {
   const f = await reviewFixture()
   try {
     await f.post(`${REVIEW_DAY}/open`)
     const initial = await f.view()
-    const ids = initial.items.filter((i) => i.kind === 'carry').map((i) => i.id)
-    const first = await f.post(`${REVIEW_DAY}/move`, { ids })
-    const retry = await f.post(`${REVIEW_DAY}/move`, { ids })
+    const carried = initial.items.filter((i) => i.kind === 'carry')
+    const ids = carried.filter((i) => !isReminder(i)).map((i) => i.id)
+    const first = await f.post(`${REVIEW_DAY}/copy`, { ids })
+    const retry = await f.post(`${REVIEW_DAY}/copy`, { ids })
+    const moved = await f.post(`${REVIEW_DAY}/move`, { ids: carried.filter(isReminder).map((i) => i.id) })
     assert({
       given: 'duplicate todos and a reminder',
-      should: 'move once and accept a retry',
-      actual: [first.status, retry.status, (await f.view()).step],
-      expected: [200, 200, 'carry'],
+      should: 'copy the to-dos once, accept a retry, and move the reminder',
+      actual: [first.status, retry.status, moved.status, (await f.view()).step],
+      expected: [200, 200, 200, 'carry'],
     })
     const streak = initial.items.find((i) => i.kind === 'streak')!
     const tracked = initial.items.find((i) => i.kind === 'tracking')!
@@ -45,13 +48,144 @@ test('real review actions carry duplicate todos and reminders, check streaks and
       actual: [
         (today.match(/Review Atlas outline/g) ?? []).length,
         today.includes('Water the plants'),
+        (yesterday.match(/^- Review Atlas outline$/gm) ?? []).length,
+        yesterday.includes('- Water the plants'),
         /started:.*\d/.test(today),
         /ended:.*\d/.test(yesterday),
         yesterday.includes('~~Read a chapter~~'),
         report.metrics[0].entries.map((entry) => [entry.date, entry.values.hours]),
         f.calls,
       ],
-      expected: [2, true, false, false, true, [[REVIEW_DAY, '3.5']], ['summary']],
+      expected: [2, true, 2, false, false, false, true, [[REVIEW_DAY, '3.5']], ['summary']],
+    })
+  } finally {
+    await f.dispose()
+  }
+})
+
+test('copying to-dos to today leaves the reviewed day as it was and adds nothing today already has', async () => {
+  const f = await reviewFixture()
+  try {
+    await mkdir(path.dirname(f.file(REVIEW_TODAY)), { recursive: true })
+    await writeFile(
+      f.file(REVIEW_TODAY),
+      '## Professional Todos\n\n- Review Atlas outline\n  Keep the attached notes.\n',
+    )
+    await f.post(`${REVIEW_DAY}/open`)
+    const before = await f.readDay(REVIEW_DAY)
+    const todos = (await f.view()).items.filter((i) => i.kind === 'carry' && !isReminder(i))
+    const response = await f.post(`${REVIEW_DAY}/copy`, { ids: todos.map((i) => i.id) })
+    const today = await f.readDay(REVIEW_TODAY)
+    const view = await f.view()
+    assert({
+      given: 'two unfinished to-dos copied to a day that already has one of them',
+      should: 'leave the reviewed day byte for byte, add only what today lacks, and stop asking about both',
+      actual: [
+        response.status,
+        await f.readDay(REVIEW_DAY),
+        today.match(/Keep the attached notes/g)?.length,
+        today.match(/Keep this separate copy/g)?.length,
+        view.items.filter((i) => i.kind === 'carry' && !isReminder(i)).length,
+        Object.values(view.answers).map((answer) => [answer.result, answer.target]),
+      ],
+      expected: [
+        200,
+        before,
+        1,
+        1,
+        0,
+        [
+          ['copied', REVIEW_TODAY],
+          ['copied', REVIEW_TODAY],
+        ],
+      ],
+    })
+  } finally {
+    await f.dispose()
+  }
+})
+
+test('a reminder moves off its day and can never be copied, and a to-do can never be moved', async () => {
+  const f = await reviewFixture()
+  try {
+    await f.post(`${REVIEW_DAY}/open`)
+    const carried = (await f.view()).items.filter((i) => i.kind === 'carry')
+    const reminder = carried.find(isReminder)!
+    const todo = carried.find((i) => !isReminder(i))!
+    const before = await f.readDay(REVIEW_DAY)
+    const copied = await f.post(`${REVIEW_DAY}/copy`, { ids: [reminder.id] })
+    const moved = await f.post(`${REVIEW_DAY}/move`, { ids: [todo.id] })
+    assert({
+      given: 'a request to copy a reminder and a request to move a to-do',
+      should: 'keep each in its own step, refuse both requests and change nothing',
+      actual: [
+        reviewItemStep(todo),
+        reviewItemStep(reminder),
+        copied.status,
+        moved.status,
+        await f.readDay(REVIEW_DAY),
+        await exists(f.file(REVIEW_TODAY)),
+      ],
+      expected: ['carry', 'reminder', 409, 409, before, false],
+    })
+    const response = await f.post(`${REVIEW_DAY}/move`, { ids: [reminder.id] })
+    const day = await f.readDay(REVIEW_DAY)
+    const today = await f.readDay(REVIEW_TODAY)
+    assert({
+      given: 'a reminder moved to today',
+      should: 'take it off the reviewed day, put it on today once, and leave the to-dos alone',
+      actual: [
+        response.status,
+        day.includes('Water the plants'),
+        today.match(/Water the plants/g)?.length,
+        day.match(/^- Review Atlas outline$/gm)?.length,
+        (await f.view()).answers[reminder.id].result,
+      ],
+      expected: [200, false, 1, 2, 'moved'],
+    })
+  } finally {
+    await f.dispose()
+  }
+})
+
+test('Done finishes a task as the day page does: a to-do is struck and a reminder leaves the list', async () => {
+  const f = await reviewFixture()
+  try {
+    await f.post(`${REVIEW_DAY}/open`)
+    const carry = (await f.view()).items.filter((i) => i.kind === 'carry')
+    const todo = carry[0]
+    const reminder = carry.find((i) => i.detail === 'Reminders')!
+    const struck = await f.post(`${REVIEW_DAY}/answer`, { id: todo.id, action: 'apply' })
+    const cleared = await f.post(`${REVIEW_DAY}/answer`, { id: reminder.id, action: 'apply' })
+    const day = await f.readDay(REVIEW_DAY)
+    const view = await f.view()
+    assert({
+      given: 'Done on one of two matching to-dos and on a reminder',
+      should: 'strike only that to-do with its notes, clear the reminder, and leave the other to-do to decide',
+      actual: [
+        struck.status,
+        cleared.status,
+        day.includes('- ~~Review Atlas outline~~\n  Keep the attached notes.'),
+        day.includes('- Review Atlas outline\n  Keep this separate copy.'),
+        day.includes('Water the plants'),
+        view.items.filter((i) => i.kind === 'carry').map((i) => i.title),
+        [view.answers[todo.id].result, view.answers[reminder.id].result],
+      ],
+      expected: [200, 200, true, true, false, ['Review Atlas outline'], ['done', 'done']],
+    })
+    await writeFile(daySummaryPath(f.file(REVIEW_DAY)), '# Summary\n')
+    const left = (await f.view()).items.find((i) => i.kind === 'carry')!
+    const before = await f.readDay(REVIEW_DAY)
+    const blocked = await f.post(`${REVIEW_DAY}/answer`, { id: left.id, action: 'apply' })
+    assert({
+      given: 'Done on a task after the day has a saved summary',
+      should: 'name the task, say why, and leave the day alone',
+      actual: [blocked.status, ((await blocked.json()) as { message: string }).message, await f.readDay(REVIEW_DAY)],
+      expected: [
+        409,
+        'Review Atlas outline: This day has a saved summary. Remove its summary to finish or bring tasks forward again.',
+        before,
+      ],
     })
   } finally {
     await f.dispose()
@@ -64,7 +198,7 @@ test('review rejects cross-origin, invalid dates, stale items and writes to summ
     const item = (await f.view()).items.find((i) => i.kind === 'carry')!
     const before = await f.readDay(REVIEW_DAY)
     await writeFile(f.file(REVIEW_DAY), before.replace('Review Atlas outline', 'Review Widget outline'))
-    const stale = await f.post(`${REVIEW_DAY}/move`, { ids: [item.id] })
+    const stale = await f.post(`${REVIEW_DAY}/copy`, { ids: [item.id] })
     const origin = await f.app.request(`/${REVIEW_DAY}/open`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Origin: 'https://example.com' },

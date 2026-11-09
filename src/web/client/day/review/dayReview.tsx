@@ -3,6 +3,7 @@ import { Button, Drawer, Modal, TextInput } from '@mantine/core'
 import { useMediaQuery } from '@mantine/hooks'
 import { useEffect, useRef, useState } from 'react'
 import {
+  isReminder,
   REVIEW_STEPS,
   reviewItemStep,
   type ReviewItem,
@@ -331,7 +332,9 @@ export function DayReviewDialog({
     void close(() => navigate(href))
   }
   const items = view?.items.filter((item) => reviewItemStep(item) === step) ?? []
-  const movable = items.filter((item) => item.kind === 'carry' && !item.blocked)
+  // Todos are copied and reminders moved, so each of those steps names its own action.
+  const carrying = step === 'carry' ? 'copy' : step === 'reminder' ? 'move' : null
+  const ready = items.filter((item) => !item.blocked).slice(0, 100)
   const history = Object.entries<ReviewView['answers'][string]>(view?.answers ?? {}).filter(
     ([, answer]) => reviewItemStep(answer.item) === step,
   )
@@ -346,8 +349,6 @@ export function DayReviewDialog({
     void run('step', () =>
       reviewRequest(`${day}/step`, { step: next, ...(skip ? { skipIds: items.map((item) => item.id) } : {}) }),
     )
-  const moveAll = () =>
-    void run('carry', () => reviewRequest(`${day}/move`, { ids: movable.slice(0, 100).map((item) => item.id) }))
   const content = (
     <div className="sky-review" onPointerDownCapture={() => engage()} onKeyDownCapture={() => engage()}>
       <input
@@ -545,18 +546,24 @@ export function DayReviewDialog({
               </>
             ) : (
               <>
-                {step === 'carry' && items.length > 0 && (
+                {carrying && items.length > 0 && (
                   <div className="sky-review-carry">
                     <span>
-                      {items.length} unfinished · Moving to {view.today}
+                      {carrying === 'copy'
+                        ? `Copying to ${view.today} keeps them on this day, not completed.`
+                        : `Moving to ${view.today} takes them off this day.`}
                     </span>
                     <Button
                       variant="primary"
-                      disabled={Boolean(busy) || !movable.length}
-                      loading={busy === 'carry'}
-                      onClick={moveAll}
+                      disabled={Boolean(busy) || !ready.length}
+                      loading={busy === carrying}
+                      onClick={() =>
+                        void run(carrying, () =>
+                          reviewRequest(`${day}/${carrying}`, { ids: ready.map((item) => item.id) }),
+                        )
+                      }
                     >
-                      Move to today{movable.length ? ` (${Math.min(movable.length, 100)})` : ''}
+                      {carrying === 'copy' ? 'Copy' : 'Move'} to today{ready.length ? ` (${ready.length})` : ''}
                     </Button>
                   </div>
                 )}
@@ -579,13 +586,13 @@ export function DayReviewDialog({
                       <div className="sky-review-row">
                         <div className="sky-review-copy">
                           <strong>{item.title}</strong>
-                          {item.detail && <p>{item.detail}</p>}
+                          {item.detail && !isReminder(item) && <p>{item.detail}</p>}
                           {item.blocked && <p>{item.blocked} You can skip it here.</p>}
                         </div>
                         <div className="sky-review-actions">
-                          {item.kind === 'streak' && (
+                          {(item.kind === 'streak' || item.kind === 'carry') && (
                             <Button
-                              variant="primary"
+                              variant={item.kind === 'carry' ? 'primary-quiet' : 'primary'}
                               size="sm"
                               disabled={Boolean(busy) || Boolean(item.blocked)}
                               onClick={() => void answer(item, 'apply')}
@@ -650,9 +657,11 @@ export function DayReviewDialog({
                           <small>
                             {answer.result === 'moved'
                               ? `Moved to ${answer.target}`
-                              : answer.result === 'skipped'
-                                ? 'Skipped'
-                                : 'Done'}
+                              : answer.result === 'copied'
+                                ? `Copied to ${answer.target}`
+                                : answer.result === 'skipped'
+                                  ? 'Skipped'
+                                  : 'Done'}
                           </small>
                         </span>
                         {answer.result === 'skipped' && (
