@@ -1,11 +1,10 @@
 /**
  * notion:table:new — make a table (a Notion database) on a page or as a
- * private one, with its first rows if given. In ai:chat it asks first.
+ * private one, with its first rows if given. In ai:chat it runs without
+ * asking: it only makes something new.
  */
 
-import colors from 'picocolors'
 import { AIChatTool } from '#commands/lib/AIChatTool.ts'
-import type { OutputHandler } from '#commands/lib/output/OutputHandler.ts'
 import { Arg, Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { NOTION_NOT_CONNECTED, NotionError, openNotion } from '#lib/notion/mod.ts'
@@ -42,13 +41,13 @@ declare module '#commands/lib/core/CommandTypesRegistry.ts' {
   }
 }
 
-@AIChatTool({ needsApproval: true })
+@AIChatTool({ needsApproval: false })
 export default class NotionTableNewTask extends Command {
   static override description: CommandDescription = {
     name: 'notion:table:new',
     description:
       'Create a table (a Notion database) in the connected Notion workspace, on a page or as a private table, ' +
-      'with its first rows if given. The user approves it first. `columns` uses Notion’s column syntax: the title ' +
+      'with its first rows if given. `columns` uses Notion’s column syntax: the title ' +
       "column as TITLE, then RICH_TEXT, NUMBER [FORMAT 'dollar'], SELECT('opt':color, …), MULTI_SELECT(…), " +
       "STATUS(…), DATE, PEOPLE, CHECKBOX, URL, EMAIL, PHONE_NUMBER, FORMULA('expression'). In `rows`, a date " +
       'column Due takes "date:Due:start", a checkbox true or false. A table goes on a page, not at the top of a ' +
@@ -59,23 +58,6 @@ export default class NotionTableNewTask extends Command {
       'sky notion:table:new "Atlas tasks" --parent <page-link> --rows \'[{"Name": "Draft the brief"}]\'',
     ],
     params,
-  }
-
-  static formatApproval(input: Record<string, unknown>, output: OutputHandler): void {
-    const text = (key: string) => (typeof input[key] === 'string' ? (input[key] as string).trim() : '')
-    const rows = text('rows') ? rowsOf(text('rows')) : []
-    output.log('')
-    output.log(colors.bold('Create this Notion table?'))
-    output.log('')
-    output.log(`  Title:   ${text('title')}`)
-    output.log(`  In:      ${text('parent') || 'your private pages, where only you can see it'}`)
-    output.log(`  Columns: ${text('columns') || '"Name" TITLE'}`)
-    if (typeof rows === 'string') output.log(`  Rows:    ${text('rows')}`)
-    else if (rows.length > 0) {
-      output.log(`  Rows:    ${rows.length}`)
-      for (const row of rows) output.log(`    ${JSON.stringify(row)}`)
-    }
-    output.log('')
   }
 
   async run({ args, context }: CommandArgs<Params>): Promise<CommandResult<Result>> {

@@ -211,7 +211,7 @@ export function NotionMain({ navigate }: { navigate: (to: string) => void }) {
   return (
     <ConnectionPage
       name="Notion"
-      gives="Chats can search your Notion, read the pages you link, and create pages and tables. Sky signs in as you and sees what you can see. It asks you before it makes a table."
+      gives="Chats can search your Notion, read the pages you link, and create pages and tables. Sky signs in as you and sees what you can see."
       navigate={navigate}
     >
       {gone ? (

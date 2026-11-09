@@ -1,6 +1,6 @@
 ---
 created: 2026-10-24
-updated: 2026-11-05
+updated: 2026-11-08
 ---
 
 # notion — Notion commands
@@ -16,8 +16,7 @@ updated: 2026-11-05
 - `notion:table:new` creates a table (a Notion database) on a page or private, with its first rows if given.
 - Links drop Notion's `pvs` tracking parameter; Notion's links are `app.notion.com/p/<id>`.
 - `notion_find` and `notion_read` are auto-approved ai:chat tools.
-  `notion_new` runs without asking: it only makes something new.
-  `notion_table_new` asks first, and its card shows the table it will make.
+  `notion_new` and `notion_table_new` run without asking: they only make something new.
   The chat prompt steers Notion links and Notion requests to these tools instead of the browser.
 - Connecting lives on Settings → Connections → Notion: `web/client/settings/settingsNotion.tsx`,
   routes under `/notion` in `service/handler/settings/connections.ts`.
