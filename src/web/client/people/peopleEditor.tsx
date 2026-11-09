@@ -401,6 +401,13 @@ export function PeopleEditor({
             )}
           </div>
         )}
+        <TagsInput
+          label="Also known as"
+          placeholder="Add another name"
+          value={draft.aliases}
+          onChange={(value) => set('aliases', value)}
+          splitChars={[';']}
+        />
         {type === 'person' ? (
           <>
             <TextInput
@@ -465,12 +472,6 @@ export function PeopleEditor({
               value={draft.location}
               valueLabel={profile?.location === draft.location ? profile.locationLabel : ''}
               onChange={(value) => set('location', value)}
-            />
-            <TagsInput
-              label="Also known as"
-              value={draft.aliases}
-              onChange={(value) => set('aliases', value)}
-              splitChars={[';']}
             />
             {type === 'person' ? (
               <>
