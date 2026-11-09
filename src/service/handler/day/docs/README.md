@@ -1,6 +1,6 @@
 ---
 created: 2026-09-03
-updated: 2026-11-07
+updated: 2026-11-08
 ---
 
 # The day's items, the day's rail, and the day's files
@@ -153,8 +153,10 @@ future-day template, or a dated entry in a schedule file, writes that destinatio
 removes the source blocks. It resolves references and rebases relative links,
 including links in notes. A revision covers both the block and its resolved
 references, so a stale selection cannot move newly changed notes or links.
-Matching destination rows are retained alongside the moved copies. Summarized days
-reject the entire batch. Linked workstream
+Matching destination rows are retained alongside the moved copies.
+A `copy` leaves the source as it was and adds no block the destination already has;
+with the source row still there, nothing else would stop a repeat or a recurring task from stacking up.
+Summarized days reject the entire batch. Linked workstream
 activities retain their canonical scheduling flow instead of bypassing their
 participation history through a raw Markdown move.
 
@@ -226,7 +228,7 @@ Filed documents, attachments, and continuing chats remain accessible.
 
 | Route | Does |
 | --- | --- |
-| `POST /day/:ymd/item/organize/move` | `{items: [{list, raw, occurrence, revision}], date, requestId}` → move a selection to a date, answers `{view, undo, date}` |
+| `POST /day/:ymd/item/organize/move` | `{items: [{list, raw, occurrence, revision}], date, requestId, copy?}` → move a selection to a date, or with `copy` add it there and leave this day as it was, answers `{view, undo, date}` |
 | `POST /day/:ymd/item/organize/reorder` | `{list, items, requestId}` → save a complete, revision-checked list permutation |
 | `POST /day/:ymd/item/organize/order` | `{order: "time" \| "manual", requestId}` → save the commitment ordering preference |
 | `POST /day/:ymd/item/organize/priority` | `{items, revision, group?: "todos" \| "reminders", moved?, reset?, requestId}` → save that group's priority overrides or restore Sky's order; defaults to To-dos |

@@ -381,6 +381,39 @@ const EXISTING = `## Professional Todos
   - Keep the nested checklist.
 `
 
+test('a copy reaches the destination like a move, leaves the source as it was, and never repeats a row', async () => {
+  await withDays(async ({ post, view, read, write }) => {
+    const existing = '## Professional Todos\n\n- Share the outline\n'
+    await write(TARGET, existing)
+    const items = (await view()).record.todos.filter((item) => !item.done)
+    const response = await post('organize/move', { items, date: TARGET, requestId: randomUUID(), copy: true })
+    const result = (await response.json()) as Result
+    const saved = (await read(TARGET))!
+    const again = await post('organize/move', { items, date: TARGET, requestId: randomUUID(), copy: true })
+    assert({
+      given: 'two unfinished to-dos copied, one already on the destination, then copied once more',
+      should: 'keep the source byte for byte, carry the missing one with notes and links, and add nothing twice',
+      actual: {
+        status: response.status,
+        source: await read(),
+        shared: saved.match(/Share the outline/g)?.length,
+        notes: saved.includes('A nested checklist item'),
+        link: /Review \[Atlas\]\([^)]*brief\.md "Atlas brief"\)/.test(saved),
+        again: again.status,
+        target: await read(TARGET),
+      },
+      expected: { status: 200, source: CONTENT, shared: 1, notes: true, link: true, again: 200, target: saved },
+    })
+    const undo = await post('organize/undo', { id: result.undo })
+    assert({
+      given: 'Undo of a copy',
+      should: 'take back only what the copy added',
+      actual: { status: undo.status, source: await read(), target: await read(TARGET) },
+      expected: { status: 200, source: CONTENT, target: existing },
+    })
+  })
+})
+
 test('moves keep repeated rows, destination copies and notes, with idempotent retry and precise Undo', async () => {
   await withDays(async ({ post, view, read, write }) => {
     await write(TARGET, EXISTING)

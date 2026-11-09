@@ -89,6 +89,17 @@ function orderAddedItems(before: string, after: string, lists: Iterable<string>)
   return after
 }
 
+/** Whether a list already holds this block, whichever bullet, indent or line endings its file uses. */
+function listHasBlock(content: string | undefined, list: string, block: string): boolean {
+  const words = (text: string) =>
+    text
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .join('\n')
+      .replace(/^[-*+]\s+/, '')
+  return Boolean(content && planSection(content, list)?.rows.some((row) => words(row.block) === words(block)))
+}
+
 export function createDayOrganizer(options: ItemRoutesOptions) {
   const routes = new Hono()
   const operations = new Map<string, Operation>()
@@ -131,9 +142,10 @@ export function createDayOrganizer(options: ItemRoutesOptions) {
       : run()
   routes.onError((error, c) => c.json({ error: error.message }, error instanceof ItemEditError ? error.status : 500))
 
+  /** `copy` adds the items to the destination and leaves the source day as it was. */
   const move = async (
     c: Context,
-    input: { items: DayItemAddress[]; date: string; requestId: string; edit?: DayEditFields },
+    input: { items: DayItemAddress[]; date: string; requestId: string; edit?: DayEditFields; copy?: boolean },
   ) => {
     const selected = addresses(input.items)
     if (!validId(input.requestId) || !isDay(input.date)) throw new ItemEditError('Choose a date for these items.', 400)
@@ -156,7 +168,6 @@ export function createDayOrganizer(options: ItemRoutesOptions) {
           return { address, row: checkedBlock(day.content, day.file, address) }
         })
         .sort((a, b) => a.row.from - b.row.from)
-      let source = day.content
       const moved: MovedBlock[] = []
       for (const { address, row } of rows) {
         const edited = input.edit
@@ -186,6 +197,8 @@ export function createDayOrganizer(options: ItemRoutesOptions) {
           destinations.set(file, change)
         }
         const block = moveItemMarkdown(edited?.block ?? row.block, day.content, day.file, file)
+        // The source row stays, so nothing else stops a repeated copy, or a recurring task, from stacking up here.
+        if (input.copy && listHasBlock(change.before, destination.list, block)) continue
         const raw = blockRaw(filed === 'schedule' ? scheduledBlock(block, list) : block)
         const occurrence =
           planSection(change.after!, destination.list)?.rows.filter((row) => row.raw === raw).length ?? 0
@@ -207,15 +220,19 @@ export function createDayOrganizer(options: ItemRoutesOptions) {
           },
         })
       }
-      // Remove later occurrences first so earlier duplicates retain their validated addresses.
-      for (const { address } of [...rows].reverse())
-        source = removeBlock(source, address.list, address.raw, address.occurrence)
-      source = rebasePriorityOrder(
-        day.content,
-        source,
-        rows.map(({ address }) => ({ before: address })),
-      )
-      const changes = [...destinations.values(), { file: day.file, before: day.content, after: source }]
+      const changes = [...destinations.values()]
+      if (!input.copy) {
+        let source = day.content
+        // Remove later occurrences first so earlier duplicates retain their validated addresses.
+        for (const { address } of [...rows].reverse())
+          source = removeBlock(source, address.list, address.raw, address.occurrence)
+        source = rebasePriorityOrder(
+          day.content,
+          source,
+          rows.map(({ address }) => ({ before: address })),
+        )
+        changes.push({ file: day.file, before: day.content, after: source })
+      }
       // Keep a destination copy before removing anything from the source.
       await writeChanges(changes, options.writePlanning)
       const when = input.date === new PlainDate(today).addDays(1).ymd ? 'tomorrow' : input.date
@@ -226,7 +243,7 @@ export function createDayOrganizer(options: ItemRoutesOptions) {
         moved,
         target: input.date,
         filed,
-        message: `${moved.length} ${moved.length === 1 ? 'item' : 'items'} ${filed === 'schedule' ? 'scheduled for' : 'moved to'} ${when}`,
+        message: `${moved.length} ${moved.length === 1 ? 'item' : 'items'} ${filed === 'schedule' ? 'scheduled for' : input.copy ? 'copied to' : 'moved to'} ${when}`,
       })
       return response(c, input.requestId)
     })
@@ -236,7 +253,12 @@ export function createDayOrganizer(options: ItemRoutesOptions) {
     const body = await bodyOf(c)
     if (!body || typeof body.date !== 'string' || !validId(body.requestId))
       throw new ItemEditError('Select items and choose their destination date.', 400)
-    return move(c, { items: addresses(body.items), date: body.date, requestId: body.requestId })
+    return move(c, {
+      items: addresses(body.items),
+      date: body.date,
+      requestId: body.requestId,
+      copy: body.copy === true,
+    })
   })
 
   routes.post('/:ymd/item/organize/reorder', async (c) => {
