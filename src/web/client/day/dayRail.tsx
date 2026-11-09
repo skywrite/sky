@@ -37,8 +37,8 @@ export interface ScheduledMeeting {
   who: string[]
   joinUrl: string | null
   state: 'past' | 'now' | 'next'
-  /** The notebook's record of it, when one is filed */
-  record: { path: string; title: string; inline?: boolean } | null
+  /** The notebook's record of it, when one is filed; `summary` is the note's gist or the notes written under it */
+  record: { path: string; title: string; inline?: boolean; summary?: string | null } | null
 }
 
 export interface DaySchedule {
@@ -136,6 +136,17 @@ const NAMED = 2
 function whoLine(who: string[]): string {
   if (who.length <= NAMED + 1) return who.join(', ')
   return `${who.slice(0, NAMED).join(', ')}, ${who.length - NAMED} more`
+}
+
+/**
+ * What a past meeting was about: its filed note's title, or the start of the notes written under it in the day
+ * file. Anything else keeps the calendar's title.
+ */
+function aboutLine(m: ScheduledMeeting): string {
+  const record = m.state === 'past' ? m.record : null
+  if (!record) return m.title || '(untitled)'
+  const note = record.inline ? (record.summary ?? '').split('\n')[0].split(' | ')[0].trim() : ''
+  return note || record.title || m.title || '(untitled)'
 }
 
 function minutesOf(time: string): number {
@@ -242,6 +253,10 @@ function MeetingRow({
   }
   const canDrop = Boolean(!notification && onImportMeeting && m.state === 'past' && !m.record && !m.allDay && m.start)
   const drop = useFileDrop(canDrop, (files) => onImportMeeting?.(files, { title: m.title, when: `${ymd} ${m.start}` }))
+  const missing = m.state === 'past' && !m.record && !notification && !importing && !m.allDay
+  const whoText = [whoLine(m.who), m.state === 'now' && !m.allDay ? `until ${m.end}` : '', missing ? 'no notes' : '']
+    .filter(Boolean)
+    .join(' · ')
   return (
     <div
       className="sky-dr-item"
@@ -252,8 +267,12 @@ function MeetingRow({
       {...drop.handlers}
     >
       <span className="sky-dr-time">{m.allDay ? 'all day' : m.start}</span>
-      <span className="sky-dr-label" title={m.title}>
-        {m.title || '(untitled)'}
+      <span className="sky-dr-label sky-dr-meeting-label" title={m.title}>
+        {m.state === 'past' && m.record ? (
+          <a href={meetingHref(m.record.path) ?? fileHref(m.record.path)}>{aboutLine(m)}</a>
+        ) : (
+          aboutLine(m)
+        )}
       </span>
       <span className="sky-dr-event-actions">
         <span className="sky-dr-mark">
@@ -270,11 +289,8 @@ function MeetingRow({
               ''
             )
           ) : m.state === 'past' ? (
-            m.record ? (
-              <a href={meetingHref(m.record.path) ?? fileHref(m.record.path)}>{m.record.inline ? 'noted' : 'filed'}</a>
-            ) : (
-              'no record'
-            )
+            // The title opens the record; a past meeting without one says "no notes" on the who line.
+            ''
           ) : m.state === 'now' ? (
             m.joinUrl ? (
               <a href={m.joinUrl} target="_blank" rel="noopener noreferrer">
@@ -328,11 +344,7 @@ function MeetingRow({
           </Menu>
         )}
       </span>
-      {(m.who.length > 0 || m.state === 'now') && (
-        <span className="sky-dr-who">
-          {[whoLine(m.who), m.state === 'now' && !m.allDay ? `until ${m.end}` : ''].filter(Boolean).join(' · ')}
-        </span>
-      )}
+      {whoText && <span className="sky-dr-who">{whoText}</span>}
       {error && (
         <span className="sky-dr-event-error" role="alert">
           {error}

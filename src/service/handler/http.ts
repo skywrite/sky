@@ -236,6 +236,7 @@ export function createHttpApp(options: HttpHandlerOptions): Hono {
         markdownBaseDir,
         people: markdownStore?.people,
         scores: store,
+        aboutMePath: chat.aboutMePath,
       }),
       workstreams: options.workstreams?.store,
       mostImportant: options.mostImportant,

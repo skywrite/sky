@@ -447,9 +447,12 @@ scrolls; its foot is anchored.
   without a linked file. Linked entries and their files merge by path.
   `schedule.ts` combines these with calendar events, matching each record
   at most once within fifteen minutes of the event start and retaining
-  unmatched records. Rows sort by time; inline records link to the day and
-  say `noted`, saved files say `filed`. Current calendar events still offer
-  `join`. Local records remain visible if the calendar fails. The existing
+  unmatched records. Rows sort by time. A past row with a record leads with
+  what it was about: the saved file's title, or the start of the inline notes.
+  It links to the file or the day, and the calendar's title stays on hover.
+  A record's `who:` leaves out the owner's names from `me/about.md`. Current
+  calendar events still offer `join`. Local records remain visible if the
+  calendar fails. The existing
   `GET /day/:ymd/schedule` route refreshes one minute after the previous request
   settles. Failed refreshes keep the last schedule visible with a stale warning
   and a link to Connections. See the [Keychain contract](../../../../lib/secrets/docs/README.md).
@@ -466,8 +469,9 @@ scrolls; its foot is anchored.
   the calendar's display name, falling back to the address. Names are never
   guessed from email handles. Contact and score edits are picked up on the
   next schedule refresh.
-  A timed past meeting marked `no record` takes a transcript or recording
-  drop: the row lights blue and opens the shared import dialog for that
+  A timed past meeting with no record says `no notes` beside its people. It
+  takes a transcript or recording drop: the row lights blue and opens the
+  shared import dialog for that
   slot. The section heading and the blank space below its rows, before Chats, import an
   unscheduled meeting on the viewed day, with an editable suggested time;
   hovering there turns the whole section blue. See [the meeting import flow](../../import/docs/README.md#dropping-on-a-meeting).

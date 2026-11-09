@@ -26,7 +26,7 @@ import type { PersonScore } from '../../scoring/ScoringStore.ts'
 import type { Store } from '../../store.ts'
 import { createAttendeeNames } from './attendeeNames.ts'
 import isDay from './isDay.ts'
-import { buildDayRecord, type MeetingRow } from './record.ts'
+import { buildDayRecord, loadOwnerNames, type MeetingRow } from './record.ts'
 
 export type ScheduleState = 'past' | 'now' | 'next'
 
@@ -42,8 +42,11 @@ export interface ScheduledMeeting {
   who: string[]
   joinUrl: string | null
   state: ScheduleState
-  /** The notebook's record of it, relative to the notebook root, when one is filed */
-  record: { path: string; title: string; inline?: boolean } | null
+  /**
+   * The notebook's record of it, relative to the notebook root, when one is filed.
+   * `summary` is its gist: a filed note's summary, or the notes written under a day-file meeting.
+   */
+  record: { path: string; title: string; inline?: boolean; summary?: string | null } | null
 }
 
 export interface DaySchedule {
@@ -71,6 +74,14 @@ export type ScheduleHost = ((day: PlainDate) => Promise<DaySchedule>) & {
 function minutesOf(time: string): number {
   const [hours, minutes] = time.split(':').map(Number)
   return hours * 60 + minutes
+}
+
+/** A record's `who:` as names, without the owner's own: `Alex Chen, Sam` → `Alex Chen`. */
+function othersIn(who: string | null, owner: ReadonlySet<string>): string[] {
+  return (who ?? '')
+    .split(',')
+    .map((name) => name.trim())
+    .filter((name) => name && !owner.has(name.toLowerCase()))
 }
 
 /** The `HH:MM` a record's `when:` starts with, if it has one. */
@@ -107,8 +118,11 @@ export function scheduleOf(input: {
   errors: string[]
   people?: PeopleStore | null
   personScores?: readonly PersonScore[]
+  /** The owner's names, left out of a record's who */
+  ownerNames?: readonly string[]
 }): DaySchedule {
   const attendeeNames = createAttendeeNames(input.people, input.personScores)
+  const owner = new Set((input.ownerNames ?? []).filter(Boolean).map((name) => name.toLowerCase()))
   const remaining = new Set(input.records)
   const recordOf = (event: CalendarEvent): ScheduledMeeting['record'] => {
     if (event.allDay) return null
@@ -121,7 +135,7 @@ export function scheduleOf(input: {
       .sort((a, b) => Math.abs(minutesOf(recordStart(a)!) - start) - Math.abs(minutesOf(recordStart(b)!) - start))[0]
     if (!match) return null
     remaining.delete(match)
-    return { path: match.path, title: match.title, inline: match.inline }
+    return { path: match.path, title: match.title, inline: match.inline, summary: match.summary }
   }
   const meetings = input.events.map(
     (event): ScheduledMeeting => ({
@@ -143,10 +157,10 @@ export function scheduleOf(input: {
       start: recordStart(row) ?? '',
       end: '',
       allDay: false,
-      who: row.who ? [row.who] : [],
+      who: othersIn(row.who, owner),
       joinUrl: null,
       state: 'past',
-      record: { path: row.path, title: row.title, inline: row.inline },
+      record: { path: row.path, title: row.title, inline: row.inline, summary: row.summary },
     })
   }
   meetings.sort(
@@ -189,10 +203,12 @@ export function createDayScheduleHost(options: {
   markdownBaseDir: string
   people?: PeopleStore | null
   scores?: Pick<Store, 'getPeopleWithScores'>
+  /** me/about.md, whose names leave the who of the day's own meeting records */
+  aboutMePath?: string
 }): ScheduleHost {
   const secrets = new KeychainSecretsProvider()
   const schedule: ScheduleHost = async (day) => {
-    const [calendar, record] = await Promise.all([
+    const [calendar, record, ownerNames] = await Promise.all([
       fetchDayMeetings(secrets, day, options.timeDir).catch((err: unknown) => ({
         meetings: [] as CalendarEvent[],
         notifications: [] as ClassifiedCalendarEvent[],
@@ -206,6 +222,7 @@ export function createDayScheduleHost(options: {
         markdownBaseDir: options.markdownBaseDir,
         ownerNames: [],
       }).catch(() => null),
+      loadOwnerNames(options.aboutMePath),
     ])
     // The clock the rows are judged by: the notebook's, or the machine's for a notebook with no started day.
     const now = await fetchNow({ timeDir: options.timeDir })
@@ -223,6 +240,7 @@ export function createDayScheduleHost(options: {
       errors: calendar.errors,
       people: options.people,
       personScores: options.scores?.getPeopleWithScores(),
+      ownerNames,
     })
   }
   schedule.setType = async (day, key, type) => {

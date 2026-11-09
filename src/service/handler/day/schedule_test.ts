@@ -460,6 +460,35 @@ test('meetings remain available without a calendar and include inline records', 
   })
 })
 
+test('records carry their notes, and a day-file meeting names who was there without the owner', () => {
+  const filed = { ...record('Board prep sync', '09:05'), summary: 'Board deck and budget' }
+  const noted = {
+    ...record('Atlas review', '13:00'),
+    path: 'time/2026/W05/01-27/day.md',
+    inline: true,
+    who: 'Alex Chen, Sam',
+    summary: 'Atlas launch review | follow up Friday',
+  }
+  const schedule = scheduleOf({
+    day: DAY,
+    events: [event('Board prep', '09:00', '09:45')],
+    records: [filed, noted],
+    clock: { date: DAY, time: '18:00' },
+    read: true,
+    errors: [],
+    ownerNames: ['Sam Rivera', 'Sam'],
+  })
+  assert({
+    given: 'a calendar meeting with a filed note, and a day-file meeting whose who names the owner',
+    should: "carry each record's notes and leave the owner out of who",
+    actual: schedule.meetings.map((m) => ({ start: m.start, who: m.who, summary: m.record?.summary ?? null })),
+    expected: [
+      { start: '09:00', who: ['Jane Doe', 'Alex Chen'], summary: 'Board deck and budget' },
+      { start: '13:00', who: ['Alex Chen'], summary: 'Atlas launch review | follow up Friday' },
+    ],
+  })
+})
+
 test('a recorded meeting is matched to at most one calendar event', () => {
   const schedule = scheduleOf({
     day: DAY,

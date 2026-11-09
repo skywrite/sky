@@ -71,6 +71,15 @@
   white-space: nowrap;
 }
 
+/* A meeting's title wraps to three lines instead of cutting off what it was about. */
+.sky-dr-meeting-label {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
 .sky-dr-label a {
   color: inherit;
   text-decoration: none;

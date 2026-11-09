@@ -115,7 +115,7 @@ test(
             await page
               .locator(NOTICES)
               .innerText()
-              .then((text) => text.includes('no record')),
+              .then((text) => text.includes('no notes')),
             await page.locator(`${NOTICES} [data-meeting-drop]`).count(),
             await page.getByText('Type uncertain · kept in Meetings').count(),
             await page.getByRole('button', { name: 'Retry calendar sorting' }).count(),
