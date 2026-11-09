@@ -1,6 +1,8 @@
 import Document from '#shared/models/Markdown/Document/mod.ts'
 import TagSet from '#shared/models/TagSet/mod.ts'
 import { PlainDateTime, When } from '#universal/dates/nbdt/mod.ts'
+import { quoteLegacyChannelFields } from '../channelFields.ts'
+import { videoSourceReferences } from '../source.ts'
 
 const DEFAULT_TEMPLATE = `# Video
 
@@ -80,16 +82,12 @@ export default class VideoDocument extends Document {
   }
 
   get videoUrl(): string | undefined {
-    const video = this.yaml['video']
-    if (video && typeof video === 'object' && !Array.isArray(video)) {
-      const url = (video as Record<string, unknown>)['url']
-      return typeof url === 'string' ? url : undefined
-    }
-    return undefined
+    const sources = videoSourceReferences(this.yaml)
+    return sources.grouped ? undefined : sources.urls[0]
   }
 
   static override fromMarkdown(contentsWithYamlHeader: string): VideoDocument {
-    const doc = super.fromMarkdown(contentsWithYamlHeader)
+    const doc = super.fromMarkdown(quoteLegacyChannelFields(contentsWithYamlHeader))
     return new VideoDocument(doc.yaml, doc.markdown, doc.yamlError)
   }
 }

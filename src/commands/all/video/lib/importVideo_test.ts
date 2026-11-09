@@ -1,6 +1,8 @@
 import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import * as path from 'node:path'
+import { attachmentDestination } from '#service/handler/attachments/mod.ts'
+import { Document } from '#shared/models/Markdown/mod.ts'
 import VideoDocument from '#shared/models/Video/mod.ts'
 import { dayDir, dayFile } from '#shared/nbfs/mod.ts'
 import { assert, test } from '#test'
@@ -98,9 +100,10 @@ test('a complete video import keeps originals and reruns by Loom ID without dupl
         calls,
         body: videoContent(doc.markdown),
         url: doc.videoUrl,
+        recordedAt: (doc.yaml.video as { recorded_at?: string }).recorded_at,
         originalVideo: await readFile(options.videoFile!, 'utf8'),
         originalTranscript: await readFile(options.transcriptFile!, 'utf8'),
-        readable: first.filePath!.endsWith('2031-04-05_093045_Atlas-API-demonstration.md'),
+        readable: first.filePath!.endsWith('Loom_Atlas-API-demonstration.md'),
       },
       expected: {
         same: true,
@@ -108,9 +111,97 @@ test('a complete video import keeps originals and reruns by Loom ID without dupl
         calls: 1,
         body: { summary: true, transcript: true, transcriptText: WORDS },
         url: URL,
+        recordedAt: '2031-04-05T09:30:45Z',
         originalVideo: 'synthetic recording bytes',
         originalTranscript: WORDS,
         readable: true,
+      },
+    })
+  })
+})
+
+test('source imports use the generated speaker and summary for descriptive note and attachment names', async () => {
+  await fixture(async (options) => {
+    const result = await importVideo({
+      ...options,
+      title: undefined,
+      prepare: async () => ({ body: WRITEUP, cleanedText: WORDS, title: 'API Review', from: 'Jane Doe' }),
+    })
+    const doc = VideoDocument.fromMarkdown(await readFile(result.filePath!, 'utf8'))
+    assert({
+      given: 'speaker and summary metadata produced while preparing a source import',
+      should: 'use the same convention as transcript imports and retain the day on attachments',
+      actual: {
+        note: path.basename(result.filePath!),
+        attachments: doc.yaml.attachments,
+        from: doc.yaml.from,
+        summary: doc.summary,
+      },
+      expected: {
+        note: 'Loom_Jane-Doe_API-Review.md',
+        attachments: [
+          { file: '2031-04-05_Loom_Jane-Doe_API-Review.mp4' },
+          { file: '2031-04-05_Loom_Jane-Doe_API-Review.txt' },
+        ],
+        from: 'Jane Doe',
+        summary: 'API Review',
+      },
+    })
+  })
+})
+
+test('distinct source IDs with the same descriptive name preserve both recordings and remain idempotent', async () => {
+  await fixture(async (options, root) => {
+    const otherVideo = path.join(root, 'other.mp4')
+    await writeFile(otherVideo, 'another synthetic recording')
+    const inputs = [
+      { ...options, from: 'Jane Doe' },
+      {
+        ...options,
+        from: 'Jane Doe',
+        url: 'https://www.loom.com/share/fedcba9876543210fedcba9876543210',
+        videoFile: otherVideo,
+      },
+    ]
+    const results = await Promise.all(inputs.map((input) => importVideo(input)))
+    const docs = await Promise.all(
+      results.map(async (result) => VideoDocument.fromMarkdown(await readFile(result.filePath!, 'utf8'))),
+    )
+    const recordings = await Promise.all(
+      docs.map(async (doc, index) => {
+        const attachment = (doc.yaml.attachments as { file: string }[]).find((item) => item.file.endsWith('.mp4'))!
+        const result = results[index]
+        const destination = attachmentDestination(
+          path.relative(options.config.DIR_BASE, result.filePath!),
+          options.config.DIR_USER_DATA,
+        )
+        return readFile(path.join(destination.dir, attachment.file), 'utf8')
+      }),
+    )
+    const retries = await Promise.all(
+      inputs.map((input) =>
+        importVideo({
+          ...input,
+          prepare: async () => {
+            throw new Error('A retry must not regenerate content')
+          },
+        }),
+      ),
+    )
+    assert({
+      given: 'two different recordings imported concurrently with identical day, person and summary',
+      should: 'allocate a numeric suffix without overwriting media or duplicating either recording on retry',
+      actual: {
+        names: results.map((result) => path.basename(result.filePath!)).sort(),
+        recordings: recordings.sort(),
+        same: retries.every(
+          (retry, index) => retry.filePath === results[index].filePath && retry.plan.action === 'skip',
+        ),
+      },
+      expected: {
+        names: ['Loom_Jane-Doe_Atlas-API-demonstration-2.md', 'Loom_Jane-Doe_Atlas-API-demonstration.md'],
+        recordings: ['another synthetic recording', 'synthetic recording bytes'],
+        same: true,
       },
     })
   })
@@ -173,6 +264,64 @@ test('matching an old Loom entry fills transcript and summary while retaining no
   })
 })
 
+test('filling a legacy video preserves channel fields and quotes a concurrent channel edit', async () => {
+  await fixture(async (options) => {
+    const file = path.join(options.config.DIR_BASE, 'legacy-channels.md')
+    const initial = `---
+who: #atlas-owners
+from: #atlas-source
+to: #atlas-review
+when: 2031-04-07 14:10
+custom: keep
+video:
+  url: ${URL}
+---
+
+# Original notes
+
+Keep the original decisions.
+`
+    await writeFile(file, initial)
+    let calls = 0
+    const input = {
+      ...options,
+      prepare: async () => {
+        calls++
+        await writeFile(file, initial.replace('who: #atlas-owners', 'who: #atlas-planning'))
+        return { body: WRITEUP, cleanedText: WORDS }
+      },
+    }
+    const first = await importVideo(input)
+    const saved = await readFile(file, 'utf8')
+    const doc = Document.fromMarkdown(saved)
+    const again = await importVideo(input)
+    assert({
+      given: 'legacy channel literals and a participant edit made during generation',
+      should: 'retain the latest channel values as real YAML strings and keep retries unchanged',
+      actual: {
+        same: first.filePath === file && again.filePath === file,
+        fields: { who: doc.yaml.who, from: doc.yaml.from, to: doc.yaml.to },
+        quoted: ['who', 'from', 'to'].every((key) => saved.includes(`${key}: "#atlas-`)),
+        when: doc.yaml.when,
+        custom: doc.yaml.custom,
+        notes: doc.markdown.startsWith('# Original notes\n\nKeep the original decisions.\n'),
+        calls,
+        unchanged: (await readFile(file, 'utf8')) === saved,
+      },
+      expected: {
+        same: true,
+        fields: { who: '#atlas-planning', from: '#atlas-source', to: '#atlas-review' },
+        quoted: true,
+        when: '2031-04-07 14:10',
+        custom: 'keep',
+        notes: true,
+        calls: 1,
+        unchanged: true,
+      },
+    })
+  })
+})
+
 test('an existing transcript supplies a missing summary without replacing the transcript or requiring its source file', async () => {
   await fixture(async (options) => {
     const file = path.join(options.config.DIR_BASE, 'legacy-video.md')
@@ -201,8 +350,9 @@ test('an existing transcript supplies a missing summary without replacing the tr
         supplied,
         transcriptCount: doc.markdown.split(WORDS).length - 1,
         summary: videoContent(doc.markdown).summary,
+        summaryFirst: doc.markdown.indexOf('## Imported summary') < doc.markdown.indexOf('## Transcript'),
       },
-      expected: { supplied: WORDS, transcriptCount: 1, summary: true },
+      expected: { supplied: WORDS, transcriptCount: 1, summary: true, summaryFirst: true },
     })
   })
 })
@@ -237,17 +387,19 @@ test('summary placeholders are incomplete and completion preserves original note
   const filled = completeVideoBody(body, { body: WRITEUP, cleanedText: WORDS })
   assert({
     given: 'a legacy template with empty sections',
-    should: 'detect missing content and append substantive sections once',
+    should: 'fill template sections with the summary before the transcript once',
     actual: {
       before: videoContent(body),
       after: videoContent(filled),
-      prefix: filled.startsWith(body),
+      summaryFirst: filled.indexOf('## Imported summary') < filled.indexOf('## Transcript'),
+      transcriptHeadings: filled.split('## Transcript').length - 1,
       stable: completeVideoBody(filled, { body: WRITEUP, cleanedText: WORDS }) === filled,
     },
     expected: {
       before: { summary: false, transcript: false, transcriptText: '' },
       after: { summary: true, transcript: true, transcriptText: WORDS },
-      prefix: true,
+      summaryFirst: true,
+      transcriptHeadings: 1,
       stable: true,
     },
   })
@@ -368,6 +520,285 @@ test('legacy entries without full header dates keep their folder date and origin
       should: 'anchor processing to its existing folder date and preserve the original header value',
       actual: { processedWhen, header: doc.yaml.when, complete: (await planVideoImport(options)).action },
       expected: { processedWhen: '2031-04-08 11:45', header: '11:45', complete: 'skip' },
+    })
+  })
+})
+
+test('legacy source metadata is filled in place and aliases reuse the same recording', async () => {
+  const alias = `https://www.loom.com/share/${'1'.repeat(32)}`
+  const formats = [
+    { metadata: { video: { loom: { url: URL }, backup: { url: 'https://example.com/backup' } } }, source: URL },
+    { metadata: { url: URL }, source: URL },
+    { metadata: { video: [{ url: URL }] }, source: URL },
+    { metadata: { video: { url: URL, aliases: [alias] } }, source: alias },
+  ]
+  for (const format of formats) {
+    await fixture(async (options) => {
+      const file = path.join(options.config.DIR_BASE, 'legacy.md')
+      const yaml = { when: '2031-04-08 25:15', context: 'Atlas original context', ...format.metadata }
+      const original = '# Original notes\n\nKeep this text and its date.\n'
+      await writeFile(file, new Document(yaml, original).toMarkdown())
+      let calls = 0
+      const input = {
+        ...options,
+        url: format.source,
+        prepare: async () => {
+          calls++
+          return { body: WRITEUP, cleanedText: WORDS }
+        },
+      }
+      const first = await importVideo(input)
+      const again = await importVideo({ ...input, url: URL })
+      const doc = Document.fromMarkdown(await readFile(file, 'utf8'))
+      const { attachments: _attachments, ...metadata } = doc.yaml
+      assert({
+        given: 'an old source shape or an explicitly verified alternate recording URL',
+        should: 'complete one existing note without changing metadata, date, original text or source URLs',
+        actual: {
+          same: first.filePath === file && again.filePath === file,
+          calls,
+          metadata,
+          prefix: doc.markdown.startsWith(original),
+          when: first.plan.when,
+          action: again.plan.action,
+          files: (await readdir(options.config.DIR_BASE)).filter((name) => name.endsWith('.md')),
+        },
+        expected: {
+          same: true,
+          calls: 1,
+          metadata: yaml,
+          prefix: true,
+          when: '2031-04-08 25:15',
+          action: 'skip',
+          files: ['legacy.md'],
+        },
+      })
+    })
+  }
+})
+
+test('conflicting stored-video associations require review before any collection clip is filed', async () => {
+  await fixture(async (options, root) => {
+    const other = `https://www.loom.com/share/${'1'.repeat(32)}`
+    const originals = new Map<string, string>()
+    for (const name of ['first', 'second']) {
+      const media = path.join(root, `${name}.mp4`)
+      const file = path.join(options.config.DIR_BASE, `${name}.md`)
+      await writeFile(media, `${name} recording bytes`)
+      const text = new Document({ video: [{ url: URL, file: media }, { url: other }] }, '# Collection\n').toMarkdown()
+      originals.set(file, text)
+      await writeFile(file, text)
+    }
+    const plan = await planVideoImport(options)
+    let refused = false
+    let calls = 0
+    try {
+      await importVideo({
+        ...options,
+        prepare: async () => {
+          calls++
+          return { body: WRITEUP, cleanedText: WORDS }
+        },
+      })
+    } catch {
+      refused = true
+    }
+    assert({
+      given: 'two different stored files explicitly assigned to one source',
+      should: 'report the ambiguous association and leave both collections unchanged',
+      actual: {
+        action: plan.action,
+        refused,
+        calls,
+        unchanged: (
+          await Promise.all([...originals].map(async ([file, text]) => (await readFile(file, 'utf8')) === text))
+        ).every(Boolean),
+      },
+      expected: { action: 'review', refused: true, calls: 0, unchanged: true },
+    })
+  })
+})
+
+test('removing a source association during generation cannot silently create another recording', async () => {
+  await fixture(async (options) => {
+    const alias = `https://www.loom.com/share/${'1'.repeat(32)}`
+    const file = path.join(options.config.DIR_BASE, 'legacy.md')
+    const original = new Document(
+      { when: WHEN.toString(), video: { url: URL, aliases: [alias] } },
+      '# Original notes\n',
+    ).toMarkdown()
+    const edited = new Document(
+      { when: WHEN.toString(), video: { url: URL } },
+      '# Original notes\n\nAn edit made during processing.\n',
+    ).toMarkdown()
+    await writeFile(file, original)
+    let refused = false
+    try {
+      await importVideo({
+        ...options,
+        url: alias,
+        prepare: async () => {
+          await writeFile(file, edited)
+          return { body: WRITEUP, cleanedText: WORDS }
+        },
+      })
+    } catch {
+      refused = true
+    }
+    assert({
+      given: 'a source alias removed while the model was working',
+      should: 'preserve the edit and require review instead of creating another note',
+      actual: { refused, text: await readFile(file, 'utf8'), files: await readdir(options.config.DIR_BASE) },
+      expected: { refused: true, text: edited, files: ['legacy.md'] },
+    })
+  })
+})
+
+test('body links remain references and do not turn a message into a video entry', async () => {
+  await fixture(async (options) => {
+    const file = path.join(options.config.DIR_BASE, 'message.md')
+    const original = new Document({ medium: 'Email' }, `Watch this demonstration: ${URL}\n`).toMarkdown()
+    await writeFile(file, original)
+    const plan = await planVideoImport(options)
+    assert({
+      given: 'a message that mentions the recording in its body',
+      should: 'plan a separate recording entry and preserve the message',
+      actual: { action: plan.action, matches: plan.matches, message: await readFile(file, 'utf8') },
+      expected: { action: 'create', matches: [], message: original },
+    })
+  })
+})
+
+test('grouped video notes retain their index and each clip gets its own content and correct media', async () => {
+  await fixture(async (options) => {
+    const secondUrl = `https://www.loom.com/share/${'1'.repeat(32)}`
+    const group = path.join(options.config.DIR_TIME, dayDir(WHEN.plainDate), 'collection.md')
+    await mkdir(path.dirname(group), { recursive: true })
+    const mediaDir = path.join(options.config.DIR_ATTACHMENTS, '2031', '04', '05')
+    await mkdir(mediaDir, { recursive: true })
+    const stored = path.join(mediaDir, 'second.mp4')
+    await writeFile(stored, 'stored second recording')
+    const metadata = {
+      video: [{ url: URL }, { url: secondUrl, file: 'second.mp4' }],
+      attachments: [{ file: 'second.mp4', annotation: 'Keep this annotation' }],
+    }
+    const original = new Document(
+      metadata,
+      `${WRITEUP}\n\n## Transcript\n\nAn unrelated collection transcript is already here.\n`,
+    ).toMarkdown()
+    await writeFile(group, original)
+    let calls = 0
+    const input = (url: string, title: string, transcript: string) => ({
+      ...options,
+      url,
+      title,
+      videoFile: url === secondUrl ? undefined : options.videoFile,
+      prepare: async () => {
+        calls++
+        return { body: WRITEUP, cleanedText: transcript }
+      },
+    })
+    const second = input(
+      secondUrl,
+      'Widget demonstration',
+      'The Widget recording contains its own complete transcript.',
+    )
+    const preview = await importVideo({ ...second, dryRun: true })
+    assert({
+      given: 'a collection with one source explicitly associated with an existing video',
+      should: 'preview a separate clip and its reusable media without changing the index',
+      actual: {
+        action: preview.plan.action,
+        groups: preview.plan.sourceGroups,
+        media: preview.plan.reuseVideoFile,
+        calls,
+        group: await readFile(group, 'utf8'),
+      },
+      expected: { action: 'create', groups: [group], media: stored, calls: 0, group: original },
+    })
+    const first = await importVideo(input(URL, 'Atlas demonstration', WORDS))
+    const next = await importVideo(second)
+    const after = await readFile(group, 'utf8')
+    const again = await importVideo(second)
+    const firstDoc = Document.fromMarkdown(await readFile(first.filePath!, 'utf8'))
+    const secondDoc = Document.fromMarkdown(await readFile(next.filePath!, 'utf8'))
+    assert({
+      given: 'two recordings in one legacy note, including a different stored file for the second clip',
+      should:
+        'create independent complete entries, reuse the correct bytes, preserve the index and retry without changes',
+      actual: {
+        distinct: first.filePath !== next.filePath,
+        calls,
+        first: videoContent(firstDoc.markdown).transcriptText,
+        second: videoContent(secondDoc.markdown).transcriptText,
+        groupPrefix: after.startsWith(original),
+        groupMetadata: Document.fromMarkdown(after).yaml,
+        links: after.split('- Imported recording:').length - 1,
+        unchanged: (await readFile(group, 'utf8')) === after,
+        action: again.plan.action,
+        videoFiles: (await readdir(mediaDir)).filter((name) => name.endsWith('.mp4')).length,
+        secondAttachment: secondDoc.attachments.some((a) => a.file === 'second.mp4'),
+        originalVideo: await readFile(stored, 'utf8'),
+      },
+      expected: {
+        distinct: true,
+        calls: 2,
+        first: WORDS,
+        second: 'The Widget recording contains its own complete transcript.',
+        groupPrefix: true,
+        groupMetadata: metadata,
+        links: 2,
+        unchanged: true,
+        action: 'skip',
+        videoFiles: 2,
+        secondAttachment: true,
+        originalVideo: 'stored second recording',
+      },
+    })
+  })
+})
+
+test('interrupted collection filing repairs its index link without duplicate entries or model work', async () => {
+  await fixture(async (options) => {
+    const group = path.join(options.config.DIR_BASE, 'collection.md')
+    await writeFile(
+      group,
+      new Document(
+        { video: { url: [URL, `https://www.loom.com/share/${'1'.repeat(32)}`] } },
+        '# Atlas collection\n',
+      ).toMarkdown(),
+    )
+    const day = path.join(options.config.DIR_TIME, dayFile(WHEN.plainDate))
+    await mkdir(day, { recursive: true })
+    let calls = 0
+    const input = {
+      ...options,
+      prepare: async () => {
+        calls++
+        return { body: WRITEUP, cleanedText: WORDS }
+      },
+    }
+    let interrupted = false
+    try {
+      await importVideo(input)
+    } catch {
+      interrupted = true
+    }
+    await rm(day, { recursive: true })
+    const result = await importVideo(input)
+    const index = await readFile(group, 'utf8')
+    await importVideo(input)
+    assert({
+      given: 'a failure after publishing a collection clip but before linking it',
+      should: 'repair both links once from the checkpoint and then remain unchanged',
+      actual: {
+        interrupted,
+        calls,
+        links: index.split(path.basename(result.filePath!)).length - 1,
+        unchanged: (await readFile(group, 'utf8')) === index,
+        action: (await planVideoImport(options)).action,
+      },
+      expected: { interrupted: true, calls: 1, links: 1, unchanged: true, action: 'skip' },
     })
   })
 })

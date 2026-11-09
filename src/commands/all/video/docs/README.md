@@ -1,6 +1,6 @@
 ---
 created: 2026-09-25
-updated: 2026-11-01
+updated: 2026-11-08
 ---
 
 # Video commands
@@ -26,16 +26,34 @@ pick up what the first already paid for; `--fresh` forgets them.
 
 With `--url`, the command creates or completes a recording through `lib/importVideo.ts`.
 `--video-file` supplies the recording and `--from-srt`, `--from-zoom-vtt`, or `--from-text` supplies its transcript.
-`--when` states the recording time for a new entry; optional `--recorded-at` retains the original zoned instant and
-supplies seconds for its readable filename.
+`--when` states the recording time for a new entry; optional `--recorded-at` retains the original zoned instant in metadata.
+Both import paths name notes with the medium, available speaker or recipient, and short summary, such as
+`Loom_Jane-Doe_API-Review.md`.
+Media and transcript attachments retain a day prefix, such as `2031-04-05_Loom_Jane-Doe_API-Review.mp4`.
+The day folder and metadata retain recording time; a numeric suffix handles note-name collisions.
 `--dry-run` reads matches and source-file presence without model calls, checkpoints, attachments, or notebook writes.
 
-Loom identity comes from the ID in existing `video.url` headers, normalized across share/embed URLs and query strings.
+Loom identity comes from the ID in source metadata, normalized across share/embed URLs and query strings.
+The importer also reads legacy `video.loom.url`, scalar `video`, and top-level Loom `url` headers.
+Verified alternate URLs in `video.aliases` identify the same recording without replacing its original URL.
+An ordinary Loom link in a message or day note does not identify a recording entry.
 Multiple matches require destination review.
-An existing entry retains its path, date, metadata, attachment annotations, and original body; only missing video,
-substantive summary, and full transcript are added.
+An existing entry retains its path, date, metadata, attachment annotations, authored notes, and existing transcript text.
+Only missing video, substantive summary, and full transcript are added.
+Legacy `who`, `from`, and `to` fields can contain an unquoted channel such as `#atlas-updates`.
+Video parsing quotes these channel literals before YAML reads them as comments and turns their values into null.
+Preservation checks must retain the channel text, rather than accepting matching null values before and after a write.
+New summaries appear before an existing transcript, replacing empty template sections where available.
 The short YAML `summary:` title does not establish that a summary exists in the body.
 Sources are copied during filing, preserving caller-owned originals.
+
+Legacy URL lists and `video: [{url: ...}, ...]` notes represent collections.
+They remain indexes; each recording gets its own entry, summary and transcript.
+A collection item's optional `file` associates that source with an existing video attachment so the correct media can be
+reused through the normal attachment filing path.
+Conflicting file associations require review.
+Filing appends a local recording link to the original index without replacing its metadata or body.
+The pending record repairs both the day link and collection links after an interruption.
 
 A source lock serializes CLI and web imports of the same URL.
 AI runs before the short document write lock; filing re-reads the document so concurrent edits survive.

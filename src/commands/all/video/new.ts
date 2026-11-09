@@ -19,11 +19,11 @@ import { DayDirFileWriter, writeDayItems } from '#lib/nbfs/mod.ts'
 import { autoRelMessage, mergeRel } from '#lib/notebook/enrich/autoRel.ts'
 import { autoTagMessage } from '#lib/notebook/enrich/autoTag.ts'
 import openEditor from '#lib/shell/openEditor.ts'
-import slugify from '#lib/string/slugify.ts'
 import VideoDocument from '#shared/models/Video/mod.ts'
 import dayAttachmentsDir from '#shared/nbfs/dayAttachmentsDir.ts'
 import { actionKindRel } from '#shared/nbfs/mod.ts'
 import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
+import { videoAttachmentName, videoFileStem } from './lib/fileNames.ts'
 import { importVideo, type VideoImportPlan, videoSource } from './lib/importVideo.ts'
 
 const params = {
@@ -294,11 +294,8 @@ export default class VideoNewTask extends Command {
     const whenDate = when.plainDate
     const mediumValue = medium || 'Video'
 
-    // Build filename slug from available info
-    const whoSlug = from ? slugify(from, { preserveCase: true }) : to ? slugify(to, { preserveCase: true }) : ''
-    const summarySlug = slugify(summary || '', { preserveCase: true, suggestedLength: 40 })
-    const partialSlug = whoSlug && summarySlug ? `${whoSlug}_${summarySlug}` : whoSlug || summarySlug
-    const fileName = `${actionKindRel('video')}/${mediumValue}_${partialSlug}.md`
+    const stem = videoFileStem({ medium: mediumValue, from, to, summary })
+    const fileName = `${actionKindRel('video')}/${stem}.md`
 
     const ddfw = new DayDirFileWriter(whenDate)
 
@@ -329,7 +326,7 @@ export default class VideoNewTask extends Command {
       output.stage('file', 'Filing')
       const sourcePath = transcriptPath
       const attachDir = path.join(config.DIR_ATTACHMENTS as string, dayAttachmentsDir(whenDate))
-      const attachmentFile = `${whenDate}_${mediumValue}_${partialSlug}${path.extname(sourcePath)}`
+      const attachmentFile = videoAttachmentName(whenDate.toString(), stem, path.extname(sourcePath))
       const destPath = path.join(attachDir, attachmentFile)
 
       try {
