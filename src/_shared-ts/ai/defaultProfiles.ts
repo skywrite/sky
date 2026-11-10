@@ -120,3 +120,28 @@ export const PROFILES = {
     options: { reasoningEffort: 'high' },
   }),
 } satisfies Record<string, ModelProfile>
+
+/**
+ * Built-ins that were removed from PROFILES, and the built-in that replaced each one.
+ *
+ * A choice saved before the removal still holds the old name. Without an entry here that
+ * name finds nothing, and the feature that reads it stops until the person picks again:
+ * the day Fable 5.1 left, a Writing Voice choice saved on it refused every draft. When a
+ * preset is removed, add it here in the same change. The type keeps every replacement a
+ * preset that still ships, so removing one later forces its entries to be repointed.
+ */
+export const RETIRED_PROFILES = {
+  'default-fable-5.1': 'default-fable-5.2',
+  'default-fable-5.1-high': 'default-fable-5.2-high',
+} satisfies Record<string, keyof typeof PROFILES>
+
+/**
+ * The name a saved choice runs under now. `profiles` holds everything the caller can run:
+ * the built-ins and the person's own. A name found there is kept, so a person's own
+ * configuration under a retired name still wins. A retired built-in becomes its replacement.
+ * Any other name comes back unchanged, for the caller to report as unavailable.
+ */
+export function currentProfileName(name: string, profiles: Readonly<Record<string, unknown>>): string {
+  if (Object.hasOwn(profiles, name) || !Object.hasOwn(RETIRED_PROFILES, name)) return name
+  return RETIRED_PROFILES[name as keyof typeof RETIRED_PROFILES]
+}

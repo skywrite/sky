@@ -1,4 +1,11 @@
-import { KNOWN_PROVIDERS, PROFILES, resolveProfile, type ModelProfile, type ResolvedModel } from '#shared/ai/models.ts'
+import {
+  currentProfileName,
+  KNOWN_PROVIDERS,
+  PROFILES,
+  resolveProfile,
+  type ModelProfile,
+  type ResolvedModel,
+} from '#shared/ai/models.ts'
 import { loadSkyConfig } from '#shared/config/loader.ts'
 import type { SkyConfig } from '#shared/config/types.ts'
 import { WritingVoiceError } from './types.ts'
@@ -12,8 +19,9 @@ export function createWritingVoiceModel(
 ): () => ResolvedModel {
   return () => {
     const { ai } = load()
-    const name = ai.writingVoiceProfile ?? DEFAULT_WRITING_VOICE_PROFILE
     const profiles = { ...PROFILES, ...ai.profiles }
+    // A selection saved on a built-in that was since retired runs on its replacement.
+    const name = currentProfileName(ai.writingVoiceProfile ?? DEFAULT_WRITING_VOICE_PROFILE, profiles)
     const profile = Object.hasOwn(profiles, name) ? profiles[name as keyof typeof profiles] : undefined
     if (
       !profile ||

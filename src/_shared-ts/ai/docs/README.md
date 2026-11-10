@@ -1,6 +1,6 @@
 ---
 created: 2026-09-01
-updated: 2026-11-09
+updated: 2026-11-10
 ---
 
 # Model registry — roles, profiles, providers
@@ -157,6 +157,11 @@ also uses Jev to skip clearly irrelevant conversations before request extraction
   Opus 5 (2026-09-22), Opus 4.6/4.8,
   Sonnet 4.6, GPT-4o, and GPT-5.5. A chat saved under a retired profile, without a saved
   configuration of its own, opens on the chat default model (`chat/modelSettings.ts`).
+- Removing a built-in strands every saved choice that names it.
+  Add the old name and its replacement to `RETIRED_PROFILES` in `defaultProfiles.ts` in the same change;
+  `currentProfileName` reads it.
+  The Writing Voice selection is the one saved choice that follows it so far: the day Fable 5.1 was removed
+  (2026-11-09), a selection saved on it refused every draft until the person picked again.
 - GPT-6 Astra has `default-gpt-6-astra-low`, `default-gpt-6-astra-high`, and
   `default-gpt-6-astra-xhigh`, all using priority processing. The model
   id and reasoning efforts follow the

@@ -103,6 +103,7 @@ export function defineProfile<P extends Provider>(profile: ModelProfile<P>): Mod
 
 /** Built-in model profiles live in ./defaultProfiles.ts; re-exported here as part of the registry's public surface. */
 export { PROFILES }
+export { currentProfileName, RETIRED_PROFILES } from './defaultProfiles.ts'
 
 export type ProfileName = keyof typeof PROFILES
 

@@ -513,6 +513,25 @@ test('Writing Voice settings select available configurations and protect the sel
   })
 })
 
+test('Writing Voice settings show a choice saved on a retired built-in as its replacement', async () => {
+  const saved = (profiles: NonNullable<SkyConfig['ai']['profiles']>) =>
+    ({ ...CONFIG, ai: { ...CONFIG.ai, writingVoiceProfile: 'default-fable-5.1-high', profiles } }) satisfies SkyConfig
+  const selection = async (config: SkyConfig) => {
+    const app = await appWith(hostWith(config).host)
+    return ((await (await app.request('/settings/_api/settings')).json()) as SettingsData).writingVoice.profile
+  }
+  assert({
+    given:
+      'a writing model saved before its built-in was retired, alone and beside the owner’s own configuration of that name',
+    should: 'show the replacement as selected, and the owner’s own configuration when one exists',
+    actual: [
+      await selection(saved({})),
+      await selection(saved({ 'default-fable-5.1-high': { provider: 'ollama', model: 'synthetic-writer' } })),
+    ],
+    expected: ['default-fable-5.2-high', 'default-fable-5.1-high'],
+  })
+})
+
 test({ name: 'settings route - the page is the shell; without a host the api is not served' }, async () => {
   const { host } = hostWith()
   const app = await appWith(host)

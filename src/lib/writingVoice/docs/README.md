@@ -1,6 +1,6 @@
 ---
 created: 2026-09-08
-updated: 2026-11-09
+updated: 2026-11-10
 ---
 
 # Writing voice
@@ -24,7 +24,10 @@ lesson extraction, and compaction. `model.ts` reads the selection and custom pro
 definition on every call, then uses the shared registry's `resolveProfile`.
 Do not replace that read with the registry's cached `getProfile`: configurations
 created or edited during a running chat must take effect on its next voice call.
-An unavailable selection reports the setting to repair. Settings prevents deleting
+An unavailable selection reports the setting to repair.
+A selection saved on a built-in that was since retired is not unavailable: it runs on the built-in
+that replaced it (`RETIRED_PROFILES` in the registry), and Settings shows that replacement as selected.
+Settings prevents deleting
 a selected custom configuration without choosing another one first.
 
 ## Notebook records

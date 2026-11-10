@@ -121,6 +121,27 @@ test('An unavailable writing model reports the setting to repair without substit
   }
 })
 
+test('A writing model saved on a retired built-in runs on the built-in that replaced it', () => {
+  const ranAs = (profiles: NonNullable<SkyConfig['ai']['profiles']>) => {
+    const seen: ModelProfile[] = []
+    createWritingVoiceModel(
+      () => ({ ai: { ...baseAI, writingVoiceProfile: 'default-fable-5.1-high', profiles } }),
+      (profile) => {
+        seen.push(profile)
+        return { model: new MockLanguageModelV4() }
+      },
+    )()
+    return seen.map(({ model, options }) => [model, (options as { effort?: string } | undefined)?.effort ?? null])
+  }
+  assert({
+    given:
+      'a selection saved before its built-in was retired, alone and beside the owner’s own configuration of that name',
+    should: 'run the replacement at the same effort, and the owner’s own configuration when one exists',
+    actual: [ranAs({}), ranAs({ 'default-fable-5.1-high': { provider: 'ollama', model: 'synthetic-writer' } })],
+    expected: [[['claude-fable-5-2', 'high']], [['synthetic-writer', null]]],
+  })
+})
+
 test('The persisted writing model selection and custom definition are reloaded together', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'sky-voice-model-'))
   const configPath = path.join(root, 'config.jsonc')

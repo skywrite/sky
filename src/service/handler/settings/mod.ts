@@ -21,7 +21,7 @@ import {
 } from '#commands/all/audio/transcript/lib/models.ts'
 import type { WritingDraftStore } from '#lib/writingVoice/drafts.ts'
 import { DEFAULT_WRITING_VOICE_PROFILE } from '#lib/writingVoice/model.ts'
-import type { ModelProfile } from '#shared/ai/models.ts'
+import { currentProfileName, type ModelProfile } from '#shared/ai/models.ts'
 import { ENV_OVERRIDES } from '#shared/config/loader.ts'
 import type { GoogleAccountCategory, SkyConfig } from '#shared/config/types.ts'
 import type { PromptCatalog } from '#shared/prompts/catalog.ts'
@@ -673,7 +673,8 @@ function writingVoiceSettings(host: SettingsHost, config: SkyConfig): SettingsDa
     ),
   )
   return {
-    profile: config.ai.writingVoiceProfile ?? DEFAULT_WRITING_VOICE_PROFILE,
+    // A choice saved on a retired built-in shows as the preset the writer runs in its place.
+    profile: currentProfileName(config.ai.writingVoiceProfile ?? DEFAULT_WRITING_VOICE_PROFILE, candidates),
     choices: Object.entries(all).map(([name, profile]) => ({
       value: name,
       label: `${choiceLabel(name, all)} · ${PROVIDER_LABEL[profile.provider] ?? profile.provider}`,
