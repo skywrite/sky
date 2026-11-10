@@ -244,11 +244,38 @@ export function resolveProfile(profile: ModelProfile, overrides?: ModelOverrides
     }
   }
 
+  if (refusesChangedHistory(profile)) {
+    providerOptions['thinking'] = settingStaleReasoningAside(providerOptions['thinking'])
+  }
+
   if (Object.keys(providerOptions).length > 0) {
     resolved.providerOptions = { [PROVIDER_OPTIONS_KEY[profile.provider]]: providerOptions }
   }
 
   return resolved
+}
+
+/**
+ * Fable 5.2 and Mythos 5.2 tie a reply's reasoning to everything sent before it: the system
+ * prompt, the tool list and the earlier messages. When that reasoning comes back after any of
+ * those changed, they answer 400 on every account, and a retry sends the same thing again.
+ */
+function refusesChangedHistory(profile: ModelProfile): boolean {
+  return profile.provider === 'anthropic' && /^claude-(?:fable|mythos)-5-2(?:$|-\d{8}$)/.test(profile.model)
+}
+
+/**
+ * Ask the API to set aside reasoning it can no longer match and answer anyway. Chat still changes
+ * what it already sent (a thread reopened after a service restart renders its prompt again), and
+ * a refused turn stayed refused. A profile that chose its own behavior keeps it, and thinking
+ * that is not adaptive is left as written. See docs/2026-11-09-fable-5-2-refuses-a-reopened-chat.md.
+ */
+function settingStaleReasoningAside(thinking: JSONValue | undefined): JSONValue {
+  if (thinking === undefined) return { type: 'adaptive', blockBinding: { prefixMismatchBehavior: 'drop_block' } }
+  if (typeof thinking !== 'object' || thinking === null || Array.isArray(thinking)) return thinking
+  const given = thinking as Readonly<Record<string, JSONValue | undefined>>
+  if (given['type'] !== 'adaptive' || given['blockBinding'] !== undefined) return thinking
+  return { ...given, blockBinding: { prefixMismatchBehavior: 'drop_block' } }
 }
 
 /** Resolve a semantic role (e.g. `aiModel('reasoning')`) to a configured model. */

@@ -39,6 +39,8 @@ the key the provider's model reads (`PROVIDER_OPTIONS_KEY` — an
 OpenAI-compatible host such as Cerebras files under `openai`). Sampling
 overrides are dropped on thinking profiles because those models reject them
 with a 400.
+For Fable 5.2 and Mythos 5.2 it also asks the API to drop reasoning that no longer matches the request,
+instead of refusing the turn ([2026-11-09](2026-11-09-fable-5-2-refuses-a-reopened-chat.md)).
 
 A profile may declare `contextWindow` — the tokens its host serves in one
 request, when that is less than a chat may ask to read. A chat's reading
@@ -187,6 +189,9 @@ Tokens only; the invoice prices them.
 
 ## Notes
 
+- [2026-11-09](2026-11-09-fable-5-2-refuses-a-reopened-chat.md) — Fable 5.2 refuses a reply's reasoning
+  once anything sent before it changed, on every account.
+  A chat reopened after a restart failed for good; `resolveProfile` now asks the API to drop that reasoning and answer.
 - [2026-10-11](2026-10-11-reading-budget-in-model-tokens.md) — the reading
   budget counts the model's tokens: the 10-05 learned ratio had made a 1M
   window end at 500k of four-character estimates, which read as a cap.

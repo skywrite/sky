@@ -318,9 +318,9 @@ test('default-fable-5.2 profile resolves to fable 5.2 with effort/thinking optio
   })
   assert({
     given: 'its thinking option',
-    should: 'land under providerOptions.anthropic as adaptive',
+    should: 'land under providerOptions.anthropic as adaptive, set to answer after earlier content changed',
     actual: resolved.providerOptions?.['anthropic']?.['thinking'],
-    expected: { type: 'adaptive' },
+    expected: { type: 'adaptive', blockBinding: { prefixMismatchBehavior: 'drop_block' } },
   })
 })
 
@@ -340,11 +340,14 @@ test('default-fable-5.2-high profile resolves to fable 5.2 at effort high', () =
   })
   assert({
     given: 'its thinking option',
-    should: 'land under providerOptions.anthropic as adaptive',
+    should: 'land under providerOptions.anthropic as adaptive, set to answer after earlier content changed',
     actual: resolved.providerOptions?.['anthropic']?.['thinking'],
-    expected: { type: 'adaptive' },
+    expected: { type: 'adaptive', blockBinding: { prefixMismatchBehavior: 'drop_block' } },
   })
 })
+
+/** Adaptive thinking as Fable 5.2 receives it: reasoning that no longer matches is dropped, not refused. */
+const STALE_REASONING_SET_ASIDE = { type: 'adaptive', block_binding: { prefix_mismatch_behavior: 'drop_block' } }
 
 test('Fable 5.2 presets serialize adaptive thinking and native structured output', async () => {
   const requests: unknown[][] = []
@@ -400,11 +403,82 @@ test('Fable 5.2 presets serialize adaptive thinking and native structured output
     actual: { requests, summaries },
     expected: {
       requests: [
-        ['claude-fable-5-2', 'xhigh', { type: 'adaptive' }, 'json_schema', null, null, null, null],
-        ['claude-fable-5-2', 'high', { type: 'adaptive' }, 'json_schema', null, null, null, null],
+        ['claude-fable-5-2', 'xhigh', STALE_REASONING_SET_ASIDE, 'json_schema', null, null, null, null],
+        ['claude-fable-5-2', 'high', STALE_REASONING_SET_ASIDE, 'json_schema', null, null, null, null],
       ],
       summaries: ['Atlas is ready.', 'Atlas is ready.'],
     },
+  })
+})
+
+test('only the models that refuse a changed history are asked to set stale reasoning aside', () => {
+  const adaptive = { type: 'adaptive' } as const
+  const setAside = { prefixMismatchBehavior: 'drop_block' } as const
+  const profiles = [
+    defineProfile({ provider: 'anthropic', model: 'claude-fable-5-2', options: { thinking: adaptive } }),
+    defineProfile({ provider: 'anthropic', model: 'claude-fable-5-2' }),
+    defineProfile({
+      provider: 'anthropic',
+      model: 'claude-mythos-5-2',
+      options: { thinking: { type: 'adaptive', display: 'summarized' } },
+    }),
+    defineProfile({
+      provider: 'anthropic',
+      model: 'claude-fable-5-2',
+      options: { thinking: { type: 'adaptive', blockBinding: { prefixMismatchBehavior: 'error' } } },
+    }),
+    defineProfile({ provider: 'anthropic', model: 'claude-fable-5-1', options: { thinking: adaptive } }),
+    defineProfile({ provider: 'anthropic', model: 'claude-opus-5-5', options: { thinking: adaptive } }),
+  ]
+  assert({
+    given:
+      'Fable 5.2 and Mythos 5.2, which refuse replayed reasoning once earlier content changed, beside models that do not',
+    should: 'add the setting for those two only, with or without a thinking option, and keep a choice the profile made',
+    actual: profiles.map((profile) => resolveProfile(profile).providerOptions?.['anthropic']?.['thinking']),
+    expected: [
+      { type: 'adaptive', blockBinding: setAside },
+      { type: 'adaptive', blockBinding: setAside },
+      { type: 'adaptive', display: 'summarized', blockBinding: setAside },
+      { type: 'adaptive', blockBinding: { prefixMismatchBehavior: 'error' } },
+      adaptive,
+      adaptive,
+    ],
+  })
+})
+
+test('a Fable 5.2 request carries the beta header its stale-reasoning setting needs', async () => {
+  const sent: unknown[][] = []
+  const provider = createAnthropic({
+    apiKey: 'test-api-key',
+    fetch: (async (_input, init) => {
+      const request = JSON.parse(String(init?.body))
+      const betas = (new Headers(init?.headers).get('anthropic-beta') ?? '').split(',').map((beta) => beta.trim())
+      sent.push([request.thinking, betas.includes('thinking-binding-controls-2026-08-01')])
+      return Response.json({
+        id: 'msg_synthetic',
+        type: 'message',
+        role: 'assistant',
+        model: request.model,
+        content: [{ type: 'text', text: 'Atlas is ready.' }],
+        stop_reason: 'end_turn',
+        stop_sequence: null,
+        usage: { input_tokens: 10, output_tokens: 20 },
+      })
+    }) as typeof fetch,
+  })
+  const profile = getProfile('default-fable-5.2', { models: { strong: '', fast: '', transcription: '' } })
+  await generateText({
+    ...resolveProfile(profile),
+    model: provider(profile.model),
+    maxRetries: 0,
+    maxOutputTokens: 1024,
+    prompt: 'Summarize this synthetic note: Atlas is ready.',
+  })
+  assert({
+    given: 'a Fable 5.2 preset sent through the installed Anthropic adapter',
+    should: 'send the setting together with the beta header the API rejects it without',
+    actual: sent,
+    expected: [[STALE_REASONING_SET_ASIDE, true]],
   })
 })
 

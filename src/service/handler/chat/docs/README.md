@@ -1,6 +1,6 @@
 ---
 created: 2026-09-01
-updated: 2026-11-06
+updated: 2026-11-09
 ---
 
 # Chat over HTTP — a thread, its tuning, and the story of its context
@@ -466,6 +466,8 @@ a person can see and touch:
   terminal's pid — and every one becomes a thread again: in the day's list
   and the rail with its turns on the page at once, its context restored at
   its next message, and the same model, reading budget, and filing preference.
+  The restore renders the system prompt again, which Fable 5.2 refuses for a reply it already gave:
+  see [Fable 5.2 refuses a chat that was reopened](../../../../_shared-ts/ai/docs/2026-11-09-fable-5-2-refuses-a-reopened-chat.md).
   Recovery includes the full model history with tool calls and results and
   answered approval cards, including the exact edited calendar drafts; a
   continued saved chat keeps its file identity. Only ending a thread removes
