@@ -9,7 +9,7 @@ import SummaryWeek from './week.ts'
 
 const args = {
   week: '2031-W11',
-  model: 'default-fable-5.1',
+  model: 'default-fable-5.2',
   force: false,
   allowMissing: false,
   dryRun: false,

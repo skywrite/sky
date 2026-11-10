@@ -1,3 +1,5 @@
+import { createAnthropic } from '@ai-sdk/anthropic'
+import { generateText, jsonSchema, Output } from 'ai'
 import type { SkyConfig } from '#shared/config/types.ts'
 
 test('custom reasoning presets suppress unsupported sampling without an explicit thinking option', () => {
@@ -7,6 +9,7 @@ test('custom reasoning presets suppress unsupported sampling without an explicit
     defineProfile({ provider: 'anthropic', model: 'claude-sonnet-5' }),
     defineProfile({ provider: 'anthropic', model: 'claude-sonnet-5-5' }),
     defineProfile({ provider: 'anthropic', model: 'claude-haiku-5-5' }),
+    defineProfile({ provider: 'anthropic', model: 'claude-fable-5-2' }),
   ]
   assert({
     given: 'roles assigned to reasoning presets without a thinking option',
@@ -21,6 +24,7 @@ test('custom reasoning presets suppress unsupported sampling without an explicit
       [undefined, undefined, 1000],
       [undefined, undefined, 1000],
       [undefined, undefined, 1000],
+      [undefined, undefined, 1000],
     ],
   })
 })
@@ -30,6 +34,7 @@ import {
   aiModelByProfile,
   aiModelId,
   defineProfile,
+  getAllProfiles,
   getProfile,
   getRoles,
   resolveProfile,
@@ -282,13 +287,28 @@ test('default-opus-5.5 profile resolves to opus 5.5 with effort/thinking options
   })
 })
 
-test('default-fable-5.1 profile resolves to fable 5.1 with effort/thinking options', () => {
-  const resolved = aiModelByProfile('default-fable-5.1')
+test('the shipped Fable catalog replaces both 5.1 presets with 5.2', () => {
+  const profiles = getAllProfiles({ models: { strong: '', fast: '', transcription: '' } })
   assert({
-    given: 'the default-fable-5.1 profile',
-    should: 'resolve to claude-fable-5-1',
+    given: 'the built-in model catalog without user overrides',
+    should: 'offer only the Fable 5.2 presets, each with a 1M context window',
+    actual: Object.entries(profiles)
+      .filter(([name]) => name.startsWith('default-fable-'))
+      .map(([name, profile]) => [name, profile.model, profile.contextWindow]),
+    expected: [
+      ['default-fable-5.2', 'claude-fable-5-2', 1_000_000],
+      ['default-fable-5.2-high', 'claude-fable-5-2', 1_000_000],
+    ],
+  })
+})
+
+test('default-fable-5.2 profile resolves to fable 5.2 with effort/thinking options', () => {
+  const resolved = aiModelByProfile('default-fable-5.2')
+  assert({
+    given: 'the default-fable-5.2 profile',
+    should: 'resolve to claude-fable-5-2',
     actual: modelId(resolved.model),
-    expected: 'claude-fable-5-1',
+    expected: 'claude-fable-5-2',
   })
   assert({
     given: 'its effort option',
@@ -304,13 +324,13 @@ test('default-fable-5.1 profile resolves to fable 5.1 with effort/thinking optio
   })
 })
 
-test('default-fable-5.1-high profile resolves to fable 5.1 at effort high', () => {
-  const resolved = aiModelByProfile('default-fable-5.1-high')
+test('default-fable-5.2-high profile resolves to fable 5.2 at effort high', () => {
+  const resolved = aiModelByProfile('default-fable-5.2-high')
   assert({
-    given: 'the default-fable-5.1-high profile',
-    should: 'resolve to claude-fable-5-1',
+    given: 'the default-fable-5.2-high profile',
+    should: 'resolve to claude-fable-5-2',
     actual: modelId(resolved.model),
-    expected: 'claude-fable-5-1',
+    expected: 'claude-fable-5-2',
   })
   assert({
     given: 'its effort option',
@@ -323,6 +343,68 @@ test('default-fable-5.1-high profile resolves to fable 5.1 at effort high', () =
     should: 'land under providerOptions.anthropic as adaptive',
     actual: resolved.providerOptions?.['anthropic']?.['thinking'],
     expected: { type: 'adaptive' },
+  })
+})
+
+test('Fable 5.2 presets serialize adaptive thinking and native structured output', async () => {
+  const requests: unknown[][] = []
+  const provider = createAnthropic({
+    apiKey: 'test-api-key',
+    fetch: (async (_input, init) => {
+      const request = JSON.parse(String(init?.body))
+      requests.push([
+        request.model,
+        request.output_config?.effort,
+        request.thinking,
+        request.output_config?.format?.type,
+        request.temperature ?? null,
+        request.top_p ?? null,
+        request.top_k ?? null,
+        request.tool_choice?.type ?? null,
+      ])
+      return Response.json({
+        id: 'msg_synthetic',
+        type: 'message',
+        role: 'assistant',
+        model: request.model,
+        content: [{ type: 'text', text: '{"summary":"Atlas is ready."}' }],
+        stop_reason: 'end_turn',
+        stop_sequence: null,
+        usage: { input_tokens: 10, output_tokens: 20 },
+      })
+    }) as typeof fetch,
+  })
+  const summaries: string[] = []
+  for (const name of ['default-fable-5.2', 'default-fable-5.2-high']) {
+    const profile = getProfile(name, { models: { strong: '', fast: '', transcription: '' } })
+    const result = await generateText({
+      ...resolveProfile(profile, { temperature: 0, topP: 1, topK: 1 }),
+      model: provider(profile.model),
+      maxRetries: 0,
+      maxOutputTokens: 1024,
+      prompt: 'Summarize this synthetic note: Atlas is ready.',
+      output: Output.object({
+        schema: jsonSchema<{ summary: string }>({
+          type: 'object',
+          properties: { summary: { type: 'string' } },
+          required: ['summary'],
+          additionalProperties: false,
+        }),
+      }),
+    })
+    summaries.push(result.output.summary)
+  }
+  assert({
+    given: 'both Fable 5.2 presets generating structured output through the installed Anthropic adapter',
+    should: 'use the new model and requested effort without sampling parameters or forced tool calls',
+    actual: { requests, summaries },
+    expected: {
+      requests: [
+        ['claude-fable-5-2', 'xhigh', { type: 'adaptive' }, 'json_schema', null, null, null, null],
+        ['claude-fable-5-2', 'high', { type: 'adaptive' }, 'json_schema', null, null, null, null],
+      ],
+      summaries: ['Atlas is ready.', 'Atlas is ready.'],
+    },
   })
 })
 

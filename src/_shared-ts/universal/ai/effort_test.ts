@@ -82,6 +82,22 @@ test('effort levels for Haiku 5.5', () => {
   })
 })
 
+test('Fable 5.2 supports all effort levels with high as its API default', () => {
+  for (const model of ['claude-fable-5-2', 'claude-fable-5-2-20261109']) {
+    const profile = { provider: 'anthropic', model, options: { thinking: { type: 'adaptive' } } }
+    assert({
+      given: 'Fable 5.2 or a dated snapshot with no explicit effort',
+      should: 'offer all five effort overrides and inherit high by default',
+      actual: [
+        effortLevels(profile),
+        modelDefaultEffort(profile),
+        EFFORTS.map((effort) => optionsWithEffort(profile, effort)),
+      ],
+      expected: [EFFORTS, 'high', EFFORTS.map((effort) => ({ thinking: { type: 'adaptive' }, effort }))],
+    })
+  }
+})
+
 test('effort levels for GPT-6.1 Sol', () => {
   assert({
     given: 'the GPT-6.1 Sol model with no preset effort',
@@ -105,7 +121,7 @@ test('inherited effort resolves the known API default without setting preset opt
     should: 'use each model family’s API default',
     actual: [
       modelDefaultEffort({ provider: 'anthropic', model: 'claude-opus-5-5-20260922' }),
-      modelDefaultEffort({ provider: 'anthropic', model: 'claude-fable-5-1' }),
+      modelDefaultEffort({ provider: 'anthropic', model: 'claude-fable-5-2' }),
       modelDefaultEffort({ provider: 'anthropic', model: 'claude-sonnet-5-5-20260928' }),
       modelDefaultEffort({ provider: 'openai', model: 'gpt-6.1-sol-20260929' }),
     ],

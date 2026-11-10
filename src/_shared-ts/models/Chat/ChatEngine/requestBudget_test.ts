@@ -272,7 +272,7 @@ test('the real Claude adapter counts and refits before its first generation requ
     }) as typeof fetch),
   })
   const engine = new ChatEngine({
-    model: { model: provider('claude-fable-5-1'), contextWindow: 6000, maxOutputTokens: 500 },
+    model: { model: provider('claude-fable-5-2'), contextWindow: 6000, maxOutputTokens: 500 },
     approvalHandler: async () => ({ approved: false, reason: '' }),
   })
   const notebook = 'Source text. '.repeat(1500)

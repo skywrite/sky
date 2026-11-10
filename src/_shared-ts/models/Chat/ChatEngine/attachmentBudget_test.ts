@@ -71,7 +71,7 @@ test('the real Claude adapter recovers oversized saved history and a new batch b
     }) as typeof fetch),
   })
   const options = {
-    model: { model: provider('claude-fable-5-1'), contextWindow: 10000, maxOutputTokens: 200 },
+    model: { model: provider('claude-fable-5-2'), contextWindow: 10000, maxOutputTokens: 200 },
     approvalHandler: async () => ({ approved: false, reason: '' }),
   }
   const history: ModelMessage[] = [

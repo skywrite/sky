@@ -737,7 +737,7 @@ export function profileLabel(profile: Pick<ModelProfile, 'model' | 'label'>): st
 /**
  * A profile's line where models are listed: its label when it has one, else the model's
  * name, and when another unlabeled profile runs the same model, the effort that tells them
- * apart — `Claude Fable 5.1 · xhigh` beside `Claude Fable 5.1 · high`. A model only one
+ * apart — `Claude Fable 5.2 · xhigh` beside `Claude Fable 5.2 · high`. A model only one
  * profile runs keeps its bare name.
  */
 export function choiceLabel(name: string, all: Record<string, ModelProfile>): string {

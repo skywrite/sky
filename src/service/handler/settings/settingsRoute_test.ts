@@ -499,7 +499,7 @@ test('Writing Voice settings select available configurations and protect the sel
       profileDeletes,
     ],
     expected: [
-      'default-fable-5.1-high',
+      'default-fable-5.2-high',
       ['default-opus-5.5', 'my-writer'],
       200,
       400,
@@ -724,14 +724,14 @@ test({ name: 'choiceLabel - a labeled profile shows its label, and its unlabeled
 
 test({ name: 'choiceLabel - two profiles on one model carry their effort; a lone one keeps the bare name' }, () => {
   const all = {
-    'default-fable-5.1': {
+    'default-fable-5.2': {
       provider: 'anthropic',
-      model: 'claude-fable-5-1',
+      model: 'claude-fable-5-2',
       options: { effort: 'xhigh', thinking: { type: 'adaptive' } },
     },
-    'default-fable-5.1-high': {
+    'default-fable-5.2-high': {
       provider: 'anthropic',
-      model: 'claude-fable-5-1',
+      model: 'claude-fable-5-2',
       options: { effort: 'high', thinking: { type: 'adaptive' } },
     },
     'default-opus-5.5': { provider: 'anthropic', model: 'claude-opus-5-5', options: { effort: 'xhigh' } },
@@ -739,12 +739,12 @@ test({ name: 'choiceLabel - two profiles on one model carry their effort; a lone
     mine: { provider: 'openai', model: 'gpt-5.5' },
   } as unknown as Parameters<typeof choiceLabel>[1]
   assert({
-    given: 'a catalog where Fable 5.1 appears twice, once at each effort, and Opus 5.5 once',
+    given: 'a catalog where Fable 5.2 appears twice, once at each effort, and Opus 5.5 once',
     should: 'tell the twins apart by effort and leave the lone model bare',
     actual: Object.keys(all).map((name) => choiceLabel(name, all)),
     expected: [
-      'Claude Fable 5.1 · xhigh',
-      'Claude Fable 5.1 · high',
+      'Claude Fable 5.2 · xhigh',
+      'Claude Fable 5.2 · high',
       'Claude Opus 5.5',
       'GPT 5.5 · xhigh',
       'GPT 5.5 · mine',

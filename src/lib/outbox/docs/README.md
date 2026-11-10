@@ -1,6 +1,6 @@
 ---
 created: 2026-09-06
-updated: 2026-10-25
+updated: 2026-11-09
 ---
 
 # Outbox — decisions prepared from saved conversations
@@ -98,7 +98,7 @@ The message scanner consumes saved Slack/email conversations and observes actual
 
 ## Following through on an approved reply
 
-After a confirmed native handoff, `followups.ts` uses the same Fable 5.1 high profile to read
+After a confirmed native handoff, `followups.ts` uses the same Fable 5.2 high profile to read
 the **final approved wording**, communication preferences, and the original
 conversation. An explicit promise to ask or tell another named person produces
 that person's actual draft. Merely mentioning someone, proposing a hypothetical,

@@ -1,6 +1,6 @@
 ---
 created: 2026-09-01
-updated: 2026-10-25
+updated: 2026-11-09
 ---
 
 # Model registry — roles, profiles, providers
@@ -151,7 +151,8 @@ also uses Jev to skip clearly irrelevant conversations before request extraction
   ([2026-10-24](2026-10-24-chat-opens-on-sol-ultrafast.md)).
 - Superseded profiles stay in the catalog unless explicitly retired: a
   person's config or a command flag may still name them. The retired
-  built-ins are Haiku 4.5 (2026-10-08), Sonnet 5 (2026-09-28), Opus 5 (2026-09-22), Opus 4.6/4.8,
+  built-ins are Fable 5.1 (2026-11-09), Haiku 4.5 (2026-10-08), Sonnet 5 (2026-09-28),
+  Opus 5 (2026-09-22), Opus 4.6/4.8,
   Sonnet 4.6, GPT-4o, and GPT-5.5. A chat saved under a retired profile, without a saved
   configuration of its own, opens on the chat default model (`chat/modelSettings.ts`).
 - GPT-6 Astra has `default-gpt-6-astra-low`, `default-gpt-6-astra-high`, and

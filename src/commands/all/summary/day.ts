@@ -47,7 +47,7 @@ const PREVIOUS_HOPS = 2
 
 // The summary is the day's canonical record and feeds every downstream
 // consumer — worth the top-tier model.
-const DEFAULT_PROFILE = 'default-fable-5.1'
+const DEFAULT_PROFILE = 'default-fable-5.2'
 
 // What a run ended by the host's Stop (context.signal) reports; nothing
 // reaches summary.md.

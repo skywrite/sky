@@ -3,7 +3,7 @@ import { loadSkyConfig } from '#shared/config/loader.ts'
 import type { SkyConfig } from '#shared/config/types.ts'
 import { WritingVoiceError } from './types.ts'
 
-export const DEFAULT_WRITING_VOICE_PROFILE = 'default-fable-5.1-high'
+export const DEFAULT_WRITING_VOICE_PROFILE = 'default-fable-5.2-high'
 
 /** Read both the selection and its definition on each call, including in existing chats. */
 export function createWritingVoiceModel(

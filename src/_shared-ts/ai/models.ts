@@ -192,7 +192,7 @@ function thinkingEnabled(profile: ModelProfile): boolean {
   if (profile.provider === 'openai' && /^gpt-6(?:-astra|\.1-sol)(?:$|-)/.test(profile.model)) return true
   if (
     profile.provider === 'anthropic' &&
-    /^claude-(?:opus-5(?:-5)?|sonnet-5(?:-5)?|fable-5(?:-1)?|haiku-5-5)(?:$|-\d{8}$)/.test(profile.model)
+    /^claude-(?:opus-5(?:-5)?|sonnet-5(?:-5)?|fable-5(?:-[12])?|haiku-5-5)(?:$|-\d{8}$)/.test(profile.model)
   )
     return true
   const thinking = (profile.options as { thinking?: { type?: string } } | undefined)?.thinking

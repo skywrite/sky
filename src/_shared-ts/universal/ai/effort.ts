@@ -55,7 +55,7 @@ export function effortLevels(profile: EffortProfile): readonly Effort[] {
   if (profile.provider === 'anthropic') {
     // https://platform.claude.com/docs/en/build-with-claude/effort
     if (
-      /^claude-(?:opus-(?:5(?:-5)?|4-[78])|sonnet-5(?:-5)?|fable-5(?:-1)?|mythos-5(?:-1)?|haiku-5-5)(?:$|-\d{8}$)/.test(
+      /^claude-(?:opus-(?:5(?:-5)?|4-[78])|sonnet-5(?:-5)?|fable-5(?:-[12])?|mythos-5(?:-1)?|haiku-5-5)(?:$|-\d{8}$)/.test(
         profile.model,
       )
     )

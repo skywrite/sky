@@ -45,7 +45,7 @@ test(
     )
     const app = new Hono()
     app.route('/settings/_api/writing-voice', createWritingVoiceRoutes(drafts))
-    let writingProfile = 'default-fable-5.1-high'
+    let writingProfile = 'default-fable-5.2-high'
     app.get('/settings/_api/settings', (c) =>
       c.json({
         theme: 'light',
@@ -53,7 +53,7 @@ test(
         writingVoice: {
           profile: writingProfile,
           choices: [
-            { value: 'default-fable-5.1-high', label: 'Claude Fable 5.1 - High' },
+            { value: 'default-fable-5.2-high', label: 'Claude Fable 5.2 - High' },
             { value: 'sample-writer', label: 'Sample writer' },
           ],
         },
@@ -61,7 +61,7 @@ test(
     )
     app.post('/settings/_api/set', async (c) => {
       const { key, value } = await c.req.json()
-      if (key !== 'ai.writingVoiceProfile' || !['default-fable-5.1-high', 'sample-writer'].includes(value))
+      if (key !== 'ai.writingVoiceProfile' || !['default-fable-5.2-high', 'sample-writer'].includes(value))
         return c.json({ message: 'Unknown setting or model' }, 400)
       writingProfile = value
       return c.json({ ok: true })

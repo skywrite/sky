@@ -24,13 +24,15 @@ function savedUnder(profile: string, effort = 'high', modelConfig?: unknown): Th
 }
 
 test('restoredModelPrefs - a chat saved under a retired profile opens on the default model', () => {
-  const prefs = restoredModelPrefs({}, savedUnder('default-haiku-4.5'), catalog)
-  assert({
-    given: 'a saved chat set to a profile the catalog no longer has, with no configuration of its own',
-    should: 'open on the default model at its default effort, still locked to the conversation',
-    actual: [prefs.profile, prefs.effort, prefs.modelSettingsLocked],
-    expected: ['default-opus-5.5', 'default', true],
-  })
+  for (const profile of ['default-haiku-4.5', 'default-fable-5.1', 'default-fable-5.1-high']) {
+    const prefs = restoredModelPrefs({}, savedUnder(profile), catalog)
+    assert({
+      given: 'a saved chat set to a profile the catalog no longer has, with no configuration of its own',
+      should: 'open on the default model at its default effort, still locked to the conversation',
+      actual: [prefs.profile, prefs.effort, prefs.modelSettingsLocked],
+      expected: ['default-opus-5.5', 'default', true],
+    })
+  }
 })
 
 test('restoredModelPrefs - known profiles and saved configurations stay as they were', () => {

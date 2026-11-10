@@ -70,10 +70,10 @@ test('An existing writing agent uses the current model selection and definition 
   await writer.learn(example)
   ai = {
     ...ai,
-    writingVoiceProfile: 'default-fable-5.1-high',
+    writingVoiceProfile: 'default-fable-5.2-high',
     profiles: {
       ...ai.profiles,
-      'default-fable-5.1-high': { provider: 'ollama', model: 'synthetic-override' },
+      'default-fable-5.2-high': { provider: 'ollama', model: 'synthetic-override' },
     },
   }
   response = { lessons: [], covered: [] }
@@ -84,7 +84,7 @@ test('An existing writing agent uses the current model selection and definition 
       'use the default initially and resolve the current definition for drafting, questions, learning, and compaction',
     actual: seen.map(({ model, options }) => [model, options?.temperature ?? null]),
     expected: [
-      ['claude-fable-5-1', null],
+      ['claude-fable-5-2', null],
       ['synthetic-writer-one', 0.2],
       ['synthetic-writer-two', 0.4],
       ['synthetic-override', null],
@@ -143,7 +143,7 @@ test('The persisted writing model selection and custom definition are reloaded t
       given: 'model selections and profile edits saved through the actual config writer',
       should: 'load the saved selection and current definition without rebuilding the writing agent',
       actual: seen,
-      expected: ['claude-fable-5-1', 'synthetic-one', 'synthetic-two'],
+      expected: ['claude-fable-5-2', 'synthetic-one', 'synthetic-two'],
     })
   } finally {
     await rm(root, { recursive: true, force: true })

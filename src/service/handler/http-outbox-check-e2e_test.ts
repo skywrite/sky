@@ -84,7 +84,7 @@ test(
           check: await job.status(),
           search: await store.scanRange('2025-03-15'),
           today: '2025-03-15',
-          modelLabel: 'Fable 5.1 · High',
+          modelLabel: 'Fable 5.2 · High',
         }),
         scan: async (selection) => {
           if (selection) await store.saveScanRange(selection.range, selection.revision, '2025-03-15')
@@ -150,7 +150,7 @@ test(
       await page.reload()
       await page.getByRole('status').filter({ hasText: 'Checked through Sat 15 Mar, 17:45' }).waitFor()
       await page.getByText('What Sky checked', { exact: false }).click()
-      await page.getByText('Fable 5.1 · High', { exact: true }).waitFor()
+      await page.getByText('Fable 5.2 · High', { exact: true }).waitFor()
       await page.getByText('The selected range is checked.', { exact: false }).waitFor()
       if (env.get('SKY_BROWSER_SCREENSHOT'))
         await page.screenshot({ path: env.get('SKY_BROWSER_SCREENSHOT')!, fullPage: true })

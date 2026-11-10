@@ -118,7 +118,7 @@ test('ongoing review, reporting and independent verification share the configure
 test('the ongoing named profile can be overridden with Fable without changing its provider settings', async () => {
   const profile = models.defineProfile({
     provider: 'anthropic',
-    model: 'claude-fable-5-1',
+    model: 'claude-fable-5-2',
     options: { effort: 'high', thinking: { type: 'adaptive' } },
   })
   const selected = spyOn(models, 'getProfile').mockReturnValue(profile)

@@ -1,6 +1,6 @@
 ---
 created: 2026-09-08
-updated: 2026-10-21
+updated: 2026-11-09
 ---
 
 # Writing voice
@@ -19,7 +19,7 @@ communications call the same writer. Chat's shared system prompt routes personal
 drafting and accepted revisions to this tool, including when a built-in prompt is customized.
 
 Settings > Writing Voice selects `ai.writingVoiceProfile` in the app configuration.
-It defaults to `default-fable-5.1-high` and applies to drafting, question generation,
+It defaults to `default-fable-5.2-high` and applies to drafting, question generation,
 lesson extraction, and compaction. `model.ts` reads the selection and custom profile
 definition on every call, then uses the shared registry's `resolveProfile`.
 Do not replace that read with the registry's cached `getProfile`: configurations

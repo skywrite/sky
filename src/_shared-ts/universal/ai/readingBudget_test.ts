@@ -68,7 +68,7 @@ test({ name: 'readingBudget - a budget the window cannot take drops to the highe
 
 test({ name: "readingBudget - the slider counts the model's tokens, so a 1M window reaches 750k" }, () => {
   assert({
-    given: 'the 1M windows of Opus 5.5 and Fable 5.1, and GPT-6.1 Sol’s 1.05M',
+    given: 'the 1M windows of Opus 5.5 and Fable 5.2, and GPT-6.1 Sol’s 1.05M',
     should: 'reach the last stop and keep a 750k budget whole',
     actual: [
       STOPS[reachIndex(1_000_000)],

@@ -8,7 +8,7 @@ test({ name: 'tokenRatio - seeds by model family, default for the unknown' }, ()
       'seed the Opus 4.7 tokenizer family high (Haiku 5.5 with it), Haiku 4.5 and GPT-6 lower, and an unknown model at the old slack',
     actual: [
       'claude-opus-5-5',
-      'claude-fable-5-1',
+      'claude-fable-5-2',
       'claude-sonnet-5-5',
       'claude-haiku-5-5',
       'claude-haiku-4-5',

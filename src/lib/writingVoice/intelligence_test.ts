@@ -66,7 +66,7 @@ test('Every writing-voice operation uses arrays accepted by the Anthropic struct
       })
     }) as typeof fetch,
   })
-  const resolved = { model: provider('claude-fable-5-1'), maxRetries: 0 }
+  const resolved = { model: provider('claude-fable-5-2'), maxRetries: 0 }
   let legacyError = ''
   try {
     await generateText({
