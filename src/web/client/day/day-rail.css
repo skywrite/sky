@@ -167,6 +167,58 @@
   white-space: nowrap;
 }
 
+/* A meeting's people line ends with whether it is filed. The names give way to it:
+   a mark at the end of a cut-off line would be cut off with it. */
+.sky-dr-meeting-who {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.sky-dr-people {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Filed is quiet; not filed turns amber once the meeting is over, like an import that needs you. */
+.sky-dr-filing {
+  flex: none;
+  font-family: var(--mantine-font-family-monospace);
+  font-size: 11.5px;
+  color: var(--sky-dim);
+  text-decoration: none;
+}
+
+a.sky-dr-filing:hover {
+  text-decoration: underline;
+}
+
+.sky-dr-filing svg {
+  margin-right: 4px;
+  vertical-align: -1px;
+}
+
+.sky-dr-filing[data-filing='due'] {
+  color: var(--sky-amber);
+}
+
+.sky-dr-filing:not([data-filing='filed'])::before {
+  content: '';
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: currentColor;
+  margin-right: 5px;
+  vertical-align: 1px;
+}
+
+.sky-dr-item[data-dragging] .sky-dr-filing {
+  color: inherit;
+}
+
 .sky-dr-item[data-state='now'] {
   background: var(--sky-accent-soft);
   margin: 0 -8px;

@@ -222,6 +222,37 @@ function ImportMark({ job, name, onOpen }: { job: ImportJob; name: string; onOpe
   )
 }
 
+/**
+ * The end of a meeting's people line: `filed` opens its notes, and `not filed`
+ * turns amber once the meeting is over. Before then it stays gray.
+ */
+function FilingMark({ meeting: m }: { meeting: ScheduledMeeting }) {
+  if (m.record)
+    return (
+      <a className="sky-dr-filing" data-filing="filed" href={meetingHref(m.record.path) ?? fileHref(m.record.path)}>
+        <svg
+          width="10"
+          height="10"
+          viewBox="0 0 10 10"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.6"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
+          <path d="M1.5 5.4 4 7.8 8.6 2.4" />
+        </svg>
+        filed
+      </a>
+    )
+  return (
+    <span className="sky-dr-filing" data-filing={m.state === 'past' ? 'due' : 'waiting'}>
+      not filed
+    </span>
+  )
+}
+
 function MeetingRow({
   meeting: m,
   ymd,
@@ -253,10 +284,9 @@ function MeetingRow({
   }
   const canDrop = Boolean(!notification && onImportMeeting && m.state === 'past' && !m.record && !m.allDay && m.start)
   const drop = useFileDrop(canDrop, (files) => onImportMeeting?.(files, { title: m.title, when: `${ymd} ${m.start}` }))
-  const missing = m.state === 'past' && !m.record && !notification && !importing && !m.allDay
-  const whoText = [whoLine(m.who), m.state === 'now' && !m.allDay ? `until ${m.end}` : '', missing ? 'no notes' : '']
-    .filter(Boolean)
-    .join(' · ')
+  // A running import says where it is in the mark instead.
+  const showsFiling = !notification && !m.allDay && !importing
+  const whoText = [whoLine(m.who), m.state === 'now' && !m.allDay ? `until ${m.end}` : ''].filter(Boolean).join(' · ')
   return (
     <div
       className="sky-dr-item"
@@ -289,7 +319,7 @@ function MeetingRow({
               ''
             )
           ) : m.state === 'past' ? (
-            // The title opens the record; a past meeting without one says "no notes" on the who line.
+            // Whether it is filed ends the people line.
             ''
           ) : m.state === 'now' ? (
             m.joinUrl ? (
@@ -344,7 +374,12 @@ function MeetingRow({
           </Menu>
         )}
       </span>
-      {whoText && <span className="sky-dr-who">{whoText}</span>}
+      {(whoText || showsFiling) && (
+        <span className="sky-dr-who sky-dr-meeting-who">
+          <span className="sky-dr-people">{whoText}</span>
+          {showsFiling && <FilingMark meeting={m} />}
+        </span>
+      )}
       {error && (
         <span className="sky-dr-event-error" role="alert">
           {error}

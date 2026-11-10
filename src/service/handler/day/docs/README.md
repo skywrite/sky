@@ -1,6 +1,6 @@
 ---
 created: 2026-09-03
-updated: 2026-11-08
+updated: 2026-11-09
 ---
 
 # The day's items, the day's rail, and the day's files
@@ -476,8 +476,11 @@ scrolls; its foot is anchored.
   the calendar's display name, falling back to the address. Names are never
   guessed from email handles. Contact and score edits are picked up on the
   next schedule refresh.
-  A timed past meeting with no record says `no notes` beside its people. It
-  takes a transcript or recording drop: the row lights blue and opens the
+  Each timed meeting ends its people line with whether it is filed: `filed`
+  opens the record, and `not filed` turns amber once the meeting is over,
+  gray before then. The names are cut short first, never the mark.
+  A timed past meeting with no record takes a transcript or recording drop:
+  the row lights blue and opens the
   shared import dialog for that
   slot. The section heading and the blank space below its rows, before Chats, import an
   unscheduled meeting on the viewed day, with an editable suggested time;

@@ -68,6 +68,7 @@ test(
                   end: '11:30',
                   record: { path: DAY_DOC, title: 'Widget review', inline: true },
                 },
+                { ...meeting, title: 'Atlas retro', start: '16:00', end: '16:30', state: 'next' },
               ],
             },
           }),
@@ -75,6 +76,22 @@ test(
         await page.setViewportSize({ width: 1400, height: 900 })
         await page.goto(`${origin}/${DAY.ymd}`)
         await page.waitForSelector(ROW)
+        const filing = (title: string) =>
+          page
+            .locator('.sky-rail [data-section="meetings"] .sky-dr-item', { hasText: title })
+            .locator('.sky-dr-filing')
+            .evaluate((mark) => [mark.textContent, mark.getAttribute('data-filing'), getComputedStyle(mark).color])
+        const [due, filed, waiting] = [
+          await filing('Atlas sync'),
+          await filing('Widget review'),
+          await filing('Atlas retro'),
+        ]
+        assert({
+          given: 'a past meeting without notes, a past one with notes and one still to come',
+          should: 'end each people line with filed or not filed, amber only once the meeting is over',
+          actual: [due.slice(0, 2), filed.slice(0, 2), waiting.slice(0, 2), due[2] !== waiting[2]],
+          expected: [['not filed', 'due'], ['filed', 'filed'], ['not filed', 'waiting'], true],
+        })
         const recap = { name: 'recap.vtt', type: 'text/vtt', text: TRANSCRIPT }
 
         await dispatchFileDrag(page, '.sky-day .sky-col', recap)
