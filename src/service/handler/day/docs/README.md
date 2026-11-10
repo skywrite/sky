@@ -275,6 +275,9 @@ height cap. See [2026-09-05 — larger type without clipped tasks](2026-09-05-la
 An OS input monitor offers the last notebook day's review after returning from five idle hours across a calendar date.
 Settings → Me → About me changes the idle hours live; zero disables automatic prompts.
 Browser polls are not activity, and service downtime alone is not evidence of sleep.
+Time asleep counts as away: the idle timer does not count it and a closed Mac wakes itself every few minutes,
+so only input made after the last wake moves the last-input time
+([2026-11-09 — a closed Mac is still away](2026-11-09-a-closed-mac-is-still-away.md)).
 The prompt showing is the morning, so it also starts the waiting day with no press, through Start's own route,
 once however many tabs show it.
 The dialog says the day has started, or why it couldn't, with Try again; a review opened from a page starts nothing.

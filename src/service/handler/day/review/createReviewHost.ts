@@ -3,7 +3,7 @@ import { getManifest } from '#commands/all/cli/_commandsManifest.ts'
 import { findRecapFile } from '#commands/all/recap/lib/writeRecapFile.ts'
 import CommandContext from '#commands/lib/core/CommandContext.ts'
 import CommandService from '#commands/lib/core/CommandService.ts'
-import { getDarwinIdleMs, isCommandAvailable, runCommand } from '#lib/sys/mod.ts'
+import { getDarwinIdleMs, getDarwinWakeMs, isCommandAvailable, runCommand } from '#lib/sys/mod.ts'
 import type * as ConfigModule from '#shared/config.ts'
 import { loadSkyConfig } from '#shared/config/loader.ts'
 import { exists } from '#shared/fs/mod.ts'
@@ -20,17 +20,28 @@ export function createReviewRuntime(config: typeof ConfigModule, env: Record<str
     if (sampling) return
     sampling = true
     try {
-      const [idleMs, clock] = await Promise.all([
+      // The clock is read first: readings the Mac slept between then make the idle timer look older, never newer.
+      const now = Instant.from(instantNow()).epochMilliseconds
+      const [idleMs, wokeAt, clock] = await Promise.all([
         getDarwinIdleMs(),
+        getDarwinWakeMs(),
         fetchNow({ timeDir: config.DIR_TIME }).catch(() => null),
       ])
-      await idle.sample(
-        Instant.from(instantNow()).epochMilliseconds,
+      const back = await idle.sample(
+        now,
         idleMs,
         clock?.plainDateTime.date ?? null,
         PlainDate.today().ymd,
         loadSkyConfig().dayReview?.idleHours ?? 5,
+        wokeAt,
       )
+      // One line a morning: what the check measured, for the day a prompt is missed or unexpected.
+      if (back) {
+        const hours = (back.awayMs / 3_600_000).toFixed(1)
+        console.log(
+          `Day review: back after ${hours} hours away; ${back.offered ? `offering ${back.offered}` : 'no day to offer'}`,
+        )
+      }
     } catch (error) {
       console.warn('Day review idle check:', (error as Error).message)
     } finally {
