@@ -10,6 +10,7 @@ function retryable(error: unknown): boolean {
 function prelude(part: LanguageModelV4StreamPart): boolean {
   return (
     part.type === 'stream-start' ||
+    part.type === 'ping' ||
     part.type === 'response-metadata' ||
     part.type === 'reasoning-start' ||
     part.type === 'reasoning-delta' ||

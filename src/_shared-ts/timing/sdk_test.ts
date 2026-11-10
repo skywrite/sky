@@ -1,5 +1,5 @@
-import { APICallError, generateText, isStepCount, jsonSchema, streamText } from 'ai'
-import { MockLanguageModelV3 } from 'ai/test'
+import { APICallError, generateText, isStepCount, jsonSchema, simulateReadableStream, streamText } from 'ai'
+import { MockLanguageModelV3, MockLanguageModelV4 } from 'ai/test'
 import { assert, test } from '#test'
 import { currentTimingSpan, TimingSpan, withTiming, withTimingEnvironment, type TimingEvent } from './mod.ts'
 import { createTimingTelemetry } from './sdk.ts'
@@ -113,6 +113,40 @@ test('SDK tracing measures streamed bodies and nested tool/model execution witho
         outcome: 'success',
         after: true,
       },
+    })
+  })
+})
+
+test('SDK tracing marks an interrupted stream incomplete and preserves its partial reply', async () => {
+  const events: TimingEvent[] = []
+  const model = new MockLanguageModelV4({
+    doStream: async () => ({
+      stream: simulateReadableStream({
+        chunks: [
+          { type: 'stream-start', warnings: [] },
+          { type: 'ping' },
+          { type: 'text-start', id: 'partial' },
+          { type: 'text-delta', id: 'partial', delta: 'Partial reply' },
+          { type: 'text-end', id: 'partial' },
+          { type: 'finish', finishReason: { unified: 'interrupted', raw: undefined }, usage: USAGE },
+        ],
+        initialDelayInMs: null,
+        chunkDelayInMs: null,
+      }),
+    }),
+  })
+  await withTimingEnvironment({ now: () => performance.now(), sink: (event) => events.push(event) }, async () => {
+    const result = streamText({
+      model,
+      prompt: 'Read the example.',
+      telemetry: { integrations: [createTimingTelemetry()] },
+    })
+    const text = await result.text
+    assert({
+      given: 'a provider stream that ends with interrupted instead of an error',
+      should: 'preserve the partial text and finish its span once as incomplete',
+      actual: [text, events.filter((event) => event.event === 'timing-end').map((event) => event.span.outcome)],
+      expected: ['Partial reply', ['incomplete']],
     })
   })
 })

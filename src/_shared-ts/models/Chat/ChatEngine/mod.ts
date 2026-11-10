@@ -624,6 +624,9 @@ export default class ChatEngine {
             error: streamError,
             usage: await stream.totalUsage,
           }
+          // Interrupted streams retain partial output without firing onError.
+          if (result.error === undefined && (await stream.finishReason) === 'interrupted')
+            result.error = new Error('The model response was interrupted before it finished. Ask Sky to continue.')
           // A closing step that called tools anyway wrote nothing — the
           // cut must still be said, so the engine says it.
           if (closingAt !== undefined && cutShort && roundPieces === piecesAtClosing) sink.write(closingLine(cutShort))

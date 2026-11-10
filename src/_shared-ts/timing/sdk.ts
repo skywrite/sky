@@ -36,8 +36,13 @@ function timedStream(stream: ReadableStream<unknown>, span: TimingSpan): Readabl
           if (part.type === 'text-delta' || part.type === 'reasoning-delta' || part.type === 'tool-input-delta')
             span.firstOutput()
           if (part.type === 'error') span.finish('error')
-          if (part.type === 'finish')
-            span.finish(part.finishReason?.unified === 'error' ? 'error' : 'success', usageOf(part.usage))
+          if (part.type === 'finish') {
+            const reason = part.finishReason?.unified
+            span.finish(
+              reason === 'interrupted' ? 'incomplete' : reason === 'error' ? 'error' : 'success',
+              usageOf(part.usage),
+            )
+          }
         }
         controller.enqueue(value)
       } catch (error) {

@@ -12,7 +12,7 @@ const failure = (message = 'The example provider is busy.', isRetryable = true) 
   statusCode: isRetryable ? 503 : 400,
   isRetryable,
 })
-const finish = (unified: 'stop' | 'tool-calls' | 'error'): LanguageModelV4StreamPart => ({
+const finish = (unified: 'stop' | 'tool-calls' | 'error' | 'interrupted'): LanguageModelV4StreamPart => ({
   type: 'finish',
   finishReason: { unified, raw: undefined },
   usage: {
@@ -44,6 +44,7 @@ test('chat retries only the failed model step and keeps completed tools and succ
     doStream: [
       step([{ type: 'tool-call', toolCallId: 'save-one', toolName: 'save', input: '{}' }, finish('tool-calls')]),
       step([
+        { type: 'ping' },
         { type: 'reasoning-start', id: 'discarded' },
         { type: 'reasoning-delta', id: 'discarded', delta: 'Discarded reasoning.' },
         { type: 'error', error: failure() },
@@ -95,6 +96,67 @@ test('chat retries only the failed model step and keeps completed tools and succ
       discarded: false,
       tools: ['ok'],
       completed: 'turn-complete',
+    },
+  })
+})
+
+test('an interrupted reply preserves completed tools and partial text without retrying', async () => {
+  let writes = 0
+  const events: ChatEngineEvent[] = []
+  const model = new MockLanguageModelV4({
+    doStream: [
+      step([{ type: 'tool-call', toolCallId: 'save-one', toolName: 'save', input: '{}' }, finish('tool-calls')]),
+      step([
+        { type: 'text-start', id: 'partial' },
+        { type: 'text-delta', id: 'partial', delta: 'The example is saved, but' },
+        { type: 'text-end', id: 'partial' },
+        finish('interrupted'),
+      ]),
+    ],
+  })
+  const engine = new ChatEngine({
+    model: { model },
+    approvalHandler: async () => ({ approved: false, reason: 'Unused.' }),
+    onEvent: (event) => events.push(event),
+  })
+  engine.appendUserMessage('Save the example.')
+  let error: unknown
+  try {
+    await engine.runTurn({
+      ...options,
+      tools: {
+        save: {
+          inputSchema: jsonSchema({ type: 'object', properties: {} }),
+          execute: async () => {
+            writes++
+            return { saved: true }
+          },
+        },
+      },
+    })
+  } catch (caught) {
+    error = caught
+  }
+  assert({
+    given: 'a completed write followed by an interrupted reply without a stream error',
+    should: 'report the unfinished response, retain its text and tool receipt, and avoid replaying the write',
+    actual: {
+      writes,
+      calls: model.doStreamCalls.length,
+      message: error instanceof TurnError && error.message,
+      partial: error instanceof TurnError && error.partialText,
+      tools: error instanceof TurnError && error.toolRecords.map((record) => record.outcome),
+      receipt: JSON.stringify(engine.snapshotMessages()).includes('save-one'),
+      completed: events.some((event) => event.type === 'turn-complete'),
+    },
+    expected: {
+      writes: 1,
+      calls: 2,
+      message: 'The model response was interrupted before it finished. Ask Sky to continue.',
+      partial: 'The example is saved, but',
+      tools: ['ok'],
+      receipt: true,
+      completed: false,
     },
   })
 })
