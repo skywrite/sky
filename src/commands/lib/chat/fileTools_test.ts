@@ -12,6 +12,7 @@ import * as path from 'node:path'
 import { toolModelMessageSchema } from 'ai'
 import { makeTempDir, readDir } from '#shared/fs/mod.ts'
 import type { Attachment } from '#shared/models/Markdown/Document/attachment.ts'
+import notebookDayDir from '#shared/nbfs/dayDir.ts'
 import { assert, test } from '#test'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import {
@@ -216,6 +217,132 @@ test('readFile - re-reading the same file keeps one copy; a missing path and a d
       recorded: [{ file: '2026-01-27_Chat_notes.txt' }, { file: '2026-01-27_Chat_notes.txt' }],
       missing: { success: false, error: `No such file: ${path.join(cwd, 'missing.txt')}` },
       directory: { success: false, error: `${path.join(cwd, 'folder')} is a directory — name a file` },
+    },
+  })
+})
+
+/** File a document under a day's attachments, the way a capture does; a note then records only its name. */
+async function fileAttachment(attachmentsRoot: string, ymd: string, name: string, text: string): Promise<string> {
+  const [year, month, day] = ymd.split('-')
+  const dir = path.join(attachmentsRoot, year, month, day)
+  await mkdir(dir, { recursive: true })
+  await writeFile(path.join(dir, name), text)
+  return path.join(dir, name)
+}
+
+const besideNote = (cwd: string, ymd: string, name: string) =>
+  path.join(cwd, 'time', notebookDayDir(new PlainDate(ymd)), 'actions', 'meetings', name)
+
+test('readFile - a file a note lists is found in the attachments of its day', async () => {
+  const { cwd, attachmentsRoot, recorded, options, dayDir } = await setup()
+  const name = '2026-01-20_Zoom_Jane-Doe_Atlas-Review.txt'
+  const text = 'Jane: ship Tuesday.'
+  const filed = await fileAttachment(attachmentsRoot, '2026-01-20', name, text)
+  const copy = attachmentFileName(DAY, name)
+
+  const guessed = await readFile({ path: besideNote(cwd, '2026-01-20', name) }, options)
+  const bare = await readFile({ path: name }, options)
+
+  assert({
+    given: 'a guessed path beside the note, for a file filed under that day',
+    should: 'read the filed file, report where it really is, and copy it like any other read',
+    actual: { output: guessed.output, document: guessed.document, recorded: recorded[0] },
+    expected: {
+      output: {
+        success: true,
+        path: filed,
+        attachment: copy,
+        attachmentPath: path.join(dayDir, copy),
+        kind: 'text',
+        bytes: text.length,
+        chars: text.length,
+      },
+      document: { kind: 'text', text },
+      recorded: { file: copy },
+    },
+  })
+  assert({
+    given: 'only the filename a note lists under attachments:',
+    should: 'find it by the date the name starts with',
+    actual: bare.output.success ? bare.output.path : bare.output,
+    expected: filed,
+  })
+})
+
+test('readFile - a file filed on another day than its name is found from the note', async () => {
+  const { cwd, attachmentsRoot, options } = await setup()
+  const name = '2026-01-18_Loom_Atlas-Demo.txt'
+  const filed = await fileAttachment(attachmentsRoot, '2026-01-20', name, 'Atlas demo.')
+
+  const guessed = await readFile({ path: besideNote(cwd, '2026-01-20', name) }, options)
+  const bare = await readFile({ path: name }, options)
+
+  assert({
+    given: "a file dated the 18th, filed with the 20th's note, named by a path beside that note",
+    should: "look in the note's day, not the date in the name",
+    actual: guessed.output.success ? guessed.output.path : guessed.output,
+    expected: filed,
+  })
+  assert({
+    given: 'the same file by bare name, with nothing to say which note holds it',
+    should: 'report it missing rather than search other days',
+    actual: bare.output,
+    expected: { success: false, error: `No such file: ${path.join(cwd, name)}` },
+  })
+})
+
+test('readFile - a file at the path given wins over an attachment of the same name', async () => {
+  const { cwd, attachmentsRoot, options } = await setup()
+  const name = '2026-01-20_Atlas-Notes.txt'
+  await fileAttachment(attachmentsRoot, '2026-01-20', name, 'The filed copy.')
+  await writeFile(path.join(cwd, name), 'The local file.')
+
+  const { output, document } = await readFile({ path: name }, options)
+
+  assert({
+    given: 'a file that exists where the path says, and a namesake in the attachments',
+    should: 'read the one the path names',
+    actual: { path: output.success ? output.path : output, document },
+    expected: { path: path.join(cwd, name), document: { kind: 'text', text: 'The local file.' } },
+  })
+})
+
+test('readFile - a name matching no attachment still fails, without recording anything', async () => {
+  const { cwd, recorded, options } = await setup()
+  const unfiled = '2026-01-20_Zoom_Atlas-Kickoff.txt'
+  const impossible = '2026-13-45_Zoom_Atlas-Kickoff.txt'
+
+  const [missing, invalid] = await Promise.all([unfiled, impossible].map((file) => readFile({ path: file }, options)))
+
+  assert({
+    given: 'a dated name nothing was filed under, and a name whose date cannot exist',
+    should: 'fail on the path as given and record nothing',
+    actual: { missing: missing.output, invalid: invalid.output, recorded },
+    expected: {
+      missing: { success: false, error: `No such file: ${path.join(cwd, unfiled)}` },
+      invalid: { success: false, error: `No such file: ${path.join(cwd, impossible)}` },
+      recorded: [],
+    },
+  })
+})
+
+test('private browser file reads cannot reach filed attachments', async () => {
+  const { cwd, attachmentsRoot, options, recorded } = await setup()
+  const files = path.join(cwd, 'downloads')
+  await mkdir(files)
+  const name = '2026-01-20_Zoom_Jane-Doe_Atlas-Review.txt'
+  await fileAttachment(attachmentsRoot, '2026-01-20', name, 'synthetic-private-data')
+
+  const denied = await readFile({ path: name }, { ...options, cwd: files, allowedRoot: files })
+
+  assert({
+    given: 'a private task naming a file that exists in the attachments',
+    should: 'refuse it before any lookup or copy',
+    actual: { output: denied.output, document: denied.document, recorded },
+    expected: {
+      output: { success: false, error: 'This browser task can read only its downloaded files.' },
+      document: undefined,
+      recorded: [],
     },
   })
 })

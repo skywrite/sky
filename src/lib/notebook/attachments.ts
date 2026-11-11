@@ -14,7 +14,33 @@ import { copyFile, link, mkdir, open, unlink } from 'node:fs/promises'
 import * as path from 'node:path'
 import type { Attachment } from '#shared/models/Markdown/Document/attachment.ts'
 import dayAttachmentsDir from '#shared/nbfs/dayAttachmentsDir.ts'
-import type { PlainDate } from '#universal/dates/nbdt/mod.ts'
+import parseTimePath from '#shared/nbfs/parseTimePath.ts'
+import { PlainDate } from '#universal/dates/nbdt/mod.ts'
+
+/** The date a captured file's name starts with, when that is a real date. */
+function dateInName(name: string): PlainDate | undefined {
+  const ymd = /^\d{4}-\d{2}-\d{2}/.exec(name)?.[0]
+  if (!ymd) return undefined
+  try {
+    return new PlainDate(ymd)
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * Where a file may be filed when the path naming it does not exist, in lookup
+ * order. A document's `attachments:` records a bare filename, so a path built
+ * from one guesses the folder, usually beside the note. The file sits in the
+ * attachments of the note's day, which the date in its name usually matches
+ * but need not.
+ */
+export function dayAttachmentCandidates(filePath: string, attachmentsRoot: string): string[] {
+  const name = path.basename(filePath)
+  const time = parseTimePath(filePath)
+  const days = [time?.kind === 'day' ? time.date : undefined, dateInName(name)]
+  return days.flatMap((day) => (day ? [path.join(attachmentsRoot, dayAttachmentsDir(day), name)] : []))
+}
 
 /** Keep untrusted attachment names within their chosen folder. */
 export function safeAttachmentName(name: string): string {

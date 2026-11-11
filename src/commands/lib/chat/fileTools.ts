@@ -19,7 +19,7 @@ import * as os from 'node:os'
 import * as path from 'node:path'
 import { jsonSchema, type Tool, tool, type UserContent } from 'ai'
 import { IMAGE_EXTENSIONS, loadDocument, type LoadedDocument, PDF_EXTENSIONS } from '#lib/documents/loadDocument.ts'
-import { copyToDayAttachments } from '#lib/notebook/attachments.ts'
+import { copyToDayAttachments, dayAttachmentCandidates } from '#lib/notebook/attachments.ts'
 import { slugify } from '#lib/string/mod.ts'
 import type { Attachment } from '#shared/models/Markdown/Document/attachment.ts'
 import type { PlainDate } from '#universal/dates/nbdt/mod.ts'
@@ -175,17 +175,29 @@ export function toUserContent(output: ReadFileSuccess, document: LoadedDocument)
   ]
 }
 
+/** The first of these paths that exists. */
+async function firstExisting(files: string[]) {
+  for (const file of files) {
+    try {
+      return { file, info: await stat(file) }
+    } catch {
+      // Not here: try the next one.
+    }
+  }
+  return undefined
+}
+
 /** Load, copy, record. The document rides back beside the output so execute can keep it for toModelOutput. */
 export async function readFile(
   input: ReadFileInput,
   options: FileToolsOptions,
 ): Promise<{ output: ReadFileOutput; document?: LoadedDocument }> {
-  const resolved = resolveFilePath(input.path, options.cwd)
+  const requested = resolveFilePath(input.path, options.cwd)
   const fail = (error: string) => ({ output: { success: false, error } as ReadFileOutput })
 
   if (options.allowedRoot) {
     try {
-      const [root, file] = await Promise.all([realpath(options.allowedRoot), realpath(resolved)])
+      const [root, file] = await Promise.all([realpath(options.allowedRoot), realpath(requested)])
       const relative = path.relative(root, file)
       if (!relative || relative.startsWith(`..${path.sep}`) || relative === '..' || path.isAbsolute(relative))
         return fail('This browser task can read only its downloaded files.')
@@ -194,12 +206,11 @@ export async function readFile(
     }
   }
 
-  let info
-  try {
-    info = await stat(resolved)
-  } catch {
-    return fail(`No such file: ${resolved}`)
-  }
+  // A note records its attachments by filename alone, so a path built from one guesses the folder.
+  const attachments = options.allowedRoot ? [] : dayAttachmentCandidates(requested, options.attachmentsRoot)
+  const found = await firstExisting([requested, ...attachments])
+  if (!found) return fail(`No such file: ${requested}`)
+  const { file: resolved, info } = found
   if (info.isDirectory()) return fail(`${resolved} is a directory — name a file`)
 
   const ext = path.extname(resolved).toLowerCase()
@@ -257,7 +268,8 @@ export function createFileTools(options: FileToolsOptions): Record<string, unkno
         properties: {
           path: {
             type: 'string',
-            description: "Absolute path, ~/path, or a path relative to the user's shell directory",
+            description:
+              "Absolute path, ~/path, a path relative to the user's shell directory, or a filename from a note's attachments: list",
           },
         },
         required: ['path'],
