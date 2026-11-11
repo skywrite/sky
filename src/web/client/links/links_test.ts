@@ -1,5 +1,5 @@
 import { assert, test } from '#test'
-import { splitLinks } from './links.ts'
+import { splitLinks, webLinkOf } from './links.ts'
 
 test({ name: 'links - an address in a sentence becomes a run of its own, punctuation left to the sentence' }, () => {
   assert({
@@ -31,5 +31,39 @@ test({ name: 'links - an address with brackets of its own keeps its closing brac
     should: 'keep the bracket as part of the address',
     actual: splitLinks('https://example.com/wiki/Thing_(band)'),
     expected: [{ text: 'https://example.com/wiki/Thing_(band)', url: 'https://example.com/wiki/Thing_(band)' }],
+  })
+})
+
+test({ name: 'links - a saved link that is a web address opens that address under its title' }, () => {
+  assert({
+    given: 'a titled Markdown link whose title has brackets and an apostrophe of its own',
+    should: 'give the address and the title as words',
+    actual: webLinkOf(
+      "[Atlas plan - Jane's notes (Google Docs)](https://docs.example.com/document/d/abc_DEF-123/edit?x=1)",
+    ),
+    expected: {
+      href: 'https://docs.example.com/document/d/abc_DEF-123/edit?x=1',
+      title: "Atlas plan - Jane's notes (Google Docs)",
+    },
+  })
+  assert({
+    given: 'an address saved without a title',
+    should: 'name it by where it goes',
+    actual: webLinkOf('https://www.example.com/wiki/Thing_(band)/'),
+    expected: { href: 'https://www.example.com/wiki/Thing_(band)/', title: 'example.com/wiki/Thing_(band)' },
+  })
+})
+
+test({ name: 'links - a saved link that is not a web address stays as it was saved' }, () => {
+  assert({
+    given: 'a name, a link to a notebook file, a script address, and an address inside a sentence',
+    should: 'treat none of them as a web link',
+    actual: [
+      'Jane Doe',
+      '[Atlas](projects/open/Atlas/README.md)',
+      '[Atlas](javascript:alert(1))',
+      'See [Atlas](https://example.com/atlas) for the plan',
+    ].map(webLinkOf),
+    expected: [null, null, null, null],
   })
 })

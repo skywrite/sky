@@ -438,6 +438,37 @@ test({ name: 'rail — Links offers the open projects and saves a working link',
   )
 })
 
+test({ name: 'rail — a web address saved in Links opens that page under its title', timeout: 40000 }, async (t) => {
+  const address = 'https://docs.example.com/document/d/abc_DEF-123/edit?x=1'
+  await runWysiwygE2e(
+    t,
+    {
+      initialMarkdown: DOC.replace('  - Jane Doe\n', `  - Jane Doe\n  - "[Atlas plan (Google Docs)](${address})"\n`),
+      tempPrefix: 'wysiwyg-rail-web-link-',
+      files: PEOPLE,
+      store: true,
+    },
+    async ({ page, origin, errors }) => {
+      await page.setViewportSize({ width: 1400, height: 900 })
+      await page.goto(`${origin}/explorer/notes/preview.md`)
+      const links = page.locator('.sky-rail .sky-prop[data-key="rel"] .sky-linked-label a')
+      await links.filter({ hasText: 'Jane Doe' }).waitFor()
+      const web = links.filter({ hasText: 'Atlas plan' })
+      assert({
+        given: 'a document whose links hold a person and a titled web address',
+        should: 'name the address by its title and open the page in a new tab',
+        actual: [
+          await links.allTextContents(),
+          await web.getAttribute('href'),
+          await web.getAttribute('target'),
+          errors,
+        ],
+        expected: [['Jane Doe', 'Atlas plan (Google Docs)'], address, '_blank', []],
+      })
+    },
+  )
+})
+
 test(
   { name: 'rail — add a property, pick a value, remove a key, and edit the YAML face', timeout: 40000 },
   async (t) => {

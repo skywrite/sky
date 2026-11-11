@@ -14,6 +14,7 @@ import { renderStatic } from '../editor/wysiwyg/render.ts'
 import { RenderedHtml } from '../lib/renderedHtml.tsx'
 import { LinkTypeFilters, linkTypesHaveDates, linkTypesLabel } from './linkFilters.tsx'
 import { LinkIcon } from './linkIcon.tsx'
+import { webLinkOf } from './links.ts'
 
 async function request<T>(url: string, body?: unknown): Promise<T> {
   const response = await fetch(
@@ -445,6 +446,8 @@ export function LinksInput({
     <div className="sky-links-input">
       {values.map((value) => {
         const item = items[value]
+        // A page on the web is no notebook record, so nothing resolves it: its own address is the link.
+        const web = item ? null : webLinkOf(value)
         return (
           <div className="sky-linked-row" key={value}>
             <span className="sky-linked-label">
@@ -453,6 +456,13 @@ export function LinksInput({
                   <LinkIcon kind={item.kind} />
                   <a href={href(item.path)} target="_blank" rel="noreferrer">
                     {titleText(item.title)}
+                  </a>
+                </>
+              ) : web ? (
+                <>
+                  <LinkIcon kind="web" />
+                  <a href={web.href} target="_blank" rel="noreferrer" title={web.href}>
+                    {web.title}
                   </a>
                 </>
               ) : (
@@ -464,7 +474,7 @@ export function LinksInput({
                 type="button"
                 disabled={busy}
                 className="sky-prop-chip-remove"
-                aria-label={`Remove link to ${item ? titleText(item.title) : value}`}
+                aria-label={`Remove link to ${item ? titleText(item.title) : (web?.title ?? value)}`}
                 onClick={() =>
                   void change(values.filter((v) => v !== value)).catch((failure: Error) => setError(failure.message))
                 }

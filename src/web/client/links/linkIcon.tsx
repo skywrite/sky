@@ -1,7 +1,10 @@
 import type { ReactNode } from 'react'
 import type { LinkKind } from '../../../service/handler/links/types.ts'
 
-const ICONS: Record<LinkKind, ReactNode> = {
+/** A saved link is a notebook record of some kind, or a page on the web. */
+export type LinkIconKind = LinkKind | 'web'
+
+const ICONS: Record<LinkIconKind, ReactNode> = {
   person: (
     <>
       <circle cx="12" cy="7" r="3.5" />
@@ -67,10 +70,17 @@ const ICONS: Record<LinkKind, ReactNode> = {
       <path d="m14 5 4-1 4 15-4 1-4-15Z" />
     </>
   ),
+  web: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18" />
+    </>
+  ),
 }
 
-export function LinkIcon({ kind }: { kind: LinkKind }) {
-  const label = kind === 'org' ? 'Organization' : kind.charAt(0).toUpperCase() + kind.slice(1)
+export function LinkIcon({ kind }: { kind: LinkIconKind }) {
+  const label =
+    kind === 'org' ? 'Organization' : kind === 'web' ? 'Web page' : kind.charAt(0).toUpperCase() + kind.slice(1)
   return (
     <svg
       className="sky-link-icon"
