@@ -22,6 +22,7 @@ import { createNumberedFile } from '#lib/nbfs/createNumberedFile.ts'
 import { atomicWrite, hash } from '#lib/outbox/files.ts'
 import { describePlace } from '#lib/places/describe.ts'
 import { countryPlace, ensurePlaceRef } from '#lib/places/geography.ts'
+import { matchLocation } from '#lib/places/locations.ts'
 import type Document from '#shared/models/Markdown/Document/mod.ts'
 import type MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
 import addDatedNote from '#shared/models/Markdown/util/addDatedNote.ts'
@@ -159,19 +160,32 @@ export function createPeopleStore(store: MarkdownStore, baseDir: string, dirs: s
 
   /**
    * A location as it is saved: a saved place's reference, a recognized country (created the first
-   * time someone is located there), or nothing. Text that names no place is refused, so the
-   * person can choose or add the place; a location the edit leaves unchanged is kept as it is.
+   * time someone is located there), or nothing. Text becomes the one saved place it names; text
+   * that names none is found on Google Maps and saved as a new place, as choosing it in the
+   * Location list would. Without Google Maps that text is refused, so the person can choose or
+   * add the place, and so is a link to a place with no record. A location the edit leaves
+   * unchanged is kept as it is.
    */
   async function savedLocation(value: string, previous: string): Promise<string> {
     const text = value.trim()
     if (!text || text === previous.trim()) return text
-    const ref = normalizePlaceRef(text)
+    const link = normalizePlaceRef(text)
+    const ref = link ?? matchLocation(store.places, text)?.ref
     const saved = ref ? store.places.findByPlacePath(ref) : undefined
     if (saved) return saved.placePath
     if (ref && countryPlace(ref)) {
       const country = await ensurePlaceRef(store.places, ref)
       store.set(country.filePath, await readFile(country.filePath, 'utf8'))
       return country.ref
+    }
+    if (!link && options.addPlace) {
+      let added: string | null
+      try {
+        added = await options.addPlace(text)
+      } catch (error) {
+        throw new ProfileError(`“${text}” could not be added as a place. ${(error as Error).message}`, 409)
+      }
+      if (added) return added
     }
     throw new ProfileError(
       `“${text}” is not a saved place. Choose it from the Location list, or add it there as a new place.`,

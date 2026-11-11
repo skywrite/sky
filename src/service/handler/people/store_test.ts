@@ -766,7 +766,7 @@ test('Two organizations never share a name, alternate names and punctuation incl
   }
 })
 
-test('A location is saved as a place and reads as one; text that names no place is refused', async () => {
+test('A location is saved as a place and reads as one; without Google Maps, text that names no saved place is refused', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'sky-people-places-'))
   try {
     const peopleDir = path.join(root, 'people')
@@ -838,13 +838,11 @@ test('A location is saved as a place and reads as one; text that names no place 
     })
 
     assert({
-      given: 'typed text, a link to a place with no record, and new text replacing old text',
+      given: 'without Google Maps, text that names no saved place, and a link to a place with no record',
       should: 'refuse each, saying what to do, and write no new person',
       actual: [
         await refused('Winooski, VT'),
         await refused('places/US/VT/Winooski'),
-        await refused('Burlington, Vermont', edited),
-        (await readFile(path.join(root, edited.id), 'utf8')).includes('\nlocation: Burlington VT\n'),
         store.people
           .getAll()
           .toArray()
@@ -853,9 +851,143 @@ test('A location is saved as a place and reads as one; text that names no place 
       expected: [
         '“Winooski, VT” is not a saved place. Choose it from the Location list, or add it there as a new place.',
         '“places/US/VT/Winooski” is not a saved place. Choose it from the Location list, or add it there as a new place.',
-        '“Burlington, Vermont” is not a saved place. Choose it from the Location list, or add it there as a new place.',
-        true,
         false,
+      ],
+    })
+
+    const linked = await profiles.save({ ...edited, location: 'Burlington, Vermont' })
+    assert({
+      given: 'new text that names one saved place, replacing old text',
+      should: 'save that place',
+      actual: [
+        (await read(linked.id)).includes('\nlocation: places/US/VT/Burlington\n'),
+        [linked.locationLabel, linked.locationRef],
+      ],
+      expected: [true, ['Burlington, VT, USA', 'places/US/VT/Burlington']],
+    })
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('A person saved with a location that is not a saved place gets the place saved from Google Maps', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'sky-people-new-place-'))
+  try {
+    const peopleDir = path.join(root, 'people')
+    const orgsDir = path.join(root, 'orgs')
+    const placesDir = path.join(root, 'places')
+    await Promise.all([peopleDir, orgsDir, placesDir].map((dir) => mkdir(dir)))
+    const store = await MarkdownStore.build({ peopleDirs: [peopleDir], orgDirs: [orgsDir], placesDir, timeDirs: [] })
+    const now = () => new ZonedDateTime('2026-02-12 09:34', 'America/Chicago')
+    const stateDir = path.join(root, '.state')
+    const searches: string[] = []
+    let searchAvailable = true
+    const app = createTestHttpApp([peopleDir, orgsDir, placesDir], {
+      markdownStore: store,
+      people: { peopleDir, orgsDir, stateDir, now },
+      places: {
+        placesDir,
+        stateDir,
+        now,
+        // Stands in for Google Maps: a shop and a city for Winooski, nothing for anything else
+        maps: {
+          config: async () => ({ browserKey: '', mapId: '', searchAvailable, configurable: true }),
+          configure: async () => {
+            throw new Error('Unused in this test.')
+          },
+          search: async (query) => {
+            searches.push(query)
+            if (!query.startsWith('Winooski')) return []
+            return [
+              {
+                id: 'sample_shop',
+                name: 'Winooski Books',
+                address: '1 Main Street, Winooski, VT, USA',
+                kind: 'venue',
+                category: 'shop',
+                coordinates: null,
+                attributions: [],
+              },
+              {
+                id: 'sample_city',
+                name: 'Winooski',
+                address: 'Winooski, VT, USA',
+                kind: 'city',
+                category: 'visit',
+                coordinates: null,
+                attributions: [],
+              },
+            ]
+          },
+          detail: async () => {
+            throw new Error('Unused in this test.')
+          },
+          locate: async (id) => ({
+            kind: 'city',
+            name: 'Winooski',
+            country: 'US',
+            region: { code: 'VT', name: 'Vermont' },
+            coordinates: null,
+            googlePlaceId: id,
+            googleMapsUrl: '',
+          }),
+        },
+      },
+    })
+    const add = async (name: string, location: string) => {
+      const response = await app.request('/people/_api/profile', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...blankProfile('person'), name, location }),
+      })
+      const body = (await response.json()) as ProfileDetail & { message?: string }
+      return { status: response.status, body }
+    }
+    const read = (file: string) => readFile(path.join(root, file), 'utf8')
+    const people = () =>
+      store.people
+        .getAll()
+        .toArray()
+        .map(({ doc }) => String(doc.yaml.name))
+        .toSorted()
+
+    const riley = await add('Riley Voss', 'Winooski, VT')
+    assert({
+      given: 'a new person whose location is text that names no saved place',
+      should: 'save the first city Google Maps finds, with its state and country, and locate the person there',
+      actual: [
+        riley.status,
+        [riley.body.locationLabel, riley.body.locationRef],
+        (await read(riley.body.id)).includes('\nlocation: places/US/VT/Winooski\n'),
+        (await read('places/locations/US/VT/Winooski.md')).includes('googlePlaceId: sample_city'),
+        (await read('places/locations/US/VT.md')).includes('name: Vermont'),
+        (await read('places/locations/US.md')).includes('kind: country'),
+      ],
+      expected: [200, ['Winooski, VT, USA', 'places/US/VT/Winooski'], true, true, true, true],
+    })
+
+    const jane = await add('Jane Doe', 'Winooski, Vermont')
+    assert({
+      given: 'another new person whose location text names that place, now saved',
+      should: 'locate the person there without asking Google Maps again',
+      actual: [jane.body.locationRef, searches],
+      expected: ['places/US/VT/Winooski', ['Winooski, VT']],
+    })
+
+    const unknown = await add('Alex Kim', 'Harbor City')
+    searchAvailable = false
+    const unconnected = await add('Alex Kim', 'Harbor City')
+    assert({
+      given: 'text Google Maps finds no place for, then the same text without Google Maps',
+      should: 'refuse each, naming the text, why, and what to do, and save no person',
+      actual: [[unknown.status, unknown.body.message], [unconnected.status, unconnected.body.message], people()],
+      expected: [
+        [
+          409,
+          '“Harbor City” could not be added as a place. Google Maps found no city, state, or country by that name. Choose the place from the Location list, or clear the location.',
+        ],
+        [400, '“Harbor City” is not a saved place. Choose it from the Location list, or add it there as a new place.'],
+        ['Jane Doe', 'Riley Voss'],
       ],
     })
   } finally {

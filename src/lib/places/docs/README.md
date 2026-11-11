@@ -1,6 +1,6 @@
 ---
 created: 2026-09-08
-updated: 2026-11-03
+updated: 2026-11-10
 ---
 
 # Places
@@ -171,8 +171,12 @@ The People form's Location picker lists saved geography and every recognized
 country (`locations.ts`). A city that is not saved is found on Google Maps and saved
 with the state and country containing it, reusing every record that exists; only
 the chosen place keeps Google's coordinates. Without Google Maps, a city is typed
-by hand inside a country or state. The People save refuses text that names no
-saved place; text from before places stays until someone replaces it, and the
+by hand inside a country or state. The People save turns new text into the one
+saved place it names. Text that names none is searched on Google Maps, and the
+first city, region or country found is saved as choosing it in the picker would
+save it (`addLocationNamed` in `service/handler/places/store.ts`). Without Google
+Maps, or when it finds no such place, the save is refused with the reason. Text
+from before places stays until someone replaces it, and the
 picker offers the saved place it names. A LinkedIn import's location text becomes
 the saved place it names when exactly one does. In the explorer, a person's or
 organization's `location` uses the same picker and is written as one value; the

@@ -417,5 +417,21 @@ export function createPlacesStore(store: MarkdownStore, baseDir: string, dirs: s
       return choice
     })
   }
-  return { index, resolveRef, detail, save, addNote, archive, locations, matchText, addLocation }
+  /**
+   * Save the place written text names as Google Maps finds it: its first city, region or country,
+   * with the places containing it, as choosing that result in the location picker saves it. For a
+   * form handed text instead of a chosen place. Null when Google Maps is not set up.
+   */
+  async function addLocationNamed(text: string): Promise<LocationChoice | null> {
+    const maps = options.maps
+    if (!maps || !(await maps.config()).searchAvailable) return null
+    const first = (await maps.search(text)).find((result) => result.kind !== 'venue')
+    if (!first)
+      throw new PlaceError(
+        'Google Maps found no city, state, or country by that name. Choose the place from the Location list, or clear the location.',
+        404,
+      )
+    return addLocation({ found: await maps.locate(first.id) })
+  }
+  return { index, resolveRef, detail, save, addNote, archive, locations, matchText, addLocation, addLocationNamed }
 }

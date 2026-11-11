@@ -163,10 +163,16 @@ export function createHttpApp(options: HttpHandlerOptions): Hono {
     owner: async () => (await loadOwnerNames(chat?.aboutMePath))[0],
   })
   const importRoutes = imports ? createImportRoutes({ ...imports, links: links.host }) : null
+  const placesStore =
+    options.places && markdownStore
+      ? createPlacesStore(markdownStore, markdownBaseDir, markdownDirs, options.places)
+      : null
   const profiles =
     options.people && markdownStore
       ? createPeopleStore(markdownStore, markdownBaseDir, markdownDirs, {
           ...options.people,
+          // A person saved with a location that is not a saved place yet gets the place saved too
+          addPlace: placesStore ? async (text) => (await placesStore.addLocationNamed(text))?.ref ?? null : undefined,
           scores:
             options.people.scores ??
             (() => scoresFrom(store.getPeopleWithScores(), store.getOrganizationsWithScores(), [])),
@@ -317,13 +323,7 @@ export function createHttpApp(options: HttpHandlerOptions): Hono {
     app.route('/people/_api', createPeopleRoutes(profiles, options.people))
   }
   if (options.places) {
-    app.route(
-      '/places/_api',
-      createPlacesRoutes(
-        markdownStore ? createPlacesStore(markdownStore, markdownBaseDir, markdownDirs, options.places) : null,
-        options.places,
-      ),
-    )
+    app.route('/places/_api', createPlacesRoutes(placesStore, options.places))
   }
 
   // The clock page's data: the two clocks and the converter. The page itself is /clock, below.

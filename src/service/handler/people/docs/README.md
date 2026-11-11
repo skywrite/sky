@@ -1,6 +1,6 @@
 ---
 created: 2026-09-23
-updated: 2026-11-03
+updated: 2026-11-10
 ---
 
 # People & Orgs
@@ -49,7 +49,8 @@ never written as `[]`. An organization keeps one website in `site`, several in
 `sites`, never both.
 
 Location is a saved place, chosen in the form's place picker and shown as it reads,
-linked to its page in Places; typed text is refused. The rules live in the
+linked to its page in Places. Text that names no saved place is added from Google
+Maps when the profile is saved, and refused without Google Maps. The rules live in the
 [places README](../../../../lib/places/docs/README.md#where-people-and-organizations-are).
 
 New profiles come from the same code as `person:new` and `org:new`

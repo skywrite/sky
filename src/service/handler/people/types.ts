@@ -155,6 +155,11 @@ export interface PeopleOptions {
   scores?: () => Pick<Scores, 'people' | 'orgs'>
   /** Looks a new organization up as org:new does; org:new's own lookup when absent */
   draftOrganization?: (request: OrganizationRequest) => Promise<OrganizationDraft>
+  /**
+   * Saves the place a location's text names, found on Google Maps, and gives its reference; null
+   * when Google Maps is not set up. Absent, text that names no saved place is refused.
+   */
+  addPlace?: (text: string) => Promise<string | null>
 }
 
 export class ProfileError extends Error {
