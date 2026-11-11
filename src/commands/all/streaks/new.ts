@@ -545,8 +545,9 @@ export default class StreaksNewTask extends Command {
 
     // Step 10: Final name — every source passes through slugify so an AI- or
     // user-supplied value can't smuggle path separators into the filename
+    const chosenName = overrideName ? slugify(overrideName, { preserveCase: true }) : ''
     const finalName =
-      (overrideName ? slugify(overrideName, { preserveCase: true }) : '') ||
+      chosenName ||
       slugify(aiResponse.slug, { suggestedLength: 20 }) ||
       slugify(clarifiedHabit, { suggestedLength: 20 })
 
@@ -564,6 +565,7 @@ export default class StreaksNewTask extends Command {
     try {
       written = await writeStreak({
         name: finalName,
+        nameDerived: !chosenName,
         title,
         schedule,
         start: startDay,
@@ -611,8 +613,8 @@ export default class StreaksNewTask extends Command {
       // Editor opening is best-effort
     }
 
-    p.outro(colors.green(`Streak "${finalName}" created`))
+    p.outro(colors.green(`Streak "${written.name}" created`))
 
-    return CommandResult.success({ file: written.file, name: finalName })
+    return CommandResult.success({ file: written.file, name: written.name })
   }
 }

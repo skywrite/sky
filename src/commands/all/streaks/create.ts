@@ -65,6 +65,7 @@ export default class StreaksCreateTask extends Command {
       'Creates the streak exactly as streaks:new would, from explicit fields.',
       'Infers Personal or Professional from the purpose and rules unless --category is supplied.',
       'Saves the category for future day entries, with name/title collision checks.',
+      'A name derived from the title that is already taken is saved as <name>-2; one passed with --name is refused.',
     ],
     usage: ['sky streaks:create --title "Eat clean" --why "..." --schedule daily --start 2026-08-10'],
     params,
@@ -107,7 +108,8 @@ export default class StreaksCreateTask extends Command {
       }
     }
 
-    const finalName = (name ? slugify(name, { preserveCase: true }) : '') || slugify(title, { suggestedLength: 20 })
+    const chosenName = name ? slugify(name, { preserveCase: true }) : ''
+    const finalName = chosenName || slugify(title, { suggestedLength: 20 })
 
     if (!finalName) {
       return CommandResult.fail('Could not derive a usable slug — pass name')
@@ -135,6 +137,7 @@ export default class StreaksCreateTask extends Command {
     try {
       written = await writeStreak({
         name: finalName,
+        nameDerived: !chosenName,
         title,
         schedule,
         start,
@@ -174,7 +177,7 @@ export default class StreaksCreateTask extends Command {
 
     return CommandResult.success({
       file: written.file,
-      name: finalName,
+      name: written.name,
       dayItem: written.dayItem,
       stamped: written.stamped,
     })

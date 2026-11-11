@@ -9,7 +9,7 @@ import { DIR_BASE, DIR_STREAKS } from '#config'
 import { createDayFile } from '#lib/nbfs/createDayFile.ts'
 import { writeDayItems } from '#lib/nbfs/mod.ts'
 import { createStreakClassifier, resolveStreakCategory, type StreakClassifier } from '#lib/streaks/category.ts'
-import { loadAllStreaks, stampStreaksList } from '#lib/streaks/mod.ts'
+import { freeStreakName, loadAllStreaks, stampStreaksList } from '#lib/streaks/mod.ts'
 import { exists } from '#shared/fs/mod.ts'
 import StreakDocument, {
   findStreakTitleConflict,
@@ -28,6 +28,12 @@ export class TitleCollisionError extends Error {}
 export interface WriteStreakInput {
   /** Slugified file/entity name — the caller owns slug derivation */
   name: string
+  /**
+   * True when `name` was derived from the title rather than chosen by the
+   * person. A derived name that is taken gets the next free suffix (`-2`),
+   * as in the app; a chosen name that is taken is refused.
+   */
+  nameDerived?: boolean
   /** Daily-checklist title — the join key in day files, unique on every day it is tracked */
   title: string
   schedule: StreakSchedule
@@ -48,6 +54,8 @@ export interface WriteStreakInput {
 }
 
 export interface WriteStreakResult {
+  /** The name the rule was saved under — `input.name`, or its next free suffix when derived */
+  name: string
   file: string
   markdown: string
   dayItem: string
@@ -62,8 +70,9 @@ export interface WriteStreakResult {
 }
 
 /**
- * Create the streak rule doc under active/, refusing name collisions (across
- * every status) and title collisions (with any streak, active or archived,
+ * Create the streak rule doc under active/, refusing a chosen name that is
+ * taken (across every status; a derived one moves to the next free suffix)
+ * and title collisions (with any streak, active or archived,
  * tracked on the same days — titles are the join key in day files, so a title
  * is free again only after the earlier streak's end). Stamps the start day's
  * Streaks list and records the day item on the creation day. Directory
@@ -78,9 +87,15 @@ export async function writeStreak(
 
   const existing = await loadAllStreaks(streaksDir)
 
-  const nameTaken = existing.find(({ streak }) => streak.name === input.name)
+  const name = input.nameDerived
+    ? freeStreakName(
+        input.name,
+        existing.map(({ streak }) => streak.name),
+      )
+    : input.name
+  const nameTaken = existing.find(({ streak }) => streak.name === name)
   if (nameTaken) {
-    throw new SlugCollisionError(`A streak named "${input.name}" already exists (${nameTaken.status})`)
+    throw new SlugCollisionError(`A streak named "${name}" already exists (${nameTaken.status})`)
   }
 
   const titleTaken = findStreakTitleConflict(
@@ -91,13 +106,13 @@ export async function writeStreak(
     throw new TitleCollisionError(streakTitleConflictMessage(titleTaken, now.plainDateTime.date, 'title'))
   }
 
-  const file = path.join(streaksDir, 'active', `${input.name}.md`)
+  const file = path.join(streaksDir, 'active', `${name}.md`)
   if (await exists(file)) {
     throw new SlugCollisionError(`File already exists: ${file}`)
   }
 
   let streak = StreakDocument.create({
-    name: input.name,
+    name,
     title: input.title,
     schedule: input.schedule,
     start,
@@ -138,7 +153,7 @@ export async function writeStreak(
   // Day item lands on the creation day — starting later is part of the record
   const today = now.plainDateTime.plainDate
   const startsNote = start.ymd === today.ymd ? '' : ` (starts ${start.ymd})`
-  const dayItem = `${now.plainDateTime.time} > streaks/${input.name} -> Started | ${input.title}${startsNote}`
+  const dayItem = `${now.plainDateTime.time} > streaks/${name} -> Started | ${input.title}${startsNote}`
   let dayItemWarning: string | undefined
   try {
     await writeDayItems(
@@ -152,6 +167,7 @@ export async function writeStreak(
   }
 
   return {
+    name,
     file,
     markdown,
     dayItem,

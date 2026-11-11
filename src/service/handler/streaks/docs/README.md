@@ -1,6 +1,6 @@
 ---
 created: 2026-09-08
-updated: 2026-11-10
+updated: 2026-11-11
 ---
 
 # Streaks in the app
@@ -19,6 +19,7 @@ two streaks whose dates never meet keep separate histories although the day file
 `streaksShareDays` in the shared Streak model is the one rule; the form, the app store, and the CLI writer all use it.
 A streak with no readable start, or with no end, stays in the way of its title.
 The new rule gets its own name (`read-a-chapter-2`), because names stay unique across both statuses.
+The app and the CLI pick that name the same way (`freeStreakName`); a name the person chose with `--name` is refused instead.
 
 The app has no rename operation because changing a title would detach its existing history.
 Ambiguous names, titles that share days, or duplicate day items remain visible through warnings

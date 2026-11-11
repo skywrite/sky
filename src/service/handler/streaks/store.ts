@@ -8,7 +8,7 @@ import { insertBlock } from '#lib/nbfs/listBlocks.ts'
 import { writePlanningChanges, type PlanningChange } from '#lib/nbfs/planningChanges.ts'
 import { atomicWrite, hash, missing, readOptional, withLock } from '#lib/outbox/files.ts'
 import { createStreakClassifier, resolveStreakCategory, type StreakClassifier } from '#lib/streaks/category.ts'
-import { archivedStreakFile } from '#lib/streaks/mod.ts'
+import { archivedStreakFile, freeStreakName } from '#lib/streaks/mod.ts'
 import slugify from '#lib/string/slugify.ts'
 import DayDocument from '#shared/models/Day/mod.ts'
 import StreakDocument, {
@@ -397,9 +397,10 @@ export class StreaksStore {
         slugify(value.title)
           .replace(/^-+|-+$/g, '')
           .slice(0, 100) || 'streak'
-      let name = base
-      for (let suffix = 2; streaks.some(({ document }) => document.name.toLowerCase() === name.toLowerCase()); suffix++)
-        name = `${base}-${suffix}`
+      const name = freeStreakName(
+        base,
+        streaks.map(({ document }) => document.name),
+      )
       Name.parse(name)
       const document = StreakDocument.create({
         name,

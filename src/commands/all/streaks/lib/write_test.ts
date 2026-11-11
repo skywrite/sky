@@ -219,3 +219,55 @@ test('writeStreak - a title is free again after the earlier streak ended', async
     expected: path.join(streaksDir, 'active', 'eat-clean-2.md'),
   })
 })
+
+test('writeStreak - a derived name that is taken gets the next free suffix, like the app', async () => {
+  const streaksDir = await makeTempDir({ prefix: 'streaks-' })
+  const timeDir = await makeTempDir({ prefix: 'time-' })
+  await outputFile(
+    path.join(streaksDir, 'archived/2026/eat-clean.md'),
+    StreakDocument.create({
+      name: 'eat-clean',
+      title: 'Eat clean',
+      start: new PlainDate('2026-01-05'),
+      end: new PlainDate('2026-02-28'),
+    }).toMarkdown(),
+  )
+  const input = {
+    name: 'eat-clean',
+    schedule: 'daily' as const,
+    start: new PlainDate('2026-03-05'),
+    why: 'A fresh run.',
+    now: NOW,
+    category: 'Personal Complete',
+  }
+
+  const reused = await writeStreak({ ...input, title: 'Eat clean', nameDerived: true }, { streaksDir, timeDir })
+  const next = await writeStreak({ ...input, title: 'Eat clean at lunch', nameDerived: true }, { streaksDir, timeDir })
+  assert({
+    given: 'two new streaks whose title-derived name an archived streak already has',
+    should: 'save them as -2 and -3, in the file, the rule and the day item alike',
+    actual: [
+      [reused.name, path.relative(streaksDir, reused.file), reused.dayItem],
+      [next.name, path.relative(streaksDir, next.file), next.dayItem],
+      StreakDocument.fromMarkdown(await readTextFile(reused.file)).name,
+    ],
+    expected: [
+      ['eat-clean-2', 'active/eat-clean-2.md', '09:15 > streaks/eat-clean-2 -> Started | Eat clean'],
+      ['eat-clean-3', 'active/eat-clean-3.md', '09:15 > streaks/eat-clean-3 -> Started | Eat clean at lunch'],
+      'eat-clean-2',
+    ],
+  })
+
+  let thrown: unknown
+  try {
+    await writeStreak({ ...input, title: 'Eat clean at dinner' }, { streaksDir, timeDir })
+  } catch (err) {
+    thrown = err
+  }
+  assert({
+    given: 'a name the person chose that a streak already has',
+    should: 'still refuse rather than save under a different name',
+    actual: thrown instanceof SlugCollisionError,
+    expected: true,
+  })
+})

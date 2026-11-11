@@ -35,6 +35,20 @@ export interface LoadedStreak {
   status: StreakStatus
 }
 
+/**
+ * The name a new rule is saved under: `base`, or `base-2`, `base-3`, … when a
+ * streak already has it. A name is the rule's file name, its CLI argument and
+ * its page address, so it stays unique across active and archived streaks.
+ * Case is ignored because the common filesystems ignore it too. The app and
+ * the CLI both pick names here, so a reused title gets the same name either way.
+ */
+export function freeStreakName(base: string, taken: readonly string[]): string {
+  const used = new Set(taken.map((name) => name.toLowerCase()))
+  let name = base
+  for (let suffix = 2; used.has(name.toLowerCase()); suffix++) name = `${base}-${suffix}`
+  return name
+}
+
 /** Load all streak rule docs of one status, sorted by name for stable stamping order. */
 export async function loadStreaks(status: StreakStatus = 'active', baseDir = DIR_STREAKS): Promise<LoadedStreak[]> {
   const dir = path.join(baseDir, status)
