@@ -57,7 +57,7 @@ function yamlText(text: string): string {
 export function readBlocks(page: Page): ReadBlock {
   return (ref) =>
     page
-      .locator(`aria-ref=${ref}`)
+      .getByRef(ref)
       .evaluate(
         (element) =>
           element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement

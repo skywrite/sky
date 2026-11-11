@@ -816,7 +816,7 @@ export class PrivateBrowserSession {
           structuredContent: { kind: 'authentication_required' },
         }
       }
-      const locator = typeof args.target === 'string' ? this.page.locator(`aria-ref=${args.target}`) : null
+      const locator = typeof args.target === 'string' ? this.page.getByRef(args.target) : null
       switch (name) {
         case 'sky_read_linkedin_profile': {
           try {

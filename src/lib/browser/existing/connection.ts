@@ -32,6 +32,7 @@ const { tools } = require('playwright-core/lib/coreBundle') as {
       config: unknown,
       client: { clientName: string },
       options: Record<string, unknown>,
+      published: { title: string },
     ): Promise<{ browser: Browser }>
   }
 }
@@ -68,7 +69,10 @@ export async function connectExistingBrowser(
       ...(options.userDataDir ? { userDataDir: options.userDataDir } : {}),
     }
     const config = await tools.resolveCLIConfigForMCP(args, {})
-    browser = (await tools.createBrowserWithInfo(config, { clientName: 'Sky' }, args)).browser
+    browser = (await tools.createBrowserWithInfo(config, { clientName: 'Sky' }, args, { title: 'Sky' })).browser
+    // The factory publishes every browser it creates so Playwright's own CLI can attach.
+    // Only this worker drives an everyday browser, so withdraw that before any page opens.
+    await browser.unbind()
     const context = browser.contexts()[0]
     if (!context) throw new Error('No extension context')
     // Never reuse, navigate, or close a pre-existing tab, even if shared with the extension.
