@@ -67,8 +67,8 @@ test(
                 ({
                   'Draft the Atlas project brief': 4,
                   'Book annual checkup': 3.5,
-                  'Review Atlas launch plan with Jane Doe': 3,
-                  'Atlas planning': 2.5,
+                  'Review Atlas launch plan with Jane Doe': 2.5,
+                  'Atlas planning': 3,
                   'Evening walk': 2,
                 })[item.text] ?? 0.5,
             ),
@@ -82,7 +82,7 @@ test(
           const open = page.locator('.sky-todos-open')
           await open.locator('.sky-ptext').first().waitFor()
           await page.waitForFunction(
-            () => document.querySelector('.sky-todos-open .sky-ptext')?.textContent === 'Draft the Atlas project brief',
+            () => document.querySelector('.sky-todos-open .sky-ptext')?.textContent === 'Atlas planning',
           )
           const layout = await open.locator('.sky-todo-row').evaluateAll((rows) =>
             rows.map((row) => {
@@ -102,7 +102,8 @@ test(
           )
           assert({
             given: `timed and untimed tasks at ${width}px, including a long title`,
-            should: 'share a title edge, keep times at the right beside the first line, and retain the other sections',
+            should:
+              'put timed tasks above the highest-ranked untimed ones, share a title edge, keep times at the right beside the first line, and retain the other sections',
             actual: {
               titles: await open.locator('.sky-ptext').allTextContents(),
               aligned: new Set(layout.map((row) => row.left)).size,
@@ -129,11 +130,11 @@ test(
             },
             expected: {
               titles: [
-                'Draft the Atlas project brief',
-                'Review Atlas launch plan with Jane Doe',
                 'Atlas planning',
-                'Book annual checkup',
+                'Review Atlas launch plan with Jane Doe',
+                'Draft the Atlas project brief',
                 'Evening walk',
+                'Book annual checkup',
               ],
               aligned: 1,
               right: true,
@@ -189,6 +190,10 @@ test(
           actual: [await readFile(file, 'utf8'), errors],
           expected: [CONTENT, []],
         })
+        // The restored file is ranked again; organizing before that lands would save the file's order as the person's.
+        await page.waitForFunction(
+          () => document.querySelector('.sky-todos-open .sky-ptext')?.textContent === 'Atlas planning',
+        )
         await page.getByRole('button', { name: 'Show 3 more', exact: true }).click()
         assert({
           given: 'the rest of the list expanded on a small phone',
@@ -206,19 +211,21 @@ test(
           if (request.url().endsWith('/item/organize/priority')) priorityWrites++
         })
         const keyboardSave = page.waitForResponse((response) => response.url().endsWith('/item/organize/priority'))
-        await page.getByRole('button', { name: 'Reorder Evening walk', exact: true }).press('ArrowUp')
+        await page.getByRole('button', { name: 'Reorder Send the garden plan', exact: true }).press('ArrowUp')
         await (await keyboardSave).finished()
         await personal
           .locator('.sky-ptext')
-          .first()
-          .filter({ hasText: /^Evening walk$/ })
+          .nth(1)
+          .filter({ hasText: /^Send the garden plan$/ })
           .waitFor()
-        await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === 'Reorder Evening walk')
+        await page.waitForFunction(
+          () => document.activeElement?.getAttribute('aria-label') === 'Reorder Send the garden plan',
+        )
         await page.keyboard.press('ArrowUp')
         await page.waitForTimeout(200)
         assert({
-          given: 'a personal task moved above its category neighbor, then up again at the category boundary',
-          should: 'reorder within the category and stop at its heading',
+          given: 'an untimed personal task moved above its untimed neighbor, then up again against a timed task',
+          should: 'reorder among the untimed tasks of its category and stop below the timed one',
           actual: {
             personal: await personal.locator('.sky-ptext').allTextContents(),
             headings: await page.locator('.sky-todos-open .sky-igroup').allTextContents(),
@@ -227,8 +234,8 @@ test(
           expected: {
             personal: [
               'Evening walk',
-              'Book annual checkup',
               'Send the garden plan',
+              'Book annual checkup',
               'Review supplies',
               'Replace the porch light',
             ],
@@ -239,14 +246,14 @@ test(
         await page.locator('.sky-organize-toast').getByRole('button', { name: 'Undo', exact: true }).click()
         await personal
           .locator('.sky-ptext')
-          .first()
+          .nth(1)
           .filter({ hasText: /^Book annual checkup$/ })
           .waitFor()
         const promoted = page.locator('.sky-todos-open .sky-todo-row').filter({ hasText: 'Review supplies' })
         await promoted.getByRole('button', { name: 'Move to top: Review supplies', exact: true }).click()
         await personal
           .locator('.sky-ptext')
-          .first()
+          .nth(1)
           .filter({ hasText: /^Review supplies$/ })
           .waitFor()
         assert({
@@ -260,7 +267,8 @@ test(
         await promoted.waitFor()
         assert({
           given: 'a lower-priority task promoted above Jev’s suggestions, followed by reload',
-          should: 'preserve the override above both categories and return to five visible tasks',
+          should:
+            'preserve the override above the untimed tasks of both categories, below the timed ones, with five visible',
           actual: [
             await page.locator('.sky-todos-open .sky-igroup').allTextContents(),
             await page.locator('.sky-todos-open .sky-ptext').allTextContents(),
@@ -268,11 +276,11 @@ test(
           expected: [
             ['Professional', 'Personal'],
             [
-              'Draft the Atlas project brief',
-              'Review Atlas launch plan with Jane Doe',
               'Atlas planning',
+              'Review Atlas launch plan with Jane Doe',
+              'Draft the Atlas project brief',
+              'Evening walk',
               'Review supplies',
-              'Book annual checkup',
             ],
           ],
         })
@@ -282,13 +290,23 @@ test(
           given: 'completion of a visible task',
           should: 'fill its place with the next priority while keeping Most Important separate',
           actual: [
-            await page.locator('.sky-todos-open .sky-ptext').count(),
-            await page.locator('.sky-todos-open .sky-ptext').first().textContent(),
+            await page.locator('.sky-todos-open .sky-ptext').allTextContents(),
             await page.locator('.sky-day-priority .sky-ptext').textContent(),
             await page.evaluate(() => document.documentElement.scrollWidth > innerWidth),
             errors,
           ],
-          expected: [5, 'Draft the Atlas project brief', 'Decide the launch scope for Atlas', false, []],
+          expected: [
+            [
+              'Atlas planning',
+              'Review Atlas launch plan with Jane Doe',
+              'Draft the Atlas project brief',
+              'Evening walk',
+              'Book annual checkup',
+            ],
+            'Decide the launch scope for Atlas',
+            false,
+            [],
+          ],
         })
         await page.getByRole('button', { name: 'Completed · 2', exact: true }).click()
         assert({

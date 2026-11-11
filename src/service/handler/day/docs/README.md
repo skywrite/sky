@@ -1,6 +1,6 @@
 ---
 created: 2026-09-03
-updated: 2026-11-09
+updated: 2026-11-10
 ---
 
 # The day's items, the day's rail, and the day's files
@@ -48,7 +48,9 @@ To-dos and Reminders each show their five highest-priority open items; Show more
 Jev suggests priority from goals, the week's plan, recent journals, Most Important and linked task notes.
 Personal and professional tasks share this ranking; select the top five overall before grouping them by category.
 Each group keeps priority order; Professional and Personal headings keep their positions as tasks are completed.
-A time informs urgency without automatically outranking untimed work.
+A to-do with a time always sits above the to-dos without one, in the top five and under each category heading.
+Priority orders the timed to-dos among themselves, and the untimed ones among themselves.
+`priorityItems.ts` applies this on the page, so it also holds before Sky's first ranking.
 Reminders rank separately by relevance to this context and the day's To-dos; habits and principles need no deadline.
 Times sit on the right, aligned with the first line on phones too, so every title starts at the same edge.
 Completed to-dos remain available under a disclosure at the bottom, expanded while organizing.
@@ -99,10 +101,11 @@ operation ID; Undo preserves unrelated later changes and refuses to overwrite
 changed task blocks. Linked workstream activities open their canonical details.
 
 **Organize** combines manual ordering and selection across the plan lists. A row
-selects for moving; To-do grips reorder within their category, across timed and untimed items.
+selects for moving; To-do grips reorder within their category, among the timed rows or among the untimed ones.
 Other lists retain their own ordering.
 Organize reveals all To-dos and Reminders and offers Move to top for promoting a hidden item within its list,
 including above other categories in the shared To-do ranking.
+An untimed to-do's top is just below the timed ones.
 Desktop grips also appear on hover or keyboard focus outside Organize. Touch
 grips appear only in Organize so normal scrolling, text editing and swipe deletion
 retain their gestures. Grip arrow keys offer the same ordering without dragging.
@@ -120,6 +123,7 @@ The combined To-dos view cannot express its order by rearranging blocks within s
 Its `todo-order` frontmatter stores readable heading/text/occurrence references, with `manual` marking the rows
 the person moved. Reminders use the same contract in a separate `reminder-order` field.
 Those rows keep their chosen slots while Jev fills the remaining slots in each list independently.
+Timed and untimed to-dos count their slots separately, so a moved row keeps its place among its own kind.
 Completion, edits and category/time changes rebase these references; repeated item text still has distinct occurrences.
 Clearing a reminder reveals the next one, and Undo restores its priority as well as its text and notes.
 Use Sky's order clears only that list's overrides. Most Important retains its existing block ordering.

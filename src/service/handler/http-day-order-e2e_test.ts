@@ -117,7 +117,8 @@ for (const width of [1500, 390]) {
           await row('Older completed task').getByRole('button', { name: 'Mark not done', exact: true }).waitFor()
           assert({
             given: 'existing checked tasks loaded from Markdown',
-            should: 'keep priority order within each category, with checked items under Completed',
+            should:
+              'put timed tasks first, then keep priority order in each category, with checked items under Completed',
             actual: {
               open: await labels('open'),
               completed: await labels('completed'),
@@ -128,12 +129,12 @@ for (const width of [1500, 390]) {
                 {
                   category: 'Professional',
                   items: [
-                    'First open task',
-                    'Read Atlas brief',
-                    'Final open task',
                     'Early open commitment',
                     'Late open commitment',
                     'Midday open commitment',
+                    'First open task',
+                    'Read Atlas brief',
+                    'Final open task',
                   ],
                 },
                 { category: 'Personal', items: ['Personal open task'] },
@@ -141,7 +142,7 @@ for (const width of [1500, 390]) {
               completed: [
                 {
                   category: 'Professional',
-                  items: ['Older completed task', 'Later completed commitment', 'Earlier completed commitment'],
+                  items: ['Later completed commitment', 'Earlier completed commitment', 'Older completed task'],
                 },
                 { category: 'Personal', items: ['Personal completed task'] },
               ],
@@ -177,11 +178,11 @@ for (const width of [1500, 390]) {
                 {
                   category: 'Professional',
                   items: [
-                    'First open task',
-                    'Final open task',
                     'Early open commitment',
                     'Late open commitment',
                     'Midday open commitment',
+                    'First open task',
+                    'Final open task',
                   ],
                 },
                 { category: 'Personal', items: ['Personal open task'] },
@@ -190,10 +191,10 @@ for (const width of [1500, 390]) {
                 {
                   category: 'Professional',
                   items: [
-                    'Older completed task',
-                    'Read Atlas brief',
                     'Later completed commitment',
                     'Earlier completed commitment',
+                    'Older completed task',
+                    'Read Atlas brief',
                   ],
                 },
                 { category: 'Personal', items: ['Personal completed task'] },

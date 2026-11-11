@@ -1,6 +1,6 @@
 import { assert, test } from '#test'
 import type { DayItem } from './day.tsx'
-import { priorityItems } from './priorityItems.ts'
+import { organizeGroup, priorityItems } from './priorityItems.ts'
 
 const item = (
   text: string,
@@ -21,7 +21,7 @@ const item = (
   revision: 'sample-revision',
 })
 
-test('To-dos rank by priority across category and time, with completed tasks separate', () => {
+test('timed to-dos sit above untimed ones, each ranked by priority across category', () => {
   const items = [
     item('Late call', 4, '25:30', false, 'Personal Commitments'),
     item('Write the Atlas brief', 0),
@@ -31,18 +31,45 @@ test('To-dos rank by priority across category and time, with completed tasks sep
   ]
   const { open, completed } = priorityItems(items, (row) => row.done)
   assert({
-    given: 'an untimed personal task ranked above timed work and a completed high-priority task',
-    should: 'follow priority without category grouping or time taking precedence, retaining original write addresses',
+    given: 'untimed tasks ranked above timed work and a completed high-priority task',
+    should: 'put every timed task first, follow priority within each kind, and retain original write addresses',
     actual: {
       open: open.map((row) => row.text),
       completed: completed.map((row) => row.text),
-      retained: open[0] === items[1] && items[0].text === 'Late call',
+      retained: open[0] === items[2] && items[0].text === 'Late call',
     },
     expected: {
-      open: ['Write the Atlas brief', 'Book a checkup', 'Atlas planning', 'Late call'],
+      open: ['Atlas planning', 'Late call', 'Write the Atlas brief', 'Book a checkup'],
       completed: ['Completed plan'],
       retained: true,
     },
+  })
+})
+
+test('a timed to-do leads the top five even when it ranks last', () => {
+  const items = [
+    ...Array.from({ length: 6 }, (_, index) => item(`Task ${index + 1}`, index)),
+    item('Call Jane Doe', 6, '14:30', false, 'Professional Commitments'),
+  ]
+  const { open } = priorityItems(items, (row) => row.done)
+  assert({
+    given: 'six untimed to-dos ranked above the only timed one',
+    should: 'show the timed to-do first and keep it from dragging among the untimed ones',
+    actual: [open.slice(0, 5).map((row) => row.text), organizeGroup(open[0]) === organizeGroup(open[1])],
+    expected: [['Call Jane Doe', 'Task 1', 'Task 2', 'Task 3', 'Task 4'], false],
+  })
+})
+
+test('a time on a reminder does not reorder reminders', () => {
+  const items = [
+    item('Pause before replying', 0, null, false, 'Reminders'),
+    item('Stretch', 1, '15:00', false, 'Reminders'),
+  ]
+  assert({
+    given: 'a reminder with a time ranked below one without',
+    should: 'keep the reminders in priority order',
+    actual: priorityItems(items, (row) => row.done).open.map((row) => row.text),
+    expected: ['Pause before replying', 'Stretch'],
   })
 })
 

@@ -52,10 +52,13 @@ async function dragRow(page: Page, text: string, targetText: string, touch: bool
   )
   const targetKey = await target.getAttribute('data-organize-key')
   const expectedOrder = await row.evaluate((node, targetKey) => {
-    const rows = [...node.parentElement!.querySelectorAll<HTMLElement>(':scope > [data-organize-key]')].filter(
-      (row) => row.dataset.organizeGroup === (node as HTMLElement).dataset.organizeGroup,
-    )
-    const target = rows.find((row) => row.dataset.organizeKey === targetKey)!
+    // The save carries the whole list. A row lands only among its own kind: timed to-dos stay above untimed ones.
+    const rows = [...node.parentElement!.querySelectorAll<HTMLElement>(':scope > [data-organize-key]')]
+    const target = rows.find(
+      (row) =>
+        row.dataset.organizeKey === targetKey &&
+        row.dataset.organizeGroup === (node as HTMLElement).dataset.organizeGroup,
+    )!
     const scroll = node.closest('.sky-scroll')!
     const from = node.getBoundingClientRect()
     const to = target.getBoundingClientRect()

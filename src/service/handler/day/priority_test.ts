@@ -320,10 +320,10 @@ test('Jev priorities follow changed inputs, reuse unchanged context and preserve
     await Promise.all([host.refresh(DAY.ymd, view), host.refresh(DAY.ymd, view)])
     await host.refresh(DAY.ymd, view)
     assert({
-      given: 'unchanged context and repeated or simultaneous requests',
-      should: 'rank once, cache the result, and leave the notebook untouched',
+      given: 'unchanged context and repeated or simultaneous requests, with the timed task scored lowest',
+      should: 'rank once, put the timed task first, cache the result, and leave the notebook untouched',
       actual: [calls, titles(await host.apply(await view())), await readFile(file, 'utf8')],
-      expected: [1, ['Draft Atlas brief', 'Send agenda', 'Book annual checkup'], CONTENT],
+      expected: [1, ['Book annual checkup', 'Draft Atlas brief', 'Send agenda'], CONTENT],
     })
     time = '19:02'
     const restarted = createDayPriority(options)
@@ -378,9 +378,9 @@ test('Jev priorities follow changed inputs, reuse unchanged context and preserve
     const result = await fresh.apply(await view())
     assert({
       given: 'new context and a person putting the agenda first',
-      should: 'keep the human slot while reranking the other tasks, including after a service restart',
+      should: 'keep the human slot among the untimed tasks, below the timed one, including after a service restart',
       actual: [calls, titles(result), result.record.mostImportant.map((item) => item.text)],
-      expected: [4, ['Send agenda', 'Book annual checkup', 'Draft Atlas brief'], ['Decide the Atlas scope']],
+      expected: [4, ['Book annual checkup', 'Send agenda', 'Draft Atlas brief'], ['Decide the Atlas scope']],
     })
   } finally {
     await rm(root, { recursive: true, force: true })

@@ -248,16 +248,17 @@ export function useDayOrganizing(
       : save('reorder', { list: item.list, items: ordered.map(address) })
   }
   const canReorder = (item: DayItem) => enabled && !busy && Boolean(item.revision)
-  const canPromote = (item: DayItem) => {
+  /** The highest place an item can take: an untimed to-do's top is just below the timed ones. */
+  const topOf = (item: DayItem) => {
     const group = priorityGroupOf(item)
-    return (
-      enabled &&
-      group !== null &&
-      !item.done &&
-      Boolean(item.revision) &&
-      dayItemKey(groups[group].open[0] ?? item) !== dayItemKey(item)
-    )
+    return group ? groups[group].open.find((row) => organizeGroup(row) === organizeGroup(item)) : undefined
   }
+  const canPromote = (item: DayItem) =>
+    enabled &&
+    priorityGroupOf(item) !== null &&
+    !item.done &&
+    Boolean(item.revision) &&
+    dayItemKey(topOf(item) ?? item) !== dayItemKey(item)
   const shifts = (state: Drag) =>
     new Map(
       state.rows.map((key, index) => [
@@ -533,8 +534,8 @@ export function useDayOrganizing(
             ),
       ),
     moveToTop: (item: DayItem) => {
-      const group = priorityGroupOf(item)
-      if (group && canPromote(item) && !pending.current) void reorder(item, groups[group].open[0], false)
+      const top = topOf(item)
+      if (top && canPromote(item) && !pending.current) void reorder(item, top, false)
     },
     chooseDate: () => setDatePicker(true),
     moveTomorrow: () =>

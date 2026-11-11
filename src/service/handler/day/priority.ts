@@ -95,7 +95,9 @@ export function createDayPriority(options: DayPriorityOptions, group: PriorityGr
     const byPrevious = (a: ReturnType<typeof groupItems>[number], b: ReturnType<typeof groupItems>[number]) =>
       (previous.get(key(a)) ?? Number.MAX_SAFE_INTEGER) - (previous.get(key(b)) ?? Number.MAX_SAFE_INTEGER)
     const items = [...groupItems(view)].sort((a, b) => a.priority! - b.priority!)
-    let open = items.filter((item) => !item.done)
+    // A to-do with a time always sits above the ones without, so each of the two runs is ordered separately.
+    const timed = (item: ReturnType<typeof groupItems>[number]) => group === 'todos' && Boolean(item.time)
+    let runs = [items.filter((item) => !item.done && timed(item)), items.filter((item) => !item.done && !timed(item))]
     if (
       identities &&
       snapshot &&
@@ -103,15 +105,19 @@ export function createDayPriority(options: DayPriorityOptions, group: PriorityGr
       samePriorityOverrides(saved.snapshot, snapshot, group, identities)
     ) {
       // Filter the resolved order, including manual slots. Re-solving slots after a checkbox can move untouched rows.
-      open.sort(byPrevious)
+      for (const run of runs) run.sort(byPrevious)
     } else if (!(identities && snapshot?.orders[group].length)) {
-      const automatic = open
-        .filter((item) => !item.priorityManual)
-        .sort((a, b) => (scores.get(key(b)) ?? -1) - (scores.get(key(a)) ?? -1) || byPrevious(a, b))
-      let index = 0
-      open = open.map((item) => (item.priorityManual ? item : automatic[index++]))
+      // A manual row keeps its slot within its own run.
+      runs = runs.map((run) => {
+        const automatic = run
+          .filter((item) => !item.priorityManual)
+          .sort((a, b) => (scores.get(key(b)) ?? -1) - (scores.get(key(a)) ?? -1) || byPrevious(a, b))
+        let index = 0
+        return run.map((item) => (item.priorityManual ? item : automatic[index++]))
+      })
     }
     // A new explicit override already carries the complete chosen order in the day file.
+    const open = runs.flat()
     open.forEach((item, priority) => {
       item.priority = priority
     })
