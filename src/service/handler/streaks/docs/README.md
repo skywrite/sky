@@ -10,11 +10,19 @@ and completion records from each day's `## Streaks` list. A rule's title is
 the exact join key, with outer strike marks removed by `StreakDocument`.
 Older day files carry a stamped run count after the title (`— 12d`); it is
 stripped when matching and never written again
-([why](2026-09-19-the-run-count-leaves-the-day-file.md)). Creation reserves
-titles across both statuses; the app has no rename operation because
-changing a title would detach its existing history. Ambiguous names, titles,
-or day items remain visible through warnings and cannot be changed through
-the app.
+([why](2026-09-19-the-run-count-leaves-the-day-file.md)).
+
+A title is taken only on the days a streak with that title is tracked, active or archived.
+It is free again from the day after that streak's end, so a new streak can reuse an archived one's title.
+This is safe because every reader counts a streak only between its own start and end:
+two streaks whose dates never meet keep separate histories although the day files spell both the same way.
+`streaksShareDays` in the shared Streak model is the one rule; the form, the app store, and the CLI writer all use it.
+A streak with no readable start, or with no end, stays in the way of its title.
+The new rule gets its own name (`read-a-chapter-2`), because names stay unique across both statuses.
+
+The app has no rename operation because changing a title would detach its existing history.
+Ambiguous names, titles that share days, or duplicate day items remain visible through warnings
+and cannot be changed through the app.
 
 Reports never create or stamp files. They read only the configured `day.md`
 paths in bounded batches, from the earliest rule start through notebook

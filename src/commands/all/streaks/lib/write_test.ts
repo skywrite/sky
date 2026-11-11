@@ -176,3 +176,46 @@ test('writeStreak - refuses a title collision among active streaks', async () =>
     expected: true,
   })
 })
+
+test('writeStreak - a title is free again after the earlier streak ended', async () => {
+  const streaksDir = await makeTempDir({ prefix: 'streaks-' })
+  const timeDir = await makeTempDir({ prefix: 'time-' })
+  await outputFile(
+    path.join(streaksDir, 'archived/2026/eat-clean.md'),
+    StreakDocument.create({
+      name: 'eat-clean',
+      title: 'Eat clean',
+      start: new PlainDate('2026-01-05'),
+      end: new PlainDate('2026-02-28'),
+    }).toMarkdown(),
+  )
+  const input = {
+    name: 'eat-clean-2',
+    title: 'Eat clean',
+    schedule: 'daily' as const,
+    why: 'A fresh run.',
+    now: NOW,
+    category: 'Personal Complete',
+  }
+
+  let thrown: unknown
+  try {
+    await writeStreak({ ...input, start: new PlainDate('2026-02-28') }, { streaksDir, timeDir })
+  } catch (err) {
+    thrown = err
+  }
+  assert({
+    given: 'an archived streak’s title, starting on that streak’s last day',
+    should: 'refuse and say which day the title is free from',
+    actual: [thrown instanceof TitleCollisionError, (thrown as Error | undefined)?.message],
+    expected: [true, '“Eat clean” ran through 2026-02-28. Start on 2026-03-01 or later, or choose a different title.'],
+  })
+
+  const result = await writeStreak({ ...input, start: new PlainDate('2026-03-05') }, { streaksDir, timeDir })
+  assert({
+    given: 'the same title, starting after the archived streak ended',
+    should: 'create the new streak beside the archived one',
+    actual: result.file,
+    expected: path.join(streaksDir, 'active', 'eat-clean-2.md'),
+  })
+})

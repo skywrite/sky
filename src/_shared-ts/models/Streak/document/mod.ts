@@ -2,6 +2,7 @@ import Document from '#shared/models/Markdown/Document/mod.ts'
 import TagSet from '#shared/models/TagSet/mod.ts'
 import PlainDate from '#universal/dates/nbdt/PlainDate/mod.ts'
 import { parseStreakCategory, type StreakCategory } from '../category.ts'
+import type { StreakSpan } from '../titleConflict.ts'
 
 /** How often a streak expects completion. */
 export type StreakSchedule = 'daily' | 'weekdays'
@@ -26,7 +27,9 @@ export const STREAKS_LIST_TITLE = 'Streaks'
  * bullet in the day's `## Streaks` list. Completion is the standard
  * strikethrough mechanic (`~~Eat clean~~`, see DayDocument.isItemDone). The
  * title is therefore the join key between day items and this rule — renaming
- * it orphans history.
+ * it orphans history. A later streak may reuse the title once this one has
+ * ended: each reads only the days inside its own start and end (see
+ * streaksShareDays).
  *
  * The run is never written to the day file; it is counted back from the
  * struck items on read (computeStreakStats). Older day files carry a stamped
@@ -91,6 +94,11 @@ export default class StreakDocument extends Document {
    */
   get end(): PlainDate | undefined {
     return toPlainDate(this.yaml['end'])
+  }
+
+  /** The title and tracked days that decide which day items this streak reads. */
+  get span(): StreakSpan {
+    return { title: this.title, start: this.start?.ymd, end: this.end?.ymd }
   }
 
   // Scheduling

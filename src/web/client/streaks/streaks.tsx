@@ -1,6 +1,11 @@
 import { ActionIcon, Button, Menu, Modal, Select, Textarea, TextInput } from '@mantine/core'
 import { useEffect, useMemo, useState } from 'react'
 import { STREAK_CATEGORIES } from '#shared/models/Streak/category.ts'
+import {
+  findStreakTitleConflict,
+  streaksShareDays,
+  streakTitleConflictMessage,
+} from '#shared/models/Streak/titleConflict.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import type { StreakReport, StreakView } from '../../../service/handler/streaks/types.ts'
 import { renderStatic } from '../editor/wysiwyg/render.ts'
@@ -43,8 +48,7 @@ function dayWritable(report: StreakReport, date: string): boolean {
 function ambiguousStreak(report: StreakReport, streak: StreakView): boolean {
   return report.streaks.some(
     (other) =>
-      other.relativePath !== streak.relativePath &&
-      (other.name === streak.name || other.title.trim().toLowerCase() === streak.title.trim().toLowerCase()),
+      other.relativePath !== streak.relativePath && (other.name === streak.name || streaksShareDays(other, streak)),
   )
 }
 
@@ -259,7 +263,13 @@ function NewStreak({
   const [start, setStart] = useState(report.today)
   const [end, setEnd] = useState('')
   const [error, setError] = useState('')
-  const duplicate = report.streaks.some((streak) => streak.title.trim().toLowerCase() === title.trim().toLowerCase())
+  // A name is free again after the earlier streak's end, so the check waits for a complete start date.
+  const validDay = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value)
+  const conflict =
+    title.trim() && validDay(start) && (!end || validDay(end))
+      ? findStreakTitleConflict({ title, start, end: end || null }, report.streaks)
+      : undefined
+  const duplicate = !!conflict
   return (
     <Modal
       opened={opened}
@@ -312,7 +322,7 @@ function NewStreak({
           value={title}
           onChange={(event) => setTitle(event.currentTarget.value)}
           required
-          error={duplicate ? 'A streak already uses this name. Choose a different name.' : null}
+          error={conflict ? streakTitleConflictMessage(conflict, report.today) : null}
           data-autofocus
         />
         <Textarea

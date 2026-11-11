@@ -12,7 +12,9 @@ import { createStreakClassifier, resolveStreakCategory, type StreakClassifier } 
 import { loadAllStreaks, stampStreaksList } from '#lib/streaks/mod.ts'
 import { exists } from '#shared/fs/mod.ts'
 import StreakDocument, {
+  findStreakTitleConflict,
   parseStreakCategory,
+  streakTitleConflictMessage,
   type StreakCategory,
   type StreakSchedule,
 } from '#shared/models/Streak/mod.ts'
@@ -26,7 +28,7 @@ export class TitleCollisionError extends Error {}
 export interface WriteStreakInput {
   /** Slugified file/entity name — the caller owns slug derivation */
   name: string
-  /** Daily-checklist title — the join key in day files, unique among active streaks */
+  /** Daily-checklist title — the join key in day files, unique on every day it is tracked */
   title: string
   schedule: StreakSchedule
   /** First tracked day — may be later than the creation day */
@@ -61,9 +63,11 @@ export interface WriteStreakResult {
 
 /**
  * Create the streak rule doc under active/, refusing name collisions (across
- * every status) and title collisions (among active streaks — titles are the
- * join key in day files). Stamps the start day's Streaks list and records the
- * day item on the creation day. Directory overrides exist for tests only.
+ * every status) and title collisions (with any streak, active or archived,
+ * tracked on the same days — titles are the join key in day files, so a title
+ * is free again only after the earlier streak's end). Stamps the start day's
+ * Streaks list and records the day item on the creation day. Directory
+ * overrides exist for tests only.
  */
 export async function writeStreak(
   input: WriteStreakInput,
@@ -79,9 +83,12 @@ export async function writeStreak(
     throw new SlugCollisionError(`A streak named "${input.name}" already exists (${nameTaken.status})`)
   }
 
-  const titleTaken = existing.find(({ streak, status }) => status === 'active' && streak.title === input.title)
+  const titleTaken = findStreakTitleConflict(
+    { title: input.title, start: start.ymd, end: input.end?.ymd },
+    existing.map(({ streak }) => streak.span),
+  )
   if (titleTaken) {
-    throw new TitleCollisionError(`Active streak "${titleTaken.streak.name}" already uses the title "${input.title}"`)
+    throw new TitleCollisionError(streakTitleConflictMessage(titleTaken, now.plainDateTime.date, 'title'))
   }
 
   const file = path.join(streaksDir, 'active', `${input.name}.md`)

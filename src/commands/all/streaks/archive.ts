@@ -33,7 +33,8 @@ export default class StreaksArchiveTask extends Command {
     descriptionLong: [
       'Streaks are never deleted, only archived. The rule doc keeps its full',
       'history: stats can be recomputed from day files forever.',
-      'It is filed under the year the streak ended.',
+      'It is filed under the year the streak ended, and its title becomes free',
+      'for a new streak that starts after that end.',
     ],
     usage: ['sky streaks:archive eat-clean'],
     params,

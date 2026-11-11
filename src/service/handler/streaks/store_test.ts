@@ -159,10 +159,71 @@ test('archive preserves history and Undo restores the original planned end', asy
     })
     await f.store.archive(original.name, { revision: original.revision })
     assert({
-      given: 'an archived title',
-      should: 'reserve it so a new streak cannot absorb its history',
+      given: 'an archived title, asked for on days the archived streak covers',
+      should: 'refuse it so a new streak cannot absorb that history',
       actual: (await f.post('/create', { ...readInput, title: 'READ A CHAPTER' })).status,
       expected: 409,
+    })
+  } finally {
+    await f.dispose()
+  }
+})
+
+test('a title is free again after the earlier streak ended, and each streak keeps its own history', async () => {
+  const f = await streaksFixture(new PlainDateTime({ date: '2026-05-22', time: '14:30' }))
+  try {
+    await f.store.create({ ...readInput, end: '2026-05-19' })
+    await f.day('2026-05-18', ['~~Read a chapter~~'])
+    await f.day('2026-05-19', ['~~Read a chapter~~'])
+    await f.day('2026-05-20', ['Read a chapter'])
+    await f.day('2026-05-21', ['~~Read a chapter~~'])
+    await f.day('2026-05-22', ['Read a chapter'])
+    const original = (await f.store.report()).streaks[0]
+    await f.store.archive(original.name, { revision: original.revision })
+    const refused = await f.post('/create', { ...readInput, start: '2026-05-19' })
+    assert({
+      given: 'the archived title, starting on the archived streak’s last day',
+      should: 'refuse it and say which day the title is free from',
+      actual: [refused.status, await refused.json()],
+      expected: [
+        409,
+        {
+          message: '“Read a chapter” ran through 2026-05-19. Start on 2026-05-20 or later, or choose a different name.',
+        },
+      ],
+    })
+    const created = await f.store.create({ ...readInput, rule: 'Read two chapters.', start: '2026-05-20' })
+    const views = async () =>
+      (await f.store.report()).streaks.map((s) => [s.name, s.status, s.rule, s.done, s.current, s.best])
+    assert({
+      given: 'the archived title, starting the day after the archived streak ended',
+      should: 'create a separate streak with its own file, rule, and run, and raise no ambiguity warning',
+      actual: [created.name, await views(), (await f.store.report()).warnings],
+      expected: [
+        'read-a-chapter-2',
+        [
+          ['read-a-chapter', 'archived', readInput.rule, ['2026-05-18', '2026-05-19'], 2, 2],
+          ['read-a-chapter-2', 'active', 'Read two chapters.', ['2026-05-21'], 1, 1],
+        ],
+        [],
+      ],
+    })
+    await f.store.completion('read-a-chapter-2', { date: '2026-05-22', done: true, expectedDone: false })
+    await f.store.completion('read-a-chapter', { date: '2026-05-19', done: false, expectedDone: true })
+    assert({
+      given: 'a check-in on the new streak and a correction on the archived one',
+      should: 'change each streak on its own days only',
+      actual: [
+        await views(),
+        (await f.post('/read-a-chapter/completion', { date: '2026-05-21', done: false, expectedDone: true })).status,
+      ],
+      expected: [
+        [
+          ['read-a-chapter', 'archived', readInput.rule, ['2026-05-18'], 0, 1],
+          ['read-a-chapter-2', 'active', 'Read two chapters.', ['2026-05-21', '2026-05-22'], 2, 2],
+        ],
+        400,
+      ],
     })
   } finally {
     await f.dispose()

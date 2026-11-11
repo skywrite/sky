@@ -404,6 +404,61 @@ test(
           }
         }
       }
+      // An archived streak frees its name for a new one that starts after it ended.
+      const earlier = StreakDocument.create({
+        name: 'stretch',
+        title: 'Stretch',
+        start: new PlainDate('2026-05-01'),
+        end: new PlainDate('2026-05-10'),
+        details: '## What counts\n\nFive minutes on the mat.\n',
+        createdOn: '2026-05-01',
+      }).toMarkdown()
+      const earlierFile = path.join(f.dirs.streaksDir, 'archived', '2026', 'stretch.md')
+      await mkdir(path.dirname(earlierFile), { recursive: true })
+      await writeFile(earlierFile, earlier)
+      await page.goto(`${origin}/streaks`)
+      await page.getByRole('button', { name: 'New streak', exact: true }).click()
+      await dialog.getByRole('textbox', { name: 'What’s the habit?', exact: true }).fill('Stretch')
+      await dialog
+        .getByRole('textbox', { name: 'What counts as done?', exact: true })
+        .fill('Ten minutes before breakfast.')
+      const nameInUse = dialog.getByText(
+        '“Stretch” ran through 2026-05-10. Start on 2026-05-11 or later, or choose a different name.',
+        { exact: true },
+      )
+      const freeToday = [
+        await nameInUse.count(),
+        await dialog.getByRole('button', { name: 'Create streak', exact: true }).isDisabled(),
+      ]
+      await dialog.getByRole('textbox', { name: 'Start', exact: true }).fill('2026-05-10')
+      await nameInUse.waitFor()
+      const sharedDay = await dialog.getByRole('button', { name: 'Create streak', exact: true }).isDisabled()
+      // The dialog is still fading in here; capture it at rest.
+      if (shots)
+        await page.screenshot({
+          path: path.join(shots, 'new-streak-name-in-use-until.png'),
+          fullPage: true,
+          animations: 'disabled',
+        })
+      await dialog.getByRole('textbox', { name: 'Start', exact: true }).fill('2026-05-11')
+      await dialog.getByRole('button', { name: 'Create streak', exact: true }).click()
+      await dialog.waitFor({ state: 'hidden' })
+      await page.getByRole('heading', { name: 'Stretch', exact: true }).waitFor()
+      assert({
+        given: 'a name an archived streak used: starting today, on its last day, then the day after it ended',
+        should: 'allow today, block the shared day with the first free date, and create a separate streak',
+        actual: [
+          freeToday,
+          sharedDay,
+          new URL(page.url()).pathname,
+          (await readFile(path.join(f.dirs.streaksDir, 'active', 'stretch-2.md'), 'utf8')).includes(
+            'start: 2026-05-11',
+          ),
+          await readFile(earlierFile, 'utf8'),
+        ],
+        expected: [[0, false], true, '/streaks/stretch-2', true, earlier],
+      })
+
       // Reset only this temporary notebook to exercise the first-use path.
       await rm(f.dirs.streaksDir, { recursive: true })
       await rm(f.dirs.timeDir, { recursive: true })

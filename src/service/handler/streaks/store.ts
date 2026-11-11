@@ -13,9 +13,12 @@ import slugify from '#lib/string/slugify.ts'
 import DayDocument from '#shared/models/Day/mod.ts'
 import StreakDocument, {
   computeStreakStats,
+  findStreakTitleConflict,
   STREAKS_LIST_TITLE,
   STREAK_CATEGORIES,
   streaksItemsFromDay,
+  streaksShareDays,
+  streakTitleConflictMessage,
   type StreakDayEntry,
 } from '#shared/models/Streak/mod.ts'
 import { hasDaySummary } from '#shared/nbfs/daySummary.ts'
@@ -226,13 +229,10 @@ export class StreaksStore {
     await visit(path.join(this.paths.streaksDir, 'archived'), 'archived')
     streaks.sort((a, b) => a.document.name.localeCompare(b.document.name))
     for (const streak of streaks) {
-      if (
-        streaks.some(
-          (other) => other !== streak && other.document.title.toLowerCase() === streak.document.title.toLowerCase(),
-        )
-      )
+      // Reusing a title is fine once the earlier streak has ended; only shared days are ambiguous.
+      if (streaks.some((other) => other !== streak && streaksShareDays(other.document.span, streak.document.span)))
         warnings.push(
-          `More than one streak uses the title “${streak.document.title}”. Review the documents before checking it off.`,
+          `More than one streak uses the title “${streak.document.title}” on the same days. Review the documents before checking it off.`,
         )
       if (streaks.some((other) => other !== streak && other.document.name === streak.document.name))
         warnings.push(
@@ -345,12 +345,8 @@ export class StreaksStore {
       throw new StreaksError('This streak has an invalid end date. Review its document first.', 409)
     if (result.document.yaml.schedule && !['daily', 'weekdays'].includes(result.document.yaml.schedule as string))
       throw new StreaksError('This streak has an unsupported schedule. Review its document first.', 409)
-    if (
-      streaks.some(
-        (other) => other !== result && other.document.title.toLowerCase() === result.document.title.toLowerCase(),
-      )
-    )
-      throw new StreaksError('More than one streak uses this title. Review the documents first.', 409)
+    if (streaks.some((other) => other !== result && streaksShareDays(other.document.span, result.document.span)))
+      throw new StreaksError('More than one streak uses this title on the same days. Review the documents first.', 409)
     return result
   }
 
@@ -391,11 +387,12 @@ export class StreaksStore {
           'Some streak documents could not be read. Review them before creating another streak.',
           409,
         )
-      if (streaks.some(({ document }) => document.title.toLowerCase() === value.title.toLowerCase()))
-        throw new StreaksError(
-          'A streak already uses this title. Choose a different title so its history stays distinct.',
-          409,
-        )
+      const today = await this.today()
+      const conflict = findStreakTitleConflict(
+        { title: value.title, start: value.start, end: value.end },
+        streaks.map(({ document }) => document.span),
+      )
+      if (conflict) throw new StreaksError(streakTitleConflictMessage(conflict, today.ymd), 409)
       const base =
         slugify(value.title)
           .replace(/^-+|-+$/g, '')
@@ -404,7 +401,6 @@ export class StreaksStore {
       for (let suffix = 2; streaks.some(({ document }) => document.name.toLowerCase() === name.toLowerCase()); suffix++)
         name = `${base}-${suffix}`
       Name.parse(name)
-      const today = await this.today()
       const document = StreakDocument.create({
         name,
         title: value.title,

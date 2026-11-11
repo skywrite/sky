@@ -575,7 +575,12 @@ export default class StreaksNewTask extends Command {
         category,
       })
     } catch (err) {
-      if (err instanceof SlugCollisionError || err instanceof TitleCollisionError) {
+      // A title refusal already says how to resolve it; a new slug would not help.
+      if (err instanceof TitleCollisionError) {
+        output.error(err.message)
+        return CommandResult.fail(err.message)
+      }
+      if (err instanceof SlugCollisionError) {
         output.error(`${err.message}. Pick another with --name.`)
         return CommandResult.fail(err.message)
       }
