@@ -352,7 +352,7 @@ test(
         given: 'archiving before a planned end',
         should: 'move the file, stop tracking today, and record it in the corrected Professional category',
         actual: [
-          (await readFile(path.join(f.dirs.streaksDir, 'archived', 'practice-piano.md'), 'utf8')).includes(
+          (await readFile(path.join(f.dirs.streaksDir, 'archived', '2026', 'practice-piano.md'), 'utf8')).includes(
             `end: ${TODAY.ymd}`,
           ),
           DayDocument.fromMarkdown(await readFile(f.todayFile, 'utf8')).lists.find(

@@ -1,11 +1,10 @@
-import * as path from 'node:path'
 import colors from 'picocolors'
 import { Arg, Command, CommandResult } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { writeDayItems } from '#lib/nbfs/mod.ts'
 import { writePlanningChanges } from '#lib/nbfs/planningChanges.ts'
 import { createStreakClassifier, resolveStreakCategory } from '#lib/streaks/category.ts'
-import { loadStreakEntries, loadStreaks } from '#lib/streaks/mod.ts'
+import { archivedStreakFile, loadStreakEntries, loadStreaks } from '#lib/streaks/mod.ts'
 import { readTextFile } from '#shared/fs/mod.ts'
 import StreakDocument, { computeStreakStats, parseStreakCategory } from '#shared/models/Streak/mod.ts'
 import { streakCategoryFlag } from './lib/category.ts'
@@ -30,10 +29,11 @@ declare module '#commands/lib/core/CommandTypesRegistry.ts' {
 export default class StreaksArchiveTask extends Command {
   static override description: CommandDescription = {
     name: 'streaks:archive',
-    description: 'Archive a streak — stamps ended and moves it to streaks/archived/.',
+    description: 'Archive a streak — stamps ended and moves it to streaks/archived/<year>/.',
     descriptionLong: [
       'Streaks are never deleted, only archived. The rule doc keeps its full',
       'history: stats can be recomputed from day files forever.',
+      'It is filed under the year the streak ended.',
     ],
     usage: ['sky streaks:archive eat-clean'],
     params,
@@ -68,7 +68,7 @@ export default class StreaksArchiveTask extends Command {
     )
     let archived = streak.archive(today)
     if (category.category) archived = archived.updateYaml({ category: category.category })
-    const archivedPath = path.join(config.DIR_STREAKS, 'archived', `${name}.md`)
+    const archivedPath = archivedStreakFile(config.DIR_STREAKS, name, archived.end?.ymd ?? today.ymd)
 
     await writePlanningChanges([
       { file: archivedPath, before: undefined, after: archived.toMarkdown() },

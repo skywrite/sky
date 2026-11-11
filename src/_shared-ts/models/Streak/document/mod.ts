@@ -15,7 +15,8 @@ export const STREAKS_LIST_TITLE = 'Streaks'
  * StreakDocument model - a habit-tracking rule with minimal queryable metadata
  * in YAML and free-form narrative (the why + detailed rules) in markdown.
  *
- * Stored at: $SKY_DIR/streaks/{status}/{slug}.md
+ * Stored at: $SKY_DIR/streaks/active/{slug}.md while tracked, then
+ * $SKY_DIR/streaks/archived/{year it ended}/{slug}.md
  *
  * Status is NOT a YAML field — it's derived from the file path:
  * - /active/   → active
@@ -144,8 +145,8 @@ export default class StreakDocument extends Document {
   // Lifecycle
 
   /**
-   * Stamp the end of tracking. The file move to streaks/archived/ is the
-   * caller's job — status stays path-derived, like Idea.
+   * Stamp the end of tracking. The file move to streaks/archived/{year}/ is
+   * the caller's job — status stays path-derived, like Idea.
    *
    * When a planned end already passed, it stays — the streak factually ended
    * then. Archiving early (before a planned end) moves the end up to now.

@@ -1,6 +1,6 @@
 ---
 created: 2026-07-28
-updated: 2026-10-27
+updated: 2026-11-10
 ---
 
 # Commands
@@ -72,7 +72,7 @@ sky streaks:list                 # current run, best run, month consistency
 sky streaks:archive              # retire a habit, keeping its history
 ```
 
-Streak definitions live in `streaks/active/` and `streaks/archived/`. The tracking itself
+Streak definitions live in `streaks/active/` and `streaks/archived/<year>/`. The tracking itself
 is the `## Streaks` list in each day file — struck items are the record, so your streak
 history is just your day files, and it survives Sky.
 

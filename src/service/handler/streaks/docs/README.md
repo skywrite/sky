@@ -1,6 +1,6 @@
 ---
 created: 2026-09-08
-updated: 2026-10-26
+updated: 2026-11-10
 ---
 
 # Streaks in the app
@@ -42,7 +42,11 @@ at the final check. Paths cannot traverse outside the notebook or follow
 notebook symlinks.
 
 Archive moves the rule without changing its recorded completions, clamping
-its end to the earlier of its planned end and notebook today. It adds a
+its end to the earlier of its planned end and notebook today.
+The rule is filed under `streaks/archived/<year>/`, the year of that end, so the folder follows from the document.
+Rules archived before year folders sit directly under `streaks/archived/`; every loader walks the whole folder,
+so both layouts read the same and nothing moves them.
+It adds a
 timestamped archive entry to today's category Complete list, using the same
 notebook clock and entry format as the CLI. A missing day is prepared without
 starting it; a summarized day requires starting a new day or removing its summary first.

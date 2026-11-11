@@ -8,6 +8,7 @@ import { insertBlock } from '#lib/nbfs/listBlocks.ts'
 import { writePlanningChanges, type PlanningChange } from '#lib/nbfs/planningChanges.ts'
 import { atomicWrite, hash, missing, readOptional, withLock } from '#lib/outbox/files.ts'
 import { createStreakClassifier, resolveStreakCategory, type StreakClassifier } from '#lib/streaks/category.ts'
+import { archivedStreakFile } from '#lib/streaks/mod.ts'
 import slugify from '#lib/string/slugify.ts'
 import DayDocument from '#shared/models/Day/mod.ts'
 import StreakDocument, {
@@ -511,7 +512,7 @@ export class StreaksStore {
         const after = streak.document
           .updateYaml({ end, updated: today.ymd, ...(category.category ? { category: category.category } : {}) })
           .toMarkdown()
-        const file = path.join(this.paths.streaksDir, 'archived', `${name}.md`)
+        const file = archivedStreakFile(this.paths.streaksDir, name, end)
         await this.checked(file, true)
         await this.changed(streak.file, streak.content)
         // Publish the archive and its day record before removing the active rule.

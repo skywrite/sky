@@ -27,10 +27,12 @@ for (const override of [undefined, 'Personal'] as const) {
       const category = override ?? 'Professional'
       assert({
         given: override ? 'an explicit correction while archiving' : 'an existing saved category',
-        should: 'persist the chosen category and file the archive in its Complete list',
+        should:
+          'persist the chosen category, file the rule under the year it ended, and record it in its Complete list',
         actual: [
-          StreakDocument.fromMarkdown(await readTextFile(path.join(config.DIR_STREAKS, 'archived/read-a-chapter.md')))
-            .category,
+          StreakDocument.fromMarkdown(
+            await readTextFile(path.join(config.DIR_STREAKS, 'archived', today.ymd.slice(0, 4), 'read-a-chapter.md')),
+          ).category,
           DayDocument.fromMarkdown(await readTextFile(file)).lists.find((list) => list.title === `${category} Complete`)
             ?.items,
         ],

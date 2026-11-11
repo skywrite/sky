@@ -14,7 +14,9 @@ interface StreakEntry {
 /**
  * Store for Streak rule documents with slug-based lookup.
  *
- * Streaks are stored at: {streaksDir}/{status}/{slug}.md
+ * Streaks are stored at: {streaksDir}/active/{slug}.md, then
+ * {streaksDir}/archived/{year it ended}/{slug}.md (older notebooks also hold
+ * rules directly under archived/).
  *
  * Status is derived from the file path:
  * - /active/   → active

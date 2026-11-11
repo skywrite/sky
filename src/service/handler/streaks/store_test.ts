@@ -5,7 +5,7 @@ import DayDocument from '#shared/models/Day/mod.ts'
 import StreakDocument from '#shared/models/Streak/mod.ts'
 import { daySummaryPath } from '#shared/nbfs/daySummary.ts'
 import { assert, test } from '#test'
-import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
+import { PlainDate, PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import { readInput, STREAKS_TODAY, streaksFixture } from './testHelpers.ts'
 
 test('streak reports read existing records and share the model counting rules', async () => {
@@ -169,6 +169,44 @@ test('archive preserves history and Undo restores the original planned end', asy
   }
 })
 
+test('archive files the rule under the year the streak ended, beside rules archived before year folders', async () => {
+  const f = await streaksFixture(new PlainDateTime({ date: '2026-01-02', time: '09:00' }))
+  try {
+    await f.store.create({ ...readInput, start: '2025-12-01', end: '2025-12-31' })
+    await mkdir(path.join(f.root, 'streaks/archived'), { recursive: true })
+    await writeFile(
+      path.join(f.root, 'streaks/archived/walk-outside.md'),
+      StreakDocument.create({
+        name: 'walk-outside',
+        title: 'Walk outside',
+        start: new PlainDate('2025-06-01'),
+        end: new PlainDate('2025-06-30'),
+      }).toMarkdown(),
+    )
+    const original = (await f.store.report()).streaks[0]
+    const archived = await f.store.archive(original.name, { revision: original.revision })
+    const paths = async () => (await f.store.report()).streaks.map((s) => [s.status, s.end, s.relativePath])
+    assert({
+      given: 'a streak whose planned end passed last year, archived this year',
+      should: 'file it under the year it ended and keep reading an archived rule that has no year folder',
+      actual: await paths(),
+      expected: [
+        ['archived', '2025-12-31', 'streaks/archived/2025/read-a-chapter.md'],
+        ['archived', '2025-06-30', 'streaks/archived/walk-outside.md'],
+      ],
+    })
+    await f.store.undo(archived.undoId!)
+    assert({
+      given: 'Undo of that archive',
+      should: 'return the rule to the active folder',
+      actual: (await paths())[0],
+      expected: ['active', '2025-12-31', 'streaks/active/read-a-chapter.md'],
+    })
+  } finally {
+    await f.dispose()
+  }
+})
+
 test('archive records notebook time on a missing day and Undo removes the untouched new day', async () => {
   const f = await streaksFixture(new PlainDateTime({ date: STREAKS_TODAY, time: '25:30' }))
   try {
@@ -211,7 +249,7 @@ test('archive and Undo refuse to change summarized or subsequently edited day re
     const original = (await f.store.report()).streaks[0]
     const activeFile = path.join(f.root, original.relativePath)
     const originalRule = await readFile(activeFile, 'utf8')
-    const archivedFile = path.join(f.root, 'streaks/archived/read-a-chapter.md')
+    const archivedFile = path.join(f.root, 'streaks/archived/2026/read-a-chapter.md')
     const ended = await f.day(STREAKS_TODAY, ['Read a chapter'], true)
     assert({
       given: 'a summarized notebook day',

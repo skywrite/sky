@@ -18,6 +18,17 @@ const { addDays } = dateFns
 /** Status is path-derived: streaks/active/ vs streaks/archived/. */
 export type StreakStatus = 'active' | 'archived'
 
+/**
+ * Where an archived rule is filed: streaks/archived/{year}/{name}.md. The year
+ * is the one the streak ended in (its stamped `end`), so the folder follows
+ * from the document and never from the day someone happened to archive it.
+ * Older notebooks also hold rules directly under archived/; every loader
+ * walks the whole folder, so both layouts read the same.
+ */
+export function archivedStreakFile(streaksDir: string, name: string, end: string): string {
+  return path.join(streaksDir, 'archived', end.slice(0, 4), `${name}.md`)
+}
+
 export interface LoadedStreak {
   streak: StreakDocument
   path: string
