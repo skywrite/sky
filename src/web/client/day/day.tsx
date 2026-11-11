@@ -900,8 +900,9 @@ function PlanCard({
       {sorted.map((item) => {
         const key = itemKey(item)
         const minutes = minutesOf(item.time)
+        // every open item due at the next time is "next", so a tie looks the same
         const tone =
-          next && itemKey(next) === key
+          next && open(item) && minutes !== null && minutes === minutesOf(next.time)
             ? ('next' as const)
             : nowMin !== null && minutes !== null && minutes < nowMin && open(item)
               ? ('late' as const)
@@ -971,8 +972,13 @@ function TodoCard({
   const renderRow = (item: DayItem) => {
     const key = itemKey(item)
     const minutes = minutesOf(item.time)
+    // every open item due at the next time is "next", so a tie looks the same
     const tone =
-      next && itemKey(next) === key
+      next &&
+      !itemDone(item, checkOff.phases) &&
+      !checkOff.phases[key] &&
+      minutes !== null &&
+      minutes === minutesOf(next.time)
         ? ('next' as const)
         : nowMin !== null && minutes !== null && minutes < nowMin && !itemDone(item, checkOff.phases)
           ? ('late' as const)
