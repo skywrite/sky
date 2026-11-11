@@ -1,6 +1,6 @@
 ---
 created: 2026-09-03
-updated: 2026-11-10
+updated: 2026-11-11
 ---
 
 # The day's items, the day's rail, and the day's files
@@ -49,7 +49,7 @@ Jev suggests priority from goals, the week's plan, recent journals, Most Importa
 Personal and professional tasks share this ranking; select the top five overall before grouping them by category.
 Each group keeps priority order; Professional and Personal headings keep their positions as tasks are completed.
 A to-do with a time always sits above the to-dos without one, in the top five and under each category heading.
-Priority orders the timed to-dos among themselves, and the untimed ones among themselves.
+Timed to-dos follow the clock, earliest first, with extended hours after midnight; priority orders the untimed ones.
 `priorityItems.ts` applies this on the page, so it also holds before Sky's first ranking.
 Reminders rank separately by relevance to this context and the day's To-dos; habits and principles need no deadline.
 Times sit on the right, aligned with the first line on phones too, so every title starts at the same edge.
@@ -101,7 +101,7 @@ operation ID; Undo preserves unrelated later changes and refuses to overwrite
 changed task blocks. Linked workstream activities open their canonical details.
 
 **Organize** combines manual ordering and selection across the plan lists. A row
-selects for moving; To-do grips reorder within their category, among the timed rows or among the untimed ones.
+selects for moving; To-do grips reorder untimed to-dos within their category. Timed to-dos have no grip or Move to top.
 Other lists retain their own ordering.
 Organize reveals all To-dos and Reminders and offers Move to top for promoting a hidden item within its list,
 including above other categories in the shared To-do ranking.
@@ -123,7 +123,7 @@ The combined To-dos view cannot express its order by rearranging blocks within s
 Its `todo-order` frontmatter stores readable heading/text/occurrence references, with `manual` marking the rows
 the person moved. Reminders use the same contract in a separate `reminder-order` field.
 Those rows keep their chosen slots while Jev fills the remaining slots in each list independently.
-Timed and untimed to-dos count their slots separately, so a moved row keeps its place among its own kind.
+Manual slots apply among the untimed to-dos; the ranking keeps timed ones in clock order.
 Completion, edits and category/time changes rebase these references; repeated item text still has distinct occurrences.
 Clearing a reminder reveals the next one, and Undo restores its priority as well as its text and notes.
 Use Sky's order clears only that list's overrides. Most Important retains its existing block ordering.

@@ -118,7 +118,7 @@ for (const width of [1500, 390]) {
           assert({
             given: 'existing checked tasks loaded from Markdown',
             should:
-              'put timed tasks first, then keep priority order in each category, with checked items under Completed',
+              'put timed tasks first in clock order, then keep priority order in each category, with checked items under Completed',
             actual: {
               open: await labels('open'),
               completed: await labels('completed'),
@@ -130,8 +130,8 @@ for (const width of [1500, 390]) {
                   category: 'Professional',
                   items: [
                     'Early open commitment',
-                    'Late open commitment',
                     'Midday open commitment',
+                    'Late open commitment',
                     'First open task',
                     'Read Atlas brief',
                     'Final open task',
@@ -142,19 +142,19 @@ for (const width of [1500, 390]) {
               completed: [
                 {
                   category: 'Professional',
-                  items: ['Later completed commitment', 'Earlier completed commitment', 'Older completed task'],
+                  items: ['Earlier completed commitment', 'Later completed commitment', 'Older completed task'],
                 },
                 { category: 'Personal', items: ['Personal completed task'] },
               ],
               times: {
                 open: [
                   ['Early open commitment', '7:00'],
-                  ['Late open commitment', '25:30'],
                   ['Midday open commitment', '12:00'],
+                  ['Late open commitment', '25:30'],
                 ],
                 completed: [
-                  ['Later completed commitment', '17:00'],
                   ['Earlier completed commitment', '9:00'],
+                  ['Later completed commitment', '17:00'],
                 ],
               },
             },
@@ -179,8 +179,8 @@ for (const width of [1500, 390]) {
                   category: 'Professional',
                   items: [
                     'Early open commitment',
-                    'Late open commitment',
                     'Midday open commitment',
+                    'Late open commitment',
                     'First open task',
                     'Final open task',
                   ],
@@ -191,8 +191,8 @@ for (const width of [1500, 390]) {
                 {
                   category: 'Professional',
                   items: [
-                    'Later completed commitment',
                     'Earlier completed commitment',
+                    'Later completed commitment',
                     'Older completed task',
                     'Read Atlas brief',
                   ],

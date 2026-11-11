@@ -60,6 +60,21 @@ test('a timed to-do leads the top five even when it ranks last', () => {
   })
 })
 
+test('timed to-dos follow the clock whatever their priority, extended hours last', () => {
+  const items = [
+    item('Late call', 0, '25:30', false, 'Personal Commitments'),
+    item('Review the launch plan', 1, '14:00', false, 'Professional Commitments'),
+    item('Check in with Jane Doe', 2, '9:30', false, 'Professional Commitments'),
+    item('Evening walk', 3, '23:00', false, 'Personal Commitments'),
+  ]
+  assert({
+    given: 'timed to-dos ranked in reverse clock order, one past midnight',
+    should: 'list them earliest first',
+    actual: priorityItems(items, (row) => row.done).open.map((row) => row.text),
+    expected: ['Check in with Jane Doe', 'Review the launch plan', 'Evening walk', 'Late call'],
+  })
+})
+
 test('a time on a reminder does not reorder reminders', () => {
   const items = [
     item('Pause before replying', 0, null, false, 'Reminders'),

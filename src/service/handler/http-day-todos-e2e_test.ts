@@ -103,7 +103,7 @@ test(
           assert({
             given: `timed and untimed tasks at ${width}px, including a long title`,
             should:
-              'put timed tasks above the highest-ranked untimed ones, share a title edge, keep times at the right beside the first line, and retain the other sections',
+              'put timed tasks in clock order above the highest-ranked untimed ones, share a title edge, keep times at the right beside the first line, and retain the other sections',
             actual: {
               titles: await open.locator('.sky-ptext').allTextContents(),
               aligned: new Set(layout.map((row) => row.left)).size,
@@ -190,10 +190,6 @@ test(
           actual: [await readFile(file, 'utf8'), errors],
           expected: [CONTENT, []],
         })
-        // The restored file is ranked again; organizing before that lands would save the file's order as the person's.
-        await page.waitForFunction(
-          () => document.querySelector('.sky-todos-open .sky-ptext')?.textContent === 'Atlas planning',
-        )
         await page.getByRole('button', { name: 'Show 3 more', exact: true }).click()
         assert({
           given: 'the rest of the list expanded on a small phone',

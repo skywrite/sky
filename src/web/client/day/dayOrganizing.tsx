@@ -15,7 +15,7 @@ import { dayItemKey } from '../../../service/handler/day/organizingTypes.ts'
 import type { DayData, DayItem } from './day.tsx'
 import { DayCalendarIcon, DayDatePicker } from './dayDatePicker.tsx'
 import { useItemEditing } from './dayItemEditing.tsx'
-import { isTodoItem, organizeGroup, priorityItems, priorityGroupOf } from './priorityItems.ts'
+import { isTimedTodo, isTodoItem, organizeGroup, priorityItems, priorityGroupOf } from './priorityItems.ts'
 
 type Result = { view: DayData; undo: string; message: string; date?: string; href?: string }
 /** A place the lifted row can land: how far its slot sits from home, and the rows that make room. */
@@ -247,7 +247,8 @@ export function useDayOrganizing(
         })
       : save('reorder', { list: item.list, items: ordered.map(address) })
   }
-  const canReorder = (item: DayItem) => enabled && !busy && Boolean(item.revision)
+  // Timed to-dos follow the clock, so they have no grip and no Move to top.
+  const canReorder = (item: DayItem) => enabled && !busy && Boolean(item.revision) && !isTimedTodo(item)
   /** The highest place an item can take: an untimed to-do's top is just below the timed ones. */
   const topOf = (item: DayItem) => {
     const group = priorityGroupOf(item)
@@ -257,6 +258,7 @@ export function useDayOrganizing(
     enabled &&
     priorityGroupOf(item) !== null &&
     !item.done &&
+    !isTimedTodo(item) &&
     Boolean(item.revision) &&
     dayItemKey(topOf(item) ?? item) !== dayItemKey(item)
   const shifts = (state: Drag) =>

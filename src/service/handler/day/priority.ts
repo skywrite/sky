@@ -116,6 +116,12 @@ export function createDayPriority(options: DayPriorityOptions, group: PriorityGr
         return run.map((item) => (item.priorityManual ? item : automatic[index++]))
       })
     }
+    // Timed to-dos follow the clock; their ranking only breaks ties. Extended hours count past midnight.
+    const clock = (item: ReturnType<typeof groupItems>[number]) => {
+      const [hours, minutes] = item.time!.split(':').map(Number)
+      return hours * 60 + minutes
+    }
+    runs[0].sort((a, b) => clock(a) - clock(b))
     // A new explicit override already carries the complete chosen order in the day file.
     const open = runs.flat()
     open.forEach((item, priority) => {

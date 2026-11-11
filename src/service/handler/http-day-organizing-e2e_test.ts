@@ -338,10 +338,16 @@ for (const { mobile, cpuRate } of [
               await keyboard.send('Emulation.setCPUThrottlingRate', { rate: 1 })
               await keyboard.detach()
             }
-            await page.getByRole('button', { name: 'Reorder Check in with Jane Doe', exact: true }).waitFor()
-            await dragRow(page, 'Check in with Jane Doe', 'Review the launch plan', mobile)
+            await page.getByRole('button', { name: 'Reorder Outline the next release', exact: true }).waitFor()
+            assert({
+              given: 'timed to-dos while organizing',
+              should: 'offer no grip, since they follow the clock',
+              actual: await page.locator('.sky-prow[data-timed] [data-sort-grip]').count(),
+              expected: 0,
+            })
+            await dragRow(page, 'Outline the next release', 'Share the launch checklist with the team', mobile)
             await page.locator('.sky-organize-toast').getByRole('button', { name: 'Undo', exact: true }).click()
-            await page.getByRole('button', { name: 'Reorder Check in with Jane Doe', exact: true }).waitFor()
+            await page.getByRole('button', { name: 'Reorder Outline the next release', exact: true }).waitFor()
             for (const text of ['Review the Atlas proposal', 'Check in with Jane Doe', 'Send the venue options'])
               await page.getByRole('checkbox', { name: `Select ${text}`, exact: true }).click()
             const beforeMove = await readFile(file, 'utf8')
