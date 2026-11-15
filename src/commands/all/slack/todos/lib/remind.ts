@@ -1,4 +1,5 @@
 import * as path from 'node:path'
+import { Lexer, walkTokens } from 'marked'
 import { oneLine } from '#commands/all/slack/lib/mod.ts'
 import type { LaterCaptureRow } from '#commands/all/slack/saved/lib/capture.ts'
 import type CommandContext from '#commands/lib/core/CommandContext.ts'
@@ -11,16 +12,36 @@ import { readOptional } from '#lib/outbox/files.ts'
 import DayDocument from '#shared/models/Day/document/mod.ts'
 import { dayFile } from '#shared/nbfs/mod.ts'
 
+/** Thread and navigation parameters can change without creating a different source message. */
+function sourceIdentity(link: string): string {
+  try {
+    const url = new URL(link)
+    if (
+      url.protocol === 'https:' &&
+      (url.hostname.endsWith('.slack.com') || url.hostname.endsWith('.slack-gov.com')) &&
+      /^\/archives\/[A-Z0-9]+\/p\d+$/.test(url.pathname)
+    )
+      return url.origin + url.pathname
+  } catch {
+    /* Preserve exact matching for other link forms. */
+  }
+  return link
+}
+
 function hasSource(contents: string | undefined, link: string): boolean {
   if (!contents) return false
-  const links = DayDocument.fromMarkdown(contents).links
+  const lexer = new Lexer()
+  lexer.tokens.links = Object.fromEntries(DayDocument.fromMarkdown(contents).links)
+  const identity = sourceIdentity(link)
   // The source link survives edits, completion and moves between today's lists.
   return planSections(contents).some((section) =>
-    section.rows.some(
-      (item) =>
-        item.block.includes(`](${link})`) ||
-        DayDocument.extractReferenceLabels(item.block).some((label) => links.get(label.toLowerCase())?.href === link),
-    ),
+    section.rows.some((item) => {
+      let found = false
+      walkTokens(lexer.inlineTokens(item.block), (token) => {
+        if (token.type === 'link' && sourceIdentity(token.href) === identity) found = true
+      })
+      return found
+    }),
   )
 }
 

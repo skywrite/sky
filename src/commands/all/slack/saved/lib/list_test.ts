@@ -2,7 +2,6 @@ import type { AgentSlackLaterItem } from '#commands/all/slack/cli/lib/agent-slac
 import { assert, test } from '#test'
 import {
   backfillMissingMessages,
-  laterBrowserLink,
   laterChannelLabel,
   laterConversationKind,
   laterGroupKey,
@@ -65,25 +64,25 @@ test('laterItemLink builds the archives permalink', () => {
   })
 })
 
-test('laterBrowserLink targets the web client host', () => {
+test('laterItemLink preserves the workspace and parent thread', () => {
   assert({
     given: 'a thread-parent message',
-    should: 'use the plain app.slack.com archive form',
-    actual: laterBrowserLink(item({ message: { thread_ts: '1750000000.000100' } })),
-    expected: 'https://app.slack.com/archives/C0123ABCDEF/p1750000000000100',
+    should: 'keep the workspace without opening the parent as a reply',
+    actual: laterItemLink('https://atlas.slack.com', item({ message: { thread_ts: '1750000000.000100' } })),
+    expected: 'https://atlas.slack.com/archives/C0123ABCDEF/p1750000000000100',
   })
   assert({
-    given: 'a thread reply',
-    should: 'carry thread_ts and cid so the client opens the thread pane',
-    actual: laterBrowserLink(item({ message: { thread_ts: '1749999999.000009' } })),
+    given: 'a thread reply in an enterprise workspace',
+    should: 'retain the workspace, exact reply and parent thread',
+    actual: laterItemLink('https://atlas.enterprise.slack.com/', item({ message: { thread_ts: '1749999999.000009' } })),
     expected:
-      'https://app.slack.com/archives/C0123ABCDEF/p1750000000000100?thread_ts=1749999999.000009&cid=C0123ABCDEF',
+      'https://atlas.enterprise.slack.com/archives/C0123ABCDEF/p1750000000000100?thread_ts=1749999999.000009&cid=C0123ABCDEF',
   })
   assert({
     given: 'an unfetched message (no thread info)',
-    should: 'fall back to the plain form',
-    actual: laterBrowserLink(item({})),
-    expected: 'https://app.slack.com/archives/C0123ABCDEF/p1750000000000100',
+    should: 'retain the workspace and exact message',
+    actual: laterItemLink('https://widget.slack.com', item({})),
+    expected: 'https://widget.slack.com/archives/C0123ABCDEF/p1750000000000100',
   })
 })
 
@@ -162,7 +161,7 @@ test('renderLaterRow lays out head, snippet, and link lines', () => {
     should: 'wrap the time in an OSC-8 link and drop the url line',
     expected: '2 lines, head linked: true',
     actual: `${linked.length} lines, head linked: ${linked[0].includes(
-      ']8;;https://app.slack.com/archives/C0123ABCDEF/p17500000000001002026-01-05 09:30]8;;',
+      ']8;;https://atlas.slack.com/archives/C0123ABCDEF/p17500000000001002026-01-05 09:30]8;;',
     )}`,
   })
 })
@@ -304,44 +303,44 @@ test('backfillMissingMessages hydrates only bodyless rows on live channels', asy
   const deadId = item({ ts: '1750000030.000100' })
   const wrongTs = item({ channel_name: 'general', ts: '1750000040.000100' })
   const gone = item({ channel_name: 'general', ts: '1750000050.000100' })
+  const rows = [reply, hasBody, deadId, wrongTs, gone].map((entry) => ({
+    item: entry,
+    link: laterItemLink('https://atlas.slack.com', entry),
+  }))
+  const originalLinks = rows.map((row) => row.link)
 
   const fetched: string[] = []
-  await backfillMissingMessages(
-    [
-      { item: reply, link: 'link-reply' },
-      { item: hasBody, link: 'link-body' },
-      { item: deadId, link: 'link-dead' },
-      { item: wrongTs, link: 'link-wrong-ts' },
-      { item: gone, link: 'link-gone' },
-    ],
-    async (link) => {
-      fetched.push(link)
-      if (link === 'link-reply') {
-        return {
-          channel_id: 'C0123ABCDEF',
-          ts: '1750000010.000100',
-          content: 'threaded answer',
-          thread_ts: '1749999999.000100',
-        }
+  await backfillMissingMessages(rows, async (link) => {
+    fetched.push(link)
+    if (link === originalLinks[0]) {
+      return {
+        channel_id: 'C0123ABCDEF',
+        ts: '1750000010.000100',
+        content: 'threaded answer',
+        thread_ts: '1749999999.000100',
       }
-      if (link === 'link-wrong-ts') {
-        return { channel_id: 'C0123ABCDEF', ts: '1750000099.000100', content: 'someone else' }
-      }
-      return undefined
-    },
-  )
+    }
+    if (link === originalLinks[3]) {
+      return { channel_id: 'C0123ABCDEF', ts: '1750000099.000100', content: 'someone else' }
+    }
+    return undefined
+  })
 
   assert({
     given: 'a mix of hydrated, bodyless, and dead-id rows',
     should: 'fetch only the bodyless rows on live channels',
     actual: fetched.sort(),
-    expected: ['link-gone', 'link-reply', 'link-wrong-ts'],
+    expected: [originalLinks[0], originalLinks[3], originalLinks[4]],
   })
   assert({
     given: 'a backfilled thread reply',
-    should: 'carry its content and read as a thread reply',
-    actual: `${reply.message?.content} / ${laterIsThreadReply(reply)}`,
-    expected: 'threaded answer / true',
+    should: 'carry its content, identify the reply and refresh the source link before capture or opening',
+    actual: [reply.message?.content, laterIsThreadReply(reply), rows[0].link],
+    expected: [
+      'threaded answer',
+      true,
+      'https://atlas.slack.com/archives/C0123ABCDEF/p1750000010000100?thread_ts=1749999999.000100&cid=C0123ABCDEF',
+    ],
   })
   assert({
     given: 'a row that already had a body',

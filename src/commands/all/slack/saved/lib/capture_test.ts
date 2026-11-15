@@ -3,8 +3,9 @@ import * as agentSlack from '#commands/all/slack/lib/agentSlack.ts'
 import type { OutputHandler } from '#commands/lib/output/OutputHandler.ts'
 import type { CommandService } from '#commands/mod.ts'
 import { CommandResult } from '#commands/mod.ts'
+import * as sys from '#lib/sys/mod.ts'
 import { assert, test } from '#test'
-import { captureLaterItems, type LaterCaptureRow } from './capture.ts'
+import { captureLaterItems, type LaterCaptureRow, openInSlack } from './capture.ts'
 
 const row = (): LaterCaptureRow => ({
   item: { channel_id: 'C0123ABCDEF', ts: '1750000000.000100', channel_name: 'general' },
@@ -16,6 +17,24 @@ const stubTasks = (result: CommandResult<unknown>) =>
   ({ run: () => Promise.resolve(result) }) as unknown as CommandService
 
 const stubOutput = (lines: string[]) => ({ log: (line: string) => lines.push(line) }) as unknown as OutputHandler
+
+test('openInSlack keeps the workspace and thread from the captured source link', async () => {
+  const reply = row()
+  reply.item.message = { thread_ts: '1749999999.000100' }
+  reply.link += '?thread_ts=1749999999.000100&cid=C0123ABCDEF'
+  const open = spyOn(sys, 'runCommand').mockResolvedValue({ success: true, code: 0, stdout: '', stderr: '' })
+  try {
+    await openInSlack([reply], stubOutput([]))
+    assert({
+      given: 'a captured reply opened from the CLI',
+      should: 'pass the complete source URL to the browser without switching to a workspace-free host',
+      actual: open.mock.calls,
+      expected: [['open', [reply.link]]],
+    })
+  } finally {
+    open.mockRestore()
+  }
+})
 
 test('captureLaterItems skips a message deleted from Slack instead of failing', async () => {
   const lines: string[] = []

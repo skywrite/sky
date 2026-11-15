@@ -57,21 +57,9 @@ export function laterChannelLabel(item: AgentSlackLaterItem, members?: string[])
   return name ? (isDm ? name : `#${name}`) : item.channel_id
 }
 
-/** Permalink to a later item's origin message. */
+/** Keep the workspace and parent thread so Slack opens the saved reply in the right session. */
 export function laterItemLink(workspace: string, item: AgentSlackLaterItem): string {
-  return `${workspace}/archives/${item.channel_id}/p${item.ts.replace('.', '')}`
-}
-
-/**
- * Browser-client form of the message link. Workspace-domain archive links
- * greet a browser with Slack's "open the app" interstitial; app.slack.com is
- * the web client's own host, so it lands straight in the conversation.
- * Thread replies carry thread_ts/cid like Slack's own copy-link, so the
- * client opens the thread pane rather than scrolling channel history the
- * reply isn't in.
- */
-export function laterBrowserLink(item: AgentSlackLaterItem): string {
-  const base = `https://app.slack.com/archives/${item.channel_id}/p${item.ts.replace('.', '')}`
+  const base = `${workspace.replace(/\/$/, '')}/archives/${item.channel_id}/p${item.ts.replace('.', '')}`
   const threadTs = item.message?.thread_ts
   return laterIsThreadReply(item) && threadTs ? `${base}?thread_ts=${threadTs}&cid=${item.channel_id}` : base
 }
@@ -171,8 +159,9 @@ export async function backfillMissingMessages(
   await Promise.all(
     missing.map(async (row) => {
       const message = await fetchMessage(row.link)
-      if (!message || message.ts !== row.item.ts) return
+      if (!message || message.ts !== row.item.ts || message.channel_id !== row.item.channel_id) return
       row.item.message = { content: message.content, thread_ts: message.thread_ts }
+      row.link = laterItemLink(new URL(row.link).origin, row.item)
     }),
   )
 }
@@ -313,10 +302,8 @@ export function renderLaterRow(
       : '(no preview — message not fetched)'
   const snippet = body === '' ? colors.dim(placeholder) : body
 
-  // The clickable link is the browser-client form; the piped url line keeps
-  // the workspace permalink — the copy-pasteable, capture-parseable spelling
   const lines = [
-    `${indent}${colors.dim(`${String(index + 1).padStart(2)}.`)} ${colors.dim(hyperlinks ? hyperlink(timeLabel, laterBrowserLink(item)) : timeLabel)}${label}${dueBadge}${threadBadge}${replyBadge}`,
+    `${indent}${colors.dim(`${String(index + 1).padStart(2)}.`)} ${colors.dim(hyperlinks ? hyperlink(timeLabel, link) : timeLabel)}${label}${dueBadge}${threadBadge}${replyBadge}`,
     `${indent}    ${snippet}`,
   ]
   if (!hyperlinks) lines.push(`${indent}    ${link}`)

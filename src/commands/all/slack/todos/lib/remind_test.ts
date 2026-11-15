@@ -90,6 +90,52 @@ test('Slack reminder wording is prepared outside the day lock and keeps its sour
   })
 })
 
+test('Slack reminder retries recognize legacy and thread-aware URLs as the same source', async () => {
+  await withDayNotebook(async ({ context }) => {
+    const file = path.join(context.config.DIR_TIME, dayFile('2031-03-16'))
+    const reply = row()
+    const legacy = reply.link
+    reply.item.message!.thread_ts = '1739999999.000100'
+    reply.link += '?thread_ts=1739999999.000100&cid=C0ATLAS'
+    for (const section of ['Reminders', 'Professional Todos']) {
+      for (const stored of [legacy, `${legacy}?cid=C0ATLAS&thread_ts=1739999999.000100`]) {
+        for (const source of [`[Slack](${stored})`, '[Source][atlas-message]']) {
+          const contents = `---\ncreated: 2031-03-16\n---\n\n## ${section}\n\n- ~~Edited action ${source}~~\n  Keep these notes.\n\n[atlas-message]: ${stored}\n`
+          await outputFile(file, contents)
+          const added = await addTodoReminder(reply, context, async () => {
+            throw new Error('The same message must not generate a second reminder')
+          })
+          assert({
+            given: 'an edited, completed or moved reminder with an old or reordered reply URL',
+            should: 'recognize the source without changing the action or adding a duplicate',
+            actual: [added, await readFile(file, 'utf8')],
+            expected: [false, contents],
+          })
+        }
+      }
+    }
+  })
+})
+
+test('Slack reminder deduplication keeps distinct replies and workspaces separate', async () => {
+  await withDayNotebook(async ({ context }) => {
+    const first = row()
+    const second = row(2)
+    const otherWorkspace = { ...row(), link: row().link.replace('atlas.slack.com', 'widget.slack.com') }
+    for (const entry of [first, second, otherWorkspace]) {
+      entry.link += '?thread_ts=1739999999.000100&cid=C0ATLAS'
+      await addTodoReminder(entry, context)
+    }
+    const contents = await readFile(path.join(context.config.DIR_TIME, dayFile('2031-03-16')), 'utf8')
+    assert({
+      given: 'two replies in one thread and an identically numbered message in another workspace',
+      should: 'keep each source as its own reminder',
+      actual: planSections(contents).find((section) => section.title === 'Reminders')?.rows.length,
+      expected: 3,
+    })
+  })
+})
+
 test('a Slack reminder added while wording is generated wins over the late rewrite', async () => {
   await withDayNotebook(async ({ context }) => {
     const started = Promise.withResolvers<void>()

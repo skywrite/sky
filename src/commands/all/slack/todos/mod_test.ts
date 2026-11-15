@@ -238,6 +238,28 @@ test("slack:todos capture adds old messages with any due date to today's Reminde
   })
 })
 
+test('slack:todos captures a reply with the same workspace and thread link it displays', async () => {
+  const reply = todo(1, -3600)
+  reply.message!.thread_ts = '1740000000.000100'
+  await fixture([reply], async ({ invoke, reminderFile, captured, displayed }) => {
+    await invoke({ captureAll: true })
+    const link = 'https://atlas.slack.com/archives/C0ATLAS/p1740000001000100?thread_ts=1740000000.000100&cid=C0ATLAS'
+    const contents = await readFile(reminderFile, 'utf8')
+    assert({
+      given: 'a Slack to-do saved from a thread reply',
+      should: 'retain the workspace and parent thread throughout listing, capture and the saved reminder',
+      actual: [
+        displayed[0].link,
+        captured[0].link,
+        planSections(contents)
+          .find((section) => section.title === 'Reminders')
+          ?.rows.map((entry) => entry.raw),
+      ],
+      expected: [link, link, [`[To-do 1](${link})`]],
+    })
+  })
+})
+
 test('slack:todos captures the soonest due first and reports the re-run hint for its own name', async () => {
   await fixture([todo(1, 7200), todo(2, -3600), todo(3, 60)], async ({ invoke, output, captured }) => {
     await invoke()

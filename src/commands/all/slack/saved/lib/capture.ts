@@ -11,7 +11,7 @@ import { readOptional } from '#lib/outbox/files.ts'
 import { runCommand } from '#lib/sys/mod.ts'
 import { slackMessageId } from '#shared/models/Message/slack/write.ts'
 import { resolveTimeRef } from '#shared/nbfs/mod.ts'
-import { laterBrowserLink, type LaterRowContext, renderLaterRow } from './list.ts'
+import { type LaterRowContext, renderLaterRow } from './list.ts'
 
 /** One queue row as the capture and open flows consume it */
 export type LaterCaptureRow = { item: AgentSlackLaterItem; timeLabel: string; link: string }
@@ -192,9 +192,7 @@ export async function openInSlack(
   output.log('')
   output.log(`Opening ${rows.length} in Slack (the last stays on screen):`)
   for (const [index, row] of rows.entries()) {
-    // Browser-client form — the workspace permalink greets a browser with the
-    // "open the app" interstitial, useless without the app installed
-    await runCommand('open', [laterBrowserLink(row.item)])
+    await runCommand('open', [row.link])
     for (const line of renderLaterRow(row, index, context)) output.log(line)
     await delay(500)
   }
