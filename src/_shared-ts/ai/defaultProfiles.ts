@@ -96,6 +96,32 @@ export const PROFILES = {
     contextWindow: 1_050_000,
     options: { reasoningEffort: 'high', serviceTier: 'ultrafast' },
   }),
+  'default-gpt-6.2-astra': defineProfile({
+    provider: 'openai',
+    model: 'gpt-6.2-astra',
+    contextWindow: 1_050_000,
+    options: { reasoningEffort: 'high' },
+  }),
+  'default-gpt-6.2-astra-fast': defineProfile({
+    provider: 'openai',
+    model: 'gpt-6.2-astra',
+    label: 'GPT 6.2 Astra (Fast)',
+    contextWindow: 1_050_000,
+    options: { reasoningEffort: 'high', serviceTier: 'fast' },
+  }),
+  'default-gpt-6.2-sol': defineProfile({
+    provider: 'openai',
+    model: 'gpt-6.2-sol',
+    contextWindow: 1_050_000,
+    options: { reasoningEffort: 'high' },
+  }),
+  'default-gpt-6.2-sol-ultrafast': defineProfile({
+    provider: 'openai',
+    model: 'gpt-6.2-sol',
+    label: 'GPT 6.2 Sol (Ultrafast)',
+    contextWindow: 1_050_000,
+    options: { reasoningEffort: 'high', serviceTier: 'ultrafast' },
+  }),
   'default-local-reasoning': defineProfile({
     provider: 'lm-studio',
     model: 'qwen3.6-35b-a3b',

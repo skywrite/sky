@@ -50,6 +50,11 @@ export function effectiveEffort(profile: EffortProfile): Effort | null {
   return value === undefined ? modelDefaultEffort(profile) : presetEffort(profile)
 }
 
+/** Known OpenAI models that always reason and reject sampling parameters. */
+export function requiresOpenAIReasoning(profile: EffortProfile): boolean {
+  return profile.provider === 'openai' && /^gpt-6(?:-astra|\.1-sol|\.2-(?:astra|sol))(?:$|-)/.test(profile.model)
+}
+
 /** Only advertise levels the model accepts; an unfamiliar model keeps its existing options. */
 export function effortLevels(profile: EffortProfile): readonly Effort[] {
   if (profile.provider === 'anthropic') {
@@ -63,9 +68,7 @@ export function effortLevels(profile: EffortProfile): readonly Effort[] {
       return thinkingOff(profile) ? EFFORTS.slice(0, EFFORTS.indexOf('high') + 1) : EFFORTS
     if (/^claude-(?:opus|sonnet)-4-6(?:$|-\d{8}$)/.test(profile.model)) return ['low', 'medium', 'high', 'max']
   }
-  // https://developers.openai.com/api/docs/models/gpt-6-astra
-  // https://developers.openai.com/api/docs/models/gpt-6.1-sol
-  if (profile.provider === 'openai' && /^gpt-6(?:-astra|\.1-sol)(?:$|-)/.test(profile.model)) return EFFORTS
+  if (requiresOpenAIReasoning(profile)) return EFFORTS
   const current = presetEffort(profile)
   return current ? [current] : []
 }

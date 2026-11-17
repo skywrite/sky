@@ -6,6 +6,8 @@ test('custom reasoning presets suppress unsupported sampling without an explicit
   const presets = [
     defineProfile({ provider: 'openai', model: 'gpt-6-astra' }),
     defineProfile({ provider: 'openai', model: 'gpt-6.1-sol' }),
+    defineProfile({ provider: 'openai', model: 'gpt-6.2-astra' }),
+    defineProfile({ provider: 'openai', model: 'gpt-6.2-sol' }),
     defineProfile({ provider: 'anthropic', model: 'claude-sonnet-5' }),
     defineProfile({ provider: 'anthropic', model: 'claude-sonnet-5-5' }),
     defineProfile({ provider: 'anthropic', model: 'claude-haiku-5-5' }),
@@ -18,14 +20,7 @@ test('custom reasoning presets suppress unsupported sampling without an explicit
       const resolved = resolveProfile(preset, { temperature: 0, topP: 1, maxOutputTokens: 1000 })
       return [resolved.temperature, resolved.topP, resolved.maxOutputTokens]
     }),
-    expected: [
-      [undefined, undefined, 1000],
-      [undefined, undefined, 1000],
-      [undefined, undefined, 1000],
-      [undefined, undefined, 1000],
-      [undefined, undefined, 1000],
-      [undefined, undefined, 1000],
-    ],
+    expected: presets.map(() => [undefined, undefined, 1000]),
   })
 })
 import { assert, test } from '#test'
@@ -584,6 +579,36 @@ test('default-gpt-6.1-sol-ultrafast runs Sol on the Ultrafast tier and keeps it 
     expected: { reasoningEffort: 'high', serviceTier: 'ultrafast' },
   })
 })
+
+for (const [name, model, tier] of [
+  ['default-gpt-6.2-astra', 'gpt-6.2-astra', undefined],
+  ['default-gpt-6.2-astra-fast', 'gpt-6.2-astra', 'fast'],
+  ['default-gpt-6.2-sol', 'gpt-6.2-sol', undefined],
+  ['default-gpt-6.2-sol-ultrafast', 'gpt-6.2-sol', 'ultrafast'],
+] as const) {
+  test(`${name} keeps its service tier when overriding effort`, () => {
+    const profile = getProfile(name, { models: { strong: '', fast: '', transcription: '' } })
+    const resolved = resolveProfile(profile)
+    const overridden = resolveProfile(profile, { effort: 'max' })
+    const tierOptions = tier === undefined ? {} : { serviceTier: tier }
+    assert({
+      given: `${name} at its preset effort and with a max override`,
+      should: 'resolve the correct model and context window and apply effort without changing the tier',
+      actual: [
+        modelId(resolved.model),
+        resolved.contextWindow,
+        resolved.providerOptions?.['openai'],
+        overridden.providerOptions?.['openai'],
+      ],
+      expected: [
+        model,
+        1_050_000,
+        { reasoningEffort: 'high', ...tierOptions },
+        { reasoningEffort: 'max', ...tierOptions },
+      ],
+    })
+  })
+}
 
 test('aiModelByProfile resolves by name and rejects unknown names', () => {
   assert({

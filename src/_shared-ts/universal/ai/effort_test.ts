@@ -98,13 +98,15 @@ test('Fable 5.2 supports all effort levels with high as its API default', () => 
   }
 })
 
-test('effort levels for GPT-6.1 Sol', () => {
-  assert({
-    given: 'the GPT-6.1 Sol model with no preset effort',
-    should: 'advertise every effort level, as GPT-6 Astra does',
-    actual: effortLevels({ provider: 'openai', model: 'gpt-6.1-sol' }),
-    expected: EFFORTS,
-  })
+test('effort levels for GPT-6.1 Sol and GPT-6.2', () => {
+  for (const model of ['gpt-6.1-sol', 'gpt-6.2-astra', 'gpt-6.2-sol']) {
+    assert({
+      given: `${model} with no preset effort`,
+      should: 'advertise effort levels from low through max',
+      actual: effortLevels({ provider: 'openai', model }),
+      expected: EFFORTS,
+    })
+  }
 })
 
 test('inherited effort resolves the known API default without setting preset options', () => {

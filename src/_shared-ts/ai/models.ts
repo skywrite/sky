@@ -13,7 +13,12 @@ import { wellFormedPromptMiddleware } from '#shared/ai/wellFormedPrompt.ts'
 import { readSkyConfigFile } from '#shared/config/loader.ts'
 import type { SkyConfig } from '#shared/config/types.ts'
 import { installTimingTelemetry } from '#shared/timing/sdk.ts'
-import { optionsWithEffort, validateEffort, type EffortOverride } from '#universal/ai/effort.ts'
+import {
+  optionsWithEffort,
+  requiresOpenAIReasoning,
+  validateEffort,
+  type EffortOverride,
+} from '#universal/ai/effort.ts'
 import { PROFILES } from './defaultProfiles.ts'
 
 /**
@@ -191,7 +196,7 @@ const SAMPLING_KEYS = ['temperature', 'topP', 'topK'] as const
 function thinkingEnabled(profile: ModelProfile): boolean {
   // These models reason by default even when a custom preset omits thinking, and reject
   // sampling params even when a preset turns thinking off (Haiku 5.5's fast profile does).
-  if (profile.provider === 'openai' && /^gpt-6(?:-astra|\.1-sol)(?:$|-)/.test(profile.model)) return true
+  if (requiresOpenAIReasoning(profile)) return true
   if (
     profile.provider === 'anthropic' &&
     /^claude-(?:opus-5(?:-5)?|sonnet-5(?:-5)?|fable-5(?:-[12])?|haiku-5-5)(?:$|-\d{8}$)/.test(profile.model)
