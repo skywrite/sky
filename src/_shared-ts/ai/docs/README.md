@@ -1,6 +1,6 @@
 ---
 created: 2026-09-01
-updated: 2026-11-10
+updated: 2026-11-15
 ---
 
 # Model registry — roles, profiles, providers
@@ -41,6 +41,10 @@ overrides are dropped on thinking profiles because those models reject them
 with a 400.
 For Fable 5.2 and Mythos 5.2 it also asks the API to drop reasoning that no longer matches the request,
 instead of refusing the turn ([2026-11-09](2026-11-09-fable-5-2-refuses-a-reopened-chat.md)).
+The other Claude models refuse the same way only on accounts created on or after 2026-08-31.
+Asking them up front would opt an older account into the check and drop reasoning that reaches the model today,
+so every Claude model is asked only after the API has refused a turn, and that turn is sent once more
+(`staleReasoning.ts`).
 
 A profile may declare `contextWindow` — the tokens its host serves in one
 request, when that is less than a chat may ask to read. A chat's reading

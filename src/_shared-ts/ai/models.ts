@@ -6,6 +6,7 @@ import { anthropic } from '#shared/ai/llm/anthropicProvider.ts'
 import { cerebras } from '#shared/ai/llm/cerebrasProvider.ts'
 import { openai } from '#shared/ai/llm/openaiProvider.ts'
 import { singleSystemMessageMiddleware } from '#shared/ai/llm/singleSystemMessage.ts'
+import { settingStaleReasoningAside, staleReasoningRetry } from '#shared/ai/staleReasoning.ts'
 import { tokenRatioMeter } from '#shared/ai/tokenRatio.ts'
 import { usageMeter } from '#shared/ai/usageLog.ts'
 import { wellFormedPromptMiddleware } from '#shared/ai/wellFormedPrompt.ts'
@@ -219,7 +220,15 @@ export function resolveProfile(profile: ModelProfile, overrides?: ModelOverrides
     model:
       typeof base === 'string'
         ? base
-        : wrapLanguageModel({ model: base, middleware: [usageMeter(profile), tokenRatioMeter(profile)] }),
+        : wrapLanguageModel({
+            model: base,
+            middleware: [
+              usageMeter(profile),
+              tokenRatioMeter(profile),
+              // Closest to the provider: a turn Claude refuses for changed history is sent once more.
+              ...(profile.provider === 'anthropic' ? [staleReasoningRetry()] : []),
+            ],
+          }),
     ...(profile.contextWindow === undefined ? {} : { contextWindow: profile.contextWindow }),
   }
   const common = resolved as unknown as Record<string, unknown>
@@ -260,23 +269,11 @@ export function resolveProfile(profile: ModelProfile, overrides?: ModelOverrides
  * Fable 5.2 and Mythos 5.2 tie a reply's reasoning to everything sent before it: the system
  * prompt, the tool list and the earlier messages. When that reasoning comes back after any of
  * those changed, they answer 400 on every account, and a retry sends the same thing again.
+ * So they are asked up front to set that reasoning aside. The other Claude models refuse only
+ * on newer accounts and are asked after a refusal (staleReasoning.ts).
  */
 function refusesChangedHistory(profile: ModelProfile): boolean {
   return profile.provider === 'anthropic' && /^claude-(?:fable|mythos)-5-2(?:$|-\d{8}$)/.test(profile.model)
-}
-
-/**
- * Ask the API to set aside reasoning it can no longer match and answer anyway. Chat still changes
- * what it already sent (a thread reopened after a service restart renders its prompt again), and
- * a refused turn stayed refused. A profile that chose its own behavior keeps it, and thinking
- * that is not adaptive is left as written. See docs/2026-11-09-fable-5-2-refuses-a-reopened-chat.md.
- */
-function settingStaleReasoningAside(thinking: JSONValue | undefined): JSONValue {
-  if (thinking === undefined) return { type: 'adaptive', blockBinding: { prefixMismatchBehavior: 'drop_block' } }
-  if (typeof thinking !== 'object' || thinking === null || Array.isArray(thinking)) return thinking
-  const given = thinking as Readonly<Record<string, JSONValue | undefined>>
-  if (given['type'] !== 'adaptive' || given['blockBinding'] !== undefined) return thinking
-  return { ...given, blockBinding: { prefixMismatchBehavior: 'drop_block' } }
 }
 
 /** Resolve a semantic role (e.g. `aiModel('reasoning')`) to a configured model. */
