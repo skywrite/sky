@@ -34,7 +34,9 @@ import { loadSkyConfig } from '#shared/config/loader.ts'
 import { readTextFile } from '#shared/fs/mod.ts'
 import { JournalTypes } from '#shared/models/Journal/mod.ts'
 import { dayDir, fetchNowSync } from '#shared/nbfs/mod.ts'
-import { PlainDate, PlainDateTime, ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
+import notebookTimeOf from '#shared/nbfs/notebookTimeOf.ts'
+import { Instant, PlainDate, PlainDateTime, ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
+import { currentTimezoneIANA } from '#universal/dates/timezones/mod.ts'
 import type { CalendarMatch, ImportJob, ImportRoutesOptions, Listen, RunOutcome, StagedFile } from './mod.ts'
 import { openJournals } from './openJournals.ts'
 import {
@@ -153,7 +155,7 @@ export function createImportHost(config: typeof ConfigModule, env: Record<string
         kinds: [],
         refusal: info ? 'This file has no audio track.' : 'The recording could not be read. Try exporting it again.',
       }
-    return audio
+    return info.capturedAt ? { ...audio, recordedAt: info.capturedAt } : audio
   }
 
   // A transcript's clock is its end; a recording's is when it stopped. Either
@@ -161,6 +163,9 @@ export function createImportHost(config: typeof ConfigModule, env: Record<string
   // transcript whose cues stamp the time of day says itself when it began.
   const suggestWhen = (file: StagedFile, readback: ReadBack): string => {
     if (readback.source === 'document') return notebookWhen(ZonedDateTime.now(), config.DIR_TIME)
+    // A phone's own record of when recording began outlasts the copy that resets the file's clock.
+    if (readback.recordedAt)
+      return notebookTimeOf(Instant.from(readback.recordedAt), currentTimezoneIANA(), config.DIR_TIME).toString()
     const end = file.lastModified ?? Date.now()
     if (readback.clockStartSeconds !== null) {
       return notebookWhen(startOnSavedDay(end, readback.clockStartSeconds), config.DIR_TIME)

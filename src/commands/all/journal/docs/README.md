@@ -1,6 +1,6 @@
 ---
 created: 2026-09-28
-updated: 2026-11-06
+updated: 2026-11-16
 ---
 
 # Recorded journals
@@ -29,6 +29,16 @@ journal filenames use `Type_Summary.md` with case-preserved slugs: the day
 directory supplies the date. Names are allocated once with atomic collision
 handling and numeric suffixes; their filing day is the chosen recording day.
 
+The type review also shows when the entries are filed, with its weekday and where the time came from,
+and takes a correction.
+A video journal's time comes first from the phone's own capture date (`com.apple.quicktime.creationdate`).
+AirDrop and Photos exports reset `creation_time` and the file's modified time to the moment of the copy,
+which once filed a recording from days earlier on the day it was imported.
+Until a journal or the recording is saved, a retry files at the time it states,
+and a time the person chose at review wins over a later proposal.
+Summaries and titles leave out the recording's own date: the entry's heading carries it, a date said aloud can be wrong,
+and a date handed to the model would go stale when the time changes at review.
+
 One copy of the source recording is retained in that day's attachments and
 referenced by every entry. Retention must succeed before filing. It uses the
 shared attachment copier's atomic publication and content deduplication; an
@@ -36,7 +46,8 @@ import retry must not overwrite a namesake or leave journals pointing at an
 upload that the import sweeper will delete.
 
 The transcript run's `journal` checkpoint keeps sections, suggestions, accepted
-types, names, the attachment, and each allocated document and its filing state.
+types, the filing time and whether the person chose it, names, the attachment,
+and each allocated document and its filing state.
 A partially filed retry preserves previously saved entries and their edits.
 The command returns every saved path, including partial results on failure.
 The import host persists those paths and applies the Links selection to each.

@@ -49,6 +49,24 @@ export interface MultiselectPrompt {
 }
 
 /**
+ * A multiselect whose picks are all filed at one time. The question says
+ * when, and where that time came from; the answer says when they go — the
+ * same time, or the one the person corrected it to.
+ */
+export interface MultiselectAtPrompt extends MultiselectPrompt {
+  /** `YYYY-MM-DD HH:MM`, notebook time */
+  when: string
+  /** Where the time came from, in plain words: "from the video", "yours" */
+  whenNote: string
+}
+
+export interface MultiselectAtAnswer {
+  values: string[]
+  /** `YYYY-MM-DD HH:MM`: the question's own when, unless the person changed it */
+  when: string
+}
+
+/**
  * One thing to accept and place. The item arrives with a proposed `when` —
  * what the words said, or the prompt's fallback when they said nothing —
  * and the answer says where it actually goes.
@@ -135,6 +153,7 @@ export type PromptRequest =
   | { kind: 'confirm'; prompt: ConfirmPrompt }
   | { kind: 'select'; prompt: SelectPrompt }
   | { kind: 'multiselect'; prompt: MultiselectPrompt }
+  | { kind: 'multiselect-at'; prompt: MultiselectAtPrompt }
   | { kind: 'place'; prompt: PlacePrompt }
   | { kind: 'form'; prompt: FormPrompt }
 
@@ -145,6 +164,7 @@ export interface Prompter {
   confirm(prompt: ConfirmPrompt): Promise<boolean | null>
   select(prompt: SelectPrompt): Promise<string | null>
   multiselect(prompt: MultiselectPrompt): Promise<string[] | null>
+  multiselectAt(prompt: MultiselectAtPrompt): Promise<MultiselectAtAnswer | null>
   place(prompt: PlacePrompt): Promise<PlaceAnswer | null>
   form(prompt: FormPrompt): Promise<FormAnswers | null>
 }

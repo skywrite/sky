@@ -55,6 +55,7 @@ test('meeting:new resumes a filed meeting, saves notes before routing, and retai
       confirm: () => Promise.resolve(null),
       select: () => Promise.resolve(null),
       multiselect: () => Promise.resolve(null),
+      multiselectAt: () => Promise.resolve(null),
       form: () => Promise.resolve(null),
       place: (p) => {
         prompts.push(p)

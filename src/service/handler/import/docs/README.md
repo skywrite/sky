@@ -1,6 +1,6 @@
 ---
 created: 2026-09-01
-updated: 2026-11-06
+updated: 2026-11-16
 ---
 
 # Meeting from a file — the import
@@ -49,7 +49,8 @@ it lives in Details. Persistence and reference rules are documented in
 
 Journal recordings choose their types after transcription and names review.
 Start runs `journal:new --from-audio --split`, `--from-video --split` or `--from-zoom-vtt --split`;
-the checked type suggestions arrive as a multiselect under `journal-types`. Each selected type becomes an
+the checked type suggestions arrive with the filing time as a `multiselect-at` question under `journal-types`,
+and a time corrected there comes back with the types. Each selected type becomes an
 entry, with a remainder for other content, a content-based name, and the same
 retained recording attachment. Results carry `file` for existing single-document
 consumers and `files` for the full set; explicit links reach every entry.
@@ -179,8 +180,9 @@ Retry summary. Retrying appends the summary once to the current note, preserving
 the person's edits. A successful retry reconnects the import page's event feed.
 
 The dialog settles **what** (for audio, sky's guess from the first minute
-is preselected) and **when** (proposed from the file's time and length,
-checked against the calendar within the meeting check's fifteen minutes;
+is preselected) and **when** (proposed from a phone recording's own capture
+date when it carries one, which a copy to the Mac keeps, else from the file's
+time and length, checked against the calendar within the meeting check's fifteen minutes;
 for a screenshot, when it was taken, and the calendar is not asked; for an
 `.srt`, from the file's time and length, and the calendar is not asked
 either — a video is not a meeting, and a `.vtt` chosen as a video shows

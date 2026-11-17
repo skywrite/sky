@@ -184,6 +184,7 @@ async function world(extension = 'm4a') {
     hasVideo: false,
     durationSeconds: 90,
     creationTime: null,
+    capturedAt: null,
   })
   const run = await runs.TranscriptRun.forFile(audio, options)
   return {

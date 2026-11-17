@@ -69,6 +69,7 @@ async function fixture(
       return next('confirm', question) as boolean | null
     },
     multiselect: idle.multiselect,
+    multiselectAt: idle.multiselectAt,
     place: idle.place,
     form: idle.form,
   }

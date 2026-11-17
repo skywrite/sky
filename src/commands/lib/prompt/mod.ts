@@ -5,6 +5,8 @@ export type {
   FormAnswers,
   FormItem,
   FormPrompt,
+  MultiselectAtAnswer,
+  MultiselectAtPrompt,
   MultiselectPrompt,
   PromptOption,
   Prompter,

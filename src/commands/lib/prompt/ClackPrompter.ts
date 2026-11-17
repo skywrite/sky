@@ -6,6 +6,8 @@ import type {
   FormAnswers,
   FormItem,
   FormPrompt,
+  MultiselectAtAnswer,
+  MultiselectAtPrompt,
   MultiselectPrompt,
   PlaceAnswer,
   PlacePrompt,
@@ -61,6 +63,16 @@ export class ClackPrompter implements Prompter {
       required: false,
     })
     return p.isCancel(answer) ? null : (answer as string[])
+  }
+
+  // The terminal says when the picks are filed and keeps that time: a
+  // terminal run sets it with the command's own arguments.
+  async multiselectAt(prompt: MultiselectAtPrompt): Promise<MultiselectAtAnswer | null> {
+    const values = await this.multiselect({
+      ...prompt,
+      message: `${prompt.message} · ${prompt.when} (${prompt.whenNote})`,
+    })
+    return values === null ? null : { values, when: prompt.when }
   }
 
   // The terminal has no room to move each item, so it stays the multiselect

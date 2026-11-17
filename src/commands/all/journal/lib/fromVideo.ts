@@ -3,10 +3,11 @@ import * as path from 'node:path'
 import { runOptionsFor, TranscriptRun } from '#commands/all/audio/transcript/lib/transcriptRun.ts'
 import { CommandResult } from '#commands/mod.ts'
 import type { CommandArgs } from '#commands/mod.ts'
-import { extractAudio, probeMedia } from '#lib/media/ffmpeg/mod.ts'
+import { extractAudio, type MediaInfo, probeMedia } from '#lib/media/ffmpeg/mod.ts'
 import { VIDEO_EXTENSIONS } from '#lib/media/video.ts'
 import { exists } from '#shared/fs/mod.ts'
-import { Instant, PlainDateTime } from '#universal/dates/nbdt/mod.ts'
+import notebookTimeOf from '#shared/nbfs/notebookTimeOf.ts'
+import { Instant, type PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import { desktopFilesByExt } from '../../audio/transcript/lib/desktopFiles.ts'
 import { fileRecordedJournal, recordedJournalPlan } from './recordedJournal.ts'
 
@@ -40,9 +41,8 @@ export interface FromVideoOptions {
  * The shared recorded-journal pipeline then sections, groups, names, and files
  * the entries with one retained recording.
  *
- * The entry is timed from when recording *started*: a file's mtime is when it
- * stopped, so the duration comes back off it. A container carrying its own
- * creation_time is trusted over both.
+ * The entry is timed from when recording *started*: the date an Apple camera
+ * wrote down when it began, else the file's own clock less the duration.
  */
 export async function journalFromVideo(options: FromVideoOptions): Promise<CommandResult> {
   const { context, tasks } = options
@@ -72,15 +72,10 @@ export async function journalFromVideo(options: FromVideoOptions): Promise<Comma
     return CommandResult.fail(`${path.basename(videoPath)} has no audio track, so there is nothing to transcribe.`)
   }
 
-  const when = options.whenStated
-    ? options.when
-    : await resolveRecordingStart(
-        videoPath,
-        media.durationSeconds,
-        media.creationTime,
-        options.when,
-        context.notebookNow.timezone,
-      )
+  const start = options.whenStated
+    ? { when: options.when, note: undefined }
+    : await recordingStart(videoPath, media, options.when, context.notebookNow.timezone, context.config.DIR_TIME)
+  const when = start.when
   if (media.durationSeconds !== null) {
     output.log(`Length: ${Math.round(media.durationSeconds / 60)}m, recorded from ${when.date} ${when.time}`)
   }
@@ -113,6 +108,7 @@ export async function journalFromVideo(options: FromVideoOptions): Promise<Comma
       cleanedText: clean.cleanedText,
       rel: [...clean.who, ...clean.rel].filter(Boolean),
       when,
+      whenNote: start.note,
       run,
       split,
       reviewTypes: true,
@@ -123,42 +119,47 @@ export async function journalFromVideo(options: FromVideoOptions): Promise<Comma
 }
 
 /**
- * When recording started.
+ * When recording started, and where that came from.
  *
- * Both timestamps a recording carries mark roughly when it *finished*, so the
+ * An Apple camera writes down when it began recording (`capturedAt`), and the
+ * copy to a Mac keeps it: AirDrop and Photos exports reset `creation_time` and
+ * the file's mtime to the moment of the copy, which once filed a journal
+ * recorded days earlier on the day it was imported.
+ *
+ * Those two timestamps mark roughly when recording *finished*, so the
  * duration comes off whichever one is used. Measured on a phone recording: an
  * 11m19s clip carried a `creation_time` 54 seconds before its mtime — a minute
- * apart from each other and eleven minutes after the speaking began. Treating
- * `creation_time` as the start would have dated the entry to the moment the
- * recording stopped.
+ * apart from each other and eleven minutes after the speaking began.
+ * `creation_time` is preferred over mtime because it lives inside the
+ * container, where a plain file copy leaves it alone. Without a duration
+ * neither can be walked back, so they stand as-is.
  *
- * `creation_time` is preferred over mtime because it lives inside the container
- * and survives being copied off a phone, whereas mtime becomes the transfer
- * time. Without a duration neither can be walked back, so they stand as-is.
+ * The moment is written the way the notebook writes time: on the clock of the
+ * day that was running then, in that day's time zone.
  */
-async function resolveRecordingStart(
+async function recordingStart(
   videoPath: string,
-  durationSeconds: number | null,
-  creationTime: string | null,
+  media: MediaInfo,
   typedWhen: PlainDateTime,
   timezone: string,
-): Promise<PlainDateTime> {
-  const rewind = (finishedAt: Instant) =>
-    new PlainDateTime(
-      finishedAt
-        .subtract({ milliseconds: Math.round((durationSeconds ?? 0) * 1000) })
-        .toZonedDateTimeISO(timezone)
-        .toPlainDateTime()
-        .toString({ smallestUnit: 'minute' })
-        .replace('T', ' '),
-    )
-  if (creationTime) {
+  timeDir: string,
+): Promise<{ when: PlainDateTime; note: string }> {
+  const at = (instant: Instant) => notebookTimeOf(instant, timezone, timeDir)
+  const finished = (instant: Instant) =>
+    at(instant.subtract({ milliseconds: Math.round((media.durationSeconds ?? 0) * 1000) }))
+  for (const [stamp, read, note] of [
+    [media.capturedAt, at, 'from the video'],
+    [media.creationTime, finished, "from the file's time"],
+  ] as const) {
+    if (!stamp) continue
     try {
-      return rewind(Instant.from(creationTime))
+      return { when: read(Instant.from(stamp)), note }
     } catch {
-      /* Fall back to the file's clock. */
+      /* Not a timestamp: try the next clock. */
     }
   }
   const mtime = (await stat(videoPath)).mtimeMs
-  return Number.isFinite(mtime) ? rewind(Instant.fromEpochMilliseconds(Math.trunc(mtime))) : typedWhen
+  return Number.isFinite(mtime)
+    ? { when: finished(Instant.fromEpochMilliseconds(Math.trunc(mtime))), note: "from the file's time" }
+    : { when: typedWhen, note: 'suggested' }
 }

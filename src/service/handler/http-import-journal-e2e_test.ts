@@ -110,7 +110,7 @@ for (const source of ['audio', 'video'] as const)
                 depth: 1,
               }
               const types = ask('types', {
-                kind: 'multiselect',
+                kind: 'multiselect-at',
                 prompt: {
                   message: 'Choose journal types',
                   initial: ['Health', 'Gratitude'],
@@ -119,6 +119,8 @@ for (const source of ['audio', 'video'] as const)
                     { value: 'Gratitude', label: 'Gratitude', hint: 'Jane Doe helped with Atlas.' },
                     { value: 'Leadership', label: 'Leadership' },
                   ],
+                  when: '2031-03-16 08:00',
+                  whenNote: source === 'video' ? 'from the video' : 'suggested',
                 },
               })
               yield types.event
@@ -168,6 +170,29 @@ for (const source of ['audio', 'video'] as const)
               await types.getByRole('checkbox', { name: 'Gratitude', exact: true }).isChecked(),
             ],
             expected: [true, true],
+          })
+          const when = types.getByRole('textbox', { name: 'When', exact: true })
+          const whenNote = types.locator('.sky-when-note')
+          const create = types.getByRole('button', { name: 'Create journals', exact: true })
+          assert({
+            given: 'the type review',
+            should: 'show when the journals are filed, with its weekday and where the time came from',
+            actual: [await when.inputValue(), await whenNote.textContent()],
+            expected: ['2031-03-16 08:00', `Sunday · ${source === 'video' ? 'from the video' : 'suggested'}`],
+          })
+          await when.fill('Thursday')
+          assert({
+            given: 'a When that is not a date and time',
+            should: 'show the form it takes and hold the journals back',
+            actual: [await whenNote.textContent(), await create.isDisabled()],
+            expected: ['Write it like 2031-03-16 08:00', true],
+          })
+          await when.fill('2031-03-14 21:30')
+          assert({
+            given: 'a corrected When',
+            should: 'name its weekday and call it yours',
+            actual: [await whenNote.textContent(), await create.isDisabled()],
+            expected: ['Friday · yours', false],
           })
           await types.getByRole('checkbox', { name: 'Health', exact: true }).uncheck()
           const customType = types.getByRole('combobox', { name: 'Journal type for Gratitude', exact: true })
@@ -244,7 +269,8 @@ for (const source of ['audio', 'video'] as const)
             .filter((tab) => tab !== page)
           assert({
             given: 'the accepted type checklist',
-            should: 'submit the selected types and open each result in its own browser tab through the OS',
+            should:
+              'submit the selected types at the corrected time and open each result in its own browser tab through the OS',
             actual: [
               replies,
               chosen,
@@ -254,7 +280,7 @@ for (const source of ['audio', 'video'] as const)
             ],
             expected: [
               ['names', 'types'],
-              ['Atlas Notes', 'Health'],
+              { values: ['Atlas Notes', 'Health'], when: '2031-03-14 21:30' },
               FILES.map((file) => `/explorer/${file}`),
               ['', ''],
               [FILES],

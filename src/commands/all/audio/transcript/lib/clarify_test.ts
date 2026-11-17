@@ -40,6 +40,7 @@ function person(answers: Array<string | null>): Prompter & { asked: TextPrompt[]
     confirm: (prompt) => nobody.confirm(prompt),
     select: (prompt) => nobody.select(prompt),
     multiselect: (prompt) => nobody.multiselect(prompt),
+    multiselectAt: (prompt) => nobody.multiselectAt(prompt),
     place: (prompt) => nobody.place(prompt),
     form: (prompt) => nobody.form(prompt),
   }

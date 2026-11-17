@@ -111,6 +111,7 @@ export default class JournalNewTask extends Command {
       return await journalFromTranscript({
         fromZoomVtt,
         when,
+        whenStated: rawArgs.when !== undefined,
         context,
         tasks,
         noAutoTag: args.noAutoTag,
@@ -124,6 +125,7 @@ export default class JournalNewTask extends Command {
       return journalFromAudio({
         fromAudio,
         when,
+        whenStated: rawArgs.when !== undefined,
         types,
         split: args.split,
         fresh: args.fresh,

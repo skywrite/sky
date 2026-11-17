@@ -2,7 +2,7 @@ import * as config from '#config'
 import { assert, test } from '#test'
 import CommandContext from '../core/CommandContext.ts'
 import { EventPrompter } from '../core/runCommand.ts'
-import type { FormAnswers, FormPrompt, PlacePrompt, Prompter } from './Prompter.ts'
+import type { FormAnswers, FormPrompt, MultiselectAtPrompt, PlacePrompt, Prompter } from './Prompter.ts'
 import { UnattendedPrompter } from './UnattendedPrompter.ts'
 
 const FORM: FormPrompt = {
@@ -20,6 +20,14 @@ const PLACE: PlacePrompt = {
   waiting: 3,
 }
 
+const DATED: MultiselectAtPrompt = {
+  message: 'Choose journal types',
+  options: [{ value: 'Health', label: 'Health' }],
+  initial: ['Health'],
+  when: '2031-03-16 08:00',
+  whenNote: 'from the video',
+}
+
 test('UnattendedPrompter', async () => {
   const prompter = new UnattendedPrompter()
   const answers = await Promise.all([
@@ -27,6 +35,7 @@ test('UnattendedPrompter', async () => {
     prompter.confirm({ message: 'Sure?' }),
     prompter.select({ message: 'Pick', options: [{ value: 'a', label: 'A' }] }),
     prompter.multiselect({ message: 'Pick', options: [{ value: 'a', label: 'A' }] }),
+    prompter.multiselectAt(DATED),
     prompter.place(PLACE),
     prompter.form(FORM),
   ])
@@ -34,7 +43,7 @@ test('UnattendedPrompter', async () => {
     given: 'nobody to answer',
     should: 'say so and answer null to every question',
     actual: { interactive: prompter.interactive, answers },
-    expected: { interactive: false, answers: [null, null, null, null, null, null] },
+    expected: { interactive: false, answers: [null, null, null, null, null, null, null] },
   })
 })
 
@@ -47,6 +56,7 @@ test('CommandContext: the prompter seam', async () => {
     confirm: () => Promise.resolve(true),
     select: () => Promise.resolve('a'),
     multiselect: () => Promise.resolve(['0']),
+    multiselectAt: () => Promise.resolve({ values: ['Health'], when: '2031-03-16 08:00' }),
     place: () => Promise.resolve([{ value: '0', when: { date: null, time: null } }]),
     form: () => Promise.resolve(answers),
   }
@@ -82,5 +92,19 @@ test('EventPrompter: a place question travels as an event and its reply is the a
     should: 'push a place event and resolve with the moved placement',
     actual: [pushed.map((e) => e.kind), await asked],
     expected: [['place'], answer],
+  })
+})
+
+test('EventPrompter: a dated multiselect travels as one event and its reply carries the corrected time', async () => {
+  const pushed: { kind: string; reply: (answer: unknown) => void }[] = []
+  const prompter = new EventPrompter((event) => pushed.push({ kind: event.request.kind, reply: event.reply }))
+  const asked = prompter.multiselectAt(DATED)
+  const answer = { values: ['Health'], when: '2031-03-12 07:45' }
+  pushed[0].reply(answer)
+  assert({
+    given: 'journal types filed at one time and a host that moves them to another day',
+    should: 'push one multiselect-at event and resolve with the picks and the new time',
+    actual: [pushed.map((e) => e.kind), await asked],
+    expected: [['multiselect-at'], answer],
   })
 })

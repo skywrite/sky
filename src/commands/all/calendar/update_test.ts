@@ -124,6 +124,7 @@ test('calendar:update opens event and guest pickers and shows the final changes 
         return true
       },
       multiselect: async () => null,
+      multiselectAt: async () => null,
       place: async () => null,
       form: async () => null,
     }
@@ -158,6 +159,7 @@ test('declining or cancelling an event update leaves the event unchanged; JSON a
         return false
       },
       multiselect: idle.multiselect,
+      multiselectAt: idle.multiselectAt,
       place: idle.place,
       form: idle.form,
     }

@@ -70,6 +70,8 @@ export interface ReadBack {
   durationMinutes: number | null
   /** The time of day the transcript began, in seconds since midnight, when its cues stamp the clock; null when they count from zero */
   clockStartSeconds: number | null
+  /** When an Apple camera or recorder began this recording, as it wrote down (RFC 3339 with the recording's offset); absent when it didn't */
+  recordedAt?: string
   speakers: string[]
   /** Why the file cannot be imported, in a sentence; null when it can */
   refusal: string | null

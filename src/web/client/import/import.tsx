@@ -99,6 +99,8 @@ export interface ImportJob {
     durationMinutes: number | null
     speakers: string[]
     refusal: string | null
+    /** When the phone began recording, as it wrote down; absent when it didn't */
+    recordedAt?: string
   }
   listen: { kind: ImportKind; opening: string; guess: string; category?: 'Professional' | 'Personal' } | null
   calendar: {
@@ -192,6 +194,10 @@ type PromptOnWire = { id: string } & (
   | { kind: 'confirm'; prompt: { message: string; initial?: boolean } }
   | { kind: 'select'; prompt: { message: string; options: PromptOption[]; initial?: string } }
   | { kind: 'multiselect'; prompt: { message: string; options: PromptOption[]; initial?: string[] } }
+  | {
+      kind: 'multiselect-at'
+      prompt: { message: string; options: PromptOption[]; initial?: string[]; when: string; whenNote: string }
+    }
   | { kind: 'place'; prompt: PlacePrompt }
   | { kind: 'form'; prompt: { title: string; intro?: string; items: FormItem[] } }
 )
@@ -869,14 +875,24 @@ function Pills<T extends string>({
 }
 
 /** Under When: where the proposal came from and what wins, or that the person's own wins. */
-function whenNote(source: ImportJob['readback']['source'], proposed: boolean, label: string, count: number): string {
+function whenNote(
+  source: ImportJob['readback']['source'],
+  proposed: boolean,
+  label: string,
+  count: number,
+  recorded: boolean,
+): string {
   switch (source) {
     case 'audio':
       return proposed
         ? `when the memo was recorded · ${label} · a time you say in it wins`
         : 'yours · wins over what the memo says'
     case 'video':
-      return proposed ? `when the video was recorded · ${label} · edit if needed` : 'yours · used for these journals'
+      if (!proposed) return 'yours · used for these journals'
+      // Without the phone's own date, the file's clock may be when the video was copied, not recorded.
+      return recorded
+        ? `when the video was recorded · ${label} · edit if needed`
+        : `from the file's time · ${label} · edit if needed`
     case 'imessage-audio':
       return proposed
         ? `from the first audio file's saved time · ${label} · edit if needed`
@@ -1543,6 +1559,7 @@ function ConfirmBody({
                         !whenStated && fields.when === live.suggestedWhen,
                         whenLabel(live.suggestedWhen, todayYmd),
                         count,
+                        Boolean(live.readback.recordedAt),
                       )}
                 </span>
               </div>
@@ -3141,14 +3158,14 @@ export function ImportMain({
               onAnswer={(a) => void answer(pending, a).catch(() => refresh())}
             />
           )}
-          {pending?.kind === 'multiselect' &&
-            (job?.stage?.id === 'journal-types' ? (
-              <Fragment key={pending.id}>
-                <JournalTypesReview prompt={pending.prompt} onAnswer={(types) => answer(pending, types)} />
-              </Fragment>
-            ) : (
-              <ActionItems prompt={pending} onAnswer={(a) => void answer(pending, a).catch(() => refresh())} />
-            ))}
+          {pending?.kind === 'multiselect-at' && (
+            <Fragment key={pending.id}>
+              <JournalTypesReview prompt={pending.prompt} onAnswer={(choice) => answer(pending, choice)} />
+            </Fragment>
+          )}
+          {pending?.kind === 'multiselect' && (
+            <ActionItems prompt={pending} onAnswer={(a) => void answer(pending, a).catch(() => refresh())} />
+          )}
           {pending?.kind === 'place' && (
             <Fragment key={pending.id}>
               <PlaceItems prompt={pending} onAnswer={(a) => void answer(pending, a).catch(() => refresh())} />

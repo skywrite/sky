@@ -2,6 +2,7 @@ import * as path from 'node:path'
 import type { TranscriptRun } from '#commands/all/audio/transcript/lib/transcriptRun.ts'
 import { CommandPlatform, CommandResult } from '#commands/mod.ts'
 import type { CommandArgs } from '#commands/mod.ts'
+import { typedWhen } from '#lib/journal/typedWhen.ts'
 import { selectedJournalTypes } from '#lib/journal/typeSelection.ts'
 import { createDayFile } from '#lib/nbfs/createDayFile.ts'
 import { copyToDayAttachments } from '#lib/notebook/attachments.ts'
@@ -30,6 +31,8 @@ export type RecordedJournalKind = 'Audio' | 'Video' | 'Transcript'
 export interface RecordedJournalState {
   kind: RecordedJournalKind
   when: string
+  /** The person chose `when`, at Start or in the type review; a later Start that only proposes a time keeps it. */
+  whenStated?: boolean
   stamp: string
   recording: RecordingSections
   menu?: { name: string; count: number }[]
@@ -47,6 +50,10 @@ export interface RecordedJournalOptions {
   cleanedText: string
   rel: string[]
   when: PlainDateTime
+  /** The person gave `when`; otherwise it was worked out from the recording or the file. */
+  whenStated?: boolean
+  /** Where a worked-out `when` came from, in plain words for the type review: "from the video" */
+  whenNote?: string
   run: TranscriptRun
   context: CommandArgs['context']
   split?: string
@@ -136,10 +143,25 @@ export async function fileRecordedJournal(
           state = {
             kind: options.kind,
             when: options.when.toString(),
+            ...(options.whenStated ? { whenStated: true } : {}),
             stamp: created.replace('T', '_').replaceAll(':', ''),
             recording,
           }
           await run.put('journal', state)
+        } else if (!state.attachment && !state.entries?.length) {
+          // Nothing is saved yet, so a retry files at its own time: one the
+          // person states always, a proposed one unless they chose the saved time.
+          const when = options.when.toString()
+          if (
+            (options.whenStated || !state.whenStated) &&
+            (when !== state.when || Boolean(options.whenStated) !== Boolean(state.whenStated))
+          ) {
+            state.when = when
+            state.whenStated = options.whenStated ? true : undefined
+            await run.put('journal', state)
+          }
+        } else if (options.whenStated && options.when.toString() !== state.when) {
+          output.log(`Kept ${state.when}: journals from this recording are already saved for that day.`)
         }
         const capture = state
         const persist = () => run.put('journal', capture)
@@ -181,7 +203,7 @@ export async function fileRecordedJournal(
                 const choices = [...capture.menu].sort(
                   (a, b) => Number(suggested.has(b.name)) - Number(suggested.has(a.name)),
                 )
-                const selected = await context.prompt.multiselect({
+                const answer = await context.prompt.multiselectAt({
                   message: 'Choose journal types',
                   initial,
                   options: choices.map(({ name }) => ({
@@ -189,13 +211,25 @@ export async function fileRecordedJournal(
                     label: name.replaceAll('-', ' '),
                     hint: capture.suggested!.find((group) => group.journalType === name)?.summary,
                   })),
+                  when: capture.when,
+                  whenNote: capture.whenStated ? 'yours' : (options.whenNote ?? 'suggested'),
                 })
                 signal?.throwIfAborted()
-                if (selected === null) throw new Error('Journal type selection was cancelled. Start again to continue.')
-                capture.selected = selectedJournalTypes(
-                  selected,
+                if (answer === null) throw new Error('Journal type selection was cancelled. Start again to continue.')
+                const selected = selectedJournalTypes(
+                  answer.values,
                   choices.map(({ name }) => name),
                 )
+                const when = typedWhen(answer.when)
+                if (when === null)
+                  throw new Error(
+                    `“${String(answer.when)}” is not a date and time like ${capture.when}. Start again to continue.`,
+                  )
+                if (when !== capture.when) {
+                  capture.when = when
+                  capture.whenStated = true
+                }
+                capture.selected = selected
               } else capture.selected = initial
               await persist()
             }

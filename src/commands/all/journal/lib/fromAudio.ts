@@ -7,6 +7,8 @@ import { fileRecordedJournal, recordedJournalPlan } from './recordedJournal.ts'
 export async function journalFromAudio(options: {
   fromAudio: string
   when: PlainDateTime
+  /** The person gave `when`; the type review then calls it theirs */
+  whenStated?: boolean
   types: string[]
   split?: string
   fresh?: boolean

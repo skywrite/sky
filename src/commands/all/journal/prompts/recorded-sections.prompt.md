@@ -2,7 +2,7 @@
 schema: 0.2.0
 description: Identify topical boundaries in a corrected spoken journal without rewriting its words
 created: 2026-09-28
-updated: 2026-10-20
+updated: 2026-11-16
 ---
 
 Organize this corrected spoken journal into topical sections in spoken order.
@@ -11,6 +11,9 @@ speaker's vocabulary, and a short summary of what it covers.
 In the title, summary, and headings, keep quantitative values in numerical form
 with the recording's units, currency symbols, and exact precision. Never spell
 them out, round them, or convert units or currencies.
+Leave out when the recording was made (its date, weekday, or time of day) in the
+title, summary, and headings. The journal's own heading carries that, and a date
+said aloud can be wrong. Dates the speaker gives for other events stay as said.
 
 {{#if me.firstName}}
 The speaker is {{me.firstName}}. In the summary, write {{me.firstName}},

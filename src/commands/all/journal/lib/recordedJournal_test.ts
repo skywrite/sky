@@ -2,7 +2,8 @@ import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import * as path from 'node:path'
 import { TranscriptRun } from '#commands/all/audio/transcript/lib/transcriptRun.ts'
 import CommandContext from '#commands/lib/core/CommandContext.ts'
-import type { MultiselectPrompt, Prompter } from '#commands/lib/prompt/Prompter.ts'
+import type { BufferedOutput } from '#commands/lib/output/BufferedOutput.ts'
+import type { MultiselectAtPrompt, Prompter } from '#commands/lib/prompt/Prompter.ts'
 import { UnattendedPrompter } from '#commands/lib/prompt/UnattendedPrompter.ts'
 import * as config from '#config'
 import { makeTempDir } from '#shared/fs/mod.ts'
@@ -37,7 +38,9 @@ async function fixture(answer: string[] | null = ['Health', 'Gratitude'], kind: 
   const source = path.join(base, { Audio: 'recording.m4a', Video: 'recording.mp4', Transcript: 'recording.vtt' }[kind])
   await writeFile(source, 'synthetic audio bytes')
   const calls: string[] = []
-  let review: MultiselectPrompt | undefined
+  let review: MultiselectAtPrompt | undefined
+  // What the review answers: the picks (null cancels), at its own time unless `when` corrects it.
+  const reply: { answer: string[] | null; when?: string } = { answer }
   const quiet = new UnattendedPrompter()
   const prompt: Prompter = {
     interactive: true,
@@ -46,10 +49,11 @@ async function fixture(answer: string[] | null = ['Health', 'Gratitude'], kind: 
     select: quiet.select,
     form: quiet.form,
     place: quiet.place,
-    multiselect: async (value) => {
+    multiselect: quiet.multiselect,
+    multiselectAt: async (value) => {
       calls.push('review')
       review = value
-      return answer
+      return reply.answer && { values: reply.answer, when: reply.when ?? value.when }
     },
   }
   const context = CommandContext.test(
@@ -112,7 +116,7 @@ async function fixture(answer: string[] | null = ['Health', 'Gratitude'], kind: 
     split: 'auto',
     reviewTypes: true,
   }
-  return { base, source, calls, review: () => review, models, options }
+  return { base, source, calls, review: () => review, reply, models, options }
 }
 
 test('sections are cut from the corrected recording without rewriting or losing any words', () => {
@@ -323,6 +327,120 @@ test('cancelled type review files nothing and cannot consume the source recordin
       should: 'keep the recording and preparation for retry without filing',
       actual: [result.ok, result.data?.files, f.calls, await readFile(f.source, 'utf8')],
       expected: [false, [], ['organize', 'suggest', 'review'], 'synthetic audio bytes'],
+    })
+  } finally {
+    await rm(f.base, { recursive: true, force: true })
+  }
+})
+
+test('the type review shows when the entries are filed, and a corrected time moves every entry and the recording', async () => {
+  const f = await fixture()
+  const moved = new PlainDateTime('2031-03-12 07:45')
+  try {
+    f.reply.when = moved.toString()
+    const result = await fileRecordedJournal({ ...f.options, whenNote: 'from the video' }, f.models)
+    const files = result.data?.files ?? []
+    const docs = await Promise.all(
+      files.map(async (file) => JournalDocument.fromMarkdown(await readFile(file, 'utf8'))),
+    )
+    const journalDir = path.join(dayDir(moved.plainDate), 'journal')
+    assert({
+      given: 'a recording proposed for one time and corrected at the type review',
+      should: 'show the proposed time and where it came from, then file every entry and the recording at the new time',
+      actual: [
+        result.ok,
+        [f.review()?.when, f.review()?.whenNote],
+        files.map((file) => path.relative(f.options.context.config.DIR_TIME, path.dirname(file))),
+        docs.map((doc) => doc.markdown.split('\n').find((line) => line.startsWith('# **'))),
+        await readdir(path.join(f.options.context.config.DIR_ATTACHMENTS, dayAttachmentsDir(moved.plainDate))),
+      ],
+      expected: [
+        true,
+        ['2031-03-16 08:00', 'from the video'],
+        [journalDir, journalDir],
+        ['# **Health: 2031-03-12 - Wed - 07:45**', '# **Gratitude: 2031-03-12 - Wed - 07:45**'],
+        ['2031-03-16_091234_Rest-And-Help-With-Atlas.m4a'],
+      ],
+    })
+  } finally {
+    await rm(f.base, { recursive: true, force: true })
+  }
+})
+
+test('a retry files at the time it states until something is saved, and keeps a time chosen at review', async () => {
+  const moved = new PlainDateTime('2031-03-12 07:45')
+  const stated = await fixture(null)
+  const chosen = await fixture()
+  try {
+    const cancelled = await fileRecordedJournal(stated.options, stated.models)
+    stated.reply.answer = ['Health', 'Gratitude']
+    const retried = await fileRecordedJournal({ ...stated.options, when: moved, whenStated: true }, stated.models)
+    assert({
+      given: 'a review cancelled at the proposed time, then Start again with a time the person typed',
+      should: 'ask again at the typed time, call it theirs, and file there',
+      actual: [
+        cancelled.ok,
+        retried.ok,
+        [stated.review()?.when, stated.review()?.whenNote],
+        (retried.data?.files ?? []).map((file) => path.basename(path.dirname(path.dirname(file)))),
+      ],
+      expected: [false, true, [moved.toString(), 'yours'], ['03-12', '03-12']],
+    })
+
+    // The time is corrected at review, then the recording goes missing before anything is saved.
+    chosen.reply.when = moved.toString()
+    const naming = chosen.models.name
+    chosen.models.name = async (entries, signal) => {
+      await rm(chosen.source)
+      return naming(entries, signal)
+    }
+    const stopped = await fileRecordedJournal(chosen.options, chosen.models)
+    await writeFile(chosen.source, 'synthetic audio bytes')
+    chosen.models.name = naming
+    const resumed = await fileRecordedJournal(chosen.options, chosen.models)
+    assert({
+      given: 'a time chosen at review, then Start again that only proposes the original time',
+      should: 'keep the chosen time without asking again',
+      actual: [
+        stopped.ok,
+        resumed.ok,
+        chosen.calls.filter((call) => call === 'review').length,
+        (resumed.data?.files ?? []).map((file) => path.basename(path.dirname(path.dirname(file)))),
+      ],
+      expected: [false, true, 1, ['03-12', '03-12']],
+    })
+  } finally {
+    await rm(stated.base, { recursive: true, force: true })
+    await rm(chosen.base, { recursive: true, force: true })
+  }
+})
+
+test('once an entry is saved, a retry keeps the saved time and says so', async () => {
+  const f = await fixture()
+  try {
+    let enrichments = 0
+    f.models.tags = async () => {
+      if (++enrichments === 2) throw new Error('Synthetic interrupted enrichment')
+      return undefined
+    }
+    const first = await fileRecordedJournal(f.options, f.models)
+    f.models.tags = async () => undefined
+    const retry = await fileRecordedJournal(
+      { ...f.options, when: new PlainDateTime('2031-03-12 07:45'), whenStated: true },
+      f.models,
+    )
+    assert({
+      given: 'one entry saved before the run stopped, then Start again with another time',
+      should: 'file the rest beside it and say the saved time was kept',
+      actual: [
+        first.ok,
+        retry.ok,
+        (retry.data?.files ?? []).map((file) => path.basename(path.dirname(path.dirname(file)))),
+        (f.options.context.output as BufferedOutput).hasLog(
+          'Kept 2031-03-16 08:00: journals from this recording are already saved for that day.',
+        ),
+      ],
+      expected: [false, true, ['03-16', '03-16'], true],
     })
   } finally {
     await rm(f.base, { recursive: true, force: true })

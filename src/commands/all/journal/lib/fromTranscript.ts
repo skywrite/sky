@@ -39,6 +39,8 @@ export async function journalFromTranscript(options: {
   /** A .vtt path, or `'true'` (the bare flag) for the newest .vtt on the Desktop */
   fromZoomVtt: string
   when: PlainDateTime
+  /** The person gave `when`; the type review then calls it theirs */
+  whenStated?: boolean
   split?: string
   fresh?: boolean
   noAutoTag?: boolean

@@ -35,6 +35,7 @@ test('audio conversation retries reuse completed turns and preserve boundaries w
     hasVideo: false,
     durationSeconds: 15,
     creationTime: null,
+    capturedAt: null,
   })
   const command = spyOn(sys, 'runCommand').mockImplementation(async (name, args = []) => {
     if (name === 'ffmpeg') await copyFile(args[1], args.at(-1)!)
