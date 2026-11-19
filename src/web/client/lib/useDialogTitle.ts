@@ -8,10 +8,14 @@ let pageTitle = ''
 let displayedTitle = ''
 let observer: MutationObserver | null = null
 
+// `document.title` reads back with whitespace runs collapsed and the ends trimmed. Compare in that form: a title
+// written raw, such as "Notes " from "Notes .txt", never matches its read-back, and the observer rewrote it forever.
+const asTabTitle = (title: string) => title.replace(/[\t\n\f\r ]+/g, ' ').replace(/^ | $/g, '')
+
 function displayTitle() {
   // A page may finish loading or navigate while a dialog covers it.
   if (document.title !== displayedTitle) pageTitle = document.title
-  const title = dialogs.at(-1)?.title ?? pageTitle
+  const title = asTabTitle(dialogs.at(-1)?.title ?? pageTitle)
   displayedTitle = title
   if (document.title !== title) document.title = title
 }

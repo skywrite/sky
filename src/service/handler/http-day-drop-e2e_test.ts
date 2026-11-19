@@ -127,3 +127,44 @@ test(
     )
   },
 )
+
+test(
+  {
+    name: 'day — a file named with a space before its extension opens its import, and the tab names it',
+    timeout: 60000,
+  },
+  async (t) => {
+    await runWysiwygE2e(
+      t,
+      { initialMarkdown: DAY_MARKDOWN, tempPrefix: 'day-drop-spaced-', file: DAY_DOC, day: true },
+      async ({ page, origin, errors }) => {
+        await page.setViewportSize({ width: 1400, height: 900 })
+        await page.goto(`${origin}/${DAY.ymd}`)
+        await page.waitForSelector('.sky-rail-pad[data-drop-pad]')
+        const dayTitle = await page.title()
+
+        // The import comes back titled "2026-08-05_Atlas Sync ", and the browser trims the tab's copy of it.
+        // Compared raw, the two never matched: the dialog rewrote the title forever and the tab froze.
+        await dispatchFileDrop(page, '.sky-day .sky-col', {
+          name: '2026-08-05_Atlas Sync .txt',
+          type: 'text/plain',
+          text: 'A few notes from the call.',
+        })
+        await page.waitForSelector('.sky-confirm-title:has-text("from a text file")', { timeout: 10000 })
+        await page.waitForFunction((title) => document.title === title, 'sky · Import 2026-08-05_Atlas Sync', {
+          timeout: 10000,
+        })
+        const dialogTitle = await page.title()
+        await page.getByRole('button', { name: 'Cancel', exact: true }).click()
+        await page.waitForSelector('.sky-confirm', { state: 'detached' })
+
+        assert({
+          given: 'a text file whose name has a space before its extension, dropped on the day',
+          should: 'open its import dialog, name the tab after the import, and give the day its title back on Cancel',
+          actual: [dialogTitle, await page.title(), errors],
+          expected: ['sky · Import 2026-08-05_Atlas Sync', dayTitle, []],
+        })
+      },
+    )
+  },
+)
