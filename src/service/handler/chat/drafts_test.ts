@@ -2,11 +2,12 @@ import { mkdtemp, readdir, rm } from 'node:fs/promises'
 import * as os from 'node:os'
 import * as path from 'node:path'
 import { currentDraftVersion, type WritingDraftView } from '#lib/writingVoice/draftTypes.ts'
-import type { VoiceDraftInput } from '#lib/writingVoice/types.ts'
+import { DraftInputSchema, type VoiceDraftInput } from '#lib/writingVoice/types.ts'
 import { loadResumeSession } from '#shared/models/Chat/ChatStore/mod.ts'
 import { assert, test } from '#test'
+import { pendingDraftEdit } from './draftRetry.ts'
 import { correctedOnce, EDITED_DRAFT, ORIGINAL_DRAFT, WARM_DRAFT, writingDraftTestHost } from './draftsTestHelpers.ts'
-import { createChatRoutes } from './mod.ts'
+import { createChatRoutes, type ToolRun } from './mod.ts'
 
 type App = ReturnType<typeof createChatRoutes>
 const post = (app: App, url: string, body: unknown) =>
@@ -365,6 +366,134 @@ test('a revision that names the draft by its words instead of its id revises tha
         await draftFiles(root),
       ],
       expected: [ORIGINAL_DRAFT, [[true, [ORIGINAL_DRAFT, WARM_DRAFT]]], []],
+    })
+  } finally {
+    await host.writingDrafts.idle()
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('a second pass without an unmet instruction reuses the successful version', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'sky-draft-completed-'))
+  const inputs: VoiceDraftInput[] = []
+  const host = writingDraftTestHost(root, {
+    inputs,
+    draft: writer,
+    followUp: (result) => ({
+      action: 'draft',
+      draftId: result.draftId,
+      draftRevision: result.draftRevision,
+      instruction: 'Polish again.',
+      meaning: '',
+    }),
+  })
+  try {
+    const app = createChatRoutes(host)
+    await send(app, 'main', 'Draft an email to Jane.')
+    const first = await current(app)
+    await send(app, 'main', 'Make it warmer.')
+    const saved = await current(app)
+    assert({
+      given: 'extra passes on both a new message and a successfully revised message',
+      should: 'run the writer once per requested edit and keep a single version of each result',
+      actual: [
+        inputs.length,
+        first.unsaved,
+        first.versions.length,
+        saved.versions.map((v) => v.text),
+        inputs[1]?.meaning,
+        inputs[1]?.context?.includes('undefined') ?? false,
+      ],
+      expected: [2, true, 1, [ORIGINAL_DRAFT, WARM_DRAFT], ORIGINAL_DRAFT, false],
+    })
+  } finally {
+    await host.writingDrafts.idle()
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('a failed follow-up can retry just its recorded edit after reload, only on the matching version', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'sky-draft-retry-'))
+  const inputs: VoiceDraftInput[] = []
+  const instruction = 'Include the requested Friday deadline.'
+  let fail = true
+  const host = writingDraftTestHost(root, {
+    inputs,
+    draft: (input) => {
+      if (input.instruction !== instruction) return writer(input)
+      if (fail) throw new Error('The writer is unavailable.')
+      return SHORT_DRAFT
+    },
+    followUp: (result) =>
+      result.draftRevision === 2
+        ? {
+            action: 'draft',
+            draftId: result.draftId,
+            draftRevision: 2,
+            instruction,
+            unmetRequirement: 'Include the Friday deadline.',
+            context: 'The agreed day is Friday.',
+          }
+        : undefined,
+  })
+  try {
+    let app = createChatRoutes(host)
+    await send(app, 'main', 'Draft an email to Jane.')
+    await send(app, 'main', 'Make it warmer and include the requested deadline.')
+    await host.writingDrafts.idle()
+    app = createChatRoutes(host)
+    const before = await current(app)
+    const runs: ToolRun[] = (await read(app, '/main')).runs
+    const failed = runs.find((run) => run.callId === before.failedEdit!.callId)!
+    const legacy = (error: string) => ({ ...failed, output: { success: false, error } })
+    const timedOut = legacy('The operation timed out.')
+    const missingMeaning = legacy(DraftInputSchema.safeParse({}).error!.message)
+    assert({
+      given: 'older timeouts and missing-meaning failures recorded before retry metadata existed',
+      should: 'recover the exact edit for the matching version and leave unrelated or resolved failures alone',
+      actual: [
+        pendingDraftEdit([timedOut], before)?.input.instruction,
+        pendingDraftEdit([missingMeaning], before)?.input.draftId,
+        pendingDraftEdit([timedOut], { ...before, revision: before.revision + 1 }),
+        pendingDraftEdit([{ ...timedOut, editRetried: true }], before),
+        pendingDraftEdit([legacy('The draft belongs to a different conversation.')], before),
+      ],
+      expected: [instruction, before.id, undefined, undefined, undefined],
+    })
+    const url = `/main/drafts/${before.id}`
+    const retry = { action: 'retry-edit', callId: before.failedEdit!.callId, revision: before.revision }
+    const otherCall = await post(app, url, { ...retry, callId: 'some-other-call' })
+    const otherVersion = await post(app, url, { ...retry, revision: 1 })
+    const previousInput = inputs.at(-1)
+    fail = false
+    const applied = await post(app, url, retry)
+    const again = await post(app, url, retry)
+    const after = await current(app)
+    assert({
+      given: 'version two succeeded and a specific follow-up failed in that same turn',
+      should: 'keep the saved wording and offer, retry the exact model input once, and refuse obsolete requests',
+      actual: [
+        currentDraftVersion(before).text,
+        before.failedEdit!.instruction,
+        before.failedEdit!.error,
+        [otherCall.status, otherVersion.status, applied.status, again.status],
+        inputs.length,
+        inputs.at(-1),
+        after.failedEdit,
+        after.versions.map((v) => v.text),
+        (await read(app, '/main')).turns.length,
+      ],
+      expected: [
+        WARM_DRAFT,
+        instruction,
+        'The writer is unavailable.',
+        [409, 409, 200, 409],
+        4,
+        previousInput,
+        undefined,
+        [ORIGINAL_DRAFT, WARM_DRAFT, SHORT_DRAFT],
+        4,
+      ],
     })
   } finally {
     await host.writingDrafts.idle()

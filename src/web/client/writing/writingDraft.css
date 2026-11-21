@@ -131,6 +131,15 @@
   color: var(--sky-action-danger);
   font-size: 14px;
 }
+.sky-writing-draft-retry {
+  margin: 0 24px 18px;
+  color: var(--sky-text-2);
+}
+.sky-writing-draft-retry p {
+  margin: 0 0 8px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
 .sky-writing-draft-conflict {
   color: var(--sky-text-2);
   font-size: 14px;

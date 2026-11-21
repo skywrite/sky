@@ -65,8 +65,11 @@ result or the Outbox item's own state file, and both surfaces show them in the
 shared editor as an unsaved draft under a provisional id. In chat, `me_voice`
 returns the draft ID and version. A revision loads the current words by ID and applies the editing instruction.
 A new message needs `meaning`. Pasted words can supply `original` instead.
-A draft Sky revises in the same turn stays unsaved until the owner uses it. See
+Sky presents a successful version unless it identifies a specific unmet instruction for another pass in that turn.
+That correction keeps a new draft unsaved until the owner uses it. See
 [Sky revises its own draft in the same turn](2026-10-09-sky-revises-its-own-draft-in-the-same-turn.md).
+If generation fails, the chat keeps the previous words. The editor can retry the recorded edit against its draft
+version and context, including after reload. Retrying runs only the writer and requires the owner's choice.
 The first use saves the record with the history shown,
 including an older item's original, approved pairs,
 and current text, without duplicating past learning. A deleted draft file never

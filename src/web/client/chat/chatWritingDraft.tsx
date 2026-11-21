@@ -30,9 +30,10 @@ export function ChatWritingDraft({
       {...props}
       draft={draft}
       unsaved={draft.unsaved}
+      failedEdit={draft.failedEdit}
       anchor={writingDraftAnchor(chatId, draft.id)}
       onChange={(next) => onChange(next, draft.id)}
-      mutate={(body) => writingDraftRequest(chatId, draft.id, body)}
+      mutate={(body, signal) => writingDraftRequest(chatId, draft.id, body, signal)}
     />
   )
 }

@@ -21,7 +21,12 @@ export function correctedOnce(revision: (result: Record<string, unknown>) => Rec
   return (result: Record<string, unknown>) => {
     if (corrected) return undefined
     corrected = true
-    return { action: 'draft', instruction: 'Make it warmer.', ...revision(result) }
+    return {
+      action: 'draft',
+      instruction: 'Make it warmer.',
+      unmetRequirement: 'The requested thank-you for the review is missing.',
+      ...revision(result),
+    }
   }
 }
 
@@ -106,7 +111,7 @@ export function writingDraftTestHost(
         })
         const result = await execute(input)
         report({ type: 'tool-execution-end', toolName: 'me_voice', toolCallId, output: result, finished: 2000 })
-        if (!result.success) throw new Error(String(result.error))
+        if (!result.success && typeof result.draft !== 'string') throw new Error(String(result.error))
         return { input, toolCallId, result }
       }
       const first = await call(input, `mock-writing-${args.messages.length}`)

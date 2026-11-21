@@ -137,6 +137,8 @@ export type ToolOutputEvent =
 /** One tool call at work, kept with the thread like the cards — the page shows it under the reply it belongs to. */
 export interface ToolRun {
   callId?: string
+  /** An explicit retry applied the outstanding draft edit, including when the text already matched. */
+  editRetried?: true
   input?: unknown
   output?: unknown
   error?: string
@@ -1572,7 +1574,8 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono & { openVoice
       return thread ? { reviewId: thread.session.legalReviewId } : null
     })
 
-  if (options.writingDrafts) registerWritingDraftRoutes(app, options.writingDrafts, replyHost)
+  if (options.writingDrafts)
+    registerWritingDraftRoutes(app, options.writingDrafts, { ...replyHost, accepting, activeTurns, drain })
 
   app.get('/source/:id', async (c) => {
     await restored

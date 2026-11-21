@@ -257,3 +257,40 @@ test('starting a new draft needs meaning, even when a revision instruction is pr
     await f.dispose()
   }
 })
+
+test('terminal chat keeps the available words after a failed correction and waits for the owner to retry', async () => {
+  let attempts = 0
+  const fixture = await voiceFixture({
+    draft: async () => {
+      attempts++
+      if (attempts === 2) throw new Error('Writer unavailable.')
+      return attempts === 1 ? SAMPLE.original : SAMPLE.revised
+    },
+  })
+  try {
+    const turn = () => (createWritingVoiceTools(fixture.drafts, { source: 'terminal' }).me_voice as Tool).execute!
+    const call = { toolCallId: 'sample-call', messages: [], context: undefined }
+    const write = turn()
+    await write({ action: 'draft', meaning: SAMPLE.original }, call)
+    const edit = { action: 'draft', original: SAMPLE.original, instruction: 'Open directly with the update.' }
+    await write(edit, call)
+    const correction = { ...edit, unmetRequirement: 'The requested direct opening is missing.' }
+    const failed = await write(correction, call)
+    const repeated = await write(correction, call)
+    const afterRetry = (await turn()(edit, call)) as { draft: string }
+    const available = {
+      success: false,
+      error: 'Writer unavailable.',
+      draft: SAMPLE.original,
+      outstandingEdit: edit.instruction,
+    }
+    assert({
+      given: 'a completed draft, an unnecessary second pass, and then a failed correction to the opening',
+      should: 'return the same failed edit until the next turn, when the owner can retry it',
+      actual: [failed, repeated, afterRetry.draft, attempts],
+      expected: [available, available, SAMPLE.revised, 3],
+    })
+  } finally {
+    await fixture.dispose()
+  }
+})

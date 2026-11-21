@@ -3,11 +3,11 @@ import { z } from 'zod'
 import { runWithUsageSource } from '#shared/ai/usageLog.ts'
 import { apiErrorMessage } from '#shared/models/Chat/ChatEngine/turnErrorMessage.ts'
 import { toolDisplayName } from '#universal/ai/toolDisplay.ts'
-import { standaloneDraft } from './draftChat.ts'
+import { DraftRevisionFailure, standaloneDraft } from './draftChat.ts'
 import { WritingDraftId } from './draftId.ts'
 import type { WritingDraftStore } from './drafts.ts'
 import { ChatDraftInputSchema, type WritingDraftToolHost } from './draftTypes.ts'
-import { EditId, EditInputSchema, type VoiceEditRecord } from './types.ts'
+import { EditId, EditInputSchema, type VoiceDraft, type VoiceEditRecord } from './types.ts'
 
 export const WRITING_VOICE_TOOL = 'me_voice'
 const AGENT_NAME = toolDisplayName(WRITING_VOICE_TOOL)
@@ -17,6 +17,8 @@ export const WRITING_VOICE_CHAT_INSTRUCTIONS = `
 ${AGENT_NAME} is the owner's personal drafting agent. Refer to this agent as ${AGENT_NAME} when speaking to the owner. Its callable tool ID is me_voice.
 
 Use me_voice only for the owner's personal communications written in their own voice: emails, messages, letters, posts authored as the owner, and scripts they will personally deliver. For a new message, call action draft with meaning, recipient, medium, relevant context, and the owner's direction. For a revision, send the draftId, draftRevision, and the requested change in instruction. For pasted or terminal text, send the exact original and instruction. ${AGENT_NAME} reads the latest shared rules on each call. Present its returned wording intact, using the normal chat review blockquote. Keep your commentary outside the draft.
+
+Once the draft meets the owner's request, present it. Make a second pass on the same draft in a turn only for a specific unmet instruction from the owner, identified in unmetRequirement. If a revision fails, show the last available version, explain which edit failed, and offer to retry only that edit when the owner asks.
 
 Write UI copy, product copy, interface mockups, specifications, documentation, sample dialogue, and other general writing directly in chat. These are outside ${AGENT_NAME}'s scope. A request to write, draft, or revise text does not by itself make it a personal communication. Do not create, revise, accept, or learn from this material through me_voice, even if an earlier turn mistakenly presented it in a ${AGENT_NAME} draft frame. It must not become a personal writing example or preference.
 
@@ -63,6 +65,10 @@ export function createWritingVoiceTools(
   },
 ): Record<string, unknown> {
   const { voice, learning } = store
+  const terminalDrafts = new Map<
+    string,
+    (VoiceDraft & { success: true }) | { success: false; draft: string; error: string; outstandingEdit?: string }
+  >()
   return {
     [WRITING_VOICE_TOOL]: tool({
       description: `${AGENT_NAME} drafts and revises only the owner's personal communications in their own writing voice: emails, messages, letters, personal posts, and scripts they will deliver. UI copy, product copy, mockups, specifications, documentation, sample dialogue, and other general writing belong directly in chat; do not draft, revise, accept, or learn from them here. Learn only from the owner's accepted edits to their own communications by saving one original/revised example and asking one question with two answer choices. The same rules and confirmed lessons serve Chat and Outbox. Refer to this agent as ${AGENT_NAME}.`,
@@ -75,7 +81,24 @@ export function createWritingVoiceTools(
               case 'draft': {
                 const signal = call?.abortSignal
                 if (options.drafts) return { success: true, ...(await options.drafts.draft(input, signal)) }
-                return { success: true, ...(await voice.draft(standaloneDraft(input), signal)) }
+                const prior = input.original && terminalDrafts.get(input.original)
+                if (prior && !prior.success) return prior
+                if (prior && !input.unmetRequirement) return { ...prior, message: 'Present this completed draft.' }
+                try {
+                  const result = { success: true as const, ...(await voice.draft(standaloneDraft(input), signal)) }
+                  terminalDrafts.set(result.draft, result)
+                  return result
+                } catch (error) {
+                  if (!input.original || signal?.aborted) throw error
+                  const failure = {
+                    success: false as const,
+                    error: apiErrorMessage(error),
+                    draft: input.original,
+                    outstandingEdit: input.instruction || input.unmetRequirement || input.meaning,
+                  }
+                  terminalDrafts.set(input.original, failure)
+                  return failure
+                }
               }
               case 'accept':
                 if (!options.drafts)
@@ -108,6 +131,8 @@ export function createWritingVoiceTools(
                 return { success: true, ...(await voice.compact()) }
             }
           } catch (error) {
+            if (error instanceof DraftRevisionFailure)
+              return { success: false, error: error.message, draft: error.draft, retry: error.retry }
             return {
               success: false,
               error: error instanceof Error ? apiErrorMessage(error) : `${AGENT_NAME} could not complete this step.`,

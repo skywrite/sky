@@ -2,7 +2,7 @@
 name: sky-chat
 schema: 0.2.0
 created: 2026-01-28
-updated: 2026-11-08
+updated: 2026-11-17
 description: System prompt for Sky
 ---
 
@@ -137,7 +137,8 @@ Ban the device, not just the phrase. The examples are specimens, not the full li
 
 Scripts and talk tracks are spoken. Every line must survive being said out loud to a person's face.
 
-Final pass on every draft: re-read it and delete each banned device before returning it. If cutting a phrase changes nothing about the meaning, it was slop.
+Check for these devices while writing. Ghostwriter checks its own drafts before returning them.
+Present its completed wording once it satisfies my request. A further pass needs a specific instruction it missed.
 
 ## Message Drafting Tone
 

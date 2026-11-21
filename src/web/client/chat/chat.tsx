@@ -2038,6 +2038,12 @@ export function ThreadColumn({
     if (!replyMode) return writingDraftReplies(writing.drafts, state.turns, state.runs, busy)
     const positions = new Map<string, number>(writing.drafts.map((draft) => [draft.id, draft.turn * 2 - 1]))
     const firstVisible = state.inherited - 1
+    for (const draft of writing.drafts) {
+      const callId = draft.failedEdit?.callId
+      if (!callId) continue
+      const run = state.runs.find((entry) => entry.callId === callId)
+      if (run && run.at >= firstVisible) positions.set(draft.id, run.at)
+    }
     const inheritedDrafts = writing.drafts.filter((draft) => draft.turn * 2 - 1 < firstVisible)
     if (!inheritedDrafts.length) return positions
     // Earlier drafts stay in context; only a visible quotation brings their frame into this thread.

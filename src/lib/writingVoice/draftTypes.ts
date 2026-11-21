@@ -6,6 +6,7 @@ import {
   MAX_WRITING_CHARS,
   QuestionSchema,
   type VoiceDraft,
+  type VoiceDraftInput,
   type VoiceEditInput,
 } from './types.ts'
 
@@ -54,20 +55,34 @@ export const ChatDraftInputSchema = DraftInputSchema.extend({
   newDraft: z.boolean().optional(),
   /** The exact words to revise when no draftId names them: this chat's draft that holds them, or words from elsewhere. */
   original: z.string().min(1).max(MAX_WRITING_CHARS).optional(),
+  unmetRequirement: z
+    .string()
+    .trim()
+    .min(1)
+    .max(4000)
+    .optional()
+    .describe(
+      "For a second pass on this draft in one turn, identify the owner's specific instruction the returned version missed.",
+    ),
 })
 
 export type WritingDraft = z.infer<typeof WritingDraftSchema>
 export type DraftVersion = z.infer<typeof DraftVersionSchema>
 export type ChatDraftInput = z.input<typeof ChatDraftInputSchema>
 /** `unsaved`: shown from the words Sky wrote, with no notebook record until the owner first uses it. */
-export type WritingDraftView = WritingDraft & { turn: number; unsaved?: boolean }
+export type WritingDraftView = WritingDraft & {
+  turn: number
+  unsaved?: boolean
+  failedEdit?: { callId: string; instruction: string; error: string }
+}
 
 export interface WritingDraftToolHost {
   /** A new draft has no record yet: it returns under a provisional id, and the owner's first use saves it under a readable one. */
   draft(
     input: ChatDraftInput,
     signal?: AbortSignal,
-  ): Promise<VoiceDraft & { draftId: string; draftRevision: number; unsaved?: true }>
+    expectedInput?: VoiceDraftInput,
+  ): Promise<VoiceDraft & { draftId: string; draftRevision: number; unsaved?: true; message?: string }>
   accept(id: string, revision: number): Promise<unknown>
   learn(input: VoiceEditInput & { draftId?: string; draftRevision?: number }): Promise<unknown>
 }

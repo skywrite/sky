@@ -218,7 +218,12 @@ test('asking Sky to revise an unsaved draft is its first use, and a failed revis
     const afterFailure = [await files(), links.length]
     const outdated = await failure(tools.draft({ meaning: 'Warmer.', draftId: shown.id, draftRevision: 2 }))
     fail = false
-    const revised = await tools.draft(edit)
+    const repeated = await failure(tools.draft(edit))
+    const retry = writingDraftTools(hooks, store, waiting)
+    const changedContext = await failure(
+      retry.draft(edit, undefined, { ...shown.input, recipient: 'A different recipient' }),
+    )
+    const revised = await retry.draft(edit, undefined, shown.input)
     const saved = await store.require(revised.draftId!)
     assert({
       given: 'a revision requested for words with no record, first failing, then outdated, then succeeding',
@@ -227,6 +232,8 @@ test('asking Sky to revise an unsaved draft is its first use, and a failed revis
         failed.includes('temporarily unavailable'),
         afterFailure,
         outdated.includes('draft changed'),
+        repeated.includes('already failed'),
+        changedContext.includes('context changed'),
         revised.draftId?.endsWith('_Atlas-Reply'),
         revised.draftRevision,
         links,
@@ -236,6 +243,8 @@ test('asking Sky to revise an unsaved draft is its first use, and a failed revis
       expected: [
         true,
         [[], 0],
+        true,
+        true,
         true,
         true,
         2,

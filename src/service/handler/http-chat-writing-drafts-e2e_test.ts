@@ -22,6 +22,91 @@ import { composerText, retype, runWysiwygE2e, selectWords } from './httpWysiwygE
 import { createWritingVoiceRoutes } from './settings/writingVoice.ts'
 
 test(
+  { name: 'a failed edit stays with the draft and can be stopped and retried on its own after reload', timeout: 90000 },
+  async (t) => {
+    const instruction = 'Thank Jane for her review.'
+    const writing = Promise.withResolvers<void>()
+    const stopped = Promise.withResolvers<void>()
+    let attempts = 0
+    let host: ReturnType<typeof writingDraftTestHost>
+    await runWysiwygE2e(
+      t,
+      {
+        initialMarkdown: '# Mock drafting notebook\n',
+        tempPrefix: 'sky-retry-draft-',
+        day: true,
+        chat: (root) =>
+          (host = writingDraftTestHost(root, {
+            followUp: correctedOnce((result) => ({
+              draftId: result.draftId,
+              draftRevision: result.draftRevision,
+              instruction,
+            })),
+            draft: async (input, signal) => {
+              if (input.instruction !== instruction) return ORIGINAL_DRAFT
+              attempts++
+              if (attempts === 1) throw new Error('The writer is unavailable.')
+              if (attempts === 2) {
+                writing.resolve()
+                await new Promise<never>((_resolve, reject) => {
+                  signal!.addEventListener(
+                    'abort',
+                    () => {
+                      stopped.resolve()
+                      reject(signal!.reason)
+                    },
+                    { once: true },
+                  )
+                })
+              }
+              return WARM_DRAFT
+            },
+          })),
+      },
+      async ({ page, origin, errors }) => {
+        const sent = await page.request.post(`${origin}/chat/main/messages`, {
+          data: {
+            message: 'Draft an email thanking Jane for her review.',
+            profile: 'test-thread-model',
+            contextTokens: 0,
+            saves: true,
+          },
+        })
+        if (!sent.ok() || (await sent.text()).includes('event: error')) throw new Error(await sent.text())
+        await page.goto(`${origin}/thread/main`)
+        const frame = page.locator('.sky-split-main .sky-writing-draft')
+        const retry = frame.getByRole('button', { name: 'Retry this edit' })
+        await retry.waitFor()
+        await page.reload()
+        await frame.getByText(instruction, { exact: true }).waitFor()
+        const original = await frame.locator('.sky-writing-draft-body').innerText()
+        await retry.click()
+        await writing.promise
+        await frame.getByRole('button', { name: 'Stop retry' }).click()
+        await stopped.promise
+        await retry.click()
+        await frame.getByText('Version 2', { exact: true }).waitFor()
+        await page.reload()
+        await frame.getByText('Version 2', { exact: true }).waitFor()
+        assert({
+          given: 'a failed correction to a provisional draft, a reload, and a canceled retry',
+          should: 'keep the original and retry only the outstanding edit before saving both versions',
+          actual: [
+            original,
+            await frame.locator('.sky-writing-draft-body').innerText(),
+            attempts,
+            await retry.count(),
+            errors,
+          ],
+          expected: [ORIGINAL_DRAFT, WARM_DRAFT, 3, 0, []],
+        })
+        await host!.writingDrafts.idle()
+      },
+    )
+  },
+)
+
+test(
   { name: 'a chat restored from large tool history shows an editable draft without recovery JSON', timeout: 90000 },
   async (t) => {
     let host: ReturnType<typeof writingDraftTestHost>

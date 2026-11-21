@@ -1,6 +1,6 @@
 import { Button, Select, Textarea } from '@mantine/core'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { currentDraftVersion, type WritingDraft } from '#lib/writingVoice/draftTypes.ts'
+import { currentDraftVersion, type WritingDraft, type WritingDraftView } from '#lib/writingVoice/draftTypes.ts'
 import { MAX_WRITING_CHARS } from '#lib/writingVoice/types.ts'
 import { MarkdownField } from '../editor/markdownEditor.tsx'
 import { renderStatic } from '../editor/wysiwyg/render.ts'
@@ -29,6 +29,7 @@ function savedEdit(key: string): Edit | null {
 export function WritingDraftEditor<T extends WritingDraft>({
   anchor,
   unsaved = false,
+  failedEdit,
   mutate,
   onEditingChange,
   draft,
@@ -39,7 +40,8 @@ export function WritingDraftEditor<T extends WritingDraft>({
   anchor?: string
   /** No record exists yet. The first action saves one, and its id may differ from the one shown. */
   unsaved?: boolean
-  mutate: (body: unknown) => Promise<T>
+  failedEdit?: WritingDraftView['failedEdit']
+  mutate: (body: unknown, signal?: AbortSignal) => Promise<T>
   onEditingChange?: (editing: boolean) => void
   draft: T
   disabled?: boolean
@@ -48,6 +50,7 @@ export function WritingDraftEditor<T extends WritingDraft>({
 }) {
   const current = currentDraftVersion(draft)
   const key = editKey(draft.id)
+  const [retry, setRetry] = useState<AbortController | null>(null)
   const [edit, setEdit] = useState<Edit | null>(() => savedEdit(key))
   useEffect(() => {
     onEditingChange?.(edit !== null)
@@ -124,17 +127,17 @@ export function WritingDraftEditor<T extends WritingDraft>({
     const timer = setTimeout(() => setCopied(false), 1800)
     return () => clearTimeout(timer)
   }, [copied])
-  const act = async (body: unknown, saved = false) => {
+  const act = async (body: unknown, saved = false, signal?: AbortSignal) => {
     if (busy || disabled) return
     setBusy(true)
     setError('')
     try {
-      const next = await mutate(body)
+      const next = await mutate(body, signal)
       onChange(next)
       if (saved) remember(null)
       return next
     } catch (problem) {
-      setError((problem as Error).message)
+      setError(signal?.aborted ? 'Retry canceled.' : (problem as Error).message)
       return undefined
     } finally {
       setBusy(false)
@@ -240,6 +243,39 @@ export function WritingDraftEditor<T extends WritingDraft>({
       ) : (
         <>
           <RenderedHtml className="sky-writing-draft-body sky-rendered" html={html} />
+          {failedEdit && (
+            <div className="sky-writing-draft-retry">
+              <p role="status">
+                Version {draft.revision} is available. Ghostwriter could not apply this edit. {failedEdit.error}
+              </p>
+              <p>{failedEdit.instruction}</p>
+              {retry ? (
+                <Button size="sm" onClick={() => retry.abort()}>
+                  Stop retry
+                </Button>
+              ) : (
+                <Button
+                  size="sm"
+                  disabled={busy || disabled}
+                  onClick={async () => {
+                    const controller = new AbortController()
+                    setRetry(controller)
+                    try {
+                      await act(
+                        { action: 'retry-edit', callId: failedEdit.callId, revision: draft.revision },
+                        false,
+                        controller.signal,
+                      )
+                    } finally {
+                      setRetry(null)
+                    }
+                  }}
+                >
+                  Retry this edit
+                </Button>
+              )}
+            </div>
+          )}
           <div className="sky-writing-draft-actions">
             <Button
               size="sm"

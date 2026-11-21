@@ -85,6 +85,7 @@ export function recordToolExecution(runs: ToolRun[], at: number, event: ToolExec
 const StoredRun = z.object({
   tool: z.string(),
   callId: z.string().optional(),
+  editRetried: z.literal(true).optional(),
   at: z.number().int().nonnegative(),
   started: z.number(),
   lines: z.array(z.string()),

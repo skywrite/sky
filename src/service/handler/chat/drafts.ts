@@ -3,10 +3,14 @@ import { z } from 'zod'
 import { hash } from '#lib/outbox/files.ts'
 import { changeDraft, DraftMutationSchema, mutateWritingDraft } from '#lib/writingVoice/draftActions.ts'
 import { reviseUnsaved } from '#lib/writingVoice/draftChanges.ts'
+import { writingDraftTools } from '#lib/writingVoice/draftChat.ts'
 import { WritingDraftId } from '#lib/writingVoice/draftId.ts'
 import type { WritingDraftStore } from '#lib/writingVoice/drafts.ts'
 import { currentDraftVersion, unquotedDraft, type WritingDraftView } from '#lib/writingVoice/draftTypes.ts'
 import { MAX_WRITING_CHARS, WritingVoiceError } from '#lib/writingVoice/types.ts'
+import { runWithUsageSource } from '#shared/ai/usageLog.ts'
+import { hold } from '../../activity.ts'
+import { pendingDraftEdit } from './draftRetry.ts'
 import type { Thread, ToolRun } from './mod.ts'
 import type { ReplyThreadHost } from './replyThreads.ts'
 
@@ -14,6 +18,7 @@ const Mutation = z.union([
   DraftMutationSchema,
   z.object({ action: z.literal('adopt') }),
   z.object({ action: z.literal('focus') }),
+  z.object({ action: z.literal('retry-edit'), callId: z.string().min(1), revision: z.number().int().positive() }),
 ])
 
 /**
@@ -113,7 +118,15 @@ export function unsavedDraftsOf(
     (await threadDrafts({ runs: runs(), started }, chatId, store, links)).filter((draft) => draft.unsaved)
 }
 
-export function registerWritingDraftRoutes(app: Hono, store: WritingDraftStore, host: ReplyThreadHost): void {
+export function registerWritingDraftRoutes(
+  app: Hono,
+  store: WritingDraftStore,
+  host: ReplyThreadHost & {
+    accepting: Set<string>
+    activeTurns: Map<string, AbortController>
+    drain: (id: string) => void
+  },
+): void {
   const read = async (id: string): Promise<Thread> => {
     await host.ready
     const thread = host.threads.get(id)
@@ -179,7 +192,11 @@ export function registerWritingDraftRoutes(app: Hono, store: WritingDraftStore, 
     try {
       const id = c.req.param('id')
       const thread = await read(id)
-      return c.json({ drafts: await list(thread, id), focused: thread.session.focusedWritingDraft })
+      const drafts = (await list(thread, id)).map((draft) => ({
+        ...draft,
+        failedEdit: pendingDraftEdit(thread.runs, draft)?.offer,
+      }))
+      return c.json({ drafts, focused: thread.session.focusedWritingDraft })
     } catch (error) {
       return c.json({ message: message(error) }, status(error))
     }
@@ -189,9 +206,55 @@ export function registerWritingDraftRoutes(app: Hono, store: WritingDraftStore, 
     try {
       const id = c.req.param('id')
       const thread = await read(id)
-      if (thread.busy) throw new WritingVoiceError('Wait for Sky to finish this turn before changing the draft.', 409)
       const shownId = WritingDraftId.parse(c.req.param('draft'))
       const input = Mutation.parse(await c.req.json())
+      if (thread.busy || host.accepting.has(id))
+        throw new WritingVoiceError('Wait for Sky to finish the current action before changing the draft.', 409)
+      if (input.action === 'retry-edit') {
+        host.accepting.add(id)
+        thread.busy = true
+        const stop = new AbortController()
+        host.activeTurns.set(id, stop)
+        const release = hold('writing draft edit')
+        try {
+          const session = thread.session
+          const shown = (await list(thread, id)).find((draft) => draft.id === shownId)
+          const pending = shown && pendingDraftEdit(thread.runs, shown)
+          if (!pending || pending.offer.callId !== input.callId || shown.revision !== input.revision)
+            throw new WritingVoiceError(
+              'This edit is no longer pending on that draft version. Review the current draft.',
+              409,
+            )
+          const ownerRequest = session.turns[pending.run.at - 1]
+          const tools = writingDraftTools(
+            {
+              context: { instructions: '', conversation: ownerRequest?.role === 'user' ? [ownerRequest] : [] },
+              writingDrafts: {
+                list: () => session.writingDraftLinks,
+                focus: () => session.focusedWritingDraft,
+                link: (draftId, turn) => session.linkWritingDraft(draftId, turn),
+              },
+            },
+            store,
+            () =>
+              unsavedDraftsOf(id, store, () => thread.runs, session.startTime.toString())(session.writingDraftLinks),
+          )
+          const result = await runWithUsageSource('me:voice', () =>
+            tools.draft(pending.input, AbortSignal.any([stop.signal, c.req.raw.signal]), shown.input),
+          )
+          pending.run.editRetried = true
+          await session.snapshot()
+          const draft = await store.require(result.draftId)
+          return c.json({ draft: { ...draft, turn: shown.turn }, text: currentDraftVersion(draft).text })
+        } finally {
+          thread.busy = false
+          host.activeTurns.delete(id)
+          host.accepting.delete(id)
+          host.changed(thread)
+          release()
+          host.drain(id)
+        }
+      }
       let ref = thread.session.writingDraftLinks.find((entry) => entry.id === shownId)
       if (!ref) {
         const shown = (await list(thread, id)).find((entry) => entry.id === shownId && entry.unsaved)

@@ -60,7 +60,7 @@ export function splitWritingDrafts(source: string, drafts: WritingDraftView[]): 
 export function writingDraftReplies(
   drafts: WritingDraftView[],
   turns: readonly Pick<Turn, 'role' | 'content'>[],
-  runs: readonly Pick<Run, 'tool' | 'at' | 'status' | 'output'>[],
+  runs: readonly Pick<Run, 'tool' | 'at' | 'status' | 'output' | 'callId'>[],
   writing: boolean,
 ): Map<string, number> {
   const replies = new Map<string, number>(drafts.map((draft) => [draft.id, draft.turn * 2 - 1]))
@@ -73,8 +73,11 @@ export function writingDraftReplies(
     }
   }
   for (const run of runs) {
-    if (run.tool !== 'me_voice' || run.status !== 'success' || run.at >= finished) continue
-    const id = (run.output as { draftId?: unknown } | undefined)?.draftId
+    if (run.tool !== 'me_voice' || run.at >= finished) continue
+    const id =
+      run.status === 'success'
+        ? (run.output as { draftId?: unknown } | undefined)?.draftId
+        : run.callId && drafts.find((draft) => draft.failedEdit?.callId === run.callId)?.id
     if (typeof id !== 'string') continue
     const at = replies.get(id)
     if (at !== undefined && run.at > at) replies.set(id, run.at)
@@ -82,11 +85,17 @@ export function writingDraftReplies(
   return replies
 }
 
-export async function writingDraftRequest(chatId: string, draftId: string, body: unknown): Promise<WritingDraftView> {
+export async function writingDraftRequest(
+  chatId: string,
+  draftId: string,
+  body: unknown,
+  signal?: AbortSignal,
+): Promise<WritingDraftView> {
   const response = await fetch(`/chat/${encodeURIComponent(chatId)}/drafts/${draftId}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
+    signal,
   })
   const data = (await response.json()) as { draft: WritingDraftView; message?: string }
   if (!response.ok) throw new Error(data.message ?? 'Sky could not save this draft.')
