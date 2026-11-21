@@ -13,6 +13,10 @@
  *
  * Note: The exact abbreviation format may vary by JavaScript environment.
  * Some environments may return "GMT+1" instead of "BST" for example.
+ *
+ * A zone sitting on Greenwich time always reads "GMT+0", the same offset form
+ * as "GMT+1" or "GMT+8". System time zone data disagrees on it: Linux says
+ * "GMT" for Europe/London and Europe/Dublin in winter, macOS 27.2 says "GMT+0".
  */
 export default function timezoneToAbbreviation(timezone: string, date: Date = new Date()): string {
   const formatter = new Intl.DateTimeFormat('en-US', {
@@ -20,6 +24,6 @@ export default function timezoneToAbbreviation(timezone: string, date: Date = ne
     timeZoneName: 'short',
   })
   const parts = formatter.formatToParts(date)
-  const timeZonePart = parts.find((part) => part.type === 'timeZoneName')
-  return timeZonePart?.value || ''
+  const name = parts.find((part) => part.type === 'timeZoneName')?.value || ''
+  return /^GMT([+-]0{1,2}(:00)?)?$/.test(name) ? 'GMT+0' : name
 }

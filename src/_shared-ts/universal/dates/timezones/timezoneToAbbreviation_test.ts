@@ -54,8 +54,15 @@ const fixtures = [
   {
     timezone: 'Europe/London',
     date: '2024-03-15T12:00:00',
-    expected: 'GMT',
+    expected: 'GMT+0',
     description: 'London winter',
+    isReliable: true,
+  },
+  {
+    timezone: 'Europe/Dublin',
+    date: '2024-01-15T12:00:00',
+    expected: 'GMT+0',
+    description: 'Dublin winter',
     isReliable: true,
   },
   {
