@@ -24,6 +24,7 @@ import type { Store } from '../store.ts'
 import type { KeepOptions } from './attachments/keep.ts'
 import { attachmentCandidates } from './attachments/mod.ts'
 import { createAttachmentRoutes } from './attachments/routes.ts'
+import { serveVideo } from './attachments/serveVideo.ts'
 import { type AutomationsRoutesOptions, createAutomationRoutes } from './automations/mod.ts'
 import { type ChatRoutesOptions, createChatRoutes } from './chat/mod.ts'
 import { type ClockRoutesOptions, createClockRoutes } from './clock/mod.ts'
@@ -575,6 +576,8 @@ export function createHttpApp(options: HttpHandlerOptions): Hono {
     ]
     for (const candidate of candidates) {
       try {
+        const video = await serveVideo(c, candidate)
+        if (video) return video
         const data = await readFile(candidate)
         return c.body(data, 200, { 'content-type': contentTypeOf(candidate), 'cache-control': 'no-cache' })
       } catch (err) {

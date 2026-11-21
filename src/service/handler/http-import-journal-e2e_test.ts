@@ -370,6 +370,7 @@ test(
           mimeType: 'video/quicktime',
           buffer: Buffer.from('synthetic video'),
         })
+        await page.getByRole('button', { name: 'Journal', exact: true }).click()
         await page.getByText('New journal from a video recording', { exact: true }).waitFor({ timeout: 5000 })
         await page.getByRole('button', { name: 'Start', exact: true }).click()
         await page.getByRole('button', { name: 'Open journals', exact: true }).waitFor()

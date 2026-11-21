@@ -21,7 +21,7 @@ import { VIDEO_EXTENSIONS } from '#lib/media/video.ts'
 
 /** The kinds a recording may be filed as: every door that takes audio. */
 export type RecordingKind = 'meeting' | 'journal' | 'note' | 'message' | 'event'
-/** Those, and a video, which comes in as its transcript. */
+/** A video can arrive as a recording or a transcript. */
 export type ImportKind = RecordingKind | 'video'
 /** What arrived: a file, or text dragged onto the day (`selection`). */
 export type ImportSource =
@@ -36,6 +36,7 @@ export type ImportSource =
   | 'document'
 
 export const RECORDING_KINDS: RecordingKind[] = ['meeting', 'journal', 'note', 'message', 'event']
+export const VIDEO_KINDS: ImportKind[] = ['video', 'journal']
 export const KINDS: ImportKind[] = [...RECORDING_KINDS, 'video']
 
 export const AUDIO_EXTENSIONS = ['.m4a', '.mp3', '.wav', '.aac', '.ogg', '.flac', '.webm', '.mp4', '.caf']
@@ -270,7 +271,7 @@ export function readVideo(durationSeconds: number | null): ReadBack {
   return {
     ...readAudio(0, durationSeconds),
     source: 'video',
-    kinds: ['journal'],
+    kinds: [...VIDEO_KINDS],
     summary: ['Video recording', lengthLabel(durationSeconds)].filter(Boolean).join(' · '),
   }
 }

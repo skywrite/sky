@@ -49,3 +49,13 @@ test('a phone video keeps when it began recording after a copy resets its other 
     expected: [null, null],
   })
 })
+
+test('an audio recording with cover art still imports as audio', () => {
+  const streams = [{ codec_type: 'audio' }, { codec_type: 'video', disposition: { attached_pic: 1 } }]
+  assert({
+    given: 'a voice recording whose only visual stream is its cover image',
+    should: 'keep the audio import choices',
+    actual: mediaInfoFrom(JSON.stringify({ streams }), 'memo.m4a').hasVideo,
+    expected: false,
+  })
+})

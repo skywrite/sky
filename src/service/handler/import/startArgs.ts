@@ -22,7 +22,6 @@
 
 import { basename } from 'node:path'
 import { documentWorkWhen, isAttachmentNote } from '#commands/all/notes/lib/documentInput.ts'
-import { VIDEO_EXTENSIONS } from '#lib/media/video.ts'
 import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import type { StartFields } from './jobs.ts'
 import type { ReadBack } from './readback.ts'
@@ -146,15 +145,23 @@ export function startArgs(job: StartContext, fields: StartFields, input: string 
       }
     case 'event':
       return { command: 'event:new', args: { fromVoiceMemo: filePath, category, when, fresh }, rawArgs }
-    case 'video':
+    case 'video': {
+      // A pair is staged transcript first. A lone recording has no caption input.
+      const videoFile = job.source === 'video' ? filePath : filePaths[1]
+      const transcript =
+        job.source === 'video'
+          ? {}
+          : job.source === 'srt'
+            ? { fromSrt: filePath }
+            : text
+              ? { fromText: filePath }
+              : { fromZoomVtt: filePath }
       return {
         command: 'video:new',
         args: {
-          ...(job.source === 'srt' ? { fromSrt: filePath } : text ? { fromText: filePath } : { fromZoomVtt: filePath }),
+          ...transcript,
+          ...(videoFile ? { videoFile } : {}),
           ...(fields.videoUrl ? { url: fields.videoUrl } : {}),
-          ...(filePaths.find((file) => VIDEO_EXTENSIONS.some((ext) => file.toLowerCase().endsWith(ext)))
-            ? { videoFile: filePaths.find((file) => VIDEO_EXTENSIONS.some((ext) => file.toLowerCase().endsWith(ext))) }
-            : {}),
           ...(fields.recordedAt ? { recordedAt: fields.recordedAt } : {}),
           ...(fields.acceptAllReviews ? { acceptAllReviews: true } : {}),
           category,
@@ -165,5 +172,6 @@ export function startArgs(job: StartContext, fields: StartFields, input: string 
         },
         rawArgs,
       }
+    }
   }
 }

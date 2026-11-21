@@ -479,6 +479,36 @@ test('cancelled processing leaves the original sources and notebook unchanged', 
   })
 })
 
+test('a local recording can repair an interrupted day link without a URL or a second write-up', async () => {
+  await fixture(async (options) => {
+    const day = path.join(options.config.DIR_TIME, dayFile(WHEN.plainDate))
+    await mkdir(day, { recursive: true })
+    const input = { ...options, url: undefined, transcriptFile: undefined }
+    const interrupted = await importVideo(input).then(
+      () => false,
+      () => true,
+    )
+    await rm(day, { recursive: true })
+    const recovered = await importVideo({
+      ...input,
+      prepare: async () => {
+        throw new Error('The recording has already been transcribed and filed.')
+      },
+    })
+    const file = recovered.filePath!
+    assert({
+      given: 'a standalone recording already published when the day file could not be written',
+      should: 'recover its single entry and day link',
+      actual: [
+        interrupted,
+        await readdir(path.dirname(file)),
+        (await readFile(day, 'utf8')).split(path.basename(file)).length - 1,
+      ],
+      expected: [true, [path.basename(file)], 1],
+    })
+  })
+})
+
 test('an incomplete generation cannot publish a partial entry or media files', async () => {
   await fixture(async (options) => {
     let refused = false

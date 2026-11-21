@@ -153,7 +153,11 @@ export function createImportHost(config: typeof ConfigModule, env: Record<string
       return {
         ...audio,
         kinds: [],
-        refusal: info ? 'This file has no audio track.' : 'The recording could not be read. Try exporting it again.',
+        refusal: !info
+          ? 'The recording could not be read. Try exporting it again.'
+          : audio.source === 'video'
+            ? `${name} has no audio track. Drop it together with an SRT, VTT or TXT transcript, or choose a recording with audio.`
+            : 'This file has no audio track.',
       }
     return info.capturedAt ? { ...audio, recordedAt: info.capturedAt } : audio
   }

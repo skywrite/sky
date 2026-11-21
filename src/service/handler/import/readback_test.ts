@@ -313,13 +313,13 @@ test('readAudio', () => {
   })
 })
 
-test('video recordings offer journal import without applying the audio provider cap to video bytes', () => {
+test('video recordings default to Video and also offer Journal', () => {
   const video = readVideo(252)
   assert({
     given: 'a recorded video that will be transcribed from its extracted audio',
-    should: 'offer the journal workflow and recording duration',
+    should: 'offer both destinations and show the recording duration',
     actual: [video.source, video.kinds, video.summary, video.durationMinutes, video.refusal],
-    expected: ['video', ['journal'], 'Video recording · 4 min 12 s', 4.2, null],
+    expected: ['video', ['video', 'journal'], 'Video recording · 4 min 12 s', 4.2, null],
   })
 })
 

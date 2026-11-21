@@ -1,6 +1,6 @@
 ---
 created: 2026-09-25
-updated: 2026-11-08
+updated: 2026-11-18
 ---
 
 # Video commands
@@ -9,7 +9,7 @@ Design notes for `src/commands/all/video/`.
 
 ## video:new
 
-Two paths. A summary with `--from`, `--to` and `--medium` writes a
+A summary with `--from`, `--to` and `--medium` writes a
 placeholder file for the editor to fill. `--from-srt`, or `--from-zoom-vtt`
 for a Zoom Clip's `.vtt`, runs the transcript pipeline
 (`audio:transcript:summary` with the `audio-message` template: a
@@ -22,10 +22,15 @@ file's clock.
 Run records (`audio/transcript/lib/transcriptRun.ts`) let a second run
 pick up what the first already paid for; `--fresh` forgets them.
 
-## Source URL imports
+## Recording imports
 
-With `--url`, the command creates or completes a recording through `lib/importVideo.ts`.
-`--video-file` supplies the recording and `--from-srt`, `--from-zoom-vtt`, or `--from-text` supplies its transcript.
+`--video-file` files a local recording through `lib/importVideo.ts`.
+Without captions, the transcription command extracts the audio and uses the configured speech provider.
+It keys checkpoints by the original recording, so a retry can reuse the recognized words.
+The entry keeps the original media in the day's attachments and the cleaned transcript in its body.
+`--from-srt`, `--from-zoom-vtt`, or `--from-text` supplies an existing transcript.
+A source URL is optional for a standalone recording.
+With `--url`, the command can also complete an existing entry.
 `--when` states the recording time for a new entry; optional `--recorded-at` retains the original zoned instant in metadata.
 Both import paths name notes with the medium, available speaker or recipient, and short summary, such as
 `Loom_Jane-Doe_API-Review.md`.

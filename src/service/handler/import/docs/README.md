@@ -1,6 +1,6 @@
 ---
 created: 2026-09-01
-updated: 2026-11-16
+updated: 2026-11-18
 ---
 
 # Meeting from a file — the import
@@ -68,7 +68,7 @@ One door for every file kind. The kind picks the command:
 | --- | --- |
 | VTT contents in `.vtt` or `.txt` | the kind chosen in the dialog: `meeting:new --from-zoom-vtt`, `video:new --from-zoom-vtt` — a Zoom Clip's, or `journal:new --from-zoom-vtt --split` — a recorded journal, offered last; a transcript whose cues name no speaker is offered as a video first |
 | `.srt` | `video:new --from-srt` — a video's transcript; a Loom's, a caption file's |
-| video recording (`.mp4`, `.mov`, `.m4v`, `.webm`, `.mkv`) | `journal:new --from-video --split` — extracts audio, reviews names and journal types, retains the original video |
+| video recording (`.mp4`, `.mov`, `.m4v`, `.webm`, `.mkv`) | Video (default) runs `video:new --video-file` to transcribe the audio and file the original with its summary and transcript. Journal runs `journal:new --from-video --split`. |
 | plain-text `.txt` | the kind chosen in the dialog: `meeting:new --from-text` (first), `message:new --from-text`, or `video:new --from-text --url` |
 | video with its SRT/VTT/TXT sidecar | one video import through `video:new --url --video-file`, using the transcript pipeline |
 | text dragged in | the same two doors on the text, staged as `selection.txt`: a message first, a meeting first when its lines carry a notetaker's stamps |

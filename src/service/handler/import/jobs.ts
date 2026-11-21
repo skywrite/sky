@@ -3,7 +3,7 @@ import * as path from 'node:path'
 import type { PlanStep } from '#commands/lib/output/OutputHandler.ts'
 import type { PromptRequest } from '#commands/lib/prompt/Prompter.ts'
 import { instantNow } from '#universal/dates/nbdt/mod.ts'
-import type { ImportKind, ReadBack } from './readback.ts'
+import { type ImportKind, type ReadBack, VIDEO_KINDS } from './readback.ts'
 
 export type ImportState = 'new' | 'running' | 'needs-you' | 'done' | 'failed' | 'cancelled'
 
@@ -244,6 +244,11 @@ export class JobStore {
       if (isDisposable(job)) {
         await rm(path.join(this.dir, id), { recursive: true, force: true }).catch(() => {})
         continue
+      }
+      if (job.readback.source === 'video' && !job.readback.refusal && !job.readback.kinds.includes('video')) {
+        // Jobs staged before standalone video import only offered Journal. Keep any choice already made.
+        job.readback.kinds = [...VIDEO_KINDS]
+        job.title = path.parse(job.file.name).name
       }
       if (job.state === 'running' || job.state === 'needs-you') {
         // A question the pipeline asked is answered through a resolver held in

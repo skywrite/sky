@@ -28,14 +28,14 @@ import { importVideo, type VideoImportPlan, videoSource } from './lib/importVide
 
 const params = {
   url: Flag.string('Source video URL; an existing Loom ID fills only missing content', { optional: true }),
-  videoFile: Flag.string('Local recording to attach during import', { optional: true }),
+  videoFile: Flag.string('Local video to retain and transcribe when no transcript is supplied', { optional: true }),
   recordedAt: Flag.string('Original recording instant, including timezone, retained with the source URL', {
     optional: true,
   }),
   fromText: Flag.string('Path to a plain TXT transcript', { optional: true }),
   acceptAllReviews: Flag.bool('Accept suggested name corrections and write-ups for this import', { default: false }),
   dryRun: Flag.bool('Show the source match and missing content without model calls or writes', { default: false }),
-  summary: ArgOrFlag.string('Summary of the video (optional with --from-srt or --from-zoom-vtt)', { short: 's' }),
+  summary: ArgOrFlag.string('Summary of the video (optional with a recording or transcript)', { short: 's' }),
   medium: Flag.string('Video platform/medium (YouTube, Vimeo, Loom, etc.)', { short: 'm' }),
   from: Flag.string('Who the communication was from', { short: 'f' }),
   to: Flag.string('Who the communication was to', { short: 't' }),
@@ -74,12 +74,13 @@ export default class VideoNewTask extends Command {
     description: 'Create new video entry.',
     usage: [
       'sky video:new "Weekly update" --from Jane --medium Loom',
+      'sky video:new --video-file ./Demo.mp4       # Transcribe and file a recording',
       'sky video:new --from-srt                    # Summarize newest .srt on Desktop',
       'sky video:new --from-srt ~/Desktop/talk.srt # Summarize a specific transcript',
       "sky video:new --from-zoom-vtt               # Summarize newest .vtt on Desktop, a Zoom Clip's",
     ],
     params,
-    postProcess: [validateAnyArgFlagExists('summary', 'fromSrt', 'fromZoomVtt', 'fromText', 'url')],
+    postProcess: [validateAnyArgFlagExists('summary', 'fromSrt', 'fromZoomVtt', 'fromText', 'url', 'videoFile')],
   }
 
   async run({ args, context, tasks, rawArgs }: CommandArgs<Params>): Promise<CommandResult<Result>> {
@@ -96,13 +97,19 @@ export default class VideoNewTask extends Command {
     if ([args.fromSrt, args.fromZoomVtt, args.fromText].filter((value) => value !== undefined).length > 1)
       return CommandResult.fail('Use only one of --from-srt, --from-zoom-vtt or --from-text')
 
-    if (args.url) {
+    if (args.url || args.videoFile) {
       const format = args.fromSrt !== undefined ? '.srt' : args.fromZoomVtt !== undefined ? '.vtt' : '.txt'
       const source = args.fromSrt ?? args.fromZoomVtt ?? args.fromText
       const resolved = source !== undefined ? await this.resolveTranscriptPath(format, source, output) : null
       if (resolved && !resolved.ok) return CommandResult.fail(resolved.message)
       let completedRun: string | null = null
       try {
+        const localRun =
+          !args.url && args.videoFile && !resolved && !args.dryRun
+            ? await TranscriptRun.resolve(args.run, args.videoFile, runOptionsFor(context))
+            : null
+        const transcriptFlag =
+          args.fromSrt !== undefined ? 'fromSrt' : args.fromZoomVtt !== undefined ? 'fromZoomVtt' : 'fromText'
         const result = await importVideo({
           config,
           url: args.url,
@@ -110,27 +117,34 @@ export default class VideoNewTask extends Command {
           recordedAt: args.recordedAt,
           timezone: context.systemNow.timezone,
           title: summary,
-          medium: medium || (videoSource(args.url).loomId ? 'Loom' : 'Video'),
+          medium: medium || (args.url && videoSource(args.url).loomId ? 'Loom' : 'Video'),
           from,
           to,
           category,
           videoFile: args.videoFile,
-          transcriptFile: resolved?.ok ? resolved.path : undefined,
+          runKey: localRun?.key,
+          transcriptFile: resolved?.path,
           dryRun: args.dryRun,
           signal: context.signal,
-          prepare: async (plan, existingTranscript) => {
+          onFiling: () => output.stage('file', 'Filing video'),
+          prepare: async (plan, existingTranscript, recording) => {
+            const transcribe = !existingTranscript && !resolved
             output.plan([
+              ...(transcribe
+                ? [
+                    { id: 'extract-audio', label: 'Extracting audio' },
+                    { id: 'transcribe', label: 'Transcribing' },
+                  ]
+                : []),
               { id: 'names', label: 'Checking names' },
               { id: 'writeup', label: 'Writing it up' },
-              { id: 'file', label: 'Filing missing content' },
+              { id: 'file', label: 'Filing video' },
             ])
             const sourceArgs = existingTranscript
-              ? { text: existingTranscript }
-              : args.fromSrt !== undefined
-                ? { fromSrt: resolved!.ok ? resolved!.path : undefined }
-                : args.fromZoomVtt !== undefined
-                  ? { fromZoomVtt: resolved!.ok ? resolved!.path : undefined }
-                  : { fromText: resolved!.ok ? resolved!.path : undefined }
+              ? { text: existingTranscript, fromSrt: undefined, fromZoomVtt: undefined, fromText: undefined }
+              : resolved
+                ? { [transcriptFlag]: resolved.path }
+                : { fromAudio: recording, run: recording === args.videoFile ? (localRun?.key ?? args.run) : undefined }
             if (!plan.missing.includes('summary')) {
               const clean = await tasks.run('audio:transcript:clean', {
                 ...sourceArgs,
@@ -146,7 +160,8 @@ export default class VideoNewTask extends Command {
               ...sourceArgs,
               template: 'audio-message',
               acceptAllReviews: args.acceptAllReviews,
-              when: plan.when,
+              when: args.url || rawArgs.when !== undefined ? plan.when : undefined,
+              clock: args.url || rawArgs.when !== undefined ? undefined : (args.clock ?? plan.when),
               fresh: args.fresh,
               save: false,
             })
@@ -168,18 +183,19 @@ export default class VideoNewTask extends Command {
             return { ...data, tags, rel: mergeRel(data.rel, rel) }
           },
         })
-        if (completedRun) await (await TranscriptRun.open(completedRun, runOptionsFor(context))).clear()
+        if (localRun) await localRun.clear()
+        else if (completedRun) await (await TranscriptRun.open(completedRun, runOptionsFor(context))).clear()
         output.log(JSON.stringify(result.plan, null, 2))
         return CommandResult.success(result)
       } catch (error) {
         return CommandResult.fail((error as Error).message)
       }
     }
-    if (args.dryRun || args.videoFile || args.recordedAt)
-      return CommandResult.fail('Use --url to match, preview or attach a complete video import.')
+    if (args.dryRun || args.recordedAt)
+      return CommandResult.fail('Use --video-file or --url to preview a video import or specify its recording time.')
 
     if (args.fromText !== undefined)
-      return CommandResult.fail('Use --url with --from-text to identify the video import.')
+      return CommandResult.fail('Use --video-file or --url with --from-text to identify the video import.')
 
     if (fromSrt !== undefined && fromZoomVtt !== undefined) {
       return CommandResult.fail('Use only one of --from-srt or --from-zoom-vtt')

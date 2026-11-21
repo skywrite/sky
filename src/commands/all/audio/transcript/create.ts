@@ -1,9 +1,10 @@
-import { mkdir, readFile, unlink } from 'node:fs/promises'
+import { randomUUID } from 'node:crypto'
+import { mkdir, readFile, stat, unlink } from 'node:fs/promises'
 import * as path from 'node:path'
 import colors from 'picocolors'
 import { Arg, Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
-import { probeMedia, type MediaInfo } from '#lib/media/ffmpeg/mod.ts'
+import { extractAudio, probeMedia, type MediaInfo } from '#lib/media/ffmpeg/mod.ts'
 import { runCommand } from '#lib/sys/mod.ts'
 import { loadSkyConfig } from '#shared/config/loader.ts'
 import { exists, writeTextFile } from '#shared/fs/mod.ts'
@@ -186,16 +187,38 @@ export default class AudioTranscriptCreateTask extends Command {
         return CommandResult.error(err as Error, 'Could not read the audio recording')
       }
       if (!media.hasAudio) return CommandResult.fail('This file has no audio track.')
-      const formats = media.formatName?.split(',') ?? []
-      const extension = ['caf', 'mp4', 'mp3', 'wav', 'aac', 'ogg', 'flac', 'webm'].find((ext) => formats.includes(ext))
-      if (!extension) return CommandResult.fail('This recording uses an unsupported audio container.')
-      transcribeName = `${path.basename(inputFile, path.extname(inputFile))}.${extension}`
+      if (!media.hasVideo) {
+        const formats = media.formatName?.split(',') ?? []
+        const extension = ['caf', 'mp4', 'mp3', 'wav', 'aac', 'ogg', 'flac', 'webm'].find((ext) =>
+          formats.includes(ext),
+        )
+        if (!extension) return CommandResult.fail('This recording uses an unsupported audio container.')
+        transcribeName = `${path.basename(inputFile, path.extname(inputFile))}.${extension}`
+      }
     }
 
-    // 3. Convert CAF to M4A (unsupported by transcription APIs).
+    // 3. Send only speech-sized audio from a video. The original recording owns the checkpoint.
     let transcribeFile = inputFile
     let tempConvertedFile: string | null = null
-    if (media?.formatName?.split(',').includes('caf')) {
+    if (media?.hasVideo) {
+      output.stage('extract-audio', 'Extracting audio')
+      await mkdir(run.dir, { recursive: true })
+      tempConvertedFile = path.join(run.dir, `audio-${randomUUID()}.m4a`)
+      try {
+        context.signal?.throwIfAborted()
+        transcribeFile = await extractAudio(inputFile, { outputPath: tempConvertedFile })
+        transcribeName = `${path.parse(inputFile).name}.m4a`
+        const limit = selected.maxUploadMb
+        if (limit !== null && (await stat(transcribeFile)).size > limit * 1024 * 1024) {
+          throw new Error(
+            `The audio in ${path.basename(inputFile)} exceeds ${selected.label}'s ${limit} MB limit. Choose a shorter recording or supply its transcript.`,
+          )
+        }
+      } catch (err) {
+        await unlink(tempConvertedFile).catch(() => {})
+        return CommandResult.error(err as Error)
+      }
+    } else if (media?.formatName?.split(',').includes('caf')) {
       const ffmpegCheck = await runCommand('which', ['ffmpeg'])
       if (!ffmpegCheck.success) {
         return CommandResult.fail('ffmpeg is required to convert .caf files. Install with: brew install ffmpeg')

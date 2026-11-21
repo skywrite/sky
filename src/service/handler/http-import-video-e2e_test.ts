@@ -152,6 +152,40 @@ test(
           ],
           expected: [IDS.map(() => ({ name: 'video:new', approval: true, video: 'string', source: 'string' })), []],
         })
+        await page.goto(`${origin}/${DAY.ymd}`)
+        await page.waitForSelector('.sky-day .sky-col')
+        await dispatchFileDrop(page, '.sky-day .sky-col', [
+          { name: 'Atlas demo.mp4', type: 'video/mp4', text: 'synthetic video bytes' },
+        ])
+        await page.getByText('Import video', { exact: true }).waitFor()
+        assert({
+          given: 'a recording dropped on its own',
+          should: 'select Video, also offer Journal, and allow the source URL to stay empty',
+          actual: [
+            await page.getByRole('button', { name: 'Video', exact: true }).getAttribute('data-on'),
+            await page.getByRole('button', { name: 'Journal', exact: true }).getAttribute('data-on'),
+            await page.getByLabel('Source video URL', { exact: true }).inputValue(),
+            await page.title(),
+          ],
+          expected: ['true', 'false', '', 'sky · Import Atlas demo'],
+        })
+        await page.getByRole('button', { name: 'Start', exact: true }).click()
+        await page.getByRole('button', { name: 'Start', exact: true }).waitFor({ state: 'hidden' })
+        await page.waitForFunction(() => document.title === 'sky · Atlas demo')
+        const raw = commands.at(-1)!
+        assert({
+          given: 'Start with only the dropped video',
+          should: 'send its recording to the video command for transcription',
+          actual: [
+            raw.command,
+            path.basename(String(raw.args.videoFile)),
+            raw.args.url,
+            raw.args.fromZoomVtt,
+            raw.args.fromText,
+            raw.args.fromSrt,
+          ],
+          expected: ['video:new', 'Atlas demo.mp4', undefined, undefined, undefined, undefined],
+        })
       },
     )
   },

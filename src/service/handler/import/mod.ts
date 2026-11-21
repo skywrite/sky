@@ -113,7 +113,6 @@ export interface ImportRoutesOptions {
 function titleOf(file: StagedFile, readback: ReadBack, when: string): string {
   const time = when.slice(11).replace(/^0/, '')
   if (readback.source === 'audio') return `Voice memo ${time}`
-  if (readback.source === 'video') return `Video journal ${time}`
   if (readback.source === 'imessage-audio') return `iMessage Audio ${time}`
   if (readback.source === 'image') return `Image ${time}`
   if (readback.source === 'selection') return `Text ${time}`
@@ -260,7 +259,7 @@ function parseStart(body: unknown, job: ImportJob): StartFields | string {
     ...(kind === 'video'
       ? {
           ...(videoUrl ? { videoUrl } : {}),
-          ...(typeof b.recordedAt === 'string' ? { recordedAt: b.recordedAt } : {}),
+          recordedAt: typeof b.recordedAt === 'string' ? b.recordedAt : readback.recordedAt,
           ...(b.acceptAllReviews === true ? { acceptAllReviews: true } : {}),
         }
       : {}),
@@ -376,7 +375,7 @@ export function createImportRoutes(options: ImportRoutesOptions): Hono {
         while (names.has(name.toLowerCase())) name = `${base.slice(0, base.length - ext.length)}-${suffix++}${ext}`
         names.add(name.toLowerCase())
         const filePath = path.join(dir, name)
-        await writeFile(filePath, new Uint8Array(await upload.arrayBuffer()), { flag: 'wx' })
+        await writeFile(filePath, upload.stream(), { flag: 'wx' })
         const raw = typeof modified[index] === 'string' ? Number(modified[index]) : Number.NaN
         const lastModified = Number.isFinite(raw) && raw > 0 ? raw : null
         // message:new orders screenshots by their capture times, not upload times.

@@ -116,6 +116,7 @@ const KINDS: Record<string, FileKind> = {
   '.mov': 'video',
   '.webm': 'video',
   '.m4v': 'video',
+  '.mkv': 'video',
   '.pdf': 'pdf',
   '.txt': 'text',
   '.md': 'text',

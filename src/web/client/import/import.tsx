@@ -641,8 +641,8 @@ export function DropOverlay({ what = 'files' }: { what?: Dragged }) {
             'Sky asks what it is — a conversation or a meeting — then files it.'
           ) : (
             <>
-              Capture and summarize a document, or import a transcript, voice memo, or conversation. To keep a file with
-              the day as it is, drop it on the File attachments pad.
+              Capture and summarize a document, or import a video, transcript, voice memo, or conversation. To keep a
+              file with the day as it is, drop it on the File attachments pad.
             </>
           )}
         </div>
@@ -951,6 +951,8 @@ function nextLine(kind: ImportKind, source: ImportJob['readback']['source'], cou
     case 'event':
       return `${heard}, and files it as an event under the day.`
     case 'video':
+      if (source === 'video')
+        return 'Sky transcribes the audio and saves the original video with its summary and transcript.'
       return `${heard}, writes the video up, and files it under the day with the transcript.`
   }
 }
@@ -1062,14 +1064,14 @@ function ConfirmBody({
   const kinds = live?.readback.kinds ?? []
   const documentSource =
     live?.readback.source === 'document' || Boolean(pending?.files[0] && isNoteDocument(pending.files[0].name))
-  const meeting = pending?.meeting
+  const meeting = kinds.includes('meeting') ? pending?.meeting : null
   // A section drop chooses the day; the file supplies only the editable clock time.
   const proposedWhen = documentSource
     ? `${pending?.day ?? live?.day ?? live?.suggestedWhen.slice(0, 10) ?? todayYmd ?? ''} ${live?.captureWhen?.slice(11) ?? live?.suggestedWhen.slice(11) ?? ''}`
     : (meeting?.when ??
       (meeting?.day && live ? `${meeting.day} ${live.suggestedWhen.split(' ')[1]}` : live?.suggestedWhen))
   const dayStated = Boolean(meeting?.day || job?.fields?.dayStated)
-  const [touched, setTouched] = useState(Boolean(meeting || job?.fields))
+  const [touched, setTouched] = useState(Boolean(job?.fields))
   const categoryTouched = useRef(job?.fields?.categoryStated ?? Boolean(job?.fields?.category))
   const whenTouched = useRef(Boolean(job?.fields?.when))
   const [fields, setFields] = useState<Fields>({
@@ -1127,10 +1129,10 @@ function ConfirmBody({
     setFields((f) => ({
       ...f,
       when: !whenTouched.current && (documentSource || !f.when.trim()) ? (proposedWhen ?? live.suggestedWhen) : f.when,
-      kind: touched ? f.kind : (live.listen?.kind ?? live.readback.kinds[0] ?? f.kind),
+      kind: touched ? f.kind : meeting ? 'meeting' : (live.listen?.kind ?? live.readback.kinds[0] ?? f.kind),
       category: categoryTouched.current ? f.category : (live.listen?.category ?? f.category),
     }))
-  }, [live, touched, proposedWhen])
+  }, [live, touched, proposedWhen, meeting])
 
   const uploading = pending && !pending.job && !pending.error
   const refusal = live?.readback.refusal ?? pending?.error ?? null
@@ -1224,7 +1226,9 @@ function ConfirmBody({
           ? appendTo
             ? 'Add audio to conversation'
             : 'New iMessage Audio conversation'
-          : `New ${KIND_LABEL[fields.kind].toLowerCase()} from ${sourceWord}`
+          : source === 'video' && fields.kind === 'video'
+            ? 'Import video'
+            : `New ${KIND_LABEL[fields.kind].toLowerCase()} from ${sourceWord}`
 
   const start = async () => {
     if (!live || starting || linkBusy) return
@@ -1570,7 +1574,11 @@ function ConfirmBody({
             <>
               <TextInput
                 label="Source video URL"
-                description="The Loom ID finds an existing entry so Sky can fill only its missing content. Confirm the original recording time above."
+                description={
+                  source === 'video'
+                    ? 'Optional. Add a link if this recording is also available online.'
+                    : 'The Loom ID finds an existing entry so Sky can fill only its missing content. Confirm the original recording time above.'
+                }
                 value={fields.videoUrl}
                 onChange={(event) => {
                   const videoUrl = event.currentTarget.value

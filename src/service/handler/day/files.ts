@@ -35,6 +35,7 @@ import {
   moveRequestOf,
   trashFile,
 } from '../attachments/keep.ts'
+import { serveVideo } from '../attachments/serveVideo.ts'
 import { formatDateLabel } from '../home/today.ts'
 import isDay from './isDay.ts'
 
@@ -89,10 +90,6 @@ const CONTENT_TYPES: Record<string, string> = {
   '.ogg': 'audio/ogg',
   '.flac': 'audio/flac',
   '.caf': 'audio/x-caf',
-  '.mp4': 'video/mp4',
-  '.mov': 'video/quicktime',
-  '.webm': 'video/webm',
-  '.m4v': 'video/x-m4v',
   '.pdf': 'application/pdf',
   '.txt': 'text/plain; charset=utf-8',
   '.md': 'text/markdown; charset=utf-8',
@@ -213,7 +210,7 @@ export function createDayFilesRoutes(options: DayFilesOptions): Hono {
     return c.json(answer)
   })
 
-  // The file itself, inline, from the day or a folder inside it: a PDF or an image opens in the tab, anything else downloads.
+  // Serve the file inline from the day or a folder inside it.
   app.get('/:ymd/files/*', async (c) => {
     const ymd = c.req.param('ymd')
     if (!isDay(ymd)) return badDay(c, ymd)
@@ -221,6 +218,8 @@ export function createDayFilesRoutes(options: DayFilesOptions): Hono {
     if (!rel) return c.json({ message: 'not a file name' }, 400)
     const file = path.join(dirOf(ymd), rel)
     try {
+      const video = await serveVideo(c, file)
+      if (video) return video
       if (!(await stat(file)).isFile()) return c.json({ message: 'not a file' }, 404)
       const data = await readFile(file)
       const name = path.basename(rel)

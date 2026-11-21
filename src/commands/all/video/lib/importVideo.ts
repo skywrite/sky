@@ -1,12 +1,14 @@
 import { createHash } from 'node:crypto'
 import { mkdir, readFile, readdir, stat, unlink } from 'node:fs/promises'
 import * as path from 'node:path'
+import { probeMedia } from '#lib/media/ffmpeg/mod.ts'
+import { VIDEO_CONTENT_TYPES } from '#lib/media/video.ts'
 import { createDayFile } from '#lib/nbfs/createDayFile.ts'
 import { insertBlock } from '#lib/nbfs/listBlocks.ts'
 import { ensureDay } from '#lib/nbfs/mod.ts'
 import withDayWrite from '#lib/nbfs/withDayWrite.ts'
 import { withMarkdownWrite } from '#lib/nbfs/withMarkdownWrite.ts'
-import { copyFileDedup, copyToDayAttachments } from '#lib/notebook/attachments.ts'
+import { copyFileDedup, copyToDayAttachments, sha256File } from '#lib/notebook/attachments.ts'
 import { atomicWrite, notebookFile, readOptional, withLock } from '#lib/outbox/files.ts'
 import { attachmentCandidates, attachmentDestination } from '#service/handler/attachments/mod.ts'
 import { Document } from '#shared/models/Markdown/mod.ts'
@@ -28,7 +30,7 @@ export interface VideoImportConfig {
 
 export interface VideoImportPlan {
   action: 'create' | 'fill' | 'skip' | 'review'
-  url: string
+  url: string | null
   loomId: string | null
   filePath: string | null
   matches: string[]
@@ -43,6 +45,7 @@ export interface VideoImportText {
   body?: string
   cleanedText?: string
   title?: string
+  time?: string | null
   from?: string | null
   to?: string | null
   rel?: string[]
@@ -51,7 +54,7 @@ export interface VideoImportText {
 
 export interface VideoImportOptions {
   config: VideoImportConfig
-  url: string
+  url?: string
   when: PlainDateTime
   recordedAt?: string
   timezone: string
@@ -61,10 +64,13 @@ export interface VideoImportOptions {
   to?: string
   category: string
   videoFile?: string
+  /** The host already streamed the original recording to compute this key. */
+  runKey?: string
   transcriptFile?: string
   dryRun?: boolean
   signal?: AbortSignal
-  prepare: (plan: VideoImportPlan, existingTranscript: string) => Promise<VideoImportText>
+  onFiling?: () => void
+  prepare: (plan: VideoImportPlan, existingTranscript: string, recording?: string) => Promise<VideoImportText>
 }
 
 export { videoSource } from './source.ts'
@@ -118,12 +124,14 @@ function sameSource(raw: string, url: string): boolean {
   }
 }
 
-async function matchingFiles(options: VideoImportOptions): Promise<{
+async function matchingFiles(
+  options: VideoImportOptions,
+  source: ReturnType<typeof videoSource>,
+): Promise<{
   matches: string[]
   groups: string[]
   storedVideos: string[]
 }> {
-  const source = videoSource(options.url)
   const matches: string[] = []
   const groups: string[] = []
   const storedVideos = new Set<string>()
@@ -142,7 +150,7 @@ async function matchingFiles(options: VideoImportOptions): Promise<{
         `The existing video header could not be read: ${path.relative(options.config.DIR_BASE, file)}. Fix its YAML before importing this source.`,
       )
     const references = videoSourceReferences(doc.yaml)
-    if (!references.urls.some((url) => sameSource(url, options.url))) continue
+    if (!references.urls.some((url) => sameSource(url, source.url))) continue
     if (!references.grouped) {
       matches.push(file)
       continue
@@ -153,8 +161,8 @@ async function matchingFiles(options: VideoImportOptions): Promise<{
       const item = recording as { file?: unknown }
       if (
         typeof item.file !== 'string' ||
-        !/\.(?:mp4|mov|m4v|webm|mkv)$/i.test(item.file) ||
-        !videoSourceReferences({ video: recording }).urls.some((url) => sameSource(url, options.url))
+        !VIDEO_CONTENT_TYPES[path.extname(item.file).toLowerCase()] ||
+        !videoSourceReferences({ video: recording }).urls.some((url) => sameSource(url, source.url))
       )
         continue
       const stored = await attachmentFile(item.file, file, options.config)
@@ -166,15 +174,26 @@ async function matchingFiles(options: VideoImportOptions): Promise<{
 
 async function localVideo(doc: Document, file: string, config: VideoImportConfig): Promise<boolean> {
   for (const attachment of doc.attachments) {
-    if (!/\.(?:mp4|mov|m4v|webm|mkv)$/i.test(attachment.file)) continue
+    if (!VIDEO_CONTENT_TYPES[path.extname(attachment.file).toLowerCase()]) continue
     if (await attachmentFile(attachment.file, file, config)) return true
   }
   return false
 }
 
+/** The probe can recognize a recording even when its filename has an audio extension or none at all. */
+async function recordingExtension(file: string): Promise<string> {
+  const ext = path.extname(file).toLowerCase()
+  if (VIDEO_CONTENT_TYPES[ext]) return ext
+  const { hasVideo, formatName } = await probeMedia(file)
+  const formats = formatName?.split(',') ?? []
+  if (hasVideo && formats.includes('mp4')) return '.mp4'
+  if (hasVideo && formats.includes('matroska')) return '.mkv'
+  throw new Error(`Choose an MP4, MOV, M4V, WebM or MKV recording for ${path.basename(file)}.`)
+}
+
 function identity(options: VideoImportOptions, generated: VideoImportText = {}): string {
   return videoFileStem({
-    medium: options.medium || 'Loom',
+    medium: options.medium || (options.url ? 'Loom' : 'Video'),
     from: options.from || generated.from || undefined,
     to: options.to || generated.to || undefined,
     summary: options.title || generated.title,
@@ -190,16 +209,18 @@ function existingWhen(doc: VideoDocument, file: string, options: VideoImportOpti
   return new PlainDateTime({ date, time: clock ?? options.when.time })
 }
 
-export async function planVideoImport(options: VideoImportOptions): Promise<VideoImportPlan> {
-  const source = videoSource(options.url)
+export async function planVideoImport(options: VideoImportOptions, localFile?: string): Promise<VideoImportPlan> {
+  const source = options.url ? videoSource(options.url) : null
   if (options.recordedAt) Instant.from(options.recordedAt)
-  const { matches, groups, storedVideos } = await matchingFiles(options)
+  const { matches, groups, storedVideos } = source
+    ? await matchingFiles(options, source)
+    : { matches: localFile ? [localFile] : [], groups: [], storedVideos: [] }
   const sourceGroups = groups.length ? { sourceGroups: groups } : {}
   if (matches.length > 1 || (!matches.length && storedVideos.length > 1))
     return {
       action: 'review',
-      url: source.url,
-      loomId: source.loomId,
+      url: source?.url ?? null,
+      loomId: source?.loomId ?? null,
       filePath: null,
       matches,
       missing: [],
@@ -226,8 +247,8 @@ export async function planVideoImport(options: VideoImportOptions): Promise<Vide
   if (!body.summary) missing.push('summary')
   return {
     action: !doc ? 'create' : missing.length ? 'fill' : 'skip',
-    url: source.url,
-    loomId: source.loomId,
+    url: source?.url ?? null,
+    loomId: source?.loomId ?? null,
     filePath,
     matches,
     missing,
@@ -244,6 +265,15 @@ interface PendingVideo {
   category: string
   sourceUrl?: string
   sourceGroups?: string[]
+  /** Identifies our published local note if filing stopped before linking the day. */
+  recordingAttachment?: string
+}
+
+async function publishedLocalFile(pending: PendingVideo | null): Promise<string | undefined> {
+  if (!pending?.recordingAttachment) return
+  const text = await readOptional(pending.filePath)
+  if (text && VideoDocument.fromMarkdown(text).attachments.some(({ file }) => file === pending.recordingAttachment))
+    return pending.filePath
 }
 
 async function addSourceGroupLinks(pending: PendingVideo, config: VideoImportConfig): Promise<void> {
@@ -283,7 +313,7 @@ async function addDayLink(pending: PendingVideo, config: VideoImportConfig): Pro
   })
 }
 
-/** URL identity is in the notebook. The local pending record only repairs an interrupted day link. */
+/** URL identity is in the notebook. A pending record lets either import repair an interrupted day link. */
 export async function importVideo(
   options: VideoImportOptions,
 ): Promise<{ filePath: string | null; plan: VideoImportPlan }> {
@@ -293,16 +323,21 @@ export async function importVideo(
       if (source && !(await exists(source))) throw new Error(`The source file is missing: ${path.basename(source)}`)
     return { filePath: initial.filePath, plan: initial }
   }
-  const key = createHash('sha256').update(videoSource(options.url).key).digest('hex')
+  const url = options.url
+  if (!url && (!options.videoFile || !(await exists(options.videoFile))))
+    throw new Error('Choose a video recording to import.')
+  const sourceKey = url ? videoSource(url).key : `recording:${options.runKey ?? (await sha256File(options.videoFile!))}`
+  const key = createHash('sha256').update(sourceKey).digest('hex')
   const state = path.join(options.config.DIR_STATE, 'video-imports', `${key}.json`)
   // Serialize this source across CLI and web, without holding a document's edit lock during AI calls.
   return withLock(
     `${state}.lock`,
     async () => {
-      let plan = await planVideoImport(options)
-      if (plan.action === 'review') throw new Error(`${plan.reason} ${plan.matches.join('; ')}`)
       const pendingText = await readOptional(state)
       let pending: PendingVideo | null = pendingText ? (JSON.parse(pendingText) as PendingVideo) : null
+      const localFile = url ? undefined : await publishedLocalFile(pending)
+      let plan = await planVideoImport(options, localFile)
+      if (plan.action === 'review') throw new Error(`${plan.reason} ${plan.matches.join('; ')}`)
       if (pending && plan.matches.includes(pending.filePath)) {
         await addDayLink(pending, options.config)
         await addSourceGroupLinks(pending, options.config)
@@ -317,23 +352,27 @@ export async function importVideo(
       const old = plan.matches[0] ? VideoDocument.fromMarkdown(await readFile(plan.matches[0], 'utf8')) : null
       const existingTranscript = videoContent(old?.markdown ?? '').transcriptText
       if ((plan.missing.includes('transcript') || plan.missing.includes('summary')) && !existingTranscript) {
-        if (!options.transcriptFile || !(await exists(options.transcriptFile)))
-          throw new Error('The transcript is missing. Supply an SRT, VTT or TXT transcript.')
-        const raw = await readFile(options.transcriptFile, 'utf8')
-        if (!substantiveVideoText(raw.replace(/^.*-->.*$/gm, '').replace(/^\s*\d+\s*$/gm, '')))
-          throw new Error('The supplied transcript contains no usable words.')
+        if (options.transcriptFile) {
+          if (!(await exists(options.transcriptFile)))
+            throw new Error(`The transcript is missing: ${path.basename(options.transcriptFile)}`)
+          const raw = await readFile(options.transcriptFile, 'utf8')
+          if (!substantiveVideoText(raw.replace(/^.*-->.*$/gm, '').replace(/^\s*\d+\s*$/gm, '')))
+            throw new Error('The supplied transcript contains no usable words.')
+        } else if (!recording || !(await exists(recording))) {
+          throw new Error('Supply the recording to transcribe, or an SRT, VTT or TXT transcript.')
+        }
       }
       const generated = plan.missing.some((part) => part !== 'video')
-        ? await options.prepare(plan, existingTranscript)
+        ? await options.prepare(plan, existingTranscript, recording)
         : {}
       options.signal?.throwIfAborted()
-      const when = new PlainDateTime(plan.when)
+      const when = new PlainDateTime((!url && generated.time) || plan.when)
       const save = async (file: string | null): Promise<string> => {
         if (file) await notebookFile(options.config.DIR_BASE, path.relative(options.config.DIR_BASE, file))
         const current = file ? VideoDocument.fromMarkdown(await readFile(file, 'utf8')) : null
-        if (current) {
+        if (current && url) {
           const references = videoSourceReferences(current.yaml)
-          if (references.grouped || !references.urls.some((url) => sameSource(url, options.url)))
+          if (references.grouped || !references.urls.some((reference) => sameSource(reference, url)))
             throw new Error('The destination video URL changed during review. Review it before retrying.')
         }
         const currentWhen = current ? existingWhen(current, file!, options) : when
@@ -355,9 +394,11 @@ export async function importVideo(
           sources.push(sourceVideo)
         }
         if (options.transcriptFile) sources.push(options.transcriptFile)
+        let recordingAttachment: string | undefined
         for (const source of sources) {
           options.signal?.throwIfAborted()
-          const name = videoAttachmentName(currentWhen.date, stem, path.extname(source).toLowerCase())
+          const ext = source === sourceVideo ? await recordingExtension(source) : path.extname(source).toLowerCase()
+          const name = videoAttachmentName(currentWhen.date, stem, ext)
           let attachment: { file: string } | undefined
           if (file) {
             const destination = attachmentDestination(
@@ -378,6 +419,7 @@ export async function importVideo(
             )?.attachment
           }
           if (!attachment) throw new Error(`The source file is missing: ${path.basename(source)}`)
+          if (source === sourceVideo) recordingAttachment = attachment.file
           if (
             !attachments.some(
               (entry) => entry && typeof entry === 'object' && (entry as { file?: unknown }).file === attachment.file,
@@ -390,7 +432,7 @@ export async function importVideo(
           ? { ...current.yaml, attachments }
           : {
               when: currentWhen,
-              medium: options.medium || 'Loom',
+              medium: options.medium || (url ? 'Loom' : 'Video'),
               summary: options.title || generated.title || 'Video',
               ...(options.from || generated.from ? { from: options.from || generated.from } : {}),
               ...(options.to || generated.to ? { to: options.to || generated.to } : {}),
@@ -412,23 +454,26 @@ export async function importVideo(
             when: when.toString(),
             title: options.title || generated.title || 'Video',
             category: options.category,
-            ...(plan.sourceGroups?.length ? { sourceGroups: plan.sourceGroups, sourceUrl: plan.url } : {}),
+            ...(url && plan.sourceGroups?.length ? { sourceGroups: plan.sourceGroups, sourceUrl: url } : {}),
+            ...(!url && recordingAttachment ? { recordingAttachment } : {}),
           }
           await atomicWrite(state, JSON.stringify(pending))
           if (await createDayFile(target, text)) return target
           // A crash can publish the note before its pending record is cleared.
           const existing = VideoDocument.fromMarkdown(await readFile(target, 'utf8'))
           const references = videoSourceReferences(existing.yaml)
-          if (!references.grouped && references.urls.some((url) => sameSource(url, options.url))) return target
+          if (url && !references.grouped && references.urls.some((reference) => sameSource(reference, url)))
+            return target
           target = `${base}-${suffix}.md`
         }
       }
       // Re-read after AI, including an entry saved by another caller while this run was preparing.
-      plan = await planVideoImport(options)
+      plan = await planVideoImport(options, localFile)
       if (plan.action === 'review') throw new Error(plan.reason)
       if (old && !plan.matches.length)
         throw new Error('The destination video URL changed during review. Review it before retrying.')
       if (plan.action === 'skip') return { filePath: plan.filePath, plan }
+      options.onFiling?.()
       const filePath = plan.matches[0]
         ? await withMarkdownWrite(plan.matches[0], () => save(plan.matches[0]))
         : await save(null)
@@ -437,7 +482,7 @@ export async function importVideo(
         await addSourceGroupLinks(pending, options.config)
         await unlink(state)
       }
-      const finished = await planVideoImport(options)
+      const finished = await planVideoImport(options, filePath)
       if (finished.missing.length)
         throw new Error(
           `The video entry was saved but still needs: ${finished.missing.join(', ')}. Retry to fill the missing pieces.`,

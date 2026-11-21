@@ -29,7 +29,7 @@ interface FfprobeJson {
     duration?: string
     tags?: { creation_time?: string; 'com.apple.quicktime.creationdate'?: string }
   }
-  streams?: { codec_type?: string }[]
+  streams?: { codec_type?: string; disposition?: { attached_pic?: number } }[]
 }
 
 /**
@@ -55,7 +55,7 @@ export default async function probeMedia(filePath: string): Promise<MediaInfo> {
     'ffprobe',
     [
       '-show_entries',
-      'format=format_name,duration:format_tags=creation_time,com.apple.quicktime.creationdate:stream=codec_type',
+      'format=format_name,duration:format_tags=creation_time,com.apple.quicktime.creationdate:stream=codec_type:stream_disposition=attached_pic',
       '-of',
       'json',
       filePath,
@@ -81,7 +81,7 @@ export function mediaInfoFrom(stdout: string, filePath: string): MediaInfo {
     formatName: probe.format?.format_name ?? null,
     durationSeconds: Number.isFinite(duration) ? duration : null,
     hasAudio: streams.some((stream) => stream.codec_type === 'audio'),
-    hasVideo: streams.some((stream) => stream.codec_type === 'video'),
+    hasVideo: streams.some((stream) => stream.codec_type === 'video' && !stream.disposition?.attached_pic),
     creationTime: probe.format?.tags?.creation_time ?? null,
     capturedAt: capturedAtFrom(probe.format?.tags?.['com.apple.quicktime.creationdate']),
   }
