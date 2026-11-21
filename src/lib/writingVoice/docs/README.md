@@ -1,6 +1,6 @@
 ---
 created: 2026-09-08
-updated: 2026-11-10
+updated: 2026-11-17
 ---
 
 # Writing voice
@@ -63,10 +63,9 @@ accepted or restored a version of, approved into its app, or recorded as sent.
 Until then the words stay where Sky wrote them, a chat turn's recorded `me_voice`
 result or the Outbox item's own state file, and both surfaces show them in the
 shared editor as an unsaved draft under a provisional id. In chat, `me_voice`
-returns that id with the new draft, so Sky can revise its own draft before the turn
-ends; the result is the draft's next version, and the draft stays unsaved because
-the owner has not used it. A draft request without an id may carry `original`, the
-exact words to revise. See
+returns the draft ID and version. A revision loads the current words by ID and applies the editing instruction.
+A new message needs `meaning`. Pasted words can supply `original` instead.
+A draft Sky revises in the same turn stays unsaved until the owner uses it. See
 [Sky revises its own draft in the same turn](2026-10-09-sky-revises-its-own-draft-in-the-same-turn.md).
 The first use saves the record with the history shown,
 including an older item's original, approved pairs,

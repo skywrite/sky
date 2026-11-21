@@ -21,7 +21,7 @@ export function correctedOnce(revision: (result: Record<string, unknown>) => Rec
   return (result: Record<string, unknown>) => {
     if (corrected) return undefined
     corrected = true
-    return { action: 'draft', meaning: 'Make it warmer.', instruction: 'Make it warmer.', ...revision(result) }
+    return { action: 'draft', instruction: 'Make it warmer.', ...revision(result) }
   }
 }
 
@@ -88,11 +88,12 @@ export function writingDraftTestHost(
               .join('\n') ?? '')
       const input = {
         action: 'draft',
-        meaning: ORIGINAL_DRAFT,
         medium: 'Email',
         recipient: 'Jane Doe',
         instruction: direction,
-        ...(currentId ? { draftId: currentId, draftRevision: currentRevision } : { newDraft: true }),
+        ...(currentId
+          ? { draftId: currentId, draftRevision: currentRevision }
+          : { newDraft: true, meaning: ORIGINAL_DRAFT }),
       }
       const call = async (input: Record<string, unknown>, toolCallId: string) => {
         report({

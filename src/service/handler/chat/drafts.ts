@@ -60,9 +60,12 @@ function unsavedDrafts(
     }
     const id = named ?? hash(JSON.stringify([chatId, run.callId, run.at, output.draft])).slice(0, 32)
     if (drafts.some((draft) => draft.id === id)) continue
+    const meaning = [input.meaning, input.original].find(
+      (value): value is string => typeof value === 'string' && !!value.trim(),
+    )
     const draft = store.initial(
       {
-        meaning: typeof input.meaning === 'string' ? input.meaning.slice(0, MAX_WRITING_CHARS) : text,
+        meaning: (meaning ?? text).slice(0, MAX_WRITING_CHARS),
         medium: typeof input.medium === 'string' && input.medium.trim() ? input.medium.slice(0, 80) : 'Message',
         recipient: typeof input.recipient === 'string' ? input.recipient.slice(0, 300) : '',
         context: typeof input.context === 'string' ? input.context.slice(0, 40_000) : '',

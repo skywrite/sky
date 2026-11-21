@@ -15,7 +15,7 @@ import { type VoiceDraftInput, WritingVoiceError } from './types.ts'
 export const WRITING_DRAFT_CHAT_INSTRUCTIONS = `## Editable message drafts
 This workflow applies only to the owner's personal communications written in their own voice. Write UI copy, product copy, mockups, specifications, documentation, sample dialogue, and other general writing directly in chat. Do not create, revise, accept, or learn from them through me_voice, even if an earlier turn mistakenly displayed them in a draft frame or the current drafts list contains them.
 The web chat displays ${toolDisplayName('me_voice')} drafts in editable frames with version history. Present the returned draft intact in the normal review blockquote, with your commentary outside it; the frame replaces that quote on the page. Revisions update that same draft.
-For an existing draft, pass its draftId and latest draftRevision to me_voice action draft. Every draft result returns both, a new draft's included, so revise a draft you wrote this turn by them too. Use the current text below, including the owner's direct edits, rather than an older copy in the conversation. For a separate message use newDraft=true. A selected draft is the target of the draft's Ask Sky thread; keep revisions on that draft unless the user requests another message.
+For an existing draft, pass its draftId, latest draftRevision, and the requested edit in instruction. The writer loads that version's words. For a separate requested message use newDraft=true. A selected draft is the target of the draft's Ask Sky thread.
 A draft marked unsaved has no notebook record yet. Its record starts when the owner first works on it, and a revision you make at their request counts. Its draftId changes at that moment, so use the ids the tool returns and the list below, never an id from an earlier turn. A revision you make on your own in the turn that wrote it is not their use; the draft stays unsaved under the same draftId. A draft marked unavailable was deleted; treat it as not listed.
 An AI revision is a proposal. Only after the owner explicitly accepts it, use action accept with its draftId and draftRevision. A direct edit supplied in chat uses action learn with the draftId, draftRevision, exact original and revised text. Edits and approvals made in the frame are already captured for learning: do not record them again. The owner's actual direction is retained with revisions; never invent a reason or treat an AI suggestion as their decision.
 These are drafts for review; accepting a version does not authorize sending it.`
@@ -24,19 +24,15 @@ These are drafts for review; accepting a version does not authorize sending it.`
  * The writer's request to revise these words. The agent's own text becomes direction, so the writer
  * starts from the words it is changing rather than rewriting them from a description.
  */
-export function revising(
-  words: string,
-  request: ChatDraftInput,
-  instruction: string,
-  draft?: WritingDraft,
-): VoiceDraftInput {
+function revising(words: string, request: ChatDraftInput, instruction: string, draft?: WritingDraft): VoiceDraftInput {
   return {
     ...request,
     meaning: words,
     medium: draft?.input.medium ?? request.medium,
     recipient: draft?.input.recipient ?? request.recipient,
     context: [
-      `Requested content from the chat agent: apply it only as required by the editing direction. Preserve unrelated details from the current draft supplied as meaning.\n${request.meaning}`,
+      request.meaning &&
+        `Requested content from the chat agent: apply it only as required by the editing direction. Preserve unrelated details from the current draft supplied as meaning.\n${request.meaning}`,
       request.context,
       draft?.input.context,
     ]
@@ -45,6 +41,14 @@ export function revising(
       .slice(0, 40_000),
     instruction,
   }
+}
+
+/** Without a linked draft, pasted words can still supply the text to revise. */
+export function standaloneDraft(request: ChatDraftInput, instruction = request.instruction ?? ''): VoiceDraftInput {
+  if (request.original !== undefined) return revising(request.original, request, instruction)
+  if (!request.meaning)
+    throw new WritingVoiceError('Supply what the new message should say in meaning, or select a draft to revise.')
+  return { ...request, meaning: request.meaning }
 }
 
 /** Words Sky wrote in this chat that nobody has worked on yet, under the ids the page shows them with. */
@@ -171,9 +175,7 @@ export function writingDraftTools(
         return { ...result, draftId: target.id, draftRevision: saved.revision }
       }
       // Untouched words stay in the chat that holds them. The owner's first use saves the record.
-      const result = await store.voice.draft(
-        original === undefined ? request : revising(original, request, request.instruction || direction()),
-      )
+      const result = await store.voice.draft(standaloneDraft(input, request.instruction || direction()))
       // A provisional id, not a record's name: the record takes a readable one when the owner first uses it.
       const draftId = crypto.randomUUID().replaceAll('-', '')
       writtenThisTurn.add(draftId)

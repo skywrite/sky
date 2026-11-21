@@ -43,6 +43,12 @@ export const WritingDraftSchema = z.object({
 })
 
 export const ChatDraftInputSchema = DraftInputSchema.extend({
+  meaning: z
+    .string()
+    .trim()
+    .max(MAX_WRITING_CHARS)
+    .optional()
+    .describe('Required for a new message. A revision can use the current draft text.'),
   draftId: WritingDraftId.optional(),
   draftRevision: z.number().int().positive().optional(),
   newDraft: z.boolean().optional(),

@@ -228,3 +228,32 @@ test('The shared chat tool names the provider when its model API fails', async (
     await f.dispose()
   }
 })
+
+test('starting a new draft needs meaning, even when a revision instruction is present', async () => {
+  let generated = 0
+  const f = await voiceFixture({
+    draft: async () => {
+      generated++
+      return 'Sample message.'
+    },
+  })
+  try {
+    const tool = createWritingVoiceTools(f.drafts, { source: 'terminal' }).me_voice as Tool
+    const call = { toolCallId: 'sample-call', messages: [], context: undefined }
+    const input = { action: 'draft', newDraft: true, instruction: 'Keep it brief.' }
+    const missing = await tool.execute!(input, call)
+    const blank = await tool.execute!({ ...input, meaning: '   ' }, call)
+    const expected = {
+      success: false,
+      error: 'Supply what the new message should say in meaning, or select a draft to revise.',
+    }
+    assert({
+      given: 'a new message without source text or intended meaning',
+      should: 'explain how to supply the missing content before invoking the writer',
+      actual: [missing, blank, generated],
+      expected: [expected, expected, 0],
+    })
+  } finally {
+    await f.dispose()
+  }
+})

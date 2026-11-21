@@ -213,11 +213,12 @@ test('asking Sky to revise an unsaved draft is its first use, and a failed revis
     const waiting = async () => (links.length ? [] : [shown])
     const tools = writingDraftTools(hooks, store, waiting)
     const files = () => readdir(path.join(f.store.dir, 'drafts')).catch(() => [] as string[])
-    const failed = await failure(tools.draft({ meaning: 'Warmer.', draftId: shown.id, draftRevision: 1 }))
+    const edit = { instruction: 'Make it warmer.', draftId: shown.id, draftRevision: 1 }
+    const failed = await failure(tools.draft(edit))
     const afterFailure = [await files(), links.length]
     const outdated = await failure(tools.draft({ meaning: 'Warmer.', draftId: shown.id, draftRevision: 2 }))
     fail = false
-    const revised = await tools.draft({ meaning: 'Warmer.', draftId: shown.id, draftRevision: 1 })
+    const revised = await tools.draft(edit)
     const saved = await store.require(revised.draftId!)
     assert({
       given: 'a revision requested for words with no record, first failing, then outdated, then succeeding',
