@@ -39,7 +39,7 @@ import { legalReviewBrief, legalReviewContext } from '#lib/legalReview/chat.ts'
 import { createLegalReviewer } from '#lib/legalReview/runtime.ts'
 import { summarizeTranscript } from '#lib/notebook/enrich/summarize.ts'
 import type { SecretsProvider } from '#lib/secrets/SecretsProvider.ts'
-import { writingDraftBrief, writingDraftTools } from '#lib/writingVoice/draftChat.ts'
+import { WRITING_DRAFT_CHAT_INSTRUCTIONS, writingDraftList, writingDraftTools } from '#lib/writingVoice/draftChat.ts'
 import { createWritingDrafts } from '#lib/writingVoice/runtime.ts'
 import { createWritingVoiceTools } from '#lib/writingVoice/tools.ts'
 import { logAIError } from '#shared/ai/errorLog.ts'
@@ -501,10 +501,11 @@ export function createChatHost(config: typeof ConfigModule, env: Record<string, 
               ? `Current live plan (read_plan has the latest revision and tool evidence):\n${JSON.stringify(plan.plan)}`
               : '',
             await legalReviewBrief(hooks, config),
-            await writingDraftBrief(hooks, writingDrafts, await unsaved()),
+            WRITING_DRAFT_CHAT_INSTRUCTIONS,
           ]
             .filter(Boolean)
             .join('\n\n'),
+          referenceData: await writingDraftList(hooks, writingDrafts, await unsaved()),
           tools: {
             ...(plan
               ? createTaskTools({

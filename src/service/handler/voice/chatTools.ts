@@ -115,5 +115,9 @@ export async function voiceChatTools(access: VoiceChatAccess, turns: readonly Sp
       },
     })
   }
-  return { tools, instructions: [built.systemInstructions, built.instructions].filter(Boolean).join('\n\n') }
+  // A spoken session starts from these instructions, so the data a chat turn receives with its message goes here.
+  return {
+    tools,
+    instructions: [built.systemInstructions, built.instructions, built.referenceData].filter(Boolean).join('\n\n'),
+  }
 }

@@ -311,6 +311,8 @@ export default class ChatEngine {
 
   /** The model-facing conversation history, tool exchanges included. */
   private messages: Message[] = []
+  /** The person's words as last appended, so reference data can be placed ahead of them. */
+  private lastUserText?: string
 
   constructor(opts: ChatEngineOptions) {
     this.model = opts.model
@@ -388,6 +390,7 @@ export default class ChatEngine {
    */
   appendUserMessage(userMessage: string, when?: string, files: Exclude<UserContent, string> = []): void {
     const content = when ? `${timeStampLine(when)}\n${userMessage}` : userMessage
+    this.lastUserText = content
     const priorMsg = this.messages.at(-1)
     if (priorMsg?.role === 'user') {
       if (typeof priorMsg.content === 'string' && files.length === 0) priorMsg.content += '\n\n' + content
@@ -402,6 +405,50 @@ export default class ChatEngine {
         content: files.length ? [{ type: 'text', text: content }, ...files] : content,
       })
     }
+  }
+
+  /**
+   * The reference data this conversation last carried, read from the history
+   * itself: a restored, branched or shortened conversation answers for the
+   * messages it actually holds.
+   */
+  get referenceData(): string | undefined {
+    for (let i = this.messages.length - 1; i >= 0; i--) {
+      const carried = this.messages[i]!.providerOptions?.['sky']?.['referenceData']
+      if (typeof carried === 'string') return carried
+    }
+    return undefined
+  }
+
+  /**
+   * Give the model reference data that changes while a conversation runs:
+   * `block` is the labeled text it reads, `data` what a later turn compares
+   * against. It goes into the message just appended, ahead of the person's
+   * words, and stays in the history. Both providers cache a request as a
+   * prefix and tie a reply's reasoning to everything before it, so a change
+   * made in the system prompt is billed again with the whole conversation
+   * behind it, while text added here costs only itself.
+   */
+  appendReferenceData(data: string, block: string): void {
+    const sky = { referenceData: data }
+    const last = this.messages.at(-1)
+    if (last?.role !== 'user') {
+      this.messages.push({ role: 'user', content: block, providerOptions: { sky } })
+      return
+    }
+    const words = this.lastUserText
+    if (typeof last.content === 'string') {
+      const at =
+        words !== undefined && last.content.endsWith(words) ? last.content.length - words.length : last.content.length
+      // Whatever precedes the words keeps its exact text: retrieved documents there are found again by their length.
+      const head = last.content.slice(0, at)
+      const before = head.endsWith('\n\n') ? head.slice(0, -2) : head
+      last.content = [before, block, last.content.slice(at)].filter(Boolean).join('\n\n')
+    } else {
+      const at = last.content.findLastIndex((part) => part.type === 'text' && part.text === words)
+      last.content.splice(at < 0 ? last.content.length : at, 0, { type: 'text', text: block })
+    }
+    last.providerOptions = { ...last.providerOptions, sky: { ...last.providerOptions?.['sky'], ...sky } }
   }
 
   /**

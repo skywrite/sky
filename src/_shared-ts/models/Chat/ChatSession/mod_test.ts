@@ -1501,3 +1501,117 @@ test('the real size of the first request is recorded on the turn, beside the est
     await rm(tmp, { recursive: true, force: true })
   }
 })
+
+// ---------------------------------------------------------------------------
+// Reference data a host keeps current
+// ---------------------------------------------------------------------------
+
+/** Each model request as the provider would receive it: the system prompt's parts and the conversation. */
+function requestRecorder() {
+  const requests: { instructions: string[]; messages: string[]; said: string[] }[] = []
+  const invokeModel: ModelInvoker = (args) => {
+    requests.push({
+      instructions: args.instructions.map((message) => String(message.content)),
+      // The cache marker moves from request to request; the content is what a provider compares.
+      messages: args.messages.map(({ providerOptions: _, ...message }) => JSON.stringify(message)),
+      said: args.messages.filter((message) => message.role === 'user').map((message) => String(message.content)),
+    })
+    args.sink.write('Ok.')
+    // The reply joins the history, as a provider's does, so each message stays its own.
+    return Promise.resolve({
+      text: '',
+      content: [],
+      steps: [],
+      responseMessages: [{ role: 'assistant', content: 'Ok.' }],
+    })
+  }
+  return { requests, invokeModel }
+}
+
+const NOTE_V1 =
+  'Current drafts: [{"draftId":"atlas-note","draftRevision":1,"text":"Hi Jane, the Atlas note is ready."}]'
+const NOTE_V2 = 'Current drafts: [{"draftId":"atlas-note","draftRevision":2,"text":"Hi Jane, Atlas is ready."}]'
+
+test('reference data rides with the message that follows a change, and the system prompt never moves', async () => {
+  const data: (string | undefined)[] = [undefined, NOTE_V1, NOTE_V1, NOTE_V2, '']
+  const asked = [
+    'Hello.',
+    'Draft a note to Jane.',
+    'Who is it for?',
+    'Thanks for shortening it.',
+    'I deleted that draft.',
+  ]
+  const model = requestRecorder()
+  let turn = 0
+  const { session, tmp } = await makeSession({
+    contextTokens: 0,
+    invokeModel: model.invokeModel,
+    tools: async () => ({
+      tools: {},
+      toolApproval: {},
+      instructions: 'How to work with drafts.',
+      referenceData: data[turn++],
+    }),
+  })
+  try {
+    await session.start()
+    for (const message of asked) await session.send(message)
+    const { requests } = model
+    const newest = (request: (typeof requests)[number]) => request.said.at(-1)!
+    assert({
+      given: 'a host whose data is absent, appears, stays the same, changes, then empties, over five messages',
+      should:
+        'send the system prompt unchanged every time, send each change once with the message after it, ahead of the person’s words, and never rewrite a message already sent',
+      actual: {
+        systemPrompts: new Set(requests.map((request) => JSON.stringify(request.instructions))).size,
+        lastPart: requests[0]!.instructions.at(-1),
+        carried: requests.map((request) =>
+          [NOTE_V1, NOTE_V2, '(Nothing current.)'].filter((note) => newest(request).includes(note)),
+        ),
+        dataBeforeWords: newest(requests[1]!).indexOf(NOTE_V1) < newest(requests[1]!).indexOf(asked[1]!),
+        onlyGrew: requests.every(
+          (request, i) => i === 0 || requests[i - 1]!.messages.every((message, at) => request.messages[at] === message),
+        ),
+        transcript: session.turns.filter((message) => message.role === 'user').map((message) => message.content),
+      },
+      expected: {
+        systemPrompts: 1,
+        lastPart: 'How to work with drafts.',
+        carried: [[], [NOTE_V1], [], [NOTE_V2], ['(Nothing current.)']],
+        dataBeforeWords: true,
+        onlyGrew: true,
+        transcript: asked,
+      },
+    })
+  } finally {
+    await rm(tmp, { recursive: true, force: true })
+  }
+})
+
+test('a restarted conversation does not send reference data it already carries', async () => {
+  const model = requestRecorder()
+  const options: Partial<ChatSessionOptions> = {
+    contextTokens: 0,
+    invokeModel: model.invokeModel,
+    tools: async () => ({ tools: {}, toolApproval: {}, referenceData: NOTE_V1 }),
+  }
+  const first = await makeSession(options)
+  await first.session.start()
+  await first.session.send('Draft a note to Jane.')
+  const recovered = await loadResumeSession(path.join(first.tmp, 'autosave.md'), { snapshot: true })
+  const second = await makeSession({ ...options, restore: recovered.state })
+  try {
+    await second.session.start()
+    await second.session.send('Who is it for?')
+    const count = (request: (typeof model.requests)[number]) => request.said.join('\n').split(NOTE_V1).length - 1
+    assert({
+      given: 'a process restart between two messages, with the host’s data unchanged',
+      should: 'carry the one copy sent before the restart and add no second one',
+      actual: model.requests.map(count),
+      expected: [1, 1],
+    })
+  } finally {
+    await rm(first.tmp, { recursive: true, force: true })
+    await rm(second.tmp, { recursive: true, force: true })
+  }
+})

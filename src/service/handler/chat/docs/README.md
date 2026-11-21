@@ -744,6 +744,11 @@ failed check reads as usual. See
   The settings and message routes both enforce this; disabling controls alone
   cannot prevent a stale tab from changing the provider.
 - Each turn records the actual model, effort and selected allowance it used.
+- The host's instructions are the same on every turn of a conversation. Data
+  that changes, such as the drafts list, is the tool factory's `referenceData`
+  and rides with the message after a change: text in the system prompt is
+  ahead of the whole conversation, and a change there bills all of it again.
+  See [data that changes rides with the message](../../../../_shared-ts/models/Chat/docs/2026-11-21-data-that-changes-rides-the-message.md).
 - A held call waits as long as it takes; there is no timeout. Closing the
   page does not answer it — the thread stays busy until someone does, or
   the service restarts.

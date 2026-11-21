@@ -217,6 +217,21 @@ Once text, tool arguments, or provider tool activity has appeared, the failure s
 The SDK's broader `streamRetries` option can replay partial text and provider tools, so it is not enabled here.
 Stop cancels the backoff, and an explicit model `maxRetries` also bounds these retries.
 
+## What a request may change
+
+Both providers cache a request as a prefix, in the order tools, system prompt, messages, and the newest models tie a
+reply's reasoning to everything sent before it.
+So a request only grows at its end.
+The system prompt has three parts: the base prompt, the notebook documents and the host's standing instructions.
+Each stays as it was first sent.
+
+Whatever changes while a conversation runs rides with a message instead.
+Documents a later turn admits arrive at the head of the person's message.
+Data a host keeps current, such as the drafts list, is the tool factory's `referenceData`: the session sends it with
+the message that follows a change, ahead of the person's words, and leaves every copy where it was sent.
+A host keeps `instructions` the same from turn to turn and puts anything that can change into `referenceData`.
+Read the [2026-11-21 note](2026-11-21-data-that-changes-rides-the-message.md).
+
 ## When the engine ends a turn
 
 A tool loop ends in one of two hands. The model's: it writes, and the
@@ -254,6 +269,8 @@ item, as `slack:unread` does per conversation. Read the
 [2026-09-23 note](2026-09-23-stop-reaches-the-command.md).
 
 ## Notes
+
+- [2026-11-21 — data that changes rides with the message](2026-11-21-data-that-changes-rides-the-message.md): a host's standing instructions stay the same for the whole conversation; the drafts list left the system prompt and is sent with the message after a change, so an edit no longer re-bills the conversation.
 
 - [2026-11-21 — the chat log leaves the notebook](2026-11-21-the-chat-log-leaves-the-notebook.md): a saved chat is two files, the transcript in the notebook and its log under Sky's state, keyed by the transcript's path; chats saved before are read as they are and move on their next save.
 

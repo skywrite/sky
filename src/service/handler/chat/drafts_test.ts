@@ -500,3 +500,60 @@ test('a failed follow-up can retry just its recorded edit after reload, only on 
     await rm(root, { recursive: true, force: true })
   }
 })
+
+test('the drafts list rides with the message after a change, so an edit never rewrites the system prompt', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'sky-chat-writing-cache-'))
+  const briefs: string[] = []
+  const requests: NonNullable<Parameters<typeof writingDraftTestHost>[1]>['requests'] = []
+  const host = writingDraftTestHost(root, { briefs, requests })
+  try {
+    const app = createChatRoutes(host)
+    await send(app, 'main', 'Draft an email to Jane.')
+    const shown = await current(app)
+    await post(app, `/main/drafts/${shown.id}`, { action: 'edit', revision: shown.revision, text: EDITED_DRAFT })
+    await host.writingDrafts.idle()
+    await send(app, 'main', 'Is the timing clear now?')
+    const said = (request: (typeof requests)[number]) =>
+      request.messages
+        .filter((message) => message.role === 'user')
+        .map((message) =>
+          typeof message.content === 'string'
+            ? message.content
+            : message.content.map((part) => (part.type === 'text' ? part.text : '')).join('\n'),
+        )
+    const sent = (request: (typeof requests)[number]) =>
+      request.messages.map(({ providerOptions: _, ...message }) => JSON.stringify(message))
+    const edited = EDITED_DRAFT.replaceAll('\n', '\\n')
+    const [first, second] = requests as [(typeof requests)[number], (typeof requests)[number]]
+    const followUp = said(second).at(-1)!
+    assert({
+      given: 'a first message with no draft yet, the owner’s edit in the draft’s frame, then a second message',
+      should:
+        'send the same system prompt both times, with no list in it, and give the edited words with the second message, ahead of what the owner said',
+      actual: {
+        requests: requests.length,
+        sameSystemPrompt: JSON.stringify(first.instructions) === JSON.stringify(second.instructions),
+        listInSystemPrompt: [first, second].some((request) =>
+          request.instructions.join('\n').includes('Current drafts ('),
+        ),
+        listsGiven: briefs.map((list) => list.includes('Current drafts (')),
+        firstMessageHasList: said(first).join('\n').includes('Current drafts ('),
+        editReachedTheModel: followUp.includes(edited),
+        listBeforeWords: followUp.indexOf(edited) < followUp.indexOf('Is the timing clear now?'),
+        earlierMessagesUntouched: sent(first).every((message, at) => sent(second)[at] === message),
+      },
+      expected: {
+        requests: 2,
+        sameSystemPrompt: true,
+        listInSystemPrompt: false,
+        listsGiven: [false, true],
+        firstMessageHasList: false,
+        editReachedTheModel: true,
+        listBeforeWords: true,
+        earlierMessagesUntouched: true,
+      },
+    })
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})

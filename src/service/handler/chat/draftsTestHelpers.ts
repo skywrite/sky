@@ -1,7 +1,7 @@
 import * as path from 'node:path'
 import type { ModelMessage } from 'ai'
 import { WritingVoice } from '#lib/writingVoice/agent.ts'
-import { writingDraftBrief, writingDraftTools } from '#lib/writingVoice/draftChat.ts'
+import { WRITING_DRAFT_CHAT_INSTRUCTIONS, writingDraftList, writingDraftTools } from '#lib/writingVoice/draftChat.ts'
 import { WritingDraftStore } from '#lib/writingVoice/drafts.ts'
 import { WritingVoiceStore } from '#lib/writingVoice/store.ts'
 import { intelligence } from '#lib/writingVoice/testHelpers.ts'
@@ -35,7 +35,10 @@ export function writingDraftTestHost(
   root: string,
   calls: {
     inputs?: VoiceDraftInput[]
+    /** The drafts list each turn was given, empty while the conversation has no draft. */
     briefs?: string[]
+    /** What each model request held: the system prompt's parts and the conversation. */
+    requests?: { instructions: string[]; messages: ModelMessage[] }[]
     draft?: (input: VoiceDraftInput, signal?: AbortSignal) => string | Promise<string>
     reply?: (text: string) => string
     /** Another me_voice call in the same turn, built from the result before it: Sky correcting its own draft. */
@@ -59,6 +62,7 @@ export function writingDraftTestHost(
   let execute: (input: unknown) => Promise<Record<string, unknown>>
   let currentId: string | undefined
   let currentRevision: number | undefined
+  let words = ''
   const host = replyThreadTestHost(root, {
     tools: async (hooks, thread) => {
       const unsaved = () =>
@@ -68,9 +72,9 @@ export function writingDraftTestHost(
         drafts: writingDraftTools(hooks, drafts, unsaved),
       })
       execute = (tools.me_voice as { execute: typeof execute }).execute
-      const instructions = await writingDraftBrief(hooks, drafts, await unsaved())
-      // The scripted model reads its brief as a real one does: the selected draft, else the latest listed.
-      const listed = JSON.parse(instructions.slice(instructions.lastIndexOf('\n') + 1)) as {
+      const list = await writingDraftList(hooks, drafts, await unsaved())
+      // The scripted model reads the drafts list as a real one does: the selected draft, else the latest listed.
+      const listed = (list ? JSON.parse(list.slice(list.lastIndexOf('\n') + 1)) : { drafts: [] }) as {
         selected?: string
         drafts: { draftId: string; draftRevision?: number; unavailable?: boolean }[]
       }
@@ -79,18 +83,17 @@ export function writingDraftTestHost(
         listed.drafts.findLast((draft) => !draft.unavailable)
       currentId = target?.draftId
       currentRevision = target?.draftRevision
-      calls.briefs?.push(instructions)
-      return { tools, toolApproval: {}, instructions }
+      calls.briefs?.push(list)
+      // It also tells the person's words from the drafts list that precedes them in the same message.
+      words = hooks.context.conversation.findLast((turn) => turn.role === 'user')?.content ?? ''
+      return { tools, toolApproval: {}, instructions: WRITING_DRAFT_CHAT_INSTRUCTIONS, referenceData: list }
     },
     invokeModel: async (args, report) => {
-      const last = args.messages.findLast((message) => message.role === 'user')
-      const direction =
-        typeof last?.content === 'string'
-          ? last.content
-          : (last?.content
-              .filter((part) => part.type === 'text')
-              .map((part) => part.text)
-              .join('\n') ?? '')
+      calls.requests?.push({
+        instructions: args.instructions.map((message) => String(message.content)),
+        messages: structuredClone(args.messages),
+      })
+      const direction = words
       const input = {
         action: 'draft',
         medium: 'Email',

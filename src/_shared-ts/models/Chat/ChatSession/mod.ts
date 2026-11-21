@@ -92,6 +92,20 @@ function additionsMessage(markdown: string): string {
   return `${NOTEBOOK_ADDITION}\n\n${markdown}`
 }
 
+const REFERENCE_DATA =
+  '[Current reference data, supplied by the app with the message that follows — not written by the person. It replaces every earlier copy in this conversation.]'
+
+/**
+ * Data a host keeps current while the conversation runs, as the model reads
+ * it. It rides with the person's message for the same reason the admitted
+ * documents do, and each copy stays where it was sent: the newest one is
+ * current. A host with nothing left to show says so, so an earlier copy is
+ * not taken as standing.
+ */
+function referenceMessage(data: string): string {
+  return `${REFERENCE_DATA}\n\n${data || '(Nothing current.)'}`
+}
+
 export interface ChatMessageFiles {
   content: Exclude<UserContent, string>
   attachments: Attachment[]
@@ -159,7 +173,18 @@ export interface PreparedToolApproval {
 export type ToolFactory = (hooks: ToolHooks) => Promise<{
   tools: Record<string, unknown>
   toolApproval: ToolApprovalConfig
+  /**
+   * Standing instructions, the last part of the system prompt. Keep the text the
+   * same from turn to turn: a change here is ahead of the whole conversation, so
+   * the provider bills all of it again and the model loses its earlier reasoning.
+   */
   instructions?: string
+  /**
+   * Reference data that changes while the conversation runs, such as the current
+   * drafts. The session sends it with the person's message whenever it differs
+   * from the copy the conversation last carried, and leaves it there.
+   */
+  referenceData?: string
   prepareApproval?: (
     name: string,
     input: Record<string, unknown>,
@@ -962,12 +987,15 @@ export default class ChatSession {
     const report: TurnReport = { context, sourceUrls: [], approvalRoundsExhausted: false }
     const replyImages: ChatImage[] = this.voiceImages.splice(0)
     try {
-      const { tools, toolApproval, instructions } = abortSignal?.aborted
-        ? { tools: {}, toolApproval: {}, instructions: undefined }
+      const { tools, toolApproval, instructions, referenceData } = abortSignal?.aborted
+        ? { tools: {}, toolApproval: {}, instructions: undefined, referenceData: undefined }
         : await this.conversationTools(
             this.turns.map((turn) => ({ ...turn })),
             replyImages,
           )
+      // Sent only when it changed, so an unchanged turn adds nothing and no turn rewrites what came before.
+      if (!abortSignal?.aborted && (referenceData ?? '') !== (this.engine.referenceData ?? ''))
+        this.engine.appendReferenceData(referenceData ?? '', referenceMessage(referenceData ?? ''))
       if (!this.toolsAnnounced) {
         this.toolsAnnounced = true
         this.emit({ type: 'tools', names: Object.keys(tools) })

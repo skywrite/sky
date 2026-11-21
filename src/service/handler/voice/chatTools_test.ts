@@ -77,3 +77,29 @@ test('voice validates shared tool schemas and forwards cancellation to every exe
     expected: [['newly_added_chat_tool'], true, 1, true, true, ['tool-execution-start', 'tool-execution-end']],
   })
 })
+
+test('a spoken session starts with the data a typed message would have carried', async () => {
+  const drafts = 'Current drafts: [{"draftId":"atlas-note","draftRevision":2}]'
+  const { instructions } = await voiceChatTools(
+    {
+      build: async () => ({
+        tools: {},
+        toolApproval: {},
+        systemInstructions: 'Shared instructions.',
+        instructions: 'How to work with drafts.',
+        referenceData: drafts,
+      }),
+      record: () => {},
+      persist: async () => {},
+      close: async () => {},
+    },
+    [],
+    new AbortController().signal,
+  )
+  assert({
+    given: 'a chat whose host has standing instructions and data that changes',
+    should: 'give voice all three, the changing data last: it has no later message to carry it',
+    actual: instructions,
+    expected: `Shared instructions.\n\nHow to work with drafts.\n\n${drafts}`,
+  })
+})

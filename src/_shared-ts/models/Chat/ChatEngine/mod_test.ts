@@ -10,6 +10,7 @@ import ChatEngine, {
   timeStampLine,
   TurnError,
 } from './mod.ts'
+import { NOTEBOOK_ADDITION } from './workingContext.ts'
 
 // ---------------------------------------------------------------------------
 // Scripted fakes
@@ -1314,5 +1315,112 @@ test('a turn the model finishes on its own is not marked as cut', async () => {
       // deno-lint-ignore no-explicit-any
       systems: (model.doStreamCalls[1].prompt as any[]).filter((m) => m.role === 'system').length,
     },
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Reference data
+// ---------------------------------------------------------------------------
+
+const DRAFTS_V1 = 'Current drafts: [{"draftId":"atlas-note","draftRevision":1}]'
+const noted = (data: string) => `[Reference data]\n\n${data}`
+const textOf = (message: unknown) => String((message as { content: unknown }).content)
+
+test('ChatEngine.appendReferenceData - the data goes ahead of the words it arrived with, and stays there', async () => {
+  const { engine, calls } = makeEngine([
+    textResult('Shorter now.', { responseMessages: [{ role: 'assistant', content: 'Shorter now.' }] }),
+    textResult('You are welcome.'),
+  ])
+  const before = engine.referenceData
+  engine.appendUserMessage('Shorten the Atlas note.', '2026-08-15 14:32')
+  engine.appendReferenceData(DRAFTS_V1, noted(DRAFTS_V1))
+  await engine.runTurn(TURN_OPTS)
+  engine.appendUserMessage('Thanks.')
+  await engine.runTurn(TURN_OPTS)
+
+  assert({
+    given: 'reference data sent with one message, then a message with nothing new to say',
+    should:
+      'place it ahead of the person’s words once, keep that message as it was sent, and report the copy it carries',
+    actual: [
+      before,
+      calls[0].messages,
+      JSON.stringify(calls[1].messages[0]) === JSON.stringify(calls[0].messages[0]),
+      textOf(calls[1].messages.at(-1)),
+      engine.referenceData,
+    ],
+    expected: [
+      undefined,
+      [
+        {
+          role: 'user',
+          content: `${noted(DRAFTS_V1)}\n\n[Time: 2026-08-15 Sat 14:32]\nShorten the Atlas note.`,
+        },
+      ],
+      true,
+      'Thanks.',
+      DRAFTS_V1,
+    ],
+  })
+})
+
+test('ChatEngine.appendReferenceData - retrieved documents stay first and attached files stay last', async () => {
+  const documents = `${NOTEBOOK_ADDITION}\n\n# Atlas roadmap\nThe demo ships in March.\n`
+  const withDocuments = makeEngine([textResult('ok')])
+  withDocuments.engine.appendContextMessage(documents, ['/notebook/projects/Atlas/Roadmap.md'])
+  withDocuments.engine.appendUserMessage('What changed?')
+  withDocuments.engine.appendReferenceData(DRAFTS_V1, noted(DRAFTS_V1))
+  await withDocuments.engine.runTurn(TURN_OPTS)
+  const sent = textOf(withDocuments.calls[0].messages[0])
+
+  const withFile = makeEngine([textResult('ok')])
+  withFile.engine.appendUserMessage('See the chart.', undefined, [
+    { type: 'image', image: 'aGk=', mediaType: 'image/png' },
+  ])
+  withFile.engine.appendReferenceData(DRAFTS_V1, noted(DRAFTS_V1))
+  await withFile.engine.runTurn(TURN_OPTS)
+  const parts = (withFile.calls[0].messages[0] as { content: Array<{ type: string; text?: string }> }).content
+
+  const first = makeEngine([textResult('ok')])
+  first.engine.appendReferenceData(DRAFTS_V1, noted(DRAFTS_V1))
+  first.engine.appendUserMessage('Start here.')
+  await first.engine.runTurn(TURN_OPTS)
+
+  assert({
+    given:
+      'reference data for a message that also carries retrieved documents, one with a file, and one not yet appended',
+    should:
+      'keep the documents’ text exactly where the working context finds it, put the data before the words, and leave files after them',
+    actual: [
+      sent,
+      // The working context still recognises the documents by their exact leading text.
+      withDocuments.engine.workingContext.snapshot(withDocuments.engine.snapshotMessages()).sources.length,
+      parts.map((part) => part.text ?? part.type),
+      textOf(first.calls[0].messages[0]),
+    ],
+    expected: [
+      `${documents}\n\n${noted(DRAFTS_V1)}\n\nWhat changed?`,
+      1,
+      [noted(DRAFTS_V1), 'See the chart.', 'image'],
+      `${noted(DRAFTS_V1)}\n\nStart here.`,
+    ],
+  })
+})
+
+test('ChatEngine.referenceData - a restored history answers for the copy it holds', async () => {
+  const { engine } = makeEngine([textResult('ok')])
+  engine.appendUserMessage('Shorten the Atlas note.')
+  engine.appendReferenceData(DRAFTS_V1, noted(DRAFTS_V1))
+  await engine.runTurn(TURN_OPTS)
+  const restored = makeEngine([]).engine
+  restored.seedConversation([], engine.snapshotMessages())
+  const fromTranscript = makeEngine([]).engine
+  fromTranscript.seedConversation([{ role: 'user', content: 'Shorten the Atlas note.' }])
+
+  assert({
+    given: 'a conversation restored from its saved history, and one rebuilt from the transcript alone',
+    should: 'know the copy the saved history carries, and know of none where the transcript holds only the words',
+    actual: [restored.referenceData, fromTranscript.referenceData],
+    expected: [DRAFTS_V1, undefined],
   })
 })

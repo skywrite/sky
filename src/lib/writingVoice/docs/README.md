@@ -1,6 +1,6 @@
 ---
 created: 2026-09-08
-updated: 2026-11-17
+updated: 2026-11-21
 ---
 
 # Writing voice
@@ -100,6 +100,10 @@ Reply threads share those IDs, so a revision in a draft discussion updates its
 parent frame. A separate branch copies the records instead. Each new model turn
 receives the current text, including direct edits; model revisions check the
 version again after generation, refusing to overwrite intervening edits.
+The drafts list reaches the model with the owner's message, and only when it
+has changed since the conversation last carried it. It is never part of the
+system prompt, where every edit would bill the whole conversation again; see
+[data that changes rides with the message](../../../_shared-ts/models/Chat/docs/2026-11-21-data-that-changes-rides-the-message.md).
 Outbox's Ask Sky action opens a persistent draft discussion referencing this same
 record. Linked source and workstream context is checked before and after an AI
 revision, using the same follow directories as Outbox. A context-only update also
