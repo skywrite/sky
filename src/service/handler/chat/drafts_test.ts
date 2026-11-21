@@ -135,7 +135,7 @@ test('chat draft edits, thread revisions and accepted explanations share durable
     })
     const closed = await post(app, '/main/end', { save: true })
     const saved = ((await closed.json()) as { saved: { path: string } }).saved
-    const loaded = await loadResumeSession(saved.path, { baseDir: root })
+    const loaded = await loadResumeSession(saved.path, { baseDir: root, chatLogDir: host.chatLogDir })
     assert({
       given: 'a filed chat',
       should: 'retain its editable draft link',

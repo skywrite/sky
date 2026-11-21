@@ -41,6 +41,7 @@ test(
               days: 0,
               baseDir: root,
               timeDir: path.join(root, 'time'),
+              chatLogDir: path.join(root, 'state', 'logs'),
               contextTokens: 0,
               resume: null,
               model: {} as ResolvedModel,

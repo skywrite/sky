@@ -1,6 +1,6 @@
 ---
 created: 2026-09-01
-updated: 2026-11-03
+updated: 2026-11-21
 ---
 
 # Chat model — the pieces under every chat host
@@ -35,6 +35,15 @@ message saved without a stamp. This is the shape saved Slack conversations
 use. The bold name is what tells a speaker from a reply's own `### Sky`
 section. `document/shape.ts` owns these rules for the reader, the writer and
 the migration.
+
+Nothing follows the conversation.
+What the machine needs to continue a chat is not in the notebook: the per-turn context log, the statistics and the
+session's recovery state live in a JSON file under Sky's state, at the transcript's own notebook-relative path
+(`ChatStore/logFile.ts`).
+A chat saved before 2026-11-21 carries that record as a trailing comment; it is read as before and moves out the
+next time the chat is saved, or all at once with `sky ai:chat:migrate --execute`.
+Crash snapshots keep the comment.
+See [the chat log leaves the notebook](2026-11-21-the-chat-log-leaves-the-notebook.md).
 
 The summary is `## Summary (Opus 5.5, High)`, between the title and the
 conversation: two to five short bullets from the Thinking role's model that
@@ -245,6 +254,8 @@ item, as `slack:unread` does per conversation. Read the
 [2026-09-23 note](2026-09-23-stop-reaches-the-command.md).
 
 ## Notes
+
+- [2026-11-21 — the chat log leaves the notebook](2026-11-21-the-chat-log-leaves-the-notebook.md): a saved chat is two files, the transcript in the notebook and its log under Sky's state, keyed by the transcript's path; chats saved before are read as they are and move on their next save.
 
 - [2026-10-08 — one go stands for every chat](../../../../service/handler/chat/docs/2026-10-08-one-go-stands-for-every-chat.md): file grants left the chat file's `approvals:` key for a notebook-wide ledger; a chat file no longer carries grants, and nothing reads the key old files still have.
 

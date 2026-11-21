@@ -16,7 +16,8 @@ import colors from 'picocolors'
 import { Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { dedupeMemories } from '#lib/notebook/enrich/dedupeMemories.ts'
-import { DIR_AI_MEMORY, DIR_TIME } from '#shared/config.ts'
+import { DIR_AI_MEMORY, DIR_STATE_AI_CHATS, DIR_TIME } from '#shared/config.ts'
+import { chatLogDirOf } from '#shared/models/Chat/ChatStore/logFile.ts'
 import { CONSOLIDATE_POLICY, planConsolidation } from '#shared/models/Memory/consolidate.ts'
 import { loadMemories } from '#shared/models/Memory/mod.ts'
 import { gatherMemoryUsage } from '#shared/models/Memory/usage.ts'
@@ -85,7 +86,12 @@ export default class MemoryConsolidateTask extends Command {
       return CommandResult.success({ memories: 0, planned: 0, applied: 0, skipped: 0 })
     }
 
-    const { usage, chatsScanned } = await gatherMemoryUsage({ timeDir: DIR_TIME, today, days })
+    const { usage, chatsScanned } = await gatherMemoryUsage({
+      timeDir: DIR_TIME,
+      chatLogDir: chatLogDirOf(DIR_STATE_AI_CHATS),
+      today,
+      days,
+    })
 
     // The one AI step. An abstain (model failure) drops merging, never the run.
     const merges = noAi ? [] : ((await dedupeMemories(entries)) ?? [])

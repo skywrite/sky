@@ -15,11 +15,11 @@
 import * as path from 'node:path'
 import { exists, readTextFile, walk } from '#shared/fs/mod.ts'
 import type { Attachment } from '#shared/models/Markdown/Document/attachment.ts'
-import { splitContextLog } from '../document/ContextLog/mod.ts'
 import { conversationKey } from '../document/history.ts'
 import { inheritedMessages, joinLineage, prefixOf } from '../document/lineage.ts'
 import ChatDocument, { type ChatParent, type ChatSummary } from '../document/mod.ts'
-import { reconstructResumeState, type ResumeState } from '../document/resume.ts'
+import { type ResumeState, stateOfLog } from '../document/resume.ts'
+import { readChatLog } from './logFile.ts'
 import { readChatRecovery, type ChatRecovery } from './recovery.ts'
 
 /** One saved transcript as a listing row — no body, no formatting. */
@@ -70,6 +70,12 @@ export interface LoadResumeOptions {
   /** The notebook root a parent key resolves against; without it a branch loads as its own turns alone */
   baseDir?: string
   /**
+   * Where saved chats keep their logs (logFile.ts), keyed beneath `baseDir`.
+   * Without both, only a log the transcript itself carries is read: a chat
+   * saved since 2026-11-21 then loads as its conversation alone.
+   */
+  chatLogDir?: string
+  /**
    * The file is a crash snapshot, which holds the whole thread already —
    * parent turns included — so no parent is read; the inherited count
    * comes from the parent key instead.
@@ -110,8 +116,9 @@ export async function listDayChats(chatsDir: string): Promise<SavedChatRef[]> {
 
 /**
  * Load a saved transcript into the state a session continues from: the
- * reseedable conversation and recorded context (via reconstructResumeState)
- * plus the frontmatter the save path must carry forward unchanged.
+ * reseedable conversation, the context its log recorded (the chat's log
+ * file, or the trailing comment of a chat saved before it had one), and
+ * the frontmatter the save path must carry forward unchanged.
  *
  * A branch loads as the whole thread it is: its parent's file is read (and
  * its parent's, up the lineage), the prefix up to the turn it left after is
@@ -137,12 +144,16 @@ async function loadLineage(filePath: string, options: LoadResumeOptions, seen: S
     )
   }
   const created = doc.yaml['created']
-  const own = reconstructResumeState(doc)
-  // Older snapshots kept provider history in YAML. New ones share the saved
-  // transcript's JSON block, which does not expand blank lines with indentation.
-  const recovery =
-    (options.snapshot ? readChatRecovery(doc.yaml['recovery']) : undefined) ??
-    splitContextLog(doc.markdown).details?.session
+  // A snapshot carries its log itself; a saved chat's is keyed by its place in the notebook.
+  const home =
+    !options.snapshot && options.baseDir && options.chatLogDir
+      ? { baseDir: options.baseDir, chatLogDir: options.chatLogDir }
+      : undefined
+  const log = await readChatLog(filePath, doc.markdown, home)
+  const own = stateOfLog(doc.conversation, log.entries)
+  // Older snapshots kept provider history in YAML. New ones carry it in the
+  // log's JSON, which does not expand blank lines with indentation.
+  const recovery = (options.snapshot ? readChatRecovery(doc.yaml['recovery']) : undefined) ?? log.details?.session
   if (options.snapshot && recovery?.modelMessages) own.modelMessages = recovery.modelMessages
   if (recovery?.legalReview) own.legalReview = recovery.legalReview
   if (recovery?.writingDrafts) own.writingDrafts = recovery.writingDrafts
@@ -160,7 +171,7 @@ async function loadLineage(filePath: string, options: LoadResumeOptions, seen: S
     const parentPath = path.join(options.baseDir, parent.chat)
     // A cycle in hand-edited keys must not loop; a missing parent leaves the branch on its own.
     if (!seen.has(parentPath) && (await exists(parentPath))) {
-      const above = await loadLineage(parentPath, { baseDir: options.baseDir }, seen)
+      const above = await loadLineage(parentPath, { baseDir: options.baseDir, chatLogDir: options.chatLogDir }, seen)
       const prefix = prefixOf(above.state, parent.turn)
       state = joinLineage(prefix, own)
       inherited = prefix.conversation.length

@@ -1,6 +1,7 @@
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import * as os from 'node:os'
 import * as path from 'node:path'
+import { writeChatLog } from '#shared/models/Chat/ChatStore/logFile.ts'
 import { type ContextTurnLog, serializeContextLog } from '#shared/models/Chat/document/ContextLog/mod.ts'
 import { dayDir } from '#shared/nbfs/mod.ts'
 import { assert, test } from '#test'
@@ -32,7 +33,7 @@ test('gatherMemoryUsage - counts shipped memory docs from saved chats, skipping 
     await mkdir(chatsDir, { recursive: true })
     await writeFile(path.join(chatsDir, '09-00_Atlas-Chat.md'), `# Chat\n${serializeContextLog(log)}`)
 
-    const report = await gatherMemoryUsage({ timeDir, today: TODAY, days: 7 })
+    const report = await gatherMemoryUsage({ timeDir, chatLogDir: `${timeDir}.logs`, today: TODAY, days: 7 })
     assert({
       given: 'one saved chat shipping a memory twice and cutting another',
       should: 'count only the shipped memory, with the chat day as lastShipped',
@@ -55,7 +56,7 @@ test('gatherMemoryUsage - counts shipped memory docs from saved chats, skipping 
 test('gatherMemoryUsage - empty window reports zero scanned, not zero usage', async () => {
   const timeDir = await mkdtemp(path.join(os.tmpdir(), 'memory-usage-'))
   try {
-    const report = await gatherMemoryUsage({ timeDir, today: TODAY, days: 7 })
+    const report = await gatherMemoryUsage({ timeDir, chatLogDir: `${timeDir}.logs`, today: TODAY, days: 7 })
     assert({
       given: 'a time tree with no chats at all',
       should: 'report nothing scanned so callers treat usage as unknown',
@@ -64,5 +65,31 @@ test('gatherMemoryUsage - empty window reports zero scanned, not zero usage', as
     })
   } finally {
     await rm(timeDir, { recursive: true, force: true })
+  }
+})
+
+test("gatherMemoryUsage - reads a chat's log from its log file", async () => {
+  const timeDir = await mkdtemp(path.join(os.tmpdir(), 'memory-usage-'))
+  const chatLogDir = `${timeDir}.logs`
+  try {
+    const chatsDir = path.join(timeDir, dayDir(TODAY.addDays(-1)), 'actions', 'ai-chats')
+    await mkdir(chatsDir, { recursive: true })
+    const chat = path.join(chatsDir, '09-00_Atlas-Chat.md')
+    // A chat saved since its log left the transcript: the file holds the conversation alone.
+    await writeFile(chat, '# Chat\n\n## Conversation\n')
+    await writeChatLog(chat, { baseDir: path.dirname(timeDir), chatLogDir }, [
+      { turn: 1, queries: [], universe: [{ path: 'ai/memory/big-deck.md', tokens: 40, score: 12 }] },
+    ])
+
+    const report = await gatherMemoryUsage({ timeDir, chatLogDir, today: TODAY, days: 7 })
+    assert({
+      given: 'a saved chat whose transcript carries no log, with its log file shipping a memory once',
+      should: 'count the ship from the log file',
+      actual: { chatsScanned: report.chatsScanned, bigDeck: report.usage.get('big-deck') },
+      expected: { chatsScanned: 1, bigDeck: { ships: 1, lastShipped: TODAY.addDays(-1).toString() } },
+    })
+  } finally {
+    await rm(timeDir, { recursive: true, force: true })
+    await rm(chatLogDir, { recursive: true, force: true })
   }
 })

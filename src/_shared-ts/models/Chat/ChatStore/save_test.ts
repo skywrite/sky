@@ -9,6 +9,7 @@ import { PlainDate, PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import type { ContextTurnLog } from '../document/ContextLog/mod.ts'
 import ChatDocument, { setUserSpeakerLabel } from '../document/mod.ts'
 import type { ConversationMessage } from '../type.d.ts'
+import { chatLogPath, readChatLog } from './logFile.ts'
 import { loadResumeSession } from './mod.ts'
 import { chatFilename, type EnrichSubject, type SaveEnricher, saveChat } from './save.ts'
 
@@ -54,6 +55,15 @@ async function tmpNotebook(): Promise<string> {
   return makeTempDir({ prefix: 'sky-chatstore-' })
 }
 
+/** A test notebook's chats keep their logs beside the notebook, never in it. */
+const logDirOf = (timeDir: string) => `${timeDir}.logs`
+const homeOf = (timeDir: string) => ({ baseDir: path.dirname(timeDir), chatLogDir: logDirOf(timeDir) })
+
+/** What a saved chat's log file recorded. */
+async function logOf(file: string, timeDir: string): Promise<ContextTurnLog[]> {
+  return (await readChatLog(file, await readTextFile(file), homeOf(timeDir))).entries
+}
+
 /** A saved new chat, plus the temp notebook it lives in. */
 async function saveNew(over: Partial<Parameters<typeof saveChat>[0]> = {}) {
   const timeDir = await tmpNotebook()
@@ -62,6 +72,7 @@ async function saveNew(over: Partial<Parameters<typeof saveChat>[0]> = {}) {
     contextLog: [],
     resume: null,
     timeDir,
+    chatLogDir: logDirOf(timeDir),
     day: DAY,
     startTime: START,
     endTime: END,
@@ -220,12 +231,13 @@ test('saveChat - a resume adds newly referenced documents despite existing rel',
     autoRel: true,
     enricher: stubEnricher({ chooseRel: async () => ['projects/Atlas', meeting.slice(8)] }),
   })
-  const resume = await loadResumeSession(first.path)
+  const resume = await loadResumeSession(first.path, homeOf(timeDir))
   const report = await saveChat({
     turns: [...TURNS, msg('user', 'Compare the meeting with the budget note.', '2026-01-27 10:30')],
     contextLog: [],
     resume,
     timeDir,
+    chatLogDir: logDirOf(timeDir),
     day: DAY,
     startTime: START,
     endTime: END,
@@ -276,7 +288,7 @@ test('saveChat - new place subjects append on resume and respect disabled auto-r
     autoRel: true,
     enricher: stubEnricher({ chooseRel: async () => ['projects/Atlas'] }),
   })
-  const resume = await loadResumeSession(first.path)
+  const resume = await loadResumeSession(first.path, homeOf(timeDir))
   let calls = 0
   const save = (autoRel: boolean) =>
     saveChat({
@@ -284,6 +296,7 @@ test('saveChat - new place subjects append on resume and respect disabled auto-r
       contextLog: [],
       resume,
       timeDir,
+      chatLogDir: logDirOf(timeDir),
       day: DAY,
       startTime: START,
       endTime: END,
@@ -315,7 +328,7 @@ test('saveChat - new place subjects append on resume and respect disabled auto-r
 })
 
 test('saveChat - files read into the session are recorded as attachments, and a resume keeps them', async () => {
-  const { report: first } = await saveNew({ attachments: [{ file: '2026-01-27_Chat_Atlas-MSA.pdf' }] })
+  const { timeDir, report: first } = await saveNew({ attachments: [{ file: '2026-01-27_Chat_Atlas-MSA.pdf' }] })
 
   const firstDoc = ChatDocument.fromMarkdown(await readTextFile(first.path))
   assert({
@@ -325,7 +338,7 @@ test('saveChat - files read into the session are recorded as attachments, and a 
     expected: [{ file: '2026-01-27_Chat_Atlas-MSA.pdf' }],
   })
 
-  const resume = await loadResumeSession(first.path)
+  const resume = await loadResumeSession(first.path, homeOf(timeDir))
   const report = await saveChat({
     turns: [
       ...TURNS,
@@ -334,7 +347,8 @@ test('saveChat - files read into the session are recorded as attachments, and a 
     ],
     contextLog: [],
     resume,
-    timeDir: 'unused-on-resume',
+    timeDir,
+    chatLogDir: logDirOf(timeDir),
     day: DAY,
     startTime: START,
     endTime: new PlainDateTime('2026-01-28 08:20'),
@@ -352,8 +366,8 @@ test('saveChat - files read into the session are recorded as attachments, and a 
 })
 
 test('saveChat - resuming writes back to the same file, keeping created and growing the transcript', async () => {
-  const { report: first } = await saveNew()
-  const resume = await loadResumeSession(first.path)
+  const { timeDir, report: first } = await saveNew()
+  const resume = await loadResumeSession(first.path, homeOf(timeDir))
 
   const continued = [
     ...TURNS,
@@ -364,7 +378,8 @@ test('saveChat - resuming writes back to the same file, keeping created and grow
     turns: continued,
     contextLog: [],
     resume,
-    timeDir: 'unused-on-resume',
+    timeDir,
+    chatLogDir: logDirOf(timeDir),
     day: DAY,
     startTime: START,
     endTime: new PlainDateTime('2026-01-28 08:20'),
@@ -400,17 +415,18 @@ test('saveChat - resuming writes back to the same file, keeping created and grow
 })
 
 test('saveChat - a resume fills only the fields the file is missing', async () => {
-  const { report: first } = await saveNew({
+  const { timeDir, report: first } = await saveNew({
     autoTag: true,
     enricher: stubEnricher({ chooseTags: async () => 'Atlas/Launch' }),
   })
-  const resume = await loadResumeSession(first.path)
+  const resume = await loadResumeSession(first.path, homeOf(timeDir))
 
   const report = await saveChat({
     turns: [...TURNS, msg('user', 'One more thing.', '2026-01-27 10:00')],
     contextLog: [],
     resume,
-    timeDir: 'unused-on-resume',
+    timeDir,
+    chatLogDir: logDirOf(timeDir),
     day: DAY,
     startTime: START,
     endTime: END,
@@ -443,13 +459,14 @@ test('saveChat - a resume refuses to overwrite malformed frontmatter and parks t
   const before = await readTextFile(path.join(FIXTURES, '16-45_Vendor-Landscape-Review.md'))
   await writeTextFile(original, before)
 
-  const resume = await loadResumeSession(original)
+  const resume = await loadResumeSession(original, homeOf(timeDir))
   const recoveryDir = path.join(timeDir, 'recovery')
   const report = await saveChat({
     turns: [...resume.state.conversation, msg('user', 'And the fourth vendor?', '2026-01-27 17:02')],
     contextLog: [],
     resume,
     timeDir,
+    chatLogDir: logDirOf(timeDir),
     day: DAY,
     startTime: START,
     endTime: END,
@@ -481,12 +498,19 @@ test('saveChat - a resume refuses to overwrite malformed frontmatter and parks t
     },
     expected: { inRecoveryDir: true, exists: true, holdsTheNewMessage: true },
   })
+
+  assert({
+    given: 'the refused session',
+    should: 'write no log file for a transcript it left alone',
+    actual: await exists(chatLogPath(original, homeOf(timeDir))!),
+    expected: false,
+  })
 })
 
 test('saveChat - a candidate that lost earlier history fails the self-check', async () => {
   const { report: first, timeDir } = await saveNew()
   const before = await readTextFile(first.path)
-  const resume = await loadResumeSession(first.path)
+  const resume = await loadResumeSession(first.path, homeOf(timeDir))
 
   // Drops the opening exchange — exactly the serialization bug the gate exists to catch.
   const report = await saveChat({
@@ -494,6 +518,7 @@ test('saveChat - a candidate that lost earlier history fails the self-check', as
     contextLog: [],
     resume,
     timeDir,
+    chatLogDir: logDirOf(timeDir),
     day: DAY,
     startTime: START,
     endTime: END,
@@ -517,14 +542,15 @@ test('saveChat - a candidate that lost earlier history fails the self-check', as
 })
 
 test('saveChat - day-file logging is skipped on resume, never duplicated', async () => {
-  const { report: first } = await saveNew()
-  const resume = await loadResumeSession(first.path)
+  const { timeDir, report: first } = await saveNew()
+  const resume = await loadResumeSession(first.path, homeOf(timeDir))
 
   const report = await saveChat({
     turns: [...TURNS, msg('user', 'One more thing.', '2026-01-27 10:00')],
     contextLog: [],
     resume,
-    timeDir: 'unused-on-resume',
+    timeDir,
+    chatLogDir: logDirOf(timeDir),
     day: DAY,
     startTime: START,
     endTime: END,
@@ -572,8 +598,9 @@ test('saveChat - a new chat is logged in the section its subject calls for, unle
   const resumed = await saveChat({
     turns: [...TURNS, msg('user', 'One more thing.', '2026-01-27 10:00')],
     contextLog: [],
-    resume: await loadResumeSession(chosen.report.path),
+    resume: await loadResumeSession(chosen.report.path, homeOf(chosen.timeDir)),
     timeDir: chosen.timeDir,
+    chatLogDir: logDirOf(chosen.timeDir),
     day: DAY,
     startTime: START,
     endTime: END,
@@ -676,8 +703,9 @@ test('saveChat - resuming preserves a manually moved day entry exactly', async (
   await writeTextFile(dayPath, manual)
   const resumed = await saveNew({
     timeDir,
+    chatLogDir: logDirOf(timeDir),
     turns: [...TURNS, msg('user', 'One more thing.')],
-    resume: await loadResumeSession(first.path),
+    resume: await loadResumeSession(first.path, homeOf(timeDir)),
     logToDay: { category: 'Personal' },
     enricher: neverCalled,
   })
@@ -751,6 +779,7 @@ test('saveChat - memory ops apply, report their outcomes, and land in the contex
     contextLog: [],
     resume: null,
     timeDir,
+    chatLogDir: logDirOf(timeDir),
     day: DAY,
     startTime: START,
     endTime: END,
@@ -802,11 +831,10 @@ test('saveChat - memory ops apply, report their outcomes, and land in the contex
     expected: { lastConfirmed: true, source: true },
   })
 
-  const doc = ChatDocument.fromMarkdown(await readTextFile(report.path))
   assert({
-    given: 'the saved transcript',
+    given: "the saved chat's log",
     should: 'record the memory outcomes as a final context-log entry',
-    actual: doc.contextLog,
+    actual: await logOf(report.path, timeDir),
     expected: [{ turn: 0, queries: [], memory: report.memoryOps }],
   })
 })
@@ -869,6 +897,7 @@ test('saveChat - person facts curate the profile, report outcomes, and land in t
     contextLog: [],
     resume: null,
     timeDir,
+    chatLogDir: logDirOf(timeDir),
     day: DAY,
     startTime: START,
     endTime: END,
@@ -944,11 +973,10 @@ test('saveChat - person facts curate the profile, report outcomes, and land in t
     expected: { overviewFirst: true, overview: true, location: true, updated: true, background: true },
   })
 
-  const doc = ChatDocument.fromMarkdown(await readTextFile(report.path))
   assert({
-    given: 'the saved transcript',
+    given: "the saved chat's log",
     should: 'record the profile outcomes as a final context-log entry',
-    actual: doc.contextLog,
+    actual: await logOf(report.path, timeDir),
     expected: [{ turn: 0, queries: [], people: report.personOps }],
   })
 })
@@ -963,13 +991,14 @@ test('saveChat - the memory log entry appends without tripping the resume write-
     contextLog: priorLog,
     resume: null,
     timeDir,
+    chatLogDir: logDirOf(timeDir),
     day: DAY,
     startTime: START,
     endTime: END,
     enricher: stubEnricher(),
   })
 
-  const resume = await loadResumeSession(first.path)
+  const resume = await loadResumeSession(first.path, homeOf(timeDir))
   const continued = [
     ...TURNS,
     msg('user', 'Remember: the announcement outline is still in progress.', '2026-01-28 08:12'),
@@ -981,6 +1010,7 @@ test('saveChat - the memory log entry appends without tripping the resume write-
     contextLog: [...(resume?.state.contextLog ?? [])],
     resume,
     timeDir,
+    chatLogDir: logDirOf(timeDir),
     day: DAY,
     startTime: START,
     endTime: new PlainDateTime('2026-01-28 08:20'),
@@ -998,15 +1028,15 @@ test('saveChat - the memory log entry appends without tripping the resume write-
     }),
   })
 
-  const doc = ChatDocument.fromMarkdown(await readTextFile(report.path))
+  const log = await logOf(report.path, timeDir)
   assert({
     given: 'a resumed save that applied memory ops',
     should: 'write back unrefused, carried entries intact, memory as a new final entry',
     actual: {
       aborted: report.aborted,
-      firstEntry: doc.contextLog[0],
-      finalEntry: { turn: doc.contextLog.at(-1)?.turn, memory: doc.contextLog.at(-1)?.memory?.length },
-      entries: doc.contextLog.length,
+      firstEntry: log[0],
+      finalEntry: { turn: log.at(-1)?.turn, memory: log.at(-1)?.memory?.length },
+      entries: log.length,
     },
     expected: {
       aborted: undefined,
@@ -1017,13 +1047,13 @@ test('saveChat - the memory log entry appends without tripping the resume write-
   })
 })
 
-test('saveChat - a body ending in an open fence is sealed before the context log', async () => {
+test('saveChat - a body ending in an open fence is sealed, and the log stays out of the transcript', async () => {
   const turns: ConversationMessage[] = [
     msg('user', 'Show me the helper?', '2026-01-27 09:30'),
     msg('assistant', 'Sure:\n\n```ts\nconst x = 1\n// reply truncated mid-block', '2026-01-27 09:31'),
   ]
   const contextLog: ContextTurnLog[] = [{ turn: 1, queries: [] }]
-  const { report } = await saveNew({ turns, contextLog })
+  const { timeDir, report } = await saveNew({ turns, contextLog })
 
   const markdown = await readTextFile(report.path)
   const doc = ChatDocument.fromMarkdown(markdown)
@@ -1031,14 +1061,14 @@ test('saveChat - a body ending in an open fence is sealed before the context log
 
   assert({
     given: 'a reply truncated inside an open code fence, saved with a context log',
-    should: 'seal the fence so the log still parses, strips, and stays out of the conversation',
+    should: 'seal the fence and keep the log in its own file, out of the transcript',
     actual: {
-      logStrips: !stripped.includes('CONTEXT-LOG'),
-      logParses: doc.contextLog.length,
+      logOutOfTranscript: !markdown.includes('CONTEXT-LOG'),
+      logEntries: (await logOf(report.path, timeDir)).length,
       truncatedKept: stripped.includes('reply truncated mid-block'),
       sealJoinsBody: doc.conversation.at(-1)?.content.endsWith('```'),
     },
-    expected: { logStrips: true, logParses: 1, truncatedKept: true, sealJoinsBody: true },
+    expected: { logOutOfTranscript: true, logEntries: 1, truncatedKept: true, sealJoinsBody: true },
   })
 })
 
@@ -1049,7 +1079,7 @@ test('saveChat - a resumed sealed chat does not grow a second seal', async () =>
   ]
   const { timeDir, report: first } = await saveNew({ turns, contextLog: [{ turn: 1, queries: [] }] })
 
-  const resume = await loadResumeSession(first.path)
+  const resume = await loadResumeSession(first.path, homeOf(timeDir))
   const report = await saveChat({
     turns: [
       ...resume.state.conversation,
@@ -1059,6 +1089,7 @@ test('saveChat - a resumed sealed chat does not grow a second seal', async () =>
     contextLog: [...resume.state.contextLog, { turn: 2, queries: [] }],
     resume,
     timeDir,
+    chatLogDir: logDirOf(timeDir),
     day: DAY,
     startTime: START,
     endTime: END,
@@ -1115,6 +1146,7 @@ test('saveChat - a branch files beside its parent, holding only its own turns an
     parent: { chat: parentChat, turn: 1 },
     inherited: 2,
     timeDir,
+    chatLogDir: logDirOf(timeDir),
     day: DAY,
     startTime: START,
     endTime: END,
@@ -1132,7 +1164,7 @@ test('saveChat - a branch files beside its parent, holding only its own turns an
       exchanges: report.exchanges,
       turns: doc.turnCount,
       roles: doc.conversation.map((m) => m.role),
-      logTurns: doc.contextLog.map((e) => e.turn),
+      logTurns: (await logOf(report.path, timeDir)).map((e) => e.turn),
       parent: doc.parent,
       summary: doc.summary,
     },
@@ -1175,12 +1207,13 @@ test('saveChat - a resumed branch writes back its own turns only, with its paren
     parent: { chat: parentChat, turn: 1 },
     inherited: 2,
     timeDir,
+    chatLogDir: logDirOf(timeDir),
     day: DAY,
     startTime: new PlainDateTime('2026-01-27 09:40'),
     endTime: END,
     enricher: stubEnricher({ summarize: async () => 'Board Prep Instead' }),
   })
-  const resume = await loadResumeSession(branch.path, { baseDir: path.dirname(timeDir) })
+  const resume = await loadResumeSession(branch.path, homeOf(timeDir))
   const again = await saveChat({
     turns: [
       ...resume.state.conversation,
@@ -1190,6 +1223,7 @@ test('saveChat - a resumed branch writes back its own turns only, with its paren
     contextLog: [...resume.state.contextLog, { turn: 3, queries: ['board', 'hiring'] }],
     resume,
     timeDir,
+    chatLogDir: logDirOf(timeDir),
     day: DAY,
     startTime: new PlainDateTime('2026-01-27 09:40'),
     endTime: END,
@@ -1204,7 +1238,7 @@ test('saveChat - a resumed branch writes back its own turns only, with its paren
       samePath: again.path === branch.path,
       aborted: again.aborted ?? null,
       roles: doc.conversation.map((m) => m.role),
-      logTurns: doc.contextLog.map((e) => e.turn),
+      logTurns: (await logOf(again.path, timeDir)).map((e) => e.turn),
       parent: doc.parent,
       resumedInherited: resume.inherited,
     },
@@ -1236,6 +1270,7 @@ test('saveChat - a branch whose parent was never kept files whole, as a chat of 
     parent: { chat: `time/${dayDir(DAY)}/actions/ai-chats/09-00_Never-filed.md`, turn: 1 },
     inherited: 2,
     timeDir,
+    chatLogDir: logDirOf(timeDir),
     day: DAY,
     startTime: START,
     endTime: END,
@@ -1249,7 +1284,7 @@ test('saveChat - a branch whose parent was never kept files whole, as a chat of 
     actual: {
       path: path.relative(path.dirname(timeDir), report.path),
       roles: doc.conversation.map((m) => m.role),
-      logTurns: doc.contextLog.map((e) => e.turn),
+      logTurns: (await logOf(report.path, timeDir)).map((e) => e.turn),
       parent: doc.parent,
       exchanges: report.exchanges,
     },
@@ -1460,7 +1495,7 @@ test('saveChat - no summary unless the host asks for one', async () => {
 })
 
 test('saveChat - a resume rewrites the summary for new turns and keeps it otherwise', async () => {
-  const { report: first } = await saveNew({
+  const { timeDir, report: first } = await saveNew({
     writeSummary: true,
     enricher: stubEnricher({ writeSummary: async () => ({ by: 'Opus 5.5, High', text: 'The first summary.' }) }),
   })
@@ -1468,8 +1503,9 @@ test('saveChat - a resume rewrites the summary for new turns and keeps it otherw
     const report = await saveChat({
       turns,
       contextLog: [],
-      resume: await loadResumeSession(first.path),
-      timeDir: 'unused-on-resume',
+      resume: await loadResumeSession(first.path, homeOf(timeDir)),
+      timeDir,
+      chatLogDir: logDirOf(timeDir),
       day: DAY,
       startTime: START,
       endTime: new PlainDateTime('2026-01-28 08:20'),
@@ -1516,6 +1552,7 @@ test('saveChat - a branch summary covers its own turns and reads its opening as 
     parent: { chat: parentChat, turn: 1 },
     inherited: 2,
     timeDir,
+    chatLogDir: logDirOf(timeDir),
     day: DAY,
     startTime: START,
     endTime: END,
@@ -1535,5 +1572,124 @@ test('saveChat - a branch summary covers its own turns and reads its opening as 
       turns: ['Let us do the board prep instead.', 'Three things by Thursday.'],
       earlier: ['I need help with the week.', 'Finances, board prep, hiring.'],
     },
+  })
+})
+
+// ---------------------------------------------------------------------------
+// The log file
+// ---------------------------------------------------------------------------
+
+test("saveChat - the transcript holds the conversation alone; its log has a file under Sky's state", async () => {
+  const contextLog: ContextTurnLog[] = [{ turn: 1, queries: ['{ chats { path } }'] }]
+  const { timeDir, report } = await saveNew({ contextLog, continuation: { version: 1, historyKey: 'atlas-key' } })
+  const markdown = await readTextFile(report.path)
+  const log = await readChatLog(report.path, markdown, homeOf(timeDir))
+
+  assert({
+    given: 'a new chat saved with a context log and its continuation',
+    should:
+      'write a transcript with no machine record, and the log to a file at the transcript place under the log folder',
+    actual: {
+      commentsInTranscript: markdown.includes('<!--'),
+      transcriptEnds: markdown.trimEnd().split('\n').at(-1),
+      logFile: path.relative(logDirOf(timeDir), chatLogPath(report.path, homeOf(timeDir))!),
+      entries: log.entries,
+      replies: log.details?.statistics?.replies,
+      session: log.details?.session,
+    },
+    expected: {
+      commentsInTranscript: false,
+      transcriptEnds: 'The demo script and the pricing page copy.',
+      logFile: path.relative(path.dirname(timeDir), report.path).replace(/\.md$/, '.json'),
+      entries: contextLog,
+      replies: 1,
+      session: { version: 1, historyKey: 'atlas-key' },
+    },
+  })
+})
+
+test('saveChat - a chat saved with its log inside moves it out when it is saved again', async () => {
+  const timeDir = await tmpNotebook()
+  const original = path.join(timeDir, '09-30_Atlas-Launch-Planning.md')
+  const before = await readTextFile(path.join(FIXTURES, '09-30_Atlas-Launch-Planning.md'))
+  await writeTextFile(original, before)
+
+  const resume = await loadResumeSession(original, homeOf(timeDir))
+  const carried = resume.state.contextLog
+  const report = await saveChat({
+    turns: [
+      ...resume.state.conversation,
+      msg('user', 'And the pricing page?', '2026-01-28 08:12'),
+      msg('assistant', 'Draft it Thursday.', '2026-01-28 08:13'),
+    ],
+    contextLog: [...carried, { turn: resume.state.lastTurn + 1, queries: ['pricing'] }],
+    resume,
+    timeDir,
+    chatLogDir: logDirOf(timeDir),
+    day: DAY,
+    startTime: START,
+    endTime: new PlainDateTime('2026-01-28 08:20'),
+    enricher: neverCalled,
+  })
+  const after = await readTextFile(original)
+  const log = await logOf(original, timeDir)
+
+  assert({
+    given: 'a transcript carrying its log as a trailing comment, resumed and saved with one more exchange',
+    should: 'write back the conversation alone and keep every carried entry, then the new one, in its log file',
+    actual: {
+      aborted: report.aborted,
+      logInsideBefore: before.includes('<!-- CONTEXT-LOG'),
+      logInsideAfter: after.includes('<!--'),
+      carried: JSON.stringify(log.slice(0, carried.length)) === JSON.stringify(carried),
+      turns: log.map((entry) => entry.turn),
+      messages: ChatDocument.fromMarkdown(after).conversation.length,
+    },
+    expected: {
+      aborted: undefined,
+      logInsideBefore: true,
+      logInsideAfter: false,
+      carried: true,
+      turns: [1, 2, 3],
+      messages: 6,
+    },
+  })
+})
+
+test('saveChat - a transcript outside the notebook keeps its log, having nowhere to key a log file', async () => {
+  const root = await tmpNotebook()
+  const timeDir = path.join(root, 'notebook', 'time')
+  const outside = path.join(root, 'outside', '09-30_Atlas-Launch-Planning.md')
+  await mkdir(path.dirname(outside), { recursive: true })
+  await writeTextFile(outside, await readTextFile(path.join(FIXTURES, '09-30_Atlas-Launch-Planning.md')))
+
+  const resume = await loadResumeSession(outside, homeOf(timeDir))
+  const report = await saveChat({
+    turns: [
+      ...resume.state.conversation,
+      msg('user', 'And the pricing page?', '2026-01-28 08:12'),
+      msg('assistant', 'Draft it Thursday.', '2026-01-28 08:13'),
+    ],
+    contextLog: [...resume.state.contextLog, { turn: resume.state.lastTurn + 1, queries: ['pricing'] }],
+    resume,
+    timeDir,
+    chatLogDir: logDirOf(timeDir),
+    day: DAY,
+    startTime: START,
+    endTime: new PlainDateTime('2026-01-28 08:20'),
+    enricher: neverCalled,
+  })
+  const reloaded = await loadResumeSession(outside, homeOf(timeDir))
+
+  assert({
+    given: 'a resumed transcript that sits outside the notebook root',
+    should: 'write its log back as a trailing comment, lose none of it, and create no log folder',
+    actual: {
+      aborted: report.aborted,
+      logInside: (await readTextFile(outside)).includes('<!-- CONTEXT-LOG'),
+      turns: reloaded.state.contextLog.map((entry) => entry.turn),
+      logFolder: await exists(logDirOf(timeDir)),
+    },
+    expected: { aborted: undefined, logInside: true, turns: [1, 2, 3], logFolder: false },
   })
 })

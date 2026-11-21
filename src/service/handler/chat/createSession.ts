@@ -61,6 +61,7 @@ import { logger } from '#shared/log.ts'
 import { contextPreflight, type Preflight, type PreflightState } from '#shared/models/Chat/ChatContext/preflight.ts'
 import ChatSession from '#shared/models/Chat/ChatSession/mod.ts'
 import { chatAutosaveFilename, isThreadSnapshot, listChatAutosaves } from '#shared/models/Chat/ChatStore/autosave.ts'
+import { chatLogDirOf } from '#shared/models/Chat/ChatStore/logFile.ts'
 import type { ResumeSession } from '#shared/models/Chat/ChatStore/mod.ts'
 import { buildChatTranscript, CHAT_ENRICH } from '#shared/models/Chat/enrich.ts'
 import { isAIChatPath, parseTimePath } from '#shared/nbfs/mod.ts'
@@ -351,6 +352,8 @@ export function createChatHost(config: typeof ConfigModule, env: Record<string, 
   /** A thread's crash copy: the service's own snapshot, named by the thread id. */
   const snapshotPath = (id: string, startTime: PlainDateTime) =>
     path.join(config.DIR_STATE_AI_CHATS, chatAutosaveFilename(startTime, id))
+  /** A saved chat's machine record stays out of the notebook: it has a file here (ChatStore/logFile.ts). */
+  const chatLogDir = chatLogDirOf(config.DIR_STATE_AI_CHATS)
 
   // Which files a thread may run without asking — the notebook-wide ledger
   // every host shares: a go on a file-scoped card and a file a tool created
@@ -448,6 +451,7 @@ export function createChatHost(config: typeof ConfigModule, env: Record<string, 
       tokenRatio: ratioFor(profile.model),
       baseDir: config.DIR_BASE,
       timeDir: config.DIR_TIME,
+      chatLogDir,
       preflight: contextPreflightFor(context.secrets, () => plan?.plan),
       resume: restore?.resume ?? null,
       // A continued chat seeds from its resume; a snapshot or a branch from the state it was given.
@@ -654,7 +658,7 @@ export function createChatHost(config: typeof ConfigModule, env: Record<string, 
     const timeRoot = path.resolve(config.DIR_TIME)
     if (!abs.startsWith(`${timeRoot}${path.sep}`) || !isAIChatPath(abs) || !abs.endsWith('.md')) return null
     if (!(await exists(abs))) return null
-    const resume = await readSession(abs, { baseDir: config.DIR_BASE })
+    const resume = await readSession(abs, { baseDir: config.DIR_BASE, chatLogDir })
     const info = parseTimePath(abs)
     const time = path.basename(abs).match(/^(\d{1,3})-(\d{2})_/)
     const day = info?.kind === 'day' ? info.date.ymd : resume.created
@@ -691,6 +695,7 @@ export function createChatHost(config: typeof ConfigModule, env: Record<string, 
       logToDay: { category: config.DEFAULT_CATEGORY },
     },
     timeDir: config.DIR_TIME,
+    chatLogDir,
     aboutMePath: config.FILE_ABOUT_ME,
   }
 }

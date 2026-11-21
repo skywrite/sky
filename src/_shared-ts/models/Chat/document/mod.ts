@@ -237,7 +237,11 @@ export default class ChatDocument extends SectionDocument {
     return lines.some((line) => legacySpeakerOf(line.text, userLabel) !== null)
   }
 
-  /** Per-turn context pipeline log parsed from the trailing CONTEXT-LOG comment */
+  /**
+   * The per-turn context log this text carries as a trailing CONTEXT-LOG
+   * comment: a crash snapshot, or a chat saved before 2026-11-21. A saved
+   * chat's log is in its log file (ChatStore/logFile.ts), and this is empty.
+   */
   get contextLog(): ContextTurnLog[] {
     return splitContextLog(this.markdown).entries
   }

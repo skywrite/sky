@@ -1,6 +1,7 @@
 /**
  * The write half of the chat store: turning a finished session into the
- * file it lives in.
+ * transcript it lives in, and the log file that lets it continue
+ * (logFile.ts).
  *
  * Everything a saved chat *is* gets decided here — where it files, what
  * titles it, which tags and rel it carries, and, on a resume, whether the
@@ -65,6 +66,7 @@ import { chatStatistics } from '../document/statistics.ts'
 import { buildChatTranscript, buildPersonTranscript, CHAT_ENRICH } from '../enrich.ts'
 import { writeChatSummary } from '../summarySection.ts'
 import type { ConversationMessage } from '../type.d.ts'
+import { chatLogPath, writeChatLog } from './logFile.ts'
 import type { ResumeSession } from './mod.ts'
 import type { ChatRecovery } from './recovery.ts'
 
@@ -264,8 +266,13 @@ export function chatFilePath(input: {
 // -----------------------------------------------------------------------------
 
 export interface SaveChatInput {
-  /** Continuation and tool activity live in the file's JSON block, alongside its statistics. */
+  /** Continuation and tool activity live in the chat's log, alongside its statistics. */
   continuation?: ChatRecovery
+  /**
+   * Where saved chats keep their logs, under Sky's state (logFile.ts). The
+   * transcript in the notebook holds the conversation alone.
+   */
+  chatLogDir: string
   /** The full conversation, oldest first — a branch's parent turns included */
   turns: ConversationMessage[]
   /** Per-turn context log, including entries a resume carried forward */
@@ -592,22 +599,27 @@ export async function saveChat(input: SaveChatInput): Promise<SaveChatReport> {
     ]
   }
 
-  // The per-turn context log trails as hidden comments — resume reads it
-  // back via splitContextLog, and the format is locked byte for byte by
-  // contextLog_test.ts. A body ending inside an open code fence (a reply
-  // truncated mid-block, a pasted stray ```) would shield those comments
-  // from stripping and render them as visible code, so the fence is sealed
-  // first. The closer joins the body: splitContextLog hands it back as
-  // conversation text, so resumes carry it and never re-seal.
+  // The transcript holds the conversation. The per-turn context log, the
+  // statistics and the session's continuation go to the chat's log file
+  // under Sky's state (logFile.ts); resume reads them back from there. A
+  // body ending inside an open code fence (a reply truncated mid-block, a
+  // pasted stray ```) is sealed first, so nothing that follows the
+  // conversation is ever read as code. The closer joins the body, so
+  // resumes carry it and never re-seal.
   const fence = unclosedFence(doc.markdown)
   const seal = fence ? `${fence.marker.repeat(fence.length)}\n` : ''
-  const markdown =
-    doc.toMarkdown() +
-    seal +
-    serializeContextLog(logEntries, {
-      statistics: chatStatistics(logEntries, turns.length),
-      ...(input.continuation ? { session: input.continuation } : {}),
-    })
+  const text = doc.toMarkdown() + seal
+  const details = {
+    statistics: chatStatistics(logEntries, turns.length),
+    ...(input.continuation ? { session: input.continuation } : {}),
+  }
+  const home = { baseDir, chatLogDir: input.chatLogDir }
+  // Transcript and log as one text, the shape a chat had before its log
+  // got a file: what the write-back gate reads, what a refused save parks,
+  // and what a transcript outside the notebook keeps, having nowhere to
+  // key a log file.
+  const withLog = text + serializeContextLog(logEntries, details)
+  const markdown = chatLogPath(savePath, home) ? text : withLog
 
   const report: SaveChatReport = { path: savePath, exchanges, resumed: resume !== null, summary }
   if (autoTags) report.autoTags = autoTags
@@ -618,18 +630,21 @@ export async function saveChat(input: SaveChatInput): Promise<SaveChatReport> {
 
   if (resume) {
     // The gate compares the file's own turns, never the joined thread a branch is.
-    const refusal = await refuseWriteBack(resume, markdown)
+    const refusal = await refuseWriteBack(resume, withLog)
     if (refusal) {
-      report.path = await writeRecoveryCopy(markdown, endTime, input.recoveryDir)
+      report.path = await writeRecoveryCopy(withLog, endTime, input.recoveryDir)
       report.aborted = { originalPath: resume.filePath, reason: refusal }
       return report
     }
+    // The log goes first: a save that fails after it leaves the transcript as it was.
+    await writeChatLog(savePath, home, logEntries, details)
     // Atomic replace: a crash mid-write must never leave a truncated
     // transcript at the original path.
     const tmpPath = path.join(path.dirname(savePath), `.${path.basename(savePath)}.resume-tmp`)
     await writeTextFile(tmpPath, markdown)
     await rename(tmpPath, savePath)
   } else {
+    await writeChatLog(savePath, home, logEntries, details)
     await writeTextFile(savePath, markdown)
   }
 
@@ -648,7 +663,7 @@ export async function saveChat(input: SaveChatInput): Promise<SaveChatReport> {
   return report
 }
 
-/** The reason a resumed session must not overwrite its file, or null to proceed. */
+/** The reason a resumed session must not overwrite its file, or null to proceed. `markdown` carries the log too. */
 async function refuseWriteBack(resume: ResumeSession, markdown: string): Promise<string | null> {
   if (!resume.frontmatterHealthy) {
     return 'its frontmatter is malformed and a rewrite would lose data'

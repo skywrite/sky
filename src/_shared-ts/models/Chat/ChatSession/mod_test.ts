@@ -71,6 +71,19 @@ function scriptedModel(rounds: string[][]) {
   return { invokeModel, calls }
 }
 
+/**
+ * Every test session keeps its saved chats' logs in one folder, away from
+ * the temp notebooks. A log is keyed by its chat's path beneath the folder
+ * the notebooks sit in, so a session that reopens another's chat reads the
+ * same log, as a host does.
+ */
+let chatLogs: Promise<string> | undefined
+const chatLogDir = () => (chatLogs ??= makeTempDir({ prefix: 'sky-chatsession-logs-' }))
+
+/** A saved chat read back with its log; `timeDir` is the temp notebook it was saved in. */
+const reload = async (file: string, timeDir: string) =>
+  loadResumeSession(file, { baseDir: path.dirname(timeDir), chatLogDir: await chatLogDir() })
+
 const stubEnricher: SaveEnricher = {
   summarize: async () => 'Atlas Demo Focus',
   chooseTags: async () => undefined,
@@ -89,6 +102,7 @@ async function makeSession(over: Partial<ChatSessionOptions> = {}) {
     days: 7,
     baseDir: BASE_DIR,
     timeDir: tmp,
+    chatLogDir: await chatLogDir(),
     resume: null,
     // The scripted invoker never touches the model config.
     model: {} as ResolvedModel,
@@ -459,13 +473,13 @@ test('ChatSession persists precise prompt-to-result timing, individual calls, an
     })
 
     const written = await session.end({ save: true, enricher: stubEnricher })
-    const resume = await loadResumeSession(written!.path)
+    const resume = await reload(written!.path, tmp)
     const second = await makeSession({ resume, contextTokens: 0 })
     await second.session.start()
     now += 100_000 // Idle time and a restart never become part of the next reply.
     const next = await second.session.send('And the next step?')
     const saved = await second.session.end({ save: true, enricher: stubEnricher })
-    const reparsed = await loadResumeSession(saved!.path)
+    const reparsed = await reload(saved!.path, tmp)
     assert({
       given: 'a saved chat resumed after idle time, given another prompt, and saved again',
       should: 'keep the original timing byte-for-byte and start a new trace for the new reply',
@@ -899,7 +913,7 @@ test('ChatSession keeps generated images through recovery, filing, branching, an
   const branch = session.stateAt(1)
   await session.send('What colors did you choose?')
   const saved = await session.end({ save: true, autoTag: false, autoRel: false, enricher: stubEnricher })
-  const filed = await loadResumeSession(saved!.path)
+  const filed = await reload(saved!.path, tmp)
   assert({
     given: 'a tool creates an image but the model omits the image link in its reply',
     should: 'keep one preview on that reply in every durable conversation without repeating it on later replies',
@@ -994,7 +1008,7 @@ test('ChatSession.start - resuming restores the conversation and the recorded co
   await first.session.start()
   await first.session.send('What should I focus on?')
   const saved = await first.session.end({ save: true, enricher: stubEnricher })
-  const resume = await loadResumeSession(saved!.path)
+  const resume = await reload(saved!.path, first.tmp)
 
   const second = await makeSession({ resume, timeDir: first.tmp })
   const started = await second.session.start()
@@ -1038,7 +1052,7 @@ test('ChatSession - a restored conversation is on hand before it starts, and fil
   await first.session.start()
   await first.session.send('What should I focus on?')
   const saved = await first.session.end({ save: true, enricher: stubEnricher })
-  const { state } = await loadResumeSession(saved!.path)
+  const { state } = await reload(saved!.path, first.tmp)
 
   // A restored thread keeps its own start — here a later one, so its file is its own.
   const second = await makeSession({
@@ -1089,14 +1103,15 @@ test('ChatSession - a branch inherits the turns through a reply, files beside it
   await branch.session.send('Let us do the board prep instead.')
   const written = await branch.session.end({ save: true, enricher: stubEnricher })
   const doc = ChatDocument.fromMarkdown(await readTextFile(written!.path))
+  const ownLog = (await reload(written!.path, parentSession.tmp)).own.contextLog
 
   assert({
     given: 'the timing history inherited by a branch and the branch file on disk',
     should: 'preserve the parent timing and file only the new turn timing with its own trace',
     actual: {
       inherited: JSON.stringify(branch.session.contextLog[0]?.timing) === inheritedTiming,
-      ownTurns: doc.contextLog.filter((entry) => entry.timing).map((entry) => entry.turn),
-      ownTrace: doc.contextLog[0]?.timing?.traceId !== prefix.contextLog[0]?.timing?.traceId,
+      ownTurns: ownLog.filter((entry) => entry.timing).map((entry) => entry.turn),
+      ownTrace: ownLog[0]?.timing?.traceId !== prefix.contextLog[0]?.timing?.traceId,
     },
     expected: { inherited: true, ownTurns: [2], ownTrace: true },
   })
@@ -1189,11 +1204,11 @@ test('ChatSession.end - a chat filed for a branch gets its real end without anot
   await other.session.start()
   await other.session.send('What should I focus on?')
   const otherFiled = (await other.session.fileNow())!
-  const restored = await makeSession({ resume: await loadResumeSession(otherFiled.path), timeDir: other.tmp })
+  const restored = await makeSession({ resume: await reload(otherFiled.path, other.tmp), timeDir: other.tmp })
   const restoredClosed = await restored.session.end(end)
 
   // A finished file closed again with nothing new said stays as it is.
-  const reopened = await makeSession({ resume: await loadResumeSession(filed.path), timeDir: live.tmp })
+  const reopened = await makeSession({ resume: await reload(filed.path, live.tmp), timeDir: live.tmp })
   const reclosed = await reopened.session.end(end)
 
   assert({
@@ -1288,7 +1303,7 @@ test('ChatSession - closing a recovered saved chat files replies made before the
     people: false,
     enricher: stubEnricher,
   })
-  const resume = await loadResumeSession(filed!.path)
+  const resume = await reload(filed!.path, original.tmp)
   const active = await makeSession({ contextTokens: 0, resume })
   await active.session.start()
   await active.session.send('Add a pricing page.')
@@ -1311,7 +1326,7 @@ test('ChatSession - closing a recovered saved chat files replies made before the
       path: saved?.path,
       aborted: Boolean(saved?.aborted),
       turns: doc.conversation,
-      log: doc.contextLog.length,
+      log: (await reload(filed!.path, original.tmp)).own.contextLog.length,
       recovery: doc.yaml['recovery'],
     },
     expected: {

@@ -1,8 +1,12 @@
 import { copyFile, mkdir, rm } from 'node:fs/promises'
 import * as path from 'node:path'
-import { makeTempDir } from '#shared/fs/mod.ts'
+import { makeTempDir, writeTextFile } from '#shared/fs/mod.ts'
 import { assert, test } from '#test'
-import { setUserSpeakerLabel } from '../document/mod.ts'
+import type { ContextTurnLog } from '../document/ContextLog/mod.ts'
+import { conversationKey } from '../document/history.ts'
+import ChatDocument, { type ChatParent, setUserSpeakerLabel } from '../document/mod.ts'
+import type { ConversationMessage } from '../type.d.ts'
+import { chatLogDirOf, writeChatLog } from './logFile.ts'
 import { ancestorsOf, listDayChats, loadResumeSession } from './mod.ts'
 
 setUserSpeakerLabel('Jane')
@@ -249,4 +253,142 @@ test('ancestorsOf - walks the parent keys up, nearest first, and stops where a f
     },
     expected: { branch: ['09-30_Atlas-Launch-Planning.md'], root: [] },
   })
+})
+
+// ---------------------------------------------------------------------------
+// A saved chat's log file
+// ---------------------------------------------------------------------------
+
+/** A temp notebook whose chats keep their logs under a state folder beside it. */
+async function notebookWithLogs() {
+  const root = await makeTempDir({ prefix: 'sky-chatstore-logs-' })
+  const baseDir = path.join(root, 'notebook')
+  const home = { baseDir, chatLogDir: chatLogDirOf(path.join(root, 'state', 'ai', 'chats')) }
+  const chatsDir = path.join(baseDir, 'time/2026/W05/01-27/actions/ai-chats')
+  /** Write a transcript that holds its conversation alone, as a save does. */
+  const transcript = async (
+    relative: string,
+    summary: string,
+    messages: ConversationMessage[],
+    parent?: ChatParent,
+  ): Promise<string> => {
+    const file = path.join(chatsDir, relative)
+    await mkdir(path.dirname(file), { recursive: true })
+    const doc = ChatDocument.create({ summary, messages, created: '2026-01-27', updated: '2026-01-27', parent })
+    await writeTextFile(file, doc.toMarkdown())
+    return file
+  }
+  return { root, baseDir, home, transcript }
+}
+
+const OPENING: ConversationMessage[] = [
+  { role: 'user', content: 'What should I focus on for the Atlas launch?', when: '2026-01-27 09:30' },
+  { role: 'assistant', content: 'The demo script and the pricing page copy.', when: '2026-01-27 09:31' },
+]
+
+test('loadResumeSession - a saved chat reads its recorded context from its log file', async () => {
+  const { root, baseDir, home, transcript } = await notebookWithLogs()
+  try {
+    const file = await transcript('09-30_Atlas-Launch-Planning.md', 'Atlas Launch Planning', OPENING)
+    const log: ContextTurnLog[] = [
+      {
+        turn: 1,
+        queries: ['{ chats { path } }'],
+        universe: [{ path: 'projects/Atlas/Roadmap.md', tokens: 1400, score: 7.5 }],
+      },
+    ]
+    await writeChatLog(file, home, log, {
+      session: {
+        version: 1,
+        historyKey: conversationKey(OPENING),
+        modelMessages: [{ role: 'user', content: 'What should I focus on for the Atlas launch?' }],
+      },
+    })
+    const read = async (options: Parameters<typeof loadResumeSession>[1]) => {
+      const { state, recovery } = await loadResumeSession(file, options)
+      return {
+        messages: state.conversation.length,
+        lastTurn: state.lastTurn,
+        queries: state.queries,
+        universe: state.universePaths,
+        modelHistory: state.modelMessages?.length ?? 0,
+        recovered: recovery !== undefined,
+      }
+    }
+
+    assert({
+      given: 'a transcript that holds its conversation alone, with its log in a file under the log folder',
+      should: 'load the recorded context and the model history from the log file',
+      actual: await read(home),
+      expected: {
+        messages: 2,
+        lastTurn: 1,
+        queries: ['{ chats { path } }'],
+        universe: ['projects/Atlas/Roadmap.md'],
+        modelHistory: 1,
+        recovered: true,
+      },
+    })
+
+    assert({
+      given: 'the same transcript loaded without the log folder',
+      should: 'load as its conversation alone, the signal to gather context afresh',
+      actual: await read({ baseDir }),
+      expected: { messages: 2, lastTurn: 0, queries: [], universe: [], modelHistory: 0, recovered: false },
+    })
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test("loadResumeSession - a branch joins its parent's log file to its own", async () => {
+  const { root, baseDir, home, transcript } = await notebookWithLogs()
+  try {
+    const parent = await transcript('09-30_Atlas-Launch-Planning.md', 'Atlas Launch Planning', [
+      ...OPENING,
+      { role: 'user', content: 'Draft the announcement outline.', when: '2026-01-27 09:40' },
+      { role: 'assistant', content: 'Intro, demo, pricing, call to action.', when: '2026-01-27 09:41' },
+    ])
+    await writeChatLog(parent, home, [
+      { turn: 1, queries: ['atlas'], universe: [{ path: 'projects/Atlas/Roadmap.md', tokens: 1400, score: 7.5 }] },
+      { turn: 2, queries: ['atlas', 'announcement'], diff: [{ path: 'projects/Atlas/Announcement.md', tokens: 300 }] },
+    ])
+    const branch = await transcript(
+      '09-30_Atlas-Launch-Planning/10-05_Board-Prep-Instead.md',
+      'Board Prep Instead',
+      [
+        { role: 'user', content: 'Let us do the board prep instead.', when: '2026-01-27 10:05' },
+        { role: 'assistant', content: 'The one-pager and the hiring update.', when: '2026-01-27 10:06' },
+      ],
+      { chat: path.relative(baseDir, parent), turn: 1 },
+    )
+    await writeChatLog(branch, home, [
+      { turn: 2, queries: ['board'], diff: [{ path: 'projects/Board/Pack.md', tokens: 40 }] },
+    ])
+    const loaded = await loadResumeSession(branch, home)
+
+    assert({
+      given: 'a branch left after turn 1, its parent and itself each with a log file',
+      should: "join the parent's entries through that turn to its own, and leave the parent's later turn out",
+      actual: {
+        inherited: loaded.inherited,
+        messages: loaded.state.conversation.length,
+        turns: loaded.state.contextLog.map((entry) => [entry.turn, entry.queries.join(' ')]),
+        universe: loaded.state.universePaths,
+        own: loaded.own.contextLog.map((entry) => entry.turn),
+      },
+      expected: {
+        inherited: 2,
+        messages: 4,
+        turns: [
+          [1, 'atlas'],
+          [2, 'board'],
+        ],
+        universe: ['projects/Atlas/Roadmap.md', 'projects/Board/Pack.md'],
+        own: [2],
+      },
+    })
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
 })

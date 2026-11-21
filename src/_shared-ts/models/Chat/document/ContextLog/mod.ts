@@ -1,10 +1,14 @@
 /**
- * The context log ai:chat appends to saved transcripts — a single trailing
- * `<!-- CONTEXT-LOG ... -->` HTML comment holding versioned JSON, recording
- * what the context pipeline did each turn. Resume depends on it: the
- * recorded universe (turn-1 `universe` plus every `diff` and `pruned`
- * snapshot) and `queries` are what let a later session restore the chat's
- * context state instead of re-deriving it.
+ * The context log of a chat — versioned JSON recording what the context
+ * pipeline did each turn. Resume depends on it: the recorded universe
+ * (turn-1 `universe` plus every `diff` and `pruned` snapshot) and `queries`
+ * are what let a later session restore the chat's context state instead of
+ * re-deriving it.
+ *
+ * A saved chat keeps this JSON in a file of its own under Sky's state
+ * (ChatStore/logFile.ts), never in the notebook. A crash snapshot, and a chat
+ * saved before 2026-11-21, carries the same JSON as a single trailing
+ * `<!-- CONTEXT-LOG ... -->` HTML comment in the transcript.
  *
  * The `version` field is for detection, not compatibility: the reader
  * supports the current version only, and anything else — a future version,
@@ -222,9 +226,11 @@ export interface ContextLogDetails {
   session?: ChatRecovery
 }
 
-export function serializeContextLog(entries: ContextTurnLog[], details?: ContextLogDetails): string {
-  if (entries.length === 0 && !details) return ''
-
+/**
+ * The log as JSON text, the same in a chat's log file and inside a
+ * transcript's trailing comment: fixed key order, one record per line.
+ */
+export function contextLogJson(entries: ContextTurnLog[], details?: ContextLogDetails): string {
   const lines: string[] = ['{', `  "version": ${CONTEXT_LOG_VERSION},`, '  "turns": [']
   entries.forEach((entry, i) => {
     lines.push('    {')
@@ -255,10 +261,16 @@ export function serializeContextLog(entries: ContextTurnLog[], details?: Context
     }
   }
   lines.push('}')
+  return lines.join('\n')
+}
+
+/** The log as the trailing comment a crash snapshot carries; empty when there is nothing to record. */
+export function serializeContextLog(entries: ContextTurnLog[], details?: ContextLogDetails): string {
+  if (entries.length === 0 && !details) return ''
 
   // `-->` inside a string value would terminate the HTML comment early.
   // \u003e survives JSON.parse as `>`, so the escape is round-trip exact.
-  const json = lines.join('\n').replaceAll('-->', '--\\u003e')
+  const json = contextLogJson(entries, details).replaceAll('-->', '--\\u003e')
   return `\n\n${MARKER}\n${json}\n-->\n`
 }
 
@@ -302,6 +314,15 @@ export function splitContextLog(markdown: string): {
   return { body: markdown, entries: [] }
 }
 
+/**
+ * The JSON text of the log a transcript carries as its trailing comment,
+ * exactly as written, or null when it carries none that reads. What a move
+ * to the chat's log file copies: every key, known to this version or not.
+ */
+export function embeddedContextLogJson(markdown: string): string | null {
+  return findLogBlock(markdown)?.json ?? null
+}
+
 /** The serializer's separator newlines collapse back to the body's own single trailing newline. */
 function trimBody(body: string): string {
   return body.replace(/\n+$/, '\n')
@@ -309,7 +330,7 @@ function trimBody(body: string): string {
 
 function findLogBlock(
   markdown: string,
-): { start: number; entries: ContextTurnLog[]; details?: ContextLogDetails } | null {
+): { start: number; json: string; entries: ContextTurnLog[]; details?: ContextLogDetails } | null {
   let from = 0
   let idx: number
   while ((idx = markdown.indexOf(MARKER, from)) !== -1) {
@@ -321,8 +342,9 @@ function findLogBlock(
       // The writer escapes interior `-->`; only the first terminator may close it.
       const end = markdown.indexOf('-->', headerEnd + 1)
       if (end !== -1 && markdown[end - 1] === '\n' && /^\n*$/.test(markdown.slice(end + 3))) {
-        const entries = parseLogJson(markdown.slice(headerEnd + 1, end - 1))
-        if (entries) return { start: idx, ...entries }
+        const json = markdown.slice(headerEnd + 1, end - 1)
+        const entries = parseContextLog(json)
+        if (entries) return { start: idx, json, ...entries }
       }
     }
     from = idx + 1
@@ -330,7 +352,8 @@ function findLogBlock(
   return null
 }
 
-function parseLogJson(text: string): { entries: ContextTurnLog[]; details?: ContextLogDetails } | null {
+/** Read the log's JSON text; null for anything but the current version, as for JSON that does not parse. */
+export function parseContextLog(text: string): { entries: ContextTurnLog[]; details?: ContextLogDetails } | null {
   try {
     const parsed = JSON.parse(text)
     if (parsed?.version !== CONTEXT_LOG_VERSION || !Array.isArray(parsed.turns)) return null

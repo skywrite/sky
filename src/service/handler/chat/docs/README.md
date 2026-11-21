@@ -1,6 +1,6 @@
 ---
 created: 2026-09-01
-updated: 2026-11-09
+updated: 2026-11-21
 ---
 
 # Chat over HTTP — a thread, its tuning, and the story of its context
@@ -308,7 +308,9 @@ filing any unfiled ancestors first. Saving waits for running replies; closing
 the panel does not. The parent title is pinned before the first child is
 created and survives recovery, preserving the folder's identity.
 
-The existing v2 `CONTEXT-LOG` JSON block has two optional additions:
+A saved chat keeps this record in its log file under Sky's state, not in the notebook file
+([the chat log leaves the notebook](../../../../_shared-ts/models/Chat/docs/2026-11-21-the-chat-log-leaves-the-notebook.md)).
+The v2 context log JSON has two optional additions:
 `statistics` aggregates this file's messages, replies, token usage, elapsed
 time, model calls, and tool calls; `session` retains provider history and
 host state for continuation. Statistics exclude inherited turns and child

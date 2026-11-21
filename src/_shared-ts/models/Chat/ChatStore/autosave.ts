@@ -5,10 +5,10 @@
  * that died mid-conversation — a crash, a kill, a power cut — holding
  * everything up to the last completed turn.
  *
- * A snapshot is written in the exact shape of a saved transcript — the
- * same ChatDocument body with the same trailing context log — so
- * loadResumeSession reads one like any archived chat and a lost session
- * can be continued instead of retyped. One difference from a saved
+ * A snapshot is one file: a ChatDocument body with the context log as a
+ * trailing comment, the shape a saved transcript had before its log got a
+ * file of its own (logFile.ts). loadResumeSession reads it whole, so a lost
+ * session can be continued instead of retyped. One difference from a saved
  * branch: a snapshot holds the WHOLE thread, parent turns included, with
  * the parent key beside them — a parent may not have a file yet when the
  * snapshot is written, and insurance must not depend on it. What a

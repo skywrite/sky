@@ -1,6 +1,6 @@
 /**
  * Cross-session usage telemetry for the memory store — mined from the
- * CONTEXT-LOG every saved chat already carries, with zero new
+ * context log every saved chat already keeps, with zero new
  * instrumentation. A log's doc records name every document the context
  * pipeline shipped or cut per turn; counting the ai/memory/ paths that
  * SHIPPED (no `cut` reason) tells the consolidator which memories actually
@@ -11,7 +11,8 @@
 
 import * as path from 'node:path'
 import { readTextFile, walk } from '#shared/fs/mod.ts'
-import { type ContextDocRecord, splitContextLog } from '#shared/models/Chat/document/ContextLog/mod.ts'
+import { readChatLog } from '#shared/models/Chat/ChatStore/logFile.ts'
+import type { ContextDocRecord } from '#shared/models/Chat/document/ContextLog/mod.ts'
 import { dayAIChatsDir } from '#shared/nbfs/mod.ts'
 import type { PlainDate } from '#universal/dates/nbdt/mod.ts'
 
@@ -39,10 +40,13 @@ export interface MemoryUsageReport {
  */
 export async function gatherMemoryUsage(opts: {
   timeDir: string
+  /** Where saved chats keep their logs, under Sky's state */
+  chatLogDir: string
   today: PlainDate
   days: number
 }): Promise<MemoryUsageReport> {
   const usage = new Map<string, MemoryUsage>()
+  const home = { baseDir: path.dirname(opts.timeDir), chatLogDir: opts.chatLogDir }
   let chatsScanned = 0
 
   for (let back = 0; back < opts.days; back++) {
@@ -50,7 +54,7 @@ export async function gatherMemoryUsage(opts: {
     const dir = path.join(opts.timeDir, dayAIChatsDir(day))
     for await (const entry of walk(dir, { includeDirs: false, exts: ['.md'] })) {
       try {
-        const { entries } = splitContextLog(await readTextFile(entry.path))
+        const { entries } = await readChatLog(entry.path, await readTextFile(entry.path), home)
         if (entries.length === 0) continue
         chatsScanned++
         for (const turn of entries) {

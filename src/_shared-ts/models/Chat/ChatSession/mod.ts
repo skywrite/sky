@@ -180,6 +180,8 @@ export interface ChatSessionOptions {
   baseDir: string
   /** Notebook time root — a new chat files under its day directory */
   timeDir: string
+  /** Where saved chats keep their logs, under Sky's state: a transcript holds the conversation alone */
+  chatLogDir: string
   /** The reading budget, in the model's tokens */
   contextTokens?: number
   /**
@@ -1077,7 +1079,10 @@ export default class ChatSession {
       ...options,
     })
     if (!saved.aborted) {
-      this.resumeSession = await loadResumeSession(saved.path, { baseDir: path.dirname(this.opts.timeDir) })
+      this.resumeSession = await loadResumeSession(saved.path, {
+        baseDir: path.dirname(this.opts.timeDir),
+        chatLogDir: this.opts.chatLogDir,
+      })
       this.newMessages = false
     }
     return saved
@@ -1106,6 +1111,7 @@ export default class ChatSession {
       inherited: this.inherited,
       title: this.pinnedTitle ?? undefined,
       timeDir: this.opts.timeDir,
+      chatLogDir: this.opts.chatLogDir,
       day: this.opts.today,
       startTime: this.opts.startTime,
       endTime: await this.now(),

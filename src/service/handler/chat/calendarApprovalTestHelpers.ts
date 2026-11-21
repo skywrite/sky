@@ -101,6 +101,7 @@ export function calendarApprovalTestHost(root: string) {
         startTime: new PlainDateTime('2030-05-01 08:00'),
         baseDir: root,
         timeDir: path.join(root, 'time'),
+        chatLogDir: path.join(root, 'state', 'logs'),
         days: 0,
         contextTokens: 0,
         resume: null,

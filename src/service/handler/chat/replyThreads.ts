@@ -1,6 +1,7 @@
 import * as path from 'node:path'
 import type { Hono } from 'hono'
 import { readTextFile } from '#shared/fs/mod.ts'
+import { readChatLog } from '#shared/models/Chat/ChatStore/logFile.ts'
 import { listDayChats } from '#shared/models/Chat/ChatStore/mod.ts'
 import { replyThreadsDir } from '#shared/models/Chat/document/lineage.ts'
 import ChatDocument from '#shared/models/Chat/document/mod.ts'
@@ -76,6 +77,12 @@ export async function replyThreadsOf(host: ReplyThreadHost, id: string): Promise
     )
       continue
     const doc = ChatDocument.fromMarkdown(await readTextFile(row.path))
+    const chatLogDir = host.options.chatLogDir
+    const log = await readChatLog(
+      row.path,
+      doc.markdown,
+      chatLogDir ? { baseDir: host.baseDir, chatLogDir } : undefined,
+    )
     live.push({
       id: null,
       chat,
@@ -86,7 +93,7 @@ export async function replyThreadsOf(host: ReplyThreadHost, id: string): Promise
       state: 'done',
       busy: false,
       preview: doc.conversation.findLast((message) => message.role === 'assistant')?.content ?? '',
-      statistics: chatStatistics(doc.contextLog, doc.conversation.length),
+      statistics: chatStatistics(log.entries, doc.conversation.length),
     })
   }
   return live.sort((a, b) => a.turn - b.turn)

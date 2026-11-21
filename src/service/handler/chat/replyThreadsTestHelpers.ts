@@ -7,6 +7,7 @@ import type { ToolExecutionEvent } from '#shared/models/Chat/ChatEngine/toolExec
 import ChatSession from '#shared/models/Chat/ChatSession/mod.ts'
 import type { ToolFactory } from '#shared/models/Chat/ChatSession/mod.ts'
 import { chatAutosaveFilename, listChatAutosaves } from '#shared/models/Chat/ChatStore/autosave.ts'
+import { chatLogDirOf } from '#shared/models/Chat/ChatStore/logFile.ts'
 import { loadResumeSession } from '#shared/models/Chat/ChatStore/mod.ts'
 import { setUserSpeakerLabel } from '#shared/models/Chat/document/mod.ts'
 import { PlainDate, PlainDateTime } from '#universal/dates/nbdt/mod.ts'
@@ -45,15 +46,17 @@ export function replyThreadTestHost(
 ): ChatRoutesOptions {
   setUserSpeakerLabel('Jane')
   const stateDir = path.join(baseDir, 'state')
+  const chatLogDir = chatLogDirOf(stateDir)
   const timeDir = path.join(baseDir, 'time')
   const snapshotPath = (id: string, start: PlainDateTime) => path.join(stateDir, chatAutosaveFilename(start, id))
   const openSaved: NonNullable<ChatRoutesOptions['openSaved']> = async (file) => {
     const absolute = path.resolve(baseDir, file)
     if (!absolute.startsWith(`${timeDir}${path.sep}`) || !(await exists(absolute))) return null
-    return { resume: await loadResumeSession(absolute, { baseDir }), startTime: START }
+    return { resume: await loadResumeSession(absolute, { baseDir, chatLogDir }), startTime: START }
   }
   return {
     timeDir,
+    chatLogDir,
     attachmentsRoot: path.join(baseDir, 'attachments'),
     snapshotPath,
     openSaved,
@@ -109,6 +112,7 @@ export function replyThreadTestHost(
         days: 7,
         baseDir,
         timeDir,
+        chatLogDir,
         contextTokens: 0,
         resume: restore?.resume ?? null,
         restore: restore?.resume ? undefined : restore?.state,

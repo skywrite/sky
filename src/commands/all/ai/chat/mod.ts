@@ -44,6 +44,7 @@ import { fetchWithConnectRetry } from '#shared/models/Chat/ChatContext/fetchCont
 import type { RebuildReport } from '#shared/models/Chat/ChatContext/mod.ts'
 import ChatSession, { type ChatSessionEvent } from '#shared/models/Chat/ChatSession/mod.ts'
 import { chatAutosaveFilename, sweepChatAutosaves } from '#shared/models/Chat/ChatStore/autosave.ts'
+import { chatLogDirOf } from '#shared/models/Chat/ChatStore/logFile.ts'
 import { listDayChats, loadResumeSession, type ResumeSession } from '#shared/models/Chat/ChatStore/mod.ts'
 import { firstWordsSummary } from '#shared/models/Chat/document/mod.ts'
 import { buildChatTranscript, CHAT_ENRICH } from '#shared/models/Chat/enrich.ts'
@@ -336,6 +337,8 @@ export default class AiChatTask extends Command {
     // the background.
     const autosavePath = path.join(DIR_STATE_AI_CHATS, chatAutosaveFilename(startTime, process.pid))
     sweepChatAutosaves(DIR_STATE_AI_CHATS, startTime.plainDate).catch(() => {})
+    // A saved chat's machine record stays out of the notebook: it has a file here (ChatStore/logFile.ts).
+    const chatLogDir = chatLogDirOf(DIR_STATE_AI_CHATS)
 
     // --resume: pick one of the day's saved chats (--when shifts the day)
     // and continue it as if the session never exited: conversation reseeded,
@@ -377,7 +380,7 @@ export default class AiChatTask extends Command {
       }
 
       // A branch loads as the whole thread it is: its parent's turns, then its own.
-      resumeSession = await loadResumeSession(filePath, { baseDir })
+      resumeSession = await loadResumeSession(filePath, { baseDir, chatLogDir })
       if (resumeSession.state.conversation.length === 0) {
         return CommandResult.fail(`Nothing to resume: no conversation parsed from ${filePath}`)
       }
@@ -545,6 +548,7 @@ export default class AiChatTask extends Command {
       days,
       baseDir,
       timeDir,
+      chatLogDir,
       contextTokens: contextBudget,
       tokenRatio: ratioFor(reasoningProfile.model),
       summaryBaseline,

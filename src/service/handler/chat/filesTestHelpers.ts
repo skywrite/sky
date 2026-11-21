@@ -46,6 +46,7 @@ export function fileChatHost(
         days: 0,
         baseDir: root,
         timeDir: path.join(root, 'time'),
+        chatLogDir: path.join(root, 'state', 'logs'),
         contextTokens: prefs.contextTokens ?? 0,
         resume: null,
         restore: restore?.state,

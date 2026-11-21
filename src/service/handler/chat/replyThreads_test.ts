@@ -1,8 +1,8 @@
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import * as os from 'node:os'
 import * as path from 'node:path'
+import { chatLogDirOf, readChatLog } from '#shared/models/Chat/ChatStore/logFile.ts'
 import { listDayChats, loadResumeSession } from '#shared/models/Chat/ChatStore/mod.ts'
-import { splitContextLog } from '#shared/models/Chat/document/ContextLog/mod.ts'
 import { createDomainResolvers } from '#shared/models/DomainCollection/query/resolvers/mod.ts'
 import MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
 import { assert, test } from '#test'
@@ -17,6 +17,8 @@ const post = (app: App, url: string, body: unknown) =>
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   })
+/** Where the test host's saved chats keep their logs: under its state folder, never in the notebook. */
+const logHome = (base: string) => ({ baseDir: base, chatLogDir: chatLogDirOf(path.join(base, 'state')) })
 function reviewContent(messages: ReplyTestCall['messages'] = []): string {
   const pdfs = messages.flatMap((message) =>
     message.role === 'user' && Array.isArray(message.content)
@@ -128,19 +130,20 @@ test('reply threads inherit the review and tools, isolate refinements, and persi
     const files = await listDayChats(host.timeDir)
     const childFile = files.find((row) => row.parent?.kind === 'thread')!
     const childMarkdown = await readFile(childFile.path, 'utf8')
-    const details = splitContextLog(childMarkdown).details!
+    const details = (await readChatLog(childFile.path, childMarkdown, logHome(base))).details!
+    const rootLog = await readChatLog(saved.saved.path, await readFile(saved.saved.path, 'utf8'), logHome(base))
     assert({
       given: 'saving the main conversation with a refined response thread',
       should: 'save its child under its own directory with only its own dialogue and usage',
       actual: {
         status: savedResponse.status,
         ownedPath: childFile.path.startsWith(`${saved.saved.path.replace(/\.md$/, '')}/_threads/`),
-        parentInBody: splitContextLog(childMarkdown).body.includes('Review all five mock contracts.'),
+        parentInBody: childMarkdown.includes('Review all five mock contracts.'),
         replies: details.statistics?.replies,
         input: details.statistics?.usage.input,
         tools: details.statistics?.tools.me_voice?.calls,
         retainsTools: JSON.stringify(details.session?.modelMessages).includes('legal_review'),
-        rootInput: splitContextLog(await readFile(saved.saved.path, 'utf8')).details?.statistics?.usage.input,
+        rootInput: rootLog.details?.statistics?.usage.input,
         closed: (await json(app, '/')).threads.length,
       },
       expected: {
@@ -274,7 +277,7 @@ test('saving a recovered nested branch preserves the full ancestry and its respo
     }
     const files = await listDayChats(host.timeDir)
     const responseFile = files.find((row) => row.parent?.kind === 'thread')!
-    const resumed = await loadResumeSession(responseFile.path, { baseDir: base })
+    const resumed = await loadResumeSession(responseFile.path, logHome(base))
     assert({
       given: 'two levels of unfiled branches recovered before the deepest branch is saved',
       should: 'file every ancestor at its original identity and reconstruct all context for its thread',

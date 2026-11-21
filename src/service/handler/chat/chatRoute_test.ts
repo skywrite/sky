@@ -149,6 +149,7 @@ async function testHost(
         days: 7,
         baseDir: BASE_DIR,
         timeDir: tmp,
+        chatLogDir: `${tmp}-logs`,
         contextTokens: prefs.contextTokens,
         // As the web host does: the budget's text is counted at the model's ratio, which a restart restores by.
         tokenRatio: ratioFor(prefs.profile ?? 'claude-opus-4-6'),
@@ -198,12 +199,15 @@ function appWith(host: ChatRoutesOptions) {
 
 type App = ReturnType<typeof createTestHttpApp>
 
+/** Where a test host's saved chats keep their logs: beside its temp notebook, never in it. */
+const logHome = (host: { tmp: string }) => ({ baseDir: path.dirname(host.tmp), chatLogDir: `${host.tmp}-logs` })
+
 test('source chat links follow live chats and survive saving, closing and restarting', async () => {
   const host = await testHost({ sourceLinks: true })
   host.openSaved = async (chat) => {
     const file = path.resolve(path.dirname(host.tmp), chat)
     if (!file.startsWith(host.tmp + path.sep) || !(await exists(file))) return null
-    return { resume: await loadResumeSession(file, { baseDir: path.dirname(host.tmp) }), startTime: START }
+    return { resume: await loadResumeSession(file, logHome(host)), startTime: START }
   }
   try {
     const app = appWith(host)
@@ -1467,7 +1471,7 @@ test('fixed model configuration survives preset edits, deletion, branching, save
     const ended = (await (await post(recovered, '/chat/fixed/end', { save: true })).json()) as {
       saved: { path: string }
     }
-    const saved = await loadResumeSession(ended.saved.path, { baseDir: path.dirname(host.tmp) })
+    const saved = await loadResumeSession(ended.saved.path, logHome(host))
     const reopened = appWith({
       ...host,
       snapshots: undefined,
@@ -2733,7 +2737,7 @@ test({ name: 'chat route - a saved chat opens as a thread to continue, once' }, 
     openSaved: async (chat) => {
       const file = path.join(base, chat)
       if (!(await exists(file))) return null
-      return { resume: await loadResumeSession(file, { baseDir: base }), startTime: START }
+      return { resume: await loadResumeSession(file, logHome(host)), startTime: START }
     },
   })
   await (await send(app, 'http://localhost/chat/s1/messages', { message: 'What should I focus on today?' })).text()

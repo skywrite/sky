@@ -337,6 +337,12 @@ export interface ChatRoutesOptions {
   endDefaults?: Omit<EndOptions, 'save'>
   /** Notebook time root — the day view lists the day's saved chats from it */
   timeDir: string
+  /**
+   * Where saved chats keep their logs, under Sky's state. A saved reply
+   * thread's statistics are read from there; absent, only a log the
+   * transcript itself carries is read.
+   */
+  chatLogDir?: string
   /** me/about.md — the day view tells the owner's threads from archival ones by it */
   aboutMePath?: string
 }

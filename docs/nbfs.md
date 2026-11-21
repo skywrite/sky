@@ -1,6 +1,6 @@
 ---
 created: 2026-07-28
-updated: 2026-10-11
+updated: 2026-11-21
 ---
 
 # Notebook time and the notebook filesystem
@@ -122,6 +122,8 @@ is the tell. Twice in September 2026 a writer put such a key in a file (`org_ref
 person, `audioClips` on an audio conversation) and both were taken back out; see
 [fingerprints leaving the notebook](../src/service/handler/import/docs/2026-09-28-fingerprints-leave-the-notebook.md)
 and the automations note in `src/_shared-ts/config.ts`.
+The same holds for a block at the end of a file: a saved chat's machine record lives in state, keyed by the chat's
+path ([the chat log leaves the notebook](../src/_shared-ts/models/Chat/docs/2026-11-21-the-chat-log-leaves-the-notebook.md)).
 
 ## Notebook time
 
