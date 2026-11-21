@@ -140,7 +140,8 @@ export function writingDraftTools(
   /** Drafts written this turn. Sky revising one before the turn ends is its own work, not the owner's use. */
   const writtenThisTurn = new Set<string>()
   return {
-    async draft(input) {
+    async draft(input, signal) {
+      signal?.throwIfAborted()
       const { original, ...request } = input
       // Words passed instead of an id name the draft that holds them; a selected draft is the default target.
       const id = request.newDraft
@@ -153,7 +154,8 @@ export function writingDraftTools(
         const before: WritingDraft = waiting ?? (await store.require(id, request.draftRevision))
         if (!waiting) await store.beforeChange(before, 'sky')
         const writing = revising(currentDraftVersion(before).text, request, request.instruction || direction(), before)
-        const result = await store.voice.draft(writing)
+        const result = await store.voice.draft(writing, signal)
+        signal?.throwIfAborted()
         if (waiting && writtenThisTurn.has(waiting.id)) {
           // The page lists this result as the same draft's next version, still unsaved.
           const next = structuredClone(waiting)
@@ -175,7 +177,7 @@ export function writingDraftTools(
         return { ...result, draftId: target.id, draftRevision: saved.revision }
       }
       // Untouched words stay in the chat that holds them. The owner's first use saves the record.
-      const result = await store.voice.draft(standaloneDraft(input, request.instruction || direction()))
+      const result = await store.voice.draft(standaloneDraft(input, request.instruction || direction()), signal)
       // A provisional id, not a record's name: the record takes a readable one when the owner first uses it.
       const draftId = crypto.randomUUID().replaceAll('-', '')
       writtenThisTurn.add(draftId)

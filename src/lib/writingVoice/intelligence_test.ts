@@ -1,3 +1,4 @@
+import { spyOn } from 'bun:test'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import * as path from 'node:path'
@@ -11,6 +12,8 @@ import { reviseDraft } from './draftChanges.ts'
 import { WritingDraftStore } from './drafts.ts'
 import { createVoiceIntelligence } from './intelligence.ts'
 import { WritingVoiceStore } from './store.ts'
+import { failure, voiceFixture } from './testHelpers.ts'
+import { createWritingVoiceTools } from './tools.ts'
 import { EditSchema, QuestionSchema } from './types.ts'
 
 const example = EditSchema.parse({
@@ -28,6 +31,50 @@ const question = {
   question: 'Why did you remove the introduction?',
   options: ['I prefer direct updates.', 'This recipient already has the context.'],
 }
+
+test('the draft deadline and the chat Stop both cancel the provider request', async () => {
+  const deadline = new AbortController()
+  const timeout = spyOn(AbortSignal, 'timeout').mockImplementation(() => deadline.signal)
+  let started = Promise.withResolvers<void>()
+  const model = new MockLanguageModelV4({
+    doGenerate: async ({ abortSignal }) => {
+      started.resolve()
+      abortSignal!.throwIfAborted()
+      return new Promise<never>((_resolve, reject) => {
+        abortSignal!.addEventListener('abort', () => reject(abortSignal!.reason), { once: true })
+      })
+    },
+  })
+  const writer = createVoiceIntelligence(() => ({ model, maxRetries: 0 }))
+  const fixture = await voiceFixture({ draft: writer.draft })
+  try {
+    const tool = createWritingVoiceTools(fixture.drafts, { source: 'chat:sample' }).me_voice as {
+      execute(input: unknown, call: { abortSignal: AbortSignal }): Promise<{ success: boolean; error?: string }>
+    }
+    const stop = new AbortController()
+    const pending = tool.execute({ action: 'draft', meaning: 'Draft an update.' }, { abortSignal: stop.signal })
+    await started.promise
+    stop.abort(new Error('Stopped by owner.'))
+    const stopped = await pending
+
+    started = Promise.withResolvers<void>()
+    const timed = failure(writer.draft({ meaning: 'Draft an update.', rules: '', lessons: [], examples: [] }))
+    await started.promise
+    deadline.abort(new DOMException('Deadline elapsed.', 'TimeoutError'))
+    const timedMessage = await timed
+    // The elapsed deadline also ends the learning request immediately.
+    await failure(writer.question(example))
+    assert({
+      given: 'a stopped chat tool, a writer reaching its deadline, and a learning question',
+      should: 'abort both draft calls at the provider and keep the shorter learning deadline',
+      actual: [stopped.success, stopped.error, timedMessage, timeout.mock.calls.map(([ms]) => ms)],
+      expected: [false, 'Stopped by owner.', 'Ghostwriter timed out after four minutes.', [240_000, 240_000, 120_000]],
+    })
+  } finally {
+    timeout.mockRestore()
+    await fixture.dispose()
+  }
+})
 
 function hasUnsupportedArray(schema: unknown): boolean {
   if (!schema || typeof schema !== 'object') return false

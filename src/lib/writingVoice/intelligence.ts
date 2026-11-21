@@ -18,7 +18,10 @@ import {
 } from './types.ts'
 
 export interface VoiceIntelligence {
-  draft: (input: VoiceDraftInput & { rules: string; lessons: VoiceLesson[]; examples: VoiceEdit[] }) => Promise<string>
+  draft: (
+    input: VoiceDraftInput & { rules: string; lessons: VoiceLesson[]; examples: VoiceEdit[] },
+    signal?: AbortSignal,
+  ) => Promise<string>
   question: (edit: VoiceEdit) => Promise<VoiceQuestion>
   learn: (edit: VoiceEdit) => Promise<VoiceLesson>
   compact: (rules: string, edits: VoiceEdit[]) => Promise<VoiceCompaction>
@@ -32,20 +35,31 @@ const PROMPTS = {
 }
 
 export function createVoiceIntelligence(model: () => ResolvedModel = writingVoiceModel): VoiceIntelligence {
-  async function ask<T>(kind: keyof typeof PROMPTS, schema: z.ZodType<T>, input: unknown): Promise<T> {
+  async function ask<T>(
+    kind: keyof typeof PROMPTS,
+    schema: z.ZodType<T>,
+    input: unknown,
+    signal?: AbortSignal,
+  ): Promise<T> {
     const file = PROMPTS[kind]
+    const deadline = AbortSignal.timeout(kind === 'draft' ? 240_000 : 120_000)
+    const abortSignal = signal ? AbortSignal.any([signal, deadline]) : deadline
     const result = await generateText({
       ...model(),
       output: Output.object({ schema }),
       instructions: `You are ${toolDisplayName('me_voice')}, the notebook owner's drafting agent.\n\n${renderPromptFile(await readPromptFile(file), file, {}).output}`,
       prompt: JSON.stringify(input),
-      abortSignal: AbortSignal.timeout(120_000),
+      abortSignal,
+    }).catch((error: unknown) => {
+      if (kind === 'draft' && deadline.aborted && abortSignal.reason === deadline.reason)
+        throw new Error('Ghostwriter timed out after four minutes.')
+      throw error
     })
     return result.output
   }
   return {
-    draft: async (input) =>
-      (await ask('draft', z.object({ draft: z.string().min(1).max(MAX_WRITING_CHARS) }), input)).draft,
+    draft: async (input, signal) =>
+      (await ask('draft', z.object({ draft: z.string().min(1).max(MAX_WRITING_CHARS) }), input, signal)).draft,
     question: (edit) => ask('question', QuestionSchema, edit),
     learn: (edit) => ask('learn', LessonSchema, edit),
     compact: (rules, examples) => ask('compact', CompactionSchema, { rules, examples }),

@@ -64,7 +64,10 @@ export type WritingDraftView = WritingDraft & { turn: number; unsaved?: boolean 
 
 export interface WritingDraftToolHost {
   /** A new draft has no record yet: it returns under a provisional id, and the owner's first use saves it under a readable one. */
-  draft(input: ChatDraftInput): Promise<VoiceDraft & { draftId: string; draftRevision: number; unsaved?: true }>
+  draft(
+    input: ChatDraftInput,
+    signal?: AbortSignal,
+  ): Promise<VoiceDraft & { draftId: string; draftRevision: number; unsaved?: true }>
   accept(id: string, revision: number): Promise<unknown>
   learn(input: VoiceEditInput & { draftId?: string; draftRevision?: number }): Promise<unknown>
 }

@@ -34,7 +34,7 @@ export function createWritingVoiceRoutes(drafts: WritingDraftStore): Hono {
   })
   app.post('/draft', async (c) => {
     const input = DraftInputSchema.parse(await c.req.json())
-    return c.json(await runWithUsageSource('me:voice:draft', () => voice.draft(input)))
+    return c.json(await runWithUsageSource('me:voice:draft', () => voice.draft(input, c.req.raw.signal)))
   })
   app.post('/edits', async (c) => {
     const input = EditInputSchema.omit({ source: true }).parse(await c.req.json())

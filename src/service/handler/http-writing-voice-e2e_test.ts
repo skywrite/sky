@@ -1,3 +1,4 @@
+import { once } from 'node:events'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import * as path from 'node:path'
@@ -28,7 +29,19 @@ test(
   },
   async () => {
     const root = await mkdtemp(path.join(tmpdir(), 'sky-writing-voice-browser-'))
-    const host = writingDraftTestHost(root)
+    const started = Promise.withResolvers<void>()
+    const stopped = Promise.withResolvers<void>()
+    let delayDraft = false
+    const host = writingDraftTestHost(root, {
+      draft: async (input, signal) => {
+        if (!delayDraft) return input.meaning
+        if (!signal) throw new Error('The settings draft needs a cancellation signal.')
+        started.resolve()
+        if (!signal.aborted) await once(signal, 'abort')
+        stopped.resolve()
+        throw signal.reason
+      },
+    })
     const drafts = host.writingDrafts
     const storage = createOutboxStorage({ DIR_BASE: root, DIR_STATE: path.join(root, 'data', 'state') })
     const store = new OutboxStore(storage.dir, storage.dir, drafts.voice.store, drafts, storage.initialize)
@@ -145,6 +158,19 @@ test(
       await page.getByLabel('What do you want to say?', { exact: true }).fill(SAMPLE.original)
       await page.getByRole('button', { name: 'Draft in my voice', exact: true }).click()
       await page.getByLabel('Revise the draft', { exact: true }).fill(`${SAMPLE.revised} Thank you.`)
+      delayDraft = true
+      await page.getByRole('button', { name: 'Draft in my voice', exact: true }).click()
+      await started.promise
+      await page.getByRole('button', { name: 'Stop drafting', exact: true }).click()
+      await stopped.promise
+      await page.getByText('Draft canceled.', { exact: true }).waitFor()
+      assert({
+        given: 'an existing draft edited by the owner and a new settings draft stopped mid-request',
+        should: 'cancel the model request and preserve the words under review',
+        actual: await page.getByLabel('Revise the draft', { exact: true }).inputValue(),
+        expected: `${SAMPLE.revised} Thank you.`,
+      })
+      delayDraft = false
       await page.getByRole('button', { name: 'Learn from this revision', exact: true }).click()
       await page.getByRole('button', { name: 'Write my own', exact: true }).click()
       await page

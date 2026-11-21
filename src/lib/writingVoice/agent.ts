@@ -36,21 +36,26 @@ export class WritingVoice {
     return ((await this.lessons?.edits()) ?? []).filter((edit) => edit.answer && edit.lesson && !folding.has(edit.id))
   }
 
-  async draft(input: VoiceDraftInput): Promise<VoiceDraft> {
+  async draft(input: VoiceDraftInput, signal?: AbortSignal): Promise<VoiceDraft> {
+    signal?.throwIfAborted()
     const value = DraftInputSchema.parse(input)
     await this.store.initialize()
     const [rules, learned] = await Promise.all([this.store.rules(), this.learned()])
     const relevant = learned.toSorted((a, b) => Number(b.medium === value.medium) - Number(a.medium === value.medium))
-    const draft = await this.intelligence.draft({
-      ...value,
-      rules: rules.text,
-      lessons: learned.map((edit) => edit.lesson!),
-      examples: relevant.slice(0, 4).map((edit) => ({
-        ...edit,
-        original: edit.original.slice(0, 2000),
-        revised: edit.revised.slice(0, 2000),
-      })),
-    })
+    const draft = await this.intelligence.draft(
+      {
+        ...value,
+        rules: rules.text,
+        lessons: learned.map((edit) => edit.lesson!),
+        examples: relevant.slice(0, 4).map((edit) => ({
+          ...edit,
+          original: edit.original.slice(0, 2000),
+          revised: edit.revised.slice(0, 2000),
+        })),
+      },
+      signal,
+    )
+    signal?.throwIfAborted()
     if (!draft.trim() || draft.length > MAX_WRITING_CHARS)
       throw new WritingVoiceError('The writing agent returned an invalid draft.')
     this.scheduleCompaction()

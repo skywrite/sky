@@ -67,14 +67,16 @@ export function createWritingVoiceTools(
     [WRITING_VOICE_TOOL]: tool({
       description: `${AGENT_NAME} drafts and revises only the owner's personal communications in their own writing voice: emails, messages, letters, personal posts, and scripts they will deliver. UI copy, product copy, mockups, specifications, documentation, sample dialogue, and other general writing belong directly in chat; do not draft, revise, accept, or learn from them here. Learn only from the owner's accepted edits to their own communications by saving one original/revised example and asking one question with two answer choices. The same rules and confirmed lessons serve Chat and Outbox. Refer to this agent as ${AGENT_NAME}.`,
       inputSchema: ToolInput,
-      execute: async (raw) =>
+      execute: async (raw, call) =>
         runWithUsageSource('me:voice', async () => {
           try {
             const input = Input.parse(raw)
             switch (input.action) {
-              case 'draft':
-                if (options.drafts) return { success: true, ...(await options.drafts.draft(input)) }
-                return { success: true, ...(await voice.draft(standaloneDraft(input))) }
+              case 'draft': {
+                const signal = call?.abortSignal
+                if (options.drafts) return { success: true, ...(await options.drafts.draft(input, signal)) }
+                return { success: true, ...(await voice.draft(standaloneDraft(input), signal)) }
+              }
               case 'accept':
                 if (!options.drafts)
                   return { success: false, error: 'Editable draft acceptance is available in web chat.' }

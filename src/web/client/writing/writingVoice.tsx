@@ -6,13 +6,20 @@ import './writingVoice.css'
 
 const API = '/settings/_api/writing-voice'
 
-export async function writingVoiceRequest<T>(route: string, method = 'GET', body?: unknown): Promise<T> {
+export async function writingVoiceRequest<T>(
+  route: string,
+  method = 'GET',
+  body?: unknown,
+  signal?: AbortSignal,
+): Promise<T> {
   const response = await fetch(`${API}${route}`, {
     method,
+    signal,
     headers: { 'Content-Type': 'application/json' },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   })
   const data = (await response.json().catch(() => ({}))) as { message?: string }
+  signal?.throwIfAborted()
   if (!response.ok) throw new Error(data.message ?? `Sky answered ${response.status}.`)
   return data as T
 }
@@ -257,6 +264,7 @@ export function WritingVoicePane({
   const [note, setNote] = useState('')
   const [busy, setBusy] = useState(false)
   const [meaning, setMeaning] = useState('')
+  const [drafting, setDrafting] = useState<AbortController | null>(null)
   const [medium, setMedium] = useState('Email')
   const [original, setOriginal] = useState('')
   const [revised, setRevised] = useState('')
@@ -280,6 +288,7 @@ export function WritingVoicePane({
     const timer = setInterval(() => void reload().catch(() => {}), 2500)
     return () => clearInterval(timer)
   }, [status?.compacting, reload])
+  useEffect(() => () => drafting?.abort(), [drafting])
   const act = async (work: () => Promise<void>) => {
     if (busy) return
     setBusy(true)
@@ -294,6 +303,21 @@ export function WritingVoicePane({
       setBusy(false)
     }
   }
+  const write = () =>
+    act(async () => {
+      const stop = new AbortController()
+      setDrafting(stop)
+      try {
+        const result = await writingVoiceRequest<VoiceDraft>('/draft', 'POST', { meaning, medium }, stop.signal)
+        setOriginal(result.draft)
+        setRevised(result.draft)
+      } catch (problem) {
+        if (!stop.signal.aborted) throw problem
+        setNote('Draft canceled.')
+      } finally {
+        setDrafting(null)
+      }
+    })
   return (
     <div className="sky-writing-settings">
       {error && (
@@ -367,18 +391,13 @@ export function WritingVoicePane({
           maxLength={40_000}
         />
         <div className="sky-writing-actions">
-          <Button
-            disabled={busy || !meaning.trim() || !medium.trim()}
-            onClick={() =>
-              void act(async () => {
-                const result = await writingVoiceRequest<VoiceDraft>('/draft', 'POST', { meaning, medium })
-                setOriginal(result.draft)
-                setRevised(result.draft)
-              })
-            }
-          >
-            Draft in my voice
-          </Button>
+          {drafting ? (
+            <Button onClick={() => drafting.abort()}>Stop drafting</Button>
+          ) : (
+            <Button disabled={busy || !meaning.trim() || !medium.trim()} onClick={() => void write()}>
+              Draft in my voice
+            </Button>
+          )}
         </div>
         {original && (
           <>

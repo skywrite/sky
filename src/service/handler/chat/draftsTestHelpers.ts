@@ -31,7 +31,7 @@ export function writingDraftTestHost(
   calls: {
     inputs?: VoiceDraftInput[]
     briefs?: string[]
-    draft?: (input: VoiceDraftInput) => string
+    draft?: (input: VoiceDraftInput, signal?: AbortSignal) => string | Promise<string>
     reply?: (text: string) => string
     /** Another me_voice call in the same turn, built from the result before it: Sky correcting its own draft. */
     followUp?: (result: Record<string, unknown>) => Record<string, unknown> | undefined
@@ -39,9 +39,9 @@ export function writingDraftTestHost(
 ) {
   const voice = new WritingVoice(new WritingVoiceStore(root, path.join(root, 'voice-state')), {
     ...intelligence,
-    draft: async (input) => {
+    draft: async (input, signal) => {
       calls.inputs?.push(input)
-      return calls.draft?.(input) ?? (/warmer/i.test(input.instruction ?? '') ? WARM_DRAFT : input.meaning)
+      return calls.draft?.(input, signal) ?? (/warmer/i.test(input.instruction ?? '') ? WARM_DRAFT : input.meaning)
     },
     question: async (example) => ({
       before: example.original.slice(0, 499),
