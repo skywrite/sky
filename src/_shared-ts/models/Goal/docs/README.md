@@ -1,6 +1,6 @@
 ---
 created: 2026-11-21
-updated: 2026-11-21
+updated: 2026-11-22
 ---
 
 # Goals — one file per goal
@@ -33,8 +33,31 @@ Frontmatter is `title`, `category` (Personal or Professional), `created`, `updat
 The body is free prose.
 `title` falls back to the first heading, so a file with no frontmatter still reads correctly.
 
-Dates, a tracked number and a breakdown are deliberately absent.
-They arrive with the screens that read them, not before.
+A goal that can be measured adds what the Future screen reads:
+
+| Key | What it says |
+| --- | --- |
+| `due` | The date the goal is for. |
+| `start` | The day work began. Pace and progress count from here, not from `created`. |
+| `track` | The tracker whose number measures the goal, by name. |
+| `target` | The value that number should reach. |
+| `checkpoints` | The same number at earlier dates, one line each: `- 20 by 2026-08-01`. |
+| `serves` | The bigger goal this one serves: `goals/<name>`. |
+
+`start` is its own key because a goal is often written long before anyone works on it.
+Counting from `created` would call the months it sat untouched a slow pace.
+
+## How a goal breaks down
+
+A yearly goal breaks down in two ways, and they are stored differently on purpose.
+
+- **The same number at an earlier date** is a checkpoint: a line inside the goal's file.
+  It has nothing of its own to say, so a file for it would hold a title and nothing else.
+- **A different outcome that helps** is a goal of its own, in its own file, with a `serves` line.
+  It has its own reason, its own number and its own date.
+
+Weekly actions are neither.
+They are to-dos on a day, picked with the goal in view.
 
 ## Who reads goals
 

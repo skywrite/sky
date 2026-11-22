@@ -15,6 +15,25 @@ export interface Goal {
 
 export type GoalCategory = 'Personal' | 'Professional'
 
+/** A dated value on the way to a goal's target */
+export interface GoalCheckpoint {
+  value: number
+  date: PlainDate
+}
+
+/** Coerce a YAML value to a PlainDate, or undefined when it is not a real date. */
+function toPlainDate(value: unknown): PlainDate | undefined {
+  if (value instanceof PlainDate) return value
+  if (typeof value === 'string' && value.trim()) {
+    try {
+      return new PlainDate(value.trim())
+    } catch {
+      return undefined
+    }
+  }
+  return undefined
+}
+
 /**
  * GoalDocument model - one goal: what the person is going after, and why.
  *
@@ -27,7 +46,20 @@ export type GoalCategory = 'Personal' | 'Professional'
  * reads the areas written inside them. See ../docs/README.md.
  */
 export default class GoalDocument extends Document {
-  static override yamlKeyOrder = ['title', 'category', 'created', 'updated', 'rel', 'tags']
+  static override yamlKeyOrder = [
+    'title',
+    'category',
+    'start',
+    'due',
+    'track',
+    'target',
+    'checkpoints',
+    'serves',
+    'created',
+    'updated',
+    'rel',
+    'tags',
+  ]
 
   private _goals: Goal[] | null = null
   private _discoveryNotes: string | null = null
@@ -53,6 +85,56 @@ export default class GoalDocument extends Document {
     if (typeof title === 'string' && title.trim()) return title.trim()
     const heading = this.markdown.match(/^#\s+(.+)$/m)
     return heading ? heading[1].trim() : `${this.category} Goals`
+  }
+
+  /** The date the goal is for */
+  get due(): PlainDate | undefined {
+    return toPlainDate(this.yaml['due'])
+  }
+
+  /**
+   * The day work on the goal began. A goal can sit for months after it is
+   * written; pace and progress count from here, not from `created`.
+   */
+  get start(): PlainDate | undefined {
+    return toPlainDate(this.yaml['start'])
+  }
+
+  /** The tracker whose number measures the goal, by name (as in tracking/<name>) */
+  get track(): string | undefined {
+    const track = this.yaml['track']
+    return typeof track === 'string' && track.trim() ? track.trim().replace(/^tracking\//, '') : undefined
+  }
+
+  /** The value that number should reach */
+  get target(): number | undefined {
+    const target = this.yaml['target']
+    const value = typeof target === 'number' ? target : typeof target === 'string' ? Number(target.trim()) : NaN
+    return Number.isFinite(value) && target !== '' ? value : undefined
+  }
+
+  /**
+   * The same number at earlier dates, oldest first. Each is one line in the
+   * file, written the way it is said: `- 20 by 2026-08-01`. A different
+   * outcome is a goal of its own (see `serves`), not a checkpoint.
+   */
+  get checkpoints(): GoalCheckpoint[] {
+    const lines = this.yaml['checkpoints']
+    if (!Array.isArray(lines)) return []
+    const checkpoints: GoalCheckpoint[] = []
+    for (const line of lines) {
+      const match =
+        typeof line === 'string' ? line.trim().match(/^(-?\d+(?:\.\d+)?)\s+by\s+(\d{4}-\d{2}-\d{2})$/) : null
+      const date = match ? toPlainDate(match[2]) : undefined
+      if (match && date) checkpoints.push({ value: Number(match[1]), date })
+    }
+    return checkpoints.sort((a, b) => a.date.ymd.localeCompare(b.date.ymd))
+  }
+
+  /** The bigger goal this one serves, by name: `serves: goals/<name>` */
+  get serves(): string | undefined {
+    const serves = this.yaml['serves']
+    return typeof serves === 'string' && serves.trim() ? serves.trim().replace(/^goals\//, '') : undefined
   }
 
   /**
