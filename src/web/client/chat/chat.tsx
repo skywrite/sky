@@ -17,7 +17,12 @@ import type { WritingDraftView } from '#lib/writingVoice/draftTypes.ts'
 import { splitChatFiles } from '#universal/ai/chatFiles.ts'
 import { splitChatImages } from '#universal/ai/chatImages.ts'
 import type { ChatPlan, QueuedChatInstruction } from '#universal/ai/chatPlan.ts'
-import { contextAdjustmentText, type ContextAdjustment } from '#universal/ai/contextAdjustment.ts'
+import {
+  compactionLine,
+  contextAdjustmentNote,
+  contextAdjustmentText,
+  type ContextAdjustment,
+} from '#universal/ai/contextAdjustment.ts'
 import { effortLabel, type Effort, type EffortOverride } from '#universal/ai/effort.ts'
 import { imageMarkupInstructions, type ImageMarkup } from '#universal/ai/imageMarkup.ts'
 import { sourceReference, splitSources } from '#universal/ai/sources.ts'
@@ -222,6 +227,8 @@ export interface ThreadState {
   gather: string | null
   /** The last files-read line — what the reply is grounded on; attaches to it as its note */
   provenance: string | null
+  /** A compaction made for the reply being written, until that reply exists to carry it */
+  compacted: ContextAdjustment | null
   /** Files in context after the last rebuild */
   documents: number | null
   /** The model the thread thinks with and its reading budget; null until read from the service */
@@ -293,6 +300,7 @@ type Action =
   | { type: 'rejected'; id: string }
   | { type: 'queries'; id: string; turn: number; queries: string[] }
   | { type: 'gather'; id: string; text: string; documents?: number; provenance?: boolean }
+  | { type: 'compacted'; id: string; adjustment: ContextAdjustment }
   | { type: 'delta'; id: string; text: string }
   | {
       type: 'tool'
@@ -360,6 +368,7 @@ function initial(id: string): ThreadState {
     loaded: false,
     gather: null,
     provenance: null,
+    compacted: null,
     documents: null,
     settings: null,
     contextVersion: 0,
@@ -480,6 +489,7 @@ function reduce(state: ThreadState, action: Action): ThreadState {
               ? 'reading your notebook'
               : 'finding what matters for this',
         provenance: null,
+        compacted: null,
         interrupted: null,
         turns: [...state.turns, { role: 'user', content: action.content, files: action.files, time: clock() }],
       }
@@ -510,6 +520,9 @@ function reduce(state: ThreadState, action: Action): ThreadState {
         documents: action.documents ?? state.documents,
         contextVersion: action.provenance ? state.contextVersion + 1 : state.contextVersion,
       }
+    case 'compacted':
+      // Shown at the foot of the reply in progress, where the eye is; the finished reply carries it from then on.
+      return { ...state, compacted: action.adjustment }
     case 'delta': {
       const note = state.provenance ?? undefined
       return {
@@ -609,6 +622,7 @@ function reduce(state: ThreadState, action: Action): ThreadState {
         ...state,
         phase: 'idle',
         gather: null,
+        compacted: null,
         approvals: [],
         contextVersion: state.contextVersion + 1,
         // A run still open when the turn ends never reported its end — the turn did.
@@ -620,7 +634,7 @@ function reduce(state: ThreadState, action: Action): ThreadState {
           note: r.note ?? state.provenance ?? undefined,
           usage: action.usage ?? r.usage,
           timing: action.timing ?? r.timing,
-          adjustment: action.adjustment ?? r.adjustment,
+          adjustment: action.adjustment ?? r.adjustment ?? state.compacted ?? undefined,
           model: action.model ?? r.model,
           modelLabel: action.modelLabel ?? r.modelLabel,
           effort: action.effort ?? r.effort,
@@ -632,6 +646,7 @@ function reduce(state: ThreadState, action: Action): ThreadState {
         ...state,
         phase: 'idle',
         gather: null,
+        compacted: null,
         approvals: [],
         contextVersion: state.contextVersion + 1,
         runs: state.runs.map((r) => (r.status === null ? { ...r, status: 'error' } : r)),
@@ -639,6 +654,8 @@ function reduce(state: ThreadState, action: Action): ThreadState {
           ...r,
           error: action.message,
           timing: action.timing ?? r.timing,
+          // A reply that failed after a compaction was still compacted.
+          adjustment: r.adjustment ?? state.compacted ?? undefined,
           branchPoint: undefined,
         })),
       }
@@ -1201,9 +1218,12 @@ export function useChat(id: string) {
             case 'model-start':
               dispatch({ id, type: 'gather', text: 'thinking' })
               break
-            case 'context-adjusted':
-              dispatch({ id, type: 'gather', text: contextAdjustmentText(d.adjustment as ContextAdjustment) })
+            case 'context-adjusted': {
+              const adjustment = d.adjustment as ContextAdjustment
+              if (adjustment.compacted) dispatch({ id, type: 'compacted', adjustment })
+              else dispatch({ id, type: 'gather', text: contextAdjustmentText(adjustment) })
               break
+            }
             case 'text-delta':
               dispatch({ id, type: 'delta', text: d.text as string })
               break
@@ -2016,6 +2036,16 @@ export function NoteLine({ note }: { note: Note }) {
   )
 }
 
+/** Where a conversation was compacted: at the foot of the reply while it is written, above it once it is done. */
+function CompactionLine({ adjustment }: { adjustment: ContextAdjustment }) {
+  const line = compactionLine(adjustment)
+  return line ? (
+    <div className="sky-condensed" data-tone="compacted" role="status">
+      — {line} —
+    </div>
+  ) : null
+}
+
 /** A branch that left this thread, as the page marks it between the turns. */
 /** A branch that left this thread: live on the service, or filed beside its file. */
 export interface BranchMark {
@@ -2348,6 +2378,8 @@ export function ThreadColumn({
         </>
       )}
       {refusal && <NoteLine note={{ text: refusal, tone: 'failed' }} />}
+      {/* A compaction during the reply in progress shows at its foot, beside what Sky is doing now. */}
+      {state.phase === 'busy' && state.compacted && <CompactionLine adjustment={state.compacted} />}
       <ChatActivity active={Boolean(activity)} text={activity} />
       {state.phase === 'saving' && <ChatActivity active text="saving" />}
     </div>
@@ -3088,6 +3120,7 @@ export function TurnView({
   return (
     <>
       {turn.note && <div className="sky-condensed">— {turn.note} —</div>}
+      {turn.adjustment && <CompactionLine adjustment={turn.adjustment} />}
       {cards}
       <div
         className="sky-turn"
@@ -3125,7 +3158,7 @@ export function TurnView({
           </div>
         )}
         <ChatImages images={images} />
-        {turn.adjustment && !streaming && <p className="sky-fate">{contextAdjustmentText(turn.adjustment)}</p>}
+        {turn.adjustment && !streaming && <p className="sky-fate">{contextAdjustmentNote(turn.adjustment)}</p>}
         {turn.sources && turn.sources.length > 0 && !streaming && <SourcesFold sources={turn.sources} />}
         {runs && runs.length > 0 && <RunList runs={runs} folded={!streaming} />}
         {turn.error && (

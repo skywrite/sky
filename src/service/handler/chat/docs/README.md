@@ -1,6 +1,6 @@
 ---
 created: 2026-09-01
-updated: 2026-11-21
+updated: 2026-11-22
 ---
 
 # Chat over HTTP — a thread, its tuning, and the story of its context
@@ -744,6 +744,10 @@ failed check reads as usual. See
   The settings and message routes both enforce this; disabling controls alone
   cannot prevent a stale tab from changing the provider.
 - Each turn records the actual model, effort and selected allowance it used.
+- A reply the chat was compacted for says so. The line sits at the foot of
+  the reply while it is being written and above it once it is done, with what
+  was cleared in counts; the note under the reply says nothing is lost. See
+  [a full chat is compacted once](../../../../_shared-ts/models/Chat/docs/2026-11-22-a-full-chat-is-compacted-once.md).
 - The host's instructions are the same on every turn of a conversation. Data
   that changes, such as the drafts list, is the tool factory's `referenceData`
   and rides with the message after a change: text in the system prompt is

@@ -73,12 +73,17 @@ its cache by the prefix alone and never sees it.
 
 Two consequences to know:
 
-- `fitForRequest` refits the **segment**. If that is insufficient, the
-  engine compacts identified addition blocks into rereadable source references
-  in its outgoing request, preserving the person's words and full saved history.
+- A request that does not fit is compacted by the engine, which first clears
+  older tool results and turns identified addition blocks of earlier messages
+  into rereadable source references in its outgoing request, preserving the
+  person's words and full saved history. `fitForRequest` refits the
+  **segment** only when that is not enough, because the segment sits in the
+  system prompt and a change there bills the whole request again.
   See [conversation capacity](../../docs/README.md#fitting-a-conversation-to-its-model)
   for the boundary and recovery contract. A document the segment refit drops
-  leaves the shipped set and may be admitted again later.
+  leaves the shipped set. The room the refit left then holds for the session,
+  so a later rebuild does not read the document back; another budget chosen
+  by the person lifts it.
 - Keeping a document out by hand (`exclude`) stops its future admission and
   re-renders the segment without it, but an addition already delivered
   cannot be unsaid; the log and the story say it is excluded from here on.

@@ -1,6 +1,6 @@
 ---
 created: 2026-09-01
-updated: 2026-11-21
+updated: 2026-11-22
 ---
 
 # Chat model — the pieces under every chat host
@@ -166,12 +166,21 @@ identity and use a conservative estimate. If either counting endpoint is
 unavailable or cannot count a supported generation input, a context-length
 rejection still triggers the same bounded retry.
 
-Capacity reductions reassemble notebook retrieval by relevance first, keeping
-the person's allowance and document pins. Next, identified retrieval prefixes
-in earlier user messages become source references; older textual tool results
-then become explicitly labelled excerpts. User prose, instructions, native
-attachment originals, and tool call/result pairs are preserved. `workingContext.ts`
+A request that does not fit is compacted: it frees a quarter of what the request may hold, in one step, so the next
+compaction is many replies away.
+Every compaction changes text a provider had cached, and that text is billed again with everything after it.
+Tool results older than the newest ones give way first and become explicitly labelled excerpts.
+Identified retrieval prefixes in earlier user messages follow and become source references.
+The first reading is cut last, by relevance, and only when the request still does not fit, because it sits in the
+system prompt and a change there bills the whole request again.
+The newest tool results stay whole, up to twenty and as many as fit in half the freed room.
+A single result larger than that room is shortened as it arrives.
+What a compaction clears stays cleared: `ChatContext` holds the first reading to the room a refit left, so a dropped
+document is not read back on the next turn.
+The person's allowance and document pins are kept.
+User prose, instructions, native attachment originals, and tool call/result pairs are preserved. `workingContext.ts`
 records source boundaries by user turn, length, and hash, alongside their paths.
+Read the [2026-11-22 note](2026-11-22-a-full-chat-is-compacted-once.md).
 Legacy snapshots require both the exact original user suffix and the retrieval
 log before adopting a source boundary. A quoted marker alone is never enough.
 
@@ -269,6 +278,8 @@ item, as `slack:unread` does per conversation. Read the
 [2026-09-23 note](2026-09-23-stop-reaches-the-command.md).
 
 ## Notes
+
+- [2026-11-22 — a full chat is compacted once](2026-11-22-a-full-chat-is-compacted-once.md): a request that does not fit frees a quarter of its room in one step, older tool results first and the first reading last; what it clears stays cleared; the conversation shows a line where it happened.
 
 - [2026-11-21 — data that changes rides with the message](2026-11-21-data-that-changes-rides-the-message.md): a host's standing instructions stay the same for the whole conversation; the drafts list left the system prompt and is sent with the message after a change, so an edit no longer re-bills the conversation.
 

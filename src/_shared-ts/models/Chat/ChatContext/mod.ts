@@ -322,6 +322,12 @@ export default class ChatContext {
   private shipped = new Set<string>()
   /** The documents the context segment renders; everything else shipped rides the history as additions. */
   private segment = new Set<string>()
+  /**
+   * The room a request last left for documents, once one had to be refitted. It holds for the rest
+   * of the session: without it the next rebuild assembled to the person's budget again, read the
+   * dropped documents back in as additions, and the following request was refitted again.
+   */
+  private fitted: number | undefined
 
   constructor(opts: ChatContextOptions) {
     this.today = opts.today
@@ -356,7 +362,15 @@ export default class ChatContext {
   /** Change the budget. It governs the next rebuild; reassemble() applies it at once. */
   /** Zero closes the notebook: turns read nothing and query nothing until a budget opens it again. */
   setBudget(tokens: number): void {
+    // Another budget is the person's own choice and starts over: a request that cannot hold it is
+    // refitted again. The budget already in force changes nothing; a host restates it when it reopens a chat.
+    if (tokens !== this.maxTokens) this.fitted = undefined
     this.maxTokens = tokens
+  }
+
+  /** What a rebuild assembles within: the person's budget, or less once a request could not hold it. */
+  private get room(): number {
+    return Math.min(this.maxTokens, this.fitted ?? Infinity)
   }
 
   /** A new conversation gains its storage identity when a branch or reply thread pins its title. */
@@ -505,6 +519,9 @@ export default class ChatContext {
     this.contextLog.push(...state.contextLog)
     this.queries = [...state.queries]
     this.turnNumber = state.lastTurn
+
+    // A session whose requests had to be refitted keeps the room they left.
+    this.fitted = state.contextLog.findLast((entry) => entry.stats)?.stats?.requestBudget
 
     // Re-arm the sweep policy the recorded session was running — the stated
     // window governs the conversation, resumed or not.
@@ -906,7 +923,7 @@ export default class ChatContext {
    * budget takes effect at once); additions are history and stay.
    */
   reassemble(): RebuildReport {
-    return this.rebuild(undefined, false, this.maxTokens, true)
+    return this.rebuild(undefined, false, this.room, true)
   }
 
   /**
@@ -916,7 +933,8 @@ export default class ChatContext {
    * compete for what room the request leaves.
    */
   fitForRequest(tokens: number): RebuildReport {
-    const report = this.rebuild(undefined, false, Math.min(this.maxTokens, tokens), true)
+    this.fitted = Math.min(this.room, tokens)
+    const report = this.rebuild(undefined, false, this.fitted, true)
     const entry = this.contextLog.findLast((e) => e.turn === this.turnNumber)
     if (entry) {
       entry.stats = report.stats
@@ -1089,7 +1107,7 @@ export default class ChatContext {
   private rebuild(
     newPaths: string[] | undefined,
     record: boolean,
-    requestBudget = this.maxTokens,
+    requestBudget = this.room,
     fit = false,
   ): RebuildReport {
     const prevPaths = new Set(this.contextPaths)

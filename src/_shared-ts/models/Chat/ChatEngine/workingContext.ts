@@ -72,6 +72,11 @@ export class WorkingContext {
     return this.state.sources.filter((source) => source.compacted).length
   }
 
+  /** The documents those sources held: what a person is told was cleared. */
+  get compactedDocuments(): number {
+    return this.state.sources.reduce((sum, source) => sum + (source.compacted ? source.paths.length : 0), 0)
+  }
+
   /** A branch carries only the source references and result excerpts in its inherited history. */
   snapshot(messages: readonly ModelMessage[]): WorkingContextState {
     const sources: WorkingContextState['sources'] = []

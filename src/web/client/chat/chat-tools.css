@@ -314,6 +314,11 @@
   color: var(--sky-green);
 }
 
+/* A compaction changes what the model can see from here on, so it reads as text, not as a faint aside. */
+.sky-condensed[data-tone='compacted'] {
+  color: var(--mantine-color-text);
+}
+
 .sky-condensed[data-tone='failed'] {
   color: var(--mantine-color-red-7);
 }

@@ -1615,3 +1615,77 @@ test('a restarted conversation does not send reference data it already carries',
     await rm(second.tmp, { recursive: true, force: true })
   }
 })
+
+test('a session compacted for one reply says so once and sends the same reading on the next', async () => {
+  const requests: string[] = []
+  const model = new MockLanguageModelV3({
+    provider: 'anthropic.messages',
+    doStream: async ({ prompt }) => {
+      requests.push(prompt.flatMap((message) => (message.role === 'system' ? [message.content] : [])).join('\n'))
+      if (requests.length === 1) throw new InputTokenLimitError(9000, 1000)
+      return {
+        stream: simulateReadableStream<any>({
+          chunks: [
+            { type: 'stream-start', warnings: [] },
+            { type: 'text-start', id: 't' },
+            { type: 'text-delta', id: 't', delta: 'Here is the summary.' },
+            { type: 'text-end', id: 't' },
+            {
+              type: 'finish',
+              finishReason: { unified: 'stop', raw: undefined },
+              usage: {
+                inputTokens: { total: 1, noCache: 1, cacheRead: 0, cacheWrite: 0 },
+                outputTokens: { total: 1, text: 1, reasoning: 0 },
+              },
+            },
+          ],
+        }),
+      }
+    },
+  })
+  const { session, events, tmp } = await makeSession({
+    model: { model },
+    invokeModel: undefined,
+    contextTokens: 25_000,
+    tools: async () => ({ tools: {}, toolApproval: {} }),
+    producers: {
+      produceInitialQuery: () => Promise.resolve(ok({ paths: [FIX.roadmap] })),
+      // The next message's search finds the day file again, which the compaction dropped.
+      evolveQueries: () => Promise.resolve(ok({ queries: ['q2'], changed: true })),
+      executeQuery: () => Promise.resolve(ok({ paths: [FIX.day] })),
+    },
+  })
+  try {
+    await session.start()
+    const first = await session.send('Summarize the notebook.')
+    const second = await session.send('And what about the day?')
+    const adjusted = events.filter((event) => event.type === 'context-adjusted')
+    const day = 'time/2026/W05/01-27/day.md'
+    assert({
+      given: 'a first request the model cannot hold, then a second message whose search finds a dropped document',
+      should:
+        'compact once, count the notes it dropped, keep that document out, and send the second request with the same reading',
+      actual: {
+        requests: requests.length,
+        compactions: adjusted.length,
+        notesDropped: (first.adjustment?.compacted?.notes ?? 0) > 0,
+        secondReply: [second.text, second.adjustment],
+        droppedStaysOut: [requests[0]!.includes(day), requests[1]!.includes(day), requests[2]!.includes(day)],
+        sameReading: requests[2] === requests[1],
+        readBack: session.contextLog.at(-1)?.added?.map((doc) => doc.path) ?? [],
+      },
+      expected: {
+        requests: 3,
+        compactions: 1,
+        notesDropped: true,
+        secondReply: ['Here is the summary.', undefined],
+        droppedStaysOut: [true, false, false],
+        sameReading: true,
+        readBack: [],
+      },
+    })
+  } finally {
+    await session.end({ save: false })
+    await rm(tmp, { recursive: true, force: true })
+  }
+})

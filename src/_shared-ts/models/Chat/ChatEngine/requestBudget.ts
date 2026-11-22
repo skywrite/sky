@@ -17,13 +17,28 @@ import { WorkingContext } from './workingContext.ts'
 export interface RequestNotebook {
   instructions: string
   tokens: number
+  /** The documents those tokens are, when the host counts them: a compaction says how many it cleared. */
+  documents?: number
   /** Relevance-based reassembly; does not change the person's selected allowance. */
-  fit(tokens: number): { instructions: string; tokens: number }
+  fit(tokens: number): { instructions: string; tokens: number; documents?: number }
 }
 
 const EXCERPT =
   '[Tool result shortened to fit the context window. These are excerpts; reread the source for omitted details.]'
 const MAX_FIT_ATTEMPTS = 8
+/**
+ * How full a compaction leaves the request, as a share of what it may hold. A quarter of the room is
+ * free again, so the next compaction is many replies away: every one of them changes text the
+ * provider had cached, and is billed again with everything after it.
+ */
+const COMPACT_TO = 0.75
+/**
+ * The newest tool results are the work in hand. A compaction clears older ones, and these only when
+ * nothing else fits. It keeps up to twenty, as many as fit in half the room it makes, so a model with
+ * a small window is not left holding results where its reading should be; three stay whatever their size.
+ */
+const KEEP_RESULTS = 20
+const KEEP_RESULTS_AT_LEAST = 3
 
 /** Only a provider's context rejection can trigger a retry, never a failed tool or an arbitrary error. */
 function overflow(error: unknown, outputTokens?: number): { tokens: number; limit: number; window?: number } | null {
@@ -73,8 +88,9 @@ function excerpt(text: string, length: number): string {
 
 /**
  * Runs at the SDK model boundary on EVERY step and approval continuation.
- * Refit notebook retrieval, compact identified source prefixes, then excerpt
- * older tool results if needed.
+ * A request that no longer fits is compacted: older tool results, then
+ * documents retrieved on earlier turns, then the least relevant documents of
+ * the first reading give way, in one step that leaves room for many replies.
  * The SDK and engine retain the original history. Retrying this one rejected
  * request cannot rerun a tool that already executed in a previous step.
  */
@@ -86,9 +102,17 @@ export function requestBudgetMiddleware(options: {
 }): LanguageModelMiddleware {
   let window = options.contextWindow
   const initialNotebook = options.notebook?.instructions.trim()
-  let notebook = options.notebook && { instructions: initialNotebook!, tokens: options.notebook.tokens }
+  let notebook: { instructions: string; tokens: number; documents?: number } | undefined = options.notebook && {
+    instructions: initialNotebook!,
+    tokens: options.notebook.tokens,
+    documents: options.notebook.documents,
+  }
   const shortened = new Map<string, LanguageModelV4ToolResultOutput>()
   const working = options.workingContext ?? new WorkingContext()
+  // What this turn's compaction cleared, for the line the conversation shows.
+  const cleared = new Set<string>()
+  const documentsBefore = working.compactedDocuments
+  let droppedDocuments = 0
   const attachments = new AttachmentContext(working.state)
   for (const [id, value] of Object.entries(working.state.toolExcerpts)) shortened.set(id, { type: 'text', value })
   const adjustment: ContextAdjustment = { shortenedToolResults: 0 }
@@ -104,84 +128,146 @@ export function requestBudgetMiddleware(options: {
       adjustment.deferredAttachments = files.deferred
       options.onAdjustment({ ...adjustment })
     }
-    return {
-      ...params,
-      prompt: files.prompt.map((message) => {
-        if (message.role === 'system' && initialNotebook && message.content === initialNotebook)
-          return { ...message, content: notebook!.instructions }
-        if (message.role === 'user') {
-          user++
-          return {
-            ...message,
-            content: message.content.map((part, index) =>
-              part.type === 'text' && index === 0 ? { ...part, text: working.prepare(part.text, user) } : part,
-            ),
-          }
-        }
-        if (message.role !== 'tool' || shortened.size === 0) return message
+    type PromptMessage = (typeof files.prompt)[number]
+    const sent = (message: PromptMessage): PromptMessage => {
+      if (message.role === 'user') {
+        user++
         return {
           ...message,
-          content: message.content.map((part) =>
-            part.type === 'tool-result' && shortened.has(part.toolCallId)
-              ? { ...part, output: shortened.get(part.toolCallId)! }
-              : part,
+          content: message.content.map((part, index) =>
+            part.type === 'text' && index === 0 ? { ...part, text: working.prepare(part.text, user) } : part,
           ),
         }
+      }
+      if (message.role !== 'tool' || shortened.size === 0) return message
+      return {
+        ...message,
+        content: message.content.map((part) =>
+          part.type === 'tool-result' && shortened.has(part.toolCallId)
+            ? { ...part, output: shortened.get(part.toolCallId)! }
+            : part,
+        ),
+      }
+    }
+    return {
+      ...params,
+      prompt: files.prompt.flatMap((message): PromptMessage[] => {
+        if (message.role !== 'system' || !initialNotebook || message.content !== initialNotebook) return [sent(message)]
+        // A reading cut to nothing leaves no block behind: a provider refuses an empty one.
+        return notebook!.instructions ? [{ ...message, content: notebook!.instructions }] : []
       }),
     }
   }
 
+  /**
+   * Compact the request: make room once, enough to last, rather than a little on every reply.
+   *
+   * What gives way, in order, until a quarter of the room is free:
+   * 1. tool results older than the newest ones kept (KEEP_RESULTS), oldest first;
+   * 2. documents retrieved for earlier messages, which become source references;
+   * 3. the least relevant documents of the first reading, and only when the request still does not fit:
+   *    they sit in the system prompt, so cutting them bills the whole request again.
+   * A result too large for the room a compaction makes is shortened to that room before anything
+   * else: it has not been sent yet, so shortening it costs nothing, and no reading should be
+   * dropped to hold one oversized result. If the request still does not fit, the newest results and
+   * the newest message's documents give way too, by just enough.
+   *
+   * Everything cleared here stays cleared: excerpts and source references are kept with the working
+   * context, and the host holds the first reading to its new size.
+   */
   function reduce(params: LanguageModelV4CallOptions, failure: { tokens: number; limit: number }): boolean {
     // The provider count measures the whole request. Convert the shortfall
     // back to the assembler's units, then recount after the reduction.
     const estimated = estimateTokens(JSON.stringify({ prompt: params.prompt, tools: params.tools }))
-    const remove = Math.max(1, Math.ceil(estimated * (1 - (failure.limit * 0.95) / failure.tokens)))
-    if (notebook && notebook.tokens > 0 && options.notebook) {
-      const previous = notebook
-      const fitted = options.notebook.fit(Math.max(0, notebook.tokens - remove))
-      notebook = { ...fitted, instructions: fitted.instructions.trim() }
-      if (notebook.instructions.length < previous.instructions.length) {
-        adjustment.notebookTokens = notebook.tokens
-        return true
-      }
+    const chars = (tokens: number) => Math.max(1, Math.ceil((estimated * tokens) / failure.tokens)) * 4
+    const want = chars(failure.tokens - failure.limit * COMPACT_TO)
+    const must = chars(failure.tokens - failure.limit * 0.95)
+    const room = chars(failure.limit * (1 - COMPACT_TO))
+    let removed = 0
+    let compacted = 0
+
+    const results = params.prompt.flatMap((message) =>
+      message.role === 'tool' ? message.content.filter((part) => part.type === 'tool-result') : [],
+    )
+    let kept = 0
+    for (let held = 0; kept < Math.min(KEEP_RESULTS, results.length); kept++) {
+      held += resultText(results[results.length - 1 - kept]!.output)?.length ?? 0
+      if (kept >= KEEP_RESULTS_AT_LEAST && held > room / 2) break
     }
-    let remaining = remove * 4
-    let changed = false
-    let user = -1
-    // Only identified retrieval prefixes may be removed; the person's words and native files are untouched.
-    for (const message of params.prompt) {
-      if (message.role !== 'user') continue
-      user++
-      for (const [index, part] of message.content.entries()) {
-        if (part.type !== 'text' || index !== 0) continue
-        const saved = working.compact(part.text, user)
-        remaining -= saved
-        changed ||= saved > 0
-        if (remaining <= 0) break
-      }
-      if (remaining <= 0) break
+    const recent = results.length - kept
+    /** Keep `keep` characters of a result as a labelled excerpt; what that saved, or nothing when it was already short. */
+    const shorten = (part: (typeof results)[number], keep: number): number => {
+      const text = resultText(part.output)
+      if (text === null || text.length <= EXCERPT.length + 600) return 0
+      const value = excerpt(text, Math.max(400, keep))
+      if (value.length >= text.length) return 0
+      shortened.set(part.toolCallId, { type: 'text', value })
+      working.state.toolExcerpts[part.toolCallId] = value
+      return text.length - value.length
     }
-    adjustment.compactedSources = working.compactedSources
-    if (changed) return true
-    for (const message of params.prompt) {
-      if (message.role !== 'tool') continue
-      for (const part of message.content) {
-        if (part.type !== 'tool-result') continue
+    const shortenUntil = (parts: typeof results, goal: number): void => {
+      for (const part of parts) {
+        if (removed >= goal) return
         const text = resultText(part.output)
-        if (text === null || text.length <= EXCERPT.length + 600) continue
-        const keep = Math.max(400, text.length - remaining - EXCERPT.length - 24)
-        const value = excerpt(text, keep)
-        if (value.length >= text.length) continue
-        shortened.set(part.toolCallId, { type: 'text', value })
-        working.state.toolExcerpts[part.toolCallId] = value
-        remaining -= text.length - value.length
-        changed = true
-        if (remaining <= 0) break
+        if (text === null) continue
+        const saved = shorten(part, text.length - (goal - removed) - EXCERPT.length - 24)
+        if (saved > 0) cleared.add(part.toolCallId)
+        removed += saved
+        compacted += saved
       }
-      if (remaining <= 0) break
     }
+
+    // A result larger than the room a compaction makes: nothing was sent with it yet.
+    for (const part of results.slice(recent)) {
+      const text = resultText(part.output)
+      if (text !== null && text.length > room) removed += shorten(part, room - EXCERPT.length - 24)
+    }
+
+    shortenUntil(results.slice(0, recent), want)
+
+    // Only identified retrieval prefixes may be removed; the person's words and native files are untouched.
+    const users = params.prompt.filter((message) => message.role === 'user')
+    const compactSource = (user: number): number => {
+      const first = users[user]?.content[0]
+      return first?.type === 'text' ? working.compact(first.text, user) : 0
+    }
+    for (let user = 0; user < users.length - 1 && removed < want; user++) {
+      const saved = compactSource(user)
+      removed += saved
+      compacted += saved
+    }
+
+    if (removed < must && notebook && notebook.tokens > 0 && options.notebook) {
+      const previous = notebook
+      const fitted = options.notebook.fit(Math.max(0, previous.tokens - Math.ceil((want - removed) / 4)))
+      const next = { ...fitted, instructions: fitted.instructions.trim() }
+      notebook = next
+      const saved = previous.instructions.length - next.instructions.length
+      if (saved > 0) {
+        removed += saved
+        compacted += saved
+        adjustment.notebookTokens = next.tokens
+        droppedDocuments += Math.max(0, (previous.documents ?? 0) - (next.documents ?? previous.documents ?? 0))
+      }
+    }
+
+    if (removed < must) {
+      shortenUntil(results.slice(recent), must)
+      if (removed < must) {
+        const saved = compactSource(users.length - 1)
+        removed += saved
+        compacted += saved
+      }
+    }
+
+    adjustment.compactedSources = working.compactedSources
     adjustment.shortenedToolResults = shortened.size
-    return changed
+    if (compacted > 0)
+      adjustment.compacted = {
+        toolResults: cleared.size,
+        notes: working.compactedDocuments - documentsBefore + droppedDocuments,
+      }
+    return removed > 0
   }
 
   async function invoke<T>(

@@ -83,3 +83,19 @@ test('a branch cannot inherit source references or result excerpts from later tu
     expected: [1, ['earlier'], ['/mock/Atlas.md'], ['user:0:1', 'tool:earlier:0']],
   })
 })
+
+test('compacted sources count the documents they held', () => {
+  const context = new WorkingContext()
+  const first = `${NOTEBOOK_ADDITION}\n\n${'Atlas roadmap. '.repeat(100)}`
+  const second = `${NOTEBOOK_ADDITION}\n\n${'Jane Doe profile. '.repeat(100)}`
+  context.register(first, ['/mock/Roadmap.md', '/mock/Plan.md'], 0)
+  context.register(second, ['/mock/Jane-Doe.md'], 1)
+  const before = context.compactedDocuments
+  context.compact(`${first}\n\nWhat changed?`, 0)
+  assert({
+    given: 'two messages that brought documents, the first of them compacted',
+    should: 'count the two documents of that message and none of the other',
+    actual: [before, context.compactedSources, context.compactedDocuments],
+    expected: [0, 1, 2],
+  })
+})

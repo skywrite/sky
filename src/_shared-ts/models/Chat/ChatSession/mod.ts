@@ -1009,12 +1009,17 @@ export default class ChatSession {
         notebook: {
           instructions: this.contextPrompt,
           tokens: this.context.log.findLast((entry) => entry.stats)?.stats?.docTokens ?? 0,
+          documents: this.context.log.findLast((entry) => entry.stats)?.stats?.kept,
           fit: (tokens) => {
             const rebuilt = this.context.fitForRequest(tokens)
             this.contextPrompt = buildContextPrompt(this.opts.ambient, rebuilt.activityMarkdown)
             context.rebuilt = rebuilt
             this.emit({ type: 'context-rebuilt', report: rebuilt })
-            return { instructions: this.contextPrompt, tokens: rebuilt.stats?.docTokens ?? 0 }
+            return {
+              instructions: this.contextPrompt,
+              tokens: rebuilt.stats?.docTokens ?? 0,
+              documents: rebuilt.stats?.kept,
+            }
           },
         },
         tools,

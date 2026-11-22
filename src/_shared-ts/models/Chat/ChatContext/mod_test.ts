@@ -1151,3 +1151,92 @@ test('ChatContext.fitForRequest - a refit shrinks the segment and leaves additio
     },
   })
 })
+
+test('ChatContext.fitForRequest - the room a refit leaves holds on later turns, until the person chooses another budget', async () => {
+  const { context } = makeContext({
+    maxTokens: 25_000,
+    fetchContext: fetchFake({ today: [FIX.day, FIX.journal], goals: [FIX.goal] }),
+    producers: {
+      produceInitialQuery: () => Promise.resolve(ok({ paths: [] as string[], query: 'q1' })),
+      evolveQueries: (_message: string, queries: string[]) =>
+        Promise.resolve(ok({ queries: [...queries, `q${queries.length + 1}`], changed: true })),
+      executeQuery: () => Promise.resolve(ok({ paths: [FIX.day, FIX.journal] })),
+    },
+  })
+  await context.seedBaseline()
+  const first = await context.firstTurn('What is the Atlas rollout checklist?')
+  const fitted = context.fitForRequest(0)
+  const second = await context.evolveTurn('What did the journal say about Atlas?', [])
+  // A host restates the budget in force when it reopens a chat.
+  context.setBudget(25_000)
+  const restated = context.reassemble()
+  context.setBudget(26_000)
+  const third = await context.evolveTurn('And the day file?', [])
+  assert({
+    given:
+      'a refit that dropped the day, a next turn whose search finds it and the journal, the same budget stated again, then another budget',
+    should:
+      'admit neither while the refit holds, hold through the same budget stated again, and read both once the person chooses another',
+    actual: {
+      dropped: first.rebuilt!.kept.length - fitted.kept.length,
+      readBack: second.rebuilt?.joined.map((r) => r.path),
+      additions: second.rebuilt?.additionsMarkdown,
+      room: second.rebuilt?.stats?.requestBudget,
+      restatedRoom: restated.stats?.requestBudget,
+      afterBudget: third.rebuilt?.joined.map((r) => r.path).sort(),
+      afterBudgetRoom: third.rebuilt?.stats?.requestBudget,
+    },
+    expected: {
+      dropped: 1,
+      readBack: [],
+      additions: null,
+      room: 0,
+      restatedRoom: 0,
+      afterBudget: ['time/2026/W04/01-20/journal/10_Morning_Reflection.md', 'time/2026/W05/01-27/day.md'],
+      afterBudgetRoom: undefined,
+    },
+  })
+})
+
+test('ChatContext.restore - a resumed session keeps the room its last refit left', async () => {
+  const state = (requestBudget?: number): ResumeState => ({
+    conversation: [],
+    universePaths: ['goals/2026.md', 'time/2026/W05/01-27/day.md'],
+    queries: ['q1'],
+    lastTurn: 1,
+    contextLog: [
+      {
+        turn: 1,
+        queries: ['q1'],
+        stats: {
+          kept: 1,
+          pruned: 1,
+          excluded: 0,
+          docTokens: 40,
+          budget: 25_000,
+          ...(requestBudget === undefined ? {} : { requestBudget }),
+        },
+      },
+    ],
+  })
+  const fitted = makeContext({ maxTokens: 25_000 }).context
+  const whole = makeContext({ maxTokens: 25_000 }).context
+  const held = await fitted.restore(state(0))
+  const free = await whole.restore(state())
+  assert({
+    given: 'a saved session whose last request left no room beyond its pins, and one that never had to refit',
+    should: 'reassemble the first within that room and the second within the person’s budget',
+    actual: {
+      heldRoom: held.rebuild.stats?.requestBudget,
+      heldKept: held.rebuild.kept.map((r) => r.path),
+      freeRoom: free.rebuild.stats?.requestBudget,
+      freeKept: free.rebuild.kept.map((r) => r.path).sort(),
+    },
+    expected: {
+      heldRoom: 0,
+      heldKept: ['goals/2026.md'],
+      freeRoom: undefined,
+      freeKept: ['goals/2026.md', 'time/2026/W05/01-27/day.md'],
+    },
+  })
+})
