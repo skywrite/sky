@@ -1,0 +1,599 @@
+/* Future keeps the app's typography, action roles and surfaces. Each kind of thing has one mark and one color. */
+.sky-future {
+  min-height: 0;
+  --sky-future-goal: var(--sky-accent);
+  --sky-future-decision: var(--sky-workstream-violet-accent);
+  --sky-future-idea: var(--sky-workstream-yellow-accent);
+  --sky-future-habit: var(--sky-workstream-green-accent);
+  --sky-future-needs: var(--sky-workstream-orange-accent);
+}
+.sky-future-col {
+  max-width: 1096px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 24px 48px 72px;
+}
+/* The resets carry no weight of their own, so any class below can set its own spacing. */
+:where(.sky-future) :where(h1, h2, h3, p, ul, dl, dd) {
+  margin: 0;
+}
+:where(.sky-future) ul {
+  list-style: none;
+  padding: 0;
+}
+:where(.sky-future) a {
+  color: inherit;
+  text-decoration: none;
+}
+.sky-future h1 {
+  font-size: 32px;
+  line-height: 1.25;
+  letter-spacing: -0.025em;
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+.sky-future-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+}
+.sky-future-head > div:first-child {
+  min-width: 0;
+}
+.sky-future-head .mantine-Button-root {
+  flex: none;
+}
+.sky-future-sub {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 22px;
+  margin-top: 8px;
+  color: var(--sky-dim);
+  font-size: 17px;
+  line-height: 1.5;
+}
+.sky-future-crumbs {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 18px;
+  color: var(--sky-dim);
+  font-size: 15px;
+}
+.sky-future-crumbs a:hover {
+  color: var(--sky-text);
+}
+.sky-future-hint,
+.sky-future-note {
+  color: var(--sky-dim);
+  font-size: 15px;
+  line-height: 1.6;
+}
+.sky-future-note {
+  margin-top: 10px;
+}
+.sky-future-text-link {
+  color: var(--sky-accent);
+  font: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+.sky-future-text-link:hover {
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+.sky-future-error {
+  margin-bottom: 18px;
+  padding: 14px 18px;
+  border-radius: var(--mantine-radius-md);
+  background: var(--sky-action-danger-soft);
+  color: var(--sky-action-danger);
+  font-size: 16px;
+}
+
+/* The mark in front of a title says what kind of thing it is. */
+.sky-future-mark {
+  display: inline-block;
+  flex: none;
+  align-self: center;
+  width: 11px;
+  height: 11px;
+  margin-right: 10px;
+}
+.sky-future-mark[data-kind='goal'] {
+  background: var(--sky-future-goal);
+  border-radius: 50%;
+}
+.sky-future-mark[data-kind='decision'] {
+  background: var(--sky-future-decision);
+  border-radius: 2px;
+  transform: rotate(45deg) scale(0.86);
+}
+.sky-future-mark[data-kind='idea'] {
+  width: 13px;
+  height: 13px;
+  background: var(--sky-future-idea);
+  clip-path: polygon(50% 0, 62% 38%, 100% 50%, 62% 62%, 50% 100%, 38% 62%, 0 50%, 38% 38%);
+}
+.sky-future-mark[data-kind='habit'] {
+  border: 2.5px solid var(--sky-future-habit);
+  border-radius: 4px;
+}
+.sky-future-item {
+  display: inline-flex;
+  align-items: baseline;
+  min-width: 0;
+}
+.sky-future-item > span {
+  overflow-wrap: anywhere;
+}
+.sky-future-item:hover > span {
+  text-decoration: underline;
+  text-decoration-color: var(--sky-border);
+  text-underline-offset: 4px;
+}
+.sky-future-tag {
+  margin-left: 10px;
+  color: var(--sky-dim);
+  font-size: 13.5px;
+  white-space: nowrap;
+}
+
+/* A quiet panel: what is in force across the goals, or a goal with no number yet. */
+.sky-future-panel {
+  margin-top: 26px;
+  padding: 20px 26px 18px;
+  border-radius: var(--sky-card-radius);
+  background: var(--sky-side);
+}
+.sky-future-panel h3 {
+  margin-bottom: 6px;
+  color: var(--sky-text-2);
+  font-size: 15.5px;
+  font-weight: 600;
+}
+.sky-future-panel li {
+  display: grid;
+  padding: 8px 0;
+  font-size: 18px;
+}
+.sky-future-panel li + li {
+  border-top: 1px solid var(--sky-border-soft);
+}
+.sky-future-why {
+  padding-left: 21px;
+  color: var(--sky-dim);
+  font-size: 15px;
+}
+.sky-future-panel > p {
+  max-width: 62ch;
+  margin-bottom: 16px;
+  color: var(--sky-text-2);
+  font-size: 17px;
+  line-height: 1.55;
+}
+
+/* One goal on the Goals view. */
+.sky-future-goals {
+  margin-top: 8px;
+}
+.sky-future-goal {
+  padding: 30px 0 28px;
+}
+.sky-future-goal + .sky-future-goal {
+  border-top: 1px solid var(--sky-border-soft);
+}
+.sky-future-goal-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 20px;
+}
+.sky-future-goal-title {
+  font-size: 23px;
+  font-weight: 620;
+  letter-spacing: -0.013em;
+  line-height: 1.3;
+}
+.sky-future-goal-title .sky-future-mark {
+  width: 13px;
+  height: 13px;
+  margin-right: 12px;
+}
+.sky-future-cat {
+  color: var(--sky-dim);
+  font-size: 15px;
+  white-space: nowrap;
+}
+.sky-future-stand {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 22px;
+  margin: 6px 0 0 25px;
+  color: var(--sky-text-2);
+  font-size: 17px;
+  line-height: 1.55;
+}
+.sky-future-stand[data-empty='true'] {
+  display: block;
+  color: var(--sky-dim);
+}
+.sky-future-track {
+  max-width: 640px;
+  margin: 14px 0 0 25px;
+}
+.sky-future-track-bar {
+  position: relative;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--sky-hover);
+}
+.sky-future-track-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 999px;
+  background: var(--sky-future-goal);
+}
+.sky-future-track-time {
+  position: absolute;
+  top: -6px;
+  width: 2px;
+  height: 20px;
+  margin-left: -1px;
+  border-radius: 2px;
+  background: var(--sky-text-2);
+}
+.sky-future-track-ends {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 8px;
+  color: var(--sky-dim);
+  font-size: 14px;
+}
+.sky-future-track-cap {
+  margin-top: 2px;
+  color: var(--sky-text-2);
+  font-size: 15px;
+}
+.sky-future-ties {
+  display: grid;
+  gap: 10px;
+  margin: 18px 0 0 25px;
+  font-size: 17px;
+}
+.sky-future-ties > div {
+  display: grid;
+  grid-template-columns: 132px minmax(0, 1fr);
+}
+.sky-future-ties dt {
+  padding-top: 3px;
+  color: var(--sky-dim);
+  font-size: 15px;
+}
+.sky-future-ties dd {
+  display: grid;
+  gap: 5px;
+  justify-items: start;
+}
+
+/* A goal's own page. */
+.sky-future-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 24px;
+  margin-top: 34px;
+}
+.sky-future-stats > div {
+  min-width: 0;
+}
+.sky-future-stats span,
+.sky-future-stats em {
+  display: block;
+  color: var(--sky-dim);
+  font-size: 14.5px;
+  font-style: normal;
+}
+.sky-future-stats strong {
+  display: block;
+  font-size: 34px;
+  font-weight: 500;
+  letter-spacing: -0.03em;
+  line-height: 1.25;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.sky-future-chart-card {
+  margin-top: 26px;
+  padding: 22px 26px 14px;
+  border: 1px solid var(--sky-border-soft);
+  border-radius: var(--sky-card-radius);
+}
+.sky-future-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 22px;
+  margin-bottom: 8px;
+  color: var(--sky-dim);
+  font-size: 14px;
+}
+.sky-future-legend i {
+  display: inline-block;
+  width: 20px;
+  height: 0;
+  margin-right: 7px;
+  border-top: 2px solid var(--sky-future-goal);
+  vertical-align: middle;
+}
+.sky-future-legend i[data-line='target'] {
+  border-top-color: var(--sky-text-2);
+}
+.sky-future-legend i[data-line='needs'] {
+  border-top: 2px dashed var(--sky-future-needs);
+}
+.sky-future-legend i[data-line='checkpoint'] {
+  width: 9px;
+  height: 9px;
+  margin: 0 12px 0 4px;
+  border: 2px solid var(--sky-text-2);
+  background: var(--sky-bg);
+  transform: rotate(45deg);
+}
+.sky-future-chart svg {
+  display: block;
+  overflow: visible;
+}
+.sky-future-chart text {
+  fill: var(--sky-dim);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.sky-future-chart text.sky-future-chart-label {
+  fill: var(--sky-text-2);
+  font-size: 13.5px;
+}
+.sky-future-chart-grid {
+  stroke: var(--sky-border-soft);
+}
+.sky-future-chart-target {
+  stroke: var(--sky-text-2);
+  stroke-width: 1.5;
+}
+.sky-future-chart-needs {
+  stroke: var(--sky-future-needs);
+  stroke-width: 2;
+  stroke-dasharray: 5 5;
+}
+.sky-future-chart-line {
+  fill: none;
+  stroke: var(--sky-future-goal);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+.sky-future-chart-dot {
+  fill: var(--sky-future-goal);
+}
+.sky-future-chart-latest {
+  fill: var(--sky-future-goal);
+  stroke: var(--sky-bg);
+  stroke-width: 2;
+}
+.sky-future-chart-checkpoint {
+  fill: var(--sky-bg);
+  stroke: var(--sky-text-2);
+  stroke-width: 2;
+}
+.sky-future-chart-checkpoint[data-state='reached'] {
+  fill: var(--sky-future-habit);
+  stroke: var(--sky-future-habit);
+}
+.sky-future-section {
+  margin-top: 44px;
+}
+.sky-future-section h2 {
+  font-size: 22px;
+  font-weight: 620;
+  letter-spacing: -0.012em;
+  line-height: 1.4;
+}
+.sky-future-section h2 small {
+  margin-left: 10px;
+  color: var(--sky-dim);
+  font-size: 15px;
+  font-weight: 400;
+  letter-spacing: 0;
+}
+.sky-future-section > .sky-future-note {
+  margin-top: 4px;
+}
+.sky-future-rows {
+  margin-top: 12px;
+}
+.sky-future-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 16px 0;
+  border-top: 1px solid var(--sky-border-soft);
+  font-size: 19px;
+}
+.sky-future-row:last-child {
+  border-bottom: 1px solid var(--sky-border-soft);
+}
+.sky-future-row-end {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: none;
+}
+.sky-future-remove {
+  padding: 2px 4px;
+  border: 0;
+  background: none;
+  color: var(--sky-dim);
+  font: inherit;
+  font-size: 15px;
+  cursor: pointer;
+}
+.sky-future-remove:hover:not(:disabled) {
+  color: var(--sky-action-danger);
+}
+.sky-future-meta {
+  color: var(--sky-dim);
+  font-size: 15px;
+  white-space: nowrap;
+}
+.sky-future-under {
+  display: block;
+  padding-left: 21px;
+  color: var(--sky-dim);
+  font-size: 15px;
+}
+.sky-future-state {
+  padding: 1px 11px;
+  border-radius: 999px;
+  background: var(--sky-hover);
+  color: var(--sky-text-2);
+  font-size: 13.5px;
+  white-space: nowrap;
+}
+.sky-future-state[data-state='reached'] {
+  background: var(--sky-workstream-green-fill);
+  color: var(--sky-workstream-green-ink);
+}
+.sky-future-state[data-state='missed'] {
+  background: var(--sky-workstream-orange-fill);
+  color: var(--sky-workstream-orange-ink);
+}
+.sky-future-checkpoint-form {
+  display: grid;
+  grid-template-columns: minmax(0, 180px) minmax(0, 200px) auto;
+  align-items: end;
+  gap: 14px;
+  margin-top: 18px;
+}
+.sky-future-unit {
+  color: var(--sky-dim);
+  font-size: 14px;
+}
+.sky-future-document {
+  max-width: 68ch;
+  margin-top: 12px;
+  color: var(--sky-text-2);
+  font-size: 18px;
+  line-height: 1.65;
+}
+.sky-future-document > * + * {
+  margin-top: 0.7em;
+}
+.sky-future-document :where(ul, ol) {
+  padding-left: 1.3em;
+  list-style: revert;
+}
+.sky-future-document a {
+  color: var(--sky-accent);
+}
+.sky-future-document :where(h1, h2, h3, h4) {
+  font-size: 18px;
+  font-weight: 620;
+  letter-spacing: 0;
+}
+.sky-future-empty {
+  margin-top: 34px;
+  padding: 60px 26px;
+  border: 1px dashed var(--sky-border-soft);
+  border-radius: var(--sky-card-radius);
+  text-align: center;
+}
+.sky-future-empty h2 {
+  font-size: 22px;
+  font-weight: 620;
+}
+.sky-future-empty p {
+  max-width: 56ch;
+  margin: 8px auto 22px;
+  color: var(--sky-dim);
+  font-size: 17px;
+  line-height: 1.55;
+}
+
+/* The dialogs render outside the page, so their classes stand alone. */
+.sky-future-form {
+  display: flex;
+  flex-direction: column;
+  gap: 19px;
+}
+.sky-future-form-intro {
+  margin: 0 0 2px;
+  color: var(--sky-dim);
+  font-size: 15px;
+  line-height: 1.55;
+}
+.sky-future-form-label {
+  margin-bottom: 4px;
+  font-size: var(--mantine-font-size-sm);
+  font-weight: 500;
+}
+.sky-future-form-dates {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+.sky-future-form-error {
+  margin: 0;
+  color: var(--sky-action-danger);
+  font-size: 15px;
+  line-height: 1.6;
+}
+.sky-future-form .sky-dialog-actions {
+  margin-top: 6px;
+}
+.sky-future-button-link {
+  padding: 9px 18px;
+  border-radius: var(--sky-action-radius);
+  background: var(--sky-action-primary);
+  color: var(--sky-action-primary-text);
+  font-weight: 550;
+  text-decoration: none;
+}
+.sky-future-button-link:hover {
+  background: var(--sky-action-primary-hover);
+}
+
+@media (max-width: 760px) {
+  .sky-future-col {
+    padding: 16px 20px 48px;
+  }
+  .sky-future-head {
+    flex-direction: column;
+    gap: 14px;
+  }
+  .sky-future-stats {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 16px;
+  }
+  .sky-future-ties > div {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2px;
+  }
+  .sky-future-row {
+    flex-direction: column;
+    gap: 2px;
+  }
+  .sky-future-checkpoint-form,
+  .sky-future-form-dates {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .sky-future-chart-card {
+    padding: 16px 12px 10px;
+  }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .sky-future-track-fill {
+    transition: width 0.5s ease;
+  }
+}

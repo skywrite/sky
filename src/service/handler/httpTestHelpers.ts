@@ -51,6 +51,7 @@ export function createTestHttpApp(
     workstreams?: WorkstreamsRoutesOptions
     tracking?: TrackingRoutesOptions
     streaks?: StreaksRoutesOptions
+    future?: import('./future/mod.ts').FutureRoutesOptions
     outbox?: OutboxRoutesOptions
     people?: PeopleOptions
     places?: import('./places/types.ts').PlacesOptions
@@ -89,6 +90,7 @@ export function createTestHttpApp(
     workstreams: options.workstreams,
     tracking: options.tracking,
     streaks: options.streaks,
+    future: options.future,
     outbox: options.outbox,
     people: options.people,
     places: options.places,

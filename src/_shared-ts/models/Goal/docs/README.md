@@ -68,6 +68,9 @@ They are to-dos on a day, picked with the goal in view.
 - **References** use `goals/<name>`, matched without regard to case, wherever the file sits.
 - **Most Important, journal questions, the week plan and check-in** read active goals through `readGoals()`.
   To-do priority and voice read the same folder directly.
+- **The Future screen** (`service/handler/future`, `web/client/future`) shows each active goal, where its number
+  stands, and the decisions, habits and ideas whose `rel:` names it.
+  It writes only the keys in the table above, and a new goal's file.
 
 ## Older notebooks
 

@@ -5,6 +5,8 @@ const icons = {
       <path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
     </>
   ),
+  // The sun coming up over the horizon, beside Today's full sun.
+  future: <path d="M2 18h20M6 18a6 6 0 0 1 12 0M12 5v3M4.2 10.2l2.1 2.1M19.8 10.2l-2.1 2.1" />,
   chat: (
     <>
       <path d="M7 4h10a4 4 0 0 1 4 4v7a4 4 0 0 1-4 4H9l-5 3v-5a4 4 0 0 1-1-2V8a4 4 0 0 1 4-4Z" />

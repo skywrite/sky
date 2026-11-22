@@ -35,6 +35,7 @@ import type { ReviewRuntime } from './day/review/types.ts'
 import { createDayScheduleHost } from './day/schedule.ts'
 import { createExplorerRoutes, explorerHref } from './explorer/mod.ts'
 import { type ExtensionRoutesOptions, createExtensionRoutes } from './extensions/routes.ts'
+import { createFutureRoutes, type FutureRoutesOptions } from './future/mod.ts'
 import { searchNotebook } from './home/mod.ts'
 import { createImportRoutes, type ImportRoutesOptions } from './import/mod.ts'
 import { createJournalRoutes, type JournalOptions } from './journal/mod.ts'
@@ -121,6 +122,7 @@ export interface HttpHandlerOptions {
   dayReview?: ReviewRuntime
   tracking?: TrackingRoutesOptions
   streaks?: StreaksRoutesOptions
+  future?: FutureRoutesOptions
   /** The week page's command host; without it the page reads, but starts, ends and creates nothing */
   week?: WeekCommands
   /** The file-import host — a transcript or recording dropped on the day; absent, /import is not served */
@@ -349,6 +351,7 @@ export function createHttpApp(options: HttpHandlerOptions): Hono {
   }
   if (options.tracking) app.route('/tracking/_api', createTrackingRoutes(options.tracking))
   if (options.streaks) app.route('/streaks/_api', createStreaksRoutes(options.streaks))
+  if (options.future) app.route('/future/_api', createFutureRoutes(options.future))
 
   // A file dropped on the day: the upload, its read-back, the run, its questions.
   // A navigation opens the page; a fetch of the same path reads the job.
@@ -812,6 +815,12 @@ export function createHttpApp(options: HttpHandlerOptions): Hono {
     c.req.path === '/streaks/_api' || c.req.path.startsWith('/streaks/_api/')
       ? c.json({ message: 'Streaks is unavailable.' }, 404)
       : c.html(renderAppHtml('sky · streaks')),
+  )
+  app.get('/future', (c) => c.html(renderAppHtml('sky · Future')))
+  app.get('/future/*', (c) =>
+    c.req.path.startsWith('/future/_api/')
+      ? c.json({ message: 'Future is unavailable.' }, 404)
+      : c.html(renderAppHtml('sky · Future')),
   )
   app.get('/tracking', (c) => c.html(renderAppHtml('sky · tracking')))
   app.get('/tracking/*', (c) =>

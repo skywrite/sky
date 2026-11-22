@@ -18,6 +18,8 @@ import { useDay } from './day/useDay.ts'
 import { DocView, explorerFileOf, fileHref, Tree } from './explorer/explorer.tsx'
 import { RemovedToast } from './explorer/explorerDelete.tsx'
 import { ExtensionNavLinks, ExtensionPageMain, extensionRouteOf } from './extensions/extensions.tsx'
+import { FutureMain } from './future/FutureMain.tsx'
+import { futureRouteOf } from './future/routes.ts'
 import { useDocumentNotices } from './import/documentImport.tsx'
 import { ImportDialog, ImportMain, ImportsWaiting, useFileDrop, useImportQueue, useImports } from './import/import.tsx'
 import { JournalMain } from './journal/journal.tsx'
@@ -146,6 +148,9 @@ function Canvas() {
   // '' is the outbox list, an id one item's page, null any other page.
   const outboxItem = outboxItemOf(path)
   const isOutbox = outboxItem !== null
+  // /future is the goals being pursued, /future/goals/<name> one goal's page.
+  const futureRoute = futureRouteOf(path)
+  const isFuture = futureRoute !== null
   const isTracking = path === '/tracking' || path.startsWith('/tracking/')
   const isStreaks = path === '/streaks' || path.startsWith('/streaks/')
   const isSearch = path === '/search'
@@ -224,6 +229,7 @@ function Canvas() {
     !isClock &&
     !isAutomations &&
     !isOutbox &&
+    !isFuture &&
     !isTracking &&
     !isStreaks &&
     !isSearch &&
@@ -246,6 +252,7 @@ function Canvas() {
       peopleRoute ||
       placesRoute !== null ||
       isRecurring ||
+      isFuture ||
       isTracking ||
       importId ||
       explorerFile !== null
@@ -280,6 +287,7 @@ function Canvas() {
     peopleRoute,
     placesRoute,
     isRecurring,
+    isFuture,
     isTracking,
     importId,
     explorerFile,
@@ -571,6 +579,16 @@ function Canvas() {
               <button
                 type="button"
                 className="sky-thread sky-side-primary"
+                data-active={isFuture}
+                aria-current={isFuture ? 'page' : undefined}
+                onClick={() => navigate('/future')}
+              >
+                <SidebarIcon name="future" />
+                <span>Future</span>
+              </button>
+              <button
+                type="button"
+                className="sky-thread sky-side-primary"
                 data-active={threadId !== null}
                 aria-current={threadId !== null ? 'page' : undefined}
                 onClick={newChat}
@@ -666,6 +684,8 @@ function Canvas() {
           <ClockMain back={{ label: 'Today', onClick: () => navigate('/') }} snap={clock} />
         ) : isOutbox ? (
           <OutboxMain item={outboxItem ?? ''} navigate={navigate} />
+        ) : futureRoute ? (
+          <FutureMain route={futureRoute} navigate={navigate} />
         ) : isTracking ? (
           <TrackingMain path={path} navigate={navigate} />
         ) : isStreaks ? (

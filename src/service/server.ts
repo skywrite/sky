@@ -43,6 +43,7 @@ import type { ChatRoutesOptions } from './handler/chat/mod.ts'
 import type { ClockRoutesOptions } from './handler/clock/mod.ts'
 import type { ReviewRuntime } from './handler/day/review/types.ts'
 import type { ExtensionRoutesOptions } from './handler/extensions/routes.ts'
+import type { FutureRoutesOptions } from './handler/future/mod.ts'
 import { createHttpApp } from './handler/http.ts'
 import type { ImportRoutesOptions } from './handler/import/mod.ts'
 import type { OutboxRoutesOptions } from './handler/outbox/mod.ts'
@@ -105,6 +106,7 @@ export interface ServerOptions {
   dayReview?: ReviewRuntime
   tracking?: TrackingRoutesOptions
   streaks?: StreaksRoutesOptions
+  future?: FutureRoutesOptions
   /** The week page's command host; without it the page reads, but starts, ends and creates nothing */
   week?: WeekCommands
   /** The file-import host; absent, /import is not served */
@@ -287,6 +289,7 @@ export function createServer(options: ServerOptions): Server {
       dayReview: options.dayReview,
       tracking: options.tracking,
       streaks: options.streaks,
+      future: options.future,
       week,
       imports: options.imports,
       ownerAddresses: options.ownerAddresses,

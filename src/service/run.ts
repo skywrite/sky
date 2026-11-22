@@ -23,6 +23,7 @@ import { createClockHost } from './handler/clock/createClockHost.ts'
 import { keptOwnerAddresses } from './handler/day/ownerAddresses.ts'
 import { createReviewRuntime } from './handler/day/review/createReviewHost.ts'
 import { createExtensionsHost } from './handler/extensions/createExtensionsHost.ts'
+import { createFutureHost } from './handler/future/createFutureHost.ts'
 import { createImportHost } from './handler/import/createImportHost.ts'
 import { createMeetingsHost } from './handler/meetings/createMeetingsHost.ts'
 import { createOutboxHost } from './handler/outbox/createOutboxHost.ts'
@@ -170,6 +171,8 @@ customRoutes.set('/service/restart', (req: Request) => {
 })
 
 // Create server using factory
+// Tracking and Future read the same trackers through one store.
+const tracking = createTrackingHost(config)
 const server = createServer({
   port: config.PORT_SERVER as number,
   markdownDirs: config.DIRS_MARKDOWN,
@@ -204,8 +207,9 @@ const server = createServer({
   extensions: createExtensionsHost(config, env.toObject()),
   workstreams: createWorkstreamsHost(config),
   dayReview: createReviewRuntime(config, env.toObject()),
-  tracking: createTrackingHost(config),
+  tracking,
   streaks: createStreaksHost(config),
+  future: createFutureHost(config, () => server.markdownStore, tracking.store),
   week: createWeekHost(config, env.toObject()),
   imports: createImportHost(config, env.toObject()),
   // The day page knows the owner's mail by every address it uses, Gmail aliases included
