@@ -166,10 +166,11 @@ export default class GoogleAgentTask extends Command {
   }
 
   /**
-   * A create-only or read-only mission runs without a go; one that can change
-   * an existing file, or imports one, asks. A mission whose account cannot be resolved — no
-   * connected account opens the file, or the choice for a new one is open —
-   * needs no go either: the run stops at that before anything is touched.
+   * A create-only mission (including an import) or a read-only mission runs
+   * without a go; one that can change an existing file asks. A mission whose
+   * account cannot be resolved — no connected account opens the file, or the
+   * choice for a new one is open — needs no go either: the run stops at that
+   * before anything is touched.
    */
   static async needsApprovalFor(input: Record<string, unknown>, context?: CommandContext): Promise<boolean> {
     if (!missionNeedsApproval(input)) return false

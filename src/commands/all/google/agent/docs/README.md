@@ -1,6 +1,6 @@
 ---
 created: 2026-08-09
-updated: 2026-11-06
+updated: 2026-11-22
 ---
 
 # google:agent — the mission loop and its reliability ladder
@@ -21,11 +21,10 @@ Qwen 3.8 on Cerebras, the default on trial from
 [2026-09-03](../../../../../_shared-ts/ai/docs/2026-09-03-cerebras-provider.md),
 took 4m49s, probed request formats against the live document one request
 per batch, emptied two of three tabs, and ended on a narration that passed
-for a report. A create-only mission runs without a go, and so does a
+for a report. A create-only mission — including an import — runs without a go, and so does a
 read-only one (`--read-only`): `lib/missionWorkspace.ts` withholds every tool
 that changes a file, and one the model names anyway refuses. Any other
-mission on an existing file, or an import, asks once per file per chat
-(`lib/approval.ts`). A mission runs as the account that can open its
+mission on an existing file asks once per file (`lib/approval.ts`). A mission runs as the account that can open its
 target file, or as the work account when it makes something new; one whose
 account cannot be resolved stops before it asks
 ([the account is looked up, not asked](../../docs/2026-10-01-the-account-is-looked-up-not-asked.md)).

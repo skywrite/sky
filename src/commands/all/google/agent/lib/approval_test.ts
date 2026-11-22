@@ -23,12 +23,12 @@ test('missionNeedsApproval', async (t) => {
       expected: true,
     })
   })
-  await t.step('an import asks', () => {
+  await t.step('an import runs without a go', () => {
     assert({
-      given: 'a mission importing a local file',
-      should: 'need approval',
+      given: 'a mission importing a local file into a new Google Doc',
+      should: 'need no approval',
       actual: missionNeedsApproval({ mission: 'Review this contract', import: '~/deals/atlas-msa.pdf' }),
-      expected: true,
+      expected: false,
     })
   })
   await t.step('a read-only mission on an existing file runs without a go', () => {
@@ -50,16 +50,16 @@ test('missionNeedsApproval', async (t) => {
       expected: [true, true],
     })
   })
-  await t.step('a read-only import still asks', () => {
+  await t.step('a read-only import runs without a go', () => {
     assert({
       given: 'a read-only mission importing a local file',
-      should: 'need approval, since the import uploads the file to Drive',
+      should: 'need no approval',
       actual: missionNeedsApproval({
         mission: 'Summarize this contract',
         import: '~/deals/atlas-msa.pdf',
         readOnly: true,
       }),
-      expected: true,
+      expected: false,
     })
   })
 })
