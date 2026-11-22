@@ -3,10 +3,11 @@ import { assert, test } from '#test'
 import { replyThreadTestHost } from './chat/replyThreadsTestHelpers.ts'
 import { runWysiwygE2e } from './httpWysiwygE2eTestHelpers.ts'
 
+const sourceFile = 'time/2030/W14/04-01/notes/Atlas outline.md'
 const PARTS = [
   'The outline is **settled**.\n\nBreaking it into tabs: **Vis',
   'ion** and `sky day:st',
-  'art`.\n\n- one\n- two',
+  `art\`.\n\n- one\n- two\n\n**Sources**\n\n- \`${sourceFile}\` (Jane Doe, April 1).`,
 ]
 
 test({ name: 'a reply reads as rendered markdown while it is being written', timeout: 90000 }, async (t) => {
@@ -112,6 +113,30 @@ test({ name: 'a reply reads as rendered markdown while it is being written', tim
         },
       })
       if (screenshot) await page.screenshot({ path: screenshot.replace('.png', '-done.png') })
+
+      const sources = page.getByRole('button', { name: 'Sources · 1' })
+      const list = page.locator('.sky-sources-list')
+      for (const state of ['completed', 'reopened']) {
+        if (state === 'reopened') await page.reload()
+        await sources.waitFor()
+        assert({
+          given: `a ${state} reply with an annotated notebook source`,
+          should: 'collapse the source by default and keep the heading out of the answer',
+          actual: [
+            await sources.getAttribute('aria-expanded'),
+            await done.getByText('Sources', { exact: true }).count(),
+          ],
+          expected: ['false', 0],
+        })
+        await sources.click()
+        const link = list.getByRole('link', { name: sourceFile })
+        assert({
+          given: 'the expanded source',
+          should: 'link to the notebook file and show the annotation outside the link',
+          actual: [await link.getAttribute('href'), await list.locator('li').innerText()],
+          expected: [`/explorer/${sourceFile.replaceAll(' ', '%20')}`, `${sourceFile} (Jane Doe, April 1).`],
+        })
+      }
     },
   )
 })

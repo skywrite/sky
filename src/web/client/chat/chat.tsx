@@ -20,7 +20,7 @@ import type { ChatPlan, QueuedChatInstruction } from '#universal/ai/chatPlan.ts'
 import { contextAdjustmentText, type ContextAdjustment } from '#universal/ai/contextAdjustment.ts'
 import { effortLabel, type Effort, type EffortOverride } from '#universal/ai/effort.ts'
 import { imageMarkupInstructions, type ImageMarkup } from '#universal/ai/imageMarkup.ts'
-import { splitSources, withSources } from '#universal/ai/sources.ts'
+import { sourceReference, splitSources } from '#universal/ai/sources.ts'
 import type { TokenUsage } from '#universal/ai/tokenUsage.ts'
 import { toolDisplayName } from '#universal/ai/toolDisplay.ts'
 import { ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
@@ -1246,9 +1246,7 @@ export function useChat(id: string) {
                 dispatch({ id, type: 'failed', message: d.error, timing: d.timingText as string | undefined })
               } else {
                 // The reply may name sources of its own; with the pages the searches read they are one list, the one the transcript keeps.
-                const { body: text, sources } = splitSources(
-                  withSources(d.text as string, (d.sourceUrls as string[]) ?? []),
-                )
+                const { body: text, sources } = splitSources(d.text as string, d.sourceUrls as string[] | undefined)
                 dispatch({
                   id,
                   type: 'finished',
@@ -1877,13 +1875,24 @@ function SourcesFold({ sources }: { sources: string[] }) {
       </button>
       {open && (
         <ul className="sky-sources-list">
-          {sources.map((url) => (
-            <li key={url}>
-              <a href={url} target="_blank" rel="noopener noreferrer" title={url}>
-                {sourceLabel(url)}
-              </a>
-            </li>
-          ))}
+          {sources.map((entry) => {
+            const ref = sourceReference(entry)
+            const href = ref && chatLinkHref(ref.target)
+            return (
+              <li key={entry}>
+                {ref && href && /^(?:https?:\/\/|\/explorer\/)/i.test(href) ? (
+                  <>
+                    <a href={href} target="_blank" rel="noopener noreferrer" title={ref.target}>
+                      {ref.label ?? sourceLabel(ref.target)}
+                    </a>
+                    {ref.note}
+                  </>
+                ) : (
+                  entry
+                )}
+              </li>
+            )
+          })}
         </ul>
       )}
     </div>

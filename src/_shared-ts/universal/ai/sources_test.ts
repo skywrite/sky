@@ -1,5 +1,5 @@
 import { assert, test } from '#test'
-import { splitSources, withSources } from './sources.ts'
+import { sourceReference, splitSources, withSources } from './sources.ts'
 
 test('sources - the trailing Sources list comes out of a saved reply, and a reply without one stays whole', () => {
   const saved =
@@ -17,6 +17,61 @@ test('sources - the trailing Sources list comes out of a saved reply, and a repl
       { body: plain, sources: [] },
     ],
   })
+})
+
+test('sources - annotated notebook and web citations fold together in live and saved replies', () => {
+  const file = 'time/2030/W14/04-01/notes/Atlas outline.md'
+  const notebook = `\`${file}\` (Jane Doe, April 1).`
+  const address = 'https://example.com/review'
+  const article = `[Atlas review](${address}) (background).`
+  const other = 'https://example.com/next'
+  const body = 'The Atlas outline is ready.'
+  for (const heading of ['Sources', '#### Sources', '**Sources:**', '**Sources**:', '## Sources:']) {
+    const reply = [body, '', heading, '', `* ${notebook}`, '', `* ${article}`, ''].join('\r\n')
+    const expected = { body, sources: [notebook, article, other] }
+    assert({
+      given: `a ${heading} section followed by a separately reported search result`,
+      should: 'keep the same annotations, order, and source count on completion and reload',
+      actual: [splitSources(reply, [address, other]), splitSources(withSources(reply, [address, other]))],
+      expected: [expected, expected],
+    })
+    assert({
+      given: 'an existing annotated transcript used to identify a reply thread',
+      should: 'preserve its original text for storage and history hashes',
+      actual: withSources(reply, []),
+      expected: reply,
+    })
+  }
+  assert({
+    given: 'citations with notes following a code span or Markdown link',
+    should: 'separate the link destination from its label and annotation',
+    actual: [sourceReference(notebook), sourceReference(article)],
+    expected: [
+      { target: file, note: ' (Jane Doe, April 1).' },
+      { target: address, label: 'Atlas review', note: ' (background).' },
+    ],
+  })
+})
+
+test('sources - examples and nonterminal sections stay in the reply', () => {
+  const section = '### Sources\n\n- https://example.com/atlas'
+  for (const body of [
+    `Example:\n\n\`\`\`markdown\n${section}\n\`\`\``,
+    `Example:\n\n\`\`\`markdown\n${section}`,
+    section
+      .split('\n')
+      .map((line) => `> ${line}`)
+      .join('\n'),
+    `${section}\n\nThe decision is still pending.`,
+    'Sources of uncertainty\n\n- Timing\n- Cost',
+  ]) {
+    assert({
+      given: 'a source example, quoted material, or another section in the answer',
+      should: 'preserve the complete reply body',
+      actual: splitSources(body),
+      expected: { body, sources: [] },
+    })
+  }
 })
 
 test('sources - a reply that named its own sources and had the searched pages appended folds to one list', () => {
