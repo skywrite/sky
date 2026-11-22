@@ -191,6 +191,14 @@ export default class DecisionStore {
   }
 
   /**
+   * Get the decisions in force: made, and still binding what the person does.
+   */
+  getInForce(): Collection<DecisionDocument> {
+    const docs = this.entries.filter((e) => e.value.inForce).map((e) => ({ doc: e.value, path: e.path }))
+    return Collection.from(docs, 'decision')
+  }
+
+  /**
    * Get all decided decisions (has decided date).
    */
   getDecided(): Collection<DecisionDocument> {

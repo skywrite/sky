@@ -177,14 +177,18 @@ const DOCUMENT_TYPES: Record<string, TypeDef> = {
     },
   },
   Decision: {
-    description: 'Decision record with pending/resolved status',
+    description: 'Decision record: pending, in force, or resolved',
     fields: {
       name: { type: 'String!', description: 'Decision identifier/slug' },
       summary: { type: 'String', description: 'Human-readable summary', nullable: true },
       identified: { type: 'String', description: 'When identified (ISO datetime)', nullable: true },
       target: { type: 'String', description: 'Target decision date', nullable: true },
       resolved: { type: 'String', description: 'When resolved (null if pending)', nullable: true },
-      isPending: { type: 'Boolean!', description: 'True if not yet resolved' },
+      isPending: { type: 'Boolean!', description: 'True if not yet made' },
+      inForce: {
+        type: 'Boolean!',
+        description: 'True while a made decision still binds what the person does (the inForce flag)',
+      },
       tags: { type: '[String!]!', description: 'Tags' },
       rel: { type: '[String!]!', description: 'Related entities' },
       markdown: { type: 'String!', description: 'Full document content' },
@@ -537,6 +541,7 @@ const FILTER_TYPES: Record<string, FilterDef> = {
     fields: {
       nameContains: 'String',
       pending: 'Boolean',
+      inForce: 'Boolean',
       decided: 'Boolean',
       identifiedGte: 'String',
       identifiedLte: 'String',

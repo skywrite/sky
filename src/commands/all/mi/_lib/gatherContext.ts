@@ -4,7 +4,7 @@
  * One rule, no scoring — the MI twin of journal:new's gather:
  *
  * PINNED (always included):
- *   - goals, pending decisions, the current week's week.md (the plan)
+ *   - goals, pending and in-force decisions, the current week's week.md (the plan)
  *   - standing planning files (time/commitments.md, next-*.md, schedule-*.md) —
  *     the deferred/scheduled backlog an MI often should come from
  * PER DAY, last 7 days incl. today:
@@ -32,6 +32,7 @@ import {
   readDayMostImportant,
   readDayNarration,
   readGoals,
+  readInForceDecisions,
   readPendingDecisions,
   readPlanningFiles,
   tryRead,
@@ -95,6 +96,7 @@ export async function gatherContext(today: PlainDate, time?: string): Promise<MI
   // Pinned: the anchors every run sees, independent of recency.
   for (const goal of await readGoals()) add(relToBase(goal.path), goal.body)
   for (const decision of await readPendingDecisions()) add(relToBase(decision.path), decision.body)
+  for (const decision of await readInForceDecisions()) add(relToBase(decision.path), decision.body)
   for (const planning of await readPlanningFiles()) add(relToBase(planning.path), planning.body)
 
   const week = Week.of(today)

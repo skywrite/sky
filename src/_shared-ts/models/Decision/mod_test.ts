@@ -377,3 +377,43 @@ test(`DecisionDocument.create() with a made call is born resolved`, () => {
     actual: d.toMarkdown().includes('Widget ships flagged off.'),
   })
 })
+
+test('DecisionDocument: a decision in force is made, not pending, and carries the flag only when set', () => {
+  const inForce = DecisionDocument.fromMarkdown(
+    '---\nname: No-Friday-Releases\nresolved: 2026-01-12T09:00:00-06:00[America/Chicago]\ninForce: true\n---\n\n# No releases on Fridays',
+  )
+  const flagOnly = DecisionDocument.fromMarkdown('---\nname: Quit-Coffee\ninForce: true\n---\n\n# Quit coffee')
+  const done = DecisionDocument.fromMarkdown(
+    '---\nname: Ship-Widget\nresolved: 2026-01-12T09:00:00-06:00[America/Chicago]\n---\n\n# Ship Widget',
+  )
+  const open = DecisionDocument.fromMarkdown('---\nname: Choose-Vendor\ninForce: yes please\n---\n\n# Choose a vendor')
+
+  assert({
+    given:
+      'a decision in force, one flagged by hand with no resolved date, a done one, and an open one with a stray value',
+    should: 'read in force only from `inForce: true`, and never call an in-force decision pending',
+    actual: [inForce, flagOnly, done, open].map((d) => [d.name, d.inForce, d.isPending]),
+    expected: [
+      ['No-Friday-Releases', true, false],
+      ['Quit-Coffee', true, false],
+      ['Ship-Widget', false, false],
+      ['Choose-Vendor', false, true],
+    ],
+  })
+
+  const created = (inForce: boolean) =>
+    DecisionDocument.create({
+      name: 'No-Friday-Releases',
+      identified: new ZonedDateTime('2026-01-12 09:00', 'America/Chicago'),
+      resolved: new ZonedDateTime('2026-01-12 09:00', 'America/Chicago'),
+      decision: 'No releases on Fridays.',
+      inForce,
+    }).toMarkdown()
+
+  assert({
+    given: 'the same made decision created in force and not',
+    should: 'write the flag after resolved in the first, and no flag at all in the second',
+    actual: [/\nresolved: .+\ninForce: true\ncreated: /.test(created(true)), created(false).includes('inForce')],
+    expected: [true, false],
+  })
+})

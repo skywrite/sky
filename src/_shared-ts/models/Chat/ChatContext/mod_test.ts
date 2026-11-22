@@ -30,6 +30,7 @@ const FIX = {
   oldMessage: abs('time/2026/W04/01-22/actions/messages/slack_Ops-to-atlas-general_Standup-Notes.md'),
   goal: abs('goals/2026.md'),
   decision: abs('decisions/2026-01_Atlas-Tooling.md'),
+  inForce: abs('decisions/2026/in-force/01/No-Friday-Releases.md'),
   roadmap: abs('projects/Atlas/Roadmap.md'),
   person: abs('people/Jane-Doe.md'),
   ownChat: abs('time/2026/W05/01-27/actions/ai-chats/09-00_Prior-Session.md'),
@@ -113,12 +114,14 @@ function fetchFake(sets: {
   prev?: string[]
   goals?: string[]
   decisions?: string[]
+  inForce?: string[]
   memory?: string[]
 }) {
   return async (query: string): Promise<Array<{ doc: Document; path: string }>> => {
     let paths: string[] = []
     if (query.includes('dateGte')) paths = sets.prev ?? []
     else if (query.includes('goals')) paths = sets.goals ?? []
+    else if (query.includes('inForce')) paths = sets.inForce ?? []
     else if (query.includes('decisions')) paths = sets.decisions ?? []
     else if (query.includes('ai/memory')) paths = sets.memory ?? []
     else paths = sets.today ?? []
@@ -155,6 +158,20 @@ test('ChatContext.seedBaseline', async () => {
       size: 6,
       counts: { today: 1, prev: 3, goals: 1, decisions: 1, memory: 1 },
     },
+  })
+})
+
+test('ChatContext.seedBaseline - a decision in force rides along beside a pending one', async () => {
+  const { context } = makeContext({
+    fetchContext: fetchFake({ today: [FIX.day], decisions: [FIX.decision], inForce: [FIX.inForce] }),
+  })
+  const report = await context.seedBaseline()
+
+  assert({
+    given: 'one pending decision and one decision in force',
+    should: 'seed both and count both as decisions',
+    actual: { paths: [...context.paths].sort(), decisions: report.counts.decisions },
+    expected: { paths: [FIX.day, FIX.decision, FIX.inForce].sort(), decisions: 2 },
   })
 })
 

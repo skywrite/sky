@@ -116,3 +116,49 @@ test('writeDecision - refuses a slug collision instead of overwriting', async ()
     expected: true,
   })
 })
+
+test('writeDecision - a made call that still binds lands in in-force/ with the flag', async () => {
+  const decisionsDir = await makeTempDir({ prefix: 'decisions-' })
+  const timeDir = await makeTempDir({ prefix: 'time-' })
+  const base = {
+    title: 'No releases on Fridays',
+    context: 'Two Friday releases needed weekend fixes with nobody on call.',
+    desiredOutcomes: 'No weekend fixes.',
+    now: NOW,
+    category: 'Professional Complete',
+  }
+
+  const inForce = await writeDecision(
+    {
+      ...base,
+      name: 'No-Friday-Releases',
+      decision: 'No releases on Fridays, until the on-call rota is staffed.',
+      inForce: true,
+    },
+    { decisionsDir, timeDir },
+  )
+  const unmade = await writeDecision({ ...base, name: 'Friday-Policy', inForce: true }, { decisionsDir, timeDir })
+  const content = await readTextFile(inForce.file)
+
+  assert({
+    given: 'a made decision marked in force, and an open one wrongly marked in force',
+    should:
+      'file the first under in-force/ with the flag and a Decided day item, and leave the second pending without it',
+    actual: {
+      file: inForce.file,
+      flag: content.includes('\ninForce: true\n'),
+      resolved: content.includes('resolved: 2026-03-05'),
+      dayItem: inForce.dayItem,
+      unmade: unmade.file,
+      unmadeFlag: (await readTextFile(unmade.file)).includes('inForce'),
+    },
+    expected: {
+      file: path.join(decisionsDir, '2026', 'in-force', '03', 'No-Friday-Releases.md'),
+      flag: true,
+      resolved: true,
+      dayItem: '09:15 > decisions/No-Friday-Releases -> Decided | No releases on Fridays',
+      unmade: path.join(decisionsDir, '2026', 'pending', '03', 'Friday-Policy.md'),
+      unmadeFlag: false,
+    },
+  })
+})

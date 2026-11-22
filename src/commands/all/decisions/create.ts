@@ -27,6 +27,10 @@ const params = {
     'The decision as made — pass when the call is already settled; the document lands resolved with this in its Decision section. Omit for a still-open decision.',
     { optional: true },
   ),
+  inForce: Flag.bool(
+    'Pass true when the made decision keeps binding what the person does — a rule, a freeze, a quit ("no X until Y") — instead of being carried out once. It lands in in-force/ and stays in view in every chat until it ends or is retired. Needs `decision`; say what ends it, if anything, in the decision text.',
+    { default: false },
+  ),
   target: Flag.string('Decide-by date for a still-open decision: "YYYY-MM-DD" or "YYYY-MM-DD HH:MM"', {
     optional: true,
   }),
@@ -54,18 +58,22 @@ export default class DecisionsCreateTask extends Command {
   static override description: CommandDescription = {
     name: 'decisions:create',
     description:
-      'Write a decision document into the notebook plus its day item — pending/ for an open decision, resolved/ when `decision` carries the call already made. Headless — pass fields produced by decisions_clarify; the user approves before anything is written.',
+      'Write a decision document into the notebook plus its day item — pending/ for an open decision, resolved/ when `decision` carries the call already made, in-force/ when `inForce` says that made call still binds what the person does. Headless — pass fields produced by decisions_clarify; the user approves before anything is written.',
     descriptionLong: [
       'Creates the Decision document and day item exactly as decisions:new',
       'would, from explicit fields. No AI calls — pure write.',
     ],
-    usage: ['sky decisions:create --title "..." --context "..." --desired-outcomes "..."'],
+    usage: [
+      'sky decisions:create --title "..." --context "..." --desired-outcomes "..."',
+      'sky decisions:create --title "..." --context "..." --desired-outcomes "..." --decision "..." --in-force',
+    ],
     params,
   }
 
   static formatApproval(input: Record<string, unknown>, output: OutputHandler): void {
     output.log(`  Decision: ${String(input.title ?? '')}`)
-    output.log(`  Status:   ${input.decision ? 'decided — lands in resolved/' : 'pending'}`)
+    const landing = input.inForce ? 'decided and in force — lands in in-force/' : 'decided — lands in resolved/'
+    output.log(`  Status:   ${input.decision ? landing : 'pending'}`)
     if (input.decision) output.log(`  The call: ${String(input.decision)}`)
     if (input.target) output.log(`  Target:   ${String(input.target)}`)
     if (input.tags) output.log(`  Tags:     ${String(input.tags)}`)
@@ -77,6 +85,11 @@ export default class DecisionsCreateTask extends Command {
     const { output } = context
     const { title, name, category } = args
     const decision = args.decision?.trim() || undefined
+    if (args.inForce && !decision) {
+      return CommandResult.fail(
+        'A decision can only be in force once it is made — pass decision with what was decided.',
+      )
+    }
 
     let target = args.target
     if (decision && target) {
@@ -124,6 +137,7 @@ export default class DecisionsCreateTask extends Command {
         desiredOutcomes: args.desiredOutcomes,
         target,
         decision,
+        inForce: args.inForce,
         tags,
         rel,
         now,

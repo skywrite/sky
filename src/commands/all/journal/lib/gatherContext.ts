@@ -4,7 +4,7 @@
  * One rule, no scoring — the journal twin of week:plan's planContext:
  *
  * PINNED (always included):
- *   - goals, pending decisions, the current week's week.md, active streaks
+ *   - goals, pending and in-force decisions, the current week's week.md, active streaks
  *   - health tracking lines (last 5 days)
  * PER DAY, last 7 days incl. today:
  *   - AI chats (the day's chats folder)
@@ -27,6 +27,7 @@ import {
   readDayMostImportant,
   readDayNarration,
   readGoals,
+  readInForceDecisions,
   readPendingDecisions,
   tryRead,
 } from '#commands/lib/notebookContext.ts'
@@ -88,6 +89,7 @@ export async function gatherContext(today: PlainDate, time?: string): Promise<Jo
   // Pinned: the anchors every run sees, independent of recency.
   for (const goal of await readGoals()) add(relToBase(goal.path), goal)
   for (const decision of await readPendingDecisions()) add(relToBase(decision.path), decision)
+  for (const decision of await readInForceDecisions()) add(relToBase(decision.path), decision)
 
   const week = Week.of(today)
   const weekMdPath = path.join(DIR_TIME, weekDir(week.startInYear), 'week.md')

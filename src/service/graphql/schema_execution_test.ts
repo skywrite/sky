@@ -269,6 +269,17 @@ resolved: "2026-01-25"
 Decided.`),
     path: '/test/decisions/new-office.md',
   },
+  {
+    doc: doc(`---
+name: no-friday-releases
+summary: No releases on Fridays
+identified: "2026-01-12"
+resolved: "2026-01-12"
+inForce: true
+---
+Still binding.`),
+    path: '/test/decisions/2026/in-force/01/no-friday-releases.md',
+  },
 ]
 
 const goals = [
@@ -471,6 +482,16 @@ const CASES: SmokeCase[] = [
     field: 'decisions',
     query: '{ decisions(where: { pending: true }) { path } }',
     expectPaths: [decisions[0].path],
+  },
+  {
+    field: 'decisions',
+    query: '{ decisions(where: { inForce: true }) { path } }',
+    expectPaths: [decisions[2].path],
+  },
+  {
+    field: 'decisions',
+    query: '{ decisions(where: { decided: true }) { path } }',
+    expectPaths: [decisions[1].path, decisions[2].path],
   },
   {
     field: 'goals',

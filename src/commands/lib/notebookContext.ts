@@ -11,6 +11,7 @@ import * as path from 'node:path'
 import { DIR_DECISIONS, DIR_GOALS, DIR_TIME } from '#config'
 import { MI_FILE } from '#lib/mostImportant/paths.ts'
 import { exists, readTextFile, walk } from '#shared/fs/mod.ts'
+import DecisionDocument from '#shared/models/Decision/mod.ts'
 import { activeGoalsDir } from '#shared/models/Goal/mod.ts'
 import stripHtmlComments from '#shared/models/Markdown/Document/_stripHtmlComments.ts'
 import { Document } from '#shared/models/Markdown/mod.ts'
@@ -110,6 +111,25 @@ export async function readPendingDecisions(): Promise<ContextFile[]> {
   for (const filePath of found) {
     const body = await tryRead(filePath)
     if (body !== undefined) files.push({ name: path.basename(filePath), path: filePath, body })
+  }
+  return files
+}
+
+/**
+ * Decisions in force: every decision file whose frontmatter says `inForce: true`.
+ * The flag decides it, wherever the file sits.
+ */
+export async function readInForceDecisions(): Promise<ContextFile[]> {
+  if (!(await exists(DIR_DECISIONS))) return []
+  const found: string[] = []
+  for await (const entry of walk(DIR_DECISIONS, { exts: ['.md'], includeDirs: false })) found.push(entry.path)
+  found.sort()
+  const files: ContextFile[] = []
+  for (const filePath of found) {
+    const body = await tryRead(filePath)
+    if (body !== undefined && DecisionDocument.fromMarkdown(body).inForce) {
+      files.push({ name: path.basename(filePath), path: filePath, body })
+    }
   }
   return files
 }

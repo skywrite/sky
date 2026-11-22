@@ -372,8 +372,8 @@ export default class ChatContext {
 
   /**
    * Fresh session: gather the baseline universe from the notebook service —
-   * today's documents, the previous days' activity, goals, pending
-   * decisions, and the AI memory store (ai/memory/).
+   * today's documents, the previous days' activity, goals, pending and
+   * in-force decisions, and the AI memory store (ai/memory/).
    */
   async seedBaseline(): Promise<SeedReport> {
     const prevStart = this.today.addDays(-(this.days - 1))
@@ -384,7 +384,7 @@ export default class ChatContext {
     // sweep cost seconds of serialize for content the query-targeted rel
     // path (ai:context:files) is meant to fetch when relevant.
     let t0 = performance.now()
-    const [todayDocsRaw, prevDocsRaw, goalDocs, decisionDocs, memoryDocs] = await Promise.all([
+    const [todayDocsRaw, prevDocsRaw, goalDocs, pendingDocs, inForceDocs, memoryDocs] = await Promise.all([
       this.fetchContext(`{ documents(where: { date: "${this.today}", pathContains: "/time/" }) { path } }`, 1),
       this.fetchContext(
         `{ documents(where: { dateGte: "${prevStart}", dateLte: "${yesterday}", pathContains: "/time/" }) { path } }`,
@@ -392,6 +392,8 @@ export default class ChatContext {
       ),
       this.fetchContext(`{ goals(where: { status: "active" }) { path } }`, 0),
       this.fetchContext(`{ decisions(where: { pending: true }) { path } }`, 0),
+      // A decision in force still binds what the person does, so it rides along like a goal.
+      this.fetchContext(`{ decisions(where: { inForce: true }) { path } }`, 0),
       // The AI's cross-session memories join the universe UNPINNED: unlike
       // goals they must compete — the s4 scorer's lexical channel surfaces
       // the on-topic ones and the floor sheds the rest. Preference-kind
@@ -400,6 +402,7 @@ export default class ChatContext {
       this.fetchContext(`{ documents(where: { pathContains: "${MEMORY_PATH_SEGMENT}" }) { path } }`, 0),
     ])
     const fetchMs = performance.now() - t0
+    const decisionDocs = [...pendingDocs, ...inForceDocs]
 
     const todayDocs = this.summaryBaseline ? withoutMessages(todayDocsRaw) : todayDocsRaw
 
@@ -461,7 +464,7 @@ export default class ChatContext {
       }
     }
 
-    // Goals and pending decisions are the strategic spine — never prune them.
+    // Goals and pending or in-force decisions are the strategic spine — never prune them.
     // Unpinned they cap at score 8 (flat recency 3 + type 5) and lose to any
     // query-boosted (+10) document when the token budget forces pruning.
     // The current week's plan is pinned with them: it governs the whole

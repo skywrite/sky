@@ -1,5 +1,12 @@
 import type { Document } from '#shared/models/Markdown/mod.ts'
-import { matchesContains, matchesDateGte, matchesDateLte, matchesDecided, matchesPending } from '../filters/mod.ts'
+import {
+  matchesContains,
+  matchesDateGte,
+  matchesDateLte,
+  matchesDecided,
+  matchesInForce,
+  matchesPending,
+} from '../filters/mod.ts'
 import {
   type ActivityFilter,
   type EntitySpec,
@@ -21,6 +28,7 @@ import {
 export interface DecisionFilter extends TagFilter, TextFilter, InvolvesFilter, ActivityFilter {
   nameContains?: string
   pending?: boolean
+  inForce?: boolean
   decided?: boolean
   identifiedGte?: string
   identifiedLte?: string
@@ -29,6 +37,7 @@ export interface DecisionFilter extends TagFilter, TextFilter, InvolvesFilter, A
 export function matchesDecisionFilter(doc: Document, filter: DecisionFilter, resolveNames?: NameResolver): boolean {
   if (filter.nameContains && !matchesContains(doc, 'name', filter.nameContains)) return false
   if (filter.pending === true && !matchesPending(doc)) return false
+  if (filter.inForce === true && !matchesInForce(doc)) return false
   if (filter.decided === true && !matchesDecided(doc)) return false
   // Each bound applies on its own — same one-ended contract as dateGte/dateLte.
   if (filter.identifiedGte && !matchesDateGte(doc, filter.identifiedGte)) return false
@@ -50,7 +59,8 @@ export function docToDecision(doc: Document, path: string) {
     identified: identified != null ? String(identified) : null,
     target: target != null ? String(target) : null,
     resolved: resolved != null ? String(resolved) : null,
-    isPending: !resolved,
+    isPending: matchesPending(doc),
+    inForce: matchesInForce(doc),
     ...docBase(doc, path),
   }
 }

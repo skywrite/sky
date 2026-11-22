@@ -1,6 +1,6 @@
 ---
 created: 2026-08-15
-updated: 2026-11-21
+updated: 2026-11-22
 ---
 
 # ChatContext admission — evidence in, budget as a cap
@@ -34,7 +34,7 @@ A document is admitted by **evidence**, never by budget room (scoring
 - it is **ambient core**: a day's ledger (`day.md`) or summary inside the
   baseline window, one line per capture and the digest of each day, so the
   model knows what the week held even when the question names none of it;
-- it is pinned (active goals, pending decisions, the week plan, the person's pins).
+- it is pinned (active goals, pending and in-force decisions, the week plan, the person's pins).
 
 Everything else is refused (`cut: 'floor'`, counted in `stats.floored`;
 `stats.floor` records the bar). The budget then caps the admitted set; it is

@@ -187,7 +187,7 @@ type Project {
 }
 
 """
-Decision record with pending/resolved status
+Decision record: pending, in force, or resolved
 """
 type Decision {
   name: String! # Decision identifier/slug
@@ -195,7 +195,8 @@ type Decision {
   identified: String # When identified (ISO datetime)
   target: String # Target decision date
   resolved: String # When resolved (null if pending)
-  isPending: Boolean! # True if not yet resolved
+  isPending: Boolean! # True if not yet made
+  inForce: Boolean! # True while a made decision still binds what the person does (the inForce flag)
   tags: [String!]! # Tags
   rel: [String!]! # Related entities
   markdown: String! # Full document content
@@ -530,6 +531,7 @@ input ProjectFilter {
 input DecisionFilter {
   nameContains: String
   pending: Boolean
+  inForce: Boolean
   decided: Boolean
   identifiedGte: String
   identifiedLte: String

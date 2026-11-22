@@ -8,9 +8,19 @@ import ZonedDateTime from '#universal/dates/nbdt/ZonedDateTime/mod.ts'
  * DecisionDocument model - represents a decision with minimal queryable metadata in YAML
  * and free-form narrative in markdown.
  *
- * Stored at: $SKY_DIR/decisions/{year}/{pending|resolved|archived}/{month}/{name}.md
+ * Stored at: $SKY_DIR/decisions/{year}/{pending|in-force|resolved|archived}/{month}/{name}.md
+ *
+ * A decision is pending until it is made. A made decision that still binds what
+ * the person does (a rule, a freeze, a quit) is in force, until something ends
+ * it or the person retires it. Any other made decision is resolved: history.
+ * See ../docs/README.md.
  */
 export default class DecisionDocument extends Document {
+  /** The frontmatter flag that says a made decision is still in force */
+  static readonly IN_FORCE_FLAG = 'inForce'
+  /** The folder Sky files such a decision under */
+  static readonly IN_FORCE_DIR = 'in-force'
+
   constructor(yaml: Record<string, unknown> = {}, markdown = '', yamlError?: string) {
     // Normalize tags to string format if they're an array or other format
     const normalizedYaml = { ...yaml }
@@ -83,10 +93,19 @@ export default class DecisionDocument extends Document {
   }
 
   /**
-   * Whether this decision is still pending (no resolved date)
+   * Whether this decision is in force: made, and still binding what the person
+   * does. The `inForce: true` flag decides it; the in-force/ folder is where
+   * Sky files such a decision, and never overrules the flag.
+   */
+  get inForce(): boolean {
+    return this.yaml[DecisionDocument.IN_FORCE_FLAG] === true
+  }
+
+  /**
+   * Whether this decision is still pending: not made yet (no resolved date, not in force)
    */
   get isPending(): boolean {
-    return !this.resolved
+    return !this.resolved && !this.inForce
   }
 
   /**
@@ -155,6 +174,8 @@ export default class DecisionDocument extends Document {
     decision?: string
     /** When the decision was made; a decision captured after the fact is born resolved */
     resolved?: ZonedDateTime
+    /** The made decision still binds what the person does */
+    inForce?: boolean
     tags?: string | TagSet
     rel?: string[]
   }): DecisionDocument {
@@ -168,6 +189,8 @@ export default class DecisionDocument extends Document {
       identified: DecisionDocument.formatZonedDateTime(identified),
       target: input.target ? DecisionDocument.formatTargetDate(input.target) : null,
       resolved: input.resolved ? DecisionDocument.formatZonedDateTime(input.resolved) : null,
+      // Written only when set, so an ordinary decision carries no flag to misread
+      ...(input.inForce ? { [DecisionDocument.IN_FORCE_FLAG]: true } : {}),
       created: null, // placeholder, filled by ensureCreatedUpdated
       updated: null, // placeholder, filled by ensureCreatedUpdated
       rel: input.rel && input.rel.length > 0 ? input.rel : null,
