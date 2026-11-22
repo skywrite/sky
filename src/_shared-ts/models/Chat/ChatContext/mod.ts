@@ -390,7 +390,7 @@ export default class ChatContext {
         `{ documents(where: { dateGte: "${prevStart}", dateLte: "${yesterday}", pathContains: "/time/" }) { path } }`,
         0,
       ),
-      this.fetchContext(`{ goals { path } }`, 0),
+      this.fetchContext(`{ goals(where: { status: "active" }) { path } }`, 0),
       this.fetchContext(`{ decisions(where: { pending: true }) { path } }`, 0),
       // The AI's cross-session memories join the universe UNPINNED: unlike
       // goals they must compete — the s4 scorer's lexical channel surfaces

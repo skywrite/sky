@@ -337,14 +337,10 @@ export default class MarkdownStore {
     }
 
     if (raw.startsWith('goals/')) {
-      const goalCategory = raw.slice('goals/'.length).toLowerCase()
-      if (goalCategory === 'personal' || goalCategory === 'professional') {
-        const category = goalCategory === 'personal' ? 'Personal' : 'Professional'
-        const goal = this.goals.getByCategory(category)
-        const goalPath = this.goals.getPath(category)
-        if (goal && goalPath) {
-          return { type: 'goal', value: goal, path: goalPath, raw }
-        }
+      const goalName = raw.slice('goals/'.length)
+      const goal = this.goals.find(goalName)
+      if (goal) {
+        return { type: 'goal', value: goal.value, path: goal.path, raw }
       }
     }
 

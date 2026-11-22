@@ -192,10 +192,12 @@ const DOCUMENT_TYPES: Record<string, TypeDef> = {
     },
   },
   Goal: {
-    description: 'Goal/objective',
+    description: 'A goal the person is going after, one per file (active/archived)',
     fields: {
-      name: { type: 'String!', description: 'Goal name' },
-      status: { type: 'String', description: 'Goal status', nullable: true },
+      name: { type: 'String!', description: 'Goal identifier: the file name, as in goals/<name>' },
+      title: { type: 'String!', description: 'The goal in a few words' },
+      status: { type: 'String!', description: 'Status: active, archived (derived from path)' },
+      category: { type: 'String!', description: 'Personal or Professional' },
       tags: { type: '[String!]!', description: 'Tags' },
       rel: { type: '[String!]!', description: 'Related entities' },
       markdown: { type: 'String!', description: 'Full document content' },
@@ -554,7 +556,9 @@ const FILTER_TYPES: Record<string, FilterDef> = {
   },
   GoalFilter: {
     fields: {
+      name: 'String',
       nameContains: 'String',
+      titleContains: 'String',
       status: 'String',
       tagsContains: 'String',
       tagsContainsAny: '[String!]',

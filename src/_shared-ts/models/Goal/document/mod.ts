@@ -1,7 +1,7 @@
 import Document from '#shared/models/Markdown/Document/mod.ts'
 import PlainDate from '#universal/dates/nbdt/PlainDate/mod.ts'
 
-/** A single goal within a goals document */
+/** One goal inside an older whole-category file */
 export interface Goal {
   /** Goal area (e.g., "Health", "Relationships") */
   area: string
@@ -16,12 +16,19 @@ export interface Goal {
 export type GoalCategory = 'Personal' | 'Professional'
 
 /**
- * GoalDocument model - represents a goals file (personal.md or professional.md)
- * with structured goal data parsed from markdown.
+ * GoalDocument model - one goal: what the person is going after, and why.
  *
- * Stored at: $SKY_DIR/goals/personal.md or $SKY_DIR/goals/professional.md
+ * Stored at: $SKY_DIR/goals/active/{name}.md while pursued, then
+ * $SKY_DIR/goals/archived/{year}/{name}.md once reached or dropped. Status and
+ * name come from the path (see ../paths.ts), never from a field in the file.
+ *
+ * Older notebooks keep every goal of a category in one file
+ * ($SKY_DIR/goals/personal.md, professional.md). Those still load, and `goals`
+ * reads the areas written inside them. See ../docs/README.md.
  */
 export default class GoalDocument extends Document {
+  static override yamlKeyOrder = ['title', 'category', 'created', 'updated', 'rel', 'tags']
+
   private _goals: Goal[] | null = null
   private _discoveryNotes: string | null = null
 
@@ -39,15 +46,18 @@ export default class GoalDocument extends Document {
   }
 
   /**
-   * Title of the goals document
+   * The goal in a few words: the `title` field, else the first heading.
    */
   get title(): string {
-    return (this.yaml['title'] as string) ?? `${this.category} Goals`
+    const title = this.yaml['title']
+    if (typeof title === 'string' && title.trim()) return title.trim()
+    const heading = this.markdown.match(/^#\s+(.+)$/m)
+    return heading ? heading[1].trim() : `${this.category} Goals`
   }
 
   /**
-   * Parse and return the goals from the markdown body.
-   * Cached after first parse.
+   * The areas written inside an older whole-category file. A one-goal file
+   * has none. Cached after first parse.
    */
   get goals(): Goal[] {
     if (this._goals === null) {
@@ -67,7 +77,7 @@ export default class GoalDocument extends Document {
   }
 
   /**
-   * Check if this document has any goals defined
+   * Whether an older whole-category file has any areas written in it
    */
   get hasGoals(): boolean {
     return this.goals.length > 0

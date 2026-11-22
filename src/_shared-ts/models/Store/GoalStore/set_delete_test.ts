@@ -64,16 +64,32 @@ test('GoalStore.set: upserts personal goal', () => {
   })
 })
 
-test('GoalStore.set: ignores non-personal/professional files', () => {
+test('GoalStore.set: a goal file of any name loads', () => {
   const store = GoalStore.empty()
 
-  store.set('/goals/other.md', '---\ncategory: Other\n---\n\n# Other')
+  store.set('/goals/active/Launch-Atlas.md', '---\ncategory: Professional\n---\n\n# Launch Atlas')
 
   assert({
-    given: 'set with unknown basename',
-    should: 'have size 0',
-    actual: store.size,
-    expected: 0,
+    given: 'a one-goal file under active/',
+    should: 'load it, findable by its file name in any case',
+    actual: [store.size, store.find('launch-atlas')?.path, store.find('Launch-Atlas')?.value.title],
+    expected: [1, '/goals/active/Launch-Atlas.md', 'Launch Atlas'],
+  })
+})
+
+test('GoalStore.set: moving a goal to archived/ changes its status, not its name', () => {
+  const store = GoalStore.empty()
+  const contents = '---\ntitle: Launch Atlas\n---\n\nShip it to three pilot teams.'
+
+  store.set('/goals/active/Launch-Atlas.md', contents)
+  store.delete('/goals/active/Launch-Atlas.md')
+  store.set('/goals/archived/2026/Launch-Atlas.md', contents)
+
+  assert({
+    given: 'a goal file moved from active/ to archived/<year>/',
+    should: 'leave the active goals and stay findable by the same name',
+    actual: [store.getActive().size, store.getArchived().size, store.find('Launch-Atlas')?.path],
+    expected: [0, 1, '/goals/archived/2026/Launch-Atlas.md'],
   })
 })
 

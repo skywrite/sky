@@ -288,6 +288,13 @@ status: active
 Train for it.`),
     path: '/test/goals/marathon.md',
   },
+  {
+    doc: doc(`---
+title: Learn Spanish
+---
+Reached in 2025.`),
+    path: '/test/goals/archived/2025/Learn-Spanish.md',
+  },
 ]
 
 const ideas = [
@@ -469,6 +476,16 @@ const CASES: SmokeCase[] = [
     field: 'goals',
     query: '{ goals(where: { nameContains: "Widgets" }) { path } }',
     expectPaths: [goals[0].path],
+  },
+  {
+    field: 'goals',
+    query: '{ goals(where: { status: "active" }) { path } }',
+    expectPaths: [goals[0].path, goals[1].path],
+  },
+  {
+    field: 'goals',
+    query: '{ goals(where: { status: "archived", titleContains: "spanish" }) { path } }',
+    expectPaths: [goals[2].path],
   },
   {
     field: 'ideas',

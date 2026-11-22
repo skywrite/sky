@@ -341,8 +341,8 @@ export async function gatherEntityContext(config: Record<string, unknown>): Prom
     .map((d) => d.name)
     .filter(Boolean)
 
-  // Goals — "Area: Outcome"
-  const goals = goalStore.getAllGoals().map((g) => `${g.area}: ${g.outcome}`)
+  // Goals — one line per active goal
+  const goals = goalStore.activeGoalLines()
 
   return { people, projects, decisions, goals, tags: buildTagVocabulary(vocabulary) }
 }

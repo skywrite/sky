@@ -41,7 +41,7 @@ export interface NotebookContext {
  * Map a notebook-relative file path to the entity reference `rel:` frontmatter
  * uses — the vocabulary MarkdownStore.resolve understands: bare person/org
  * names, `projects/<name>`, `decisions/<slug>`, `ideas/<slug>`,
- * `streaks/<slug>`, `goals/<category>`, `places/<place-path>`, and
+ * `streaks/<slug>`, `goals/<name>`, `places/<place-path>`, and
  * `YYYY-MM-DD/<subpath>` for time documents. Returns undefined for files with
  * no reference form (notes, journal, data). Callers should still verify with
  * store.canResolve — a ref that doesn't resolve is dead metadata.
@@ -63,9 +63,8 @@ export function refForNotebookPath(relPath: string): string | undefined {
     case 'decisions':
     case 'ideas':
     case 'streaks':
-      return relPath.endsWith('.md') ? `${family}/${stem}` : undefined
     case 'goals':
-      return stem === 'personal' || stem === 'professional' ? `goals/${stem}` : undefined
+      return relPath.endsWith('.md') ? `${family}/${stem}` : undefined
     case 'places': {
       if (!relPath.endsWith('.md')) return undefined
       const rest = parts

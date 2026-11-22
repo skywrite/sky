@@ -10,6 +10,7 @@ const CONFIG = {
   DIR_BASE: '/Notebook',
   DIR_TIME: '/Notebook/time',
   DIR_AI_MEMORY: '/Notebook/ai/memory',
+  DIR_GOALS: '/Notebook/goals',
   FILE_ABOUT_ME: '/Notebook/journal/about-me.md',
   FILE_GOALS_PERSONAL: '/Notebook/goals/personal.md',
   FILE_GOALS_PROFESSIONAL: '/Notebook/goals/professional.md',
@@ -188,5 +189,34 @@ test('voice initial context: unavailable sources leave usable local context with
       '[No records loaded for this section.]',
     ].every((text) => context.includes(text)),
     expected: true,
+  })
+})
+
+test('voice initial context: reads one file per goal and stops expecting the older category files', async () => {
+  const active = path.join(CONFIG.DIR_GOALS, 'active')
+  const load = (names: string[]) =>
+    loadVoiceInitialContext(CONFIG, CLOCK, {
+      read: reader({
+        [path.join(active, 'Launch-Atlas.md')]: '# Launch Atlas\nThree pilot teams by June.',
+        [path.join(active, 'Run-A-Marathon.md')]: '# Run a marathon\nFinish one this year.',
+      }),
+      list: async (directory) => (directory === active ? names : []),
+      memories: async () => [],
+      entities: async () => EMPTY_ENTITIES,
+    })
+  const split = await load(['Run-A-Marathon.md', 'Launch-Atlas.md', 'notes.txt'])
+  const older = await load([])
+
+  assert({
+    given: 'a notebook with two one-goal files and no category files, then one with neither',
+    should:
+      'load both goals in name order without calling the category files missing, and report them only when nothing replaces them',
+    actual: [
+      split.indexOf('Three pilot teams by June.') > 0,
+      split.indexOf('Three pilot teams by June.') < split.indexOf('Finish one this year.'),
+      split.includes('goals/personal.md'),
+      older.includes('goals/personal.md'),
+    ],
+    expected: [true, true, false, true],
   })
 })

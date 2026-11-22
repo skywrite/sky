@@ -183,3 +183,54 @@ test('GoalStore.getAll: returns collection', async () => {
     await cleanupTestDir()
   }
 })
+
+test('GoalStore.build: one goal per file, active and archived, beside an older category file', async () => {
+  await setupTestDir()
+
+  try {
+    await mkdir(path.join(TEST_DIR, 'active'), { recursive: true })
+    await mkdir(path.join(TEST_DIR, 'archived', '2025'), { recursive: true })
+    await writeTextFile(
+      path.join(TEST_DIR, 'active', 'Launch-Atlas.md'),
+      '---\ntitle: Launch Atlas\ncategory: Professional\n---\n\nThree pilot teams by June.',
+    )
+    await writeTextFile(path.join(TEST_DIR, 'active', 'Run-A-Marathon.md'), '# Run a marathon\n\nFinish one this year.')
+    await writeTextFile(path.join(TEST_DIR, 'archived', '2025', 'Learn-Spanish.md'), '# Learn Spanish')
+    await writeTextFile(
+      path.join(TEST_DIR, 'personal.md'),
+      '---\ncategory: Personal\n---\n\n## Health\n\n**Outcome:** Sleep eight hours\n**Current State:** Six\n**Why It Matters:** Energy',
+    )
+
+    const store = await GoalStore.build(TEST_DIR)
+
+    assert({
+      given: 'two active goals, one archived, and an older personal.md',
+      should: 'load all four and split them by folder',
+      actual: [store.size, store.getActive().size, store.getArchived().size],
+      expected: [4, 3, 1],
+    })
+
+    assert({
+      given: 'a goal with a title field and one with only a heading',
+      should: 'name each by its file and title it from the field or the heading',
+      actual: [store.find('Launch-Atlas')?.value.title, store.find('run-a-marathon')?.value.title, store.names.sort()],
+      expected: ['Launch Atlas', 'Run a marathon', ['launch-atlas', 'learn-spanish', 'personal', 'run-a-marathon']],
+    })
+
+    assert({
+      given: 'the active goals',
+      should: 'give one line per goal: titles for one-goal files, the areas inside an older file',
+      actual: store.activeGoalLines(),
+      expected: ['Launch Atlas', 'Run a marathon', 'Health: Sleep eight hours'],
+    })
+
+    assert({
+      given: 'an older notebook file beside the new ones',
+      should: 'still be reachable by category',
+      actual: [store.getPersonal()?.category, store.getPath('Personal'), store.getProfessional()],
+      expected: ['Personal', path.join(TEST_DIR, 'personal.md'), undefined],
+    })
+  } finally {
+    await cleanupTestDir()
+  }
+})

@@ -1,6 +1,7 @@
 import { readdir, realpath, stat } from 'node:fs/promises'
 import * as path from 'node:path'
 import { readOptional } from '#lib/outbox/files.ts'
+import { activeGoalsDir } from '#shared/models/Goal/mod.ts'
 import { dayDir, weekDir } from '#shared/nbfs/mod.ts'
 import { PlainDate, Week } from '#universal/dates/nbdt/mod.ts'
 
@@ -10,6 +11,7 @@ function contextPaths(root: string, timeDir: string, day: PlainDate, links: stri
     { file: path.join(root, 'me', 'about.md') },
     { file: path.join(timeDir, weekDir(Week.of(day).startInYear), 'week.md') },
     { file: path.join(timeDir, 'commitments.md') },
+    { dir: activeGoalsDir(path.join(root, 'goals')), limit: 12 },
     { dir: path.join(root, 'goals'), limit: 12 },
     { dir: path.join(current, 'most-important'), limit: 8 },
   ]

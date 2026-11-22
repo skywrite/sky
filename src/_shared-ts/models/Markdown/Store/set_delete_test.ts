@@ -83,6 +83,35 @@ test('MarkdownStore.set: routes goal to GoalStore', async () => {
   })
 })
 
+test('MarkdownStore.set: a one-goal file resolves by its file name, as does an older category file', async () => {
+  const store = await buildEmpty()
+
+  store.set('/nb/goals/active/Launch-Atlas.md', '---\ntitle: Launch Atlas\n---\n\nThree pilot teams by June.')
+  store.set('/nb/goals/personal.md', '---\ncategory: Personal\n---\n\n# Goals')
+
+  const resolved = (raw: string) => {
+    const ref = store.resolve(raw)
+    return ref.type === 'goal' ? [ref.type, ref.path] : [ref.type]
+  }
+
+  assert({
+    given: 'goals/<name> for a one-goal file, in another case, for an older category file, and for no file',
+    should: 'resolve the first three to their goal files and leave the last unresolved',
+    actual: [
+      resolved('goals/Launch-Atlas'),
+      resolved('goals/launch-atlas'),
+      resolved('goals/personal'),
+      resolved('goals/nothing-here'),
+    ],
+    expected: [
+      ['goal', '/nb/goals/active/Launch-Atlas.md'],
+      ['goal', '/nb/goals/active/Launch-Atlas.md'],
+      ['goal', '/nb/goals/personal.md'],
+      ['unresolved'],
+    ],
+  })
+})
+
 test('MarkdownStore.set: routes idea to IdeaStore', async () => {
   const store = await buildEmpty()
 

@@ -1,8 +1,9 @@
 import * as path from 'node:path'
-import { exists, readTextFile } from '#shared/fs/mod.ts'
-import GoalDocument from '#shared/models/Goal/mod.ts'
+import { exists, readTextFile, walk } from '#shared/fs/mod.ts'
+import GoalDocument, { goalNameFromPath, goalStatusFromPath, isOneGoalFile } from '#shared/models/Goal/mod.ts'
 import type { Goal, GoalCategory } from '#shared/models/Goal/mod.ts'
 import { Collection } from '#shared/models/Markdown/mod.ts'
+import { normalizeName } from '../normalize.ts'
 import type { StoreError, StoreWarning } from '../types.ts'
 
 interface GoalEntry {
@@ -11,17 +12,25 @@ interface GoalEntry {
 }
 
 /**
- * Store for Goal documents.
+ * Store for goal documents, one goal per file, found by name.
  *
- * Goals are stored at:
- * - {goalsDir}/personal.md
- * - {goalsDir}/professional.md
+ * Goals are stored at: {goalsDir}/active/{name}.md while pursued, then
+ * {goalsDir}/archived/{year}/{name}.md once reached or dropped. Status and
+ * name are derived from the file path (see Goal/paths.ts).
  *
- * The store provides access by category and aggregated views.
+ * Older notebooks hold whole-category files directly under {goalsDir}
+ * (personal.md, professional.md). They load as active goals too, so a notebook
+ * that never split its goals keeps working.
  */
 export default class GoalStore {
-  private personal: GoalEntry | null = null
-  private professional: GoalEntry | null = null
+  /** Normalized name → GoalEntry */
+  private byName: Map<string, GoalEntry> = new Map()
+
+  /** File path → GoalDocument */
+  private byPath: Map<string, GoalDocument> = new Map()
+
+  /** All entries for iteration */
+  private entries: GoalEntry[] = []
 
   /** Errors encountered during build */
   private _errors: StoreError[] = []
@@ -39,7 +48,7 @@ export default class GoalStore {
   }
 
   /**
-   * Build a GoalStore by loading the goals directory.
+   * Build a GoalStore by walking the goals directory.
    *
    * @param goalsDir - Base goals directory (e.g., DIR_GOALS)
    */
@@ -50,169 +59,192 @@ export default class GoalStore {
       return store
     }
 
-    // Load personal.md
-    const personalPath = path.join(goalsDir, 'personal.md')
-    if (await exists(personalPath)) {
+    for await (const entry of walk(goalsDir, { exts: ['.md'], includeDirs: false })) {
+      if (entry.name.startsWith('.')) continue
+
       try {
-        const contents = await readTextFile(personalPath)
+        const contents = await readTextFile(entry.path)
         const doc = GoalDocument.fromMarkdown(contents)
 
         if (doc.yamlError) {
           store._warnings.push({
-            path: personalPath,
+            path: entry.path,
             warning: `YAML error: ${doc.yamlError}`,
           })
         }
 
-        store.personal = { value: doc, path: personalPath }
+        store.add(entry.path, doc)
       } catch (err) {
         store._errors.push({
-          path: personalPath,
+          path: entry.path,
           error: err instanceof Error ? err.message : String(err),
         })
       }
     }
 
-    // Load professional.md
-    const professionalPath = path.join(goalsDir, 'professional.md')
-    if (await exists(professionalPath)) {
-      try {
-        const contents = await readTextFile(professionalPath)
-        const doc = GoalDocument.fromMarkdown(contents)
-
-        if (doc.yamlError) {
-          store._warnings.push({
-            path: professionalPath,
-            warning: `YAML error: ${doc.yamlError}`,
-          })
-        }
-
-        store.professional = { value: doc, path: professionalPath }
-      } catch (err) {
-        store._errors.push({
-          path: professionalPath,
-          error: err instanceof Error ? err.message : String(err),
-        })
-      }
-    }
+    // Walk order follows the filesystem; a stable order keeps every reader's output the same from run to run.
+    store.entries.sort((a, b) => a.path.localeCompare(b.path))
 
     return store
   }
 
+  private add(filePath: string, doc: GoalDocument): void {
+    const entry: GoalEntry = { value: doc, path: filePath }
+    this.byPath.set(filePath, doc)
+    this.byName.set(normalizeName(goalNameFromPath(filePath)), entry)
+    this.entries.push(entry)
+  }
+
   /**
    * Add or update a goal document by file path and raw contents.
-   * Routes to personal or professional based on basename.
    */
   set(filePath: string, contents: string): void {
-    const doc = GoalDocument.fromMarkdown(contents)
-    const basename = path.basename(filePath)
-    const entry: GoalEntry = { value: doc, path: filePath }
-
-    if (basename === 'personal.md') {
-      this.personal = entry
-    } else if (basename === 'professional.md') {
-      this.professional = entry
-    }
+    this.delete(filePath)
+    this.add(filePath, GoalDocument.fromMarkdown(contents))
   }
 
   /**
    * Remove a goal document by file path.
    */
   delete(filePath: string): void {
-    if (this.personal?.path === filePath) {
-      this.personal = null
+    this.byPath.delete(filePath)
+
+    for (const [key, entry] of this.byName) {
+      if (entry.path === filePath) {
+        this.byName.delete(key)
+      }
     }
-    if (this.professional?.path === filePath) {
-      this.professional = null
+
+    const idx = this.entries.findIndex((e) => e.path === filePath)
+    if (idx !== -1) {
+      this.entries.splice(idx, 1)
     }
   }
 
   /**
-   * Get the personal goals document.
+   * Find a goal by name (case-insensitive): the file name without `.md`.
    */
-  getPersonal(): GoalDocument | undefined {
-    return this.personal?.value
-  }
-
-  /**
-   * Get the professional goals document.
-   */
-  getProfessional(): GoalDocument | undefined {
-    return this.professional?.value
-  }
-
-  /**
-   * Get a goals document by category.
-   */
-  getByCategory(category: GoalCategory): GoalDocument | undefined {
-    return category === 'Personal' ? this.getPersonal() : this.getProfessional()
-  }
-
-  /**
-   * Get the file path for a category.
-   */
-  getPath(category: GoalCategory): string | undefined {
-    return category === 'Personal' ? this.personal?.path : this.professional?.path
-  }
-
-  /**
-   * Get all goal documents as a collection.
-   */
-  getAll(): Collection<GoalDocument> {
-    const docs: Array<{ doc: GoalDocument; path: string }> = []
-    if (this.personal) docs.push({ doc: this.personal.value, path: this.personal.path })
-    if (this.professional) docs.push({ doc: this.professional.value, path: this.professional.path })
-    return Collection.from(docs, 'goal')
-  }
-
-  /**
-   * Get all goals (flattened from all documents).
-   */
-  getAllGoals(): Goal[] {
-    return this.getAll()
-      .getAll()
-      .flatMap((doc) => doc.goals)
-  }
-
-  /**
-   * Get all goals filtered by area (across all documents).
-   */
-  getByArea(area: string): Goal[] {
-    return this.getAllGoals().filter((g) => g.area.toLowerCase() === area.toLowerCase())
-  }
-
-  /**
-   * Get all unique areas across all goals.
-   */
-  get areas(): string[] {
-    return [...new Set(this.getAllGoals().map((g) => g.area))]
+  find(name: string): GoalEntry | undefined {
+    return this.byName.get(normalizeName(name))
   }
 
   /**
    * Find a goal document by its absolute file path.
    */
   findByPath(filePath: string): GoalDocument | undefined {
-    if (this.personal?.path === filePath) return this.personal.value
-    if (this.professional?.path === filePath) return this.professional.value
-    return undefined
+    return this.byPath.get(filePath)
+  }
+
+  /** An older notebook's whole-category file, when it has one. */
+  private categoryFile(category: GoalCategory): GoalEntry | undefined {
+    const name = `${category.toLowerCase()}.md`
+    return this.entries.find((e) => !isOneGoalFile(e.path) && path.basename(e.path) === name)
+  }
+
+  /**
+   * Get the personal goals document of an older notebook.
+   */
+  getPersonal(): GoalDocument | undefined {
+    return this.categoryFile('Personal')?.value
+  }
+
+  /**
+   * Get the professional goals document of an older notebook.
+   */
+  getProfessional(): GoalDocument | undefined {
+    return this.categoryFile('Professional')?.value
+  }
+
+  /**
+   * Get an older notebook's goals document by category.
+   */
+  getByCategory(category: GoalCategory): GoalDocument | undefined {
+    return this.categoryFile(category)?.value
+  }
+
+  /**
+   * Get the file path of an older notebook's goals document for a category.
+   */
+  getPath(category: GoalCategory): string | undefined {
+    return this.categoryFile(category)?.path
+  }
+
+  private collect(entries: GoalEntry[]): Collection<GoalDocument> {
+    return Collection.from(
+      entries.map((e) => ({ doc: e.value, path: e.path })),
+      'goal',
+    )
+  }
+
+  /**
+   * Get all goal documents as a collection.
+   */
+  getAll(): Collection<GoalDocument> {
+    return this.collect(this.entries)
+  }
+
+  /** Get the goals being pursued. */
+  getActive(): Collection<GoalDocument> {
+    return this.collect(this.entries.filter((e) => goalStatusFromPath(e.path) === 'active'))
+  }
+
+  /** Get the goals that were reached or dropped. */
+  getArchived(): Collection<GoalDocument> {
+    return this.collect(this.entries.filter((e) => goalStatusFromPath(e.path) === 'archived'))
+  }
+
+  /**
+   * One line per active goal: a one-goal file gives its title, an older
+   * whole-category file gives each area written inside it.
+   */
+  activeGoalLines(): string[] {
+    return this.entries
+      .filter((e) => goalStatusFromPath(e.path) === 'active')
+      .flatMap((e) => (isOneGoalFile(e.path) ? [e.value.title] : e.value.goals.map((g) => `${g.area}: ${g.outcome}`)))
+  }
+
+  /**
+   * Get the areas written inside older whole-category files (flattened).
+   */
+  getAllGoals(): Goal[] {
+    return this.entries.flatMap((e) => e.value.goals)
+  }
+
+  /**
+   * Get those areas filtered by name (across all documents).
+   */
+  getByArea(area: string): Goal[] {
+    return this.getAllGoals().filter((g) => g.area.toLowerCase() === area.toLowerCase())
+  }
+
+  /**
+   * Get all unique areas across older whole-category files.
+   */
+  get areas(): string[] {
+    return [...new Set(this.getAllGoals().map((g) => g.area))]
+  }
+
+  /** Get all indexed names. */
+  get names(): string[] {
+    return Array.from(this.byName.keys())
   }
 
   /**
    * Number of goal documents loaded.
    */
   get size(): number {
-    return (this.personal ? 1 : 0) + (this.professional ? 1 : 0)
+    return this.entries.length
   }
 
   /**
-   * Total number of individual goals across all documents.
+   * Total number of areas written inside older whole-category files.
    */
   get goalCount(): number {
     return this.getAllGoals().length
   }
 
   /**
-   * Check if any goals exist.
+   * Check if any older whole-category file has areas written in it.
    */
   get hasGoals(): boolean {
     return this.goalCount > 0

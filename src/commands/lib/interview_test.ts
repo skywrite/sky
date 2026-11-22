@@ -30,10 +30,12 @@ test('refForNotebookPath - decisions, ideas, streaks use family/slug', () => {
   assert({ actual: refForNotebookPath('streaks/active/eat-clean.md'), expected: 'streaks/eat-clean' })
 })
 
-test('refForNotebookPath - goals map to the two categories only', () => {
+test('refForNotebookPath - a goal is referenced by its file name, whichever folder it sits in', () => {
+  assert({ actual: refForNotebookPath('goals/active/Launch-Atlas.md'), expected: 'goals/Launch-Atlas' })
+  assert({ actual: refForNotebookPath('goals/archived/2025/Learn-Spanish.md'), expected: 'goals/Learn-Spanish' })
   assert({ actual: refForNotebookPath('goals/personal.md'), expected: 'goals/personal' })
   assert({ actual: refForNotebookPath('goals/professional.md'), expected: 'goals/professional' })
-  assert({ actual: refForNotebookPath('goals/quarterly.md'), expected: undefined })
+  assert({ actual: refForNotebookPath('goals/quarterly.md'), expected: 'goals/quarterly' })
 })
 
 test('refForNotebookPath - places drop the locations/ prefix and .md', () => {

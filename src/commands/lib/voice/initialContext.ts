@@ -1,7 +1,9 @@
 /** A bounded, read-only notebook snapshot for voice. No model call at startup. */
+import { readdir } from 'node:fs/promises'
 import path from 'node:path'
 import type * as ConfigModule from '#shared/config.ts'
 import { readTextFile } from '#shared/fs/mod.ts'
+import { activeGoalsDir } from '#shared/models/Goal/mod.ts'
 import { Document } from '#shared/models/Markdown/mod.ts'
 import { loadMemories, type MemoryEntry } from '#shared/models/Memory/mod.ts'
 import dayDir from '#shared/nbfs/dayDir.ts'
@@ -16,6 +18,7 @@ type ContextConfig = Pick<
   | 'DIR_BASE'
   | 'DIR_TIME'
   | 'DIR_AI_MEMORY'
+  | 'DIR_GOALS'
   | 'FILE_ABOUT_ME'
   | 'FILE_GOALS_PERSONAL'
   | 'FILE_GOALS_PROFESSIONAL'
@@ -27,6 +30,8 @@ interface RecordExcerpt {
 }
 interface ContextReaders {
   read: (file: string) => Promise<string>
+  /** File names in a folder; a missing folder lists nothing */
+  list: (directory: string) => Promise<string[]>
   memories: (directory: string) => Promise<MemoryEntry[]>
   entities: typeof loadVoiceEntities
 }
@@ -107,27 +112,40 @@ export async function loadVoiceInitialContext(
   const read = readers.read ?? readTextFile
   const unavailable: string[] = []
   const missing: string[] = []
-  const readRecord = async (file: string): Promise<RecordExcerpt | undefined> => {
+  const list = readers.list ?? ((directory: string) => readdir(directory).catch(() => [] as string[]))
+  /** An optional source is one the notebook may rightly not have; its absence is not reported. */
+  const readRecord = async (file: string, optional = false): Promise<RecordExcerpt | undefined> => {
     try {
       const body = await read(file)
       if (body.trim()) return { source: file, body }
-      missing.push(path.relative(config.DIR_BASE, file))
+      if (!optional) missing.push(path.relative(config.DIR_BASE, file))
       return undefined
     } catch (error) {
       if ((error as { code?: string }).code !== 'ENOENT') {
         unavailable.push(`Unreadable source: ${path.relative(config.DIR_BASE, file)}`)
-      } else {
+      } else if (!optional) {
         missing.push(path.relative(config.DIR_BASE, file))
       }
       return undefined
     }
   }
+  // One goal per file. An older notebook keeps whole-category files instead,
+  // which are only expected when it has none of the new ones.
+  const goalsDir = activeGoalsDir(config.DIR_GOALS)
+  const goalFiles = (await list(goalsDir))
+    .filter((name) => name.endsWith('.md'))
+    .sort()
+    .map((name) => path.join(goalsDir, name))
+  const split = goalFiles.length > 0
   const today = PlainDate.from(clock.notebookDate)
   const recentDates = Array.from({ length: 6 }, (_, i) => today.addDays(-i - 1))
-  const [profile, personal, professional, week, day, recent, memories, entities] = await Promise.all([
+  const [profile, goals, week, day, recent, memories, entities] = await Promise.all([
     readRecord(config.FILE_ABOUT_ME),
-    readRecord(config.FILE_GOALS_PERSONAL),
-    readRecord(config.FILE_GOALS_PROFESSIONAL),
+    Promise.all([
+      ...goalFiles.map((file) => readRecord(file)),
+      readRecord(config.FILE_GOALS_PERSONAL, split),
+      readRecord(config.FILE_GOALS_PROFESSIONAL, split),
+    ]),
     readRecord(path.join(config.DIR_TIME, weekDir(today), 'week.md')),
     readRecord(path.join(config.DIR_TIME, dayFile(today))),
     Promise.all(
@@ -155,7 +173,7 @@ export async function loadVoiceInitialContext(
     Preferences: memoryRecords(['preference']),
     'Vocabulary and lessons': memoryRecords(['glossary', 'lesson']),
     'Other remembered context': memoryRecords(['thread', 'observation', undefined]),
-    Goals: present([personal, professional]),
+    Goals: present(goals),
     'Current week': present([week]),
     Today: present([day]),
     'Recent days': present(recent),

@@ -7,7 +7,7 @@
 #
 # To modify the schema, edit generate.ts and re-run the generator.
 #
-# Generated at: 2026-11-04T13:30:32.194Z
+# Generated at: 2026-11-22T15:27:55.821Z
 # =============================================================================
 
 type Query {
@@ -203,11 +203,13 @@ type Decision {
 }
 
 """
-Goal/objective
+A goal the person is going after, one per file (active/archived)
 """
 type Goal {
-  name: String! # Goal name
-  status: String # Goal status
+  name: String! # Goal identifier: the file name, as in goals/<name>
+  title: String! # The goal in a few words
+  status: String! # Status: active, archived (derived from path)
+  category: String! # Personal or Professional
   tags: [String!]! # Tags
   rel: [String!]! # Related entities
   markdown: String! # Full document content
@@ -546,7 +548,9 @@ input DecisionFilter {
 }
 
 input GoalFilter {
+  name: String
   nameContains: String
+  titleContains: String
   status: String
   tagsContains: String
   tagsContainsAny: [String!]

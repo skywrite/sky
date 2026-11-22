@@ -11,6 +11,7 @@ import * as path from 'node:path'
 import { DIR_DECISIONS, DIR_GOALS, DIR_TIME } from '#config'
 import { MI_FILE } from '#lib/mostImportant/paths.ts'
 import { exists, readTextFile, walk } from '#shared/fs/mod.ts'
+import { activeGoalsDir } from '#shared/models/Goal/mod.ts'
 import stripHtmlComments from '#shared/models/Markdown/Document/_stripHtmlComments.ts'
 import { Document } from '#shared/models/Markdown/mod.ts'
 import { dayAIChatsDir, dayDir } from '#shared/nbfs/mod.ts'
@@ -58,9 +59,16 @@ async function readMatching(dir: string, match: (name: string) => boolean): Prom
   return files
 }
 
-/** Every goal document: goals/*.md. */
+/**
+ * Every goal being pursued: goals/active/*.md, one goal per file, plus an
+ * older notebook's whole-category files directly under goals/.
+ */
 export async function readGoals(): Promise<ContextFile[]> {
-  return readMatching(DIR_GOALS, (f) => f.endsWith('.md'))
+  const isMarkdown = (f: string) => f.endsWith('.md')
+  return [
+    ...(await readMatching(activeGoalsDir(DIR_GOALS), isMarkdown)),
+    ...(await readMatching(DIR_GOALS, isMarkdown)),
+  ]
 }
 
 /** Standing planning files at the top of time/: commitments.md, next-*.md, schedule-*.md. */
