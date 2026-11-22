@@ -8,8 +8,9 @@ import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod
 import slugify from '#lib/string/slugify.ts'
 import MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
 import TagSet from '#shared/models/TagSet/mod.ts'
-import { fetchNow } from '#shared/nbfs/mod.ts'
-import { isParseableTarget, SlugCollisionError, writeDecision } from './lib/write.ts'
+import { fetchNow, readDay } from '#shared/nbfs/mod.ts'
+import { ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
+import { isParseableTarget, parseDecisionMoment, SlugCollisionError, writeDecision } from './lib/write.ts'
 
 // -----------------------------------------------------------------------------
 // Params & Types
@@ -30,6 +31,10 @@ const params = {
   inForce: Flag.bool(
     'Pass true when the made decision keeps binding what the person does — a rule, a freeze, a quit ("no X until Y") — instead of being carried out once. It lands in in-force/ and stays in view in every chat until it ends or is retired. Needs `decision`; say what ends it, if anything, in the decision text.',
     { default: false },
+  ),
+  when: Flag.string(
+    'When the decision was actually made (or, for an open one, first came up), if that was not just now: "YYYY-MM-DD HH:MM", or "YYYY-MM-DD" when the notebook shows no time. For anything decided before today, find the moment in the notebook first (journal entries, chats, day files) and pass it; never leave an older decision dated today. The document is dated, filed and logged on that day.',
+    { short: 'w', optional: true },
   ),
   target: Flag.string('Decide-by date for a still-open decision: "YYYY-MM-DD" or "YYYY-MM-DD HH:MM"', {
     optional: true,
@@ -66,6 +71,7 @@ export default class DecisionsCreateTask extends Command {
     usage: [
       'sky decisions:create --title "..." --context "..." --desired-outcomes "..."',
       'sky decisions:create --title "..." --context "..." --desired-outcomes "..." --decision "..." --in-force',
+      'sky decisions:create --title "..." --context "..." --desired-outcomes "..." --decision "..." --when "2026-01-20 14:00"',
     ],
     params,
   }
@@ -75,6 +81,7 @@ export default class DecisionsCreateTask extends Command {
     const landing = input.inForce ? 'decided and in force — lands in in-force/' : 'decided — lands in resolved/'
     output.log(`  Status:   ${input.decision ? landing : 'pending'}`)
     if (input.decision) output.log(`  The call: ${String(input.decision)}`)
+    if (input.when) output.log(`  When:     ${String(input.when)}`)
     if (input.target) output.log(`  Target:   ${String(input.target)}`)
     if (input.tags) output.log(`  Tags:     ${String(input.tags)}`)
     if (input.rel) output.log(`  Rel:      ${String(input.rel)}`)
@@ -126,7 +133,26 @@ export default class DecisionsCreateTask extends Command {
       }
     }
 
-    const now = await fetchNow()
+    // A decision made earlier is dated, filed and logged on the day it was made
+    const today = await fetchNow()
+    let now = today
+    if (args.when?.trim()) {
+      const moment = parseDecisionMoment(args.when)
+      if (!moment) {
+        return CommandResult.fail(`When "${args.when}" is not "YYYY-MM-DD" or "YYYY-MM-DD HH:MM"`)
+      }
+      if (moment.plainDate.ymd > today.plainDateTime.plainDate.ymd) {
+        return CommandResult.fail(`When "${args.when}" has not happened yet — leave it out for a decision made now.`)
+      }
+      // That day's own timezone, as decisions:resolve --when uses; a day with no file takes today's
+      let timezone = today.timezone
+      try {
+        timezone = (await readDay(moment.plainDate)).timezone
+      } catch {
+        // No day file for that date
+      }
+      now = new ZonedDateTime(moment, timezone)
+    }
 
     let written
     try {
@@ -141,6 +167,7 @@ export default class DecisionsCreateTask extends Command {
         tags,
         rel,
         now,
+        recorded: today.plainDateTime.plainDate,
         category,
       })
     } catch (err) {

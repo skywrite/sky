@@ -29,6 +29,22 @@ export function isParseableTarget(value: string): boolean {
   }
 }
 
+/**
+ * Parse when a decision was made or first came up: "YYYY-MM-DD HH:MM", or a
+ * date alone when no time is known. A bare date reads as noon, so the record
+ * never sits at the edge of its day.
+ */
+export function parseDecisionMoment(value: string): PlainDateTime | undefined {
+  const text = value.trim()
+  try {
+    if (/^\d{4}-\d{2}-\d{2}$/.test(text)) return new PlainDateTime(`${new PlainDate(text).ymd} 12:00`)
+    if (/^\d{4}-\d{2}-\d{2} \d{1,2}:\d{2}$/.test(text)) return new PlainDateTime(text)
+  } catch {
+    // Not a real date or time
+  }
+  return undefined
+}
+
 export interface WriteDecisionInput {
   /** Slugified file/entity name — the caller owns slug derivation */
   name: string
@@ -53,8 +69,17 @@ export interface WriteDecisionInput {
   tags?: TagSet
   /** Entity references (rel: vocabulary), pre-validated by the caller */
   rel?: string[]
-  /** Notebook now — identified, created/updated, path, and day item all key off it */
+  /**
+   * The moment the decision belongs to — identified, created, path, and day
+   * item all key off it. Notebook now, unless the decision was made earlier.
+   */
   now: ZonedDateTime
+  /**
+   * The day the document is written, when that is later than `now`: a
+   * decision recorded after the fact keeps its own day in `created`, and
+   * `updated` says when the file was written.
+   */
+  recorded?: PlainDate
   /** Day-item collection, e.g. "Professional Complete" */
   category: string
 }
@@ -93,7 +118,7 @@ export async function writeDecision(
     throw new SlugCollisionError(`A decision named "${input.name}" already exists this month: ${file}`)
   }
 
-  const doc = DecisionDocument.create({
+  let doc = DecisionDocument.create({
     name: input.name,
     identified: now,
     target: input.target,
@@ -106,6 +131,9 @@ export async function writeDecision(
     tags: input.tags,
     rel: input.rel,
   })
+  if (input.recorded && input.recorded.ymd !== now.plainDateTime.plainDate.ymd) {
+    doc = doc.updateYaml({ updated: input.recorded.ymd })
+  }
 
   const markdown = doc.toMarkdown()
   await outputFile(file, markdown)

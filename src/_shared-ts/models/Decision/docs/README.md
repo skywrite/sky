@@ -51,6 +51,23 @@ An ordinary decision carries no `inForce:` line to misread.
 The flag is `inForce`, in the same camelCase as the notebook's other frontmatter keys.
 The folder is `in-force`, hyphenated like other folder names, with no space.
 
+## A decision recorded after the fact
+
+A decision is dated by when it was made, not by when it was written down.
+`decisions:create --when "2025-03-10 15:00"` stamps `identified`, `resolved` and `created` with that moment, files the
+document under that year and month, and puts the day line on that day.
+`updated` alone carries the day the file was written.
+
+The moment takes the timezone of its own day file, as `decisions:resolve --when` does.
+A day with no file takes today's.
+A bare date reads as noon, for a decision whose hour the notebook does not show.
+A moment that has not happened yet is refused.
+
+The option exists because the first decision recorded this way was stamped with the day it was typed, a year after
+it was made.
+The notebook already held the real moment, in a journal entry.
+The tool description therefore tells chat to find that moment in the notebook before creating, and to pass it.
+
 ## Who reads in-force decisions
 
 - **Chat** pins them in every session, beside pending decisions and active goals:

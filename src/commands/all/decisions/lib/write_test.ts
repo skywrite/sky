@@ -1,8 +1,8 @@
 import * as path from 'node:path'
-import { writeDecision, SlugCollisionError } from '#commands/all/decisions/lib/write.ts'
+import { parseDecisionMoment, writeDecision, SlugCollisionError } from '#commands/all/decisions/lib/write.ts'
 import { makeTempDir, readTextFile } from '#shared/fs/mod.ts'
 import { assert, test } from '#test'
-import { ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
+import { PlainDate, ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
 
 const NOW = new ZonedDateTime('2026-03-05 09:15', 'America/Chicago')
 
@@ -159,6 +159,68 @@ test('writeDecision - a made call that still binds lands in in-force/ with the f
       dayItem: '09:15 > decisions/No-Friday-Releases -> Decided | No releases on Fridays',
       unmade: path.join(decisionsDir, '2026', 'pending', '03', 'Friday-Policy.md'),
       unmadeFlag: false,
+    },
+  })
+})
+
+test('parseDecisionMoment - a date with a time, a date alone, and anything else', () => {
+  const read = (value: string) => {
+    const moment = parseDecisionMoment(value)
+    return moment ? `${moment.date} ${moment.time}` : undefined
+  }
+
+  assert({
+    given: 'a date and time, a bare date, padding, a month that does not exist, and words',
+    should: 'keep the time given, read a bare date as noon, and refuse what is not a real moment',
+    actual: [
+      read('2025-03-10 15:00'),
+      read('2025-03-10'),
+      read('  2025-03-10 9:05 '),
+      read('2025-13-10'),
+      read('last spring'),
+    ],
+    expected: ['2025-03-10 15:00', '2025-03-10 12:00', '2025-03-10 09:05', undefined, undefined],
+  })
+})
+
+test('writeDecision - a decision recorded after the fact keeps its own day and says when it was written', async () => {
+  const decisionsDir = await makeTempDir({ prefix: 'decisions-' })
+  const timeDir = await makeTempDir({ prefix: 'time-' })
+
+  const result = await writeDecision(
+    {
+      name: 'No-Friday-Releases',
+      title: 'No releases on Fridays',
+      context: 'Two Friday releases needed weekend fixes with nobody on call.',
+      desiredOutcomes: 'No weekend fixes.',
+      decision: 'No releases on Fridays, until the on-call rota is staffed.',
+      inForce: true,
+      now: new ZonedDateTime('2025-03-10 15:00', 'America/New_York'),
+      recorded: new PlainDate('2026-03-05'),
+      category: 'Professional Complete',
+    },
+    { decisionsDir, timeDir },
+  )
+  const content = await readTextFile(result.file)
+
+  assert({
+    given: 'a decision made on 2025-03-10 and written down on 2026-03-05',
+    should: 'file and date it by the day it was made, and stamp only `updated` with the day it was written',
+    actual: {
+      file: result.file,
+      identified: content.includes('identified: 2025-03-10 15:00-04:00[America/New_York]'),
+      resolved: content.includes('resolved: 2025-03-10 15:00-04:00[America/New_York]'),
+      created: content.includes('\ncreated: 2025-03-10\n'),
+      updated: content.includes('\nupdated: 2026-03-05\n'),
+      dayItem: result.dayItem,
+    },
+    expected: {
+      file: path.join(decisionsDir, '2025', 'in-force', '03', 'No-Friday-Releases.md'),
+      identified: true,
+      resolved: true,
+      created: true,
+      updated: true,
+      dayItem: '15:00 > decisions/No-Friday-Releases -> Decided | No releases on Fridays',
     },
   })
 })
