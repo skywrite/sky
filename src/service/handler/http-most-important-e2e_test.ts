@@ -342,6 +342,9 @@ test(
             animations: 'disabled',
           })
         await page.setViewportSize({ width: 390, height: 844 })
+        // On a phone a bottom sheet replaces the dialog a moment after the resize. Wait for it,
+        // or the footer can be measured while the old dialog is being removed and read as missing.
+        await page.locator('.mantine-Drawer-content').waitFor()
         await dialog.locator('.sky-mi-suggestion').first().waitFor()
         if (screenshots)
           await page.screenshot({
