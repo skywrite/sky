@@ -4,7 +4,8 @@ import * as path from 'node:path'
 import { assert, test } from '#test'
 import { connectExistingBrowser } from './connection.ts'
 import { resolveExtensionProfile } from './profile.ts'
-import { EXTENSION_ID, ExistingBrowserError } from './settings.ts'
+import { EXTENSION_CONNECT_PAGE, EXTENSION_ID, ExistingBrowserError } from './settings.ts'
+import { classifyExtensionInitialTab } from './taskWindow.ts'
 
 async function fixture(run: (root: string) => Promise<void>) {
   const root = await mkdtemp(path.join(tmpdir(), 'sky-extension-profile-'))
@@ -123,3 +124,40 @@ test('leftover extension packages do not count as an enabled installation', asyn
       expected: true,
     })
   }))
+
+test('classifyExtensionInitialTab accepts Protocol v2 about:blank and legacy connect.html while rejecting personal tabs', () => {
+  const blankPage = { url: () => 'about:blank' } as never
+  const connectTab = { url: () => `${EXTENSION_CONNECT_PAGE}?mcpRelayUrl=ws://127.0.0.1:9999` } as never
+  const personalTab = { url: () => 'https://atlas.example/docs' } as never
+
+  let personalRejected = false
+  try {
+    classifyExtensionInitialTab({ pages: () => [personalTab] })
+  } catch {
+    personalRejected = true
+  }
+
+  let multiRejected = false
+  try {
+    classifyExtensionInitialTab({ pages: () => [blankPage, personalTab] })
+  } catch {
+    multiRejected = true
+  }
+
+  assert({
+    given: 'Protocol v2 about:blank, legacy connect.html, a personal URL, and multiple tabs',
+    should: 'accept only a single owned blank or connect tab and reject personal or multi-tab contexts',
+    actual: {
+      v2Kind: classifyExtensionInitialTab({ pages: () => [blankPage] }).kind,
+      v1Kind: classifyExtensionInitialTab({ pages: () => [connectTab] }).kind,
+      personalRejected,
+      multiRejected,
+    },
+    expected: {
+      v2Kind: 'blank',
+      v1Kind: 'connect',
+      personalRejected: true,
+      multiRejected: true,
+    },
+  })
+})

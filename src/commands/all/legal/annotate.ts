@@ -3,11 +3,10 @@ import { AIChatTool } from '#commands/lib/AIChatTool.ts'
 import type { OutputHandler } from '#commands/lib/output/OutputHandler.ts'
 import { ArgOrFlag, Command, CommandPlatform, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
-import { GOOGLE_BROWSER_PROFILE_DIR, findChromiumBrowser } from '#lib/google/browserSession.ts'
+import { hasGoogleBrowser } from '#lib/google/browserSession.ts'
 import { resolveFileRef } from '#lib/google/mod.ts'
 import { legalReviewChat } from '#lib/legalReview/chat.ts'
 import { createLegalReviewer } from '#lib/legalReview/runtime.ts'
-import { exists } from '#shared/fs/mod.ts'
 import { readPromptFile } from '#shared/prompts/load.ts'
 import { renderPromptFile } from '#shared/prompts/mod.ts'
 import { IMPORT_EXTENSIONS, resolveImportSource } from '../google/agent/lib/importFile.ts'
@@ -47,10 +46,10 @@ export default class LegalAnnotateTask extends Command {
       'renewal, termination, liability and indemnity, IP, confidentiality,',
       'data and compliance, assignment, and dispute terms. Findings land on',
       'the document as severity-tagged anchored comments, concrete rewrites',
-      'as suggested edits, plus one summary comment. Needs the automation',
-      'browser session (sky google:browser) — findings anchor to the text',
-      'itself, never the comments panel. The document text itself is never',
-      'edited. A careful review, not legal advice.',
+      'as suggested edits, plus one summary comment. Uses Sky’s shared browser',
+      'connection (connected Brave or sky google:browser) — findings anchor to',
+      'the text itself, never the comments panel. The document text itself is',
+      'never edited. A careful review, not legal advice.',
     ],
     usage: [
       'sky legal:annotate ~/deals/atlas-msa.pdf',
@@ -84,18 +83,13 @@ export default class LegalAnnotateTask extends Command {
       )
     }
 
-    // Findings land as browser-anchored comments; without the automation
-    // browser the mission could only degrade to file-level panel comments,
-    // so refuse to start. (Test contexts skip the machine probe.)
+    // Findings land as browser-anchored comments; without an available browser
+    // the mission could only degrade to file-level panel comments, so refuse
+    // to start. (Test contexts skip the machine probe.)
     if (context.platform !== CommandPlatform.Test) {
-      if (!(await findChromiumBrowser())) {
+      if (!(await hasGoogleBrowser())) {
         return CommandResult.fail(
-          'Anchored comments need Chromium or Google Chrome installed — legal:annotate does not degrade to panel comments',
-        )
-      }
-      if (!(await exists(GOOGLE_BROWSER_PROFILE_DIR))) {
-        return CommandResult.fail(
-          'Anchored comments need the Google automation browser session — run sky google:browser once to set it up',
+          'Anchored comments need a Chromium-family browser installed or Brave connected in Settings → Browser automation — legal:annotate does not degrade to panel comments',
         )
       }
     }

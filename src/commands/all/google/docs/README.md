@@ -1,6 +1,6 @@
 ---
 created: 2026-09-01
-updated: 2026-10-11
+updated: 2026-11-22
 ---
 
 # google — Workspace commands
@@ -16,8 +16,9 @@ The group's root commands, and where the depth lives:
 - `google:agent` is the write side: a sub-agent that creates and edits Docs,
   Sheets and Slides from a mission. Its docs live in
   [`agent/docs/`](../agent/docs/README.md).
-- `google:browser` sets up the local browser session the agent drives for
-  anchored comments and suggested edits.
+- `google:browser` signs in to Google in Sky's shared browser connection (connected
+  Brave when enabled in Settings → Browser automation, otherwise Sky's persistent
+  browser) for anchored comments, suggested edits, and Calendar/Zoom invitations.
 - `google:email:*` (Gmail) and `google:calendar:*` have their own trees;
   Gmail's docs live in [`email/docs/`](../email/docs/README.md).
 - The web [meeting composer](../../../../service/handler/meetings/docs/README.md)

@@ -10,6 +10,7 @@ import type CommandContext from '#commands/lib/core/CommandContext.ts'
 import type { OutputHandler } from '#commands/lib/output/OutputHandler.ts'
 import { ArgOrFlag, Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
+import { retainGoogleBrowser } from '#lib/google/browserSession.ts'
 import { DocSnapshotStore } from '#lib/google/docSnapshots.ts'
 import {
   AccountResolutionError,
@@ -368,6 +369,7 @@ export default class GoogleAgentTask extends Command {
 
     const abort = new AbortController()
     const missionSpan = new TimingSpan({ kind: 'generation', name: 'google:mission' })
+    const releaseBrowser = retainGoogleBrowser()
     try {
       // Resolve once so visual reviews use the same model, effort and tier as the mission.
       // Four retries let an expensive mission ride out transient provider failures.
@@ -555,6 +557,7 @@ export default class GoogleAgentTask extends Command {
       missionSpan.finish(thrownOutcome(err))
       return CommandResult.error(err instanceof Error ? err.message : String(err))
     } finally {
+      await releaseBrowser()
       // Staged image uploads are only a fetch vehicle — Google copies the
       // bytes at insert time, so the Drive copies must not outlive the mission.
       for (const upload of state.tempUploads) {

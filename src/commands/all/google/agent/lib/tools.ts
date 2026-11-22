@@ -61,7 +61,13 @@ import type { ResolvedModel } from '#shared/ai/models.ts'
 import { RepetitionGuard, guardTools } from '#shared/models/Chat/ChatEngine/repetitionGuard.ts'
 import { readWorkspaceFile } from '../../lib/readWorkspaceFile.ts'
 import type { WorkspaceReadRequest } from '../../lib/readWorkspaceFile.ts'
-import { addDocsComment, addSheetsComment, addSlidesComment } from './browserComments.ts'
+import {
+  addDocsComment,
+  addSheetsComment,
+  addSlidesComment,
+  normalizeCommentText,
+  plainCommentNeedle,
+} from './browserComments.ts'
 import { suggestDocsEdit } from './browserSuggestions.ts'
 import { applyCreationStyle } from './createDocStyle.ts'
 import { DocumentCopies } from './documentCopies.ts'
@@ -914,7 +920,7 @@ export function createAgentTools(deps: {
       execute: async ({ fileId, content, quote }: { fileId: string; content: string; quote?: string }) => {
         if (!content.trim()) return 'Error: comment content is empty'
         try {
-          const comment = await createComment(client, fileId, content.trim(), { quoted: quote })
+          const comment = await createComment(client, fileId, normalizeCommentText(content), { quoted: quote })
           const file = await getFile(client, fileId)
           track(state, 'updated', file)
           const location = content.trim().split(':')[0]
@@ -928,7 +934,7 @@ export function createAgentTools(deps: {
 
     list_comments: {
       description:
-        'Read the open comment threads on a file (author, content, replies). Check before adding feedback so you never duplicate an existing open comment; also the starting point for missions that address reviewer feedback.',
+        'Read the open comment threads on a file (id, author, content up to 4000 chars, quoted excerpt, anchored: true when natively pinned/highlighted on content and omitted on file-level panel comments, replyCount). Check before adding feedback so you never duplicate an existing open comment, to verify anchored: true after add_anchored_comment, or to read existing comments in full.',
       inputSchema: jsonSchema<{ fileId: string; includeResolved?: boolean }>({
         type: 'object',
         properties: {
@@ -950,7 +956,7 @@ export function createAgentTools(deps: {
 
     add_anchored_comment: {
       description:
-        'Leave a REAL anchored comment by driving the local browser session (invisibly, headless): anchored to one slide or one element on it (Slides — pass slideObjectId, plus elementObjectId to pin the marker to that element), one cell (Sheets, pass sheetId + range), or a text passage (Docs — pass searchText, a VERBATIM snippet from the doc, distinctive enough to be unique; the comment binds to its first occurrence, and on a doc with several tabs also pass the tabId holding the text). Slower than add_comment (~20s each) but the comment appears AT its location. On any error (browser missing, signed out), fall back to add_comment.',
+        'Leave a REAL inline/highlighted comment by driving Sky’s shared browser connection (connected Brave background tab or Sky’s persistent browser): anchored to one slide or one element on it (Slides — pass slideObjectId, plus elementObjectId to pin the marker to that element), one cell (Sheets, pass sheetId + range), or a text passage (Docs — pass searchText, a VERBATIM single-paragraph snippet from the doc with no markdown syntax, distinctive enough to be unique; the comment binds to its first occurrence, and on a multi-tab doc also pass tabId). Format comment as a concise, scannable margin note (~40–70 words max so it fits above Google’s "Show more" fold): open with a 1-line *bold* takeaway, then a blank line (\\n\\n), then 1–2 short sentences or "- " bullets, and NEVER prepend a location label ("Opening paragraph:", "Section 2:") since the highlighted anchor already shows where it applies. When the mission asks for comments on passages, slides, or cells, use this tool rather than add_comment. If the browser connection is unavailable or signed out, stop and report that exact browser error instead of silently downgrading to unanchored panel comments (unless the mission explicitly asks for file-level panel comments).',
       inputSchema: jsonSchema<{
         fileId: string
         comment: string
@@ -964,7 +970,11 @@ export function createAgentTools(deps: {
         type: 'object',
         properties: {
           fileId: { type: 'string' },
-          comment: { type: 'string', description: 'The comment text collaborators will see at the anchor' },
+          comment: {
+            type: 'string',
+            description:
+              'Concise margin note (~40–70 words): 1-line *bold* takeaway, blank line (\\n\\n), then 1–2 short sentences or "- " bullets; no location prefix',
+          },
           slideObjectId: { type: 'string', description: 'Slides: the slide to anchor to (from the outline)' },
           elementObjectId: {
             type: 'string',
@@ -1015,23 +1025,53 @@ export function createAgentTools(deps: {
               slideObjectId,
               comment: comment.trim(),
               anchor: anchor ?? undefined,
+              account: client.email,
             })
             where = level === 'element' ? `element ${elementObjectId} on ${slideObjectId}` : `slide ${slideObjectId}`
           } else if (kind === 'sheet') {
             if (sheetId === undefined || !range) return 'Error: pass sheetId and range for a Sheets anchored comment'
-            await addSheetsComment({ spreadsheetId: fileId, sheetId, range, comment: comment.trim() })
+            await addSheetsComment({
+              spreadsheetId: fileId,
+              sheetId,
+              range,
+              comment: comment.trim(),
+              account: client.email,
+            })
             where = `cell ${range}`
           } else if (kind === 'doc') {
-            if (!searchText?.trim()) return 'Error: pass searchText (verbatim doc text) for a Docs anchored comment'
-            await addDocsComment({ documentId: fileId, searchText: searchText.trim(), comment: comment.trim(), tabId })
-            where = `text "${searchText.trim().slice(0, 40)}"${tabId ? ` (tab ${tabId})` : ''}`
+            const snippet = searchText?.trim() ?? ''
+            if (!snippet) return 'Error: pass searchText (verbatim doc text) for a Docs anchored comment'
+            if (/[\n\r\t]/.test(snippet)) {
+              return 'Error: searchText cannot span paragraphs or contain tabs — pass a distinctive verbatim phrase within a single paragraph (such as its heading or opening sentence)'
+            }
+            const tabs = await getDocTabTexts(client, fileId)
+            const knownTabs = tabs.map((t) => `${t.tabId} ("${t.tabTitle ?? 'untitled'}")`).join(', ')
+            if (tabId === undefined && tabs.length > 1) {
+              return `Error: "${file.name}" has ${tabs.length} tabs — pass the tabId holding searchText: ${knownTabs}`
+            }
+            const tab = tabId === undefined ? tabs[0] : tabs.find((t) => t.tabId === tabId)
+            if (!tab) return `Error: no tab ${tabId} in "${file.name}" — its tabs: ${knownTabs}`
+            if (!tab.text.includes(snippet)) {
+              return `Error: searchText does not occur verbatim in ${tabId !== undefined ? `tab ${tabId}` : 'the document'} — pass exact plain text as it appears in the Doc (drop markdown syntax and list prefixes)`
+            }
+            await addDocsComment({
+              documentId: fileId,
+              searchText: snippet,
+              comment: comment.trim(),
+              tabId,
+              account: client.email,
+            })
+            where = `text "${snippet.slice(0, 40)}"${tabId ? ` (tab ${tabId})` : ''}`
           } else {
             return `Error: "${file.name}" is not a Doc/Sheet/Slides file`
           }
           // The UI flow is blind; the API is the witness. UI-created comments
-          // list through the Drive API (with real anchors).
-          const needle = comment.trim().slice(0, 40)
-          const found = (await listComments(client, fileId)).some((c) => (c.content ?? '').includes(needle))
+          // list through the Drive API with a non-empty native anchor; Google
+          // strips *bold*/*_italic_* delimiters from plain-text `content`.
+          const needle = plainCommentNeedle(comment)
+          const found = (await listComments(client, fileId)).some(
+            (c) => Boolean(c.anchor) && (!needle || (c.content ?? '').replace(/[*_]/g, '').includes(needle)),
+          )
           track(state, 'updated', file)
           log(`Anchored a comment on "${file.name}" (${where})${found ? '' : ' — not yet visible via API'}`)
           return found
@@ -1128,7 +1168,14 @@ export function createAgentTools(deps: {
           }
           const before = new Set(await listDocSuggestionIds(client, fileId))
           finishWrite = state.documentCopies.beginWrite(fileId)
-          await suggestDocsEdit({ documentId: fileId, searchText, replacement, occurrence: target, tabId })
+          await suggestDocsEdit({
+            documentId: fileId,
+            searchText,
+            replacement,
+            occurrence: target,
+            tabId,
+            account: client.email,
+          })
           // The UI flow is blind; the API is the witness — a landed suggestion
           // brings new pending-suggestion ids.
           const found = (await listDocSuggestionIds(client, fileId)).some((id) => !before.has(id))

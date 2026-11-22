@@ -10,8 +10,8 @@ interface ExtensionTab {
   groupId: number
 }
 
-// These APIs run only in the connection page Sky just opened. They are never
-// available to the model or evaluated on a website or pre-existing tab.
+// These APIs run only in a legacy v1 connection page Sky just opened. They are
+// never available to the model or evaluated on a website or pre-existing tab.
 interface ExtensionControls {
   debugger: { getTargets(): Promise<{ id: string; tabId?: number }[]> }
   windows: {
@@ -29,20 +29,42 @@ interface ExtensionControls {
   }
 }
 
-export function connectionPage(context: BrowserContext): Page {
+export function isExtensionConnectUrl(rawUrl: string): boolean {
+  try {
+    const url = new URL(rawUrl)
+    return (
+      url.protocol === 'chrome-extension:' &&
+      url.hostname === new URL(EXTENSION_CONNECT_PAGE).hostname &&
+      url.pathname === '/connect.html'
+    )
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Inspect the single tab claimed by a token-authenticated extension session.
+ * Extension 0.6+ (Protocol v2) converts its newly opened connect tab in-place
+ * to `about:blank` before completing the handshake; older unpacked extensions
+ * retain `connect.html`. Any other tab shape is rejected so pre-existing
+ * personal tabs can never be reused, navigated, or closed.
+ */
+export function classifyExtensionInitialTab(
+  context: Pick<BrowserContext, 'pages'>,
+): { kind: 'blank'; page: Page } | { kind: 'connect'; control: Page } {
   const pages = context.pages()
-  // The token flow attaches only its new connect page. A manually selected
-  // existing tab must never be moved, navigated, or closed by this path.
-  if (pages.length !== 1) throw new Error('The background task needs its own extension connection page')
+  if (pages.length !== 1) throw new Error('The browser task needs a single owned extension tab')
   const page = pages[0]!
-  const url = new URL(page.url())
-  if (
-    url.protocol !== 'chrome-extension:' ||
-    url.hostname !== new URL(EXTENSION_CONNECT_PAGE).hostname ||
-    url.pathname !== '/connect.html'
-  )
-    throw new Error('Unexpected extension page')
-  return page
+  const url = page.url()
+  if (url === 'about:blank') return { kind: 'blank', page }
+  if (isExtensionConnectUrl(url)) return { kind: 'connect', control: page }
+  throw new Error('Unexpected extension page')
+}
+
+export function connectionPage(context: BrowserContext): Page {
+  const initial = classifyExtensionInitialTab(context)
+  if (initial.kind !== 'connect') throw new Error('Unexpected extension page')
+  return initial.control
 }
 
 /** The pinned MCP factory exposes no launch arguments for its extension connect page. */

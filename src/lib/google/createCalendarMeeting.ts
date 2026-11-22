@@ -282,32 +282,26 @@ export async function createCalendarMeeting(
     previous.flatMap((event) => [event.id, ...(event.recurringEventId ? [event.recurringEventId] : [])]),
   )
   const used = new Set(previous.flatMap((event) => (event.conferenceUrl ? [zoomId(event.conferenceUrl)] : [])))
-  return withGoogleBrowser({ headless: true }, async (context) => {
-    const page = await context.newPage()
-    try {
-      const zoomUrl = await prepareCalendarMeeting(page, meeting)
-      if (zoomUrl && used.has(zoomId(zoomUrl)))
-        throw new Error(
-          'Zoom did not provide a fresh meeting link. Set the Calendar add-on to generate a new meeting ID, then retry.',
-        )
-      await hooks.beforeSave()
-      if (calendarInstant(meeting.start) <= calendarInstant(instantNow()))
-        throw new Error('This meeting time has passed. Choose a future time.')
-      await hooks.saving()
-      await page.getByRole('button', { name: 'Save', exact: true }).click()
-      return await finishCalendarInvitation(
-        page,
-        meeting,
-        zoomUrl,
-        async () =>
-          (await read()).filter(
-            (event) =>
-              !previousIds.has(event.id) && !(event.recurringEventId && previousIds.has(event.recurringEventId)),
-          ),
-        (id) => getEvent(client, meeting.calendarId, id),
+  return withGoogleBrowser({ headless: true, closeAfter: true }, async ({ page }) => {
+    const zoomUrl = await prepareCalendarMeeting(page, meeting)
+    if (zoomUrl && used.has(zoomId(zoomUrl)))
+      throw new Error(
+        'Zoom did not provide a fresh meeting link. Set the Calendar add-on to generate a new meeting ID, then retry.',
       )
-    } finally {
-      await page.close().catch(() => undefined)
-    }
+    await hooks.beforeSave()
+    if (calendarInstant(meeting.start) <= calendarInstant(instantNow()))
+      throw new Error('This meeting time has passed. Choose a future time.')
+    await hooks.saving()
+    await page.getByRole('button', { name: 'Save', exact: true }).click()
+    return await finishCalendarInvitation(
+      page,
+      meeting,
+      zoomUrl,
+      async () =>
+        (await read()).filter(
+          (event) => !previousIds.has(event.id) && !(event.recurringEventId && previousIds.has(event.recurringEventId)),
+        ),
+      (id) => getEvent(client, meeting.calendarId, id),
+    )
   })
 }

@@ -2,11 +2,12 @@ import { createRequire } from 'node:module'
 import process from 'node:process'
 import { setTimeout as delay } from 'node:timers/promises'
 import type { Browser, BrowserContext, CDPSession, Page } from 'playwright'
+import { runCommand } from '#lib/sys/mod.ts'
 import { resolveDownloadLocations } from '../downloadLocations.ts'
 import { NATIVE_BROWSER } from '../signIn/nativeBrowser.ts'
 import { resolveExtensionProfile } from './profile.ts'
 import { ExistingBrowserError, type ExistingBrowserSettings } from './settings.ts'
-import { backgroundTaskPage, closeTaskTabs, connectionPage, taskWindowLauncher } from './taskWindow.ts'
+import { backgroundTaskPage, classifyExtensionInitialTab, closeTaskTabs, taskWindowLauncher } from './taskWindow.ts'
 
 export type PageProtocol = Pick<CDPSession, 'send' | 'on' | 'off'>
 export interface ExistingBrowserConnection {
@@ -64,6 +65,8 @@ export async function connectExistingBrowser(
     if (options.background) launcher = await taskWindowLauncher(executablePath)
     const args = {
       extension: true,
+      tabGroup: false,
+      background: Boolean(options.background),
       executablePath: launcher?.executablePath ?? executablePath,
       profileDirName,
       ...(options.userDataDir ? { userDataDir: options.userDataDir } : {}),
@@ -75,12 +78,51 @@ export async function connectExistingBrowser(
     await browser.unbind()
     const context = browser.contexts()[0]
     if (!context) throw new Error('No extension context')
-    // Never reuse, navigate, or close a pre-existing tab, even if shared with the extension.
-    if (options.background) control = connectionPage(context)
+    // Never reuse, navigate, or close a pre-existing tab. Token auth in
+    // Extension 0.6+ converts its own connect page to a single owned
+    // about:blank tab; older unpacked extensions keep connect.html.
+    const initial = classifyExtensionInitialTab(context)
     options.signal?.throwIfAborted()
-    const task = control ? await backgroundTaskPage(context, control) : { page: await context.newPage() }
-    page = task.page
-    closePages = 'close' in task ? task.close : undefined
+    let activateTaskTab: (() => Promise<void>) | undefined
+    let showTaskWindow: (() => Promise<void>) | undefined
+    if (initial.kind === 'connect') {
+      control = initial.control
+      if (options.background) {
+        const task = await backgroundTaskPage(context, control)
+        page = task.page
+        closePages = task.close
+        activateTaskTab = task.activateTaskTab
+        showTaskWindow = task.showTaskWindow
+      } else {
+        page = await context.newPage()
+      }
+    } else {
+      let currentTab = initial.page
+      context.on('page', (next) => {
+        currentTab = next
+        void keepRendering(next)
+      })
+      page = currentTab
+      closePages = async () => {
+        const tabs = context.pages().filter((candidate) => !candidate.isClosed())
+        if (!tabs.includes(currentTab) && !currentTab.isClosed()) tabs.push(currentTab)
+        await Promise.all(tabs.map((tab) => tab.close().catch(() => {})))
+      }
+      activateTaskTab = async () => {
+        const active = context.pages().find((candidate) => !candidate.isClosed()) ?? currentTab
+        currentTab = active
+        if (!options.background) await active.bringToFront().catch(() => {})
+      }
+      showTaskWindow = async () => {
+        const active = context.pages().find((candidate) => !candidate.isClosed()) ?? currentTab
+        currentTab = active
+        await restoreWindowIfMinimized(active)
+        await active.bringToFront().catch(() => {})
+        if (process.platform === 'darwin') {
+          await runCommand('/usr/bin/open', ['-a', executablePath], { timeout: 5000 }).catch(() => {})
+        }
+      }
+    }
     await keepRendering(page)
     const ownedPage = page
     const ownedControl = control
@@ -92,9 +134,8 @@ export async function connectExistingBrowser(
       profileDirName,
       downloadDirectories: downloads.locations.map((location) => location.path),
       protocol: existingPageProtocol,
-      ...('activateTaskTab' in task
-        ? { activateTaskTab: task.activateTaskTab, showTaskWindow: task.showTaskWindow }
-        : {}),
+      ...(activateTaskTab ? { activateTaskTab } : {}),
+      ...(showTaskWindow ? { showTaskWindow } : {}),
       close: async () => {
         // A background renderer can stop answering input and page-close calls.
         // Disconnect the relay even when that tab never acknowledges close.
@@ -149,6 +190,22 @@ async function existingPageProtocol(page: Page): Promise<PageProtocol> {
   const protocol = attachedSession(page)
   protocol.removeAllListeners('Fetch.requestPaused')
   return protocol
+}
+
+async function restoreWindowIfMinimized(page: Page): Promise<void> {
+  try {
+    const session = attachedSession(page)
+    const { windowId } = (await session.send('Browser.getWindowForTarget')) as { windowId?: number }
+    if (typeof windowId !== 'number') return
+    const { bounds } = (await session.send('Browser.getWindowBounds', { windowId })) as {
+      bounds?: { windowState?: string }
+    }
+    if (bounds?.windowState === 'minimized') {
+      await session.send('Browser.setWindowBounds', { windowId, bounds: { windowState: 'normal' } })
+    }
+  } catch {
+    // Window bounds are best-effort; foregrounding continues even if unsupported.
+  }
 }
 
 /**

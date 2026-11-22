@@ -2,7 +2,7 @@ import type { GoogleClient } from './client.ts'
 import { DRIVE_FILES_URL } from './drive.ts'
 
 // The Drive comments API rejects calls without an explicit fields selector.
-const COMMENT_FIELDS = 'id,content,author(displayName,me),createdTime,resolved,quotedFileContent(value)'
+const COMMENT_FIELDS = 'id,anchor,content,author(displayName,me),createdTime,resolved,quotedFileContent(value)'
 const LIST_FIELDS = `comments(${COMMENT_FIELDS},replies(content,author(displayName,me),createdTime)),nextPageToken`
 
 export interface DriveCommentAuthor {
@@ -12,6 +12,7 @@ export interface DriveCommentAuthor {
 
 export interface DriveComment {
   id: string
+  anchor?: string
   content?: string
   author?: DriveCommentAuthor
   createdTime?: string
@@ -99,13 +100,16 @@ export interface CompactComment {
   created?: string
   content: string
   quoted?: string
+  /** True when the comment carries a native editor anchor (highlights a passage, cell, or slide). */
+  anchored?: boolean
   resolved?: boolean
   replyCount: number
 }
 
-const CONTENT_LIMIT = 300
+const CONTENT_LIMIT = 4000
+const QUOTED_LIMIT = 500
 
-/** Compact comments for the agent: who, when, what — truncated, reply-counted. */
+/** Compact comments for the agent: who, when, what, and whether natively anchored — preserving full review text. */
 export function compactComments(comments: DriveComment[]): CompactComment[] {
   return comments.map((comment) => {
     const name = comment.author?.displayName ?? 'Unknown'
@@ -118,7 +122,8 @@ export function compactComments(comments: DriveComment[]): CompactComment[] {
       replyCount: comment.replies?.length ?? 0,
     }
     const quoted = comment.quotedFileContent?.value?.trim()
-    if (quoted) compact.quoted = quoted.length > 120 ? `${quoted.slice(0, 120)}…` : quoted
+    if (quoted) compact.quoted = quoted.length > QUOTED_LIMIT ? `${quoted.slice(0, QUOTED_LIMIT)}…` : quoted
+    if (comment.anchor) compact.anchored = true
     if (comment.resolved) compact.resolved = true
     return compact
   })

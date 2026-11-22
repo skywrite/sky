@@ -1,5 +1,6 @@
+import type { Page } from 'playwright'
 import { openGooglePage, withGoogleBrowser } from '#lib/google/browserSession.ts'
-import { docsCommentUrl } from './browserComments.ts'
+import { docsCommentUrl, focusDocsCanvas } from './browserComments.ts'
 import { selectDocMatch } from './findBar.ts'
 
 // Real suggested edits (tracked changes), which the Docs API cannot create —
@@ -43,6 +44,37 @@ export function editWindow(searchText: string, replacement: string): EditWindow 
 }
 
 /**
+ * Insert replacement text without touching the system clipboard (connected
+ * Brave shares the person's macOS pasteboard, and the extension relay rejects
+ * browser-level clipboard permission grants) and without per-character
+ * keystrokes (which trigger smart-quote/dash autocorrect). Dispatch an
+ * in-memory paste event to the active editor target (Docs listens on its
+ * hidden text-event iframe and calls preventDefault); when the page does not
+ * handle synthetic paste, commit the string directly via CDP insertText.
+ */
+export async function insertSuggestedText(page: Page, text: string): Promise<void> {
+  const pasted = await page
+    .evaluate((value) => {
+      let doc: Document = document
+      while (doc.activeElement?.tagName === 'IFRAME') {
+        const inner = (doc.activeElement as HTMLIFrameElement).contentDocument
+        if (!inner) break
+        doc = inner
+      }
+      const target = doc.activeElement ?? doc.body
+      if (!target) return false
+      const clipboardData = new DataTransfer()
+      clipboardData.setData('text/plain', value)
+      const event = new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData })
+      return !target.dispatchEvent(event)
+    }, text)
+    .catch(() => false)
+  if (!pasted) {
+    await page.keyboard.insertText(text)
+  }
+}
+
+/**
  * Suggested edit anchored to text in a Doc: the editor's own find selects the
  * requested occurrence of searchText (which stays selected after the find bar
  * closes), then the caret walks to the edit window and types — in Suggesting
@@ -59,18 +91,26 @@ export async function suggestDocsEdit(options: {
   occurrence?: number
   /** Multi-tab docs: the tab holding searchText — the editor opens on it. */
   tabId?: string
+  account?: string
 }): Promise<void> {
   const occurrence = options.occurrence ?? 1
   const window = editWindow(options.searchText, options.replacement)
-  await withGoogleBrowser({ headless: true }, async (context) => {
-    await context.grantPermissions(['clipboard-write'], { origin: 'https://docs.google.com' })
-    const page = await openGooglePage(context, docsCommentUrl(options.documentId, options.tabId))
-    await page.waitForTimeout(4000)
-    // Two spaced clicks reliably hand the canvas keyboard focus (probe-verified).
-    await page.mouse.click(700, 300)
-    await page.waitForTimeout(800)
-    await page.mouse.click(700, 300)
-    await page.waitForTimeout(800)
+  await withGoogleBrowser({ headless: true }, async (session) => {
+    const targetUrl = docsCommentUrl(options.documentId, options.tabId, options.account)
+    const alreadyOpen =
+      !session.page.isClosed() &&
+      session.page.url().includes(`/document/d/${encodeURIComponent(options.documentId)}/edit`)
+    const page = await openGooglePage(session, targetUrl, {
+      account: options.account,
+      reuseLoadedDoc: true,
+    })
+    if (!alreadyOpen) {
+      await page.waitForTimeout(4000)
+    } else {
+      await page.keyboard.press('Escape').catch(() => undefined)
+      await page.waitForTimeout(400)
+    }
+    await focusDocsCanvas(page)
     // Cmd+Option+Shift+X: Suggesting mode, before any caret work — every
     // keystroke from here must record as a suggestion. A no-op under
     // commenter access, where the editor is suggest-only anyway.
@@ -82,20 +122,11 @@ export async function suggestDocsEdit(options: {
     for (let i = 0; i < window.caretAdvance; i++) await page.keyboard.press('ArrowRight')
     for (let i = 0; i < window.selectCount; i++) await page.keyboard.press('Shift+ArrowRight')
     if (window.typeText) {
-      // Paste, not keystrokes: a single insertion event replaces the selection
-      // and bypasses the editor's keystroke autocorrect (smart quotes, auto-
-      // capitalization, substitutions) — probe-verified exact, quotes and
-      // double hyphens included. The headless browser's clipboard is isolated
-      // from the macOS pasteboard (pbpaste-verified), so nothing the user
-      // copied is touched — and long replacements land instantly.
-      await page.evaluate(async (text) => {
-        await navigator.clipboard.writeText(text)
-      }, window.typeText)
-      await page.keyboard.press('Meta+KeyV')
+      await insertSuggestedText(page, window.typeText)
     } else if (window.selectCount > 0) {
       await page.keyboard.press('Backspace')
     }
-    // Let the edit sync to Drive before the browser dies.
+    // Let the edit sync to Drive before the browser closes or navigates away.
     await page.waitForTimeout(2500)
     // Cmd+Option+Shift+Z: back to Editing mode. The mode sticks per
     // user+document across sessions, and this profile is a real person's

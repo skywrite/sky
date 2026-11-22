@@ -237,17 +237,12 @@ export async function updateCalendarEvent(
   hooks: Parameters<CalendarSchedulerHost['create']>[1],
   read: () => Promise<CalendarEventSnapshot>,
 ): Promise<CreatedCalendarEvent> {
-  return withGoogleBrowser({ headless: true }, async (context) => {
-    const page = await context.newPage()
-    try {
-      await prepareCalendarEventUpdate(page, event, fields)
-      await hooks.beforeSave()
-      validateEventUpdate(event, fields, instantNow())
-      await hooks.saving()
-      await page.getByRole('button', { name: 'Save', exact: true }).click()
-      return await finishCalendarEventUpdate(page, event, fields, read)
-    } finally {
-      await page.close().catch(() => undefined)
-    }
+  return withGoogleBrowser({ headless: true, closeAfter: true }, async ({ page }) => {
+    await prepareCalendarEventUpdate(page, event, fields)
+    await hooks.beforeSave()
+    validateEventUpdate(event, fields, instantNow())
+    await hooks.saving()
+    await page.getByRole('button', { name: 'Save', exact: true }).click()
+    return await finishCalendarEventUpdate(page, event, fields, read)
   })
 }

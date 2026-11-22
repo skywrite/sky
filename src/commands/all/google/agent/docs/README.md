@@ -79,10 +79,10 @@ Changing any constant means re-checking the ordering:
 
 | Bound | Where | Converts |
 |---|---|---|
-| 60s launch (`LAUNCH_TIMEOUT_MS`) | `#lib/google/browserSession.ts` | a wedged Chromium launch → kill-and-retry (takeover), then a flow error |
+| 60s launch (`LAUNCH_TIMEOUT_MS`) | `#lib/google/browserSession.ts` | a wedged persistent-profile launch → flow error |
+| 60s warm-browser idle (`WARM_IDLE_MS`) | `#lib/google/browserSession.ts` | a parked browser → closed, owned tab or profile lease released |
 | 90s stream idle × 3 (`STREAM_IDLE_MS`) | `#shared/ai/llm/anthropicProvider.ts` → `idleGuardFetch.ts` | a wedged model request → invisible in-place retry (pre-response) or a fast stream error (mid-body) |
-| 90s warm-browser idle (`WARM_IDLE_MS`) | `#lib/google/browserSession.ts` | a parked browser → closed, cross-process lock released |
-| 120s lock wait | `#lib/google/profileLock.ts` | another process's turn → `ProfileLockBusyError`, not a silent queue |
+| 120s lock wait (`LOCK_WAIT_MS`) | `#lib/google/browserSession.ts` → `#lib/browser/signIn/profile.ts` | another process's turn → `BrowserProfileError`, not a silent queue |
 | 150s flow deadline (`FLOW_DEADLINE_MS`) | `#lib/google/browserSession.ts` | a wedged page operation → browser closed under it, queue advances |
 | 180s tool timer (`TOOL_TIMEOUT_MS`) | `lib/tools.ts` | any hung tool → an error string the agent routes around |
 | 360s stream watchdog (`STREAM_STALL_MS`) | `mod.ts` | a truly dead stream → mission aborted with a files-touched report |
@@ -106,15 +106,14 @@ Invariants behind the ordering:
 ## The warm browser
 
 Browser-hands calls (anchored comments, suggested edits) run through
-`withGoogleBrowser`, which keeps the Chromium context **warm between
-flows**: one launch serves a whole mission, and an idle timer folds the
-session 90s after the last call. The launch→close boundary it removes was
-both ~20s of overhead per comment and the wedge surface — rapid relaunch on
-a persistent profile can hang Chromium outright. Recovery when a launch
-still wedges: SIGKILL the holder, but only after `ps` proves the pid's
-command line names our profile dir **and** carries `--headless` — the
-visible `sky google:browser` sign-in window can never match, and keeps the
-polite "already in use" error.
+`withGoogleBrowser`, which shares Sky's core browser connection: an owned
+background tab in the connected Brave profile when configured in Settings →
+Browser automation, or Sky's persistent `~/.sky/browser/private-profile/`
+under `acquireBrowserProfile` otherwise. One connection stays **warm between
+flows** across a mission (`retainGoogleBrowser` folds it when the mission ends,
+with a 60s idle bound as backup), avoiding per-comment connection churn.
+Editor URLs carry `authuser` for the mission's resolved Google account, and
+suggested edits insert text without touching the system clipboard.
 
 ## Reading long files
 

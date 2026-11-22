@@ -2,7 +2,7 @@
 name: legal-annotation
 schema: 0.2.0
 created: 2026-08-08
-updated: 2026-09-09
+updated: 2026-11-22
 description: Mission brief for reviewing a legal document and leaving comments on it
 ---
 
@@ -29,7 +29,7 @@ Weight the review toward what I have flagged, without dropping anything material
 
 Put every finding on the document itself as a real anchored comment — add_anchored_comment, with searchText copied verbatim from the clause — so the passage shows highlighted with your comment pinned to it. Prioritized, at most 12 anchored comments — the material ones. Fold anything lighter into the summary rather than burying the important findings among nits.
 
-Each comment opens with its severity in brackets — `[High]`, `[Medium]`, `[Low]` — then says in plain language what the provision does to me and what to ask for instead. High is real exposure or a right I lose; medium is worth negotiating; low is cleanup and clarity. Write for a smart reader who is not a lawyer: no citation formatting, no hedging into uselessness, and never quote a clause back at me without saying what it means.
+Each comment opens with a 1-line `*bold*` headline starting with its severity in brackets — e.g. `*[High] Uncapped indemnity*`, `*[Medium] 90-day auto-renewal notice*`, `*[Low] Undefined schedule reference*` — followed by a blank line (`\n\n`) and 1–2 short `- ` bullets or sentences (~40–75 words total, staying above Google's "Show more" fold) saying in plain language what the provision does to me and what to ask for instead. High is real exposure or a right I lose; medium is worth negotiating; low is cleanup and clarity. Write for a smart reader who is not a lawyer: no wall-of-text paragraphs, no location prefixes (the highlight already shows the clause), no citation formatting, no hedging into uselessness, and never quote a clause back at me without saying what it means.
 
 When a finding has a concrete rewrite, propose it as a suggested edit as well, so I can accept it with one click, and keep the reasoning in the comment.
 

@@ -13,9 +13,9 @@ import { suggestDocsEdit } from './browserSuggestions.ts'
 //
 //   SKY_GOOGLE_E2E=1 bun test commands/all/google/agent/lib/browserSuggestions_e2e_test.ts
 //
-// Needs stored OAuth (sky google:auth) and the signed-in automation browser
-// (sky google:browser). With several stored accounts, pick one via
-// SKY_GOOGLE_E2E_ACCOUNT=<email or unique part of it>.
+// Needs stored OAuth (sky google:auth) and a Google session in Sky's browser
+// (connected Brave in Settings → Browser automation, or sky google:browser).
+// With several stored accounts, pick one via SKY_GOOGLE_E2E_ACCOUNT=<email>.
 
 const enabled = env.get('SKY_GOOGLE_E2E') === '1'
 
@@ -50,14 +50,16 @@ test(
           documentId: doc.id,
           searchText: 'consectetur adipiscing elit',
           // The apostrophe is autocorrect bait: it lands verbatim only while
-          // text entry stays on the paste path (smart quotes would curl it).
+          // text entry avoids per-character keystrokes (smart quotes would curl it).
           replacement: "consectetur tem'por elit",
+          account: client.email,
         }),
         suggestDocsEdit({
           documentId: doc.id,
           searchText: 'rests beside the',
           replacement: 'rests gently beside the',
           occurrence: 2,
+          account: client.email,
         }),
       ])
 

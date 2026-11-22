@@ -1,6 +1,6 @@
 ---
 created: 2026-09-25
-updated: 2026-11-02
+updated: 2026-11-22
 ---
 
 # Sky's browser
@@ -40,12 +40,15 @@ Missing, disabled and corrupted extensions fail with a named recovery action ins
 Repairing the extension can reset its token; reconnect explicitly rather than harvesting a replacement from browser storage.
 
 The same task worker connects through Playwright's official extension relay.
-Each connection gets a tab group, and Sky creates its own page rather than
-navigating a pre-existing tab. Cleanup closes only its task pages and disconnects
-the relay; it never quits Brave, copies cookies, acquires the personal profile's
-lock, or edits that profile's preferences. A failed connection reports how to
-reconnect; it must not silently open a new, signed-out browser. Explicit test
-profiles and the legacy batch helper keep their separate browser lifecycle.
+With Extension 0.6+ (Protocol v2), Sky connects with `tabGroup: false` and
+`background: true` for background runs: the extension converts its newly opened
+connect tab in-place to an owned `about:blank` page without creating a saved tab
+group or stealing foreground window focus, and never navigates a pre-existing tab.
+Cleanup closes only its owned task pages and disconnects the relay; it never quits
+Brave, copies cookies, acquires the personal profile's lock, or edits that profile's
+preferences. A failed connection reports how to reconnect; it must not silently open
+a new, signed-out browser. Explicit test profiles and the legacy batch helper keep
+their separate browser lifecycle.
 
 Existing sessions require no credential lookup or per-site native approval. When
 a site needs fresh authentication, `sign_in` uses the same 1Password broker and

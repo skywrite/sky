@@ -1,6 +1,6 @@
 ---
 created: 2026-08-09
-updated: 2026-11-03
+updated: 2026-11-22
 ---
 
 # Agreement review
@@ -109,8 +109,9 @@ existing Doc. The command passes both `file` and `import` explicitly to avoid
 parent-argument leakage in command composition. Its target argument remains
 `document`, not the Google agent's `file` argument.
 
-Annotation requires Chromium and the automation profile created by
-`sky google:browser`. Findings use real anchored comments and concrete suggested
+Annotation uses Sky's shared browser connection (connected Brave in Settings →
+Browser automation, or Sky's persistent browser via `sky google:browser`).
+Findings use real anchored comments and concrete suggested
 edits; document text is not directly edited. Browser failures leave unplaced
 findings in the report, never downgraded to unanchored panel comments. Only the
 whole-document summary belongs in the comments panel. See the

@@ -1,5 +1,6 @@
+import type { Page } from 'playwright'
 import { assert, test } from '#test'
-import { editWindow } from './browserSuggestions.ts'
+import { editWindow, insertSuggestedText } from './browserSuggestions.ts'
 
 test('editWindow', () => {
   assert({
@@ -35,5 +36,49 @@ test('editWindow', () => {
     should: 'never count the same characters as both prefix and suffix',
     expected: { caretAdvance: 2, selectCount: 1, typeText: '' },
     actual: editWindow('aaa', 'aa'),
+  })
+})
+
+test('insertSuggestedText uses synthetic paste when handled and falls back to keyboard.insertText without system clipboard', async () => {
+  const insertedViaKeyboard: string[] = []
+  let evaluatedText: string | undefined
+
+  const handledPage = {
+    evaluate: async (_fn: unknown, value: string) => {
+      evaluatedText = value
+      return true
+    },
+    keyboard: {
+      insertText: async (text: string) => {
+        insertedViaKeyboard.push(text)
+      },
+    },
+  } as unknown as Page
+
+  await insertSuggestedText(handledPage, "tem'por")
+
+  assert({
+    given: 'an editor whose paste handler consumes the in-memory ClipboardEvent',
+    should: 'deliver the verbatim text without invoking keyboard.insertText or navigator.clipboard',
+    expected: { evaluatedText: "tem'por", insertedViaKeyboard: [] },
+    actual: { evaluatedText, insertedViaKeyboard },
+  })
+
+  const fallbackPage = {
+    evaluate: async () => false,
+    keyboard: {
+      insertText: async (text: string) => {
+        insertedViaKeyboard.push(text)
+      },
+    },
+  } as unknown as Page
+
+  await insertSuggestedText(fallbackPage, 'gently ')
+
+  assert({
+    given: 'a page where synthetic paste is not handled by a paste listener',
+    should: 'fall back to CDP keyboard.insertText',
+    expected: ['gently '],
+    actual: insertedViaKeyboard,
   })
 })

@@ -1,6 +1,6 @@
 ---
 created: 2026-09-06
-updated: 2026-09-28
+updated: 2026-11-22
 ---
 
 # Scheduling a meeting
@@ -68,11 +68,13 @@ Its shared header, spacing, action roles and footer follow the
    Guests are optional. Video conferencing can be None or Zoom, following the
    [shared scheduler defaults](../../../../lib/calendarScheduler/docs/README.md#the-command).
    The composer and chat draft check the selected organizer's Google browser session
-   before enabling creation. **Sign in to Google** opens Sky's dedicated browser on
-   the service computer; the card polls its status and retains the draft across
-   reloads. Authentication alone never creates or retries an invitation. Cancel,
-   a closed window or a different signed-in account cannot enable sending. The same
-   window and profile are shared with `sky google:browser`.
+   before enabling creation, honoring the connected Brave session when configured
+   in Settings → Browser automation and using Sky's persistent browser otherwise.
+   **Sign in to Google** opens that shared browser on the service computer; the
+   card polls its status and retains the draft across reloads. Authentication
+   alone never creates or retries an invitation. Cancel, a closed window or a
+   different signed-in account cannot enable sending. The same sign-in flow is
+   shared with `sky google:browser`.
 5. Success shows the Calendar link and a Copy Zoom link action when present. No call is
    joined. A failure preserves the draft. An uncertain save directs the
    person to Calendar before returning to the draft.
