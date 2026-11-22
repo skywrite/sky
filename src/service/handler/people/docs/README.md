@@ -1,6 +1,6 @@
 ---
 created: 2026-09-23
-updated: 2026-11-10
+updated: 2026-11-22
 ---
 
 # People & Orgs
@@ -56,6 +56,7 @@ Maps when the profile is saved, and refused without Google Maps. The rules live 
 New profiles come from the same code as `person:new` and `org:new`
 (`commands/all/person/lib/create.ts`, `commands/all/org/lib/`). A person goes under
 `people/<year>/<first two letters>/Name.md` with the command's fields and headings.
+The year is the one in Met; a blank Met or `Never` uses the year the person was added.
 An organization is looked up as `org:new` looks it up: its website, Wikipedia, and a
 model. It is filed under `orgs/<sector>/<subcategory>/Name.md` with its overview.
 That lookup takes a few seconds; a failure refuses the save with the reason.

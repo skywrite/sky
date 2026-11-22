@@ -191,6 +191,31 @@ test('New profiles are written as person:new and org:new write them, and edits n
   }
 })
 
+test('A new person is filed under the year they met', async () => {
+  const f = await fixture()
+  try {
+    const save = (name: string, met: string) => f.profiles.save({ ...blankProfile('person'), name, met })
+    assert({
+      given: 'new people met on a day, in a year alone, never, or with no met date, added in 2026',
+      should: 'file each under the year they met, and the rest under the year they were added',
+      actual: [
+        (await save('Sam Rivera', '2017-04-12')).id,
+        (await save('Alex Reed', '2011')).id,
+        (await save('Jane Doe', 'Never')).id,
+        (await save('Priya Nair', '')).id,
+      ],
+      expected: [
+        'people/2017/sa/Sam-Rivera.md',
+        'people/2011/al/Alex-Reed.md',
+        'people/2026/ja/Jane-Doe.md',
+        'people/2026/pr/Priya-Nair.md',
+      ],
+    })
+  } finally {
+    await f.close()
+  }
+})
+
 test('Duplicate imports, ambiguous organizations, concurrent namesakes, and stale edits cannot silently overwrite records', async () => {
   const f = await fixture()
   try {

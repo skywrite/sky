@@ -16,7 +16,7 @@ const params = {
     default: () => new PlainDate(),
   }),
   org: Flag.string('Organization (sets orgs.current)', { short: 'o' }),
-  year: Flag.number('Year folder to place the file in (e.g., 2025)', { short: 'y' }),
+  year: Flag.number('Year folder to place the file in (defaults to the year met)', { short: 'y' }),
   path: Flag.string('Path to place file (overrides auto-generated path)', { short: 'p' }),
 }
 
@@ -39,7 +39,7 @@ export default class PersonNewTask extends Command {
     description: 'Create new person.',
     descriptionLong: [
       'Creates a new person file in the people/ directory.',
-      'Files are organized by year and first two letters of the first name.',
+      'Files are organized by the year met and the first two letters of the first name.',
     ],
     usage: [
       'sky person:new "John Smith"              # Create with default met date (today)',
@@ -60,8 +60,8 @@ export default class PersonNewTask extends Command {
 
     const personName = name
 
-    // Use custom path if provided, otherwise year/first-two-letters of the first name
-    const finalPath = pathStr ?? generatePersonHierarchyPath(personName, year)
+    // Use custom path if provided, otherwise year met/first-two-letters of the first name
+    const finalPath = pathStr ?? generatePersonHierarchyPath(personName, year ?? met.year)
     const peopleDir = <string>config.DIR_PEOPLE
 
     const personMarkdown = newPersonMarkdown({

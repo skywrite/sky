@@ -405,9 +405,10 @@ export function createPeopleStore(store: MarkdownStore, baseDir: string, dirs: s
     date: string,
   ): Promise<string> {
     const names = (choices: OrganizationChoice[]) => choices.map((org) => org.name)
+    const met = input.met || date
     const contents = newPersonMarkdown({
       name: aliases.length ? [input.name, ...aliases] : input.name,
-      met: input.met || date,
+      met,
       created: date,
       location: input.location,
       title: input.title,
@@ -416,7 +417,9 @@ export function createPeopleStore(store: MarkdownStore, baseDir: string, dirs: s
       sites: input.sites,
       notes: input.notes,
     })
-    const dir = path.join(options.peopleDir, generatePersonHierarchyPath(input.name, Number(date.slice(0, 4))))
+    // Filed under the year they met; `Never` files under the year they were added
+    const year = /^\d{4}/.test(met) ? met : date
+    const dir = path.join(options.peopleDir, generatePersonHierarchyPath(input.name, Number(year.slice(0, 4))))
     return createFile(dir, personFileStem(input.name), contents)
   }
 
