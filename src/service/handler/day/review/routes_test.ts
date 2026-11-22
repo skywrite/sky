@@ -20,7 +20,7 @@ test('real review actions carry duplicate todos and reminders, check streaks and
       given: 'duplicate todos and a reminder',
       should: 'copy the to-dos once, accept a retry, and move the reminder',
       actual: [first.status, retry.status, moved.status, (await f.view()).step],
-      expected: [200, 200, 200, 'carry'],
+      expected: [200, 200, 200, 'streak'],
     })
     const streak = initial.items.find((i) => i.kind === 'streak')!
     const tracked = initial.items.find((i) => i.kind === 'tracking')!

@@ -93,7 +93,7 @@ test(
         actual: [
           f.calls.filter((call) => call === 'start').length,
           await dialog.getByRole('alert').count(),
-          await dialog.getByRole('heading', { name: 'What’s coming with you?' }).count(),
+          await dialog.getByRole('heading', { name: 'Did you do these?' }).count(),
           errors,
         ],
         expected: [1, 0, 1, []],

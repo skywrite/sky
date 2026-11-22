@@ -224,7 +224,7 @@ export function DayReviewDialog({
     void reviewRequest(`${day}/acknowledge`, {}).catch(() => {})
     if (keep) onEngage?.()
   }
-  const step = view?.step ?? 'carry'
+  const step = view?.step ?? REVIEW_STEPS[0]
   const stepIndex = REVIEW_STEPS.indexOf(step)
   useDialogTitle(`sky · Review ${day} · ${steps[step].label}`)
   useEffect(() => {
@@ -517,7 +517,13 @@ export function DayReviewDialog({
                         <Button
                           variant="primary"
                           disabled={Boolean(busy)}
-                          onClick={() => goTo(reviewItemStep(view.items[0]))}
+                          onClick={() =>
+                            goTo(
+                              REVIEW_STEPS.find((candidate) =>
+                                view.items.some((item) => reviewItemStep(item) === candidate),
+                              ) ?? reviewItemStep(view.items[0]),
+                            )
+                          }
                         >
                           Review remaining items ({pending})
                         </Button>

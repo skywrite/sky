@@ -67,11 +67,11 @@ test(
       const dialog = page.getByRole('dialog', { name: `Review ${REVIEW_DAY}` })
       await dialog.waitFor()
       for (const heading of [
-        'What’s coming with you?',
-        'Which reminders still matter?',
         'Did you do these?',
         'Fill in the missing pieces',
         'Anything worth keeping?',
+        'What’s coming with you?',
+        'Which reminders still matter?',
         'Keep the conversation going',
       ]) {
         await dialog.getByRole('heading', { name: heading }).waitFor()

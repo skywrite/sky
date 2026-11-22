@@ -56,57 +56,23 @@ test(
       await page.goto(origin)
       const dialog = page.getByRole('dialog', { name: `Review ${REVIEW_DAY}` })
       await dialog.waitFor()
-      await dialog.getByRole('heading', { name: 'What’s coming with you?' }).waitFor()
+      await dialog.getByRole('heading', { name: 'Did you do these?' }).waitFor()
       const shots = env.get('SKY_REVIEW_SCREENSHOTS')
       if (shots) {
         await mkdir(shots, { recursive: true })
         await page.screenshot({ path: path.join(shots, 'desktop.png'), fullPage: true })
       }
-      await page.waitForFunction((day) => document.title === `sky · Review ${day} · Todos`, REVIEW_DAY)
+      await page.waitForFunction((day) => document.title === `sky · Review ${day} · Streaks`, REVIEW_DAY)
       assert({
         given: 'the first wizard step',
-        should: 'focus on tasks while later decisions stay out of the way',
+        should: 'focus on streaks while later decisions stay out of the way',
         actual: [
-          await dialog.getByRole('heading', { name: 'What’s coming with you?' }).count(),
+          await dialog.getByRole('heading', { name: 'Did you do these?' }).count(),
           await dialog.getByRole('textbox').count(),
-        ],
-        expected: [1, 0],
-      })
-      const todos = dialog.getByRole('region', { name: 'Todos' })
-      assert({
-        given: 'to-dos and a reminder waiting',
-        should: 'open on the to-dos alone, offering to copy them',
-        actual: [
-          await todos.locator('.sky-review-item').count(),
-          await dialog.getByRole('button', { name: 'Copy to today (2)' }).count(),
           await dialog.getByText('Water the plants').count(),
         ],
-        expected: [2, 1, 0],
+        expected: [1, 0, 0],
       })
-      await todos.getByRole('button', { name: 'Done', exact: true }).first().click()
-      await dialog.getByRole('button', { name: 'Copy to today (1)' }).click()
-      await dialog.getByRole('button', { name: 'Copy to today (1)' }).waitFor({ state: 'detached' })
-      await dialog.getByRole('button', { name: 'Continue', exact: true }).click()
-      await dialog.getByRole('heading', { name: 'Which reminders still matter?' }).waitFor()
-      await page.waitForFunction((day) => document.title === `sky · Review ${day} · Reminders`, REVIEW_DAY)
-      await dialog.getByRole('button', { name: 'Move to today (1)' }).click()
-      await dialog.getByRole('button', { name: 'Move to today (1)' }).waitFor({ state: 'detached' })
-      const [reviewed, nextDay] = [await f.readDay(REVIEW_DAY), await f.readDay(REVIEW_TODAY)]
-      assert({
-        given: 'one to-do marked done, the other copied to today and the reminder moved there',
-        should: 'strike the first, keep the copied one unfinished on its own day, and take the reminder off it',
-        actual: [
-          reviewed.includes('- ~~Review Atlas outline~~\n  Keep the attached notes.'),
-          reviewed.includes('- Review Atlas outline\n  Keep this separate copy.'),
-          reviewed.includes('Water the plants'),
-          nextDay.includes('- Review Atlas outline\n  Keep this separate copy.'),
-          nextDay.includes('Keep the attached notes.'),
-          nextDay.includes('- Water the plants'),
-        ],
-        expected: [true, true, false, true, false, true],
-      })
-      await dialog.getByRole('button', { name: 'Continue', exact: true }).click()
-      await dialog.getByRole('heading', { name: 'Did you do these?' }).waitFor()
       await dialog.getByRole('button', { name: 'Done', exact: true }).click()
       await dialog.getByRole('button', { name: 'Done', exact: true }).waitFor({ state: 'detached' })
       await dialog.getByRole('button', { name: 'Continue', exact: true }).click()
@@ -141,6 +107,42 @@ test(
       await dialog.getByRole('button', { name: 'Continue', exact: true }).click()
       await dialog.getByRole('heading', { name: 'Anything worth keeping?' }).waitFor()
       await dialog.getByRole('button', { name: 'Skip this step' }).click()
+      await dialog.getByRole('heading', { name: 'What’s coming with you?' }).waitFor()
+      await page.waitForFunction((day) => document.title === `sky · Review ${day} · Todos`, REVIEW_DAY)
+      const todos = dialog.getByRole('region', { name: 'Todos' })
+      assert({
+        given: 'to-dos and a reminder waiting',
+        should: 'show the to-dos alone, offering to copy them',
+        actual: [
+          await todos.locator('.sky-review-item').count(),
+          await dialog.getByRole('button', { name: 'Copy to today (2)' }).count(),
+          await dialog.getByText('Water the plants').count(),
+        ],
+        expected: [2, 1, 0],
+      })
+      await todos.getByRole('button', { name: 'Done', exact: true }).first().click()
+      await dialog.getByRole('button', { name: 'Copy to today (1)' }).click()
+      await dialog.getByRole('button', { name: 'Copy to today (1)' }).waitFor({ state: 'detached' })
+      await dialog.getByRole('button', { name: 'Continue', exact: true }).click()
+      await dialog.getByRole('heading', { name: 'Which reminders still matter?' }).waitFor()
+      await page.waitForFunction((day) => document.title === `sky · Review ${day} · Reminders`, REVIEW_DAY)
+      await dialog.getByRole('button', { name: 'Move to today (1)' }).click()
+      await dialog.getByRole('button', { name: 'Move to today (1)' }).waitFor({ state: 'detached' })
+      const [reviewed, nextDay] = [await f.readDay(REVIEW_DAY), await f.readDay(REVIEW_TODAY)]
+      assert({
+        given: 'one to-do marked done, the other copied to today and the reminder moved there',
+        should: 'strike the first, keep the copied one unfinished on its own day, and take the reminder off it',
+        actual: [
+          reviewed.includes('- ~~Review Atlas outline~~\n  Keep the attached notes.'),
+          reviewed.includes('- Review Atlas outline\n  Keep this separate copy.'),
+          reviewed.includes('Water the plants'),
+          nextDay.includes('- Review Atlas outline\n  Keep this separate copy.'),
+          nextDay.includes('Keep the attached notes.'),
+          nextDay.includes('- Water the plants'),
+        ],
+        expected: [true, true, false, true, false, true],
+      })
+      await dialog.getByRole('button', { name: 'Continue', exact: true }).click()
       await dialog.getByRole('heading', { name: 'Keep the conversation going' }).waitFor()
       if (shots) await page.screenshot({ path: path.join(shots, 'continuing-chats-phone.png'), fullPage: true })
       await dialog
@@ -159,13 +161,13 @@ test(
       if (shots) await page.screenshot({ path: path.join(shots, 'summary-phone.png'), fullPage: true })
       await dialog.getByRole('button', { name: 'Back', exact: true }).click()
       await dialog.getByRole('heading', { name: 'Keep the conversation going' }).waitFor()
-      await dialog.getByRole('button', { name: 'Back', exact: true }).click()
+      await dialog.getByRole('button', { name: /^Meetings/ }).click()
       await dialog.locator('summary', { hasText: '1 handled or skipped' }).click()
       await dialog.getByRole('button', { name: 'Review again' }).click()
       await dialog.getByRole('button', { name: 'Import notes' }).waitFor()
       await dialog.getByRole('button', { name: 'Skip this step' }).click()
-      await dialog.getByRole('heading', { name: 'Keep the conversation going' }).waitFor()
-      await dialog.getByRole('button', { name: 'Continue', exact: true }).click()
+      await dialog.getByRole('heading', { name: 'What’s coming with you?' }).waitFor()
+      await dialog.getByRole('button', { name: /^Summary/ }).click()
       await dialog.getByRole('button', { name: 'Read summary' }).waitFor()
       await dialog.getByRole('button', { name: 'Read summary' }).click()
       await page.waitForURL(`**/${REVIEW_DAY}?view=summary`)
@@ -273,7 +275,7 @@ test(
       )
       await second.dialog.getByRole('button', { name: 'Skip this step' }).click()
       await acknowledged
-      await second.dialog.getByRole('heading', { name: 'Which reminders still matter?' }).waitFor()
+      await second.dialog.getByRole('heading', { name: 'Fill in the missing pieces' }).waitFor()
       await first.page.bringToFront()
       await first.page.evaluate(() => window.dispatchEvent(new Event('focus')))
       await first.dialog.waitFor({ state: 'detached' })

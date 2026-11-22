@@ -2,7 +2,7 @@ import type { Tracker } from '#lib/tracking/types.ts'
 import type { DayItemAddress } from '../organizingTypes.ts'
 
 export type ReviewKind = 'carry' | 'streak' | 'tracking' | 'meeting' | 'check'
-export const REVIEW_STEPS = ['carry', 'reminder', 'streak', 'tracking', 'meeting', 'chat', 'summary'] as const
+export const REVIEW_STEPS = ['streak', 'tracking', 'meeting', 'carry', 'reminder', 'chat', 'summary'] as const
 export type ReviewStep = (typeof REVIEW_STEPS)[number]
 /** A `carry` item from the Reminders list: reminders are moved to today, where to-dos are copied. */
 export const isReminder = (item: ReviewItem) =>
