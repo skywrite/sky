@@ -72,6 +72,29 @@
   content: '· ';
 }
 
+[data-file-path] .sky-tool-subject {
+  max-width: none;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-align: start;
+}
+
+.sky-tool-file-date {
+  white-space: nowrap;
+}
+
+.sky-tool-path-tooltip {
+  max-width: min(64ch, calc(100vw - 32px));
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 640px) {
+  .sky-tool-chip[data-file-path] {
+    flex-wrap: wrap;
+    border-radius: 14px;
+  }
+}
+
 /* Which Google account the call used, after the tool's name — never cut short: it is the part that must be read */
 .sky-tool-account {
   flex: none;

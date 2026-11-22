@@ -25,6 +25,7 @@ import type { TokenUsage } from '#universal/ai/tokenUsage.ts'
 import { toolDisplayName } from '#universal/ai/toolDisplay.ts'
 import { ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
 import type { BranchPoint } from '../../../service/handler/chat/branchPoint.ts'
+import type { ToolFilePath } from '../../../service/handler/chat/toolFilePath.ts'
 import type { UnwindBlocker } from '../../../service/handler/chat/unwind.ts'
 import { renderStatic } from '../editor/wysiwyg/render.ts'
 import { fileHref } from '../explorer/explorer.tsx'
@@ -131,6 +132,7 @@ export interface Answered extends Approval {
 
 /** One tool call at work, with what it printed — kept with the reply it belongs to. */
 export interface Run {
+  filePath?: ToolFilePath
   callId?: string
   input?: unknown
   output?: unknown
@@ -292,7 +294,15 @@ type Action =
   | { type: 'queries'; id: string; turn: number; queries: string[] }
   | { type: 'gather'; id: string; text: string; documents?: number; provenance?: boolean }
   | { type: 'delta'; id: string; text: string }
-  | { type: 'tool'; id: string; name: string; subject?: string; input?: unknown; callId?: string }
+  | {
+      type: 'tool'
+      id: string
+      name: string
+      subject?: string
+      input?: unknown
+      callId?: string
+      filePath?: ToolFilePath
+    }
   | { type: 'run-updated'; id: string; run: Run }
   | { type: 'run-started'; id: string; run: Run }
   | { type: 'run-line'; id: string; tool: string; at: number; text: string }
@@ -526,6 +536,7 @@ function reduce(state: ThreadState, action: Action): ThreadState {
               ? {
                   ...r,
                   subject: action.subject ?? r.subject,
+                  filePath: r.filePath ?? action.filePath,
                   input: action.input ?? r.input,
                   callId: action.callId ?? r.callId,
                 }
@@ -543,6 +554,7 @@ function reduce(state: ThreadState, action: Action): ThreadState {
         subject,
         input: action.input,
         callId: action.callId,
+        filePath: action.filePath,
       }
       return { ...state, gather: state.phase === 'busy' ? 'thinking' : state.gather, runs: [...state.runs, chip] }
     }
@@ -1201,6 +1213,7 @@ export function useChat(id: string) {
                 type: 'tool',
                 name: d.toolName as string,
                 subject: d.subject as string | undefined,
+                filePath: d.filePath as ToolFilePath | undefined,
                 input: d.input,
                 callId: d.toolCallId as string | undefined,
               })
@@ -1623,6 +1636,56 @@ function RunView({ run }: { run: Run }) {
   const lastLine = run.lines.at(-1)
   const last = lastLine === undefined ? undefined : compactLine(lastLine)
   const folded = !running && count > 0
+  const file = run.filePath
+  const subject = file?.label ?? run.subject
+  const label = toolDisplayName(run.tool)
+  const button = (
+    <button
+      type="button"
+      className={folded ? 'sky-tool-fold' : 'sky-chip sky-tool-chip'}
+      data-act="true"
+      data-open={open}
+      data-file-path={file ? true : undefined}
+      onClick={() => setOpen((o) => !o)}
+      aria-expanded={open}
+      aria-label={file ? `${label} details · ${file.label}${file.date ? ` (${file.date})` : ''}` : `${label} details`}
+    >
+      {folded && (
+        <span className="sky-tool-caret" aria-hidden="true">
+          {open ? '▾' : '▸'}
+        </span>
+      )}
+      {running && <span className="sky-tool-pulse" role="progressbar" aria-label={`${label} progress`} />}
+      <span className={folded ? 'sky-tool-fold-name' : undefined}>{label}</span>
+      {run.account && <span className="sky-tool-account">{run.account}</span>}
+      {(!folded || file) && subject && (
+        <span className="sky-tool-subject">
+          {subject}
+          {file?.date && (
+            <>
+              {' '}
+              <span className="sky-tool-file-date">({file.date})</span>
+            </>
+          )}
+        </span>
+      )}
+      {folded ? (
+        <>
+          {took !== undefined && <span className="sky-tool-fold-time">{elapsedLabel(took)}</span>}
+          <span className="sky-tool-fold-summary">{calendarLabel ?? run.summary ?? last}</span>
+        </>
+      ) : (
+        <>
+          <span className="sky-tool-meta">
+            {running ? progressLabel : (calendarLabel ?? (run.status === 'success' ? 'Completed' : 'Failed'))}
+          </span>
+          {(running || took !== undefined) && (
+            <span className="sky-tool-meta">{elapsedLabel(running ? seconds : took!)}</span>
+          )}
+        </>
+      )}
+    </button>
+  )
   return (
     <div
       className="sky-tool-run"
@@ -1630,46 +1693,19 @@ function RunView({ run }: { run: Run }) {
       data-status={run.status ?? undefined}
       data-waiting={waiting || undefined}
     >
-      {folded ? (
-        <button
-          type="button"
-          className="sky-tool-fold"
-          data-act="true"
-          onClick={() => setOpen((o) => !o)}
-          aria-expanded={open}
-          aria-label={`${toolDisplayName(run.tool)} details`}
+      {run.tool === 'read_file' || run.tool === 'list_directory' ? (
+        <Tooltip
+          label={file?.absolute}
+          disabled={!file}
+          multiline
+          classNames={{ tooltip: 'sky-tool-path-tooltip' }}
+          openDelay={150}
+          events={{ hover: true, focus: true, touch: false }}
         >
-          <span className="sky-tool-caret" aria-hidden="true">
-            {open ? '▾' : '▸'}
-          </span>
-          <span className="sky-tool-fold-name">{toolDisplayName(run.tool)}</span>
-          {run.account && <span className="sky-tool-account">{run.account}</span>}
-          {took !== undefined && <span className="sky-tool-fold-time">{elapsedLabel(took)}</span>}
-          <span className="sky-tool-fold-summary">{calendarLabel ?? run.summary ?? last}</span>
-        </button>
+          {button}
+        </Tooltip>
       ) : (
-        <button
-          type="button"
-          className="sky-chip sky-tool-chip"
-          data-act="true"
-          data-open={open}
-          onClick={() => setOpen((o) => !o)}
-          aria-expanded={open}
-          aria-label={`${toolDisplayName(run.tool)} details`}
-        >
-          {running && (
-            <span className="sky-tool-pulse" role="progressbar" aria-label={`${toolDisplayName(run.tool)} progress`} />
-          )}
-          {toolDisplayName(run.tool)}
-          {run.account && <span className="sky-tool-account">{run.account}</span>}
-          {run.subject && <span className="sky-tool-subject">{run.subject}</span>}
-          <span className="sky-tool-meta">
-            {running ? progressLabel : (calendarLabel ?? (run.status === 'success' ? 'Completed' : 'Failed'))}
-          </span>
-          {(running || took !== undefined) && (
-            <span className="sky-tool-meta">{elapsedLabel(running ? seconds : took!)}</span>
-          )}
-        </button>
+        button
       )}
       {running && last && !open && <div className="sky-tool-last">{last}</div>}
       {open && (

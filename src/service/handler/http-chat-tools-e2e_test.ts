@@ -8,6 +8,7 @@ import { env } from '#shared/sys/mod.ts'
 import { assert, test } from '#test'
 import { ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
 import type { ToolRun } from './chat/mod.ts'
+import { toolFilePath } from './chat/toolFilePath.ts'
 import { recordToolExecution } from './chat/toolRuns.ts'
 import { createTestHttpApp } from './httpTestHelpers.ts'
 
@@ -52,13 +53,30 @@ test(
         runs,
       }),
     )
+    const datedFile = path.join(root, 'time/2025/W11/03-15/notes/Atlas draft.md')
+    const projectDir = path.join(root, 'projects/Atlas')
     app.get('/chat/tool-inspector-other', (c) =>
       c.json({
-        turns: [{ role: 'user', content: 'Discuss Atlas follow-up.' }],
+        turns: [
+          { role: 'user', content: 'Discuss Atlas follow-up.' },
+          { role: 'assistant', content: 'I found the draft.' },
+        ],
         documents: 0,
         kept: 0,
         busy: false,
-        runs: [],
+        runs: [
+          ['read_file', datedFile],
+          ['list_directory', projectDir],
+        ].map(([tool, location]) => ({
+          tool,
+          input: { path: location },
+          at: 1,
+          started: stamp,
+          finished: stamp,
+          status: 'success',
+          lines: [],
+          filePath: toolFilePath(tool!, { path: location }, undefined, root),
+        })),
       }),
     )
     app.route('/', createTestHttpApp([root]))
@@ -284,6 +302,25 @@ test(
       })
       await page.goto(`http://127.0.0.1:${address.port}/thread/tool-inspector-other`)
       await page.waitForFunction(() => document.title === 'sky:chat - Discuss Atlas follow-up.')
+      const read = page.getByRole('button', { name: /Read File details/ })
+      const dir = page.getByRole('button', { name: /List Directory details/ })
+      await read.hover()
+      await page.getByRole('tooltip', { name: datedFile }).waitFor()
+      await page.mouse.move(0, 0)
+      await read.focus()
+      await page.keyboard.press('Tab')
+      await page.getByRole('tooltip', { name: projectDir }).waitFor()
+      assert({
+        given: 'a dated file read and a project directory listing on a narrow screen',
+        should: 'show compact labels and reveal the absolute paths on hover and keyboard focus',
+        actual: [
+          await read.locator('.sky-tool-subject').innerText(),
+          await dir.locator('.sky-tool-subject').innerText(),
+          await dir.evaluate((button) => button === document.activeElement),
+          await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth),
+        ],
+        expected: ['Atlas draft.md (2025-03-15)', 'projects/Atlas', true, false],
+      })
       await page.goBack()
       await page.waitForFunction(() => document.title === 'sky:chat - Draft an update.')
       await page.goForward()

@@ -73,6 +73,7 @@ import { registerReplyThreads, type ReplyThreadHost } from './replyThreads.ts'
 import { registerSelectionStarts, type SelectionStartOptions } from './selection.ts'
 import { sourceChatHref, type ChatSourceLinks } from './sourceLinks.ts'
 import { timelineOf } from './timeline.ts'
+import { toolFilePath } from './toolFilePath.ts'
 import {
   chipSubject,
   inspectablePayload,
@@ -638,6 +639,11 @@ async function savedBranchesOf(saved: string | null, baseDir: string): Promise<S
     .sort((a, b) => a.turn - b.turn || a.time.localeCompare(b.time))
 }
 
+function wireRun(run: ToolRun, baseDir: string) {
+  const filePath = toolFilePath(run.tool, run.input, run.output, baseDir)
+  return filePath ? { ...run, filePath } : run
+}
+
 /**
  * The wire form of an event. A context rebuild is the one event that is
  * not sent whole: its rendered markdown is the entire context (hundreds of
@@ -645,7 +651,11 @@ async function savedBranchesOf(saved: string | null, baseDir: string): Promise<S
  * turn — the counts are what a client shows, so the counts are what
  * travel. The records join the wire when a client renders a changelog.
  */
-function wireEvent(event: WireEvent): unknown {
+function wireEvent(event: WireEvent, baseDir: string): unknown {
+  if (event.type === 'tool-updated' || event.type === 'tool-started')
+    return { ...event, run: wireRun(event.run, baseDir) }
+  if (event.type === 'tool-call')
+    return { ...event, filePath: toolFilePath(event.toolName, event.input, undefined, baseDir) }
   if (event.type !== 'context-rebuilt') return event
   const { turn, recorded, collectionSize, stats } = event.report
   return { type: event.type, report: { turn, recorded, collectionSize, stats } }
@@ -1384,7 +1394,7 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono & { openVoice
           const body = JSON.stringify(data)
           chain = chain.then(() => stream.writeSSE({ event, data: body }))
         }
-        thread.sink = (event) => frame(event.type, wireEvent(event))
+        thread.sink = (event) => frame(event.type, wireEvent(event, baseDir))
         // The model can think for a minute before its first token. A frame on
         // a timer keeps the page told the connection lives; silence past it
         // is a lost connection, however the socket looks from the browser.
@@ -1626,7 +1636,7 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono & { openVoice
         revision,
       })),
       answered: thread.answered,
-      runs: thread.runs,
+      runs: thread.runs.map((run) => wireRun(run, baseDir)),
       queries: [
         ...thread.session.contextLog
           .filter((entry) => entry.turn !== thread.liveQueries?.turn)
