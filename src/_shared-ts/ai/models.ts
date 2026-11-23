@@ -1,9 +1,11 @@
 import type { AnthropicProviderOptions } from '@ai-sdk/anthropic'
+import type { GoogleLanguageModelOptions } from '@ai-sdk/google'
 import { createOpenAI, type OpenAILanguageModelChatOptions, type OpenAIResponsesProviderOptions } from '@ai-sdk/openai'
 import { type JSONValue, type LanguageModel, wrapLanguageModel } from 'ai'
 import { ollama } from 'ollama-ai-provider-v2'
 import { anthropic } from '#shared/ai/llm/anthropicProvider.ts'
 import { cerebras } from '#shared/ai/llm/cerebrasProvider.ts'
+import { gemini } from '#shared/ai/llm/geminiProvider.ts'
 import { openai } from '#shared/ai/llm/openaiProvider.ts'
 import { singleSystemMessageMiddleware } from '#shared/ai/llm/singleSystemMessage.ts'
 import { settingStaleReasoningAside, staleReasoningRetry } from '#shared/ai/staleReasoning.ts'
@@ -15,6 +17,7 @@ import type { SkyConfig } from '#shared/config/types.ts'
 import { installTimingTelemetry } from '#shared/timing/sdk.ts'
 import {
   optionsWithEffort,
+  requiresGeminiReasoning,
   requiresOpenAIReasoning,
   validateEffort,
   type EffortOverride,
@@ -46,7 +49,7 @@ import { PROFILES } from './defaultProfiles.ts'
  * so it is intentionally absent from the roles below.
  */
 
-export type Provider = 'anthropic' | 'openai' | 'ollama' | 'lm-studio' | 'cerebras'
+export type Provider = 'anthropic' | 'openai' | 'gemini' | 'ollama' | 'lm-studio' | 'cerebras'
 
 /** Provider-agnostic AI-SDK call settings. */
 export interface CommonOptions {
@@ -62,10 +65,11 @@ export interface ModelOverrides extends CommonOptions {
   effort?: EffortOverride
 }
 
-/** Provider-specific option bags. Only anthropic is strongly typed for now. */
+/** Provider-specific option bags. */
 interface ProviderOptionsByProvider {
   anthropic: AnthropicProviderOptions
   openai: OpenAIResponsesProviderOptions
+  gemini: GoogleLanguageModelOptions
   ollama: Record<string, JSONValue>
   'lm-studio': Record<string, JSONValue>
   cerebras: OpenAILanguageModelChatOptions
@@ -139,6 +143,7 @@ const COMMON_KEYS = new Set<string>(['temperature', 'maxOutputTokens', 'topP', '
 const PROVIDER_OPTIONS_KEY: Record<Provider, string> = {
   anthropic: 'anthropic',
   openai: 'openai',
+  gemini: 'google',
   ollama: 'ollama',
   'lm-studio': 'lm-studio',
   cerebras: 'openai',
@@ -173,6 +178,8 @@ function providerModelFor(profile: ModelProfile) {
   switch (profile.provider) {
     case 'openai':
       return openai(profile.model)
+    case 'gemini':
+      return gemini()(profile.model)
     case 'ollama':
       return ollama(profile.model)
     case 'lm-studio':
@@ -196,14 +203,21 @@ const SAMPLING_KEYS = ['temperature', 'topP', 'topK'] as const
 function thinkingEnabled(profile: ModelProfile): boolean {
   // These models reason by default even when a custom preset omits thinking, and reject
   // sampling params even when a preset turns thinking off (Haiku 5.5's fast profile does).
-  if (requiresOpenAIReasoning(profile)) return true
+  if (requiresOpenAIReasoning(profile) || requiresGeminiReasoning(profile)) return true
   if (
     profile.provider === 'anthropic' &&
     /^claude-(?:opus-5(?:-5)?|sonnet-5(?:-5)?|fable-5(?:-[12])?|haiku-5-5)(?:$|-\d{8}$)/.test(profile.model)
   )
     return true
   const thinking = (profile.options as { thinking?: { type?: string } } | undefined)?.thinking
-  return thinking !== undefined && thinking.type !== 'disabled'
+  if (thinking !== undefined && thinking.type !== 'disabled') return true
+  const thinkingConfig = (
+    profile.options as { thinkingConfig?: { thinkingLevel?: string; thinkingBudget?: number } } | undefined
+  )?.thinkingConfig
+  return (
+    thinkingConfig !== undefined &&
+    (thinkingConfig.thinkingLevel !== undefined || (thinkingConfig.thinkingBudget ?? 0) > 0)
+  )
 }
 
 /**
@@ -308,7 +322,7 @@ export function aiModelId(role: Role): string {
 export { generateText, streamText } from 'ai'
 
 /** Every provider the registry can build, as a list — the settings page offers these. */
-export const KNOWN_PROVIDERS: readonly Provider[] = ['anthropic', 'openai', 'ollama', 'lm-studio', 'cerebras']
+export const KNOWN_PROVIDERS: readonly Provider[] = ['anthropic', 'openai', 'gemini', 'ollama', 'lm-studio', 'cerebras']
 
 const PROVIDERS = new Set<string>(KNOWN_PROVIDERS)
 

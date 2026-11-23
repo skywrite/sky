@@ -1,6 +1,6 @@
 ---
 created: 2026-09-01
-updated: 2026-11-15
+updated: 2026-11-22
 ---
 
 # Model registry — roles, profiles, providers
@@ -15,7 +15,7 @@ updated: 2026-11-15
   in pickers and Settings (else the model's name). The shipped set is `defaultProfiles.ts`; a person's own come from
   `ai.profiles` in `~/.sky/config.jsonc` (config wins on a name clash).
 - **provider** — the AI-SDK provider the profile resolves through
-  (`anthropic`, `openai`, `ollama`, `lm-studio`, `cerebras`).
+  (`anthropic`, `openai`, `gemini`, `ollama`, `lm-studio`, `cerebras`).
 
 The UI calls profiles **presets**. A preset owns its model, default effort,
 and provider options. Roles point to presets; they do not own another copy
@@ -88,16 +88,18 @@ and its [2026-10-04](../../models/Chat/ChatContext/docs/2026-10-04-admission-by-
 
 ## Providers and their keys
 
-- `anthropic` and `openai` read their keys from the OS keychain entries
-  `anthropic/main` and `openai/main`, saved under Settings → Connections →
-  Services, and fall back to `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` from
+- `anthropic`, `openai` and `gemini` read their keys from the OS keychain entries
+  `anthropic/main`, `openai/main` and `gemini/main`, saved under Settings → Connections →
+  Services, and fall back to `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` and `GOOGLE_GEMINI_API_KEY` from
   `src/.env` (loaded by both launchers) when the keychain holds none. The
   keychain is asked only when the secrets index lists the entry, so a Mac
   whose keys live in `src/.env` never waits on it. Every reader goes through
   `keychainAuthFetch.ts`: the AI SDK providers, the `openai` package's
   clients for voice, transcription and images (`openaiKey()`), and the
   presence checks (`hasKey`). A reader that skips it disagrees with the
-  Settings page about which key Sky uses.
+  Settings page about which key Sky uses. Gemini stays under `gemini` rather
+  than `google` so its keychain category and Connections page remain separate
+  from Google Workspace OAuth.
 - `cerebras` (`llm/cerebrasProvider.ts`) reads its key from the OS keychain
   entry `cerebras/main` on the first request and holds it for the process
   (`keychainAuthFetch.ts`, the fetch that signs with a keychain key).

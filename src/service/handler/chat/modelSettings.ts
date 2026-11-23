@@ -1,11 +1,11 @@
 import { z } from 'zod'
 import type { ModelProfile } from '#shared/ai/models.ts'
-import { isEffortOverride } from '#universal/ai/effort.ts'
+import { isEffortOverride, optionsWithoutEffort } from '#universal/ai/effort.ts'
 import { budgetFromEstimate } from '#universal/ai/readingBudget.ts'
 import type { ChatSettingsHost, ThreadPrefs, ThreadRestore } from './mod.ts'
 
 const modelConfigSchema = z.object({
-  provider: z.enum(['anthropic', 'openai', 'ollama', 'lm-studio', 'cerebras']),
+  provider: z.enum(['anthropic', 'openai', 'gemini', 'ollama', 'lm-studio', 'cerebras']),
   model: z.string().min(1),
   label: z.string().optional(),
   baseUrl: z.string().optional(),
@@ -87,9 +87,7 @@ const runsAs = (config: ModelProfile): string =>
     config.model,
     config.baseUrl ?? null,
     config.contextWindow ?? null,
-    Object.entries(config.options ?? {})
-      .filter(([key]) => key !== 'effort' && key !== 'reasoningEffort')
-      .sort(([a], [b]) => a.localeCompare(b)),
+    Object.entries(optionsWithoutEffort(config)).sort(([a], [b]) => a.localeCompare(b)),
   ])
 
 /**

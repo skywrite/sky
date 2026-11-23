@@ -3,8 +3,10 @@ import {
   EFFORTS,
   effectiveEffort,
   effortLevels,
+  hasCustomEffort,
   modelDefaultEffort,
   optionsWithEffort,
+  optionsWithoutEffort,
   presetEffort,
   validateEffort,
 } from './effort.ts'
@@ -155,5 +157,65 @@ test('explicit effort wins and clearing it restores the model default', () => {
       effectiveEffort({ provider: 'anthropic', model: 'sample-model', options: { effort: 'low' } }),
     ],
     expected: [null, null, null, null, 'low'],
+  })
+})
+
+test('Gemini 4 models map effort to thinkingConfig.thinkingLevel and preserve sibling options', () => {
+  const neon = {
+    provider: 'gemini',
+    model: 'gemini-4-neon',
+    options: { thinkingConfig: { thinkingLevel: 'high', includeThoughts: true }, serviceTier: 'standard' },
+  }
+  const carbon = { provider: 'gemini', model: 'gemini-4-carbon' }
+  const minimal = {
+    provider: 'gemini',
+    model: 'gemini-4-neon',
+    options: { thinkingConfig: { thinkingLevel: 'minimal' } },
+  }
+  let neonMaxRejected = false
+  try {
+    validateEffort(neon, 'max')
+  } catch {
+    neonMaxRejected = true
+  }
+  let carbonXhighRejected = false
+  try {
+    validateEffort(carbon, 'xhigh')
+  } catch {
+    carbonXhighRejected = true
+  }
+  assert({
+    given: 'Gemini 4 Neon and Carbon presets',
+    should: 'expose supported thinking levels, default to high, and update thinkingConfig without clobbering siblings',
+    actual: [
+      effortLevels(neon),
+      effortLevels(carbon),
+      modelDefaultEffort(neon),
+      presetEffort(neon),
+      effectiveEffort(carbon),
+      optionsWithEffort(neon, 'xhigh'),
+      optionsWithEffort(neon, null),
+      optionsWithoutEffort({
+        provider: 'gemini',
+        model: 'gemini-4-neon',
+        options: { thinkingConfig: { thinkingLevel: 'high' } },
+      }),
+      hasCustomEffort(minimal),
+      neonMaxRejected,
+      carbonXhighRejected,
+    ],
+    expected: [
+      ['low', 'medium', 'high', 'xhigh'],
+      ['low', 'medium', 'high'],
+      'high',
+      'high',
+      'high',
+      { thinkingConfig: { includeThoughts: true, thinkingLevel: 'xhigh' }, serviceTier: 'standard' },
+      { thinkingConfig: { includeThoughts: true }, serviceTier: 'standard' },
+      {},
+      true,
+      true,
+      true,
+    ],
   })
 })

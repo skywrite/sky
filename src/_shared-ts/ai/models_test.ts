@@ -12,6 +12,7 @@ test('custom reasoning presets suppress unsupported sampling without an explicit
     defineProfile({ provider: 'anthropic', model: 'claude-sonnet-5-5' }),
     defineProfile({ provider: 'anthropic', model: 'claude-haiku-5-5' }),
     defineProfile({ provider: 'anthropic', model: 'claude-fable-5-2' }),
+    defineProfile({ provider: 'gemini', model: 'gemini-4-neon' }),
   ]
   assert({
     given: 'roles assigned to reasoning presets without a thinking option',
@@ -609,6 +610,37 @@ for (const [name, model, tier] of [
     })
   })
 }
+
+test('default-gemini-4-neon routes google thinkingConfig and applies supported effort overrides', () => {
+  const resolved = aiModelByProfile('default-gemini-4-neon')
+  const xhigh = aiModelByProfile('default-gemini-4-neon', { effort: 'xhigh', temperature: 0 })
+  let maxRejected = false
+  try {
+    aiModelByProfile('default-gemini-4-neon', { effort: 'max' })
+  } catch {
+    maxRejected = true
+  }
+  assert({
+    given: 'the default-gemini-4-neon profile at default high, overridden to xhigh, and asked for unsupported max',
+    should: 'resolve gemini-4-neon under providerOptions.google, drop sampling overrides, and reject max',
+    actual: [
+      modelId(resolved.model),
+      resolved.contextWindow,
+      resolved.providerOptions?.['google'],
+      xhigh.providerOptions?.['google'],
+      xhigh.temperature,
+      maxRejected,
+    ],
+    expected: [
+      'gemini-4-neon',
+      1_048_576,
+      { thinkingConfig: { thinkingLevel: 'high' } },
+      { thinkingConfig: { thinkingLevel: 'xhigh' } },
+      undefined,
+      true,
+    ],
+  })
+})
 
 test('aiModelByProfile resolves by name and rejects unknown names', () => {
   assert({

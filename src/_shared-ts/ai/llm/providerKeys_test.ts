@@ -25,7 +25,7 @@ test('each provider is asked for its models, signed the way it reads keys', asyn
     asked[id] = {
       check,
       url: call?.url,
-      key: call?.headers.get('x-api-key') ?? call?.headers.get('authorization'),
+      key: call?.headers.get('x-api-key') ?? call?.headers.get('x-goog-api-key') ?? call?.headers.get('authorization'),
       version: call?.headers.get('anthropic-version'),
     }
   }
@@ -41,6 +41,12 @@ test('each provider is asked for its models, signed the way it reads keys', asyn
         version: '2023-06-01',
       },
       openai: { check: { ok: true }, url: 'https://api.openai.com/v1/models', key: `Bearer ${KEY}`, version: null },
+      gemini: {
+        check: { ok: true },
+        url: 'https://generativelanguage.googleapis.com/v1beta/models?pageSize=1',
+        key: KEY,
+        version: null,
+      },
       cerebras: { check: { ok: true }, url: 'https://api.cerebras.ai/v1/models', key: `Bearer ${KEY}`, version: null },
     },
   })
@@ -50,18 +56,31 @@ test('a refused key keeps the provider’s own words', async () => {
   const cases: Array<[ProviderKeyId, number, unknown]> = [
     ['anthropic', 401, { type: 'error', error: { type: 'authentication_error', message: 'invalid x-api-key' } }],
     ['openai', 403, { error: { message: 'Missing scopes: api.model.read.' } }],
+    [
+      'gemini',
+      400,
+      {
+        error: {
+          code: 400,
+          message: 'API key not valid. Please pass a valid API key.',
+          status: 'INVALID_ARGUMENT',
+          details: [{ reason: 'API_KEY_INVALID' }],
+        },
+      },
+    ],
     ['cerebras', 401, { message: 'Wrong API Key' }],
   ]
   const answers = await Promise.all(
     cases.map(([id, status, body]) => checkProviderKey(id, KEY, answering(status, body).fetch)),
   )
   assert({
-    given: 'a 401 or 403 from each provider',
+    given: 'a 401, 403, or Google 400 invalid-key refusal from each provider',
     should: 'read as refused, with what the provider said',
     actual: answers,
     expected: [
       { ok: false, refused: true, message: 'Anthropic refused the key. invalid x-api-key' },
       { ok: false, refused: true, message: 'OpenAI refused the key. Missing scopes: api.model.read.' },
+      { ok: false, refused: true, message: 'Gemini refused the key. API key not valid. Please pass a valid API key.' },
       { ok: false, refused: true, message: 'Cerebras refused the key. Wrong API Key' },
     ],
   })

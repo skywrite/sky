@@ -57,7 +57,7 @@ test(
           ...profile,
           options: profile.options as Record<string, unknown> | undefined,
         })),
-      providers: () => ['anthropic', 'openai', 'ollama', 'lm-studio', 'cerebras'],
+      providers: () => ['anthropic', 'openai', 'gemini', 'ollama', 'lm-studio', 'cerebras'],
       writeProfile: async (name, profile) => {
         config.ai.profiles![name] = profile
       },

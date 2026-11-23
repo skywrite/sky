@@ -1,6 +1,7 @@
 import type { KeychainSecret } from '#shared/ai/keychainAuthFetch.ts'
 import { ANTHROPIC_SECRET } from './anthropicProvider.ts'
 import { CEREBRAS_BASE_URL, CEREBRAS_SECRET } from './cerebrasProvider.ts'
+import { GEMINI_BASE_URL, GEMINI_SECRET } from './geminiProvider.ts'
 import { OPENAI_SECRET } from './openaiProvider.ts'
 
 /**
@@ -21,6 +22,13 @@ export const PROVIDER_KEYS = {
     console: 'platform.openai.com',
     models: 'https://api.openai.com/v1/models',
     headers: (key: string): Record<string, string> => ({ authorization: `Bearer ${key}` }),
+  },
+  gemini: {
+    label: 'Gemini',
+    secret: GEMINI_SECRET,
+    console: 'aistudio.google.com',
+    models: `${GEMINI_BASE_URL}/models?pageSize=1`,
+    headers: (key: string): Record<string, string> => ({ 'x-goog-api-key': key }),
   },
   cerebras: {
     label: 'Cerebras',
@@ -78,10 +86,19 @@ export async function checkProviderKey(
     await response.body?.cancel()
     return { ok: true }
   }
-  const body = (await response.json().catch(() => null)) as { error?: { message?: unknown }; message?: unknown } | null
+  const body = (await response.json().catch(() => null)) as {
+    error?: { message?: unknown; status?: unknown; details?: Array<{ reason?: unknown }> }
+    message?: unknown
+  } | null
   const said = body?.error?.message ?? body?.message
   const detail = typeof said === 'string' && said.trim() ? ` ${said.trim()}` : ''
-  if (response.status === 401 || response.status === 403)
+  // Google returns 400 INVALID_ARGUMENT (with reason API_KEY_INVALID) for a mistyped key.
+  const geminiBadKey =
+    id === 'gemini' &&
+    response.status === 400 &&
+    (body?.error?.details?.some((entry) => entry?.reason === 'API_KEY_INVALID') ||
+      (typeof said === 'string' && /api key/i.test(said)))
+  if (response.status === 401 || response.status === 403 || geminiBadKey)
     return { ok: false, refused: true, message: `${label} refused the key.${detail}` }
   return { ok: false, refused: false, message: `${label} answered ${response.status}.${detail}` }
 }

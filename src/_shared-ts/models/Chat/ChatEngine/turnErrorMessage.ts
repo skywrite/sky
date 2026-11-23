@@ -49,6 +49,7 @@ function reasonIn(body: string): string | undefined {
 const PROVIDER_NAMES: Record<string, string> = {
   'api.anthropic.com': 'Anthropic',
   'api.openai.com': 'OpenAI',
+  'generativelanguage.googleapis.com': 'Gemini',
   'api.cerebras.ai': 'Cerebras',
 }
 

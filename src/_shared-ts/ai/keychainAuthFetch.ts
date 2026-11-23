@@ -12,7 +12,7 @@ export interface KeychainSecret {
    */
   readonly env?: string
   /** The header the provider reads the key from; unset is `Authorization: Bearer`. */
-  readonly header?: 'x-api-key'
+  readonly header?: 'x-api-key' | 'x-goog-api-key'
 }
 
 /** Where a key was found. */
@@ -112,7 +112,7 @@ export function keychainAuthFetch(
       held = { key: await waitForKey(() => readKey(secrets, secret, missing), signal), change }
     signal?.throwIfAborted()
     const headers = new Headers(init?.headers)
-    if (secret.header === 'x-api-key') headers.set('x-api-key', held.key)
+    if (secret.header) headers.set(secret.header, held.key)
     else headers.set('authorization', `Bearer ${held.key}`)
     return base(input, { ...init, headers })
   }) as typeof fetch

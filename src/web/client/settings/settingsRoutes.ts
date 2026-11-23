@@ -123,6 +123,7 @@ export const CONNECTION_PAGES = [
   'typesafe',
   'anthropic',
   'openai',
+  'gemini',
   'cerebras',
 ] as const
 export type ConnectionPage = (typeof CONNECTION_PAGES)[number]
@@ -136,6 +137,7 @@ export const CONNECTION_PAGE_LABEL: Record<ConnectionPage, string> = {
   typesafe: 'TypeSafe',
   anthropic: 'Anthropic',
   openai: 'OpenAI',
+  gemini: 'Gemini',
   cerebras: 'Cerebras',
 }
 

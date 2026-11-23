@@ -25,11 +25,26 @@ export function effortLabel(value: EffortOverride | null): string {
       : value[0].toUpperCase() + value.slice(1)
 }
 
+function rawEffortValue(profile: EffortProfile): unknown {
+  const options = profile.options as Record<string, unknown> | undefined
+  if (profile.provider === 'anthropic') return options?.effort
+  if (profile.provider === 'gemini') {
+    const thinking = options?.thinkingConfig
+    return thinking && typeof thinking === 'object' && !Array.isArray(thinking)
+      ? (thinking as Record<string, unknown>).thinkingLevel
+      : undefined
+  }
+  return options?.reasoningEffort
+}
+
 export function presetEffort(profile: EffortProfile): Effort | null {
-  const value = (profile.options as Record<string, unknown> | undefined)?.[
-    profile.provider === 'anthropic' ? 'effort' : 'reasoningEffort'
-  ]
+  const value = rawEffortValue(profile)
   return isEffort(value) ? value : null
+}
+
+/** True when a preset sets a provider-specific effort outside Sky's standard levels (e.g. `none` or `minimal`). */
+export function hasCustomEffort(profile: EffortProfile): boolean {
+  return rawEffortValue(profile) !== undefined && presetEffort(profile) === null
 }
 
 /** Known API defaults, without adding an explicit option to the preset or request. */
@@ -39,20 +54,25 @@ export function modelDefaultEffort(profile: EffortProfile): Effort | null {
   // https://platform.claude.com/docs/en/build-with-claude/effort
   if (profile.provider === 'anthropic' && effortLevels(profile).length > 1)
     return /^claude-(?:opus|haiku)-5-5(?:$|-\d{8}$)/.test(profile.model) ? 'medium' : 'high'
+  if (profile.provider === 'gemini' && /^gemini-4-(?:neon|carbon|hydrogen|argon)(?:$|-)/.test(profile.model))
+    return 'high'
   return null
 }
 
 /** The effort a preset runs at; preserve unfamiliar explicit values instead of guessing. */
 export function effectiveEffort(profile: EffortProfile): Effort | null {
-  const value = (profile.options as Record<string, unknown> | undefined)?.[
-    profile.provider === 'anthropic' ? 'effort' : 'reasoningEffort'
-  ]
+  const value = rawEffortValue(profile)
   return value === undefined ? modelDefaultEffort(profile) : presetEffort(profile)
 }
 
 /** Known OpenAI models that always reason and reject sampling parameters. */
 export function requiresOpenAIReasoning(profile: EffortProfile): boolean {
   return profile.provider === 'openai' && /^gpt-6(?:-astra|\.1-sol|\.2-(?:astra|sol))(?:$|-)/.test(profile.model)
+}
+
+/** Known Gemini models that reason by default and expect default sampling parameters. */
+export function requiresGeminiReasoning(profile: EffortProfile): boolean {
+  return profile.provider === 'gemini' && /^gemini-4-(?:neon|carbon|hydrogen|argon)(?:$|-)/.test(profile.model)
 }
 
 /** Only advertise levels the model accepts; an unfamiliar model keeps its existing options. */
@@ -67,6 +87,10 @@ export function effortLevels(profile: EffortProfile): readonly Effort[] {
       // With thinking off the API stops at high; xhigh and max 400.
       return thinkingOff(profile) ? EFFORTS.slice(0, EFFORTS.indexOf('high') + 1) : EFFORTS
     if (/^claude-(?:opus|sonnet)-4-6(?:$|-\d{8}$)/.test(profile.model)) return ['low', 'medium', 'high', 'max']
+  }
+  if (profile.provider === 'gemini') {
+    if (/^gemini-4-(?:neon|hydrogen)(?:$|-)/.test(profile.model)) return ['low', 'medium', 'high', 'xhigh']
+    if (/^gemini-4-(?:carbon|argon)(?:$|-)/.test(profile.model)) return ['low', 'medium', 'high']
   }
   if (requiresOpenAIReasoning(profile)) return EFFORTS
   const current = presetEffort(profile)
@@ -90,12 +114,35 @@ function thinkingOff(profile: EffortProfile): boolean {
   return (profile.options as { thinking?: { type?: string } } | undefined)?.thinking?.type === 'disabled'
 }
 
-/** Change only effort; provider options such as service tier and thinking stay intact. */
-export function optionsWithEffort(profile: EffortProfile, effort: Effort | null): Record<string, unknown> {
-  if (effort !== null) validateEffort(profile, effort)
+/** Provider options with any effort setting removed, leaving unrelated options intact. */
+export function optionsWithoutEffort(profile: EffortProfile): Record<string, unknown> {
   const options: Record<string, unknown> = { ...profile.options }
   delete options.effort
   delete options.reasoningEffort
-  if (effort !== null) options[profile.provider === 'anthropic' ? 'effort' : 'reasoningEffort'] = effort
+  if (profile.provider === 'gemini' && options.thinkingConfig && typeof options.thinkingConfig === 'object') {
+    const { thinkingLevel: _level, ...rest } = options.thinkingConfig as Record<string, unknown>
+    if (Object.keys(rest).length > 0) options.thinkingConfig = rest
+    else delete options.thinkingConfig
+  }
+  return options
+}
+
+/** Change only effort; provider options such as service tier and thinking stay intact. */
+export function optionsWithEffort(profile: EffortProfile, effort: Effort | null): Record<string, unknown> {
+  if (effort !== null) validateEffort(profile, effort)
+  const options = optionsWithoutEffort(profile)
+  if (effort !== null) {
+    if (profile.provider === 'anthropic') {
+      options.effort = effort
+    } else if (profile.provider === 'gemini') {
+      const existing =
+        options.thinkingConfig && typeof options.thinkingConfig === 'object' && !Array.isArray(options.thinkingConfig)
+          ? (options.thinkingConfig as Record<string, unknown>)
+          : {}
+      options.thinkingConfig = { ...existing, thinkingLevel: effort }
+    } else {
+      options.reasoningEffort = effort
+    }
+  }
   return options
 }

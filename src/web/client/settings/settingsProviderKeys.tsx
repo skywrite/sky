@@ -1,6 +1,6 @@
 /**
  * The model providers' keys, each on its own page under Connections ›
- * Services: Anthropic, OpenAI and Cerebras. A pasted key is checked with the
+ * Services: Anthropic, OpenAI, Gemini and Cerebras. A pasted key is checked with the
  * provider before it goes in the keychain, and every visit asks again, so a
  * revoked key reads as refused. A key still in Sky's src/.env file shows as
  * such until one is saved here; the keychain's key wins.
@@ -39,6 +39,13 @@ export const PROVIDER_KEY_PAGES = {
       'Connect OpenAI’s models to Sky for chat, voice calls, transcription and images. Your API key is saved in the OS credential store.',
     console: 'platform.openai.com',
     where: 'On the OpenAI platform, open API keys, create a secret key, and paste it here.',
+  },
+  gemini: {
+    name: 'Gemini',
+    row: 'Google’s Gemini models. Configure its API key.',
+    gives: 'Connect Google’s Gemini models to Sky. Your API key is saved in the OS credential store.',
+    console: 'aistudio.google.com',
+    where: 'In Google AI Studio, open API keys, create a key, and paste it here.',
   },
   cerebras: {
     name: 'Cerebras',

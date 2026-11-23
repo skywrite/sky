@@ -122,6 +122,14 @@ export const PROFILES = {
     contextWindow: 1_050_000,
     options: { reasoningEffort: 'high', serviceTier: 'ultrafast' },
   }),
+  // Gemini 4 Neon thinks by default (API default is high; supports low, medium, high, xhigh).
+  // Unified 1M context window (1,048,576 input tokens) and 65,536 max output tokens.
+  'default-gemini-4-neon': defineProfile({
+    provider: 'gemini',
+    model: 'gemini-4-neon',
+    contextWindow: 1_048_576,
+    options: { thinkingConfig: { thinkingLevel: 'high' } },
+  }),
   'default-local-reasoning': defineProfile({
     provider: 'lm-studio',
     model: 'qwen3.6-35b-a3b',

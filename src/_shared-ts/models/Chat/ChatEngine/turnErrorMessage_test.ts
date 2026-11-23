@@ -55,6 +55,14 @@ test(
             url: 'https://api.cerebras.ai/v1/chat/completions',
           }),
         ),
+        apiErrorMessage(
+          call({
+            statusCode: 402,
+            responseBody:
+              '{"error":{"code":402,"message":"Your prepayment credits are depleted.","status":"RESOURCE_EXHAUSTED"}}',
+            url: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-4-neon:generateContent',
+          }),
+        ),
         apiErrorMessage(call({ statusCode: 400, responseBody: '<html><body>400 Bad Request</body></html>' })),
         apiErrorMessage(call({ statusCode: 500, responseBody: '{}', message: '' })),
       ],
@@ -63,6 +71,7 @@ test(
         'Anthropic API error (400): prompt is too long: 9 tokens > 8 maximum',
         'Cerebras API error (400): Please reduce the length of the messages or completion. Current length is 196699 while limit is 131072',
         'Cerebras API error (429): Rate limit reached for qwen-3.8-27b',
+        'Gemini API error (402): Your prepayment credits are depleted.',
         'Anthropic API error (400): Bad Request',
         'Anthropic API error (500)',
       ],

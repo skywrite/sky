@@ -278,6 +278,29 @@ test('keychainAuthFetch signs an x-api-key provider in that header', async () =>
   })
 })
 
+test('keychainAuthFetch signs an x-goog-api-key provider in that header', async () => {
+  const secrets = new TestSecretsProvider({ 'atlas/main': createSecret('gm-test-key') })
+  const seen: Headers[] = []
+  const base = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+    seen.push(new Headers(init?.headers))
+    return new Response('{}', { status: 200 })
+  }) as typeof fetch
+  const signed = keychainAuthFetch(
+    secrets,
+    { category: 'atlas', name: 'main', header: 'x-goog-api-key' },
+    MISSING,
+    base,
+  )
+
+  await signed(URL, { headers: { 'x-goog-api-key': 'keychain' } })
+  assert({
+    given: 'a provider that reads x-goog-api-key, and the SDK’s placeholder',
+    should: 'put the keychain key there and send no bearer',
+    actual: [seen[0]?.get('x-goog-api-key'), seen[0]?.get('authorization')],
+    expected: ['gm-test-key', null],
+  })
+})
+
 test('a key stored or removed in Settings signs the next request', async () => {
   const secret = { category: 'atlas', name: 'forgotten' } as const
   const secrets = new TestSecretsProvider({ 'atlas/forgotten': createSecret('ak-old-key') })

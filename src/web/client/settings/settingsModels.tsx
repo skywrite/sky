@@ -4,6 +4,7 @@ import {
   effectiveEffort,
   effortLabel,
   effortLevels,
+  hasCustomEffort,
   modelDefaultEffort,
   optionsWithEffort,
   presetEffort,
@@ -60,9 +61,7 @@ function PresetEditor({
   }
   const [draft, setDraft] = useState<ProfileRow>(seed)
   // Unknown provider-specific effort remains editable JSON and survives unrelated edits.
-  const customEffort =
-    seed.options?.[seed.provider === 'anthropic' ? 'effort' : 'reasoningEffort'] !== undefined &&
-    presetEffort(seed) === null
+  const customEffort = hasCustomEffort(seed)
   const [effort, setEffort] = useState<Effort | null | undefined>(customEffort ? undefined : presetEffort(seed))
   const [options, setOptions] = useState(
     JSON.stringify(customEffort ? seed.options : optionsWithEffort(seed, null), null, 2),

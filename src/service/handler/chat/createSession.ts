@@ -67,7 +67,7 @@ import { buildChatTranscript, CHAT_ENRICH } from '#shared/models/Chat/enrich.ts'
 import { isAIChatPath, parseTimePath } from '#shared/nbfs/mod.ts'
 import truncate from '#shared/strings/truncate.ts'
 import type { ChatPlan } from '#universal/ai/chatPlan.ts'
-import { effectiveEffort, effortLevels, isEffortOverride } from '#universal/ai/effort.ts'
+import { effectiveEffort, effortLevels, isEffortOverride, optionsWithoutEffort } from '#universal/ai/effort.ts'
 import { fitBudget } from '#universal/ai/readingBudget.ts'
 import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import { profileLabel, PROVIDER_LABEL, ROLE_LABEL } from '../settings/mod.ts'
@@ -305,9 +305,7 @@ export function modelChoices(): ModelChoice[] {
       profile.baseUrl,
       profile.contextWindow,
       profile.label,
-      Object.entries(profile.options ?? {})
-        .filter(([key]) => key !== 'effort' && key !== 'reasoningEffort')
-        .sort(([a], [b]) => a.localeCompare(b)),
+      Object.entries(optionsWithoutEffort(profile)).sort(([a], [b]) => a.localeCompare(b)),
     ]),
   }))
   const builtin = (choice: ModelChoice) => Number(choice.name in PROFILES)
