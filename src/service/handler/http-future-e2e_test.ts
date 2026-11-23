@@ -402,20 +402,31 @@ test(
       const rows = (name: string) => page.getByRole('region', { name }).locator('.sky-future-row')
       await rows('To decide').first().waitFor()
       await shot('11-decisions')
+      const tab = (await page.getByRole('link', { name: /^Decisions/ }).innerText()).replace(/\s+/g, ' ')
+      const hidden = await page.getByRole('region', { name: 'Decided' }).count()
+      await page.getByRole('button', { name: 'Show 1 decided' }).click()
+      await rows('Decided').first().waitFor()
       assert({
         given: 'the Decisions tab with an open decision, one in force and one made',
-        should: 'list each where it stands, with the goals it weighs on and its date',
+        should:
+          'list the open one and the one in force with their goals and dates, count only those on the tab, and keep the made one out of the way until asked for',
         actual: [
           new URL(page.url()).pathname,
           (await rows('To decide').allInnerTexts()).map((text) => text.replace(/\s+/g, ' ')),
           (await rows('In force').allInnerTexts()).map((text) => text.replace(/\s+/g, ' ')),
+          tab,
+          hidden,
           (await rows('Decided').allInnerTexts()).map((text) => text.replace(/\s+/g, ' ')),
+          await page.getByRole('button', { name: 'Hide decided' }).isVisible(),
         ],
         expected: [
           '/future/decisions',
           ['Which race to enter Weighs on Run a marathon Open since Mar 2'],
           ['No late nights before a long run Weighs on Learn Spanish and Run a marathon Since Mar 2'],
+          'Decisions2',
+          0,
           ['Hire a coach Weighs on Run a marathon Decided Apr 1'],
+          true,
         ],
       })
 

@@ -134,7 +134,7 @@ export function FutureMain({ route, navigate }: { route: FutureRoute; navigate: 
                   Goals<small>{report.goals.length}</small>
                 </FutureLink>
                 <FutureLink to="/future/decisions" navigate={navigate} current={route.tab === 'decisions'}>
-                  Decisions<small>{report.decisions.length}</small>
+                  Decisions<small>{report.decisions.filter((decision) => decision.state !== 'decided').length}</small>
                 </FutureLink>
               </nav>
               {route.tab === 'decisions' ? (

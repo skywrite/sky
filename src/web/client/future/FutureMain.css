@@ -105,6 +105,15 @@
 .sky-future-note {
   margin-top: 10px;
 }
+.sky-future-quiet {
+  margin-top: 34px;
+}
+.sky-future-more {
+  margin-top: 34px;
+}
+.sky-future-more + .sky-future-section {
+  margin-top: 22px;
+}
 .sky-future-text-link {
   color: var(--sky-accent);
   font: inherit;
