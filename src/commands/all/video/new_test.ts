@@ -117,3 +117,76 @@ test('video:new sends TXT and explicit batch approval through the shared pipelin
     await rm(temp, { recursive: true, force: true })
   }
 })
+
+test('video:new files a standalone TXT transcript without a source URL or recording', async () => {
+  const temp = await makeTempDir({ prefix: 'video-text-import-test-' })
+  try {
+    const result = await runCommand(
+      'bun',
+      [
+        '--eval',
+        `
+      import { strict as check } from 'node:assert'
+      import { writeFile, readFile } from 'node:fs/promises'
+      import * as path from 'node:path'
+      import Task from '#commands/all/video/new.ts'
+      import CommandContext from '#commands/lib/core/CommandContext.ts'
+      import { CommandResult } from '#commands/mod.ts'
+      import * as config from '#config'
+      import VideoDocument from '#shared/models/Video/mod.ts'
+      import dayAttachmentsDir from '#shared/nbfs/dayAttachmentsDir.ts'
+      import { dayFile } from '#shared/nbfs/mod.ts'
+      import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
+
+      const input = path.join(config.DIR_BASE, '..', 'Atlas.txt')
+      const words = 'Hello Atlas team, here is the complete product demonstration.'
+      const when = new PlainDateTime('2031-04-05 09:30')
+      await writeFile(input, words)
+      const calls = []
+      const tasks = { run: async (name, args) => {
+        calls.push({ name, args })
+        return CommandResult.success({
+          title: 'Atlas demonstration', body: '## Summary\\n\\nThe recording demonstrates Atlas.',
+          cleanedText: words, rel: [], from: 'Jane Doe', to: null, time: when.toString(),
+        })
+      }}
+      const created = await new Task().run({
+        args: {
+          fromText: input, when, clock: when.toString(), category: 'Professional Complete',
+          acceptAllReviews: true, noAutoTag: true, noAutoRel: true,
+        },
+        context: CommandContext.test(config), tasks, rawArgs: { _: [] },
+      })
+      check.equal(created.ok, true, created.message)
+      check.equal(calls.length, 1)
+      check.equal(calls[0].name, 'audio:transcript:summary')
+      check.equal(calls[0].args.fromText, input)
+      check.equal(calls[0].args.fromSrt, undefined)
+      check.equal(calls[0].args.fromZoomVtt, undefined)
+      check.equal(calls[0].args.acceptAllReviews, true)
+      check.equal(calls[0].args.clock, when.toString())
+      check.equal(calls[0].args.when, undefined)
+      const doc = VideoDocument.fromMarkdown(await readFile(created.data.filePath, 'utf8'))
+      check.equal(doc.medium, 'Video')
+      check.equal(doc.summary, 'Atlas demonstration')
+      check.equal(doc.videoUrl, undefined)
+      check.ok(doc.markdown.includes('## Summary\\n\\nThe recording demonstrates Atlas.'))
+      check.ok(doc.markdown.includes('## Transcript\\n\\n' + words))
+      check.equal(doc.attachments.length, 1)
+      const attachments = path.join(config.DIR_ATTACHMENTS, dayAttachmentsDir(when.plainDate))
+      check.equal(await readFile(path.join(attachments, doc.attachments[0].file), 'utf8'), words)
+      check.ok((await readFile(path.join(config.DIR_TIME, dayFile(when.plainDate)), 'utf8')).includes('Atlas demonstration'))
+    `,
+      ],
+      { env: { SKY_DIR: path.join(temp, 'notebook'), SKY_DATA_DIR: path.join(temp, 'user-data') } },
+    )
+    assert({
+      given: 'a standalone TXT video transcript in an isolated notebook',
+      should: 'summarize it, retain its transcript, and link the video from the day without requiring a URL',
+      actual: result.success || result.stderr,
+      expected: true,
+    })
+  } finally {
+    await rm(temp, { recursive: true, force: true })
+  }
+})

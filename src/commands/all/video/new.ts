@@ -194,20 +194,14 @@ export default class VideoNewTask extends Command {
     if (args.dryRun || args.recordedAt)
       return CommandResult.fail('Use --video-file or --url to preview a video import or specify its recording time.')
 
-    if (args.fromText !== undefined)
-      return CommandResult.fail('Use --video-file or --url with --from-text to identify the video import.')
-
-    if (fromSrt !== undefined && fromZoomVtt !== undefined) {
-      return CommandResult.fail('Use only one of --from-srt or --from-zoom-vtt')
-    }
-
-    // --from-srt / --from-zoom-vtt pipeline: clean + summarize the transcript via
+    // Transcript imports clean + summarize the words via
     // audio:transcript:summary. The 'audio-message' template is the
     // one-way-communication shape (from/to rather than a shared attendee list),
     // which is what a recorded video is.
-    const fromTranscript = fromSrt ?? fromZoomVtt
+    const fromTranscript = fromSrt ?? fromZoomVtt ?? args.fromText
     if (fromTranscript !== undefined) {
-      const resolved = await this.resolveTranscriptPath(fromSrt !== undefined ? '.srt' : '.vtt', fromTranscript, output)
+      const format = fromSrt !== undefined ? '.srt' : fromZoomVtt !== undefined ? '.vtt' : '.txt'
+      const resolved = await this.resolveTranscriptPath(format, fromTranscript, output)
       if (!resolved.ok) return CommandResult.fail(resolved.message)
       transcriptPath = resolved.path
       output.log(colors.cyan(`Using transcript: ${path.basename(transcriptPath)}`))
@@ -242,7 +236,11 @@ export default class VideoNewTask extends Command {
 
       const summaryResult = await tasks.run('audio:transcript:summary', {
         acceptAllReviews: args.acceptAllReviews,
-        ...(fromSrt !== undefined ? { fromSrt: transcriptPath } : { fromZoomVtt: transcriptPath }),
+        ...(fromSrt !== undefined
+          ? { fromSrt: transcriptPath }
+          : fromZoomVtt !== undefined
+            ? { fromZoomVtt: transcriptPath }
+            : { fromText: transcriptPath }),
         template: 'audio-message',
         run: run.key,
         fresh: args.fresh,
@@ -398,7 +396,7 @@ export default class VideoNewTask extends Command {
   }
 
   /**
-   * Resolve --from-srt or --from-zoom-vtt to a file. A valueless flag arrives as
+   * Resolve --from-text, --from-srt or --from-zoom-vtt to a file. A valueless flag arrives as
    * the string "true" at runtime, which means "search the Desktop" for that
    * flag's own extension.
    *

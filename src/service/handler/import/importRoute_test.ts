@@ -88,11 +88,9 @@ test('paired video imports retain both files, source identity and accept-all thr
   const fields = {
     kind: 'video',
     when: '2031-04-05 09:30',
-    videoUrl: 'https://loom.com/embed/11111111111111111111111111111111?source=sample',
     recordedAt: '2031-04-05T09:30:45Z',
     acceptAllReviews: true,
   }
-  const missingUrl = await postJson(app, `/import/${job.id}/start`, { ...fields, videoUrl: '' })
   const badFlag = await postJson(app, `/import/${job.id}/start`, { ...fields, acceptAllReviews: 'yes' })
   const started = await postJson(app, `/import/${job.id}/start`, fields)
   await events(
@@ -108,13 +106,12 @@ test('paired video imports retain both files, source identity and accept-all thr
   )
   assert({
     given: 'an MP4/TXT pair followed by a failed run and service restart',
-    should: 'preserve both source files, normalized Loom identity and explicit review approval',
+    should: 'infer Loom identity from the filenames and preserve both files and review approval without a URL input',
     actual: {
       status: uploaded.status,
       source: restored.readback.source,
       kinds: restored.readback.kinds,
       files: restored.files?.map((file) => path.extname(file.name)),
-      missingUrl: missingUrl.status,
       badFlag: badFlag.status,
       started: started.status,
       command: args.command,
@@ -129,7 +126,6 @@ test('paired video imports retain both files, source identity and accept-all thr
       source: 'text',
       kinds: ['video'],
       files: ['.txt', '.mp4'],
-      missingUrl: 400,
       badFlag: 400,
       started: 200,
       command: 'video:new',
@@ -140,6 +136,42 @@ test('paired video imports retain both files, source identity and accept-all thr
       recordedAt: fields.recordedAt,
     },
   })
+})
+
+test('video transcripts start without a URL, alone or paired with a local recording', async () => {
+  for (const paired of [false, true]) {
+    const w = await world()
+    w.options.read = async (file) =>
+      file.name.endsWith('.mp4') ? readVideo(90) : readText(await readFile(file.path, 'utf8'), file.name)
+    const app = new Hono().route('/import', createImportRoutes(w.options))
+    const form = new FormData()
+    form.append('file', new File(['Here is the complete Atlas demonstration.'], 'Atlas.txt'))
+    if (paired) form.append('file', new File(['synthetic recording bytes'], 'Atlas.mp4'))
+    const { job } = (await (await app.request('/import', { method: 'POST', body: form })).json()) as { job: ImportJob }
+    const started = await postJson(app, `/import/${job.id}/start`, { kind: 'video', when: '2031-04-05 09:30' })
+    await events(
+      await app.request(`/import/${job.id}/events`),
+      (event) => event.type === 'state' && event.state === 'done',
+    )
+    const { job: saved } = (await (await app.request(`/import/${job.id}`)).json()) as { job: ImportJob }
+    const command = startArgs(
+      { ...saved, source: saved.readback.source },
+      saved.fields!,
+      (saved.files ?? [saved.file]).map((file) => path.join(w.dir, job.id, file.name)),
+    )
+    assert({
+      given: paired ? 'a TXT transcript and local recording without a provider ID' : 'a standalone TXT transcript',
+      should: 'start and run video:new with the available files and no source URL',
+      actual: [
+        started.status,
+        command.command,
+        typeof command.args.fromText,
+        typeof command.args.videoFile,
+        command.args.url,
+      ],
+      expected: [200, 'video:new', 'string', paired ? 'string' : 'undefined', undefined],
+    })
+  }
 })
 
 test('all journal results survive the event stream and reload, and selected links reach every entry', async () => {

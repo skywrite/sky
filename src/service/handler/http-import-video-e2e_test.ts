@@ -76,36 +76,25 @@ test(
           ]),
         )
         for (let i = 0; i < 3; i++) {
-          const url = `https://www.loom.com/share/${IDS[i]}`
-          await page.getByLabel('Source video URL', { exact: true }).waitFor()
-          await page.waitForFunction(
-            (expected) =>
-              document.querySelector<HTMLInputElement>('input[value="' + expected + '"]')?.value === expected,
-            url,
-          )
+          await page.getByRole('checkbox', { name: LABEL }).waitFor()
           if (i === 0) {
             // Finish loading the covered page after the dialog claims the tab title.
             releaseDay()
             await page.locator('.sky-day .sky-title').filter({ hasText: 'Saturday, April 5, 2031' }).waitFor()
             await page.getByRole('checkbox', { name: LABEL }).check()
-            await page.getByLabel('Source video URL', { exact: true }).fill('')
+            await page.getByLabel('When', { exact: true }).fill('')
             await page.getByRole('button', { name: 'Start', exact: true }).click()
-            await page
-              .getByText('Enter the source video URL so Sky can find an existing entry or create the right video.', {
-                exact: true,
-              })
-              .waitFor()
-            await page.getByLabel('Source video URL', { exact: true }).fill(url)
+            await page.getByText('when must be YYYY-MM-DD HH:MM', { exact: true }).waitFor()
           }
           assert({
             given: `selected video ${i + 1}`,
-            should: 'keep the batch approval choice and source identity',
+            should: 'keep the batch approval choice without asking for a source URL',
             actual: [
               await page.getByRole('checkbox', { name: LABEL }).isChecked(),
-              await page.getByLabel('Source video URL', { exact: true }).inputValue(),
+              await page.getByLabel('Source video URL', { exact: true }).count(),
               await page.title(),
             ],
-            expected: [true, url, `sky · Import Atlas-${IDS[i]}`],
+            expected: [true, 0, `sky · Import Atlas-${IDS[i]}`],
           })
           await page.locator('input[aria-label="When"]').fill(`${DAY.ymd} 09:30`)
           await page.getByRole('button', { name: 'Start', exact: true }).click()
@@ -113,7 +102,7 @@ test(
             () => ![...document.querySelectorAll('button')].some((button) => button.textContent === 'Starting…'),
           )
         }
-        await page.getByLabel('Source video URL', { exact: true }).waitFor({ state: 'hidden' })
+        await page.getByRole('checkbox', { name: LABEL }).waitFor({ state: 'hidden' })
         await page.goto(`${origin}/${DAY.ymd}`)
         await page.waitForSelector('.sky-day button[aria-label="Add a file"]:not([disabled])')
         const freshId = '44444444444444444444444444444444'
@@ -147,10 +136,20 @@ test(
               approval: command.args.acceptAllReviews,
               video: typeof command.args.videoFile,
               source: typeof (command.args.fromSrt ?? command.args.fromText),
+              url: command.args.url,
             })),
             errors.filter((error) => !error.includes('status of 400 (Bad Request)')),
           ],
-          expected: [IDS.map(() => ({ name: 'video:new', approval: true, video: 'string', source: 'string' })), []],
+          expected: [
+            IDS.map((id) => ({
+              name: 'video:new',
+              approval: true,
+              video: 'string',
+              source: 'string',
+              url: `https://www.loom.com/share/${id}`,
+            })),
+            [],
+          ],
         })
         await page.goto(`${origin}/${DAY.ymd}`)
         await page.waitForSelector('.sky-day .sky-col')
@@ -160,14 +159,14 @@ test(
         await page.getByText('Import video', { exact: true }).waitFor()
         assert({
           given: 'a recording dropped on its own',
-          should: 'select Video, also offer Journal, and allow the source URL to stay empty',
+          should: 'select Video, also offer Journal, and show no source URL field',
           actual: [
             await page.getByRole('button', { name: 'Video', exact: true }).getAttribute('data-on'),
             await page.getByRole('button', { name: 'Journal', exact: true }).getAttribute('data-on'),
-            await page.getByLabel('Source video URL', { exact: true }).inputValue(),
+            await page.getByLabel('Source video URL', { exact: true }).count(),
             await page.title(),
           ],
-          expected: ['true', 'false', '', 'sky · Import Atlas demo'],
+          expected: ['true', 'false', 0, 'sky · Import Atlas demo'],
         })
         await page.getByRole('button', { name: 'Start', exact: true }).click()
         await page.getByRole('button', { name: 'Start', exact: true }).waitFor({ state: 'hidden' })
@@ -185,6 +184,29 @@ test(
             raw.args.fromSrt,
           ],
           expected: ['video:new', 'Atlas demo.mp4', undefined, undefined, undefined, undefined],
+        })
+        await page.goto(`${origin}/${DAY.ymd}`)
+        await page.waitForSelector('.sky-day .sky-col')
+        await dispatchFileDrop(page, '.sky-day .sky-col', [
+          { name: 'Atlas transcript.txt', type: 'text/plain', text: 'Here is the complete Atlas demonstration.' },
+        ])
+        await page.getByRole('button', { name: 'Video', exact: true }).click()
+        await page.getByText('New video from a text file', { exact: true }).waitFor()
+        assert({
+          given: 'a standalone TXT transcript chosen as a video',
+          should: 'allow import without a source URL field and identify the transcript in the tab title',
+          actual: [await page.getByLabel('Source video URL', { exact: true }).count(), await page.title()],
+          expected: [0, 'sky · Import Atlas transcript'],
+        })
+        await page.getByRole('button', { name: 'Start', exact: true }).click()
+        await page.getByRole('button', { name: 'Start', exact: true }).waitFor({ state: 'hidden' })
+        await page.waitForFunction(() => document.title === 'sky · Atlas transcript')
+        const text = commands.at(-1)!
+        assert({
+          given: 'Start with only the dropped TXT transcript',
+          should: 'send the transcript to video:new without a URL or recording',
+          actual: [text.command, path.basename(String(text.args.fromText)), text.args.url, text.args.videoFile],
+          expected: ['video:new', 'Atlas transcript.txt', undefined, undefined],
         })
       },
     )

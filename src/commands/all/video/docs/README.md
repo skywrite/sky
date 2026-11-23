@@ -1,6 +1,6 @@
 ---
 created: 2026-09-25
-updated: 2026-11-18
+updated: 2026-11-22
 ---
 
 # Video commands
@@ -10,14 +10,14 @@ Design notes for `src/commands/all/video/`.
 ## video:new
 
 A summary with `--from`, `--to` and `--medium` writes a
-placeholder file for the editor to fill. `--from-srt`, or `--from-zoom-vtt`
-for a Zoom Clip's `.vtt`, runs the transcript pipeline
+placeholder file for the editor to fill. `--from-text`, `--from-srt`, or `--from-zoom-vtt`
+for a Zoom Clip's `.vtt` runs the transcript pipeline
 (`audio:transcript:summary` with the `audio-message` template: a
 recording is one-way, from/to rather than a shared attendee list), files
 the transcript under the day's attachments, and writes the summary with the
 cleaned transcript under it. The import page's .srt and .vtt doors call this
 command with the staged file, the run key it issued at upload, and the
-file's clock.
+file's clock. A transcript alone is enough; neither a source URL nor a recording is required.
 
 Run records (`audio/transcript/lib/transcriptRun.ts`) let a second run
 pick up what the first already paid for; `--fresh` forgets them.

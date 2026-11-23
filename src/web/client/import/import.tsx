@@ -44,7 +44,7 @@ import type { PlaceAnswer, PlaceItem, PlacePrompt } from '#commands/lib/prompt/P
 import { inspectAudioBlob } from '#lib/media/audioHeader.ts'
 import { VIDEO_EXTENSIONS } from '#lib/media/video.ts'
 import TagSet from '#shared/models/TagSet/mod.ts'
-import { groupVideoFiles, videoTranscriptPair } from '#shared/models/Video/importFiles.ts'
+import { groupVideoFiles } from '#shared/models/Video/importFiles.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import {
   dayLabel,
@@ -826,7 +826,6 @@ type Fields = {
   summary: string
   body: string
   tags: string[]
-  videoUrl: string
   acceptAllReviews: boolean
 }
 
@@ -1083,14 +1082,6 @@ function ConfirmBody({
       job?.fields?.summary ?? (documentSource ? documentTitle(job?.file.name ?? pending?.files[0]?.name ?? '') : ''),
     body: job?.fields?.body ?? '',
     tags: [...TagSet.fromString(job?.fields?.tags ?? '')],
-    videoUrl:
-      job?.fields?.videoUrl ??
-      (pending?.files.length === 2 && videoTranscriptPair(pending.files)
-        ? (() => {
-            const id = pending.files.map((file) => file.name.match(/-([a-f\d]{32})\.[^.]+$/i)?.[1]).find(Boolean)
-            return id ? `https://www.loom.com/share/${id}` : ''
-          })()
-        : ''),
     acceptAllReviews: job?.fields?.acceptAllReviews ?? pending?.reviewChoice?.current ?? false,
   })
   const [starting, setStarting] = useState(false)
@@ -1251,9 +1242,7 @@ function ConfirmBody({
         category: fields.category,
         categoryStated: categoryTouched.current,
         fresh: fields.fresh,
-        ...(fields.kind === 'video'
-          ? { videoUrl: fields.videoUrl.trim(), acceptAllReviews: fields.acceptAllReviews }
-          : {}),
+        ...(fields.kind === 'video' ? { acceptAllReviews: fields.acceptAllReviews } : {}),
         ...(audioConversation
           ? {
               fileOrder: files.map((file) => file.name),
@@ -1571,31 +1560,16 @@ function ConfirmBody({
           )}
           {meeting?.when && <div className="sky-when-cal">For “{meeting.title || '(untitled)'}” on your calendar</div>}
           {fields.kind === 'video' && (
-            <>
-              <TextInput
-                label="Source video URL"
-                description={
-                  source === 'video'
-                    ? 'Optional. Add a link if this recording is also available online.'
-                    : 'The Loom ID finds an existing entry so Sky can fill only its missing content. Confirm the original recording time above.'
-                }
-                value={fields.videoUrl}
-                onChange={(event) => {
-                  const videoUrl = event.currentTarget.value
-                  setFields((current) => ({ ...current, videoUrl }))
-                }}
-              />
-              <Checkbox
-                label="Accept all reviews for the selected videos"
-                description="Apply suggested name and term corrections and accept the generated write-ups."
-                checked={fields.acceptAllReviews}
-                onChange={(event) => {
-                  const accepted = event.currentTarget.checked
-                  if (pending?.reviewChoice) pending.reviewChoice.current = accepted
-                  setFields((current) => ({ ...current, acceptAllReviews: accepted }))
-                }}
-              />
-            </>
+            <Checkbox
+              label="Accept all reviews for the selected videos"
+              description="Apply suggested name and term corrections and accept the generated write-ups."
+              checked={fields.acceptAllReviews}
+              onChange={(event) => {
+                const accepted = event.currentTarget.checked
+                if (pending?.reviewChoice) pending.reviewChoice.current = accepted
+                setFields((current) => ({ ...current, acceptAllReviews: accepted }))
+              }}
+            />
           )}
           {calendar && (
             <div className="sky-when-cal">

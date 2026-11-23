@@ -187,16 +187,20 @@ function parseStart(body: unknown, job: ImportJob): StartFields | string {
     return 'acceptAllReviews must be true or false.'
   let videoUrl: string | undefined
   if (kind === 'video') {
-    if (b.videoUrl !== undefined && typeof b.videoUrl !== 'string') return 'Enter the source video URL as text.'
-    if (typeof b.videoUrl === 'string' && b.videoUrl.trim()) {
+    const sourceUrl = b.videoUrl === undefined ? job.fields?.videoUrl : b.videoUrl
+    if (sourceUrl !== undefined && typeof sourceUrl !== 'string') return 'Enter the source video URL as text.'
+    if (typeof sourceUrl === 'string' && sourceUrl.trim()) {
       try {
-        videoUrl = videoSource(b.videoUrl.trim()).url
+        videoUrl = videoSource(sourceUrl.trim()).url
       } catch (error) {
         return (error as Error).message
       }
     }
-    if ((videoTranscriptPair(job.files ?? [job.file]) || readback.source === 'text') && !videoUrl)
-      return 'Enter the source video URL so Sky can find an existing entry or create the right video.'
+    if (!videoUrl) {
+      const pair = videoTranscriptPair(job.files ?? [job.file])
+      const loomId = pair?.map((file) => file.name.match(/-([a-f\d]{32})\.[^.]+$/i)?.[1]).find(Boolean)
+      if (loomId) videoUrl = videoSource(`https://www.loom.com/share/${loomId}`).url
+    }
     if (b.recordedAt !== undefined) {
       try {
         Instant.from(String(b.recordedAt))
