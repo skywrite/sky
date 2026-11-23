@@ -341,6 +341,49 @@ test('loadResumeSession - a saved chat reads its recorded context from its log f
   }
 })
 
+test('loadResumeSession - notebook read tracking rejects invalid paths and a log ahead of the transcript', async () => {
+  const { root, home, transcript } = await notebookWithLogs()
+  try {
+    const file = await transcript('09-30_Atlas.md', 'Atlas', OPENING)
+    const read = { path: 'projects/Atlas/Brief.md', turn: 1 }
+    await writeChatLog(file, home, [], {
+      session: {
+        version: 1,
+        historyKey: conversationKey(OPENING),
+        notebookReads: [
+          read,
+          { path: '../Outside.md', turn: 1 },
+          { path: '/outside/Private.md', turn: 1 },
+          { path: 'Atlas.pdf', turn: 1 },
+          { path: 'people/Jane-Doe.md', turn: 0 },
+        ],
+      },
+    })
+    const loaded = await loadResumeSession(file, home)
+    assert({
+      given: 'read tracking containing a verified notebook path alongside invalid paths and turn numbers',
+      should: 'restore only valid notebook Markdown sources',
+      actual: loaded.state.notebookReads,
+      expected: [read],
+    })
+    await writeChatLog(file, home, [], {
+      session: {
+        version: 1,
+        historyKey: conversationKey([...OPENING, { role: 'user', content: 'An unfiled question.' }]),
+        notebookReads: [read, { path: 'people/Jane-Doe.md', turn: 2 }],
+      },
+    })
+    assert({
+      given: 'a save whose log was written but whose newer conversation never reached the transcript',
+      should: 'leave its read tracking unrestored with the rest of that mismatched continuation',
+      actual: (await loadResumeSession(file, home)).state.notebookReads,
+      expected: undefined,
+    })
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
 test("loadResumeSession - a branch joins its parent's log file to its own", async () => {
   const { root, baseDir, home, transcript } = await notebookWithLogs()
   try {

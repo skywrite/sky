@@ -3,9 +3,9 @@
  *
  * The model names a path; the tool loads it (PDFs and images as bytes, Office,
  * Apple, spreadsheet and text formats as text — see lib/documents), copies it
- * into the day's notebook attachments, reports the copy to the host so the
- * transcript's `attachments:` records it, and hands the content to the model
- * as the tool result: PDFs and images as native file parts, text inline. From
+ * into the day's notebook attachments unless it is already a notebook
+ * Markdown record, which the host records in `rel:` instead. It hands the
+ * content to the model as the tool result: PDFs and images as native file parts, text inline. From
  * then on its recorded findings and source reference remain available;
  * native payloads are reopened when a later question needs more detail.
  *
@@ -50,6 +50,8 @@ export interface FileToolsOptions {
   allowedRoot?: string
   /** Fires once per read with the copy's attachment ref — the host carries it into the transcript */
   onAttachments: (files: Attachment[]) => void
+  /** Full chat hosts record reads of existing notebook Markdown without importing another copy. */
+  notebook?: { dir: string; onRead: (paths: string[]) => void }
 }
 
 export interface ReadFileInput {
@@ -57,13 +59,10 @@ export interface ReadFileInput {
 }
 
 export type ReadFileOutput =
-  | {
+  | ({
       success: true
       /** The source, resolved */
       path: string
-      /** Filename of the copy in the day's attachments */
-      attachment: string
-      attachmentPath: string
       kind: LoadedDocument['kind']
       mediaType?: string
       bytes: number
@@ -71,8 +70,12 @@ export type ReadFileOutput =
       chars?: number
       /** Text documents: characters in the whole document, when it was cut */
       totalChars?: number
-    }
+    } & ReadFileLocation)
   | { success: false; error: string }
+
+type ReadFileLocation =
+  | { source: 'attachment'; attachment: string; attachmentPath: string; notebookPath?: never }
+  | { source: 'notebook'; notebookPath: string; attachment?: never; attachmentPath?: never }
 
 export type ReadFileSuccess = Extract<ReadFileOutput, { success: true }>
 
@@ -123,11 +126,15 @@ function fitText(document: LoadedDocument): { document: LoadedDocument; totalCha
 
 /** The lines above the content: where it came from, where the copy lives, what it is. */
 function describe(output: ReadFileSuccess): string {
-  const lines = [
-    `File: ${output.path}`,
-    `Saved copy: ${output.attachmentPath}`,
-    `Attachment: ${output.attachment} (copied into the day's notebook attachments and recorded on this chat)`,
-  ]
+  const lines = [`File: ${output.path}`]
+  if (output.source === 'notebook') {
+    lines.push(`Notebook record: ${output.notebookPath} (recorded for this chat's rel)`)
+  } else {
+    lines.push(
+      `Saved copy: ${output.attachmentPath}`,
+      `Attachment: ${output.attachment} (copied into the day's notebook attachments and recorded on this chat)`,
+    )
+  }
   if (output.kind === 'text') {
     const size = `${(output.chars ?? 0).toLocaleString('en-US')} characters`
     lines.push(
@@ -154,9 +161,9 @@ export function toModelContent(output: ReadFileSuccess, document: LoadedDocument
       {
         type: 'file',
         mediaType: document.mediaType,
-        filename: output.attachment,
+        filename: output.attachment ?? path.basename(output.path),
         data: { type: 'data', data: Buffer.from(document.data).toString('base64') },
-        providerOptions: { sky: { sourcePath: output.path, attachmentPath: output.attachmentPath } },
+        providerOptions: { sky: { sourcePath: output.path, attachmentPath: output.attachmentPath ?? output.path } },
       },
     ],
   }
@@ -167,11 +174,17 @@ export function toUserContent(output: ReadFileSuccess, document: LoadedDocument)
   const header = describe(output)
   if (document.kind === 'text') return [{ type: 'text', text: `${header}\n\n${document.text}` }]
   const data = Buffer.from(document.data).toString('base64')
-  const providerOptions = { sky: { sourcePath: output.path, attachmentPath: output.attachmentPath } }
+  const providerOptions = { sky: { sourcePath: output.path, attachmentPath: output.attachmentPath ?? output.path } }
   // Images ride as file parts too; the SDK's `image` part is deprecated.
   return [
     { type: 'text', text: header },
-    { type: 'file', data, mediaType: document.mediaType, filename: output.attachment, providerOptions },
+    {
+      type: 'file',
+      data,
+      mediaType: document.mediaType,
+      filename: output.attachment ?? path.basename(output.path),
+      providerOptions,
+    },
   ]
 }
 
@@ -187,7 +200,32 @@ async function firstExisting(files: string[]) {
   return undefined
 }
 
-/** Load, copy, record. The document rides back beside the output so execute can keep it for toModelOutput. */
+/** The relative path of a file beneath a root, excluding the root itself. */
+function pathInside(root: string, file: string): string | undefined {
+  const relative = path.relative(root, file)
+  return relative && relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative)
+    ? relative
+    : undefined
+}
+
+async function notebookRecord(file: string, options: FileToolsOptions) {
+  if (!options.notebook || options.allowedRoot) return undefined
+  try {
+    const [root, source, attachments] = await Promise.all([
+      realpath(options.notebook.dir),
+      realpath(file),
+      realpath(options.attachmentsRoot).catch(() => undefined),
+    ])
+    const relative = pathInside(root, source)
+    if (!relative || path.extname(source).toLowerCase() !== '.md' || (attachments && pathInside(attachments, source)))
+      return undefined
+    return { path: source, relative, onRead: options.notebook.onRead }
+  } catch {
+    return undefined
+  }
+}
+
+/** Load and record the source; only imported files need a copy in attachments. */
 export async function readFile(
   input: ReadFileInput,
   options: FileToolsOptions,
@@ -198,9 +236,7 @@ export async function readFile(
   if (options.allowedRoot) {
     try {
       const [root, file] = await Promise.all([realpath(options.allowedRoot), realpath(requested)])
-      const relative = path.relative(root, file)
-      if (!relative || relative.startsWith(`..${path.sep}`) || relative === '..' || path.isAbsolute(relative))
-        return fail('This browser task can read only its downloaded files.')
+      if (!pathInside(root, file)) return fail('This browser task can read only its downloaded files.')
     } catch {
       return fail('This browser task can read only its downloaded files.')
     }
@@ -213,31 +249,39 @@ export async function readFile(
   const { file: resolved, info } = found
   if (info.isDirectory()) return fail(`${resolved} is a directory — name a file`)
 
-  const ext = path.extname(resolved).toLowerCase()
+  const notebook = await notebookRecord(resolved, options)
+  const source = notebook?.path ?? resolved
+  const ext = path.extname(source).toLowerCase()
   if ((PDF_EXTENSIONS.has(ext) || IMAGE_EXTENSIONS.has(ext)) && info.size > MAX_FILE_BYTES) {
     return fail(
       `${path.basename(resolved)} is ${formatBytes(info.size)}; the largest PDF or image read_file can pass to the model is ${formatBytes(MAX_FILE_BYTES)}`,
     )
   }
 
-  const result = await loadDocument(resolved)
+  const result = await loadDocument(source)
   if (!result.success) return fail(result.error)
   const { document, totalChars } = fitText(result.document)
 
-  const copied = await copyToDayAttachments({
-    sourcePath: resolved,
-    attachmentsRoot: options.attachmentsRoot,
-    day: options.today,
-    fileName: attachmentFileName(options.today, resolved),
-  })
-  if (!copied) return fail(`No such file: ${resolved}`)
-  options.onAttachments([copied.attachment])
+  let location: ReadFileLocation
+  if (notebook) {
+    notebook.onRead([notebook.relative])
+    location = { source: 'notebook', notebookPath: notebook.relative }
+  } else {
+    const copied = await copyToDayAttachments({
+      sourcePath: resolved,
+      attachmentsRoot: options.attachmentsRoot,
+      day: options.today,
+      fileName: attachmentFileName(options.today, resolved),
+    })
+    if (!copied) return fail(`No such file: ${resolved}`)
+    options.onAttachments([copied.attachment])
+    location = { source: 'attachment', attachment: copied.attachment.file, attachmentPath: copied.path }
+  }
 
   const output: ReadFileSuccess = {
     success: true,
-    path: resolved,
-    attachment: copied.attachment.file,
-    attachmentPath: copied.path,
+    path: source,
+    ...location,
     kind: document.kind,
     bytes: info.size,
   }
@@ -254,15 +298,20 @@ export async function readFile(
 async function documentFor(toolCallId: string, output: ReadFileSuccess): Promise<LoadedDocument | undefined> {
   const kept = loaded.get(toolCallId)
   if (kept) return kept
-  const reread = await loadDocument(output.attachmentPath)
+  const reread = await loadDocument(output.attachmentPath ?? output.path)
   return reread.success ? fitText(reread.document).document : undefined
 }
 
 export function createFileTools(options: FileToolsOptions): Record<string, unknown> {
   return {
     [READ_FILE_TOOL]: tool({
-      description:
-        "Read a local file into this conversation by path: PDF, image (png, jpg, gif, webp), Word/Pages, PowerPoint/Keynote, Excel/Numbers, CSV, markdown, or plain text. Returns the document itself (PDFs and images attached, the rest as text), copies it into today's notebook attachments, and records it on this chat. Record task-relevant findings before reading the next document. Earlier binary contents become file references; reopen the saved copy when details are needed. Inspect large files one at a time. Call it whenever the user points at a file on disk to read, summarize, review, or discuss.",
+      description: [
+        'Read a local file into this conversation by path: PDF, image (png, jpg, gif, webp), Word/Pages, PowerPoint/Keynote, Excel/Numbers, CSV, markdown, or plain text. Returns the document itself (PDFs and images attached, the rest as text).',
+        options.notebook && !options.allowedRoot
+          ? "Existing notebook Markdown records are read from their original paths and linked in this chat's rel; other files are copied into today's notebook attachments and recorded on this chat."
+          : "Files are copied into today's notebook attachments and recorded on this chat.",
+        'Record task-relevant findings before reading the next document. Earlier binary contents become file references; reopen the saved copy when details are needed. Inspect large files one at a time. Call it whenever the user points at a file on disk to read, summarize, review, or discuss.',
+      ].join(' '),
       inputSchema: jsonSchema<ReadFileInput>({
         type: 'object',
         properties: {
@@ -285,7 +334,7 @@ export function createFileTools(options: FileToolsOptions): Record<string, unkno
         if (!document) {
           return {
             type: 'json',
-            value: { ...output, error: `The copy at ${output.attachmentPath} could not be read back` },
+            value: { ...output, error: `The file at ${output.attachmentPath ?? output.path} could not be read back` },
           }
         }
         return toModelContent(output, document)

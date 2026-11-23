@@ -59,6 +59,21 @@ test('lineage - the prefix at a turn keeps the turns through it and the log they
   })
 })
 
+test('lineage - explicit notebook sources follow their first read through forks and joined lineage', () => {
+  const first = { path: 'projects/Atlas/Brief.md', turn: 1 }
+  const second = { path: 'people/Jane-Doe.md', turn: 2 }
+  const prefix = prefixOf({ ...PARENT, notebookReads: [first, second] }, 1)
+  const own = { ...prefixOf(PARENT, 2), notebookReads: [{ ...first, turn: 2 }, second] }
+  const joined = joinLineage(prefix, own)
+  const branch = ownOf(joined, 2, 1)
+  assert({
+    given: 'a prefix with one source and a branch that rereads it and reads another',
+    should: 'exclude later parent reads, preserve first-read turns, and retain source tracking when splitting',
+    actual: { prefix: prefix.notebookReads, joined: joined.notebookReads, branch: branch.notebookReads },
+    expected: { prefix: [first], joined: [first, second], branch: [first, second] },
+  })
+})
+
 test('lineage - a branch joined to its prefix is the whole thread, and its own part comes back out', () => {
   const prefix = prefixOf(PARENT, 1)
   const own: ResumeState = {

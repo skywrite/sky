@@ -583,13 +583,13 @@ export default class AiChatTask extends Command {
       },
       tools: async (hooks) => {
         const { onExternalFiles, onAttachments } = hooks
-        // A file the user points at: read into the conversation, copied
-        // into the chat's day attachments, recorded on the transcript.
+        // Notebook records link to their originals; imported files keep a durable attachment copy.
         const fileTools = createChatFileTools({
           today,
           attachmentsRoot: DIR_ATTACHMENTS,
           cwd: env.SKY_USER_CWD || process.cwd(),
           onAttachments,
+          notebook: { dir: DIR_BASE, onRead: hooks.onReadDocuments },
         })
         const notebookTools = await createNotebookTools(tasks, {
           notebookDir: DIR_BASE,

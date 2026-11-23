@@ -16,8 +16,11 @@ import type { WorkingContextState } from '../ChatEngine/workingContext.ts'
 import type { ConversationMessage } from '../type.d.ts'
 import type { ContextTurnLog } from './ContextLog/mod.ts'
 import ChatDocument from './mod.ts'
+import type { NotebookRead } from './notebookReads.ts'
 
 export interface ResumeState {
+  /** Notebook records explicitly read by tools, with the first turn that read each. */
+  notebookReads?: NotebookRead[]
   /** Stable draft identities; reply threads share these records with their parent. */
   writingDrafts?: { id: string; turn: number }[]
   writingDraftFocus?: string

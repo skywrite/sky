@@ -8,6 +8,7 @@
  */
 
 import type { ContextTurnLog } from './ContextLog/mod.ts'
+import { mergeNotebookReads } from './notebookReads.ts'
 import { type ResumeState, stateOfLog, universeOf } from './resume.ts'
 
 /** Messages a branch at `turn` inherits: each turn is a question and its reply. */
@@ -27,6 +28,7 @@ export function prefixOf(state: ResumeState, turn: number): ResumeState {
   const drafts = state.writingDrafts?.filter((ref) => ref.turn <= turn)
   return {
     ...stateOfLog(conversation, contextLog),
+    ...(state.notebookReads ? { notebookReads: state.notebookReads.filter((read) => read.turn <= turn) } : {}),
     ...(drafts ? { writingDrafts: drafts } : {}),
     ...(drafts?.some((ref) => ref.id === state.writingDraftFocus)
       ? { writingDraftFocus: state.writingDraftFocus }
@@ -51,6 +53,9 @@ export function joinLineage(prefix: ResumeState, own: ResumeState): ResumeState 
     queries: own.queries.length > 0 ? [...own.queries] : [...prefix.queries],
     lastTurn: Math.max(prefix.lastTurn, own.lastTurn),
     contextLog,
+    ...(prefix.notebookReads || own.notebookReads
+      ? { notebookReads: mergeNotebookReads(prefix.notebookReads, own.notebookReads) }
+      : {}),
     ...(writingDrafts ? { writingDrafts } : {}),
     ...(writingDrafts?.some((ref) => ref.id === writingDraftFocus) ? { writingDraftFocus } : {}),
     ...((own.legalReview ?? prefix.legalReview) ? { legalReview: own.legalReview ?? prefix.legalReview } : {}),
@@ -67,6 +72,7 @@ export function ownOf(whole: ResumeState, inherited: number, parentTurn: number)
   const contextLog = whole.contextLog.filter((entry) => entry.turn > parentTurn)
   return {
     ...stateOfLog(conversation, contextLog),
+    ...(whole.notebookReads ? { notebookReads: whole.notebookReads } : {}),
     ...(whole.legalReview ? { legalReview: whole.legalReview } : {}),
     ...(whole.writingDrafts ? { writingDrafts: whole.writingDrafts } : {}),
     ...(whole.writingDraftFocus ? { writingDraftFocus: whole.writingDraftFocus } : {}),

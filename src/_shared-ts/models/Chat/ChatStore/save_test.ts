@@ -1443,6 +1443,49 @@ test('saveChat - documents the session created join rel as facts', async () => {
   })
 })
 
+test('saveChat - explicit notebook reads become canonical rel entries even with auto-rel disabled', async () => {
+  const notebook = await tmpNotebook()
+  const note = 'time/2026/W05/01-27/actions/notes/09-00_Atlas.md'
+  const { report } = await saveNew({
+    timeDir: path.join(notebook, 'time'),
+    autoRel: false,
+    readPaths: [
+      path.join(notebook, note),
+      note,
+      'people/Jane-Doe.md',
+      'projects/Atlas/Brief.md',
+      '../Outside.md',
+      'Atlas.pdf',
+    ],
+    contextLog: [{ turn: 1, queries: [], universe: [{ path: 'projects/Unrelated.md', tokens: 20 }] }],
+  })
+  const doc = ChatDocument.fromMarkdown(await readTextFile(report.path))
+  assert({
+    given: 'verified reads of dated and undated notebook records, duplicate paths, and unrelated retrieved context',
+    should: 'link only the Markdown source records by canonical references without creating attachments',
+    actual: { rel: [...doc.rel], attachments: doc.attachments },
+    expected: {
+      rel: ['2026-01-27/actions/notes/09-00_Atlas', 'people/Jane-Doe', 'projects/Atlas/Brief'],
+      attachments: [],
+    },
+  })
+  const timeDir = path.join(notebook, 'time')
+  const resume = await loadResumeSession(report.path, homeOf(timeDir))
+  const { report: resaved } = await saveNew({
+    timeDir,
+    resume,
+    contextLog: resume.state.contextLog,
+    autoRel: false,
+    readPaths: [report.path, note, 'people/Jane-Doe.md'],
+  })
+  assert({
+    given: 'the chat itself and the same source records read again on resume',
+    should: 'retain existing relationships without a self-reference or duplicates',
+    actual: [...ChatDocument.fromMarkdown(await readTextFile(resaved.path)).rel],
+    expected: [...doc.rel],
+  })
+})
+
 test('saveChat - the summary goes between the title and the conversation, under its writer', async () => {
   let asked: { turns: number; earlier: number } | undefined
   const { report } = await saveNew({

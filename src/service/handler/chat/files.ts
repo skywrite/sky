@@ -95,6 +95,7 @@ export async function readChatFiles(
       { today, attachmentsRoot, cwd: attachmentsRoot, onAttachments: (added) => files.attachments.push(...added) },
     )
     if (!output.success) throw new Error(`${name}: ${output.error}`)
+    if (output.source !== 'attachment') throw new Error(`${name} could not be retained as an attachment.`)
     if (!document) throw new Error(`${name} could not be read.`)
     if (clip) bytes += output.bytes
     if (bytes > MAX_CHAT_FILE_BYTES) throw new Error('Attachments must total 20 MB or less.')

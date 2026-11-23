@@ -534,6 +534,7 @@ export function createChatHost(config: typeof ConfigModule, env: Record<string, 
               attachmentsRoot: config.DIR_ATTACHMENTS,
               cwd: config.DIR_HOME,
               onAttachments,
+              notebook: { dir: config.DIR_BASE, onRead: hooks.onReadDocuments },
             }),
             ...createReadChatTool({ notebookDir: config.DIR_BASE, liveChats }),
             ...createMemoryTools({

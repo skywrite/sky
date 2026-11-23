@@ -1,6 +1,6 @@
 ---
 created: 2026-09-01
-updated: 2026-11-22
+updated: 2026-11-23
 ---
 
 # Chat model — the pieces under every chat host
@@ -80,6 +80,13 @@ context log keep every byte. Transcripts the earlier reader cut short, where
 a reply carried a top-level heading of its own, read back whole now.
 
 ## Relationships to records discussed in the chat
+
+An explicit `read_file` of existing notebook Markdown links the original record in `rel`, using a canonical reference.
+It does not import an attachment copy or depend on auto-rel being enabled.
+Ownership follows real paths, so symlinks cannot turn an external file into a notebook record.
+External Markdown, binary files and the attachment store retain the usual copy-and-attach behavior.
+The first read's turn is kept in the session's recovery metadata; forks inherit only sources read through their prefix.
+Background retrieval remains a lookup hint for the conversational resolver below.
 
 Saving with auto-rel enabled also resolves conversational references to dated
 notebook records. "My meeting with Jane on Friday" is enough when the record

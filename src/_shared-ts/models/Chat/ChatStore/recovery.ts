@@ -1,6 +1,7 @@
 import type { ModelMessage } from 'ai'
 import { WRITING_DRAFT_ID } from '#lib/writingVoice/draftId.ts'
 import { readWorkingContext, type WorkingContextState } from '../ChatEngine/workingContext.ts'
+import type { NotebookRead } from '../document/notebookReads.ts'
 import type { ConversationMessage } from '../type.d.ts'
 
 /** Runtime continuation kept in recovery snapshots and the saved transcript's JSON metadata. */
@@ -15,6 +16,7 @@ export interface ChatRecovery {
   legalReview?: { id: string; turn: number }
   writingDrafts?: { id: string; turn: number }[]
   writingDraftFocus?: string
+  notebookReads?: NotebookRead[]
   /** The host's thread settings and identity. */
   host?: Record<string, unknown>
 }
@@ -25,6 +27,20 @@ export function readChatRecovery(value: unknown): ChatRecovery | undefined {
   const recovery: ChatRecovery = { version: 1 }
   const workingContext = readWorkingContext(raw.workingContext)
   if (workingContext) recovery.workingContext = workingContext
+  if (Array.isArray(raw.notebookReads)) {
+    recovery.notebookReads = raw.notebookReads.flatMap((entry) => {
+      if (!entry || typeof entry !== 'object') return []
+      const value = entry as Record<string, unknown>
+      return typeof value.path === 'string' &&
+        /\.md$/i.test(value.path) &&
+        !value.path.startsWith('/') &&
+        !value.path.split('/').some((part) => part === '..' || part === '.' || part === '') &&
+        Number.isSafeInteger(value.turn) &&
+        (value.turn as number) >= 1
+        ? [{ path: value.path, turn: value.turn as number }]
+        : []
+    })
+  }
   if (Array.isArray(raw.turnErrors))
     recovery.turnErrors = raw.turnErrors.flatMap((entry) => {
       if (!entry || typeof entry !== 'object') return []

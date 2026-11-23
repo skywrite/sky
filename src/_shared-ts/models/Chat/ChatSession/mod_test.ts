@@ -1,12 +1,13 @@
-import { rm } from 'node:fs/promises'
+import { mkdir, rm } from 'node:fs/promises'
 import * as path from 'node:path'
 import { jsonSchema, simulateReadableStream } from 'ai'
 import { MockLanguageModelV3 } from 'ai/test'
+import { readFile } from '#commands/lib/chat/fileTools.ts'
 import { createMemoryTools } from '#commands/lib/chat/memoryTools.ts'
 import type { AIErrorEntry } from '#shared/ai/errorLog.ts'
 import { InputTokenLimitError } from '#shared/ai/inputTokenLimit.ts'
 import type { ResolvedModel } from '#shared/ai/models.ts'
-import { exists, makeTempDir, readTextFile } from '#shared/fs/mod.ts'
+import { exists, makeTempDir, readTextFile, writeTextFile } from '#shared/fs/mod.ts'
 import type { PreflightVerdict } from '#shared/models/Chat/document/ContextLog/mod.ts'
 import type { ResearchContext } from '#shared/models/Chat/researchContext.ts'
 import { Document } from '#shared/models/Markdown/mod.ts'
@@ -137,6 +138,112 @@ async function makeSession(over: Partial<ChatSessionOptions> = {}) {
 }
 
 const types = (events: ChatSessionEvent[]) => events.map((e) => e.type)
+
+test('explicit notebook reads survive recovery and resume, with only prefix sources inherited by forks', async () => {
+  const notebook = await makeTempDir({ prefix: 'sky-chat-notebook-reads-' })
+  const timeDir = path.join(notebook, 'time')
+  const note = 'time/2026/W05/01-27/actions/notes/09-00_Atlas.md'
+  const person = 'people/Jane-Doe.md'
+  for (const [file, text] of [
+    [note, '# Atlas\n\nShip the demo.'],
+    [person, '# Jane Doe\n\nAtlas lead.'],
+  ]) {
+    await mkdir(path.dirname(path.join(notebook, file)), { recursive: true })
+    await writeTextFile(path.join(notebook, file), text)
+  }
+  const attachmentsRoot = path.join(notebook, 'attachments')
+  let pass = 0
+  const tools: ChatSessionOptions['tools'] = async (hooks) => {
+    for (const file of pass++ === 0 ? [note] : [person, note]) {
+      const { output } = await readFile(
+        { path: file },
+        {
+          today: TODAY,
+          cwd: notebook,
+          attachmentsRoot,
+          onAttachments: hooks.onAttachments,
+          notebook: { dir: notebook, onRead: hooks.onReadDocuments },
+        },
+      )
+      if (!output.success) throw new Error(output.error)
+    }
+    return { tools: {}, toolApproval: {} }
+  }
+  const options = { baseDir: notebook, timeDir, contextTokens: 0 }
+  const first = await makeSession({ ...options, tools })
+  await first.session.start()
+  await first.session.send('Read the Atlas note.')
+  const snapshot = await loadResumeSession(path.join(first.tmp, 'autosave.md'), { baseDir: notebook, snapshot: true })
+  await first.session.end({ save: false })
+
+  const recovered = await makeSession({ ...options, restore: snapshot.state, attachments: snapshot.attachments, tools })
+  await recovered.session.start()
+  await recovered.session.send('Read the person and revisit the note.')
+  const branch = recovered.session.stateAt(1)
+  const replyThread = recovered.session.threadSeedAt(1)
+  const saved = await recovered.session.end({ save: true, autoRel: false, autoTag: false, enricher: stubEnricher })
+  if (!saved) throw new Error('Expected a saved chat')
+  const loaded = await reload(saved.path, timeDir)
+  const reads = [
+    { path: note, turn: 1 },
+    { path: person, turn: 2 },
+  ]
+  const rel = ['2026-01-27/actions/notes/09-00_Atlas', 'people/Jane-Doe']
+  assert({
+    given: 'a notebook read before a restart, another after it, and a repeated read',
+    should: 'retain unique source relationships without attachments or model inference',
+    actual: {
+      snapshot: snapshot.state.notebookReads,
+      saved: loaded.state.notebookReads,
+      rel: loaded.rel,
+      attachments: loaded.attachments,
+      copies: await exists(attachmentsRoot),
+      branch: branch.notebookReads,
+      replyThread: replyThread.state.notebookReads,
+    },
+    expected: {
+      snapshot: reads.slice(0, 1),
+      saved: reads,
+      rel,
+      attachments: [],
+      copies: false,
+      branch: reads.slice(0, 1),
+      replyThread: reads.slice(0, 1),
+    },
+  })
+
+  const resumed = await makeSession({ ...options, resume: loaded })
+  await resumed.session.start()
+  await resumed.session.send('Continue without reading another file.')
+  const resaved = await resumed.session.end({ save: true, autoRel: false, autoTag: false, enricher: stubEnricher })
+  if (!resaved) throw new Error('Expected a resumed save')
+  const reloaded = await reload(resaved.path, timeDir)
+  assert({
+    given: 'the saved chat continued without another file read',
+    should: 'preserve the original references and their turn numbers',
+    actual: { rel: reloaded.rel, reads: reloaded.state.notebookReads, attachments: reloaded.attachments },
+    expected: { rel, reads, attachments: [] },
+  })
+
+  for (const kind of [undefined, 'thread'] as const) {
+    const child = await makeSession({
+      ...options,
+      restore: kind ? replyThread.state : branch,
+      parent: { chat: path.relative(notebook, saved.path), turn: 1, ...(kind ? { kind } : {}) },
+    })
+    await child.session.start()
+    await child.session.send('Continue from the first reply.')
+    const filed = await child.session.end({ save: true, autoRel: false, autoTag: false, enricher: stubEnricher })
+    if (!filed) throw new Error('Expected a saved fork')
+    const fork = await reload(filed.path, timeDir)
+    assert({
+      given: kind ? 'a reply thread after the first response' : 'a branch after the first response',
+      should: 'file and reopen with only the notebook records read through that response',
+      actual: { rel: fork.rel, reads: fork.state.notebookReads, attachments: fork.attachments },
+      expected: { rel: rel.slice(0, 1), reads: reads.slice(0, 1), attachments: [] },
+    })
+  }
+})
 
 test('an explicit memory tool saves during the reply and survives discarding the chat', async () => {
   const notebookDir = await makeTempDir({ prefix: 'sky-chat-memory-session-' })

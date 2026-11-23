@@ -6,11 +6,11 @@
  */
 
 import { Buffer } from 'node:buffer'
-import { mkdir, symlink, writeFile } from 'node:fs/promises'
+import { mkdir, realpath, symlink, writeFile } from 'node:fs/promises'
 import * as os from 'node:os'
 import * as path from 'node:path'
 import { toolModelMessageSchema } from 'ai'
-import { makeTempDir, readDir } from '#shared/fs/mod.ts'
+import { exists, makeTempDir, readDir, readTextFile } from '#shared/fs/mod.ts'
 import type { Attachment } from '#shared/models/Markdown/Document/attachment.ts'
 import notebookDayDir from '#shared/nbfs/dayDir.ts'
 import { assert, test } from '#test'
@@ -95,6 +95,7 @@ test('readFile - a text file: content inline, copy in the day attachments, hook 
     expected: {
       output: {
         success: true,
+        source: 'attachment',
         path: path.join(cwd, 'Atlas MSA.md'),
         attachment: '2026-01-27_Chat_Atlas-MSA.md',
         attachmentPath: path.join(dayDir, '2026-01-27_Chat_Atlas-MSA.md'),
@@ -250,6 +251,7 @@ test('readFile - a file a note lists is found in the attachments of its day', as
     expected: {
       output: {
         success: true,
+        source: 'attachment',
         path: filed,
         attachment: copy,
         attachmentPath: path.join(dayDir, copy),
@@ -429,5 +431,176 @@ test('createFileTools - execute then toModelOutput, the way the SDK drives a too
     should: 'pass the failure through as plain json',
     actual: await tool.toModelOutput({ toolCallId: 'tc2', input: { path: 'missing.txt' }, output: failed }),
     expected: { type: 'json', value: { success: false, error: `No such file: ${path.join(cwd, 'missing.txt')}` } },
+  })
+})
+
+test('readFile - notebook Markdown keeps its original source and records a relationship without an attachment', async () => {
+  const { cwd, options, recorded, dayDir } = await setup()
+  const relative = 'time/2026/W05/01-27/actions/notes/09-00_Atlas.md'
+  const source = path.join(cwd, relative)
+  const text = '# Atlas\n\nShip the demo on Friday.\n'
+  await mkdir(path.dirname(source), { recursive: true })
+  await writeFile(source, text)
+  const reads: string[] = []
+  const notebook = { dir: cwd, onRead: (paths: string[]) => reads.push(...paths) }
+  const first = await readFile({ path: relative }, { ...options, notebook })
+  await readFile({ path: source }, { ...options, notebook })
+  const empty = path.join(cwd, 'Empty.md')
+  await writeFile(empty, '')
+  const failed = await readFile({ path: empty }, { ...options, notebook })
+
+  assert({
+    given: 'an existing notebook record read twice and an empty record that cannot be read',
+    should: 'return the original text, record only successful reads, and create no attachment directory',
+    actual: {
+      output: first.output,
+      document: first.document,
+      reads,
+      recorded,
+      copies: await exists(dayDir),
+      original: await readTextFile(source),
+      failed: failed.output.success,
+    },
+    expected: {
+      output: {
+        success: true,
+        source: 'notebook',
+        path: await realpath(source),
+        notebookPath: relative,
+        kind: 'text',
+        bytes: text.length,
+        chars: text.length,
+      },
+      document: { kind: 'text', text },
+      reads: [relative, relative],
+      recorded: [],
+      copies: false,
+      original: text,
+      failed: false,
+    },
+  })
+  if (!first.output.success || !first.document) throw new Error('unreachable')
+  const model = toModelContent(first.output, first.document)
+  assert({
+    given: 'the notebook record as the model receives it',
+    should: 'identify its original source and relationship, without claiming an imported copy',
+    actual: model,
+    expected: {
+      type: 'content',
+      value: [
+        {
+          type: 'text',
+          text: `File: ${await realpath(source)}\nNotebook record: ${relative} (recorded for this chat's rel)\nType: text, ${text.length} characters\n\n${text}`,
+        },
+      ],
+    },
+  })
+  assert({
+    given: 'that notebook result embedded by the SDK',
+    should: 'validate as an ordinary tool result',
+    actual: toolModelMessageSchema.safeParse(asToolMessage(model)).success,
+    expected: true,
+  })
+})
+
+test('readFile - notebook ownership follows real paths, including symlinked roots and files', async () => {
+  const { cwd, options, recorded } = await setup()
+  const root = path.join(cwd, 'notebook')
+  const external = path.join(cwd, 'notebook-other')
+  await mkdir(root)
+  await mkdir(external)
+  const original = path.join(root, 'Atlas.md')
+  await writeFile(original, 'Notebook original.')
+  await writeFile(path.join(external, 'External.md'), 'External original.')
+  await symlink(root, path.join(cwd, 'notebook-link'))
+  await symlink(original, path.join(external, 'Notebook-alias.md'))
+  await symlink(path.join(external, 'External.md'), path.join(root, 'External-alias.md'))
+  await writeFile(path.join(root, 'Contract.pdf'), '%PDF-1.4 atlas')
+  const reads: string[] = []
+  const scoped = {
+    ...options,
+    notebook: { dir: path.join(cwd, 'notebook-link'), onRead: (paths: string[]) => reads.push(...paths) },
+  }
+  const results: string[] = []
+  for (const file of [
+    path.join(external, 'Notebook-alias.md'),
+    path.join(root, 'External-alias.md'),
+    path.join(external, 'External.md'),
+    path.join(root, 'Contract.pdf'),
+  ]) {
+    const result = await readFile({ path: file }, scoped)
+    if (!result.output.success) throw new Error(result.output.error)
+    results.push(result.output.source)
+  }
+  assert({
+    given: 'an alias into the notebook, an alias out, a similarly named sibling, and a notebook PDF',
+    should: 'link only the actual notebook Markdown record and import the external files and PDF',
+    actual: { results, reads, attachments: recorded.length },
+    expected: { results: ['notebook', 'attachment', 'attachment', 'attachment'], reads: ['Atlas.md'], attachments: 3 },
+  })
+})
+
+test('readFile - archived Markdown and private browser downloads remain attachments', async () => {
+  const { cwd, options, recorded } = await setup()
+  const attachmentsRoot = path.join(cwd, 'attachments')
+  const archived = await fileAttachment(attachmentsRoot, '2026-01-27', 'Imported.md', 'Imported proposal.')
+  const downloads = path.join(cwd, 'downloads')
+  await mkdir(downloads)
+  await writeFile(path.join(downloads, 'Downloaded.md'), 'Downloaded proposal.')
+  await writeFile(path.join(cwd, 'Private.md'), 'Private notebook record.')
+  const reads: string[] = []
+  const scoped = {
+    ...options,
+    attachmentsRoot,
+    notebook: { dir: cwd, onRead: (paths: string[]) => reads.push(...paths) },
+  }
+  const retained = await readFile({ path: archived }, scoped)
+  const restricted = { ...scoped, cwd: downloads, allowedRoot: downloads }
+  const downloaded = await readFile({ path: 'Downloaded.md' }, restricted)
+  const denied = await readFile({ path: '../Private.md' }, restricted)
+  assert({
+    given: 'Markdown in an attachment store inside the notebook, and a private browser with a notebook configured',
+    should: 'retain attachment semantics and keep the private browser confined to its downloads',
+    actual: {
+      archived: retained.output.success && retained.output.source,
+      downloaded: downloaded.output.success && downloaded.output.source,
+      denied: denied.output.success,
+      reads,
+      attachments: recorded.length,
+    },
+    expected: { archived: 'attachment', downloaded: 'attachment', denied: false, reads: [], attachments: 2 },
+  })
+})
+
+test('createFileTools - an evicted notebook result rereads its original without creating an attachment', async () => {
+  const { cwd, options, recorded, dayDir } = await setup()
+  await writeFile(path.join(cwd, 'Atlas.md'), 'Original notebook text.')
+  const reads: string[] = []
+  const tools = createFileTools({
+    ...options,
+    notebook: { dir: cwd, onRead: (paths) => reads.push(...paths) },
+  }) as Record<
+    string,
+    {
+      execute: (input: unknown, options: unknown) => Promise<unknown>
+      toModelOutput: (options: { toolCallId: string; input: unknown; output: unknown }) => Promise<unknown>
+    }
+  >
+  const tool = tools[READ_FILE_TOOL]
+  const input = { path: 'Atlas.md' }
+  const first = await tool.execute(input, { toolCallId: 'notebook-original' })
+  for (let i = 0; i < 9; i++) await tool.execute(input, { toolCallId: `notebook-later-${i}` })
+  const result = await tool.toModelOutput({ toolCallId: 'notebook-original', input, output: first })
+  assert({
+    given: 'a notebook result evicted from the bounded document cache',
+    should: 'reread the original as valid model content without importing or recording it again',
+    actual: {
+      valid: toolModelMessageSchema.safeParse(asToolMessage(result)).success,
+      hasText: JSON.stringify(result).includes('Original notebook text.'),
+      reads: reads.length,
+      recorded,
+      copies: await exists(dayDir),
+    },
+    expected: { valid: true, hasText: true, reads: 10, recorded: [], copies: false },
   })
 })

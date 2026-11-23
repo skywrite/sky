@@ -1,6 +1,6 @@
 ---
 created: 2026-09-10
-updated: 2026-11-03
+updated: 2026-11-23
 ---
 
 # Chat prompt and tools
@@ -29,6 +29,7 @@ The terminal and web chat, including voice, use `createChatFileTools` for readin
 writing text files, listing folders, creating folders, and moving files or folders.
 The browser task retains `createFileTools`, its restricted document reader; adding a chat capability must not expand
 the private browser worker's filesystem access.
+Notebook source relationships follow the [chat model's read rules](../../../../_shared-ts/models/Chat/docs/README.md#relationships-to-records-discussed-in-the-chat).
 Already requested folder changes run directly through structured tools.
 
 `write_file` saves exact UTF-8 text at a requested path and creates missing parents.

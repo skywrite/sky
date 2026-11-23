@@ -179,6 +179,24 @@ function createdRefs(paths: readonly string[] | undefined, baseDir: string): str
   return refs.length ? [...new Set(refs)] : undefined
 }
 
+/** Explicit reads link the original record, including records outside the time tree. */
+function readRefs(paths: readonly string[] | undefined, baseDir: string, self: string): string[] {
+  return (paths ?? []).flatMap((file) => {
+    const absolute = path.resolve(baseDir, file)
+    const relative = path.relative(baseDir, absolute)
+    if (
+      absolute === self ||
+      !relative ||
+      relative === '..' ||
+      relative.startsWith(`..${path.sep}`) ||
+      path.isAbsolute(relative) ||
+      !/\.md$/i.test(relative)
+    )
+      return []
+    return [(documentTimeRef(relative, baseDir) ?? relative).replace(/\.md$/i, '')]
+  })
+}
+
 /**
  * The people on the records a session read: the who/from/to of every
  * document its context shipped to the model, as the documents spell them.
@@ -314,6 +332,8 @@ export interface SaveChatInput {
    * wrote a note is about that note.
    */
   createdPaths?: readonly string[]
+  /** Original notebook paths explicitly read by tools; factual relationships, even with auto-rel disabled. */
+  readPaths?: readonly string[]
   /** Choose tags from the archived-chat corpus when the chat has none */
   autoTag?: boolean
   /** Suggest entities when rel is empty, and add explicitly referenced notebook records on every save */
@@ -544,7 +564,7 @@ export async function saveChat(input: SaveChatInput): Promise<SaveChatReport> {
         baseDir,
         relDay,
       ),
-      createdRefs(input.createdPaths, baseDir),
+      [...(createdRefs(input.createdPaths, baseDir) ?? []), ...readRefs(input.readPaths, baseDir, savePath)],
       baseDir,
       relDay,
     ),

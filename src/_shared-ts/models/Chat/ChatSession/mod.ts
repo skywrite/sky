@@ -62,6 +62,7 @@ import { chatFilePath, type SaveChatReport, type SaveEnricher, type SaveProgress
 import { conversationKey, hasCompleteModelHistory, modelHistoryThrough } from '../document/history.ts'
 import { inheritedMessages, prefixOf } from '../document/lineage.ts'
 import type { ChatParent } from '../document/mod.ts'
+import { mergeNotebookReads, type NotebookRead } from '../document/notebookReads.ts'
 import { adjustmentInModelTokens, reportInModelTokens } from '../modelTokens.ts'
 import type { ConversationMessage } from '../type.d.ts'
 import { type AmbientContext, buildContextPrompt } from './contextPrompt.ts'
@@ -159,6 +160,8 @@ export interface ToolHooks {
   onAttachments: (files: Attachment[]) => void
   /** A tool created notebook documents — the chat's own products, recorded for the transcript's rel. */
   onCreatedDocuments: (paths: string[]) => void
+  /** A tool read existing notebook records — their verified paths join the transcript's rel. */
+  onReadDocuments: (paths: string[]) => void
   /** Renderable results are appended to the reply even when the model omits their links. */
   onImages: (images: ChatImage[]) => void
 }
@@ -329,6 +332,7 @@ export default class ChatSession {
   private readonly attachments = new Map<string, Attachment>()
   // Notebook documents the session's tools created — saved into rel as the chat's own products.
   private readonly createdDocuments = new Set<string>()
+  private notebookReads: NotebookRead[] = []
   private systemPrompt = ''
   private contextPrompt = ''
   /** Documents admitted between turns (a pin, a wider budget), delivered with the next message. */
@@ -403,6 +407,7 @@ export default class ChatSession {
     // thread read back from a snapshot, or a branch, has turns before its
     // next message.
     const seed = this.seed
+    this.notebookReads = mergeNotebookReads(seed?.notebookReads)
     this.legalReview = seed?.legalReview
     this.writingDrafts = seed?.writingDrafts?.map((ref) => ({ ...ref })) ?? []
     this.writingDraftFocus = seed?.writingDraftFocus
@@ -544,6 +549,7 @@ export default class ChatSession {
       queries: [],
       lastTurn: 0,
       contextLog: [...this.contextLog],
+      ...(this.notebookReads.length ? { notebookReads: this.notebookReads } : {}),
       ...(this.legalReview ? { legalReview: this.legalReview } : {}),
       ...(this.writingDrafts.length ? { writingDrafts: this.writingDrafts } : {}),
       ...(this.writingDraftFocus ? { writingDraftFocus: this.writingDraftFocus } : {}),
@@ -606,6 +612,13 @@ export default class ChatSession {
       },
       onCreatedDocuments: (paths) => {
         for (const p of paths) this.createdDocuments.add(p)
+      },
+      onReadDocuments: (paths) => {
+        const turn = Math.max(1, Math.ceil(conversation.length / 2))
+        this.notebookReads = mergeNotebookReads(
+          this.notebookReads,
+          paths.map((p) => ({ path: p, turn })),
+        )
       },
       onImages: (results) => images.push(...results),
     })
@@ -1141,6 +1154,7 @@ export default class ChatSession {
         legalReview: this.legalReview,
         writingDrafts: this.writingDrafts,
         writingDraftFocus: this.writingDraftFocus,
+        notebookReads: this.notebookReads,
         modelMessages: hasCompleteModelHistory(history, this.turns) ? history : undefined,
         workingContext: this.engine.workingContext.state,
         turnErrors: turnErrors(this.turns),
@@ -1160,6 +1174,7 @@ export default class ChatSession {
       externalFiles: this.externalFiles,
       attachments: [...this.attachments.values()],
       createdPaths: [...this.createdDocuments],
+      readPaths: this.notebookReads.map((read) => read.path),
       approvals: this.opts.approvals?.(),
       autoTag: opts.autoTag,
       autoRel: opts.autoRel,
@@ -1213,6 +1228,7 @@ export default class ChatSession {
           legalReview: this.legalReview,
           writingDrafts: this.writingDrafts,
           writingDraftFocus: this.writingDraftFocus,
+          notebookReads: this.notebookReads,
           modelMessages,
           workingContext: this.engine.workingContext.state,
           turnErrors: turnErrors(this.turns),
