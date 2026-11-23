@@ -7,7 +7,7 @@
 #
 # To modify the schema, edit generate.ts and re-run the generator.
 #
-# Generated at: 2026-11-22T15:27:55.821Z
+# Generated at: 2026-11-23T03:42:08.852Z
 # =============================================================================
 
 type Query {
@@ -204,12 +204,12 @@ type Decision {
 }
 
 """
-A goal the person is going after, one per file (active/archived)
+A goal the person is going after, one per file
 """
 type Goal {
   name: String! # Goal identifier: the file name, as in goals/<name>
   title: String! # The goal in a few words
-  status: String! # Status: active, archived (derived from path)
+  status: String! # Status: active, reached, missed, dropped (derived from path); archived in older notebooks
   category: String! # Personal or Professional
   tags: [String!]! # Tags
   rel: [String!]! # Related entities

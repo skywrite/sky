@@ -184,18 +184,18 @@ test('GoalStore.getAll: returns collection', async () => {
   }
 })
 
-test('GoalStore.build: one goal per file, active and archived, beside an older category file', async () => {
+test('GoalStore.build: one goal per file, active and ended, beside an older category file', async () => {
   await setupTestDir()
 
   try {
     await mkdir(path.join(TEST_DIR, 'active'), { recursive: true })
-    await mkdir(path.join(TEST_DIR, 'archived', '2025'), { recursive: true })
+    await mkdir(path.join(TEST_DIR, 'reached', '2025'), { recursive: true })
     await writeTextFile(
       path.join(TEST_DIR, 'active', 'Launch-Atlas.md'),
       '---\ntitle: Launch Atlas\ncategory: Professional\n---\n\nThree pilot teams by June.',
     )
     await writeTextFile(path.join(TEST_DIR, 'active', 'Run-A-Marathon.md'), '# Run a marathon\n\nFinish one this year.')
-    await writeTextFile(path.join(TEST_DIR, 'archived', '2025', 'Learn-Spanish.md'), '# Learn Spanish')
+    await writeTextFile(path.join(TEST_DIR, 'reached', '2025', 'Learn-Spanish.md'), '# Learn Spanish')
     await writeTextFile(
       path.join(TEST_DIR, 'personal.md'),
       '---\ncategory: Personal\n---\n\n## Health\n\n**Outcome:** Sleep eight hours\n**Current State:** Six\n**Why It Matters:** Energy',
@@ -204,9 +204,9 @@ test('GoalStore.build: one goal per file, active and archived, beside an older c
     const store = await GoalStore.build(TEST_DIR)
 
     assert({
-      given: 'two active goals, one archived, and an older personal.md',
+      given: 'two active goals, one reached, and an older personal.md',
       should: 'load all four and split them by folder',
-      actual: [store.size, store.getActive().size, store.getArchived().size],
+      actual: [store.size, store.getActive().size, store.getEnded().size],
       expected: [4, 3, 1],
     })
 

@@ -11,7 +11,9 @@ It belongs to no single day, so it lives outside the time tree, beside decisions
 ```
 goals/
   active/Launch-Atlas.md            a goal being pursued
-  archived/2025/Learn-Spanish.md    a goal that was reached or dropped
+  reached/2025/Learn-Spanish.md     a goal that was reached
+  missed/2025/Run-A-Marathon.md     a goal chased to its date that fell short
+  dropped/2025/Write-A-Book.md      a goal the person stopped going after
   personal.md                       an older notebook's whole-category file
 ```
 
@@ -21,8 +23,32 @@ The folder is the status and the file name is the name.
 Neither is written inside the file.
 A person edits these files by hand and moves them in Finder, so a `status:` or `name:` field would be a second
 source of truth that can silently disagree with where the file sits.
-Moving a goal to `archived/<year>/` is the whole act of finishing it, and its name stays the same, so every
-`goals/<name>` reference keeps resolving.
+Moving a goal to `reached/<year>/`, `missed/<year>/` or `dropped/<year>/` is the whole act of ending it, and its
+name stays the same, so every `goals/<name>` reference keeps resolving.
+The year is the year it ended.
+
+## How a goal ends
+
+There are three endings, and each is a folder.
+
+- **Reached**: the person got there.
+- **Missed**: they went for it to its date and fell short.
+- **Dropped**: they stopped going after it.
+
+Missed and dropped are kept apart on purpose.
+A yearly goal that came up short was not walked away from, and filing it as dropped would hide the miss.
+A goal whose date passes while the person keeps going is neither: it stays active with a new date.
+
+The folder cannot say when the goal ended or where its number stood, so the file carries those two facts.
+`ended` is the day.
+`final` is the last reading on that day, written as it is said (`26.4 mi`): it is only ever shown, and it has to
+read true after the tracker behind it is renamed or gone.
+A line the person adds when closing goes into the body under `## How it ended`.
+
+Sky asks and never ends a goal itself.
+When the number reaches the target the Future screen offers to close the goal as reached, and when the date
+passes it asks whether to close it or give it a new date.
+Reopening moves the file back to `active/` and takes `ended` and `final` out.
 
 `Goal/paths.ts` is the one module that spells the folder names.
 The store, the GraphQL resolver, and the direct readers (chat context gathers, to-do priority, voice) all ask it.
@@ -70,7 +96,8 @@ They are to-dos on a day, picked with the goal in view.
   To-do priority and voice read the same folder directly.
 - **The Future screen** (`service/handler/future`, `web/client/future`) shows each active goal, where its number
   stands, and the decisions, habits and ideas whose `rel:` names it.
-  It writes only the keys in the table above, and a new goal's file.
+  It writes only the keys in the table above, a new goal's file, and a goal's ending: closing moves the file to
+  its ending's folder, and reopening moves it back.
 
 ## Older notebooks
 
@@ -83,9 +110,17 @@ A one-goal file has none.
 Voice reports a missing category file only when the notebook has no one-goal files either.
 Once a notebook is split, the old files are not expected.
 
+For a few days ended goals went to a single `archived/<year>/` folder, which could not say how a goal ended.
+A file still sitting there loads with the status `archived`: it is not pinned and still resolves by name, as
+before.
+Nothing writes there any more, and the Future screen leaves those goals out, having no ending to show for them.
+
 ## Rejected
 
 - **A `status:` field.** The location already says it, and a field can be wrong without anything looking wrong.
 - **A `name:` field repeating the file name**, as streaks and ideas carry. It is a duplicate a rename breaks.
+- **One `archived/` folder with an `outcome:` line in the file.** It put the ending in a field, where a hand edit
+  or a move in Finder can leave it wrong. A folder per ending keeps the rule above without an exception.
+- **Only reached and dropped.** See "How a goal ends": a miss is not a walk-away.
 - **Converting older files automatically.** Splitting one prose file into several goals is a judgment about the
   person's own words, so it is theirs to make or to ask for.

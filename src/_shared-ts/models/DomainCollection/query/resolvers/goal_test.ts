@@ -3,25 +3,25 @@ import { assert, test } from '#test'
 import { docToGoal, matchesGoalFilter } from './goal.ts'
 
 const ACTIVE = '/nb/goals/active/Launch-Atlas.md'
-const ARCHIVED = '/nb/goals/archived/2025/Learn-Spanish.md'
+const REACHED = '/nb/goals/reached/2025/Learn-Spanish.md'
 const OLDER = '/nb/goals/professional.md'
 
 test('goal resolver: name and status come from the path, title and category from the file', () => {
   const active = Document.fromMarkdown(
     '---\ntitle: Launch Atlas\ncategory: Professional\n---\n\nThree pilot teams by June.',
   )
-  const archived = Document.fromMarkdown('# Learn Spanish\n\nReached in 2025.')
+  const reached = Document.fromMarkdown('# Learn Spanish\n\nReached in 2025.')
   const older = Document.fromMarkdown('---\ncategory: Professional\nstatus: paused\nname: Something Else\n---\n\nBody.')
   const pick = ({ name, title, status, category }: ReturnType<typeof docToGoal>) => ({ name, title, status, category })
 
   assert({
     given:
-      'a one-goal file, an archived one with only a heading, and an older category file carrying stray name and status fields',
+      'a one-goal file, a reached one with only a heading, and an older category file carrying stray name and status fields',
     should: 'name each by its file, read status from the folder, and never trust the stray fields',
-    actual: [pick(docToGoal(active, ACTIVE)), pick(docToGoal(archived, ARCHIVED)), pick(docToGoal(older, OLDER))],
+    actual: [pick(docToGoal(active, ACTIVE)), pick(docToGoal(reached, REACHED)), pick(docToGoal(older, OLDER))],
     expected: [
       { name: 'Launch-Atlas', title: 'Launch Atlas', status: 'active', category: 'Professional' },
-      { name: 'Learn-Spanish', title: 'Learn Spanish', status: 'archived', category: 'Personal' },
+      { name: 'Learn-Spanish', title: 'Learn Spanish', status: 'reached', category: 'Personal' },
       { name: 'professional', title: 'Professional Goals', status: 'active', category: 'Professional' },
     ],
   })
@@ -39,8 +39,8 @@ test('goal resolver: filters by name, title and status', () => {
       matchesGoalFilter(doc, { nameContains: 'atlas' }, ACTIVE),
       matchesGoalFilter(doc, { titleContains: 'launch a' }, ACTIVE),
       matchesGoalFilter(doc, { status: 'active' }, ACTIVE),
-      matchesGoalFilter(doc, { status: 'archived' }, ACTIVE),
-      matchesGoalFilter(doc, { status: 'archived' }, ARCHIVED),
+      matchesGoalFilter(doc, { status: 'reached' }, ACTIVE),
+      matchesGoalFilter(doc, { status: 'reached' }, REACHED),
     ],
     expected: [true, false, true, true, true, false, true],
   })

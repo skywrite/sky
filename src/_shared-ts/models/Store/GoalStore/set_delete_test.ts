@@ -77,19 +77,19 @@ test('GoalStore.set: a goal file of any name loads', () => {
   })
 })
 
-test('GoalStore.set: moving a goal to archived/ changes its status, not its name', () => {
+test('GoalStore.set: moving a goal to reached/ changes its status, not its name', () => {
   const store = GoalStore.empty()
   const contents = '---\ntitle: Launch Atlas\n---\n\nShip it to three pilot teams.'
 
   store.set('/goals/active/Launch-Atlas.md', contents)
   store.delete('/goals/active/Launch-Atlas.md')
-  store.set('/goals/archived/2026/Launch-Atlas.md', contents)
+  store.set('/goals/reached/2026/Launch-Atlas.md', contents)
 
   assert({
-    given: 'a goal file moved from active/ to archived/<year>/',
+    given: 'a goal file moved from active/ to reached/<year>/',
     should: 'leave the active goals and stay findable by the same name',
-    actual: [store.getActive().size, store.getArchived().size, store.find('Launch-Atlas')?.path],
-    expected: [0, 1, '/goals/archived/2026/Launch-Atlas.md'],
+    actual: [store.getActive().size, store.getEnded().size, store.find('Launch-Atlas')?.path],
+    expected: [0, 1, '/goals/reached/2026/Launch-Atlas.md'],
   })
 })
 

@@ -1,5 +1,5 @@
 import { assert, test } from '#test'
-import GoalDocument from './mod.ts'
+import GoalDocument, { endedGoalsDir, goalStatusFromPath, isOneGoalFile } from './mod.ts'
 
 test('GoalDocument: a goal reads its number, its dates and its checkpoints from the frontmatter', () => {
   const goal = GoalDocument.fromMarkdown(
@@ -53,5 +53,56 @@ test('GoalDocument: a goal with none of those fields has none of them', () => {
     should: 'report nothing rather than a guess',
     actual: [goal.start, goal.due, goal.track, goal.target, goal.checkpoints, goal.serves],
     expected: [undefined, undefined, undefined, undefined, [], undefined],
+  })
+})
+
+test('goal paths: the folder a goal sits in is its status', () => {
+  const files = [
+    '/nb/goals/active/Launch-Atlas.md',
+    '/nb/goals/reached/2026/Launch-Atlas.md',
+    '/nb/goals/missed/2026/Launch-Atlas.md',
+    '/nb/goals/dropped/2026/Launch-Atlas.md',
+    '/nb/goals/reached/Launch-Atlas.md',
+    '/nb/goals/archived/2025/Launch-Atlas.md',
+    '/nb/goals/personal.md',
+    '/home/dropped/nb/goals/active/Launch-Atlas.md',
+    '/home/reached/nb/goals/personal.md',
+  ]
+
+  assert({
+    given:
+      'a goal in each folder, one filed without a year, an older ended goal, an older category file, and notebooks kept under folders named like an ending',
+    should: 'read the status from the goal folder alone, and tell a one-goal file from a category file',
+    actual: files.map((file) => [goalStatusFromPath(file), isOneGoalFile(file)]),
+    expected: [
+      ['active', true],
+      ['reached', true],
+      ['missed', true],
+      ['dropped', true],
+      ['reached', true],
+      ['archived', true],
+      ['active', false],
+      ['active', true],
+      ['active', false],
+    ],
+  })
+
+  assert({
+    given: 'a goal that was missed in 2026',
+    should: 'file it under that ending and that year',
+    actual: endedGoalsDir('/nb/goals', 'missed', 2026),
+    expected: '/nb/goals/missed/2026',
+  })
+})
+
+test('GoalDocument: an ended goal says when it ended and where its number stood', () => {
+  const ended = GoalDocument.fromMarkdown('---\ntitle: Run a marathon\nended: 2026-10-04\nfinal: 26.4 mi\n---\n\nBody.')
+  const bare = GoalDocument.fromMarkdown('---\ntitle: Read 20 books\nended: soon\nfinal: 21\n---\n\nBody.')
+
+  assert({
+    given: 'an ended goal with its last reading as text, and one with a bare number and a date that is not a date',
+    should: 'read the day and the reading as written, and no day when it is not one',
+    actual: [ended.ended?.ymd, ended.final, bare.ended, bare.final, GoalDocument.fromMarkdown('# Open').final],
+    expected: ['2026-10-04', '26.4 mi', undefined, '21', undefined],
   })
 })

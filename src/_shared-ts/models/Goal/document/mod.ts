@@ -37,9 +37,9 @@ function toPlainDate(value: unknown): PlainDate | undefined {
 /**
  * GoalDocument model - one goal: what the person is going after, and why.
  *
- * Stored at: $SKY_DIR/goals/active/{name}.md while pursued, then
- * $SKY_DIR/goals/archived/{year}/{name}.md once reached or dropped. Status and
- * name come from the path (see ../paths.ts), never from a field in the file.
+ * Stored at: $SKY_DIR/goals/active/{name}.md while pursued, then under
+ * $SKY_DIR/goals/reached|missed|dropped/{year}/{name}.md once it ends. Status
+ * and name come from the path (see ../paths.ts), never from a field in the file.
  *
  * Older notebooks keep every goal of a category in one file
  * ($SKY_DIR/goals/personal.md, professional.md). Those still load, and `goals`
@@ -55,6 +55,8 @@ export default class GoalDocument extends Document {
     'target',
     'checkpoints',
     'serves',
+    'ended',
+    'final',
     'created',
     'updated',
     'rel',
@@ -135,6 +137,22 @@ export default class GoalDocument extends Document {
   get serves(): string | undefined {
     const serves = this.yaml['serves']
     return typeof serves === 'string' && serves.trim() ? serves.trim().replace(/^goals\//, '') : undefined
+  }
+
+  /** The day the goal ended. How it ended is the folder it sits in, not a field. */
+  get ended(): PlainDate | undefined {
+    return toPlainDate(this.yaml['ended'])
+  }
+
+  /**
+   * Where the goal's number stood the day it ended, as it is said: `26.4 mi`.
+   * It is kept as text because it is only ever shown, and it has to read true
+   * after the tracker behind it is renamed or gone.
+   */
+  get final(): string | undefined {
+    const final = this.yaml['final']
+    const text = typeof final === 'number' ? String(final) : typeof final === 'string' ? final.trim() : ''
+    return text || undefined
   }
 
   /**

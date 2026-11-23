@@ -196,11 +196,14 @@ const DOCUMENT_TYPES: Record<string, TypeDef> = {
     },
   },
   Goal: {
-    description: 'A goal the person is going after, one per file (active/archived)',
+    description: 'A goal the person is going after, one per file',
     fields: {
       name: { type: 'String!', description: 'Goal identifier: the file name, as in goals/<name>' },
       title: { type: 'String!', description: 'The goal in a few words' },
-      status: { type: 'String!', description: 'Status: active, archived (derived from path)' },
+      status: {
+        type: 'String!',
+        description: 'Status: active, reached, missed, dropped (derived from path); archived in older notebooks',
+      },
       category: { type: 'String!', description: 'Personal or Professional' },
       tags: { type: '[String!]!', description: 'Tags' },
       rel: { type: '[String!]!', description: 'Related entities' },

@@ -14,8 +14,8 @@ interface GoalEntry {
 /**
  * Store for goal documents, one goal per file, found by name.
  *
- * Goals are stored at: {goalsDir}/active/{name}.md while pursued, then
- * {goalsDir}/archived/{year}/{name}.md once reached or dropped. Status and
+ * Goals are stored at: {goalsDir}/active/{name}.md while pursued, then under
+ * {goalsDir}/reached|missed|dropped/{year}/{name}.md once they end. Status and
  * name are derived from the file path (see Goal/paths.ts).
  *
  * Older notebooks hold whole-category files directly under {goalsDir}
@@ -188,9 +188,9 @@ export default class GoalStore {
     return this.collect(this.entries.filter((e) => goalStatusFromPath(e.path) === 'active'))
   }
 
-  /** Get the goals that were reached or dropped. */
-  getArchived(): Collection<GoalDocument> {
-    return this.collect(this.entries.filter((e) => goalStatusFromPath(e.path) === 'archived'))
+  /** Get the goals that ended: reached, missed or dropped, and those archived before endings were recorded. */
+  getEnded(): Collection<GoalDocument> {
+    return this.collect(this.entries.filter((e) => goalStatusFromPath(e.path) !== 'active'))
   }
 
   /**
