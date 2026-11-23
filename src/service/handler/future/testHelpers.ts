@@ -27,7 +27,8 @@ const decision = (name: string, summary: string, extra: string, rel: string[]) =
     .join('\n')
 
 /**
- * A small notebook: three goals, one with a number, and one of each thing that can be tied to a goal.
+ * A small notebook: three goals, one with a number, one of each thing that can be tied to a goal, a goal that
+ * was reached, and one archived before endings were recorded.
  * `goals: false` leaves it with a tracker and nothing else, as a new notebook is.
  */
 export async function futureFixture({ ready = true, goals = true } = {}) {
@@ -73,6 +74,10 @@ export async function futureFixture({ ready = true, goals = true } = {}) {
       '---\ntitle: Learn Spanish\ncategory: Personal\ntrack: vocabulary\ntarget: 2000\n---\n\n# Learn Spanish\n',
     )
     await put('goals/archived/2029/Run-a-10k.md', '---\ntitle: Run a 10k\n---\n\n# Run a 10k\n')
+    await put(
+      'goals/reached/2029/Run-a-5k.md',
+      '---\ntitle: Run a 5k\ncategory: Personal\nended: 2029-09-01\nfinal: 3.1 mi\n---\n\n# Run a 5k\n',
+    )
     await put(
       'decisions/2030/in-force/03/No-Late-Nights.md',
       decision(
@@ -120,6 +125,6 @@ export async function futureFixture({ ready = true, goals = true } = {}) {
       headers: { 'content-type': 'application/json', ...headers },
       body: JSON.stringify(body),
     })
-  const goalFile = (name: string) => readFile(path.join(root, 'goals/active', `${name}.md`), 'utf8')
+  const goalFile = (name: string, folder = 'active') => readFile(path.join(root, 'goals', folder, `${name}.md`), 'utf8')
   return { root, store, app, post, goalFile, tracking, dispose: tracking.dispose }
 }

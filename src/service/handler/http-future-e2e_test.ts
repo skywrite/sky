@@ -260,3 +260,128 @@ test(
     }
   },
 )
+
+test(
+  {
+    name: 'Future asks when a goal is reached or its date has passed, closes it, lists it among past goals, and reopens it',
+    ignore: env.get('SKY_BROWSER_TESTS') !== '1',
+    timeout: 120000,
+  },
+  async () => {
+    const f = await futureFixture()
+    // One goal already past its target, and one whose date has gone by.
+    await f.post('/goals/Run-a-Marathon/number', {
+      track: 'long-run',
+      target: 12,
+      due: '2030-10-04',
+      start: '2030-05-01',
+    })
+    await f.post('/goals/Weekly-Long-Runs/date', { due: '2030-06-01' })
+    const { page, origin, errors, shot, waitForTitle, close } = await open(f)
+    try {
+      await page.goto(`${origin}/future`)
+      const marathon = page.getByRole('region', { name: 'Run a marathon' })
+      const weekly = page.getByRole('region', { name: 'A long run every week' })
+      const past = page.getByRole('region', { name: 'Past goals' })
+      await past.waitFor()
+      assert({
+        given: 'a goal past its target, a goal past its date, and a goal reached last year',
+        should: 'ask about the first two where they are listed, and show the third among past goals',
+        actual: [
+          await marathon.getByRole('link', { name: 'You’re there. Close this goal' }).isVisible(),
+          await weekly.getByRole('link', { name: 'Its date has passed. Close it or move the date' }).isVisible(),
+          (await past.locator('.sky-future-row').allInnerTexts()).map((text) => text.replace(/\s+/g, ' ')),
+        ],
+        expected: [true, true, ['Run a 5k Ended at 3.1 mi Reached Sep 1, 2029']],
+      })
+
+      await weekly.getByRole('link', { name: 'Its date has passed. Close it or move the date' }).click()
+      await waitForTitle('sky · A long run every week')
+      await page.getByRole('heading', { name: 'The date has passed' }).waitFor()
+      await page.getByRole('button', { name: 'Move the date' }).click()
+      const move = page.getByRole('dialog', { name: 'Move the date' })
+      await move.getByLabel('By when?').fill('2030-12-01')
+      await move.getByRole('button', { name: 'Save' }).click()
+      await move.waitFor({ state: 'detached' })
+      await page.getByRole('heading', { name: 'The date has passed' }).waitFor({ state: 'detached' })
+      assert({
+        given: 'the date moved from the question on the goal page',
+        should: 'write the new date and stop asking',
+        actual: [
+          /\ndue: 2030-12-01\n/.test(await f.goalFile('Weekly-Long-Runs')),
+          (await page.locator('.sky-future-sub').innerText()).replace(/\s+/g, ' '),
+        ],
+        expected: [true, 'Personal By Dec 1 166 days left Serves Run a marathon'],
+      })
+
+      await page.goto(`${origin}/future/goals/Run-a-Marathon`)
+      await page.getByRole('heading', { name: 'You’re there' }).waitFor()
+      await page.getByRole('button', { name: 'Close as reached' }).click()
+      const dialog = page.getByRole('dialog', { name: 'Close this goal' })
+      await dialog.getByLabel('Anything to remember?').fill('Long runs every week did it.')
+      await shot('08-close-goal')
+      assert({
+        given: 'the close dialog opened from "You’re there"',
+        should: 'already say the goal was reached, today',
+        actual: [
+          await dialog.getByRole('radio', { name: /Reached/ }).isChecked(),
+          await dialog.getByLabel('When did it end?').inputValue(),
+        ],
+        expected: [true, '2030-06-18'],
+      })
+      await dialog.getByRole('button', { name: 'Close goal' }).click()
+      await dialog.waitFor({ state: 'detached' })
+      await page.getByRole('button', { name: 'Reopen' }).waitFor()
+      await shot('09-closed-goal')
+      const filed = await f.goalFile('Run-a-Marathon', 'reached/2030')
+      assert({
+        given: 'the goal closed as reached',
+        should: 'keep its page open as a past goal, and file it with the day, the last reading and the line',
+        actual: [
+          await page.title(),
+          (await page.locator('.sky-future-sub').innerText()).replace(/\s+/g, ' '),
+          await page.getByRole('button', { name: 'Close this goal' }).count(),
+          await page.getByRole('button', { name: 'Add checkpoint' }).count(),
+          filed.match(/\nended: .*\nfinal: .*\n/)?.[0],
+          filed.endsWith('\n\n## How it ended\n\nLong runs every week did it.\n'),
+        ],
+        expected: [
+          'sky · Run a marathon',
+          'Personal Reached on Jun 18 By Oct 4',
+          0,
+          0,
+          '\nended: 2030-06-18\nfinal: 14 mi\n',
+          true,
+        ],
+      })
+
+      await page.getByRole('link', { name: 'Future', exact: true }).click()
+      await waitForTitle('sky · Future')
+      await past.locator('.sky-future-row').nth(1).waitFor()
+      await shot('10-past-goals')
+      assert({
+        given: 'the Goals view after closing',
+        should: 'take the goal off the active ones and list it first among past goals',
+        actual: [
+          await marathon.count(),
+          (await past.locator('.sky-future-row').allInnerTexts()).map((text) => text.replace(/\s+/g, ' ')),
+        ],
+        expected: [0, ['Run a marathon Ended at 14 mi Reached Jun 18', 'Run a 5k Ended at 3.1 mi Reached Sep 1, 2029']],
+      })
+
+      await past.getByRole('link', { name: 'Run a marathon' }).click()
+      await waitForTitle('sky · Run a marathon')
+      await page.getByRole('button', { name: 'Reopen' }).click()
+      await page.getByRole('button', { name: 'Close this goal' }).waitFor()
+      const reopened = await f.goalFile('Run-a-Marathon')
+      assert({
+        given: 'the past goal reopened from its page',
+        should: 'bring it back among the active goals without its ending, with no page errors',
+        actual: [/\n(ended|final): /.test(reopened), reopened.includes('Long runs every week did it.'), errors],
+        expected: [false, true, []],
+      })
+    } finally {
+      await close()
+    }
+  },
+)

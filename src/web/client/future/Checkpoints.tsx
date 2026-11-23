@@ -14,10 +14,13 @@ export function Checkpoints({
   goal,
   today,
   onChanged,
+  readOnly = false,
 }: {
   goal: FutureGoal
   today: string
   onChanged: () => Promise<void>
+  /** An ended goal shows its checkpoints as they stood */
+  readOnly?: boolean
 }) {
   const [value, setValue] = useState('')
   const [date, setDate] = useState('')
@@ -56,51 +59,55 @@ export function Checkpoints({
                 <span className="sky-future-state" data-state={checkpoint.state}>
                   {STATE[checkpoint.state]}
                 </span>
-                <button
-                  type="button"
-                  className="sky-future-remove"
-                  disabled={busy}
-                  aria-label={`Remove the checkpoint on ${niceDate(checkpoint.date, today)}`}
-                  onClick={() => void change('/checkpoints/remove', { date: checkpoint.date })}
-                >
-                  Remove
-                </button>
+                {!readOnly && (
+                  <button
+                    type="button"
+                    className="sky-future-remove"
+                    disabled={busy}
+                    aria-label={`Remove the checkpoint on ${niceDate(checkpoint.date, today)}`}
+                    onClick={() => void change('/checkpoints/remove', { date: checkpoint.date })}
+                  >
+                    Remove
+                  </button>
+                )}
               </span>
             </div>
           ))}
         </div>
       )}
-      <form
-        className="sky-future-checkpoint-form"
-        onSubmit={async (event) => {
-          event.preventDefault()
-          if (!ready || busy) return
-          if (await change('/checkpoints', { value: amount, date })) {
-            setValue('')
-            setDate('')
-          }
-        }}
-      >
-        <TextInput
-          label="Number"
-          inputMode="decimal"
-          value={value}
-          onChange={(event) => setValue(event.currentTarget.value)}
-          rightSection={unit ? <span className="sky-future-unit">{unit}</span> : undefined}
-          rightSectionWidth={unit ? 52 : undefined}
-        />
-        <TextInput
-          label="By"
-          type="date"
-          min={today}
-          max={goal.due ?? undefined}
-          value={date}
-          onChange={(event) => setDate(event.currentTarget.value)}
-        />
-        <Button type="submit" variant="secondary" loading={busy} disabled={!ready}>
-          Add checkpoint
-        </Button>
-      </form>
+      {!readOnly && (
+        <form
+          className="sky-future-checkpoint-form"
+          onSubmit={async (event) => {
+            event.preventDefault()
+            if (!ready || busy) return
+            if (await change('/checkpoints', { value: amount, date })) {
+              setValue('')
+              setDate('')
+            }
+          }}
+        >
+          <TextInput
+            label="Number"
+            inputMode="decimal"
+            value={value}
+            onChange={(event) => setValue(event.currentTarget.value)}
+            rightSection={unit ? <span className="sky-future-unit">{unit}</span> : undefined}
+            rightSectionWidth={unit ? 52 : undefined}
+          />
+          <TextInput
+            label="By"
+            type="date"
+            min={today}
+            max={goal.due ?? undefined}
+            value={date}
+            onChange={(event) => setDate(event.currentTarget.value)}
+          />
+          <Button type="submit" variant="secondary" loading={busy} disabled={!ready}>
+            Add checkpoint
+          </Button>
+        </form>
+      )}
       {error && (
         <p className="sky-future-form-error" role="alert">
           {error}

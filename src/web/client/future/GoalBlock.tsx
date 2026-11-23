@@ -65,6 +65,13 @@ export function GoalBlock({
         </p>
       )}
       <Standing goal={goal} today={today} navigate={navigate} />
+      {(goal.number?.reached || (goal.daysLeft !== null && goal.daysLeft < 0)) && (
+        <p className="sky-future-stand">
+          <FutureLink to={goalHref(goal.name)} navigate={navigate} className="sky-future-text-link">
+            {goal.number?.reached ? 'You’re there. Close this goal' : 'Its date has passed. Close it or move the date'}
+          </FutureLink>
+        </p>
+      )}
       {shown.length ? (
         <dl className="sky-future-ties">
           {shown.map(([label, links]) => (

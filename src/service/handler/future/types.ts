@@ -1,4 +1,7 @@
-/** What the Future screen reads: each active goal, where it stands, and what is tied to it. */
+/** What the Future screen reads: each active goal, where it stands, what is tied to it, and the goals that ended. */
+
+/** How a goal ended; the folder its file sits in */
+export type FutureEnding = 'reached' | 'missed' | 'dropped'
 
 /** A goal named from another goal */
 export interface FutureGoalTie {
@@ -52,11 +55,13 @@ export interface FutureNumber {
   unit: string
   /** The first day drawn: the goal's start, or the day it was written */
   from: string
+  /** The last day read: today, or the day an ended goal ended */
+  through: string
   /** How many days the drawing spans, through the goal's date when that is still ahead */
   days: number
-  /** Today's day on the chart */
-  todayDay: number
-  /** The goal date's day on the chart, when the goal has a date that is still ahead */
+  /** The last day read, as a day on the chart */
+  endDay: number
+  /** The goal date's day on the chart, when the goal has a date after the last day read */
   dueDay: number | null
   points: FuturePoint[]
   first: FuturePoint | null
@@ -75,6 +80,11 @@ export interface FutureGoal {
   name: string
   title: string
   category: string
+  status: 'active' | FutureEnding
+  /** The day an ended goal ended, when its file says */
+  ended: string | null
+  /** Where an ended goal's number stood that day, as its file says it */
+  final: string | null
   /** Notebook-relative path of the goal's file */
   file: string
   /** The goal's own writing */
@@ -95,11 +105,30 @@ export interface FutureGoal {
   ideas: FutureIdeaTie[]
 }
 
+/** A goal that ended, as the list of past goals shows it */
+export interface FuturePastGoal {
+  name: string
+  title: string
+  category: string
+  status: FutureEnding
+  ended: string | null
+  final: string | null
+}
+
 export interface FutureReport {
   today: string
+  /** The goals being pursued */
   goals: FutureGoal[]
+  /** The goals that ended, the latest first */
+  past: FuturePastGoal[]
   /** Decisions in force, each with the goals it serves */
   inForce: Array<FutureDecisionTie & { goals: FutureGoalTie[] }>
+}
+
+/** One goal's page, for a goal that is not among the active ones */
+export interface FutureGoalView {
+  today: string
+  goal: FutureGoal
 }
 
 export interface FutureMutation {

@@ -5,9 +5,11 @@ import { AddGoalDialog } from './AddGoalDialog.tsx'
 import { niceDate } from './dates.ts'
 import { GoalBlock } from './GoalBlock.tsx'
 import { GoalPage } from './GoalPage.tsx'
+import { PastGoals } from './PastGoals.tsx'
 import { type FutureRoute, goalHref } from './routes.ts'
 import { TieLink } from './TieLink.tsx'
 import { useFutureReport } from './useFutureReport.ts'
+import { useGoal } from './useGoal.ts'
 import './FutureMain.css'
 
 /** "A", "A and B", "A, B and C" */
@@ -47,7 +49,15 @@ export function FutureMain({ route, navigate }: { route: FutureRoute; navigate: 
   const { report, error, refresh } = useFutureReport()
   const [adding, setAdding] = useState(false)
   const wanted = route.goal?.toLowerCase()
-  const goal = wanted === undefined ? undefined : report?.goals.find((item) => item.name.toLowerCase() === wanted)
+  const active = wanted === undefined ? undefined : report?.goals.find((item) => item.name.toLowerCase() === wanted)
+  // A goal that is not among the active ones may have ended: its page is read on its own.
+  const other = useGoal(route.goal !== null && report && !active ? route.goal : null)
+  const ended = other.view && other.view.goal.name.toLowerCase() === wanted ? other.view.goal : undefined
+  const goal = active ?? ended
+  const changed = async () => {
+    await refresh()
+    await other.refresh()
+  }
   // The tab names the goal that is open; while it loads, or when it is gone, it still says which area this is.
   const title = goal?.title ?? 'Future'
   useEffect(() => {
@@ -74,11 +84,15 @@ export function FutureMain({ route, navigate }: { route: FutureRoute; navigate: 
             )
           ) : route.goal !== null ? (
             goal ? (
-              <GoalPage key={goal.name} goal={goal} today={report.today} navigate={navigate} onChanged={refresh} />
+              <GoalPage key={goal.name} goal={goal} today={report.today} navigate={navigate} onChanged={changed} />
+            ) : !other.missing ? (
+              <p className="sky-future-hint" role="status">
+                Loading this goal…
+              </p>
             ) : (
               <div className="sky-future-empty">
                 <h2>This goal isn’t here</h2>
-                <p>“{route.goal}” is not one of your active goals. It may have been renamed, archived, or reached.</p>
+                <p>“{route.goal}” is not one of your goals. It may have been renamed.</p>
                 <Button variant="primary" onClick={() => navigate('/future')}>
                   See your goals
                 </Button>
@@ -108,7 +122,7 @@ export function FutureMain({ route, navigate }: { route: FutureRoute; navigate: 
                 </div>
               ) : (
                 <div className="sky-future-empty">
-                  <h2>Start with one goal</h2>
+                  <h2>{report.past.length ? 'Nothing in progress' : 'Start with one goal'}</h2>
                   <p>
                     Name one outcome you want. Sky keeps it in view in every chat and when it picks what matters each
                     day, and this page shows how far it has come.
@@ -118,6 +132,7 @@ export function FutureMain({ route, navigate }: { route: FutureRoute; navigate: 
                   </Button>
                 </div>
               )}
+              <PastGoals goals={report.past} today={report.today} navigate={navigate} />
             </>
           )}
         </div>

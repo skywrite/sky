@@ -30,7 +30,7 @@ export function Standing({
       </p>
     )
   const way = number.progress === null ? null : Math.round(number.progress * 100)
-  const time = number.dueDay ? Math.round((number.todayDay / number.dueDay) * 100) : goal.due ? 100 : null
+  const time = number.dueDay ? Math.round((number.endDay / number.dueDay) * 100) : goal.due ? 100 : null
   return (
     <>
       <p className="sky-future-stand">

@@ -1,13 +1,18 @@
 import { Button } from '@mantine/core'
 import { type ReactNode, useState } from 'react'
-import type { FutureGoal } from '../../../service/handler/future/types.ts'
+import type { FutureEnding, FutureGoal } from '../../../service/handler/future/types.ts'
 import { fileHref } from '../explorer/explorer.tsx'
 import { RenderedHtml } from '../lib/renderedHtml.tsx'
 import { Checkpoints } from './Checkpoints.tsx'
+import { CloseGoalDialog } from './CloseGoalDialog.tsx'
+import { ClosePrompt } from './ClosePrompt.tsx'
+import { DateDialog } from './DateDialog.tsx'
 import { niceDate, timeLeft } from './dates.ts'
+import { ENDING_LABEL } from './endings.ts'
 import { FutureLink } from './FutureLink.tsx'
 import { GoalChart } from './GoalChart.tsx'
 import { NumberDialog } from './NumberDialog.tsx'
+import { futureRequest } from './request.ts'
 import { goalHref } from './routes.ts'
 import { TieLink } from './TieLink.tsx'
 
@@ -48,7 +53,25 @@ export function GoalPage({
   onChanged: () => Promise<void>
 }) {
   const [connecting, setConnecting] = useState(false)
+  const [dating, setDating] = useState(false)
+  // `false` is no dialog; an ending is the one the page already knows; null leaves the choice open.
+  const [closing, setClosing] = useState<FutureEnding | null | false>(false)
+  const [reopening, setReopening] = useState(false)
+  const [problem, setProblem] = useState('')
   const number = goal.number
+  const closed = goal.status !== 'active'
+  const reopen = async () => {
+    setReopening(true)
+    setProblem('')
+    try {
+      await futureRequest(`/goals/${encodeURIComponent(goal.name)}/reopen`, {})
+      await onChanged()
+    } catch (failure) {
+      setProblem((failure as Error).message)
+    } finally {
+      setReopening(false)
+    }
+  }
   const when = (ymd: string | null) => (ymd ? niceDate(ymd, today) : null)
   return (
     <>
@@ -64,6 +87,14 @@ export function GoalPage({
           <h1>{goal.title}</h1>
           <p className="sky-future-sub">
             <span>{goal.category}</span>
+            {goal.status !== 'active' && (
+              <span>
+                <span className="sky-future-state" data-state={goal.status}>
+                  {ENDING_LABEL[goal.status]}
+                </span>
+                {goal.ended ? ` on ${niceDate(goal.ended, today)}` : ''}
+              </span>
+            )}
             {goal.due && <span>By {niceDate(goal.due, today)}</span>}
             {goal.daysLeft !== null && !number?.reached && <span>{timeLeft(goal.daysLeft)}</span>}
             {goal.serves && (
@@ -76,16 +107,40 @@ export function GoalPage({
             )}
           </p>
         </div>
-        <Button component="a" href={fileHref(goal.file)} variant="secondary">
-          Open the file
-        </Button>
+        <div className="sky-future-head-actions">
+          {closed ? (
+            <Button variant="secondary" loading={reopening} onClick={() => void reopen()}>
+              Reopen
+            </Button>
+          ) : (
+            <Button variant="secondary" onClick={() => setClosing(number?.reached ? 'reached' : null)}>
+              Close this goal
+            </Button>
+          )}
+          <Button component="a" href={fileHref(goal.file)} variant="secondary">
+            Open the file
+          </Button>
+        </div>
       </header>
+      {problem && (
+        <div className="sky-future-error" role="alert">
+          {problem}
+        </div>
+      )}
+      {!closed && (
+        <ClosePrompt
+          goal={goal}
+          today={today}
+          onClose={(ending) => setClosing(ending)}
+          onMoveDate={() => setDating(true)}
+        />
+      )}
 
       {number ? (
         <>
           <div className="sky-future-stats">
             <div>
-              <span>{number.latest?.date === today ? 'Today' : 'Latest'}</span>
+              <span>{closed ? 'Final' : number.latest?.date === today ? 'Today' : 'Latest'}</span>
               <strong>{number.latest?.text ?? '—'}</strong>
               <em>
                 {number.latest
@@ -106,7 +161,7 @@ export function GoalPage({
             )}
             {number.targetText && (
               <div>
-                <span>{number.reached ? 'Goal' : 'To go'}</span>
+                <span>{number.reached ? 'Goal' : closed ? 'Short by' : 'To go'}</span>
                 <strong>{number.reached ? 'Reached' : (number.toGoText ?? '—')}</strong>
                 <em>
                   {number.targetText}
@@ -128,7 +183,7 @@ export function GoalPage({
                     The goal
                   </span>
                 )}
-                {number.dueDay !== null && number.target !== null && !number.reached && goal.due && (
+                {!closed && number.dueDay !== null && number.target !== null && !number.reached && goal.due && (
                   <span>
                     <i data-line="needs" />
                     What {niceDate(goal.due, today)} needs
@@ -141,21 +196,25 @@ export function GoalPage({
                   </span>
                 )}
               </div>
-              <GoalChart number={number} checkpoints={goal.checkpoints} due={goal.due} today={today} />
+              <GoalChart number={number} checkpoints={goal.checkpoints} due={goal.due} today={today} closed={closed} />
             </div>
           )}
           <p className="sky-future-note">
             Counting from {niceDate(number.from, today)}
             {goal.start ? ', the day you started' : ', the day this goal was written'}.{' '}
-            <button type="button" className="sky-future-text-link" onClick={() => setConnecting(true)}>
-              Change the number
-            </button>
+            {!closed && (
+              <button type="button" className="sky-future-text-link" onClick={() => setConnecting(true)}>
+                Change the number
+              </button>
+            )}
           </p>
-          <Section title="Checkpoints" count={goal.checkpoints.length}>
-            <Checkpoints goal={goal} today={today} onChanged={onChanged} />
-          </Section>
+          {(!closed || goal.checkpoints.length > 0) && (
+            <Section title="Checkpoints" count={goal.checkpoints.length}>
+              <Checkpoints goal={goal} today={today} onChanged={onChanged} readOnly={closed} />
+            </Section>
+          )}
         </>
-      ) : (
+      ) : closed ? null : (
         <div className="sky-future-panel">
           <h3>{goal.numberProblem ? 'The number is missing' : 'No number connected'}</h3>
           <p>
@@ -245,6 +304,16 @@ export function GoalPage({
           <RenderedHtml className="sky-future-document" html={goal.bodyHtml} />
         </Section>
       )}
+      {closing !== false && (
+        <CloseGoalDialog
+          goal={goal}
+          today={today}
+          preset={closing}
+          onClose={() => setClosing(false)}
+          onClosed={onChanged}
+        />
+      )}
+      {dating && <DateDialog goal={goal} today={today} onClose={() => setDating(false)} onSaved={onChanged} />}
       {connecting && (
         <NumberDialog
           goal={goal}

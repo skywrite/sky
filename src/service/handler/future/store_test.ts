@@ -24,7 +24,7 @@ test('Future: a goal with a number shows where it stands and everything tied to 
         progress: goal.number?.progress?.toFixed(3),
         reached: goal.number?.reached,
         daysLeft: goal.daysLeft,
-        chart: [goal.number?.from, goal.number?.todayDay, goal.number?.dueDay, goal.number?.days],
+        chart: [goal.number?.from, goal.number?.endDay, goal.number?.dueDay, goal.number?.days],
         days: goal.number?.points.map((point) => point.day),
       },
       expected: {
@@ -178,7 +178,7 @@ test('Future: connecting a number and adding checkpoints change only those lines
       expected: [
         [400, { message: '"vocabulary" is not a number in Tracking. Choose one from the list.' }],
         [400, { message: 'The start is a day that has already happened.' }],
-        [404, { message: '"Run-a-10k" is not one of your active goals. It may have been renamed or archived.' }],
+        [404, { message: '"Run-a-10k" is not one of your active goals. It may have been renamed or closed.' }],
       ],
     })
   } finally {
@@ -200,6 +200,145 @@ test('Future: a change from another site, or one sent before the notebook is rea
       should: 'turn the first away and ask the second to try again',
       actual: [crossSite.status, early.status, await early.json()],
       expected: [403, 503, { message: 'Sky is still reading your notebook. Try again in a moment.' }],
+    })
+  } finally {
+    await f.dispose()
+  }
+})
+
+test('Future: closing a goal files it under how it ended, with the day and where its number stood', async () => {
+  const f = await futureFixture()
+  try {
+    const before = await f.store.report()
+    assert({
+      given: 'a goal reached last year and one archived before endings were recorded',
+      should: 'list the reached one among past goals, and leave the older one out',
+      actual: before.past,
+      expected: [
+        {
+          name: 'Run-a-5k',
+          title: 'Run a 5k',
+          category: 'Personal',
+          status: 'reached',
+          ended: '2029-09-01',
+          final: '3.1 mi',
+        },
+      ],
+    })
+
+    const tomorrow = await f.post('/goals/Run-a-Marathon/close', { ending: 'missed', ended: '2030-06-19' })
+    const unsaid = await f.post('/goals/Run-a-Marathon/close', {})
+    assert({
+      given: 'a close dated tomorrow, and one that does not say how the goal ended',
+      should: 'refuse both and leave the goal where it is',
+      actual: [
+        [tomorrow.status, await tomorrow.json()],
+        [unsaid.status, await unsaid.json()],
+        (await f.store.report()).goals.some((goal) => goal.name === 'Run-a-Marathon'),
+      ],
+      expected: [
+        [400, { message: 'A goal ends on a day that has already happened.' }],
+        [400, { message: 'Say how the goal ended.' }],
+        true,
+      ],
+    })
+
+    const closed = await f.post('/goals/run-a-marathon/close', {
+      ending: 'missed',
+      ended: '2030-06-01',
+      note: 'An injury in May cost the summer.',
+    })
+    const file = await f.goalFile('Run-a-Marathon', 'missed/2030')
+    assert({
+      given: 'the goal closed as missed on an earlier day, with a line about it',
+      should: 'move the file under that ending and year, and record the day, the reading on that day, and the line',
+      actual: [
+        closed.status,
+        file.match(/\nended: .*\nfinal: .*\n/)?.[0],
+        file.endsWith('\n\n## How it ended\n\nAn injury in May cost the summer.\n'),
+        await f.goalFile('Run-a-Marathon').catch(() => 'gone'),
+      ],
+      expected: [200, '\nended: 2030-06-01\nfinal: 10 mi\n', true, 'gone'],
+    })
+
+    const after = await f.store.report()
+    const view = await (await f.app.request('/goals/Run-a-Marathon')).json()
+    assert({
+      given: 'the notebook read again straight after',
+      should: 'show the goal among past goals, off the active ones, and off the decision in force',
+      actual: [
+        after.past.map((goal) => `${goal.name}: ${goal.status} ${goal.ended} at ${goal.final}`),
+        after.goals.map((goal) => goal.name),
+        after.inForce[0]?.goals.map((goal) => goal.name),
+      ],
+      expected: [
+        ['Run-a-Marathon: missed 2030-06-01 at 10 mi', 'Run-a-5k: reached 2029-09-01 at 3.1 mi'],
+        ['Learn-Spanish', 'Weekly-Long-Runs'],
+        ['Learn-Spanish'],
+      ],
+    })
+    assert({
+      given: "the closed goal's own page",
+      should: 'read its number through the day it ended, with nothing left to count down and no checkpoint after it',
+      actual: [
+        view.goal.status,
+        view.goal.number.through,
+        view.goal.number.latest.text,
+        view.goal.daysLeft,
+        view.goal.checkpoints.map((checkpoint: { state: string }) => checkpoint.state),
+      ],
+      expected: ['missed', '2030-06-01', '10 mi', null, ['reached']],
+    })
+
+    const again = await f.post('/goals/Run-a-Marathon/close', { ending: 'dropped' })
+    const edited = await f.post('/goals/Run-a-Marathon/date', { due: '2031-01-01' })
+    assert({
+      given: 'a second close and a new date for a goal that has ended',
+      should: 'refuse both: an ended goal changes only by being reopened',
+      actual: [again.status, edited.status],
+      expected: [404, 404],
+    })
+
+    const reopened = await f.post('/goals/Run-a-Marathon/reopen', {})
+    const back = await f.goalFile('Run-a-Marathon')
+    assert({
+      given: 'the goal reopened',
+      should: 'move it back among the active goals without its ending, keeping what was written about it',
+      actual: [
+        reopened.status,
+        /\n(ended|final): /.test(back),
+        back.includes('An injury in May cost the summer.'),
+        (await f.store.report()).goals.map((goal) => goal.name),
+        (await f.post('/goals/Run-a-Marathon/reopen', {})).status,
+      ],
+      expected: [200, false, true, ['Learn-Spanish', 'Run-a-Marathon', 'Weekly-Long-Runs'], 404],
+    })
+  } finally {
+    await f.dispose()
+  }
+})
+
+test('Future: a goal takes a new date, loses its date, and closes without a number', async () => {
+  const f = await futureFixture()
+  try {
+    await f.post('/goals/Weekly-Long-Runs/date', { due: '2030-09-30' })
+    const dated = await f.goalFile('Weekly-Long-Runs')
+    await f.post('/goals/Weekly-Long-Runs/date', { due: null })
+    const undated = await f.goalFile('Weekly-Long-Runs')
+    assert({
+      given: 'a goal given a date, then asked to have none',
+      should: 'write the date, then take the line out',
+      actual: [/\ndue: 2030-09-30\n/.test(dated), /\ndue: /.test(undated)],
+      expected: [true, false],
+    })
+
+    await f.post('/goals/Weekly-Long-Runs/close', { ending: 'dropped' })
+    const file = await f.goalFile('Weekly-Long-Runs', 'dropped/2030')
+    assert({
+      given: 'a goal with no number dropped today',
+      should: 'file it under dropped for this year, with the day and no reading',
+      actual: [/\nended: 2030-06-18\n/.test(file), /\nfinal: /.test(file)],
+      expected: [true, false],
     })
   } finally {
     await f.dispose()

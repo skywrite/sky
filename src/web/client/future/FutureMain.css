@@ -44,6 +44,12 @@
 .sky-future-head .mantine-Button-root {
   flex: none;
 }
+.sky-future-head-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  flex: none;
+}
 .sky-future-sub {
   display: flex;
   flex-wrap: wrap;
@@ -469,6 +475,11 @@
   background: var(--sky-workstream-orange-fill);
   color: var(--sky-workstream-orange-ink);
 }
+.sky-future-panel-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
 .sky-future-checkpoint-form {
   display: grid;
   grid-template-columns: minmax(0, 180px) minmax(0, 200px) auto;
@@ -542,6 +553,51 @@
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 16px;
+}
+.sky-future-endings {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.sky-future-endings legend {
+  margin-bottom: 6px;
+  padding: 0;
+  font-size: var(--mantine-font-size-sm);
+  font-weight: 500;
+}
+.sky-future-ending {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--sky-border-soft);
+  border-radius: var(--mantine-radius-md);
+  cursor: pointer;
+}
+.sky-future-ending[data-checked='true'] {
+  border-color: var(--sky-accent);
+  background: var(--sky-accent-soft);
+}
+.sky-future-ending:focus-within {
+  outline: 2px solid var(--sky-action-focus);
+  outline-offset: 2px;
+}
+.sky-future-ending input {
+  margin: 4px 0 0;
+  accent-color: var(--sky-accent);
+}
+.sky-future-ending strong {
+  display: block;
+  font-size: 16px;
+  font-weight: 600;
+}
+.sky-future-ending em {
+  display: block;
+  color: var(--sky-dim);
+  font-size: 14.5px;
+  font-style: normal;
 }
 .sky-future-form-error {
   margin: 0;

@@ -16,11 +16,14 @@ export function GoalChart({
   checkpoints,
   due,
   today,
+  closed = false,
 }: {
   number: FutureNumber
   checkpoints: FutureCheckpoint[]
   due: string | null
   today: string
+  /** An ended goal has no pace left to draw */
+  closed?: boolean
 }) {
   const frame = useRef<HTMLDivElement>(null)
   const [width, setWidth] = useState(880)
@@ -54,9 +57,9 @@ export function GoalChart({
   const y = (value: number) => pad.top + ((range.high - value) / (range.high - range.low)) * plotHeight
   const at = (day: number, value: number) => `${x(day).toFixed(1)} ${y(value).toFixed(1)}`
   const line = points.map((point, index) => `${index ? 'L' : 'M'}${at(point.day, point.value)}`).join(' ')
-  const needs = latest && target !== null && number.dueDay !== null && !number.reached
-  // Today's label sits under its own mark unless it would run into the first or the last date.
-  const todayFits = x(number.todayDay) - pad.left > 90 && pad.left + plotWidth - x(number.todayDay) > 90
+  const needs = !closed && latest && target !== null && number.dueDay !== null && !number.reached
+  // The last day's label sits under its own mark unless it would run into the first or the last date.
+  const endFits = x(number.endDay) - pad.left > 90 && pad.left + plotWidth - x(number.endDay) > 90
 
   return (
     <div className="sky-future-chart" ref={frame}>
@@ -80,9 +83,9 @@ export function GoalChart({
         <text x={pad.left} y={height - 10}>
           {niceDate(number.from, today)}
         </text>
-        {(todayFits || number.dueDay === null) && (
-          <text x={x(number.todayDay)} y={height - 10} textAnchor={number.dueDay === null ? 'end' : 'middle'}>
-            Today
+        {(endFits || number.dueDay === null) && (
+          <text x={x(number.endDay)} y={height - 10} textAnchor={number.dueDay === null ? 'end' : 'middle'}>
+            {number.through === today ? 'Today' : niceDate(number.through, today)}
           </text>
         )}
         {number.dueDay !== null && due && (
