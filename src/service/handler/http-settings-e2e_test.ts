@@ -62,6 +62,7 @@ test(
     let refuseTranscriptionSave = false
     let refuseWorkstreamSave = false
     let persistBeforeRefusal = false
+    let settingsReads = 0
     let modelRequests = 0
     let localModels: MacWhisperModels = {
       available: true,
@@ -76,7 +77,10 @@ test(
       return c.json(localModels)
     })
     app.route('/settings/_api/about-me', createAboutMeRoutes(host))
-    app.get('/settings/_api/settings', (c) => c.json(settings))
+    app.get('/settings/_api/settings', (c) => {
+      settingsReads++
+      return c.json(settings)
+    })
     app.post('/settings/_api/set', async (c) => {
       const input = await c.req.json()
       if (input.key === 'ai.models.transcription') {
@@ -158,6 +162,23 @@ test(
       }
       await page.goto(`${base}/settings`)
       await page.getByRole('heading', { name: 'Appearance', exact: true }).waitFor()
+      await page.route(
+        '**/settings/_api/set',
+        (route) => route.fulfill({ status: 503, json: { message: 'Save failed' } }),
+        {
+          times: 1,
+        },
+      )
+      const restoredAppearance = page.waitForResponse('**/settings/_api/settings')
+      await page.getByText('Dark', { exact: true }).click()
+      await restoredAppearance
+      await page.locator('input[value="light"]:checked').waitFor({ state: 'attached' })
+      assert({
+        given: 'a theme change the service refused',
+        should: 'restore the saved appearance when Settings reads it back',
+        actual: await page.locator('html').getAttribute('data-mantine-color-scheme'),
+        expected: 'light',
+      })
       await nav.getByRole('button', { name: 'Me', exact: true }).click()
       await page.getByLabel('Your name', { exact: true }).fill('Jane Doe')
       await page.getByLabel('About you', { exact: true }).click()
@@ -447,13 +468,26 @@ test(
         ],
         expected: [200, true, 'same-document'],
       })
+      const readsBeforeReload = settingsReads
       await page.reload()
       await workstreams.waitFor({ state: 'visible' })
+      await page.waitForResponse('**/chat')
       assert({
-        given: 'a reload after enabling Workstreams',
-        should: 'restore the saved sidebar preference',
-        actual: [await workstreams.count(), settings.experimental.workstreams],
-        expected: [1, true],
+        given: 'Today is reloaded with Workstreams enabled and its chat list refreshes',
+        should: 'read settings once and keep the saved sidebar entry visible',
+        actual: [settingsReads - readsBeforeReload, await workstreams.count()],
+        expected: [1, 1],
+      })
+      assert({
+        given: 'the served app has rendered and refreshed in an open tab',
+        should: 'leave React development traces out of the browser performance timeline',
+        actual: await page.evaluate(() =>
+          performance.getEntriesByType('measure').some((entry) => {
+            const track = (entry as PerformanceMeasure).detail?.devtools
+            return track?.track === 'Components ⚛' || track?.trackGroup === 'Scheduler ⚛'
+          }),
+        ),
+        expected: false,
       })
       await sidebar.getByRole('link', { name: 'Settings', exact: true }).click()
       await nav.getByRole('button', { name: 'Experimental', exact: true }).click()

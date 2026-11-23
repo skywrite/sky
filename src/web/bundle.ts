@@ -104,6 +104,8 @@ async function buildAssets(): Promise<Map<string, ThemeAsset>> {
       entrypoints: [path.join(__dirname, 'client/main.tsx')],
       target: 'browser',
       minify: true,
+      // React's development build adds component timings to the tab's performance timeline on every refresh.
+      define: { 'process.env.NODE_ENV': '"production"' },
       plugins: [extensionsPlugin(entries)],
     })
   // Under `bun test`, a build can report files that are there as unresolvable: the runner's scan for

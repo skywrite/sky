@@ -12,7 +12,7 @@
  */
 
 import { Button, SegmentedControl, Select, useMantineColorScheme } from '@mantine/core'
-import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useEffectEvent, useRef, useState } from 'react'
 import type { TranscriptionSettings } from '#commands/all/audio/transcript/lib/models.ts'
 import { ExtensionsPane } from '../extensions/extensions.tsx'
 import { playVoicePreview } from '../voice/voicePreview.ts'
@@ -104,7 +104,9 @@ export interface SettingsData {
 // ── Talking to the service ──────────────────────────────────────────
 
 const SETTING_CHANGED = 'sky:setting-changed'
+const SETTINGS_READ = 'sky:settings-read'
 type SettingChange = { key: string; value: string }
+type ShellSettings = Pick<SettingsData, 'theme' | 'textSize' | 'experimental'>
 
 function notifySettingChange(key: string, value: string): void {
   window.dispatchEvent(new CustomEvent<SettingChange>(SETTING_CHANGED, { detail: { key, value } }))
@@ -149,10 +151,27 @@ const SIDEBAR_EXPERIMENTS: Record<string, keyof SidebarExperiments> = {
  */
 export function useSettingsBoot(): SidebarExperiments {
   const { setColorScheme } = useMantineColorScheme()
+  // Mantine returns a new setter on every render. The shell reads settings once per mount.
+  const applySavedTheme = useEffectEvent((theme: Theme) => setColorScheme(theme === 'system' ? 'auto' : theme))
   const [sidebar, setSidebar] = useState<SidebarExperiments>({ workstreams: false, outbox: false })
   useEffect(() => {
-    let alive = true
+    let awaitingBoot = true
     const changed = new Set<keyof SidebarExperiments>()
+    const apply = (data: ShellSettings) => {
+      applySavedTheme(data.theme)
+      applyTextSize(data.textSize)
+      setSidebar((current) => {
+        const workstreams = changed.has('workstreams') ? current.workstreams : data.experimental?.workstreams === true
+        const outbox = changed.has('outbox') ? current.outbox : data.experimental?.outbox === true
+        return workstreams === current.workstreams && outbox === current.outbox ? current : { workstreams, outbox }
+      })
+    }
+    const onRead = (event: Event) => {
+      // An explicit Settings read, including recovery after a refused save, supersedes a slow startup read.
+      awaitingBoot = false
+      changed.clear()
+      apply((event as CustomEvent<ShellSettings>).detail)
+    }
     const onChange = (event: Event) => {
       const { key, value } = (event as CustomEvent<SettingChange>).detail
       const entry = SIDEBAR_EXPERIMENTS[key]
@@ -162,24 +181,19 @@ export function useSettingsBoot(): SidebarExperiments {
       setSidebar((current) => (current[entry] === on ? current : { ...current, [entry]: on }))
     }
     window.addEventListener(SETTING_CHANGED, onChange)
+    window.addEventListener(SETTINGS_READ, onRead)
     fetch('/settings/_api/settings')
       .then((r) => (r.ok ? (r.json() as Promise<SettingsData>) : null))
       .then((data) => {
-        if (!alive || !data) return
-        setColorScheme(data.theme === 'system' ? 'auto' : data.theme)
-        applyTextSize(data.textSize)
-        // A slow boot response must not undo a preference just saved in Settings.
-        setSidebar((current) => ({
-          workstreams: changed.has('workstreams') ? current.workstreams : data.experimental?.workstreams === true,
-          outbox: changed.has('outbox') ? current.outbox : data.experimental?.outbox === true,
-        }))
+        if (awaitingBoot && data) apply(data)
       })
       .catch(() => {})
     return () => {
-      alive = false
+      awaitingBoot = false
       window.removeEventListener(SETTING_CHANGED, onChange)
+      window.removeEventListener(SETTINGS_READ, onRead)
     }
-  }, [setColorScheme])
+  }, [])
   return sidebar
 }
 
@@ -193,8 +207,10 @@ function useSettings() {
         if (r.ok) {
           const saved = (await r.json()) as SettingsData
           setData(saved)
-          notifySettingChange('experimental.workstreams', String(saved.experimental?.workstreams === true))
-          notifySettingChange('experimental.outbox', String(saved.experimental?.outbox === true))
+          const { theme, textSize, experimental } = saved
+          window.dispatchEvent(
+            new CustomEvent<ShellSettings>(SETTINGS_READ, { detail: { theme, textSize, experimental } }),
+          )
           setNote(null)
         } else {
           const body = (await r.json().catch(() => ({}))) as { message?: string }
