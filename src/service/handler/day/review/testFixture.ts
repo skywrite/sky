@@ -14,7 +14,8 @@ import type { ReviewRuntime, ReviewView } from './types.ts'
 
 export const REVIEW_DAY = '2030-06-17'
 export const REVIEW_TODAY = '2030-06-18'
-export async function reviewFixture() {
+export async function reviewFixture(options: { reminderRollover?: boolean } = {}) {
+  const reminderRollover = options.reminderRollover ?? true
   const root = await makeTempDir({ prefix: 'sky-review-test-' })
   const timeDir = path.join(root, 'time')
   const stateDir = path.join(root, '.state/day-review')
@@ -137,6 +138,7 @@ tz: America/Chicago
       dayRoutes,
       stateDir,
       runtime,
+      reminderRollover: () => reminderRollover,
       streaks,
       tracking,
       chats: {

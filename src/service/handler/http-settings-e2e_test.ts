@@ -84,6 +84,18 @@ test(
         settings.transcription.value = input.value
       }
       if (input.key === 'dayReview.idleHours') settings.dayReview = { idleHours: Number(input.value) }
+      if (input.key === 'reminders.autoRollover') {
+        settings.reminders = {
+          autoRollover: input.value === true || input.value === 'true',
+          expireDays: settings.reminders?.expireDays ?? 3,
+        }
+      }
+      if (input.key === 'reminders.expireDays') {
+        settings.reminders = {
+          autoRollover: settings.reminders?.autoRollover ?? true,
+          expireDays: Number(input.value),
+        }
+      }
       if (input.key === 'web.theme') settings.theme = input.value
       if (input.key === 'web.textSize') settings.textSize = input.value
       if (input.key === 'experimental.workstreams') {
@@ -380,6 +392,20 @@ test(
       ]) {
         await page.goto(`${base}${route}`)
         await page.getByRole('heading', { name: title, exact: true }).waitFor()
+        if (route === '/settings/notebook') {
+          const expireDays = page.getByLabel('Expire days', { exact: true })
+          await expireDays.fill('5')
+          await page.getByRole('button', { name: 'Save reminder settings', exact: true }).click()
+          await page.getByText('Saved', { exact: true }).waitFor()
+          await page.reload()
+          await expireDays.waitFor()
+          assert({
+            given: 'updated reminder expiry days under Notebook settings',
+            should: 'save and reload the preference',
+            actual: [await expireDays.inputValue(), settings.reminders],
+            expected: ['5', { autoRollover: true, expireDays: 5 }],
+          })
+        }
         if (route === '/settings/voice') {
           await page.waitForFunction(() => document.title === 'sky · Voice')
           await nav.getByRole('button', { name: 'Models', exact: true }).click()

@@ -11,6 +11,7 @@ import { Hono } from 'hono'
 import type { CalendarSchedulerHost } from '#lib/calendarScheduler/types.ts'
 import type { MostImportantAI } from '#lib/mostImportant/types.ts'
 import { planningDate } from '#lib/nbfs/taskDestination.ts'
+import { loadSkyConfig, remindersConfig } from '#shared/config/loader.ts'
 import { createChatActivityReader } from '#shared/models/Chat/ChatStore/dayActivity.ts'
 import type MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
 import { fetchNowSync } from '#shared/nbfs/mod.ts'
@@ -262,6 +263,7 @@ export function createHttpApp(options: HttpHandlerOptions): Hono {
           dayRoutes,
           stateDir: path.join(userDataDir, 'state/day-review'),
           runtime: options.dayReview,
+          reminderRollover: () => remindersConfig(loadSkyConfig()).autoRollover,
           tracking: options.tracking?.store,
           streaks: options.streaks?.store,
           chats: {

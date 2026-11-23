@@ -18,6 +18,7 @@ import {
 export interface ReviewInventory {
   today: string
   items: ReviewItem[]
+  steps?: ReviewStep[]
   hasDay: boolean
   summarized: boolean
   summaryHref: string | null
@@ -79,10 +80,13 @@ export class DayReviewStore {
     ])
     const missingSummary = !inventory.summaryHref && state.summary.status === 'done'
     const items = inventory.items.filter((item) => !state.answers[item.id])
+    const steps = inventory.steps ?? [...REVIEW_STEPS]
+    const savedStep = state.step && steps.includes(state.step) ? state.step : undefined
     const { due: _due, ...shown } = inventory
     return {
       ...state,
       ...shown,
+      steps,
       start: this.starts.get(day) ?? null,
       // A run in progress shows as one; otherwise the file decides, then what the person did here.
       recaps: recaps.map(({ id, title, saved }): ReviewJob => {
@@ -98,8 +102,8 @@ export class DayReviewStore {
       items,
       chats: inventory.chats ?? [],
       step:
-        state.step ??
-        REVIEW_STEPS.find((step) => items.some((item) => reviewItemStep(item) === step)) ??
+        savedStep ??
+        steps.find((step) => items.some((item) => reviewItemStep(item) === step)) ??
         (inventory.chats?.length ? 'chat' : 'summary'),
       summary: inventory.summaryHref
         ? { ...state.summary, status: 'done' }
@@ -129,10 +133,13 @@ export class DayReviewStore {
         state.summary.status = 'waiting'
         delete state.summary.message
       }
-      state.step ??=
-        REVIEW_STEPS.find((step) =>
-          inventory.items.some((item) => !state.answers[item.id] && reviewItemStep(item) === step),
-        ) ?? (inventory.chats?.length ? 'chat' : 'summary')
+      const steps = inventory.steps ?? [...REVIEW_STEPS]
+      if (!state.step || !steps.includes(state.step)) {
+        state.step =
+          steps.find((step) =>
+            inventory.items.some((item) => !state.answers[item.id] && reviewItemStep(item) === step),
+          ) ?? (inventory.chats?.length ? 'chat' : 'summary')
+      }
       if (!this.workers.has(day)) {
         for (const job of [...state.recaps, state.summary]) {
           if (job.status === 'running') {

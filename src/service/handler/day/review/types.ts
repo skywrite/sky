@@ -4,6 +4,8 @@ import type { DayItemAddress } from '../organizingTypes.ts'
 export type ReviewKind = 'carry' | 'streak' | 'tracking' | 'meeting' | 'check'
 export const REVIEW_STEPS = ['streak', 'tracking', 'meeting', 'carry', 'reminder', 'chat', 'summary'] as const
 export type ReviewStep = (typeof REVIEW_STEPS)[number]
+export const reviewSteps = (includeReminders: boolean): ReviewStep[] =>
+  includeReminders ? [...REVIEW_STEPS] : REVIEW_STEPS.filter((step) => step !== 'reminder')
 /** A `carry` item from the Reminders list: reminders are moved to today, where to-dos are copied. */
 export const isReminder = (item: ReviewItem) =>
   item.kind === 'carry' && /^reminders$/i.test(item.address?.list.trim() ?? '')
@@ -53,6 +55,7 @@ export interface ReviewState {
 
 export interface ReviewView extends ReviewState {
   step: ReviewStep
+  steps: ReviewStep[]
   today: string
   items: ReviewItem[]
   hasDay: boolean

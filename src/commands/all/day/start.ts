@@ -1,7 +1,9 @@
 import { Command, CommandResult, dayArg, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
 import { ensureDay, withDayWrite } from '#lib/nbfs/mod.ts'
+import { rolloverReminders } from '#lib/nbfs/reminderRollover.ts'
 import { loadStreaks, stampStreaksList } from '#lib/streaks/mod.ts'
+import { loadSkyConfig, remindersConfig } from '#shared/config/loader.ts'
 import { readDay, writeDay } from '#shared/nbfs/mod.ts'
 import { PlainDate, ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
 
@@ -90,6 +92,19 @@ export default class DayStartTask extends Command {
         console.warn(`  [day:start] streaks: ${(err as Error).message}`)
       }
     })
+
+    // Roll unfinished reminders forward and expire stale ones (best-effort, owns its own day locks).
+    try {
+      const settings = remindersConfig(loadSkyConfig())
+      await rolloverReminders({
+        config,
+        targetDay: targetDate,
+        autoRollover: settings.autoRollover,
+        expireDays: settings.expireDays,
+      })
+    } catch (err) {
+      console.warn(`  [day:start] reminders: ${(err as Error).message}`)
+    }
 
     // Set location on day document
     if (tasks && !skipLocation) {

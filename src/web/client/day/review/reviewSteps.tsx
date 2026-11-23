@@ -60,10 +60,11 @@ export function ReviewSteps({
   busy: boolean
   goTo: (step: ReviewStep) => void
 }) {
+  const visibleSteps = view.steps ?? [...REVIEW_STEPS]
   return (
     <nav aria-label="Review steps" className="sky-review-steps">
       <ol>
-        {REVIEW_STEPS.map((step, index) => {
+        {visibleSteps.map((step, index) => {
           const pending = view.items.filter((item) => reviewItemStep(item) === step).length
           const complete =
             step === 'summary'

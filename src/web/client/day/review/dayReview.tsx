@@ -224,8 +224,9 @@ export function DayReviewDialog({
     void reviewRequest(`${day}/acknowledge`, {}).catch(() => {})
     if (keep) onEngage?.()
   }
-  const step = view?.step ?? REVIEW_STEPS[0]
-  const stepIndex = REVIEW_STEPS.indexOf(step)
+  const visibleSteps = view?.steps ?? [...REVIEW_STEPS]
+  const step = view?.step ?? visibleSteps[0]
+  const stepIndex = Math.max(0, visibleSteps.indexOf(step))
   useDialogTitle(`sky · Review ${day} · ${steps[step].label}`)
   useEffect(() => {
     if (view?.step) heading.current?.focus()
@@ -399,7 +400,7 @@ export function DayReviewDialog({
           <>
             <header className="sky-review-step-head">
               <p className="sky-review-eyebrow">
-                Step {stepIndex + 1} of {REVIEW_STEPS.length}
+                Step {stepIndex + 1} of {visibleSteps.length}
               </p>
               <h2 ref={heading} tabIndex={-1}>
                 {steps[step].title}
@@ -519,7 +520,7 @@ export function DayReviewDialog({
                           disabled={Boolean(busy)}
                           onClick={() =>
                             goTo(
-                              REVIEW_STEPS.find((candidate) =>
+                              visibleSteps.find((candidate) =>
                                 view.items.some((item) => reviewItemStep(item) === candidate),
                               ) ?? reviewItemStep(view.items[0]),
                             )
@@ -724,7 +725,7 @@ export function DayReviewDialog({
           {view?.hasDay && (
             <div className="sky-review-navigation">
               {stepIndex > 0 && (
-                <Button disabled={Boolean(busy)} onClick={() => goTo(REVIEW_STEPS[stepIndex - 1])}>
+                <Button disabled={Boolean(busy)} onClick={() => goTo(visibleSteps[stepIndex - 1])}>
                   Back
                 </Button>
               )}
@@ -734,7 +735,7 @@ export function DayReviewDialog({
                   disabled={Boolean(busy)}
                   loading={busy === 'step'}
                   rightSection={<span aria-hidden="true">→</span>}
-                  onClick={() => goTo(REVIEW_STEPS[stepIndex + 1], items.length > 0)}
+                  onClick={() => goTo(visibleSteps[stepIndex + 1], items.length > 0)}
                 >
                   {items.length ? (history.length ? 'Skip remaining' : 'Skip this step') : 'Continue'}
                 </Button>

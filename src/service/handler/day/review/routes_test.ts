@@ -7,7 +7,7 @@ import { reviewFixture, REVIEW_DAY, REVIEW_TODAY } from './testFixture.ts'
 import { isReminder, reviewItemStep, type ReviewView } from './types.ts'
 
 test('real review actions carry duplicate todos and reminders, check streaks and save dated tracking without start or end', async () => {
-  const f = await reviewFixture()
+  const f = await reviewFixture({ reminderRollover: false })
   try {
     await f.post(`${REVIEW_DAY}/open`)
     const initial = await f.view()
@@ -106,7 +106,7 @@ test('copying to-dos to today leaves the reviewed day as it was and adds nothing
 })
 
 test('a reminder moves off its day and can never be copied, and a to-do can never be moved', async () => {
-  const f = await reviewFixture()
+  const f = await reviewFixture({ reminderRollover: false })
   try {
     await f.post(`${REVIEW_DAY}/open`)
     const carried = (await f.view()).items.filter((i) => i.kind === 'carry')
@@ -149,7 +149,7 @@ test('a reminder moves off its day and can never be copied, and a to-do can neve
 })
 
 test('Done finishes a task as the day page does: a to-do is struck and a reminder leaves the list', async () => {
-  const f = await reviewFixture()
+  const f = await reviewFixture({ reminderRollover: false })
   try {
     await f.post(`${REVIEW_DAY}/open`)
     const carry = (await f.view()).items.filter((i) => i.kind === 'carry')
@@ -230,7 +230,7 @@ test('review rejects cross-origin, invalid dates, stale items and writes to summ
 })
 
 test('wizard navigation saves its place and skips a visible selection atomically without changing notebook content', async () => {
-  const f = await reviewFixture()
+  const f = await reviewFixture({ reminderRollover: false })
   try {
     await f.post(`${REVIEW_DAY}/open`)
     const before = await f.readDay(REVIEW_DAY)
@@ -429,6 +429,36 @@ test('a start that fails says why, and Try again starts the waiting day', async 
         { ymd: REVIEW_TODAY, weekday: 'Tuesday', status: 'done' },
         1,
       ],
+    })
+  } finally {
+    await f.dispose()
+  }
+})
+
+test('automatic reminder rollover omits the Reminders step and summarizes without blocking on past reminders', async () => {
+  const f = await reviewFixture()
+  try {
+    // Even if a prior paused review saved step='reminder', opening with autoRollover on clamps to a live step.
+    await f.post(`${REVIEW_DAY}/step`, { step: 'reminder' })
+    await f.post(`${REVIEW_DAY}/open`)
+    const initial = await f.view()
+    for (const item of initial.items) await f.post(`${REVIEW_DAY}/answer`, { id: item.id, action: 'skip' })
+    const done = await f.waitFor((view) => view.summary.status === 'done')
+    assert({
+      given: 'autoRollover enabled (default) on a day that still has a reminder line',
+      should: 'omit the reminder step, exclude reminders from review items, and summarize cleanly',
+      actual: {
+        steps: initial.steps,
+        step: initial.step,
+        hasReminderItem: initial.items.some(isReminder),
+        summaryStatus: done.summary.status,
+      },
+      expected: {
+        steps: ['streak', 'tracking', 'meeting', 'carry', 'chat', 'summary'],
+        step: 'streak',
+        hasReminderItem: false,
+        summaryStatus: 'done',
+      },
     })
   } finally {
     await f.dispose()

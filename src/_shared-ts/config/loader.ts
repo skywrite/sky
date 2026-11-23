@@ -4,7 +4,7 @@ import * as path from 'node:path'
 import process from 'node:process'
 import { parse } from 'jsonc-parser'
 import { DEFAULT_LAYOUT_PATTERN, LAYOUT_PATTERNS, layoutByPattern } from '../nbfs/layout/registry.ts'
-import type { GoogleAccountCategory, SkyConfig, SlackForYou } from './types.ts'
+import type { GoogleAccountCategory, RemindersConfig, SkyConfig, SlackForYou } from './types.ts'
 
 export const SKY_CONFIG_DIR = path.join(os.homedir(), '.sky')
 export const SKY_CONFIG_PATH = path.join(SKY_CONFIG_DIR, 'config.jsonc')
@@ -99,6 +99,7 @@ function defaults(): SkyConfig {
     web: {},
     voice: {},
     dayReview: { idleHours: 5 },
+    reminders: { ...REMINDERS_DEFAULTS },
     experimental: { workstreams: false },
     ai: {
       models: {
@@ -122,9 +123,16 @@ export function readSkyConfigFile(configPath = SKY_CONFIG_PATH): { text: string;
 
 export const SLACK_FOR_YOU_DEFAULTS: SlackForYou = { dms: true, mentions: true, own: true }
 
+export const REMINDERS_DEFAULTS: RemindersConfig = { autoRollover: true, expireDays: 3 }
+
 /** The For you rules, whole, whatever the file left out. */
 export function slackForYou(config: Pick<SkyConfig, 'slack'>): SlackForYou {
   return { ...SLACK_FOR_YOU_DEFAULTS, ...config.slack.forYou }
+}
+
+/** Daily reminder rollover and expiry settings, with defaults filled in. */
+export function remindersConfig(config?: Pick<SkyConfig, 'reminders'>): RemindersConfig {
+  return { ...REMINDERS_DEFAULTS, ...config?.reminders }
 }
 
 export function loadSkyConfig(configPath = SKY_CONFIG_PATH): SkyConfig {
@@ -174,6 +182,19 @@ export function loadSkyConfig(configPath = SKY_CONFIG_PATH): SkyConfig {
     ) {
       config.dayReview = { idleHours: parsed.dayReview.idleHours }
     }
+    const reminders = { ...REMINDERS_DEFAULTS }
+    if (typeof parsed.reminders?.autoRollover === 'boolean') {
+      reminders.autoRollover = parsed.reminders.autoRollover
+    }
+    if (
+      typeof parsed.reminders?.expireDays === 'number' &&
+      Number.isInteger(parsed.reminders.expireDays) &&
+      parsed.reminders.expireDays >= 0 &&
+      parsed.reminders.expireDays <= 365
+    ) {
+      reminders.expireDays = parsed.reminders.expireDays
+    }
+    config.reminders = reminders
     if (parsed.voice?.voice) config.voice.voice = parsed.voice.voice
     if (typeof parsed.experimental?.contextPreflight === 'boolean') {
       config.experimental.contextPreflight = parsed.experimental.contextPreflight

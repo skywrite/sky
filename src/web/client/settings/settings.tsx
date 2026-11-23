@@ -17,6 +17,7 @@ import type { TranscriptionSettings } from '#commands/all/audio/transcript/lib/m
 import { ExtensionsPane } from '../extensions/extensions.tsx'
 import { playVoicePreview } from '../voice/voicePreview.ts'
 import { WritingVoicePane } from '../writing/writingVoice.tsx'
+import { RemindersSettings } from './RemindersSettings.tsx'
 import { AboutMePane } from './settingsAboutMe.tsx'
 import { BeeperMain } from './settingsBeeper.tsx'
 import { Block, mono, refusalOf, Row, UNREACHABLE } from './settingsBlocks.tsx'
@@ -73,6 +74,7 @@ export interface ConfigView {
 
 export interface SettingsData {
   dayReview?: { idleHours: number }
+  reminders?: { autoRollover: boolean; expireDays: number }
   transcription: TranscriptionSettings
   calendar: { classifyEvents: boolean }
   /** Each Google account's category, by lower-case email; an account not listed files as Professional */
@@ -595,6 +597,7 @@ function NotebookPane({ data, change }: { data: SettingsData; change: ReturnType
           {mono(notebook.inputDir)}
         </Row>
       </Block>
+      <RemindersSettings reminders={data.reminders ?? { autoRollover: true, expireDays: 3 }} change={change} />
     </>
   )
 }

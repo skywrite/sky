@@ -868,3 +868,39 @@ test('day review idle preference validates hours and takes effect in the next se
     expected: [{ idleHours: 5 }, [200, 400, 400, 400, 400, 200], { idleHours: 0 }],
   })
 })
+
+test('reminders settings validate autoRollover and expireDays and read live', async () => {
+  const config = structuredClone(CONFIG)
+  const { host } = hostWith(config)
+  host.write = async (key, value) => {
+    config.reminders = { autoRollover: true, expireDays: 3, ...config.reminders }
+    if (key === 'reminders.autoRollover') config.reminders.autoRollover = value === 'true'
+    if (key === 'reminders.expireDays') config.reminders.expireDays = Number(value)
+  }
+  const app = await appWith(host)
+  const read = async () => ((await (await app.request('/settings/_api/settings')).json()) as SettingsData).reminders
+  const before = await read()
+  const statuses: number[] = []
+  for (const [key, value] of [
+    ['reminders.autoRollover', 'false'],
+    ['reminders.autoRollover', 'maybe'],
+    ['reminders.expireDays', '5'],
+    ['reminders.expireDays', '-1'],
+    ['reminders.expireDays', '2.5'],
+    ['reminders.expireDays', '366'],
+    ['reminders.expireDays', ''],
+    ['reminders.expireDays', '0'],
+  ]) {
+    statuses.push((await post(app, '/settings/_api/set', { key, value })).status)
+  }
+  assert({
+    given: 'valid and invalid reminders rollover and expiry updates',
+    should: 'validate strictly and expose the saved values live',
+    actual: [before, statuses, await read()],
+    expected: [
+      { autoRollover: true, expireDays: 3 },
+      [200, 400, 200, 400, 400, 400, 400, 200],
+      { autoRollover: false, expireDays: 0 },
+    ],
+  })
+})

@@ -102,6 +102,49 @@ test('day:start preserves a prepared plan and reconciles streaks without duplica
   })
 })
 
+test('day:start rolls over unfinished reminders from recent unclosed days and expires recurring ones', async () => {
+  await withDayNotebook(async (notebook) => {
+    const { context, tasks } = notebook
+    const yesterday = new PlainDate('2031-03-15')
+    const today = new PlainDate('2031-03-16')
+    const timeDir = context.config.DIR_TIME
+    await outputFile(context.config.FILE_REMINDERS, '## EVERY-DAY\n- Clean whiteboard\n')
+    await writeDay(
+      DayDocument.createFutureDay(yesterday).addReminderItem('Clean whiteboard').addReminderItem('Call Jane Doe'),
+      timeDir,
+    )
+    const run = spyOn(tasks, 'run').mockResolvedValue(CommandResult.success())
+    const fetch = spyOn(globalThis, 'fetch').mockResolvedValue(new Response())
+    try {
+      const result = await new DayStart().run({
+        ...notebook,
+        args: { day: today, tz: 'UTC', journal: false, skipLocation: true },
+      })
+      const todayDoc = await readDay(today, timeDir)
+      const yesterdayDoc = await readDay(yesterday, timeDir)
+      assert({
+        given: 'an unclosed yesterday with one recurring reminder and one ad-hoc reminder',
+        should: 'roll the ad-hoc reminder onto today, expire the recurring one, and clear yesterday',
+        actual: {
+          ok: result.ok,
+          todayReminders: todayDoc.lists.find((list) => list.title === 'Reminders')?.items ?? [],
+          yesterdayReminders: (yesterdayDoc.lists.find((list) => list.title === 'Reminders')?.items ?? []).filter(
+            Boolean,
+          ),
+        },
+        expected: {
+          ok: true,
+          todayReminders: ['Call Jane Doe'],
+          yesterdayReminders: [],
+        },
+      })
+    } finally {
+      fetch.mockRestore()
+      run.mockRestore()
+    }
+  })
+})
+
 const startupFailures = [
   { name: 'returned failure', outcome: CommandResult.fail('Mock import failed', { retry: 'mock:import' }) },
   { name: 'returned error', outcome: CommandResult.error(new Error('Mock import error')) },

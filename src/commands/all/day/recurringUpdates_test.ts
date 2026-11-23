@@ -220,21 +220,27 @@ for (const startDay of [false, true]) {
         const expected = expectedLists('Future', true, true)
         expected.professionalTodos.push('Scheduled task')
         expected.started = startDay
+        const pastAfter = await readTextFile(pastFile)
+        const pastLists = await lists(notebook, PAST)
         assert({
           given: 'a selected future day and no file for the system date',
-          should: 'put recurring tasks, scheduled items and reminders on that day without creating today',
+          should: startDay
+            ? 'put recurring tasks, scheduled items and reminders on that day, roll past reminders, and not create today'
+            : 'put recurring tasks, scheduled items and reminders on that day without creating today',
           actual: {
             status: result.status,
             lists: await lists(notebook, FUTURE),
             todayExists: await exists(todayFile),
-            pastUnchanged: (await readTextFile(pastFile)) === pastBefore,
+            pastHandled: startDay
+              ? pastLists.professionalTodos.join(',') === 'Existing plan' && pastLists.reminders.length === 0
+              : pastAfter === pastBefore,
             scheduleDrained: !(await readTextFile(config.FILE_SCHEDULE_PROFESSIONAL)).includes('Scheduled task'),
           },
           expected: {
             status: 'success',
             lists: expected,
             todayExists: false,
-            pastUnchanged: true,
+            pastHandled: true,
             scheduleDrained: true,
           },
         })

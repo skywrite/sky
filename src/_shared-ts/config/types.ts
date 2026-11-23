@@ -12,6 +12,14 @@ export interface AiProfileConfig {
 /** What Sky lands in the day from Slack on its own: direct messages, mentions and thread replies, the owner's own messages. */
 export type SlackForYou = { dms: boolean; mentions: boolean; own: boolean }
 
+/** Automatic rollover and expiry for daily reminders on day:start. */
+export interface RemindersConfig {
+  /** Move unfinished reminders from recent unclosed past days onto Today on day:start (default: true). */
+  autoRollover: boolean
+  /** Delete reminders untouched for this many days on day:start; 0 disables automatic expiry (default: 3). */
+  expireDays: number
+}
+
 export interface SkyConfig {
   version: number
   dir: string
@@ -50,6 +58,8 @@ export interface SkyConfig {
   }
   /** Morning review only; starting and ending remain explicit. Zero disables the automatic prompt. */
   dayReview?: { idleHours: number }
+  /** Daily reminder rollover and automatic expiry on day:start. */
+  reminders?: RemindersConfig
   voice: {
     /** The voice Sky uses in browser calls; unset means the built-in default. */
     voice?: string

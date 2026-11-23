@@ -160,3 +160,36 @@ test('day review hours default to five and preserve valid numbers including disa
     await rm(dir, { recursive: true, force: true })
   }
 })
+
+test('reminders rollover and expireDays default cleanly and reject invalid values', async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'sky-reminders-config-'))
+  const file = path.join(dir, 'config.jsonc')
+  try {
+    const results: unknown[] = [loadSkyConfig(file).reminders]
+    for (const reminders of [
+      { autoRollover: false, expireDays: 0 },
+      { autoRollover: true, expireDays: 7 },
+      { autoRollover: 'no', expireDays: -1 },
+      { autoRollover: true, expireDays: 2.5 },
+      { autoRollover: true, expireDays: 366 },
+    ]) {
+      await writeFile(file, JSON.stringify({ reminders }))
+      results.push(loadSkyConfig(file).reminders)
+    }
+    assert({
+      given: 'missing, valid, disabled, and invalid reminders settings',
+      should: 'apply valid values and fall back to defaults otherwise',
+      actual: results,
+      expected: [
+        { autoRollover: true, expireDays: 3 },
+        { autoRollover: false, expireDays: 0 },
+        { autoRollover: true, expireDays: 7 },
+        { autoRollover: true, expireDays: 3 },
+        { autoRollover: true, expireDays: 3 },
+        { autoRollover: true, expireDays: 3 },
+      ],
+    })
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})

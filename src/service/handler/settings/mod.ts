@@ -22,10 +22,10 @@ import {
 import type { WritingDraftStore } from '#lib/writingVoice/drafts.ts'
 import { DEFAULT_WRITING_VOICE_PROFILE } from '#lib/writingVoice/model.ts'
 import { currentProfileName, type ModelProfile } from '#shared/ai/models.ts'
-import { ENV_OVERRIDES } from '#shared/config/loader.ts'
-import type { GoogleAccountCategory, SkyConfig } from '#shared/config/types.ts'
+import { ENV_OVERRIDES, remindersConfig } from '#shared/config/loader.ts'
+import type { GoogleAccountCategory, RemindersConfig, SkyConfig } from '#shared/config/types.ts'
 import type { PromptCatalog } from '#shared/prompts/catalog.ts'
-import { isEffort, optionsWithEffort } from '#universal/ai/effort.ts'
+import { isEffort, optionsWithEffort, presetEffort } from '#universal/ai/effort.ts'
 import { prettyModel } from '#universal/ai/modelName.ts'
 import { createAboutMeRoutes, type AboutMeHost } from './aboutMe.ts'
 import type { BrowserAutomationHost } from './browserAutomation/host.ts'
@@ -88,6 +88,7 @@ const SECTIONS: ReadonlyArray<{ id: string; title: string; keys: string[]; group
     id: 'notebook',
     title: 'Notebook',
     keys: ['dir', 'userDataDir', 'inputDir', 'outputDir', 'codeDir', 'editor', 'categories', 'nbfs.layout'],
+    groups: ['reminders'],
   },
   {
     id: 'commands',
@@ -249,6 +250,7 @@ export interface ProfileInput {
 /** Everything the page shows, in one payload. */
 export interface SettingsData {
   dayReview?: { idleHours: number }
+  reminders?: RemindersConfig
   transcription: TranscriptionSettings
   calendar: { classifyEvents: boolean }
   /** Each Google account's category, by lower-case email; an account not listed files as Professional */
@@ -327,6 +329,8 @@ export type SettingsRoutesOptions = SettingsHost
 /** The keys the page may write, and where each lives in the file. */
 export const SETTABLE_KEYS = {
   'dayReview.idleHours': ['dayReview', 'idleHours'],
+  'reminders.autoRollover': ['reminders', 'autoRollover'],
+  'reminders.expireDays': ['reminders', 'expireDays'],
   'calendar.classifyEvents': ['calendar', 'classifyEvents'],
   'web.theme': ['web', 'theme'],
   'web.textSize': ['web', 'textSize'],
@@ -352,6 +356,7 @@ export type SettableKey = keyof typeof SETTABLE_KEYS
 
 /** Keys written as true/false, not text — the page sends the words, the file keeps the value. */
 export const BOOLEAN_KEYS: ReadonlySet<SettableKey> = new Set<SettableKey>([
+  'reminders.autoRollover',
   'calendar.classifyEvents',
   'experimental.contextPreflight',
   'experimental.workstreams',
@@ -362,6 +367,12 @@ export const BOOLEAN_KEYS: ReadonlySet<SettableKey> = new Set<SettableKey>([
   'slack.forYou.own',
 ])
 
+/** Keys written as JSON numbers rather than text. */
+export const NUMBER_KEYS: ReadonlySet<SettableKey> = new Set<SettableKey>([
+  'dayReview.idleHours',
+  'reminders.expireDays',
+])
+
 /** The valid values for one settable key, against the live host. null = fine. */
 async function refuse(host: SettingsHost, key: SettableKey, value: string): Promise<string | null> {
   switch (key) {
@@ -369,6 +380,10 @@ async function refuse(host: SettingsHost, key: SettableKey, value: string): Prom
       return value.trim() !== '' && Number.isFinite(Number(value)) && Number(value) >= 0 && Number(value) <= 24
         ? null
         : 'Choose an idle period from 0 to 24 hours. Zero turns the automatic review off.'
+    case 'reminders.expireDays':
+      return value.trim() !== '' && Number.isInteger(Number(value)) && Number(value) >= 0 && Number(value) <= 365
+        ? null
+        : 'Choose a whole number of days from 0 to 365. Zero turns automatic expiry off.'
     case 'ai.models.transcription': {
       if (TRANSCRIPTION_MODELS.some((model) => model.value === value)) return null
       try {
@@ -406,6 +421,7 @@ async function refuse(host: SettingsHost, key: SettableKey, value: string): Prom
       return writingVoiceSettings(host, host.load().config).choices.some((choice) => choice.value === value)
         ? null
         : 'Choose an available preset.'
+    case 'reminders.autoRollover':
     case 'experimental.contextPreflight':
     case 'experimental.workstreams':
     case 'experimental.outbox':
@@ -425,6 +441,7 @@ async function settingsData(host: SettingsHost): Promise<SettingsData> {
   return {
     theme: config.web.theme ?? 'system',
     dayReview: { idleHours: config.dayReview?.idleHours ?? 5 },
+    reminders: remindersConfig(config),
     transcription: {
       value: transcriptionModelValue(config.ai.models.transcription),
       choices: await Promise.all(
@@ -754,13 +771,14 @@ export function choiceLabel(name: string, all: Record<string, ModelProfile>): st
   )
   if (twins.length < 2) return model
   const options = (profile.options ?? {}) as { effort?: string; reasoningEffort?: string }
-  const effort = options.effort ?? options.reasoningEffort
+  const effort = presetEffort(profile) ?? options.effort ?? options.reasoningEffort
   return `${model} · ${effort ?? name}`
 }
 
 export const PROVIDER_LABEL: Record<string, string> = {
   anthropic: 'Anthropic',
   openai: 'OpenAI',
+  gemini: 'Gemini',
   ollama: 'Ollama',
   'lm-studio': 'LM Studio',
   cerebras: 'Cerebras',

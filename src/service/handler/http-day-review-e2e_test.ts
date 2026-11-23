@@ -123,24 +123,20 @@ test(
       await todos.getByRole('button', { name: 'Done', exact: true }).first().click()
       await dialog.getByRole('button', { name: 'Copy to today (1)' }).click()
       await dialog.getByRole('button', { name: 'Copy to today (1)' }).waitFor({ state: 'detached' })
-      await dialog.getByRole('button', { name: 'Continue', exact: true }).click()
-      await dialog.getByRole('heading', { name: 'Which reminders still matter?' }).waitFor()
-      await page.waitForFunction((day) => document.title === `sky · Review ${day} · Reminders`, REVIEW_DAY)
-      await dialog.getByRole('button', { name: 'Move to today (1)' }).click()
-      await dialog.getByRole('button', { name: 'Move to today (1)' }).waitFor({ state: 'detached' })
       const [reviewed, nextDay] = [await f.readDay(REVIEW_DAY), await f.readDay(REVIEW_TODAY)]
       assert({
-        given: 'one to-do marked done, the other copied to today and the reminder moved there',
-        should: 'strike the first, keep the copied one unfinished on its own day, and take the reminder off it',
+        given: 'one to-do marked done and the other copied to today with reminder auto-rollover enabled',
+        should:
+          'strike the first, keep the copied one unfinished, omit the Reminders step, and leave past reminders untouched',
         actual: [
           reviewed.includes('- ~~Review Atlas outline~~\n  Keep the attached notes.'),
           reviewed.includes('- Review Atlas outline\n  Keep this separate copy.'),
           reviewed.includes('Water the plants'),
           nextDay.includes('- Review Atlas outline\n  Keep this separate copy.'),
           nextDay.includes('Keep the attached notes.'),
-          nextDay.includes('- Water the plants'),
+          await dialog.getByRole('button', { name: /^Reminders/ }).count(),
         ],
-        expected: [true, true, false, true, false, true],
+        expected: [true, true, true, true, false, 0],
       })
       await dialog.getByRole('button', { name: 'Continue', exact: true }).click()
       await dialog.getByRole('heading', { name: 'Keep the conversation going' }).waitFor()

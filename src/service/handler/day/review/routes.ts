@@ -14,13 +14,15 @@ import { dayItemKey } from '../organizingTypes.ts'
 import { buildReviewRecords } from '../reviewRecords.ts'
 import type { ScheduleHost } from '../schedule.ts'
 import { DayReviewStore } from './store.ts'
-import { isReminder, REVIEW_STEPS, type ReviewItem, type ReviewRuntime } from './types.ts'
+import { isReminder, REVIEW_STEPS, reviewSteps, type ReviewItem, type ReviewRuntime } from './types.ts'
 
 interface Options {
   day: DayRoutesOptions
   dayRoutes: Hono
   stateDir: string
   runtime: ReviewRuntime
+  /** When true, reminders roll over automatically on day:start and stay out of Day Review. Defaults to true. */
+  reminderRollover?: () => boolean
   tracking?: TrackingStore
   streaks?: StreaksStore
   imports?: () => Promise<import('../../import/jobs.ts').ImportJob[]>
@@ -51,8 +53,10 @@ export function createReviewRoutes(options: Options) {
     const items: ReviewItem[] = []
     const hasDay = Boolean(view.day.dayRelativePath)
     const summarized = view.record.summarized
+    const autoRollover = options.reminderRollover?.() ?? true
     if (hasDay) {
-      for (const item of [...view.record.todos, ...view.record.reminders].filter((item) => !item.done)) {
+      const carryItems = autoRollover ? view.record.todos : [...view.record.todos, ...view.record.reminders]
+      for (const item of carryItems.filter((item) => !item.done)) {
         if (!item.revision) continue
         items.push({
           id: fingerprint('carry', [dayItemKey(item), item.revision]),
@@ -179,6 +183,7 @@ export function createReviewRoutes(options: Options) {
     }
     return {
       items,
+      steps: reviewSteps(!autoRollover),
       hasDay,
       summarized,
       today: view.planningToday ?? PlainDate.today().ymd,

@@ -21,6 +21,7 @@ import { createConnectionsHost } from './createConnectionsHost.ts'
 import {
   BOOLEAN_KEYS,
   choiceLabel,
+  NUMBER_KEYS,
   PROVIDER_LABEL,
   ROLE_LABEL,
   SETTABLE_KEYS,
@@ -109,7 +110,7 @@ export function createSettingsHost(): SettingsRoutesOptions {
     write: (key, value) => {
       setConfigValue(
         [...SETTABLE_KEYS[key]],
-        BOOLEAN_KEYS.has(key) ? value === 'true' : key === 'dayReview.idleHours' ? Number(value) : value,
+        BOOLEAN_KEYS.has(key) ? value === 'true' : NUMBER_KEYS.has(key) ? Number(value) : value,
       )
       return Promise.resolve()
     },
