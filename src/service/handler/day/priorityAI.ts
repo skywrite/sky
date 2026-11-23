@@ -53,12 +53,17 @@ const answer = z
       ) <= 0.05,
   )
 
+export const MAX_PRIORITY_ITEMS = 100
+export const MAX_PRIORITY_EVIDENCE_CHARS = 60_000
+
 export function createDayPrioritizer(
   client: TypeSafeClient,
   sink?: (record: AIUsageRecord) => void | Promise<void>,
 ): PrioritizeDayItems {
   return async (evidence, signal) => {
-    if (evidence.tasks.length > 100 || JSON.stringify(evidence).length > 60_000)
+    if (evidence.tasks.length > MAX_PRIORITY_ITEMS)
+      throw new Error(`Sky doesn't rank more than ${MAX_PRIORITY_ITEMS} open items at a time.`)
+    if (JSON.stringify(evidence).length > MAX_PRIORITY_EVIDENCE_CHARS)
       throw new Error('Too much context to rank these items together.')
     const reminders = evidence.group === 'reminders'
     const questions = Object.fromEntries(

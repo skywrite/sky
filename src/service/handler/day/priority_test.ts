@@ -12,7 +12,7 @@ import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import { createItemRoutes } from './item.ts'
 import { buildDayView } from './mod.ts'
 import { createDayPriority } from './priority.ts'
-import { createDayPrioritizer, type PriorityEvidence } from './priorityAI.ts'
+import { createDayPrioritizer, MAX_PRIORITY_ITEMS, type PriorityEvidence } from './priorityAI.ts'
 import { priorityContextSources, readPriorityContext } from './priorityContext.ts'
 
 const DAY = new PlainDate('2031-03-17')
@@ -589,6 +589,60 @@ test('priority context reads the selected notebook and includes goals and linked
         sources.some((source) => source.includes('passwd') || source.includes('example.com')),
       ],
       expected: [true, true, true, true, false],
+    })
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('more than 100 open items explains the ranking limit without retry and resumes once under the cap', async () => {
+  const root = await mkdtemp('/tmp/sky-priority-limit-')
+  const timeDir = path.join(root, 'time')
+  const file = path.join(timeDir, dayFile(DAY))
+  const makeReminders = (count: number) =>
+    `## Reminders\n\n${Array.from({ length: count }, (_, index) => `- Reminder ${index + 1}`).join('\n')}\n`
+  await mkdir(path.dirname(file), { recursive: true })
+  await writeFile(file, makeReminders(MAX_PRIORITY_ITEMS + 1))
+  let calls = 0
+  const host = createDayPriority(
+    {
+      markdownBaseDir: root,
+      timeDir,
+      stateDir: path.join(root, 'state', 'reminders'),
+      context: async () => [],
+      rank: async ({ tasks }) => {
+        calls++
+        return tasks.map((_, index) => index % 5)
+      },
+    },
+    'reminders',
+  )
+  const view = () => buildDayView({ markdownBaseDir: root, timeDir, today: () => DAY, ownerNames: [] }, DAY.ymd)
+  try {
+    await host.refresh(DAY.ymd, view)
+    const overLimit = await host.apply(await view())
+    await writeFile(file, makeReminders(MAX_PRIORITY_ITEMS))
+    await host.refresh(DAY.ymd, view)
+    const withinLimit = await host.apply(await view())
+    assert({
+      given: '101 open reminders followed by reducing the list to 100',
+      should: 'explain the 100-item ranking limit without retry, skip ranking while over the cap, and resume at 100',
+      actual: {
+        overWarning: overLimit.record.reminderPriority?.warning,
+        overRetryable: overLimit.record.reminderPriority?.retryable,
+        overInputRevision: overLimit.record.reminderPriority?.inputRevision,
+        withinWarning: withinLimit.record.reminderPriority?.warning,
+        withinSource: withinLimit.record.reminderPriority?.source,
+        calls,
+      },
+      expected: {
+        overWarning: `Sky doesn't rank more than ${MAX_PRIORITY_ITEMS} open reminders at a time (${MAX_PRIORITY_ITEMS + 1} open). Your existing order is still available.`,
+        overRetryable: false,
+        overInputRevision: undefined,
+        withinWarning: undefined,
+        withinSource: 'sky',
+        calls: 1,
+      },
     })
   } finally {
     await rm(root, { recursive: true, force: true })

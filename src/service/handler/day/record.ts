@@ -91,6 +91,8 @@ export interface DayPriorityStatus {
   sources?: string[]
   warning?: string
   connection?: boolean
+  /** False when retrying cannot resolve the warning (for example, more than the max rankable items). */
+  retryable?: boolean
 }
 
 export interface DayRecord {

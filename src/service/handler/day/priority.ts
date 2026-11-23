@@ -13,7 +13,12 @@ import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import { hold } from '../../activity.ts'
 import isDay from './isDay.ts'
 import type { DayView } from './mod.ts'
-import { createDayPrioritizer, type PrioritizeDayItems, type PriorityEvidence } from './priorityAI.ts'
+import {
+  createDayPrioritizer,
+  MAX_PRIORITY_ITEMS,
+  type PrioritizeDayItems,
+  type PriorityEvidence,
+} from './priorityAI.ts'
 import { priorityContextSources, readPriorityContext } from './priorityContext.ts'
 import { PrioritySnapshot, prioritySnapshot, reusePrioritySnapshot, samePriorityOverrides } from './prioritySnapshot.ts'
 
@@ -137,6 +142,19 @@ export function createDayPriority(options: DayPriorityOptions, group: PriorityGr
   const apply = async (view: DayView): Promise<DayView> => {
     if (view.record.summarized) return view
     const saved = await read(view.day.ymd)
+    const openCount = groupItems(view).filter((item) => !item.done).length
+    if (openCount > MAX_PRIORITY_ITEMS) {
+      view.record[statusKey] = {
+        source: saved ? 'sky' : 'saved',
+        warning: `Sky doesn't rank more than ${MAX_PRIORITY_ITEMS} open ${label.toLowerCase()} at a time (${openCount} open). Your existing order is still available.`,
+        retryable: false,
+      }
+      if (saved) {
+        const content = await readOptional(file(view.day.ymd))
+        if (content) orderItems(view, content, saved)
+      }
+      return view
+    }
     view.record[statusKey] = { source: saved ? 'sky' : 'saved', ...warnings.get(view.day.ymd) }
     const content = await readOptional(file(view.day.ymd))
     if (!content) return view
@@ -180,6 +198,10 @@ export function createDayPriority(options: DayPriorityOptions, group: PriorityGr
     const byAddress = new Map(rows.map((row) => [priorityAddressKey(row), row]))
     const tasks = [...groupItems(current)].filter((item) => !item.done).sort((a, b) => a.priority! - b.priority!)
     if (tasks.length < 2) return
+    if (tasks.length > MAX_PRIORITY_ITEMS) {
+      warnings.delete(ymd)
+      return
+    }
     const evidence: PriorityEvidence = {
       group,
       day: ymd,

@@ -6,7 +6,7 @@ export function PriorityStatus({
   suggestions,
   paused,
 }: {
-  status?: { warning?: string; connection?: boolean }
+  status?: { warning?: string; connection?: boolean; retryable?: boolean }
   suggestions: ReturnType<typeof useDayPriority>
   paused: boolean
 }) {
@@ -19,11 +19,11 @@ export function PriorityStatus({
           <Button component="a" href="/settings/connections" variant="secondary">
             Connect TypeSafe
           </Button>
-        ) : (
+        ) : status?.retryable !== false ? (
           <Button variant="secondary" disabled={suggestions.loading} onClick={suggestions.retry}>
             Retry
           </Button>
-        )}
+        ) : null}
       </div>
     )
   return suggestions.loading ? (
