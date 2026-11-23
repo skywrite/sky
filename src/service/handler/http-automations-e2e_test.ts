@@ -25,7 +25,7 @@ test(
     const root = await mkdtemp(path.join(tmpdir(), 'sky-automations-e2e-'))
     const dir = path.join(root, 'automations')
     await mkdir(dir)
-    const catalog: AutomationCommand[] = ['journal', 'notes', 'tasks', 'meetings', 'activity'].map((name) => ({
+    const dayRecaps: AutomationCommand[] = ['journal', 'notes', 'tasks', 'meetings', 'activity'].map((name) => ({
       name: `recap:${name}`,
       description: `Recap saved ${name} activity.`,
       source: 'local',
@@ -34,6 +34,15 @@ test(
         { name: 'no-editor', kind: 'flag', type: 'bool', description: 'Keep the editor closed' },
       ],
     }))
+    const catalog: AutomationCommand[] = [
+      ...dayRecaps,
+      {
+        name: 'recap:backfill',
+        description: 'Backfill missing day recaps across installed recap commands.',
+        source: 'core',
+        flags: [{ name: 'days', kind: 'flag', type: 'number', description: 'Past days to check' }],
+      },
+    ]
     const files = new Map<string, string>()
     const creates: string[] = []
     const requests: [string, string | undefined][] = []
@@ -124,7 +133,7 @@ Keep the journal recap current.
       draft: async (request, revise) => {
         requests.push([request, revise])
         const name = revise ?? 'morning-recaps'
-        const selected = revise ? catalog.slice(0, 2) : catalog
+        const selected = revise ? dayRecaps.slice(0, 2) : dayRecaps
         const contents = `---
 # Keep the drafted context
 commands:
@@ -254,7 +263,7 @@ ${revise ? 'The revised recap instructions.' : 'Prepare the previous day’s rec
           requests.length,
           creates.length,
         ],
-        expected: [catalog.map(({ name }) => name), '08:15', 'Prepare the mock activity summary.', 0, 0, 0],
+        expected: [dayRecaps.map(({ name }) => name), '08:15', 'Prepare the mock activity summary.', 0, 0, 0],
       })
       await page.getByLabel('Automation name', { exact: true }).fill('invalid name')
       await review.click()
@@ -320,7 +329,7 @@ ${revise ? 'The revised recap instructions.' : 'Prepare the previous day’s rec
         expected: [
           '2Configure',
           false,
-          catalog.map(({ name }) => name),
+          dayRecaps.map(({ name }) => name),
           '06:30',
           'Previous day',
           'Europe/Paris',
@@ -446,7 +455,7 @@ ${revise ? 'The revised recap instructions.' : 'Prepare the previous day’s rec
         expected: [
           ['legacy-recap.md', 'morning-recaps.md'],
           ['morning-recaps', 'morning-recaps'],
-          catalog.map(({ name }) => ({ run: name, args: { day: 'yesterday', noEditor: true } })),
+          dayRecaps.map(({ name }) => ({ run: name, args: { day: 'yesterday', noEditor: true } })),
           'EVERY-DAY 06:45',
           'Europe/Paris',
           '2025-11-30',
@@ -462,7 +471,7 @@ ${revise ? 'The revised recap instructions.' : 'Prepare the previous day’s rec
         given: 'Run now on one group',
         should: 'invoke all five commands in order',
         actual: invoked,
-        expected: catalog.map(({ name }) => name),
+        expected: dayRecaps.map(({ name }) => name),
       })
       await page.getByRole('switch', { name: 'Morning recaps on', exact: true }).focus()
       await page.getByRole('switch', { name: 'Morning recaps on', exact: true }).press('Space')
@@ -532,7 +541,7 @@ ${revise ? 'The revised recap instructions.' : 'Prepare the previous day’s rec
         should: 'save its complete command list and final manual adjustment to the same file',
         actual: [revised.commands, describeTrigger(revised.trigger), revised.brief, files.size],
         expected: [
-          catalog.slice(0, 2).map(({ name }) => ({ run: name, args: { day: 'today', noEditor: true } })),
+          dayRecaps.slice(0, 2).map(({ name }) => ({ run: name, args: { day: 'today', noEditor: true } })),
           'EVERY-DAY 10:45',
           'The revised recap instructions.',
           2,

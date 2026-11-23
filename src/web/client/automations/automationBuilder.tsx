@@ -52,13 +52,16 @@ function repeatOf(setup: AutomationSetup): string {
   return 'custom'
 }
 
+function isDayRecap(command: AutomationCommand | undefined): boolean {
+  return Boolean(
+    command?.name.startsWith('recap:') &&
+    command.flags.some((flag) => flag.name === 'day' && flag.type === 'plainDate'),
+  )
+}
+
 function selectionFor(command: AutomationCommand): AutomationSetup['commands'][number] {
   const args: Record<string, unknown> = {}
-  if (
-    command.name.startsWith('recap:') &&
-    command.flags.some((flag) => flag.name === 'day' && flag.type === 'plainDate')
-  )
-    args.day = 'yesterday'
+  if (isDayRecap(command)) args.day = 'yesterday'
   if (command.flags.some((flag) => keyOf(flag.name) === 'noEditor' && flag.type === 'bool')) args.noEditor = true
   return { run: command.name, args }
 }
@@ -143,11 +146,7 @@ export function AutomationBuilder({
       }),
     })
 
-  const recapDays = setup.commands.filter(
-    (selection) =>
-      selection.run.startsWith('recap:') &&
-      byName.get(selection.run)?.flags.some((flag) => flag.name === 'day' && flag.type === 'plainDate'),
-  )
+  const recapDays = setup.commands.filter((selection) => isDayRecap(byName.get(selection.run)))
   const dayValues = new Set(recapDays.map((selection) => selection.args.day ?? 'default'))
   const recapDay = dayValues.size === 1 ? String([...dayValues][0]) : null
 
@@ -245,7 +244,7 @@ export function AutomationBuilder({
           </Button>
           <span className="sky-auto-help">{catalog?.length ?? 0} installed commands</span>
         </div>
-        {catalog?.some((command) => command.name.startsWith('recap:')) && (
+        {catalog?.some(isDayRecap) && (
           <div>
             <Button
               size="sm"
@@ -255,10 +254,7 @@ export function AutomationBuilder({
                 setClockTime('07:00')
                 update({
                   ...rest,
-                  commands: catalog
-                    .filter((command) => command.name.startsWith('recap:'))
-                    .slice(0, 50)
-                    .map(selectionFor),
+                  commands: catalog.filter(isDayRecap).slice(0, 50).map(selectionFor),
                   at: ['07:00'],
                 })
               }}
