@@ -1,18 +1,31 @@
-/** `/future` is the area's Goals view; `/future/goals/<name>` is one goal's page. */
+/**
+ * `/future` is the area's Goals list and `/future/goals/<name>` one goal's page;
+ * `/future/decisions` is the Decisions list and `/future/decisions/new` the page that adds one.
+ */
 export interface FutureRoute {
-  /** The goal whose page is open, or null on the Goals view */
+  /** The list the area shows */
+  tab: 'goals' | 'decisions'
+  /** The goal whose page is open, or null */
   goal: string | null
+  /** The page that adds a decision */
+  adding: boolean
 }
 
 export function futureRouteOf(path: string): FutureRoute | null {
   if (path !== '/future' && !path.startsWith('/future/')) return null
+  const decisions = /^\/future\/decisions(\/|$)/.test(path)
+  const route: FutureRoute = {
+    tab: decisions ? 'decisions' : 'goals',
+    goal: null,
+    adding: /^\/future\/decisions\/new\/?$/.test(path),
+  }
   const name = path.match(/^\/future\/goals\/([^/]+)\/?$/)?.[1]
-  if (!name) return { goal: null }
+  if (!name) return route
   try {
-    return { goal: decodeURIComponent(name) }
+    return { ...route, goal: decodeURIComponent(name) }
   } catch {
     // A mangled address still opens the area.
-    return { goal: null }
+    return route
   }
 }
 

@@ -385,3 +385,141 @@ test(
     }
   },
 )
+
+test(
+  {
+    name: 'Future lists decisions, drafts one with Sky from plain words, and saves it',
+    ignore: env.get('SKY_BROWSER_TESTS') !== '1',
+    timeout: 120000,
+  },
+  async () => {
+    const f = await futureFixture()
+    const { page, origin, errors, shot, waitForTitle, close } = await open(f)
+    try {
+      await page.goto(`${origin}/future`)
+      await page.getByRole('link', { name: /^Decisions/ }).click()
+      await waitForTitle('sky · Decisions')
+      const rows = (name: string) => page.getByRole('region', { name }).locator('.sky-future-row')
+      await rows('To decide').first().waitFor()
+      await shot('11-decisions')
+      assert({
+        given: 'the Decisions tab with an open decision, one in force and one made',
+        should: 'list each where it stands, with the goals it weighs on and its date',
+        actual: [
+          new URL(page.url()).pathname,
+          (await rows('To decide').allInnerTexts()).map((text) => text.replace(/\s+/g, ' ')),
+          (await rows('In force').allInnerTexts()).map((text) => text.replace(/\s+/g, ' ')),
+          (await rows('Decided').allInnerTexts()).map((text) => text.replace(/\s+/g, ' ')),
+        ],
+        expected: [
+          '/future/decisions',
+          ['Which race to enter Weighs on Run a marathon Open since Mar 2'],
+          ['No late nights before a long run Weighs on Learn Spanish and Run a marathon Since Mar 2'],
+          ['Hire a coach Weighs on Run a marathon Decided Apr 1'],
+        ],
+      })
+
+      await page.getByRole('button', { name: 'Add a decision' }).click()
+      await waitForTitle('sky · New decision')
+      await page.getByLabel('What’s the decision?').fill('which fall race should I run')
+      await page.getByRole('button', { name: 'Draft it with Sky' }).click()
+      await page.getByLabel('The decision', { exact: true }).waitFor()
+      await shot('12-decision-draft')
+      assert({
+        given: 'a decision said in plain words and drafted',
+        should: 'fill the form from the draft, tick the goal it found, and show what Sky was unsure of with its answer',
+        actual: [
+          await page.getByLabel('The decision', { exact: true }).inputValue(),
+          await page.getByLabel('What’s going on?').inputValue(),
+          await page.getByLabel('Decide by').inputValue(),
+          await page.getByLabel('Run a marathon').isChecked(),
+          await page.getByLabel('Learn Spanish').isChecked(),
+          await page.getByLabel('Is a half marathon an option?').inputValue(),
+          await page.locator('.sky-future-linked').allInnerTexts(),
+        ],
+        expected: [
+          'Which race to enter in the fall',
+          'Drafted from: which fall race should I run',
+          '2030-07-01',
+          true,
+          false,
+          'No, the full distance only.',
+          ['streaks/run-before-work\n×'],
+        ],
+      })
+
+      await page.getByLabel('Is a half marathon an option?').fill('No. The full distance.')
+      await page.getByRole('button', { name: 'Redraft with these answers' }).click()
+      await page.getByRole('heading', { name: /Sky wasn’t sure/ }).waitFor({ state: 'detached' })
+      await page.getByRole('button', { name: 'Remove streaks/run-before-work' }).click()
+      await page.getByText('Already decided', { exact: true }).click()
+      await page.getByLabel('What did you decide?').fill('The city marathon in October.')
+      await page.getByLabel('It’s still in force').check()
+      await page.getByLabel('When did you decide?').fill('2030-06-10')
+      await page.getByText('Personal', { exact: true }).click()
+      await page.getByRole('button', { name: 'Add decision' }).click()
+      await waitForTitle('sky · Decisions')
+      await rows('In force').nth(1).waitFor()
+      assert({
+        given: 'the redrafted decision marked as made on an earlier day and still in force, then saved',
+        should: 'run the command with what the form held, and list the decision as in force since that day',
+        actual: [
+          f.drafted.at(-1)?.conversation,
+          f.created,
+          (await rows('In force').allInnerTexts()).map((text) => text.replace(/\s+/g, ' ')),
+        ],
+        expected: [
+          'Q: Is a half marathon an option?\nA: No. The full distance.',
+          [
+            {
+              title: 'Which race to enter in the fall',
+              context: 'Drafted from: which fall race should I run',
+              desiredOutcomes: 'A full marathon that fits the plan.',
+              decision: 'The city marathon in October.',
+              inForce: true,
+              when: '2030-06-10',
+              target: undefined,
+              rel: ['goals/Run-a-Marathon'],
+              category: 'Personal',
+            },
+          ],
+          [
+            'Which race to enter in the fall Weighs on Run a marathon Since Jun 10',
+            'No late nights before a long run Weighs on Learn Spanish and Run a marathon Since Mar 2',
+          ],
+        ],
+      })
+
+      await page.setViewportSize({ width: 390, height: 844 })
+      await page.goto(`${origin}/future/decisions/new`)
+      await page.getByLabel('What’s the decision?').fill('Whether to hire a coach again')
+      await page.getByRole('button', { name: 'Write it myself' }).click()
+      const add = page.getByRole('button', { name: 'Add decision' })
+      await add.waitFor()
+      const blocked = await add.isDisabled()
+      await page.getByLabel('What’s going on?').fill('The plan ends in July.')
+      await page.getByLabel('What do you want out of it?').fill('Stay injury free.')
+      await shot('13-decision-phone')
+      const fits = await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)
+      await add.click()
+      await waitForTitle('sky · Decisions')
+      await rows('To decide').nth(1).waitFor()
+      assert({
+        given: 'a decision written by hand on a phone, with no draft',
+        should:
+          'start from the words as the title, wait for the two required fields, fit the screen, and save it as open',
+        actual: [
+          blocked,
+          fits,
+          f.created.at(-1)?.title,
+          f.created.at(-1)?.decision,
+          (await rows('To decide').allInnerTexts()).some((text) => text.includes('Whether to hire a coach again')),
+          errors,
+        ],
+        expected: [true, true, 'Whether to hire a coach again', undefined, true, []],
+      })
+    } finally {
+      await close()
+    }
+  },
+)

@@ -6,11 +6,14 @@ export function FutureLink({
   navigate,
   children,
   className,
+  current = false,
 }: {
   to: string
   navigate: (to: string) => void
   children: ReactNode
   className?: string
+  /** This link is the page being shown */
+  current?: boolean
 }) {
   const click = (event: MouseEvent<HTMLAnchorElement>) => {
     if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
@@ -18,7 +21,7 @@ export function FutureLink({
     navigate(to)
   }
   return (
-    <a href={to} onClick={click} className={className}>
+    <a href={to} onClick={click} className={className} aria-current={current ? 'page' : undefined}>
       {children}
     </a>
   )

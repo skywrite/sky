@@ -59,6 +59,33 @@
   font-size: 17px;
   line-height: 1.5;
 }
+.sky-future-tabs {
+  display: flex;
+  gap: 28px;
+  margin-top: 22px;
+  border-bottom: 1px solid var(--sky-border-soft);
+}
+.sky-future-tabs a {
+  margin-bottom: -1px;
+  padding: 10px 0 12px;
+  border-bottom: 2px solid transparent;
+  color: var(--sky-dim);
+  font-size: 17px;
+  font-weight: 550;
+}
+.sky-future-tabs a:hover {
+  color: var(--sky-text);
+}
+.sky-future-tabs a[aria-current='page'] {
+  border-bottom-color: var(--sky-text);
+  color: var(--sky-text);
+}
+.sky-future-tabs small {
+  margin-left: 8px;
+  color: var(--sky-dim);
+  font-size: 14px;
+  font-weight: 400;
+}
 .sky-future-crumbs {
   display: flex;
   gap: 12px;
@@ -547,7 +574,7 @@
 .sky-future-form-label {
   margin-bottom: 4px;
   font-size: var(--mantine-font-size-sm);
-  font-weight: 500;
+  font-weight: 600;
 }
 .sky-future-form-dates {
   display: grid;
@@ -565,7 +592,7 @@
   margin-bottom: 6px;
   padding: 0;
   font-size: var(--mantine-font-size-sm);
-  font-weight: 500;
+  font-weight: 600;
 }
 .sky-future-ending {
   display: flex;
@@ -652,4 +679,72 @@
   .sky-future-track-fill {
     transition: width 0.5s ease;
   }
+}
+
+/* The page that adds a decision: one column, with room to write. */
+.sky-future-new {
+  max-width: 720px;
+}
+.sky-future-new > h1 {
+  margin-bottom: 26px;
+}
+.sky-future-new .sky-future-panel {
+  margin-top: 0;
+}
+.sky-future-new-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 6px;
+}
+.sky-future-questions {
+  display: grid;
+  gap: 14px;
+}
+.sky-future-questions > p {
+  margin-bottom: 0;
+  font-size: 15px;
+}
+.sky-future-choices {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.sky-future-choices legend {
+  margin-bottom: 8px;
+  padding: 0;
+  font-size: var(--mantine-font-size-sm);
+  font-weight: 600;
+}
+.sky-future-choices .sky-future-note {
+  margin-top: 0;
+}
+.sky-future-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.sky-future-linked {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 6px 3px 12px;
+  border-radius: 999px;
+  background: var(--sky-hover);
+  color: var(--sky-text-2);
+  font-size: 14.5px;
+}
+.sky-future-linked button {
+  padding: 0 6px;
+  border: 0;
+  background: none;
+  color: var(--sky-dim);
+  font-size: 17px;
+  line-height: 1;
+  cursor: pointer;
+}
+.sky-future-linked button:hover {
+  color: var(--sky-action-danger);
 }

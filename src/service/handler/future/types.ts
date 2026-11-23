@@ -19,6 +19,36 @@ export interface FutureDecisionTie {
   since: string | null
 }
 
+/** A decision as the Decisions list shows it */
+export interface FutureDecision extends FutureDecisionTie {
+  state: 'open' | 'inForce' | 'decided'
+  /** The day an open decision should be made by, when it has one */
+  target: string | null
+  /** The active goals it weighs on */
+  goals: FutureGoalTie[]
+}
+
+/** Something Sky could not settle from the person's words, with the answer it would assume */
+export interface FutureOpenQuestion {
+  question: string
+  why?: string
+  proposed: string
+}
+
+/** A decision drafted from the person's own words, for them to correct before it is saved */
+export interface FutureDecisionDraft {
+  title: string
+  /** What was decided, when the words say the decision is already made */
+  decision: string | null
+  /** A decide-by day, when the words give one */
+  target: string | null
+  context: string
+  desiredOutcomes: string
+  /** Notebook references the draft found: goals, people, projects */
+  rel: string[]
+  openQuestions: FutureOpenQuestion[]
+}
+
 export interface FutureIdeaTie {
   name: string
   title: string
@@ -121,6 +151,8 @@ export interface FutureReport {
   goals: FutureGoal[]
   /** The goals that ended, the latest first */
   past: FuturePastGoal[]
+  /** Every decision: the open ones first, then those in force, then the ones made, newest first */
+  decisions: FutureDecision[]
   /** Decisions in force, each with the goals it serves */
   inForce: Array<FutureDecisionTie & { goals: FutureGoalTie[] }>
 }
@@ -138,7 +170,7 @@ export interface FutureMutation {
 export class FutureError extends Error {
   constructor(
     message: string,
-    public readonly status: 400 | 404 | 409 | 503 = 400,
+    public readonly status: 400 | 404 | 409 | 502 | 503 = 400,
   ) {
     super(message)
   }

@@ -16,8 +16,11 @@ import type MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
 import IdeaStore from '#shared/models/Store/IdeaStore/mod.ts'
 import type { TrackingColumn } from '#shared/models/Tracking/mod.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
+import type { DecisionCommands } from './decisionCommands.ts'
 import {
   type FutureCheckpoint,
+  type FutureDecision,
+  type FutureDecisionDraft,
   type FutureDecisionTie,
   type FutureEnding,
   FutureError,
@@ -100,6 +103,27 @@ const CloseInput = z.object({
   note: z.string().trim().max(5000).default(''),
 })
 
+const DraftInput = z.object({
+  statement: z.string().trim().min(1, 'Say what the decision is, in your own words.').max(4000),
+  answers: z
+    .array(z.object({ question: z.string().trim().min(1).max(1000), answer: z.string().trim().min(1).max(2000) }))
+    .max(20)
+    .default([]),
+})
+
+const DecisionInput = z.object({
+  title: z.string().trim().min(1, 'Say what the decision is.').max(160, 'Keep the decision to one line.'),
+  context: z.string().trim().min(1, 'Say what is going on.').max(20_000),
+  desiredOutcomes: z.string().trim().min(1, 'Say what you want out of it.').max(20_000),
+  decision: z.string().trim().max(20_000).default(''),
+  inForce: z.boolean().default(false),
+  when: YmdSchema.nullish(),
+  target: YmdSchema.nullish(),
+  goals: z.array(z.string().trim().min(1).max(200)).max(50).default([]),
+  rel: z.array(z.string().trim().min(1).max(300)).max(50).default([]),
+  category: z.enum(['Personal', 'Professional']).default('Professional'),
+})
+
 /** Whole days from one date to another, negative when `to` comes first. */
 function daysFrom(from: PlainDate, to: PlainDate): number {
   let days = 0
@@ -137,7 +161,12 @@ interface Shown {
 
 /** Everything in the notebook that can name a goal in its `rel:` */
 interface Tied {
-  decisions: Array<{ rel: Set<string>; state: 'inForce' | 'pending' | 'decided'; tie: FutureDecisionTie }>
+  decisions: Array<{
+    rel: Set<string>
+    state: 'inForce' | 'pending' | 'decided'
+    target: string | null
+    tie: FutureDecisionTie
+  }>
   ideas: Array<{ rel: Set<string>; tie: FutureIdeaTie }>
   habits: Array<{ rel: Set<string>; tie: FutureHabitTie }>
 }
@@ -148,6 +177,8 @@ export class FutureStore {
     readonly notebook: () => FutureNotebook | null,
     readonly tracking: Pick<TrackingStore, 'report'>,
     readonly today: () => Promise<PlainDate>,
+    /** The commands that draft and write a decision; without them decisions are listed but not added */
+    readonly commands?: DecisionCommands,
   ) {}
 
   private ready(): FutureNotebook {
@@ -185,6 +216,7 @@ export class FutureStore {
         .map(({ doc, path: file }) => ({
           rel: tiedTo(doc.rel),
           state: doc.inForce ? ('inForce' as const) : doc.isPending ? ('pending' as const) : ('decided' as const),
+          target: !doc.target ? null : 'plainDate' in doc.target ? doc.target.plainDate.ymd : doc.target.ymd,
           tie: {
             name: baseName(file),
             title: doc.summary || firstHeading(doc.markdown) || baseName(file),
@@ -258,6 +290,25 @@ export class FutureStore {
               ],
         )
         .sort((a, b) => (b.ended ?? '').localeCompare(a.ended ?? '') || a.title.localeCompare(b.title)),
+      decisions: tied.decisions
+        .map(
+          (decision): FutureDecision => ({
+            ...decision.tie,
+            state: decision.state === 'pending' ? 'open' : decision.state,
+            target: decision.target,
+            goals: active
+              .filter((goal) => decision.rel.has(goal.key))
+              .map((goal) => ({ name: goal.name, title: goal.doc.title })),
+          }),
+        )
+        // Open ones first, the soonest to decide at the top; the rest keep newest first.
+        .sort((a, b) => {
+          const rank = { open: 0, inForce: 1, decided: 2 }
+          return (
+            rank[a.state] - rank[b.state] ||
+            (a.state === 'open' ? (a.target ?? '9999').localeCompare(b.target ?? '9999') : 0)
+          )
+        }),
       inForce: tied.decisions
         .filter((decision) => decision.state === 'inForce')
         .map((decision) => ({
@@ -529,6 +580,71 @@ export class FutureStore {
     }).toMarkdown()
     const to = path.join(activeGoalsDir(this.dirs.goalsDir), path.basename(entry.path))
     return this.move(notebook, entry.path, to, text)
+  }
+
+  private decisionCommands(): DecisionCommands {
+    if (!this.commands) throw new FutureError('Decisions cannot be added from here.', 503)
+    return this.commands
+  }
+
+  /**
+   * Draft a decision from the person's own words: `decisions:clarify`, the run
+   * chat makes. Answers to what Sky was unsure of go back in as the conversation.
+   */
+  async draftDecision(input: unknown): Promise<FutureDecisionDraft> {
+    const commands = this.decisionCommands()
+    const { statement, answers } = DraftInput.parse(input)
+    try {
+      return await commands.draft({
+        statement,
+        conversation: answers.length
+          ? answers.map(({ question, answer }) => `Q: ${question}\nA: ${answer}`).join('\n\n')
+          : undefined,
+      })
+    } catch (error) {
+      throw new FutureError((error as Error).message, 502)
+    }
+  }
+
+  /** Save a decision: `decisions:create`, with the fields as the person left them. */
+  async createDecision(input: unknown): Promise<FutureMutation> {
+    const notebook = this.ready()
+    const commands = this.decisionCommands()
+    const fields = DecisionInput.parse(input)
+    if (fields.inForce && !fields.decision)
+      throw new FutureError('A decision is in force once it is made. Say what you decided.')
+    const today = await this.today()
+    if (fields.when && fields.when > today.ymd)
+      throw new FutureError('That day has not happened yet. Leave the date empty for today.')
+    const goals = fields.goals.map((name) => {
+      const entry = notebook.goals.find(name)
+      if (!entry) throw new FutureError(`"${name}" is not one of your goals. It may have been renamed.`)
+      return `goals/${baseName(entry.path)}`
+    })
+    let created
+    try {
+      created = await commands.create({
+        title: fields.title,
+        context: fields.context,
+        desiredOutcomes: fields.desiredOutcomes,
+        decision: fields.decision || undefined,
+        inForce: fields.inForce,
+        // Today needs no date: the command stamps the moment it runs.
+        when: fields.when && fields.when !== today.ymd ? fields.when : undefined,
+        target: fields.decision ? undefined : (fields.target ?? undefined),
+        rel: [...new Set([...goals, ...fields.rel])],
+        category: fields.category,
+      })
+    } catch (error) {
+      throw new FutureError((error as Error).message)
+    }
+    try {
+      // The page reads again at once; the notebook's own reading of the new file can be a moment behind.
+      notebook.decisions.set(created.file, await readTextFile(created.file))
+    } catch {
+      // The file watcher brings it in.
+    }
+    return { name: created.name }
   }
 
   /** The file's checkpoint lines as written, without the one on `date`; a line Sky cannot read is kept. */

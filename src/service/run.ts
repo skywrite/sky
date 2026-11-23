@@ -209,7 +209,7 @@ const server = createServer({
   dayReview: createReviewRuntime(config, env.toObject()),
   tracking,
   streaks: createStreaksHost(config),
-  future: createFutureHost(config, () => server.markdownStore, tracking.store),
+  future: createFutureHost(config, env.toObject(), () => server.markdownStore, tracking.store),
   week: createWeekHost(config, env.toObject()),
   imports: createImportHost(config, env.toObject()),
   // The day page knows the owner's mail by every address it uses, Gmail aliases included

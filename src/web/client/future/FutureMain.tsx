@@ -3,18 +3,18 @@ import { useEffect, useState } from 'react'
 import type { FutureReport } from '../../../service/handler/future/types.ts'
 import { AddGoalDialog } from './AddGoalDialog.tsx'
 import { niceDate } from './dates.ts'
+import { DecisionsList } from './DecisionsList.tsx'
+import { FutureLink } from './FutureLink.tsx'
 import { GoalBlock } from './GoalBlock.tsx'
 import { GoalPage } from './GoalPage.tsx'
+import { NewDecision } from './NewDecision.tsx'
 import { PastGoals } from './PastGoals.tsx'
 import { type FutureRoute, goalHref } from './routes.ts'
 import { TieLink } from './TieLink.tsx'
 import { useFutureReport } from './useFutureReport.ts'
 import { useGoal } from './useGoal.ts'
+import { listed } from './words.ts'
 import './FutureMain.css'
-
-/** "A", "A and B", "A, B and C" */
-const listed = (names: string[]): string =>
-  names.length < 2 ? (names[0] ?? '') : `${names.slice(0, -1).join(', ')} and ${names.at(-1)}`
 
 /** The decisions that still bind what the person does, once, above the goals they serve. */
 function InForce({ report, navigate }: { report: FutureReport; navigate: (to: string) => void }) {
@@ -59,7 +59,7 @@ export function FutureMain({ route, navigate }: { route: FutureRoute; navigate: 
     await other.refresh()
   }
   // The tab names the goal that is open; while it loads, or when it is gone, it still says which area this is.
-  const title = goal?.title ?? 'Future'
+  const title = goal?.title ?? (route.adding ? 'New decision' : route.tab === 'decisions' ? 'Decisions' : 'Future')
   useEffect(() => {
     document.title = `sky · ${title}`
   }, [title])
@@ -98,6 +98,16 @@ export function FutureMain({ route, navigate }: { route: FutureRoute; navigate: 
                 </Button>
               </div>
             )
+          ) : route.adding ? (
+            <NewDecision
+              goals={report.goals}
+              today={report.today}
+              navigate={navigate}
+              onCreated={async () => {
+                await refresh()
+                navigate('/future/decisions')
+              }}
+            />
           ) : (
             <>
               <header className="sky-future-head">
@@ -107,32 +117,57 @@ export function FutureMain({ route, navigate }: { route: FutureRoute; navigate: 
                     <span>The future you want, and what shapes it.</span>
                   </p>
                 </div>
-                {report.goals.length > 0 && (
-                  <Button variant="primary" onClick={() => setAdding(true)}>
-                    ＋ Add a goal
-                  </Button>
-                )}
+                {route.tab === 'decisions'
+                  ? report.decisions.length > 0 && (
+                      <Button variant="primary" onClick={() => navigate('/future/decisions/new')}>
+                        ＋ Add a decision
+                      </Button>
+                    )
+                  : report.goals.length > 0 && (
+                      <Button variant="primary" onClick={() => setAdding(true)}>
+                        ＋ Add a goal
+                      </Button>
+                    )}
               </header>
-              <InForce report={report} navigate={navigate} />
-              {report.goals.length ? (
-                <div className="sky-future-goals">
-                  {report.goals.map((item) => (
-                    <GoalBlock key={item.name} goal={item} today={report.today} navigate={navigate} />
-                  ))}
-                </div>
+              <nav className="sky-future-tabs" aria-label="Future">
+                <FutureLink to="/future" navigate={navigate} current={route.tab === 'goals'}>
+                  Goals<small>{report.goals.length}</small>
+                </FutureLink>
+                <FutureLink to="/future/decisions" navigate={navigate} current={route.tab === 'decisions'}>
+                  Decisions<small>{report.decisions.length}</small>
+                </FutureLink>
+              </nav>
+              {route.tab === 'decisions' ? (
+                <DecisionsList
+                  decisions={report.decisions}
+                  today={report.today}
+                  navigate={navigate}
+                  onAdd={() => navigate('/future/decisions/new')}
+                />
               ) : (
-                <div className="sky-future-empty">
-                  <h2>{report.past.length ? 'Nothing in progress' : 'Start with one goal'}</h2>
-                  <p>
-                    Name one outcome you want. Sky keeps it in view in every chat and when it picks what matters each
-                    day, and this page shows how far it has come.
-                  </p>
-                  <Button variant="primary" onClick={() => setAdding(true)}>
-                    ＋ Add a goal
-                  </Button>
-                </div>
+                <>
+                  <InForce report={report} navigate={navigate} />
+                  {report.goals.length ? (
+                    <div className="sky-future-goals">
+                      {report.goals.map((item) => (
+                        <GoalBlock key={item.name} goal={item} today={report.today} navigate={navigate} />
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="sky-future-empty">
+                      <h2>{report.past.length ? 'Nothing in progress' : 'Start with one goal'}</h2>
+                      <p>
+                        Name one outcome you want. Sky keeps it in view in every chat and when it picks what matters
+                        each day, and this page shows how far it has come.
+                      </p>
+                      <Button variant="primary" onClick={() => setAdding(true)}>
+                        ＋ Add a goal
+                      </Button>
+                    </div>
+                  )}
+                  <PastGoals goals={report.past} today={report.today} navigate={navigate} />
+                </>
               )}
-              <PastGoals goals={report.past} today={report.today} navigate={navigate} />
             </>
           )}
         </div>

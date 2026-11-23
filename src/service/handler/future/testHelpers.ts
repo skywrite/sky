@@ -1,11 +1,14 @@
 import { readFile } from 'node:fs/promises'
 import * as path from 'node:path'
+import { writeDecision } from '#commands/all/decisions/lib/write.ts'
+import slugify from '#lib/string/slugify.ts'
 import { sleepInput, TRACKING_TODAY, trackingFixture } from '#lib/tracking/testHelpers.ts'
 import DecisionStore from '#shared/models/Store/DecisionStore/mod.ts'
 import GoalStore from '#shared/models/Store/GoalStore/mod.ts'
 import IdeaStore from '#shared/models/Store/IdeaStore/mod.ts'
 import StreakStore from '#shared/models/Store/StreakStore/mod.ts'
-import { PlainDate } from '#universal/dates/nbdt/mod.ts'
+import { PlainDate, PlainDateTime, ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
+import type { DecisionCommands, DecisionCreate } from './decisionCommands.ts'
 import { createFutureRoutes } from './mod.ts'
 import { type FutureNotebook, FutureStore } from './store.ts'
 
@@ -112,11 +115,59 @@ export async function futureFixture({ ready = true, goals = true } = {}) {
     ideas: await IdeaStore.build(path.join(root, 'ideas')),
     streaks: await StreakStore.build(path.join(root, 'streaks')),
   }
+  // The two decision commands, stood in for: the draft is canned, and the write goes through the
+  // same write core the real command uses, into this notebook.
+  const created: DecisionCreate[] = []
+  const drafted: Array<{ statement: string; conversation?: string }> = []
+  const commands: DecisionCommands = {
+    async draft(input) {
+      drafted.push(input)
+      if (input.statement.includes('fail')) throw new Error('The model did not answer.')
+      return {
+        title: 'Which race to enter in the fall',
+        decision: null,
+        target: '2030-07-01',
+        context: `Drafted from: ${input.statement}`,
+        desiredOutcomes: input.conversation ? 'A full marathon that fits the plan.' : 'A race that fits the plan.',
+        rel: ['goals/Run-a-Marathon', 'streaks/run-before-work'],
+        openQuestions: input.conversation
+          ? []
+          : [
+              {
+                question: 'Is a half marathon an option?',
+                why: 'It changes the training plan.',
+                proposed: 'No, the full distance only.',
+              },
+            ],
+      }
+    },
+    async create(input) {
+      created.push(input)
+      const name = slugify(input.title, { suggestedLength: 25, preserveCase: true })
+      const written = await writeDecision(
+        {
+          name,
+          title: input.title,
+          context: input.context,
+          desiredOutcomes: input.desiredOutcomes,
+          target: input.target,
+          decision: input.decision,
+          inForce: input.inForce,
+          rel: input.rel,
+          now: new ZonedDateTime(new PlainDateTime('08:15', input.when ?? TRACKING_TODAY), 'America/Chicago'),
+          category: `${input.category} Complete`,
+        },
+        { decisionsDir: path.join(root, 'decisions'), timeDir: path.join(root, 'time') },
+      )
+      return { name, file: written.file }
+    },
+  }
   const store = new FutureStore(
     { root, goalsDir: path.join(root, 'goals') },
     () => (ready ? notebook : null),
     tracking.store,
     async () => new PlainDate(TRACKING_TODAY),
+    commands,
   )
   const app = createFutureRoutes({ store })
   const post = (url: string, body: unknown, headers: Record<string, string> = {}) =>
@@ -126,5 +177,5 @@ export async function futureFixture({ ready = true, goals = true } = {}) {
       body: JSON.stringify(body),
     })
   const goalFile = (name: string, folder = 'active') => readFile(path.join(root, 'goals', folder, `${name}.md`), 'utf8')
-  return { root, store, app, post, goalFile, tracking, dispose: tracking.dispose }
+  return { root, store, app, post, goalFile, tracking, created, drafted, dispose: tracking.dispose }
 }

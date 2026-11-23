@@ -344,3 +344,141 @@ test('Future: a goal takes a new date, loses its date, and closes without a numb
     await f.dispose()
   }
 })
+
+test('Future: decisions are listed by where they stand, drafted from plain words, and saved through the command', async () => {
+  const f = await futureFixture()
+  try {
+    assert({
+      given: 'an open decision, one in force and one made',
+      should: 'list the open one first, then the one in force, then the one made, each with the goals it weighs on',
+      actual: (await f.store.report()).decisions.map(
+        (decision) => `${decision.state}: ${decision.title} [${decision.goals.map((goal) => goal.name).join(', ')}]`,
+      ),
+      expected: [
+        'open: Which race to enter [Run-a-Marathon]',
+        'inForce: No late nights before a long run [Learn-Spanish, Run-a-Marathon]',
+        'decided: Hire a coach [Run-a-Marathon]',
+      ],
+    })
+
+    const first = await (await f.post('/decisions/draft', { statement: '  which fall race should I run  ' })).json()
+    await f.post('/decisions/draft', {
+      statement: 'which fall race should I run',
+      answers: [{ question: 'Is a half marathon an option?', answer: 'No. The full distance.' }],
+    })
+    const failed = await f.post('/decisions/draft', { statement: 'this one will fail' })
+    assert({
+      given: 'a decision said in plain words, then again with an answer to what Sky was unsure of',
+      should: 'pass the words on as said, the answer as the conversation, and say when the draft could not be made',
+      actual: [first.title, first.openQuestions.length, f.drafted.slice(0, 2), failed.status, await failed.json()],
+      expected: [
+        'Which race to enter in the fall',
+        1,
+        [
+          { statement: 'which fall race should I run', conversation: undefined },
+          {
+            statement: 'which fall race should I run',
+            conversation: 'Q: Is a half marathon an option?\nA: No. The full distance.',
+          },
+        ],
+        502,
+        { message: 'The model did not answer.' },
+      ],
+    })
+
+    const made = await f.post('/decisions', {
+      title: 'Run the city marathon',
+      context: 'Two races fit the fall.',
+      desiredOutcomes: 'A flat course close to home.',
+      decision: 'The city marathon in October.',
+      inForce: true,
+      when: '2030-06-10',
+      target: '2030-07-01',
+      goals: ['run-a-marathon'],
+      rel: ['streaks/run-before-work', 'goals/Run-a-Marathon'],
+      category: 'Personal',
+    })
+    const open = await f.post('/decisions', {
+      title: 'Whether to hire a coach again',
+      context: 'The plan ends in July.',
+      desiredOutcomes: 'Stay injury free.',
+      when: '2030-06-18',
+      target: '2030-07-01',
+    })
+    assert({
+      given: 'a decision already made on an earlier day and still in force, and an open one raised today',
+      should:
+        'run the command with the fields as given: goals as references, no decide-by day once decided, and no date for today',
+      actual: [made.status, open.status, f.created],
+      expected: [
+        201,
+        201,
+        [
+          {
+            title: 'Run the city marathon',
+            context: 'Two races fit the fall.',
+            desiredOutcomes: 'A flat course close to home.',
+            decision: 'The city marathon in October.',
+            inForce: true,
+            when: '2030-06-10',
+            target: undefined,
+            rel: ['goals/Run-a-Marathon', 'streaks/run-before-work'],
+            category: 'Personal',
+          },
+          {
+            title: 'Whether to hire a coach again',
+            context: 'The plan ends in July.',
+            desiredOutcomes: 'Stay injury free.',
+            decision: undefined,
+            inForce: false,
+            when: undefined,
+            target: '2030-07-01',
+            rel: [],
+            category: 'Professional',
+          },
+        ],
+      ],
+    })
+    assert({
+      given: 'the page reading again straight after',
+      should: 'show both new decisions where they stand, without waiting for the notebook to be read again',
+      actual: (await f.store.report()).decisions
+        .filter((decision) => /city marathon|coach again/.test(decision.title))
+        .map((decision) => [decision.state, decision.title, decision.since, decision.target, decision.goals.length]),
+      expected: [
+        ['open', 'Whether to hire a coach again', '2030-06-18', '2030-07-01', 0],
+        ['inForce', 'Run the city marathon', '2030-06-10', null, 1],
+      ],
+    })
+
+    const noCall = await f.post('/decisions', { title: 'A rule', context: 'c', desiredOutcomes: 'o', inForce: true })
+    const later = await f.post('/decisions', { title: 'Later', context: 'c', desiredOutcomes: 'o', when: '2030-06-19' })
+    const unknown = await f.post('/decisions', {
+      title: 'For what',
+      context: 'c',
+      desiredOutcomes: 'o',
+      goals: ['Nope'],
+    })
+    const empty = await f.post('/decisions', { title: 'Bare', context: ' ', desiredOutcomes: 'o' })
+    assert({
+      given: 'in force with nothing decided, a day that has not happened, an unknown goal, and no context',
+      should: 'refuse each one, say why, and run no command',
+      actual: [
+        [noCall.status, (await noCall.json()).message],
+        [later.status, (await later.json()).message],
+        [unknown.status, (await unknown.json()).message],
+        [empty.status, (await empty.json()).message],
+        f.created.length,
+      ],
+      expected: [
+        [400, 'A decision is in force once it is made. Say what you decided.'],
+        [400, 'That day has not happened yet. Leave the date empty for today.'],
+        [400, '"Nope" is not one of your goals. It may have been renamed.'],
+        [400, 'Say what is going on.'],
+        2,
+      ],
+    })
+  } finally {
+    await f.dispose()
+  }
+})
