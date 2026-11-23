@@ -181,6 +181,9 @@ export function loadSkyConfig(configPath = SKY_CONFIG_PATH): SkyConfig {
     if (typeof parsed.experimental?.workstreams === 'boolean') {
       config.experimental.workstreams = parsed.experimental.workstreams
     }
+    if (typeof parsed.experimental?.outbox === 'boolean') {
+      config.experimental.outbox = parsed.experimental.outbox
+    }
     if (typeof parsed.experimental?.jevBrowser === 'boolean') {
       config.experimental.jevBrowser = parsed.experimental.jevBrowser
     }

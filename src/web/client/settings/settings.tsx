@@ -96,7 +96,7 @@ export interface SettingsData {
   about: { version: string | null; date: string | null }
   advanced: ConfigView
   /** The Experimental page's switches */
-  experimental: { contextPreflight: boolean; workstreams: boolean; jevBrowser?: boolean }
+  experimental: { contextPreflight: boolean; workstreams: boolean; outbox?: boolean; jevBrowser?: boolean }
 }
 
 // ── Talking to the service ──────────────────────────────────────────
@@ -133,21 +133,31 @@ export function applyTextSize(size: TextSize): void {
   document.body.style.zoom = size === 'large' ? '1.15' : ''
 }
 
+/** The sidebar entries that stay hidden until switched on under Experimental. */
+export type SidebarExperiments = { workstreams: boolean; outbox: boolean }
+
+const SIDEBAR_EXPERIMENTS: Record<string, keyof SidebarExperiments> = {
+  'experimental.workstreams': 'workstreams',
+  'experimental.outbox': 'outbox',
+}
+
 /**
  * Apply saved appearance at app start and keep the sidebar's opt-in
- * Workstreams entry in sync with successful settings writes.
+ * entries in sync with successful settings writes.
  */
-export function useSettingsBoot(): boolean {
+export function useSettingsBoot(): SidebarExperiments {
   const { setColorScheme } = useMantineColorScheme()
-  const [workstreamsEnabled, setWorkstreamsEnabled] = useState(false)
+  const [sidebar, setSidebar] = useState<SidebarExperiments>({ workstreams: false, outbox: false })
   useEffect(() => {
     let alive = true
-    let workstreamsChanged = false
+    const changed = new Set<keyof SidebarExperiments>()
     const onChange = (event: Event) => {
       const { key, value } = (event as CustomEvent<SettingChange>).detail
-      if (key !== 'experimental.workstreams') return
-      workstreamsChanged = true
-      setWorkstreamsEnabled(value === 'true')
+      const entry = SIDEBAR_EXPERIMENTS[key]
+      if (!entry) return
+      changed.add(entry)
+      const on = value === 'true'
+      setSidebar((current) => (current[entry] === on ? current : { ...current, [entry]: on }))
     }
     window.addEventListener(SETTING_CHANGED, onChange)
     fetch('/settings/_api/settings')
@@ -157,7 +167,10 @@ export function useSettingsBoot(): boolean {
         setColorScheme(data.theme === 'system' ? 'auto' : data.theme)
         applyTextSize(data.textSize)
         // A slow boot response must not undo a preference just saved in Settings.
-        if (!workstreamsChanged) setWorkstreamsEnabled(data.experimental?.workstreams === true)
+        setSidebar((current) => ({
+          workstreams: changed.has('workstreams') ? current.workstreams : data.experimental?.workstreams === true,
+          outbox: changed.has('outbox') ? current.outbox : data.experimental?.outbox === true,
+        }))
       })
       .catch(() => {})
     return () => {
@@ -165,7 +178,7 @@ export function useSettingsBoot(): boolean {
       window.removeEventListener(SETTING_CHANGED, onChange)
     }
   }, [setColorScheme])
-  return workstreamsEnabled
+  return sidebar
 }
 
 function useSettings() {
@@ -179,6 +192,7 @@ function useSettings() {
           const saved = (await r.json()) as SettingsData
           setData(saved)
           notifySettingChange('experimental.workstreams', String(saved.experimental?.workstreams === true))
+          notifySettingChange('experimental.outbox', String(saved.experimental?.outbox === true))
           setNote(null)
         } else {
           const body = (await r.json().catch(() => ({}))) as { message?: string }
@@ -392,7 +406,7 @@ function ExperimentalPane({ data, change }: { data: SettingsData; change: Return
           ]}
         />
       </Row>
-      <Row label="Workstreams" sub="Show Workstreams in the sidebar to organize ongoing work with Sky." last>
+      <Row label="Workstreams" sub="Show Workstreams in the sidebar to organize ongoing work with Sky.">
         <SegmentedControl
           aria-label="Workstreams"
           value={data.experimental.workstreams === true ? 'on' : 'off'}
@@ -401,6 +415,23 @@ function ExperimentalPane({ data, change }: { data: SettingsData; change: Return
             change('experimental.workstreams', String(workstreams), (current) => ({
               ...current,
               experimental: { ...current.experimental, workstreams },
+            }))
+          }}
+          data={[
+            { value: 'off', label: 'Off' },
+            { value: 'on', label: 'On' },
+          ]}
+        />
+      </Row>
+      <Row label="Outbox" sub="Show Outbox in the sidebar to review replies Sky drafts for your messages." last>
+        <SegmentedControl
+          aria-label="Outbox"
+          value={data.experimental.outbox === true ? 'on' : 'off'}
+          onChange={(value) => {
+            const outbox = value === 'on'
+            change('experimental.outbox', String(outbox), (current) => ({
+              ...current,
+              experimental: { ...current.experimental, outbox },
             }))
           }}
           data={[

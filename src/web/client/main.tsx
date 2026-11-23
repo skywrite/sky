@@ -107,7 +107,7 @@ function Canvas() {
   // The address holds a review the person opened or acted in; until then the prompt shows it in every tab.
   const [promptDay, dismissPrompt] = useReviewPrompt()
   const shownReview = reviewDay ?? promptDay
-  const workstreamsEnabled = useSettingsBoot()
+  const sidebarExperiments = useSettingsBoot()
   usePromptDraftGuard()
   useAboutMeDraftGuard()
   // On a phone the sidebar is a drawer; any navigation closes it.
@@ -596,17 +596,19 @@ function Canvas() {
                 <SidebarIcon name="chat" />
                 <span>Chat</span>
               </button>
-              <button
-                type="button"
-                className="sky-thread sky-side-primary sky-outbox-nav"
-                data-active={isOutbox}
-                aria-current={isOutbox ? 'page' : undefined}
-                onClick={() => navigate('/outbox')}
-              >
-                <SidebarIcon name="outbox" />
-                <span>Outbox</span>
-              </button>
-              {workstreamsEnabled && (
+              {sidebarExperiments.outbox && (
+                <button
+                  type="button"
+                  className="sky-thread sky-side-primary sky-outbox-nav"
+                  data-active={isOutbox}
+                  aria-current={isOutbox ? 'page' : undefined}
+                  onClick={() => navigate('/outbox')}
+                >
+                  <SidebarIcon name="outbox" />
+                  <span>Outbox</span>
+                </button>
+              )}
+              {sidebarExperiments.workstreams && (
                 <button
                   type="button"
                   className="sky-thread sky-side-primary"

@@ -276,7 +276,7 @@ export interface SettingsData {
   about: { version: string | null; date: string | null }
   advanced: ConfigView
   /** The Experimental page's switches */
-  experimental: { contextPreflight: boolean; workstreams: boolean; jevBrowser?: boolean }
+  experimental: { contextPreflight: boolean; workstreams: boolean; outbox?: boolean; jevBrowser?: boolean }
 }
 
 /** The host behind the routes — production reads the machine, tests script it. */
@@ -341,6 +341,7 @@ export const SETTABLE_KEYS = {
   editor: ['editor'],
   'experimental.contextPreflight': ['experimental', 'contextPreflight'],
   'experimental.workstreams': ['experimental', 'workstreams'],
+  'experimental.outbox': ['experimental', 'outbox'],
   'experimental.jevBrowser': ['experimental', 'jevBrowser'],
   'slack.forYou.dms': ['slack', 'forYou', 'dms'],
   'slack.forYou.mentions': ['slack', 'forYou', 'mentions'],
@@ -354,6 +355,7 @@ export const BOOLEAN_KEYS: ReadonlySet<SettableKey> = new Set<SettableKey>([
   'calendar.classifyEvents',
   'experimental.contextPreflight',
   'experimental.workstreams',
+  'experimental.outbox',
   'experimental.jevBrowser',
   'slack.forYou.dms',
   'slack.forYou.mentions',
@@ -406,6 +408,7 @@ async function refuse(host: SettingsHost, key: SettableKey, value: string): Prom
         : 'Choose an available preset.'
     case 'experimental.contextPreflight':
     case 'experimental.workstreams':
+    case 'experimental.outbox':
     case 'experimental.jevBrowser':
     case 'calendar.classifyEvents':
     case 'slack.forYou.dms':
@@ -455,6 +458,7 @@ async function settingsData(host: SettingsHost): Promise<SettingsData> {
     experimental: {
       contextPreflight: config.experimental.contextPreflight === true,
       workstreams: config.experimental.workstreams === true,
+      outbox: config.experimental.outbox === true,
       jevBrowser: config.experimental.jevBrowser === true,
     },
   }

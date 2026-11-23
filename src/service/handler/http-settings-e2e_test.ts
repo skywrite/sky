@@ -123,6 +123,7 @@ test(
       const nav = page.locator('.sky-settings-nav')
       const sidebar = page.locator('.sky-side')
       const workstreams = sidebar.getByRole('button', { name: 'Workstreams', exact: true })
+      const outbox = sidebar.getByRole('button', { name: 'Outbox', exact: true })
       const returnToday = () =>
         page.locator('.sky-main > .sky-head').getByRole('button', { name: '‹ Today', exact: true }).click()
       const setWorkstreams = async (enabled: boolean) => {
@@ -393,10 +394,10 @@ test(
       }
       await returnToday()
       assert({
-        given: 'the ordinary sidebar with experimental Workstreams off by default',
-        should: 'omit the Workstreams entry',
-        actual: await workstreams.count(),
-        expected: 0,
+        given: 'the ordinary sidebar with experimental Workstreams and Outbox off by default',
+        should: 'omit both entries',
+        actual: [await workstreams.count(), await outbox.count()],
+        expected: [0, 0],
       })
       await sidebar.getByRole('link', { name: 'Settings', exact: true }).click()
       await nav.getByRole('button', { name: 'Experimental', exact: true }).click()
