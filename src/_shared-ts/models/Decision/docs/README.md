@@ -74,6 +74,9 @@ The tool description therefore tells chat to find that moment in the notebook be
   `{ decisions(where: { inForce: true }) { path } }`.
 - **Most Important and journal questions** read them through `readInForceDecisions()`.
 - **GraphQL** exposes `inForce` on `Decision` and as a filter. `pending` excludes them and `decided` includes them.
+- **The Future screen** (`service/handler/future`) lists every decision as open, in force or made, with the goals
+  whose `goals/<name>` its `rel:` holds. Its "Add a decision" page runs `decisions:clarify` to draft and
+  `decisions:create` to save, the same two runs chat makes.
 
 ## Not here yet
 
