@@ -253,3 +253,19 @@
   outline-offset: 2px;
   border-radius: 4px;
 }
+
+.sky-clock-new-meeting {
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+@media (max-width: 900px) {
+  .sky-clock-page > .sky-head {
+    flex-wrap: wrap;
+  }
+  .sky-clock-page > .sky-head .sky-mini {
+    order: 4;
+    flex-basis: 100%;
+    overflow-wrap: anywhere;
+  }
+}

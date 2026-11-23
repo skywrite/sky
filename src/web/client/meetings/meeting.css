@@ -1,15 +1,3 @@
-.sky-meeting-modal {
-  display: flex;
-  flex-direction: column;
-  max-height: var(--sky-dialog-max-height);
-  overflow: hidden;
-}
-.sky-meeting-modal-body {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  overflow: hidden;
-}
 .sky-meeting-body {
   overflow-y: auto;
   padding: 0 var(--sky-dialog-padding) var(--sky-space-4);
@@ -480,28 +468,7 @@
   color: var(--sky-green);
   font-size: 36px;
 }
-.sky-clock-new-meeting {
-  margin-left: auto;
-  flex-shrink: 0;
-}
-
 @media (max-width: 900px) {
-  .sky-clock-page > .sky-head {
-    flex-wrap: wrap;
-  }
-  .sky-clock-page > .sky-head .sky-mini {
-    order: 4;
-    flex-basis: 100%;
-    overflow-wrap: anywhere;
-  }
-  .sky-meeting-modal {
-    max-height: 100dvh;
-    height: 100dvh;
-    border-radius: 0;
-  }
-  .sky-meeting-modal-body {
-    flex: 1;
-  }
   .sky-meeting-body {
     flex: 1;
   }

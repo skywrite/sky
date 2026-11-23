@@ -1,6 +1,6 @@
 ---
 created: 2026-09-07
-updated: 2026-09-28
+updated: 2026-11-22
 ---
 
 # CalendarScheduler
@@ -86,7 +86,7 @@ Both take a natural-language `request`, return unresolved questions or candidate
 and leave clarification to the conversation. Each call must include its relevant
 context and all settled answers. Call preparation with the user's words before
 asking for dates, emails, duration or account details: it uses the same fast
-Cerebras interpretation and live scored contact search as the `/clock` composer.
+Cerebras interpretation and live scored contact search as the `/schedule` composer.
 A new meeting without a day means today on the civil clock, duration defaults to
 30 minutes, and timezone defaults to the system zone. The speaker's "me" or
 "myself" is the organizer, already represented by the connected calendar account,

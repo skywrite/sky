@@ -1,6 +1,6 @@
 ---
 created: 2026-08-30
-updated: 2026-09-06
+updated: 2026-11-22
 ---
 
 # Clock — notebook time against the world's
@@ -10,10 +10,8 @@ Design notes for `src/service/handler/clock/` and the page it serves,
 
 ## What is built
 
-New meeting opens the shared [meeting composer](../../meetings/docs/README.md):
-free text, resolved invitees, calendar conflicts and a reviewed Zoom invitation.
-It is a dialog on desktop and a full-screen composer on phones. The clock's
-converter and scheduling use separate inputs and service routes.
+**Schedule Meeting** opens the [scheduling page](../../meetings/docs/README.md) at `/schedule`.
+The clock converter and scheduling use separate inputs and service routes.
 
 The notebook clock sits beside "sky" at the top left of every page —
 one line normally, a second orange system line when the two diverge.

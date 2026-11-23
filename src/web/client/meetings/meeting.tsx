@@ -1,5 +1,4 @@
-import { Alert, Button, Loader, Modal, Select, Textarea, TextInput } from '@mantine/core'
-import { useMediaQuery } from '@mantine/hooks'
+import { Alert, Button, Loader, Select, Textarea, TextInput } from '@mantine/core'
 import { useEffect, useRef, useState } from 'react'
 import { calendarConference } from '#lib/calendarScheduler/conference.ts'
 import { recurrenceLabel } from '#lib/calendarScheduler/recurrence.ts'
@@ -326,10 +325,18 @@ export function DaySchedule({
   )
 }
 
-export function MeetingDialog({ opened, onClose }: { opened: boolean; onClose: () => void }) {
-  const phone = useMediaQuery('(max-width: 900px)') ?? false
+export function MeetingComposer({
+  opened,
+  query,
+  setQuery,
+  onClose,
+}: {
+  opened: boolean
+  query: string
+  setQuery: (text: string) => void
+  onClose: () => void
+}) {
   const [setup, setSetup] = useState<CalendarSetup | null>(null)
-  const [query, setQuery] = useState('')
   const [parsedQuery, setParsedQuery] = useState('')
   const [draft, setDraft] = useState<CalendarDraft | null>(null)
   const [parsing, setParsing] = useState(false)
@@ -360,6 +367,10 @@ export function MeetingDialog({ opened, onClose }: { opened: boolean; onClose: (
         recurrence: fields.recurrence,
       })
     : ''
+  useEffect(() => {
+    if (opened) document.title = `sky · ${job?.result?.title || fields?.title || 'Book a meeting'}`
+  }, [opened, job?.result?.title, fields?.title])
+
   const active = sending || job?.state === 'creating'
   const browserAccount = job ? (sentFields?.account ?? '') : (fields?.account ?? '')
   const connection = useMeetingBrowser(
@@ -645,21 +656,7 @@ export function MeetingDialog({ opened, onClose }: { opened: boolean; onClose: (
     `https://calendar.google.com/calendar/u/0/r?authuser=${encodeURIComponent(sentFields?.account ?? '')}`
 
   return (
-    <Modal
-      opened={opened}
-      onClose={() => {
-        if (!active) onClose()
-      }}
-      fullScreen={phone}
-      centered
-      size={draft && !job ? 1020 : 680}
-      padding={0}
-      title="New meeting"
-      closeOnClickOutside={false}
-      closeOnEscape={!active}
-      withCloseButton={!active}
-      classNames={{ content: 'sky-meeting-modal', body: 'sky-meeting-modal-body' }}
-    >
+    <>
       {job || sending ? (
         <div className="sky-meeting-outcome" aria-live="polite">
           {active ? (
@@ -798,7 +795,7 @@ export function MeetingDialog({ opened, onClose }: { opened: boolean; onClose: (
                     retryParse()
                   }
                 }}
-                data-autofocus
+                autoFocus={opened}
               />
               <div className="sky-meeting-prompt-foot">
                 <span role="status">
@@ -905,7 +902,7 @@ export function MeetingDialog({ opened, onClose }: { opened: boolean; onClose: (
           </footer>
         </>
       )}
-    </Modal>
+    </>
   )
 }
 

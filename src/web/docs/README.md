@@ -1,6 +1,6 @@
 ---
 created: 2026-09-03
-updated: 2026-11-01
+updated: 2026-11-22
 ---
 
 # The web app's shell and client
@@ -81,7 +81,7 @@ A feature's other stylesheets — `automations/automations.css`,
 join the same bundle.
 
 Clock place labels and timezone metadata follow the [clock design](../../service/handler/clock/docs/README.md).
-The reusable meeting dialog and its mobile layout follow the
+The scheduling page and its mobile layout follow the
 [meeting composer design](../../service/handler/meetings/docs/README.md).
 The shared link picker follows the [record-link design](../../service/handler/links/docs/README.md).
 The persistent search header and its preview column follow the

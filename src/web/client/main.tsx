@@ -33,6 +33,7 @@ import { outboxItemOf, outboxLegacyItemPath } from './outbox/outboxRoutes.ts'
 import { PeopleMain, peopleRouteOf } from './people/people.tsx'
 import { PlacesMain, placesRouteOf } from './places/places.tsx'
 import { RecurringMain } from './recurring/RecurringMain.tsx'
+import { SchedulePage } from './schedule/SchedulePage.tsx'
 import { SearchWorkspace } from './search/search.tsx'
 import { SettingsMain, useSettingsBoot } from './settings/settings.tsx'
 import { useAboutMeDraftGuard } from './settings/settingsAboutMe.tsx'
@@ -136,6 +137,7 @@ function Canvas() {
   // /extensions/<author>/<slug> is an extension's own page.
   const extensionPage = extensionRouteOf(path)
   const isClock = path === '/clock'
+  const isSchedule = path === '/schedule'
   // /week is this week, /week/<id> another.
   const weekId = weekIdOf(path)
   const isWeek = weekId !== null
@@ -227,6 +229,7 @@ function Canvas() {
     !isRecurring &&
     extensionPage === null &&
     !isClock &&
+    !isSchedule &&
     !isAutomations &&
     !isOutbox &&
     !isFuture &&
@@ -248,6 +251,7 @@ function Canvas() {
       meetingRoute ||
       noteRoute ||
       onDayPage ||
+      isSchedule ||
       isOutbox ||
       peopleRoute ||
       placesRoute !== null ||
@@ -276,11 +280,15 @@ function Canvas() {
                     ? 'sky · Voice'
                     : settingsSection === 'about-me'
                       ? 'sky · About me'
-                      : 'sky'
+                      : isClock
+                        ? 'sky · Clock'
+                        : 'sky'
   }, [
     threadId,
     chatTitle,
     connectionPage,
+    isClock,
+    isSchedule,
     isAudition,
     isStreaks,
     isOutbox,
@@ -683,7 +691,13 @@ function Canvas() {
             />
           </Fragment>
         ) : isClock ? (
-          <ClockMain back={{ label: 'Today', onClick: () => navigate('/') }} snap={clock} />
+          <ClockMain
+            back={{ label: 'Today', onClick: () => navigate('/') }}
+            snap={clock}
+            onSchedule={() => navigate('/schedule')}
+          />
+        ) : isSchedule ? (
+          <SchedulePage find={new URLSearchParams(search).get('tab') === 'find'} navigate={navigate} />
         ) : isOutbox ? (
           <OutboxMain item={outboxItem ?? ''} navigate={navigate} />
         ) : futureRoute ? (

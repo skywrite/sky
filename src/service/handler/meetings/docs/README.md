@@ -5,13 +5,41 @@ updated: 2026-11-22
 
 # Scheduling a meeting
 
-The New meeting button on `/clock` opens `web/client/meetings/meeting.tsx`: a
-dialog on desktop and a full-screen composer on phones. Repeat controls and native
-series behavior are defined by the [shared scheduler](../../../../lib/calendarScheduler/docs/README.md#chat-and-voice). The component is
-reusable; scheduling does not belong to the clock converter. It keeps Sky's
-theme, with a scrollable body and an always-visible action footer.
-Its shared header, spacing, action roles and footer follow the
-[UI toolkit](../../../../web/docs/README.md#shared-ui-toolkit).
+The **Schedule Meeting** button on `/clock` leads to `/schedule`.
+**Book a meeting** opens the existing composer with its scrollable review and action footer.
+**Find a time** (`/schedule?tab=find`) shares the typed request and can be opened directly.
+Booking keeps its reviewed fields when the tab changes.
+Repeat controls and native series behavior belong to the
+[shared scheduler](../../../../lib/calendarScheduler/docs/README.md#chat-and-voice).
+
+## Finding times to offer
+
+The finder interprets the requested days, civil hours, search and display zones, buffer, meeting length, and allowed
+start minutes within each hour.
+It reads owned calendars through the booking provider and groups nearby days into a single calendar read.
+Free ranges come from subtracting merged busy intervals and their buffers from each day’s search hours.
+Each column shows the full day’s calendar in the display zone, including each overlapping event and entries marked free.
+The grid aligns days by local clock time. Each date includes its UTC offset periods so the client can place overnight
+and daylight-saving spans on that scale while keeping the original instants as the selection key.
+Buffers apply only to the openings. Calendar events show their actual start and end times.
+When a start rule is requested, the first eligible minute on the display clock must leave room for the minimum
+meeting length inside the buffered opening. The end of the opening stays at its actual boundary.
+The email includes that start rule once alongside the selected days.
+Find a time remembers disabled calendars in the browser and skips reading their events.
+Turning every calendar off shows the requested hours. A failed read from an enabled calendar withholds openings for
+the affected dates and identifies the calendar to retry.
+The tab remembers ignored occurrences across searches and reloads. Ignoring a meeting also removes its buffer.
+Shared copies use the same occurrence ID, so ignoring one meeting preserves other dates in its series.
+These choices apply only to finding times to offer. Booking still checks all owned calendars for conflicts.
+Dates and labels in the email use the display zone, including when conversion crosses midnight.
+
+The email body, repeating day line, and separator between openings are saved together in `availability-template.json`.
+An existing `availability-template.txt` supplies the email body until the first edit, using the default day line.
+The `fast` model uses the email body and writing guide to phrase the opening and closing.
+The client expands `{{days}}` using the saved day line and the selected openings.
+The line can use the combined day label or the weekday and date separately. The time zone can go in the body or the line.
+A range crossing midnight is listed on its starting day.
+Calendar entries stay out of the wording request, and the saved template works while the model is unavailable.
 
 ## From words to an invitation
 

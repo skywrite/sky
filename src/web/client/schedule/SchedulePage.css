@@ -1,0 +1,275 @@
+.sky-schedule-page {
+  width: 100%;
+  min-height: 0;
+  max-width: 1096px;
+  margin-inline: auto;
+  padding: 8px 48px 0;
+}
+.sky-schedule-heading .sky-button {
+  margin-inline-start: -8px;
+}
+.sky-schedule-heading h1 {
+  margin: 10px 0 16px;
+  font-size: 30px;
+  line-height: 1.2;
+  letter-spacing: -0.035em;
+}
+.sky-schedule-tabs {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+.sky-schedule-tabs > .mantine-Tabs-list {
+  flex-shrink: 0;
+}
+.sky-schedule-tabs .mantine-Tabs-tab {
+  font-size: 17px;
+  padding: 14px 16px;
+}
+.sky-schedule-tabs .mantine-Tabs-tab[data-active] {
+  font-weight: 600;
+}
+.sky-schedule-tabs > .mantine-Tabs-panel:not([hidden]) {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+}
+.sky-schedule-page .sky-meeting-body {
+  flex: 1;
+  padding: 24px 4px;
+}
+.sky-schedule-page .sky-meeting-prompt {
+  margin: 0 10px 24px;
+}
+.sky-schedule-page .sky-meeting-prompt textarea {
+  border-color: var(--sky-border-soft);
+}
+.sky-schedule-page .sky-meeting-prompt textarea:focus {
+  border-color: var(--sky-accent);
+}
+.sky-schedule-page .sky-meeting-footer {
+  padding-inline: 4px;
+  flex-shrink: 0;
+}
+.sky-find-time {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  padding: 26px 4px 40px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+.sky-find-time > * {
+  flex-shrink: 0;
+}
+.sky-find-time > .mantine-Textarea-root textarea,
+.sky-find-message textarea {
+  font-size: 18px;
+  line-height: 1.55;
+}
+.sky-find-controls {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  align-items: stretch;
+}
+.sky-find-display-zone .mantine-Input-section {
+  font-size: 14px;
+}
+.sky-find-window {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  min-height: var(--input-height-sm, 36px);
+  padding: 5px 12px;
+  font-size: var(--mantine-font-size-sm);
+  line-height: 1.4;
+  border: 1px solid var(--mantine-color-default-border);
+  border-radius: var(--mantine-radius-md);
+}
+.sky-find-window-editor {
+  display: grid;
+  gap: 12px;
+}
+.sky-find-window-editor > div:first-child {
+  display: flex;
+  gap: 10px;
+}
+.sky-find-window-editor > div:first-child > * {
+  flex: 1;
+}
+.sky-find-section-head,
+.sky-find-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.sky-find-section-head {
+  margin: 0 0 12px;
+}
+.sky-find-section-head h2 {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.025em;
+}
+.sky-find-section-head > span,
+.sky-find-hint,
+.sky-find-actions > span {
+  color: var(--sky-dim);
+  font-size: 15px;
+}
+.sky-find-hint,
+.sky-find-warning {
+  margin: 0;
+}
+.sky-find-guide,
+.sky-find-legend {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  color: var(--sky-text-2);
+  font-size: 14px;
+}
+.sky-find-guide {
+  justify-content: space-between;
+  margin: 0 0 14px;
+}
+.sky-find-legend,
+.sky-find-guide p {
+  padding: 0;
+  margin: 0;
+}
+.sky-find-legend {
+  list-style: none;
+}
+.sky-find-legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.sky-find-legend li::before {
+  content: '';
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--sky-dim);
+}
+.sky-find-legend [data-state='busy']::before {
+  background: var(--sky-amber);
+}
+.sky-find-legend [data-state='proposed']::before {
+  background: var(--sky-workstream-green-accent);
+}
+.sky-find-calendar-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 15px;
+  color: var(--sky-dim);
+}
+.sky-find-start-rule {
+  display: block;
+  color: var(--sky-text-2);
+  font-size: 13px;
+}
+.sky-find-calendar-picker {
+  display: grid;
+  gap: 10px;
+}
+.sky-find-calendar-list {
+  display: grid;
+  gap: 4px;
+  max-height: min(48dvh, 360px);
+  overflow-y: auto;
+}
+.sky-find-calendar-list button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 10px;
+  border: 1px solid var(--sky-border-soft);
+  border-radius: var(--mantine-radius-sm);
+  background: var(--sky-bg);
+  color: var(--sky-text-2);
+  font: inherit;
+  text-align: start;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+.sky-find-calendar-list button[aria-pressed='true'] {
+  background: var(--sky-accent-soft);
+  color: var(--sky-text);
+}
+.sky-find-calendar-list small {
+  flex-shrink: 0;
+  font-weight: 600;
+}
+.sky-find-warning {
+  font-size: 15px;
+  color: var(--sky-amber);
+}
+.sky-find-actions {
+  margin-top: 14px;
+  justify-content: flex-end;
+}
+.sky-find-template-fields {
+  display: grid;
+  gap: 18px;
+}
+.sky-find-template-style {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  gap: 16px;
+}
+.sky-find-template-example {
+  padding: 12px 16px;
+  border-radius: var(--mantine-radius-md);
+  background: var(--sky-side);
+}
+.sky-find-template-example span {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 14px;
+  color: var(--sky-text-2);
+}
+.sky-find-template-example output {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 900px) {
+  .sky-schedule-page {
+    padding: 0 16px;
+  }
+  .sky-schedule-heading h1 {
+    font-size: 25px;
+    margin: 4px 0 8px;
+  }
+  .sky-schedule-page .sky-meeting-footer {
+    padding: 8px 0 max(8px, env(safe-area-inset-bottom));
+    gap: 4px;
+  }
+}
+@media (max-width: 620px) {
+  .sky-find-template-style {
+    grid-template-columns: 1fr;
+  }
+  .sky-find-controls {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .sky-find-window {
+    grid-column: 1 / -1;
+  }
+  .sky-find-time {
+    padding-top: 18px;
+  }
+}

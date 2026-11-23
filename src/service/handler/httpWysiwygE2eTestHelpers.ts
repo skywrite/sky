@@ -12,6 +12,7 @@ import { serve } from '@hono/node-server'
 import type { ServerType } from '@hono/node-server'
 import { type Browser, chromium, type Locator, type Page } from 'playwright'
 import { listAudioConversations, readAudioConversation } from '#commands/all/message/_lib/savedAudioConversation.ts'
+import type { CalendarSchedulerHost } from '#lib/calendarScheduler/types.ts'
 import type { MostImportantAI } from '#lib/mostImportant/types.ts'
 import { exists } from '#shared/fs/mod.ts'
 import MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
@@ -188,6 +189,7 @@ export async function runWysiwygE2e(
     /** Use ordinary browser popup restrictions instead of Playwright's permissive default. */
     popupBlocking?: boolean
     now?: ZonedDateTime
+    meetings?: (userDataDir: string) => CalendarSchedulerHost
     mostImportant?: MostImportantAI
     todoPriority?: import('./day/mod.ts').DayRoutesOptions['todoPriority']
     reminderPriority?: import('./day/mod.ts').DayRoutesOptions['reminderPriority']
@@ -264,6 +266,7 @@ export async function runWysiwygE2e(
               },
             }
           : {}),
+        meetings: options.meetings?.(userDataDir),
         mostImportant: options.mostImportant,
         reminderPriority: options.reminderPriority ?? {
           rank: async ({ tasks }) => tasks.map(() => 0),

@@ -789,9 +789,10 @@ export function createHttpApp(options: HttpHandlerOptions): Hono {
   }
 
   // The clock: notebook time against the world's. Its data lives under /clock/_api/….
-  app.get('/clock', (c) => {
-    return c.html(renderAppHtml('sky'))
-  })
+  app.get('/clock', (c) => c.html(renderAppHtml('sky · Clock')))
+  app.get('/schedule', (c) =>
+    c.html(renderAppHtml(c.req.query('tab') === 'find' ? 'sky · Find a time' : 'sky · Book a meeting')),
+  )
 
   // The week: this week at /week, another by its id — /week/2026-W36. Its data lives under /week/_api/….
   app.get('/week', (c) => {

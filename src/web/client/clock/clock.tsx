@@ -1,7 +1,6 @@
 import { Button, Loader, TextInput } from '@mantine/core'
 import { Fragment, type KeyboardEvent, useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import type { ClockReading, ClockSnapshot, ConvertAnswer } from '../../../service/handler/clock/mod.ts'
-import { MeetingDialog } from '../meetings/meeting.tsx'
 import './clock.css'
 
 export type { ClockReading, ClockSnapshot, ConvertAnswer } from '../../../service/handler/clock/mod.ts'
@@ -402,15 +401,16 @@ function AnswerRows({ answer, anchor }: { answer: ConvertAnswer; anchor: ZonePar
 
 export function ClockMain({
   back,
+  onSchedule,
   snap,
 }: {
   back: { label: string; onClick: () => void }
+  onSchedule: () => void
   snap: ClockSnapshot | null
 }) {
   useMinute()
   const hour12 = useHour12()
   const [q, setQ] = useState('')
-  const [meetingOpen, setMeetingOpen] = useState(false)
   const [asked, setAsked] = useState<Asked | null>(null)
   const [busy, setBusy] = useState(false)
 
@@ -511,12 +511,11 @@ export function ClockMain({
             {snap.notebook.timezone} · {offsetLabel(offsetMinutes(at, snap.notebook.timezone))}
           </span>
         )}
-        <Button className="sky-clock-new-meeting" variant="primary" size="sm" onClick={() => setMeetingOpen(true)}>
-          + New meeting
+        <Button className="sky-clock-new-meeting" variant="primary" size="sm" onClick={onSchedule}>
+          Schedule Meeting
         </Button>
       </header>
 
-      <MeetingDialog opened={meetingOpen} onClose={() => setMeetingOpen(false)} />
       <div className="sky-scroll">
         <div className="sky-col sky-clock">
           <section className="sky-block">

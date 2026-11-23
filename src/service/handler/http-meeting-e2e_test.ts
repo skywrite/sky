@@ -73,7 +73,7 @@ test({ name: 'meeting composer creates solo blocks with optional conferencing', 
       for (const width of [1440, 390]) {
         await page.setViewportSize({ width, height: width === 390 ? 844 : 1100 })
         await page.goto(`${origin}/clock`)
-        await page.getByRole('button', { name: '+ New meeting', exact: true }).click()
+        await page.getByRole('button', { name: 'Schedule Meeting', exact: true }).click()
         await page.getByLabel('What are we scheduling?').fill('Block off 1pm to 3pm tomorrow for focus time')
         const create = page.getByRole('button', { name: 'Create event', exact: true })
         await create.and(page.locator(':not([disabled])')).waitFor()
@@ -222,7 +222,7 @@ test(
         })
         await page.setViewportSize({ width: 1440, height: 1100 })
         await page.goto(`${origin}/clock`)
-        await page.getByRole('button', { name: '+ New meeting', exact: true }).click()
+        await page.getByRole('button', { name: 'Schedule Meeting', exact: true }).click()
         await page.getByLabel('What are we scheduling?').fill('Meet Jane and Sam on Friday at 3 PM about Atlas')
         await page.getByText('1 scheduling conflict', { exact: true }).waitFor()
         const create = page.getByRole('button', { name: 'Create & send invites', exact: true })
@@ -278,20 +278,20 @@ test(
         }
         await page.setViewportSize({ width: 390, height: 844 })
         await page.waitForFunction(
-          () => document.querySelector('[role="dialog"]')?.getBoundingClientRect().width === 390,
+          () => document.querySelector('.sky-schedule-page')?.getBoundingClientRect().width === 390,
         )
         if (artifacts)
           await page.screenshot({ path: path.join(artifacts, 'meeting-mobile.png'), animations: 'disabled' })
         const layout = await page.evaluate(() => ({
           width: document.documentElement.scrollWidth,
           footer: document.querySelector('.sky-meeting-footer')!.getBoundingClientRect().bottom,
-          dialog: document.querySelector('[role="dialog"]')!.getBoundingClientRect().height,
+          route: location.pathname,
         }))
         assert({
           given: 'the same meeting on a narrow phone',
           should: 'fill the screen without horizontal overflow and keep the action footer in view',
-          actual: [layout.width, layout.footer <= 844, layout.dialog],
-          expected: [390, true, 844],
+          actual: [layout.width, layout.footer <= 844, layout.route],
+          expected: [390, true, '/schedule'],
         })
         await page.getByRole('button', { name: '1 conflict · Review your day', exact: true }).click()
         const afterReview = await page.locator('.sky-meeting-footer').boundingBox()
@@ -465,7 +465,7 @@ test(
           return route.fulfill({ status: 404, json: { message: 'Unknown test route' } })
         })
         await page.goto(`${origin}/clock`)
-        await page.getByRole('button', { name: '+ New meeting', exact: true }).click()
+        await page.getByRole('button', { name: 'Schedule Meeting', exact: true }).click()
         const wording = page.getByLabel('What are we scheduling?')
         const time = page.getByLabel('Time', { exact: true })
         const minutes = page.getByLabel('Minutes', { exact: true })
