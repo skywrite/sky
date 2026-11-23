@@ -5,6 +5,7 @@ import { CalendarScheduler } from '#lib/calendarScheduler/CalendarScheduler.ts'
 import type { CalendarSchedulerHost } from '#lib/calendarScheduler/types.ts'
 import { hold } from '../../activity.ts'
 import { CalendarBrowserConnection } from './browserSignIn.ts'
+import { createFindTimeRoutes } from './findTimeRoutes.ts'
 
 export function createMeetingRoutes(host: CalendarSchedulerHost): Hono {
   const app = new Hono()
@@ -35,6 +36,7 @@ export function createMeetingRoutes(host: CalendarSchedulerHost): Hono {
     ),
   )
 
+  app.route('/availability', createFindTimeRoutes(host))
   app.get('/setup', async (c) => c.json(await scheduler.setup()))
   app.get('/browser', async (c) => {
     const account = await browserAccount(c.req.query('account'))

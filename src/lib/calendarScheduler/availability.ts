@@ -10,6 +10,22 @@ export interface CalendarSourceEvents {
   events: CalendarEvent[]
 }
 
+export interface CalendarReadSource extends CalendarSourceEvents {
+  id: string
+  warning?: string
+}
+
+export const attendsCalendarEvent = (event: CalendarEvent): boolean =>
+  event.status !== 'cancelled' && event.selfResponse !== 'declined'
+
+export const blocksCalendarTime = (event: CalendarEvent): boolean =>
+  event.transparency !== 'transparent' && event.eventType !== 'workingLocation' && event.eventType !== 'birthday'
+
+/** Shared copies may expose only “Busy” on one calendar and the meeting name on another. */
+export function preferCalendarTitle(current: string, candidate: string): string {
+  return !current || current.toLowerCase() === 'busy' ? candidate.trim() || current : current
+}
+
 /** Overlap is half-open: one meeting can start exactly when another ends. */
 export function availabilityOf(
   timing: CalendarTiming,
@@ -27,7 +43,7 @@ export function availabilityOf(
   const byId = new Map<string, { row: CalendarDayEvent; from: number; to: number }>()
   for (const source of sources) {
     for (const event of source.events) {
-      if (event.status === 'cancelled' || event.selfResponse === 'declined') continue
+      if (!attendsCalendarEvent(event)) continue
       if (
         exclude &&
         ((event.id === exclude.ref.eventId &&
@@ -42,12 +58,12 @@ export function availabilityOf(
       const from = event.allDay ? midnight(event.start) : calendarInstant(event.start)
       const to = event.allDay ? midnight(event.end) : calendarInstant(event.end)
       if (to <= dayStart || from >= Math.max(dayEnd, requested.endMilliseconds)) continue
-      const busy =
-        event.transparency !== 'transparent' && event.eventType !== 'workingLocation' && event.eventType !== 'birthday'
+      const busy = blocksCalendarTime(event)
       const conflict = busy && from < requested.endMilliseconds && to > requested.startMilliseconds
       const id = `${event.iCalUid ?? event.id}/${event.start}`
       const previous = byId.get(id)
       if (previous) {
+        previous.row.title = preferCalendarTitle(previous.row.title, event.title)
         previous.row.busy ||= busy
         previous.row.conflict ||= conflict
         continue
@@ -55,7 +71,7 @@ export function availabilityOf(
       byId.set(id, {
         row: {
           id,
-          title: event.title || 'Busy',
+          title: event.title.trim(),
           start: event.start,
           end: event.end,
           allDay: event.allDay,
@@ -90,7 +106,7 @@ export function availabilityOf(
       alternatives.push({ time, distance: Math.abs(slot.startMilliseconds - requested.startMilliseconds) })
     }
   }
-  const events = entries.map((entry) => entry.row)
+  const events = entries.map(({ row }) => ({ ...row, title: row.title || 'Untitled event' }))
   const reviewKey = createHash('sha256')
     .update(
       JSON.stringify({

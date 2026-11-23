@@ -1,4 +1,4 @@
-import { availabilityOf, type CalendarSourceEvents } from '#lib/calendarScheduler/availability.ts'
+import { availabilityOf, type CalendarReadSource } from '#lib/calendarScheduler/availability.ts'
 import { parseMeeting } from '#lib/calendarScheduler/parse.ts'
 import { meetingInterval } from '#lib/calendarScheduler/validation.ts'
 import { checkCalendarBrowserSignIn, signInGoogleBrowser } from '#lib/google/browserSignIn.ts'
@@ -43,8 +43,60 @@ export function createGoogleCalendarHost(options: {
     if (!client) throw new Error('Connect Google Calendar in Settings → Connections.')
     return new GoogleClient({ secrets, email, client })
   }
+  const readCalendars: NonNullable<CalendarSchedulerHost['readCalendars']> = async (
+    timeMin,
+    timeMax,
+    timezone,
+    disabledCalendars,
+  ) => {
+    const sources: CalendarReadSource[] = []
+    const warnings: string[] = []
+    const emails = await accounts()
+    if (!emails.length) warnings.push('No Google calendars are connected.')
+    // Booking checks every owned calendar. Only the availability finder passes calendar exclusions.
+    await Promise.all(
+      emails.map(async (email) => {
+        try {
+          const client = await clientFor(email)
+          let token: string | undefined
+          do {
+            const url = new URL('https://www.googleapis.com/calendar/v3/users/me/calendarList')
+            url.searchParams.set('minAccessRole', 'owner')
+            url.searchParams.set('maxResults', '250')
+            if (token) url.searchParams.set('pageToken', token)
+            const page = await client.getJson<CalendarListPage>(url.toString())
+            if (!token && !page.items?.length && !page.nextPageToken)
+              warnings.push(`No owned calendars could be found for ${email}.`)
+            for (const calendar of page.items ?? []) {
+              const label = `${calendar.summary} · ${email}`
+              const source: CalendarReadSource = { id: JSON.stringify([email, calendar.id]), label, events: [] }
+              sources.push(source)
+              if (disabledCalendars?.has(source.id)) continue
+              try {
+                source.events = await listEvents(client, {
+                  calendarId: calendar.id,
+                  timeMin,
+                  timeMax,
+                  timeZone: timezone,
+                })
+              } catch {
+                source.warning = `Could not check ${label}.`
+              }
+            }
+            token = page.nextPageToken
+          } while (token)
+        } catch {
+          warnings.push(`Could not check calendars for ${email}.`)
+        }
+      }),
+    )
+    sources.sort((a, b) => a.label.localeCompare(b.label))
+    warnings.sort()
+    return { sources, warnings }
+  }
   return {
     dir,
+    readCalendars,
     setup: async () => {
       const timezone = (await readSystemTimezone()) ?? currentTimezoneIANA()
       return { date: calendarNow(timezone).date, timezone, accounts: await accounts(), browserSignIn: true }
@@ -59,48 +111,19 @@ export function createGoogleCalendarHost(options: {
     availability: async (timing, exclude) => {
       meetingInterval(timing)
       const day = new PlainDate(timing.date)
-      const sources: CalendarSourceEvents[] = []
-      const warnings: string[] = []
-      const emails = await accounts()
-      if (!emails.length) warnings.push('No Google calendars are connected.')
-      // Read every owned calendar, including all-day and solo blocks. Coworkers' shared calendars are not the user's availability.
-      await Promise.all(
-        emails.map(async (email) => {
-          try {
-            const client = await clientFor(email)
-            let token: string | undefined
-            do {
-              const url = new URL('https://www.googleapis.com/calendar/v3/users/me/calendarList')
-              url.searchParams.set('minAccessRole', 'owner')
-              url.searchParams.set('maxResults', '250')
-              if (token) url.searchParams.set('pageToken', token)
-              const page = await client.getJson<CalendarListPage>(url.toString())
-              if (!token && !page.items?.length && !page.nextPageToken)
-                warnings.push(`No owned calendars could be found for ${email}.`)
-              for (const calendar of page.items ?? []) {
-                const label = `${calendar.summary} · ${email}`
-                try {
-                  const events = await listEvents(client, {
-                    calendarId: calendar.id,
-                    timeMin: `${day.addDays(-1).ymd}T00:00:00Z`,
-                    timeMax: `${day.addDays(2).ymd}T00:00:00Z`,
-                    timeZone: timing.timezone,
-                  })
-                  sources.push({ label, events })
-                } catch {
-                  warnings.push(`Could not check ${label}.`)
-                }
-              }
-              token = page.nextPageToken
-            } while (token)
-          } catch {
-            warnings.push(`Could not check calendars for ${email}.`)
-          }
-        }),
+      const { sources, warnings } = await readCalendars(
+        `${day.addDays(-1).ymd}T00:00:00Z`,
+        `${day.addDays(2).ymd}T00:00:00Z`,
+        timing.timezone,
       )
-      sources.sort((a, b) => a.label.localeCompare(b.label))
-      warnings.sort()
-      return availabilityOf(timing, sources, warnings, undefined, exclude)
+      const issues = warnings.concat(sources.flatMap((source) => source.warning ?? [])).sort()
+      return availabilityOf(
+        timing,
+        sources.filter((source) => !source.warning),
+        issues,
+        undefined,
+        exclude,
+      )
     },
     create: async (fields, hooks) => {
       const client = await clientFor(fields.account)

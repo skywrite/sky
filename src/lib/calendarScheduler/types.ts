@@ -1,3 +1,4 @@
+import type { CalendarReadSource } from './availability.ts'
 import type { CalendarEventRef, CalendarEventSnapshot, CalendarUpdateHost } from './updateTypes.ts'
 
 /** Calendar scheduling values, separate from notebook meeting documents. */
@@ -148,6 +149,13 @@ export interface CalendarPreparedDraft {
 export interface CalendarSchedulerHost {
   dir: string
   setup: () => Promise<CalendarSetup>
+  readCalendars?: (
+    timeMin: string,
+    timeMax: string,
+    timezone: string,
+    disabledCalendars?: ReadonlySet<string>,
+  ) => Promise<{ sources: CalendarReadSource[]; warnings: string[] }>
+  writingRules?: () => Promise<string>
   browser?: CalendarBrowserHost
   people: (query: string) => Promise<CalendarContact[]>
   parse: (query: string, timezone: string, signal?: AbortSignal) => Promise<CalendarDraft>

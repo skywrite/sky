@@ -24,6 +24,11 @@ export function calendarInstant(value: string): number {
   return Temporal.Instant.from(value).epochMilliseconds
 }
 
+/** The first instant of a calendar date, including dates when the clocks skip midnight. */
+export function calendarDayStart(date: string, timezone: string): number {
+  return Temporal.PlainDate.from(date).toZonedDateTime(timezone).epochMilliseconds
+}
+
 /** Render a provider instant on the civil clock in an explicit IANA zone. */
 export function calendarLocal(value: string, timezone: string): PlainDateTime {
   const local = Temporal.Instant.from(value).toZonedDateTimeISO(timezone)

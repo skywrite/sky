@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import * as os from 'node:os'
 import * as path from 'node:path'
 import { availabilityOf } from '#lib/calendarScheduler/availability.ts'
@@ -69,7 +69,7 @@ test('meeting date review accepts weekends and checks only the weekday explicitl
 test('meeting availability includes busy solo and overnight events, ignores free and declined entries, and deduplicates calendars', () => {
   const events = [
     event('ends-at-start', '2030-05-03T14:00:00-04:00', '2030-05-03T15:00:00-04:00'),
-    event('overlap', '2030-05-03T15:15:00-04:00', '2030-05-03T16:00:00-04:00', { iCalUid: 'shared' }),
+    event('overlap', '2030-05-03T15:15:00-04:00', '2030-05-03T16:00:00-04:00', { iCalUid: 'shared', title: 'Busy' }),
     event('free', '2030-05-03T15:00:00-04:00', '2030-05-03T16:00:00-04:00', { transparency: 'transparent' }),
     event('declined', '2030-05-03T15:00:00-04:00', '2030-05-03T16:00:00-04:00', { selfResponse: 'declined' }),
     event('overnight', '2030-05-02T23:00:00-04:00', '2030-05-03T00:30:00-04:00'),
@@ -78,7 +78,7 @@ test('meeting availability includes busy solo and overnight events, ignores free
     FIELDS,
     [
       { label: 'Work', events },
-      { label: 'Personal', events: [events[1]!] },
+      { label: 'Personal', events: [{ ...events[1]!, title: 'Atlas review' }] },
     ],
     [],
     '2030-05-01T00:00:00Z',
@@ -91,7 +91,7 @@ test('meeting availability includes busy solo and overnight events, ignores free
       preview.events.filter((item) => item.conflict).map((item) => item.title),
       preview.alternatives,
     ],
-    expected: [4, ['overlap'], ['16:00', '16:15', '13:30']],
+    expected: [4, ['Atlas review'], ['16:00', '16:15', '13:30']],
   })
   const allDay = availabilityOf(
     FIELDS,
@@ -179,6 +179,46 @@ async function fixture(run: (host: CalendarSchedulerHost) => Promise<void>) {
     await rm(dir, { recursive: true, force: true })
   }
 }
+
+test('availability templates use a colon for the original day line and keep explicit formatting choices', async () =>
+  fixture(async (host) => {
+    const app = createMeetingRoutes(host)
+    const url = '/availability/template'
+    const file = path.join(host.dir, 'availability-template.json')
+    const old = {
+      template: 'My times in {{timezone}}\n{{days}}',
+      dayLine: '• {{day}} — {{times}}',
+      timeSeparator: ' / ',
+    }
+    const read = async () => (await app.request(url)).json()
+    const custom = { ...old, dayLine: '- {{weekday}} — {{times}}' }
+    await writeFile(file, JSON.stringify(custom))
+    assert({
+      given: 'an older custom day line',
+      should: 'keep its exact formatting',
+      actual: await read(),
+      expected: custom,
+    })
+    await writeFile(file, JSON.stringify(old))
+    const current = await read()
+    assert({
+      given: 'the former stock line saved with a personal message',
+      should: 'update just the date punctuation',
+      actual: current,
+      expected: { ...old, dayLine: '• {{day}}: {{times}}' },
+    })
+    const response = await app.request(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ previous: current, format: old }),
+    })
+    assert({
+      given: 'an explicit edit after upgrading',
+      should: 'honor the saved separator on future reads',
+      actual: [response.status, await read()],
+      expected: [200, old],
+    })
+  }))
 
 async function finished(jobs: CalendarJobs, id: string): Promise<CalendarJob> {
   for (let attempt = 0; attempt < 100; attempt++) {
