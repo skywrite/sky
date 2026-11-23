@@ -757,6 +757,16 @@ export default class ChatSession {
     return this.budgetTokens
   }
 
+  /**
+   * What the conversation holds, in the model's tokens: its last request and the reply to it, as
+   * the provider counted them. A chat saved before that was recorded answers with the size of its
+   * last turn's first request. Null before any reply.
+   */
+  get heldTokens(): number | null {
+    const entry = this.contextLog.findLast((e) => e.heldTokens !== undefined || e.requestTokens !== undefined)
+    return entry?.heldTokens ?? entry?.requestTokens ?? null
+  }
+
   /** The model's tokens per estimated token this session reads with — a host restates the saved log's counts by it. */
   get contextTokenRatio(): number {
     return this.tokenRatio
@@ -1029,6 +1039,7 @@ export default class ChatSession {
       this.context.recordTurnTools(result.toolRecords)
       this.context.recordTurnUsage(result.usage)
       if (result.requestTokens !== undefined) this.context.recordTurnRequest(result.requestTokens)
+      if (result.heldTokens !== undefined) this.context.recordTurnHeld(result.heldTokens)
 
       const sourceUrls = [...new Set(result.sourceUrls)]
       const text = withChatImages(result.text, replyImages)
@@ -1133,8 +1144,6 @@ export default class ChatSession {
         modelMessages: hasCompleteModelHistory(history, this.turns) ? history : undefined,
         workingContext: this.engine.workingContext.state,
         turnErrors: turnErrors(this.turns),
-        // Saved as the estimate the context assembles within, as the log records it; read back through budgetFromEstimate.
-        contextTokens: this.context.budget,
         host: this.snapshotHostState?.(),
       },
       turns: this.turns,
@@ -1207,7 +1216,6 @@ export default class ChatSession {
           modelMessages,
           workingContext: this.engine.workingContext.state,
           turnErrors: turnErrors(this.turns),
-          contextTokens: this.context.budget,
           host: this.snapshotHostState?.(),
         },
       })

@@ -1,7 +1,6 @@
 import { z } from 'zod'
 import type { ModelProfile } from '#shared/ai/models.ts'
 import { isEffortOverride, optionsWithoutEffort } from '#universal/ai/effort.ts'
-import { budgetFromEstimate } from '#universal/ai/readingBudget.ts'
 import type { ChatSettingsHost, ThreadPrefs, ThreadRestore } from './mod.ts'
 
 const modelConfigSchema = z.object({
@@ -20,32 +19,15 @@ export function storedModelConfig(value: unknown): ModelProfile | undefined {
 }
 
 /**
- * The reading budget a thread saved in the model's tokens, when the value reads as one.
- * A session saves its budget as the estimate its context reads within, and converting
- * that back goes through the model's learned ratio, which moves between saves. A chat
- * restored that way could come back at another size than its page shows, and the page's
- * next message would be refused as a settings change.
- */
-export function storedContextTokens(value: unknown): number | undefined {
-  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : undefined
-}
-
-/**
- * A thread's settings as it opens. A restored chat comes back at the budget it saved in the
- * model's tokens; only a save from before that record converts its estimate back, at the
- * ratio the model counts with now.
+ * A thread's settings as it opens: its saved model and effort. What it reads follows the
+ * model, so a budget it was saved with is not read back.
  */
 export function restoredModelPrefs(
   prefs: ThreadPrefs,
   restore: ThreadRestore | undefined,
   catalog: ChatSettingsHost | undefined,
 ): ThreadPrefs {
-  if (!restore) return knownProfile(prefs, catalog)
-  const restored = knownProfile(fromRestore(prefs, restore, catalog), catalog)
-  const estimate = restored.contextTokens === undefined ? savedEstimate(restore) : undefined
-  return estimate === undefined
-    ? restored
-    : { ...restored, contextTokens: budgetFromEstimate(estimate, ratioOf(restored, catalog)) }
+  return knownProfile(restore ? fromRestore(prefs, restore, catalog) : prefs, catalog)
 }
 
 /**
@@ -68,7 +50,6 @@ function fromRestore(prefs: ThreadPrefs, restore: ThreadRestore, catalog: ChatSe
     (typeof host?.profile === 'string' ? host.profile : undefined) ??
     last?.preset ??
     (last && catalog?.profileFor?.(last.model, catalog.defaultModel))
-  const contextTokens = prefs.contextTokens ?? storedContextTokens(host?.contextTokens)
   return {
     ...prefs,
     modelSettingsLocked:
@@ -76,7 +57,6 @@ function fromRestore(prefs: ThreadPrefs, restore: ThreadRestore, catalog: ChatSe
     modelConfig: withProfileName(prefs.modelConfig ?? storedModelConfig(host?.modelConfig), profile, catalog),
     profile,
     effort: prefs.effort ?? (isEffortOverride(host?.effort) ? host.effort : undefined) ?? last?.effort ?? 'default',
-    ...(contextTokens === undefined ? {} : { contextTokens }),
   }
 }
 
@@ -108,28 +88,4 @@ function withProfileName(
     return config
   }
   return named?.label && runsAs(named) === runsAs(config) ? { ...config, label: named.label } : config
-}
-
-/**
- * The budget a thread was saved with, as the estimate its context assembled
- * within: the snapshot's, else the saved file's, else the last turn's, else —
- * for a log older than turn settings — the last assembly's ceiling.
- */
-function savedEstimate(restore: ThreadRestore): number | undefined {
-  const log = restore.state.contextLog
-  return (
-    restore.budget ??
-    restore.resume?.recovery?.contextTokens ??
-    log.findLast((entry) => entry.settings)?.settings?.contextTokens ??
-    log.findLast((entry) => entry.stats?.budget !== undefined)?.stats?.budget
-  )
-}
-
-/**
- * The ratio the restored thread's session reads with, so its budget holds the
- * text it always held — on the model it runs on now, which a retired profile
- * changes. A host that knows no ratio takes the two counts as one.
- */
-function ratioOf(prefs: ThreadPrefs, catalog: ChatSettingsHost | undefined): number {
-  return catalog?.tokenRatio?.(prefs.profile ?? catalog.defaultModel, prefs.modelConfig) ?? 1
 }

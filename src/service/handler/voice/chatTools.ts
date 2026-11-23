@@ -11,7 +11,6 @@ export interface VoiceChatRequest {
   after: number
   profile: string
   effort: EffortOverride
-  contextTokens: number
   saves: boolean
 }
 

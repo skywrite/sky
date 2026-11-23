@@ -12,8 +12,6 @@ export interface ChatRecovery {
   modelMessages?: ModelMessage[]
   workingContext?: WorkingContextState
   turnErrors?: { at: number; message: string }[]
-  /** The reading budget as the estimate the context assembles within; hosts read it back through budgetFromEstimate. */
-  contextTokens?: number
   legalReview?: { id: string; turn: number }
   writingDrafts?: { id: string; turn: number }[]
   writingDraftFocus?: string
@@ -65,8 +63,6 @@ export function readChatRecovery(value: unknown): ChatRecovery | undefined {
   }
   if (Array.isArray(raw.modelMessages)) recovery.modelMessages = raw.modelMessages as ModelMessage[]
   if (typeof raw.historyKey === 'string') recovery.historyKey = raw.historyKey
-  if (typeof raw.contextTokens === 'number' && Number.isSafeInteger(raw.contextTokens) && raw.contextTokens >= 0)
-    recovery.contextTokens = raw.contextTokens
   if (raw.host && typeof raw.host === 'object' && !Array.isArray(raw.host))
     recovery.host = raw.host as Record<string, unknown>
   return recovery

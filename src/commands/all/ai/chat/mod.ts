@@ -54,7 +54,7 @@ import truncate from '#shared/strings/truncate.ts'
 import { timingLine } from '#shared/timing/summary.ts'
 import { contextAdjustmentText } from '#universal/ai/contextAdjustment.ts'
 import { effectiveEffort } from '#universal/ai/effort.ts'
-import { fitBudget } from '#universal/ai/readingBudget.ts'
+import { readingCap } from '#universal/ai/readingBudget.ts'
 import { toolDisplayName } from '#universal/ai/toolDisplay.ts'
 import { gatherContext } from '../_lib/gatherContext.ts'
 import { SessionBlessings, harvestFileRefs } from './lib/approvals.ts'
@@ -87,10 +87,9 @@ const params = {
     default: () => CHAT_READING.days,
   }),
   maxContext: Flag.number(
-    'Token ceiling for the assembled document context — commas allowed (e.g. 150,000); 0 keeps the notebook closed',
+    'Token ceiling for the assembled document context — commas allowed (e.g. 150,000); 0 keeps the notebook closed. Without it the chat reads as much as its model holds',
     {
       long: 'ai-max-context',
-      default: () => CHAT_READING.contextTokens,
       parse: (raw) => {
         const n = Number(String(raw).replace(/,/g, ''))
         if (!Number.isInteger(n) || n < 0) {
@@ -310,8 +309,11 @@ export default class AiChatTask extends Command {
     // A closed notebook: the flag or a zero ceiling. Documents are neither
     // read nor queried; the ambient day (summaries, health, prices, calendar)
     // still frames the conversation, as it does on the web page.
-    const asked = noContext ? 0 : maxContext
-    const contextBudget = fitBudget(asked, reasoningProfile.contextWindow)
+    // Without a ceiling the chat reads what its model holds, as on the web page; a ceiling the
+    // window cannot take comes down to it. A profile with no declared window reads the fixed default.
+    const cap = readingCap(reasoningProfile.contextWindow)
+    const asked = noContext ? 0 : (maxContext ?? cap ?? CHAT_READING.contextTokens)
+    const contextBudget = cap === null ? asked : Math.min(asked, cap)
     const closed = contextBudget === 0
     if (contextBudget !== asked) {
       output.log(

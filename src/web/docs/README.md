@@ -62,7 +62,7 @@ Keep changes with the feature they affect, including its responsive rules:
 | `shell/components.css` | Shared action shapes and focus states, cards, section labels, counters, chips, activity rows, disclosure links |
 | `shell/dialogs.css` | Modal and Drawer surfaces, headers, titles, bodies, action rows, fixed footers, mobile sheets |
 | `chat/chat.css` | Conversation turns, replies, branch actions |
-| `chat/composer.css` | Message input, composer controls, reading budget |
+| `chat/composer.css` | Message input, composer controls |
 | `chat/chat-tools.css` | Tool activity, output, usage, approval prompts |
 | `chat/context.css` | Chat context panel, files in context, turn timeline |
 | `explorer/explorer.css` | File tree, directory listings, document headers, breadcrumbs |

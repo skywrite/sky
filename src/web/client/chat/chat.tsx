@@ -231,6 +231,8 @@ export interface ThreadState {
   compacted: ContextAdjustment | null
   /** Files in context after the last rebuild */
   documents: number | null
+  /** What the conversation holds after its last reply, in the model's tokens; null before any */
+  heldTokens: number | null
   /** The model the thread thinks with and its reading budget; null until read from the service */
   settings: ThreadSettings | null
   /** Moves whenever the context may have changed — a rebuild, a finished turn, a new budget; the panel re-reads on it */
@@ -262,6 +264,7 @@ type Action =
       id: string
       turns: Turn[]
       documents: number | null
+      heldTokens?: number | null
       busy?: boolean
       approvals?: Approval[]
       answered?: Answered[]
@@ -283,6 +286,7 @@ type Action =
       id: string
       turns: Turn[]
       documents: number | null
+      heldTokens?: number | null
       busy: boolean
       approvals: Approval[]
       answered: Answered[]
@@ -327,6 +331,7 @@ type Action =
       effort?: Effort
       timing?: string
       adjustment?: ContextAdjustment
+      heldTokens?: number | null
       branchPoint?: BranchPoint
     }
   | { type: 'failed'; id: string; message: string; timing?: string }
@@ -370,6 +375,7 @@ function initial(id: string): ThreadState {
     provenance: null,
     compacted: null,
     documents: null,
+    heldTokens: null,
     settings: null,
     contextVersion: 0,
     approvals: [],
@@ -406,7 +412,13 @@ function reduce(state: ThreadState, action: Action): ThreadState {
       // A read-back that lands after the person already typed must not
       // erase what they sent; the service holds it either way.
       if (state.turns.length > 0)
-        return { ...state, loaded: true, documents: state.documents ?? action.documents, day: action.day ?? state.day }
+        return {
+          ...state,
+          loaded: true,
+          documents: state.documents ?? action.documents,
+          heldTokens: state.heldTokens ?? action.heldTokens ?? null,
+          day: action.day ?? state.day,
+        }
       // A turn still running on the service — from another page, or one
       // that reloaded mid-turn — shows as busy; its held calls show as cards.
       const approvals = action.approvals ?? []
@@ -415,6 +427,7 @@ function reduce(state: ThreadState, action: Action): ThreadState {
         ...state,
         turns: action.turns,
         documents: action.documents,
+        heldTokens: action.heldTokens ?? null,
         loaded: true,
         inherited: action.inherited ?? 0,
         fixed: action.fixed ?? 0,
@@ -442,6 +455,7 @@ function reduce(state: ThreadState, action: Action): ThreadState {
             : state.settings,
         turns: action.turns,
         documents: action.documents,
+        heldTokens: action.heldTokens ?? state.heldTokens,
         approvals: action.approvals,
         answered: action.answered,
         runs: action.runs,
@@ -623,6 +637,7 @@ function reduce(state: ThreadState, action: Action): ThreadState {
         phase: 'idle',
         gather: null,
         compacted: null,
+        heldTokens: action.heldTokens ?? state.heldTokens,
         approvals: [],
         contextVersion: state.contextVersion + 1,
         // A run still open when the turn ends never reported its end — the turn did.
@@ -719,6 +734,7 @@ interface ThreadBody {
   branchPoints?: Array<BranchPoint | null>
   documents: number
   kept: number | null
+  heldTokens?: number | null
   busy?: boolean
   inherited?: number
   fixed?: number
@@ -800,6 +816,7 @@ export function useChat(id: string) {
       id,
       turns: turnsOf(body),
       documents: body.kept ?? body.documents,
+      heldTokens: body.heldTokens,
       busy: Boolean(body.busy),
       approvals: body.pending ?? [],
       answered: body.answered ?? [],
@@ -853,6 +870,7 @@ export function useChat(id: string) {
           id,
           turns: turnsOf(body),
           documents: body.kept ?? body.documents,
+          heldTokens: body.heldTokens,
           busy: body.busy,
           approvals: body.pending ?? [],
           answered: body.answered ?? [],
@@ -896,6 +914,7 @@ export function useChat(id: string) {
             id,
             turns: turnsOf(body),
             documents: body.kept ?? body.documents,
+            heldTokens: body.heldTokens,
             busy: Boolean(body.busy),
             approvals: body.pending ?? [],
             answered: body.answered ?? [],
@@ -955,7 +974,7 @@ export function useChat(id: string) {
 
   // Tune the thread: what comes back is the tuning as the service holds it.
   const tune = useCallback(
-    async (change: { profile?: string; effort?: EffortOverride; contextTokens?: number; saves?: boolean }) => {
+    async (change: { profile?: string; effort?: EffortOverride; saves?: boolean }) => {
       if (!state.id) return
       const id = state.id
       tuningCount.current++
@@ -991,7 +1010,6 @@ export function useChat(id: string) {
   )
   const setModel = useCallback((profile: string) => tune({ profile, effort: 'default' }), [tune])
   const setEffort = useCallback((effort: EffortOverride) => tune({ effort }), [tune])
-  const setContextTokens = useCallback((contextTokens: number) => tune({ contextTokens }), [tune])
   const setSaves = useCallback((saves: boolean) => tune({ saves }), [tune])
 
   const queuePosting = useRef(false)
@@ -1032,7 +1050,6 @@ export function useChat(id: string) {
       instructionId: queuedRequest.current.id,
       profile: state.settings.model.current,
       effort: state.settings.effort ?? 'default',
-      contextTokens: state.settings.contextTokens,
       saves: state.settings.saves,
       continuing: true,
     })
@@ -1098,7 +1115,6 @@ export function useChat(id: string) {
         message,
         profile: state.settings.model.current,
         effort: state.settings.effort ?? 'default',
-        contextTokens: state.settings.contextTokens,
         saves: state.settings.saves,
         continuing: state.turns.length > 0,
       })
@@ -1275,6 +1291,7 @@ export function useChat(id: string) {
                   usage: d.usage as TokenUsage | undefined,
                   timing: d.timingText as string | undefined,
                   adjustment: d.adjustment as ContextAdjustment | undefined,
+                  heldTokens: d.heldTokens as number | null | undefined,
                   model: d.model as string | undefined,
                   modelLabel: d.modelLabel as string | undefined,
                   effort: d.effort as Effort | undefined,
@@ -1473,7 +1490,6 @@ export function useChat(id: string) {
     end,
     setModel,
     setEffort,
-    setContextTokens,
     setSaves,
     reload,
     answer,
@@ -1564,6 +1580,7 @@ async function reattach(id: string, replyIndex: number, dispatch: (action: Actio
     type: 'refresh',
     turns: turnsOf(body),
     documents: body.kept ?? body.documents,
+    heldTokens: body.heldTokens,
     busy: Boolean(body.busy),
     approvals: body.pending ?? [],
     answered: body.answered ?? [],

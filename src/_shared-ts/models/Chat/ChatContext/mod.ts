@@ -324,7 +324,7 @@ export default class ChatContext {
   private segment = new Set<string>()
   /**
    * The room a request last left for documents, once one had to be refitted. It holds for the rest
-   * of the session: without it the next rebuild assembled to the person's budget again, read the
+   * of the session: without it the next rebuild assembled to the whole budget again, read the
    * dropped documents back in as additions, and the following request was refitted again.
    */
   private fitted: number | undefined
@@ -362,13 +362,13 @@ export default class ChatContext {
   /** Change the budget. It governs the next rebuild; reassemble() applies it at once. */
   /** Zero closes the notebook: turns read nothing and query nothing until a budget opens it again. */
   setBudget(tokens: number): void {
-    // Another budget is the person's own choice and starts over: a request that cannot hold it is
+    // Another budget comes with another model and starts over: a request that cannot hold it is
     // refitted again. The budget already in force changes nothing; a host restates it when it reopens a chat.
     if (tokens !== this.maxTokens) this.fitted = undefined
     this.maxTokens = tokens
   }
 
-  /** What a rebuild assembles within: the person's budget, or less once a request could not hold it. */
+  /** What a rebuild assembles within: the budget, or less once a request could not hold it. */
   private get room(): number {
     return Math.min(this.maxTokens, this.fitted ?? Infinity)
   }
@@ -816,6 +816,13 @@ export default class ChatContext {
     const entry = this.contextLog.findLast((e) => e.turn === this.turnNumber)
     if (entry) entry.requestTokens = tokens
     else this.contextLog.push({ turn: this.turnNumber, queries: [...this.queries], requestTokens: tokens })
+  }
+
+  /** What the conversation held once the turn was done, on its log entry. */
+  recordTurnHeld(tokens: number): void {
+    const entry = this.contextLog.findLast((e) => e.turn === this.turnNumber)
+    if (entry) entry.heldTokens = tokens
+    else this.contextLog.push({ turn: this.turnNumber, queries: [...this.queries], heldTokens: tokens })
   }
 
   recordTurnAdjustment(adjustment: ContextAdjustment): void {

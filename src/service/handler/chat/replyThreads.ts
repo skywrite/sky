@@ -153,7 +153,6 @@ export function registerReplyThreads(app: Hono, host: ReplyThreadHost): (id: str
             prefs: {
               profile: typeof savedProfile === 'string' ? savedProfile : undefined,
               effort: isEffortOverride(recovery?.host?.effort) ? recovery.host.effort : undefined,
-              contextTokens: recovery?.contextTokens,
               saves: source.saves,
             },
           })
@@ -177,7 +176,6 @@ export function registerReplyThreads(app: Hono, host: ReplyThreadHost): (id: str
             modelConfig: source.modelConfig,
             profile: source.profile,
             effort: source.effort,
-            contextTokens: source.session.contextTokens,
             saves: source.saves,
           },
         })

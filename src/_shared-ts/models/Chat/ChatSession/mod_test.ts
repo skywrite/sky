@@ -304,31 +304,28 @@ test("ChatSession - the budget counts the model's tokens; the context reads the 
     const logged = session.contextLog.findLast((entry) => entry.stats)?.stats
     const rebuilt = events.findLast((event) => event.type === 'context-rebuilt')
     const reported = rebuilt?.type === 'context-rebuilt' ? rebuilt.report.stats : undefined
-    const saved = async () =>
-      (await loadResumeSession(path.join(tmp, 'autosave.md'), { baseDir: BASE_DIR, snapshot: true })).recovery
-        ?.contextTokens
-    const before = await saved()
     session.setModel({} as ResolvedModel, { model: 'claude-opus-4-6' }, 3)
     session.setModel({} as ResolvedModel, { model: 'claude-sonnet-x' }, 2)
-    await session.snapshot()
+    await session.send('And after that?')
     assert({
       given: 'a 750k budget on a model counting 1.5 tokens per four-character estimate, then another model at 2',
       should:
-        'assemble within 500k of estimate, show the counts in the model’s tokens, save the estimate, and re-read it for the new model only',
+        'assemble within 500k of estimate, show the counts in the model’s tokens, and re-read the budget for the new model only',
       actual: {
         budget: session.contextTokens,
         assembled: logged?.budget,
         shown: reported?.budget,
         docTokens: reported?.docTokens === Math.round((logged?.docTokens ?? 0) * 1.5),
-        saved: before,
-        afterSwitch: [session.contextTokens, await saved()],
+        afterSwitch: [
+          session.contextTokens,
+          session.contextLog.findLast((entry) => entry.settings)?.settings?.contextTokens,
+        ],
       },
       expected: {
         budget: 750_000,
         assembled: 500_000,
         shown: 750_000,
         docTokens: true,
-        saved: 500_000,
         afterSwitch: [750_000, 375_000],
       },
     })
@@ -1683,6 +1680,69 @@ test('a session compacted for one reply says so once and sends the same reading 
         sameReading: true,
         readBack: [],
       },
+    })
+  } finally {
+    await session.end({ save: false })
+    await rm(tmp, { recursive: true, force: true })
+  }
+})
+
+test('ChatSession - what a conversation holds after a reply is its last request and that reply', async () => {
+  const step = (input: number, cacheRead: number, output: number) => ({
+    usage: {
+      inputTokens: input + cacheRead,
+      outputTokens: output,
+      totalTokens: input + cacheRead + output,
+      inputTokenDetails: { noCacheTokens: input, cacheReadTokens: cacheRead, cacheWriteTokens: 0 },
+      outputTokenDetails: { textTokens: output, reasoningTokens: 0 },
+    },
+  })
+  const { session, tmp } = await makeSession({
+    // A tool step, then the step that answered.
+    invokeModel: async () =>
+      ({
+        text: 'Here is the summary.',
+        content: [],
+        steps: [step(900, 100, 40), step(60, 1_200, 25)],
+        responseMessages: [{ role: 'assistant', content: 'Here is the summary.' }],
+      }) as unknown as Awaited<ReturnType<NonNullable<ChatSessionOptions['invokeModel']>>>,
+  })
+  try {
+    const before = session.heldTokens
+    await session.start()
+    await session.send('What is on the Atlas roadmap?')
+    const saved = await loadResumeSession(path.join(tmp, 'autosave.md'), { baseDir: BASE_DIR, snapshot: true })
+    assert({
+      given: 'a reply whose last model request read 1,260 tokens and wrote 25, after a tool step of another size',
+      should: 'hold nothing before the reply and 1,285 after it, saved on the turn',
+      actual: { before, after: session.heldTokens, saved: saved.state.contextLog.at(-1)?.heldTokens },
+      expected: { before: null, after: 1_285, saved: 1_285 },
+    })
+  } finally {
+    await session.end({ save: false })
+    await rm(tmp, { recursive: true, force: true })
+  }
+})
+
+test('ChatSession - a chat saved before the count was kept answers with its last recorded request', async () => {
+  const { session, tmp } = await makeSession({
+    restore: {
+      conversation: [
+        { role: 'user', content: 'What is on the Atlas roadmap?' },
+        { role: 'assistant', content: 'The March demo.' },
+      ],
+      universePaths: [],
+      queries: [],
+      lastTurn: 1,
+      contextLog: [{ turn: 1, queries: [], requestTokens: 18_204 }],
+    },
+  })
+  try {
+    assert({
+      given: 'a restored chat whose log holds the size of its last turn’s first request and nothing newer',
+      should: 'answer with that size, before the session has even started',
+      actual: session.heldTokens,
+      expected: 18_204,
     })
   } finally {
     await session.end({ save: false })

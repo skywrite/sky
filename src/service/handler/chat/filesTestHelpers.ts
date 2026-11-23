@@ -6,7 +6,7 @@ import type { ToolFactory } from '#shared/models/Chat/ChatSession/mod.ts'
 import { PlainDate, PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import type { ChatRoutesOptions, ThreadRestore } from './mod.ts'
 
-export const FILE_CHAT_PREFS = { profile: 'test', contextTokens: 0, saves: true }
+export const FILE_CHAT_PREFS = { profile: 'test', saves: true }
 export const FILE_CHAT_REPLY = 'The proposal includes a two-week pilot.'
 
 /** Real sessions and file storage, with the model and clock replaced by synthetic fixtures. */
@@ -17,6 +17,8 @@ export function fileChatHost(
   now: () => PlainDateTime = () => new PlainDateTime('2026-01-27 09:31'),
 ) {
   const calls: ModelMessage[][] = []
+  /** The model steps each reply reports; a test that needs a reply's token counts puts them here. */
+  const steps: unknown[] = []
   const sessions = new Map<string, ChatSession>()
   const snapshotPath = (id: string) => path.join(root, 'state', `${id}.md`)
   const host: ChatRoutesOptions = {
@@ -26,7 +28,7 @@ export function fileChatHost(
     snapshots: async () => snapshots,
     settings: {
       defaultModel: 'test',
-      defaultContextTokens: 0,
+      readingBudget: () => 0,
       choices: () => [{ name: 'test', label: 'Test model', provider: 'Test', roles: ['Thinking'] }],
       resolve: () => ({ model: {} as ResolvedModel, profile: { model: 'test' } }),
     },
@@ -47,7 +49,7 @@ export function fileChatHost(
         baseDir: root,
         timeDir: path.join(root, 'time'),
         chatLogDir: path.join(root, 'state', 'logs'),
-        contextTokens: prefs.contextTokens ?? 0,
+        contextTokens: 0,
         resume: null,
         restore: restore?.state,
         attachments: restore?.attachments,
@@ -70,7 +72,7 @@ export function fileChatHost(
           return {
             text: FILE_CHAT_REPLY,
             content: [],
-            steps: [],
+            steps: steps as never,
             responseMessages: [{ role: 'assistant', content: FILE_CHAT_REPLY }],
           }
         },
@@ -82,5 +84,5 @@ export function fileChatHost(
       return session
     },
   }
-  return { host, calls, sessions, snapshotPath }
+  return { host, calls, steps, sessions, snapshotPath }
 }

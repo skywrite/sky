@@ -82,8 +82,8 @@ Two consequences to know:
   See [conversation capacity](../../docs/README.md#fitting-a-conversation-to-its-model)
   for the boundary and recovery contract. A document the segment refit drops
   leaves the shipped set. The room the refit left then holds for the session,
-  so a later rebuild does not read the document back; another budget chosen
-  by the person lifts it.
+  so a later rebuild does not read the document back; another budget, which
+  comes only with another model, lifts it.
 - Keeping a document out by hand (`exclude`) stops its future admission and
   re-renders the segment without it, but an addition already delivered
   cannot be unsaid; the log and the story say it is excluded from here on.

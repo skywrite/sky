@@ -32,7 +32,7 @@ export function imageChatHost(root: string) {
       baseDir: root,
       timeDir: host.timeDir,
       chatLogDir: path.join(root, 'state', 'logs'),
-      contextTokens: prefs.contextTokens ?? 0,
+      contextTokens: 0,
       resume: null,
       restore: restore?.state,
       attachments: restore?.attachments,

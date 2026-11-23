@@ -86,7 +86,7 @@ test(
           timeDir: path.join(root, 'time'),
           settings: {
             defaultModel: 'test',
-            defaultContextTokens: 0,
+            readingBudget: () => 0,
             choices: () => [{ name: 'test', label: 'Test model', provider: 'Test', roles: ['Thinking'] }],
             resolve: () => ({ model: resolved, profile: { model: 'test' } }),
           },

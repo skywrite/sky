@@ -695,7 +695,7 @@ test(
         const expired = await fetch(`${origin}/chat/expired/messages`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ message: 'Schedule Atlas.', profile: 'test', contextTokens: 0, saves: false }),
+          body: JSON.stringify({ message: 'Schedule Atlas.', profile: 'test', saves: false }),
         })
         const expiredTurn = expired.text()
         try {

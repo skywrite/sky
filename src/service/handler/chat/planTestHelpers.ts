@@ -16,7 +16,7 @@ export function planTestHost(
     timeDir: path.join(root, 'time'),
     settings: {
       defaultModel: 'test',
-      defaultContextTokens: 0,
+      readingBudget: () => 0,
       choices: () => [{ name: 'test', label: 'Test model', provider: 'Test', roles: ['Thinking'] }],
       resolve: () => ({ model: {} as ResolvedModel, profile: { model: 'test' } }),
     },
@@ -101,5 +101,5 @@ export function samplePlan() {
 export const planMessage = (message: string, extra: object = {}): RequestInit => ({
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({ message, profile: 'test', contextTokens: 0, saves: false, ...extra }),
+  body: JSON.stringify({ message, profile: 'test', saves: false, ...extra }),
 })

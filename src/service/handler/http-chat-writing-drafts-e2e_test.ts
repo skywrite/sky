@@ -214,7 +214,7 @@ test(
         await page.context().grantPermissions(['clipboard-read', 'clipboard-write'])
         await page.setViewportSize({ width: 1440, height: 1100 })
         const first = await page.request.post(`${origin}/chat/main/messages`, {
-          data: { message: 'Draft a message to Jane.', profile: 'test-thread-model', contextTokens: 0, saves: true },
+          data: { message: 'Draft a message to Jane.', profile: 'test-thread-model', saves: true },
         })
         if (!first.ok() || (await first.text()).includes('event: error')) throw new Error(await first.text())
         await page.goto(`${origin}/thread/main`)
@@ -337,7 +337,7 @@ test(
       async ({ page, origin, errors }) => {
         await page.setViewportSize({ width: 1440, height: 1100 })
         const first = await page.request.post(`${origin}/chat/main/messages`, {
-          data: { message: 'Draft a message to Jane.', profile: 'test-thread-model', contextTokens: 0, saves: true },
+          data: { message: 'Draft a message to Jane.', profile: 'test-thread-model', saves: true },
         })
         if (!first.ok() || (await first.text()).includes('event: error')) throw new Error(await first.text())
         await page.goto(`${origin}/thread/main`)
@@ -404,7 +404,7 @@ test(
       async ({ page, origin, errors }) => {
         await page.setViewportSize({ width: 1440, height: 1100 })
         const sent = await page.request.post(`${origin}/chat/main/messages`, {
-          data: { message: 'Draft an email to Jane.', profile: 'test-thread-model', contextTokens: 0, saves: true },
+          data: { message: 'Draft an email to Jane.', profile: 'test-thread-model', saves: true },
         })
         if (!sent.ok() || (await sent.text()).includes('event: error')) throw new Error(await sent.text())
         await page.goto(`${origin}/thread/main`)
@@ -452,7 +452,7 @@ test(
         await page.context().grantPermissions(['clipboard-read', 'clipboard-write'])
         await page.setViewportSize({ width: 1440, height: 1100 })
         const first = await page.request.post(`${origin}/chat/main/messages`, {
-          data: { message: 'Draft an email to Jane.', profile: 'test-thread-model', contextTokens: 0, saves: true },
+          data: { message: 'Draft an email to Jane.', profile: 'test-thread-model', saves: true },
         })
         if (!first.ok() || (await first.text()).includes('event: error')) throw new Error(await first.text())
         await page.goto(`${origin}/thread/main`)

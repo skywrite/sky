@@ -110,6 +110,11 @@ export interface TurnResult {
    * Absent when the invoker reported no step usage.
    */
   requestTokens?: number
+  /**
+   * What the conversation holds once this turn is done: the turn's last model request as the
+   * provider counted it, and the reply to it. Absent when the invoker reported no step usage.
+   */
+  heldTokens?: number
   /** True when the approval-round cap cut the loop short. */
   approvalRoundsExhausted: boolean
   /**
@@ -900,6 +905,11 @@ export default class ChatEngine {
 
       collectToolActivity(result)
 
+      // The last request of the turn and its reply are what the next message starts from.
+      const lastStep = result.steps?.at(-1)?.usage
+      const last = lastStep ? tokenUsageOf(lastStep) : undefined
+      const heldTokens = last ? realInputOf(last) + last.output : undefined
+
       // Push all response messages (including tool_use/tool_result pairs) to
       // preserve valid conversation history
       // deno-lint-ignore no-explicit-any
@@ -918,6 +928,7 @@ export default class ChatEngine {
         approvalRoundsExhausted,
         usage,
         ...(requestTokens !== undefined ? { requestTokens } : {}),
+        ...(heldTokens !== undefined ? { heldTokens } : {}),
         ...(cutShort ? { cutShort } : {}),
       }
     } catch (err) {

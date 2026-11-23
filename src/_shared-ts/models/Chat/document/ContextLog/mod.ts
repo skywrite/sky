@@ -210,6 +210,11 @@ export interface ContextTurnLog {
    * against which `stats.docTokens` is the estimate.
    */
   requestTokens?: number
+  /**
+   * What the conversation held once the turn was done: its last model request as the provider
+   * counted it, and the reply to it. The page shows the newest one against the model's window.
+   */
+  heldTokens?: number
   /** Prompt-to-result elapsed time and individual calls; independent of transcript minute stamps. */
   timing?: TimingDetail
   /** The model, preset, effort, and reading budget this turn ran under */
@@ -246,6 +251,7 @@ export function contextLogJson(entries: ContextTurnLog[], details?: ContextLogDe
     if (entry.errors && entry.errors.length > 0) fields.push(stringArrayField('errors', entry.errors))
     if (entry.usage) fields.push(`      "usage": ${JSON.stringify(entry.usage)}`)
     if (entry.requestTokens !== undefined) fields.push(`      "requestTokens": ${entry.requestTokens}`)
+    if (entry.heldTokens !== undefined) fields.push(`      "heldTokens": ${entry.heldTokens}`)
     if (entry.timing) fields.push(`      "timing": ${JSON.stringify(entry.timing)}`)
     if (entry.settings) fields.push(`      "settings": ${JSON.stringify(entry.settings)}`)
     if (entry.preflight) fields.push(`      "preflight": ${JSON.stringify(entry.preflight)}`)

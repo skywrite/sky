@@ -75,6 +75,16 @@ test(
       writeAccountCategory: async () => {},
     }
     const fixture = fileChatHost(root)
+    // The reply's one model request read 212,000 tokens and wrote 400.
+    fixture.steps.push({
+      usage: {
+        inputTokens: 212_000,
+        outputTokens: 400,
+        totalTokens: 212_400,
+        inputTokenDetails: { noCacheTokens: 12_000, cacheReadTokens: 200_000, cacheWriteTokens: 0 },
+        outputTokenDetails: { textTokens: 400, reasoningTokens: 0 },
+      },
+    })
     config.ai.profiles!['custom-effort'] = {
       provider: 'lm-studio',
       model: 'sample-model',
@@ -84,7 +94,7 @@ test(
       get defaultModel() {
         return getRoles(config.ai).reasoning
       },
-      defaultContextTokens: 0,
+      readingBudget: () => 0,
       choices: () =>
         Object.entries(getAllProfiles(config.ai)).map(([name, profile]) => ({
           name,
@@ -172,12 +182,18 @@ test(
       await page.waitForFunction(() =>
         document.querySelector('[aria-label="Chat settings"]')?.textContent?.includes('Medium effort'),
       )
-      const contextSlider = page.getByRole('slider', { name: 'Notebook context', exact: true })
-      await contextSlider.focus()
-      await contextSlider.press('ArrowRight')
-      await page.waitForFunction(() =>
-        document.querySelector('[aria-label="Chat settings"]')?.textContent?.includes('25k context'),
-      )
+      const meter = page.getByRole('meter', { name: 'Context in use', exact: true })
+      assert({
+        given: 'chat settings before the first message, on a model that holds a million tokens',
+        should: 'offer no context control, and show nothing held yet against all the model can hold',
+        actual: [
+          await page.getByRole('slider').count(),
+          await meter.getAttribute('aria-valuenow'),
+          await meter.getAttribute('aria-valuemax'),
+          (await toggle.textContent())?.includes('0 of 1M context'),
+        ],
+        expected: [0, '0', '1000000', true],
+      })
       const temporary = page.getByRole('switch', { name: 'Temporary chat' })
       await temporary.click()
       await page.waitForFunction(() => document.querySelector('.sky-main')?.getAttribute('data-temporary') === 'true')
@@ -212,19 +228,18 @@ test(
       const checkLocked = async (given: string) => {
         assert({
           given,
-          should: 'keep model, effort and context visible but fixed, with a clear explanation',
+          should: 'keep model and effort visible but fixed, with a clear explanation, and show what the chat holds',
           actual: [
             await page.getByRole('combobox', { name: 'Model', exact: true }).isDisabled(),
             await effort.getByRole('radio', { name: 'Medium', exact: true }).isDisabled(),
-            await page.getByRole('slider', { name: 'Notebook context', exact: true, includeHidden: true }).isDisabled(),
             await page
-              .getByText(
-                'Model, effort, and context size are fixed for this chat and its branches. Start a new chat to change them.',
-              )
+              .getByText('Model and effort are fixed for this chat and its branches. Start a new chat to change them.')
               .isVisible(),
             (await toggle.textContent())?.includes('Medium effort'),
+            (await toggle.textContent())?.includes('212k of 1M context'),
+            await meter.getAttribute('aria-valuenow'),
           ],
-          expected: [true, true, true, true, true],
+          expected: [true, true, true, true, true, '212400'],
         })
       }
       await checkLocked('a chat after its first reply')

@@ -137,8 +137,10 @@ relationships are already present.
 
 ## Fitting a conversation to its model
 
-The notebook slider is a retrieval allowance in the model's tokens, not the
-size of the whole request. `ChatEngine/requestBudget.ts` checks each SDK model call,
+A chat's reading budget is what its model's window leaves once the prompt, the
+tools and the reply have room. Nobody chooses it. It is a retrieval allowance
+in the model's tokens, not the size of the whole request.
+`ChatEngine/requestBudget.ts` checks each SDK model call,
 including tool steps and approval continuations. Instructions, the conversation,
 tool definitions and results must fit together with room for output. Declared
 profile windows travel with the resolved model; an undeclared window can also
@@ -177,7 +179,7 @@ The newest tool results stay whole, up to twenty and as many as fit in half the 
 A single result larger than that room is shortened as it arrives.
 What a compaction clears stays cleared: `ChatContext` holds the first reading to the room a refit left, so a dropped
 document is not read back on the next turn.
-The person's allowance and document pins are kept.
+Document pins are kept.
 User prose, instructions, native attachment originals, and tool call/result pairs are preserved. `workingContext.ts`
 records source boundaries by user turn, length, and hash, alongside their paths.
 Read the [2026-11-22 note](2026-11-22-a-full-chat-is-compacted-once.md).

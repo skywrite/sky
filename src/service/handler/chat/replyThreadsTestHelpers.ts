@@ -63,7 +63,7 @@ export function replyThreadTestHost(
     title: async (turns) => turns.find((turn) => turn.role === 'user')?.content.slice(0, 64) ?? 'Conversation',
     settings: {
       defaultModel: MODEL,
-      defaultContextTokens: 0,
+      readingBudget: () => 0,
       choices: () => [{ name: MODEL, label: 'Test model', provider: 'Test', roles: ['Thinking'] }],
       resolve: (name) => {
         if (name !== MODEL) throw new Error('Unknown test model')
@@ -99,7 +99,7 @@ export function replyThreadTestHost(
           runs: restoreToolRuns(host?.runs),
           title: typeof host?.title === 'string' ? host.title : null,
           attachments: loaded.attachments,
-          prefs: { profile: MODEL, contextTokens: 0, saves: typeof host?.saves === 'boolean' ? host.saves : true },
+          prefs: { profile: MODEL, saves: typeof host?.saves === 'boolean' ? host.saves : true },
           ...(saved ? { resume: { ...saved.resume, state } } : {}),
         })
       }

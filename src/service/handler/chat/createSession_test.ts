@@ -130,27 +130,19 @@ test({ name: 'toolOutputSink - without a summarizer the events are the three as 
 
 test({ name: 'webReading - a new web thread reads with the shared defaults, lean baseline included' }, () => {
   assert({
-    given: 'no stored budget and a model with no declared window',
+    given: 'a model with no declared window',
     should: 'sweep seven days under the 500k budget with the lean baseline on',
-    actual: webReading(undefined, undefined),
+    actual: webReading(undefined),
     expected: { days: 7, contextTokens: 500_000, summaryBaseline: true },
   })
 })
 
-test({ name: 'webReading - a stored budget past the model window drops to the stop that fits' }, () => {
+test({ name: 'webReading - a thread reads as much as its model’s window leaves' }, () => {
   assert({
-    given: 'a 300k preference on a model that serves 131,072 tokens a request',
-    should: 'fit the budget to the window and keep the lean baseline',
-    actual: webReading(300_000, 131_072),
-    expected: { days: 7, contextTokens: 50_000, summaryBaseline: true },
-  })
-})
-
-test({ name: 'webReading - a 1M window takes the 750k budget whole, in the model’s tokens' }, () => {
-  assert({
-    given: 'a 750k preference and a 500k one on a model that serves 1M tokens a request',
-    should: 'keep both: the window holds 750k of its own tokens with room for the prompt and reply',
-    actual: [webReading(750_000, 1_000_000).contextTokens, webReading(500_000, 1_000_000).contextTokens],
-    expected: [750_000, 500_000],
+    given:
+      'a model that serves 131,072 tokens a request, one that serves 1M, and one whose window is all prompt and reply',
+    should: 'leave room for the prompt, the tools and the reply, and give the notebook the rest',
+    actual: [131_072, 1_000_000, 32_000].map((window) => webReading(window).contextTokens),
+    expected: [99_072, 968_000, 0],
   })
 })

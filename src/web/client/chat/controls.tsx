@@ -1,7 +1,7 @@
-import { Select, Slider } from '@mantine/core'
-import { useId, useState } from 'react'
+import { Select } from '@mantine/core'
+import { useId } from 'react'
 import { effortLabel, type Effort, type EffortOverride } from '#universal/ai/effort.ts'
-import { reachIndex, STOPS, stopIndex } from '#universal/ai/readingBudget.ts'
+import { formatTokens } from '#universal/ai/tokenUsage.ts'
 import { EffortControl } from '../lib/effortControl.tsx'
 import type { Chat } from './chat.tsx'
 import './chatControls.css'
@@ -21,14 +21,11 @@ export interface ThreadSettings {
   model: { current: string; default: string; choices: ModelChoice[] }
   effort?: EffortOverride
   modelSettingsLocked: boolean
+  /** What the chat's model leaves for the notebook, in its tokens; zero when it reads none. Not a choice. */
   contextTokens: number
   kept: number | null
   documents: number | null
   saves: boolean
-}
-
-export function thousands(n: number): string {
-  return n >= 1000 ? `${Math.round(n / 1000)}k` : String(n)
 }
 
 /** Retain named presets while folding built-in variants that differ only by effort. */
@@ -56,7 +53,6 @@ export function ChatControls({
   open: boolean
   onOpenChange: (open: boolean) => void
 }) {
-  const [budget, setBudget] = useState<number | null>(null)
   const panelId = useId()
   const { settings } = chat.state
   if (!settings) return null
@@ -64,9 +60,10 @@ export function ChatControls({
   const effort = settings.effort && settings.effort !== 'default' ? settings.effort : (current?.effort?.default ?? null)
   const locked = settings.modelSettingsLocked || chat.state.inherited > 0
   const disabled = locked || chat.state.phase !== 'idle' || !!chat.tuning
-  const reach = Math.max(reachIndex(current?.contextWindow), locked ? stopIndex(settings.contextTokens) : 0)
-  const at = Math.min(budget ?? stopIndex(settings.contextTokens), reach)
-  const tokens = budget === null ? settings.contextTokens : STOPS[at]
+  // What the chat holds now, against all its model can hold. A model that declares no window shows the count alone.
+  const held = chat.state.heldTokens ?? 0
+  const max = current?.contextWindow
+  const context = max ? `${formatTokens(held)} of ${formatTokens(max)}` : formatTokens(held)
   const choices = pickerChoices(settings)
   const providers = [...new Set(choices.map((choice) => choice.provider))]
   return (
@@ -100,7 +97,7 @@ export function ChatControls({
           <span className="sky-chat-controls-dot" aria-hidden="true">
             ·
           </span>
-          <span>{tokens === 0 ? 'Context off' : `${thousands(tokens)} context`}</span>
+          <span>{context} context</span>
           <svg
             className="sky-chat-controls-caret"
             viewBox="0 0 12 12"
@@ -115,29 +112,23 @@ export function ChatControls({
         <section id={panelId} className="sky-chat-controls-panel" aria-label="Chat settings" hidden={!open}>
           <div className="sky-chat-controls-fields">
             <div className="sky-chat-context-field">
-              <span>Notebook context</span>
-              <Slider
-                className="sky-budget"
-                min={0}
-                max={reach}
-                domain={[0, STOPS.length - 1]}
-                step={1}
-                value={at}
-                disabled={disabled}
-                onChange={setBudget}
-                onChangeEnd={(index) => {
-                  if (STOPS[index] !== settings.contextTokens)
-                    void chat.setContextTokens(STOPS[index]).finally(() => setBudget(null))
-                  else setBudget(null)
-                }}
-                marks={STOPS.map((stop, index) => ({
-                  value: index,
-                  label: <span data-off={index > reach || undefined}>{stop === 0 ? 'Off' : thousands(stop)}</span>,
-                }))}
-                label={null}
-                thumbLabel="Notebook context"
-              />
-              <strong>{tokens === 0 ? 'Off' : thousands(tokens)}</strong>
+              <span>Context</span>
+              {max ? (
+                <div
+                  className="sky-chat-context-meter"
+                  role="meter"
+                  aria-label="Context in use"
+                  aria-valuemin={0}
+                  aria-valuemax={max}
+                  aria-valuenow={Math.min(held, max)}
+                  aria-valuetext={`${context} tokens`}
+                >
+                  <span style={{ width: `${Math.min(100, (held / max) * 100)}%` }} />
+                </div>
+              ) : (
+                <span />
+              )}
+              <strong>{context}</strong>
             </div>
             <div className="sky-chat-model-field">
               <span>Model</span>
@@ -176,17 +167,8 @@ export function ChatControls({
           </div>
           <p className="sky-chat-controls-note sky-chat-controls-lock">
             {locked
-              ? 'Model, effort, and context size are fixed for this chat and its branches. Start a new chat to change them.'
+              ? 'Model and effort are fixed for this chat and its branches. Start a new chat to change them.'
               : 'These settings become fixed after your first message, including in branches.'}
-          </p>
-          {reach < STOPS.length - 1 && (
-            <p className="sky-chat-controls-note">
-              This model supports up to {thousands(STOPS[reach])} of notebook context.
-            </p>
-          )}
-          <p className="sky-chat-controls-note">
-            The most of your notebook Sky reads, in the model’s tokens. Sky reads less when needed to leave room for the
-            conversation and reply.
           </p>
         </section>
       </div>

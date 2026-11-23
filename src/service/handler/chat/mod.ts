@@ -54,7 +54,6 @@ import {
   type EffortOverride,
 } from '#universal/ai/effort.ts'
 import { prettyModel } from '#universal/ai/modelName.ts'
-import { budgetFromEstimate, fitBudget } from '#universal/ai/readingBudget.ts'
 import { type PlainDateTime, ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
 import { hold } from '../../activity.ts'
 import { explorerHref } from '../explorer/mod.ts'
@@ -89,8 +88,6 @@ export interface ThreadPrefs {
   /** Model profile name */
   profile?: string
   effort?: EffortOverride
-  /** Token budget for the assembled document context; zero keeps the notebook closed */
-  contextTokens?: number
   /** Whether ending files the thread. Active threads always keep a temporary recovery snapshot. */
   saves?: boolean
   /** Once a message is accepted, inherited conversations keep the same model settings. */
@@ -177,8 +174,6 @@ export interface ThreadRestore {
   runs?: ToolRun[]
   answered?: AnsweredApproval[]
   prefs?: ThreadPrefs
-  /** The reading budget as a snapshot saved it — an estimate, restored once the thread's model is known */
-  budget?: number
   title?: string | null
   /** When the thread started; absent, it starts now — a fresh branch does */
   startTime?: PlainDateTime
@@ -249,12 +244,12 @@ export interface ModelChoice {
   builtin?: boolean
 }
 
-/** How a thread is tuned: the model it thinks with and the reading budget. */
+/** How a thread is tuned: the model it thinks with, and what that model leaves for the notebook. */
 export interface ThreadSettings {
   model: { current: string; default: string; choices: ModelChoice[] }
   effort?: EffortOverride
   modelSettingsLocked: boolean
-  /** Token budget for the assembled document context, in the model's tokens; zero keeps the notebook closed */
+  /** What the thread's model leaves for the notebook, in its tokens; zero when it reads none. Not a choice. */
   contextTokens: number
   /** How many documents the model sees as the context stands; null before any turn */
   kept: number | null
@@ -267,7 +262,8 @@ export interface ThreadSettings {
 /** The host's catalog and defaults behind the settings routes. */
 export interface ChatSettingsHost {
   defaultModel: string
-  defaultContextTokens: number
+  /** The reading budget a model gets, in its tokens: what its window leaves for the notebook. */
+  readingBudget(contextWindow: number | undefined): number
   choices(): ModelChoice[]
   /** A choice as a session takes it; throws on a name it doesn't know */
   resolve(
@@ -454,7 +450,18 @@ const NAMING_PATIENCE_MS = 4000
 /** Lines kept per tool run — a mission narrates for an hour; the newest lines are the ones that matter */
 const RUN_LINES = 400
 const MODEL_SETTINGS_LOCKED =
-  'Model, effort, and context size are fixed after the first message, including in branches. Start a new chat to use different settings.'
+  'Model and effort are fixed after the first message, including in branches. Start a new chat to use different settings.'
+
+/** A thread reads what its model holds: the budget follows the model, and is nobody's choice. */
+function applyModel(
+  session: ChatSession,
+  chosen: ReturnType<ChatSettingsHost['resolve']>,
+  host: ChatSettingsHost,
+): void {
+  session.setModel(chosen.model, chosen.profile, chosen.tokenRatio)
+  const budget = host.readingBudget(chosen.contextWindow)
+  if (session.contextTokens !== budget) session.setContextTokens(budget)
+}
 
 function head(text: string, chars = LINE_CHARS): string {
   const flat = text.replace(/\s+/g, ' ').trim()
@@ -828,10 +835,7 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono & { openVoice
             prefs.effort,
             prefs.modelConfig,
           )
-          if (chosen) session.setModel(chosen.model, chosen.profile, chosen.tokenRatio)
-          // A recovered allowance stays selected; per-request fitting handles changes in available room.
-          if (prefs.modelSettingsLocked && prefs.contextTokens !== undefined)
-            session.setContextTokens(prefs.contextTokens)
+          if (chosen) applyModel(session, chosen, options.settings!)
           if (restore?.title) session.pinTitle(restore.title)
           const thread: Thread = {
             session,
@@ -910,8 +914,6 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono & { openVoice
             saves: thread.saves,
             profile: thread.profile,
             effort: thread.effort,
-            // In the model's tokens, so a restart restores the size the page shows (storedContextTokens).
-            contextTokens: thread.session.contextTokens,
             modelSettingsLocked: thread.modelSettingsLocked,
             modelConfig: thread.modelConfig,
             title: thread.title,
@@ -1034,10 +1036,7 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono & { openVoice
       effort: thread?.effort ?? prefs?.effort ?? 'default',
       modelSettingsLocked: thread?.modelSettingsLocked ?? prefs?.modelSettingsLocked ?? false,
       contextTokens:
-        thread?.session.contextTokens ??
-        (prefs?.modelSettingsLocked && prefs.contextTokens !== undefined
-          ? prefs.contextTokens
-          : fitBudget(prefs?.contextTokens ?? host.defaultContextTokens, windowOf(host, current))),
+        thread?.session.contextTokens ?? host.readingBudget(config?.contextWindow ?? windowOf(host, current)),
       kept: thread ? keptOf(thread) : null,
       documents: thread?.context?.collectionSize ?? null,
       saves: thread?.saves ?? prefs?.saves ?? true,
@@ -1049,23 +1048,11 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono & { openVoice
     return !!(
       current?.modelSettingsLocked &&
       ((change.profile !== undefined && change.profile !== current.model.current) ||
-        (change.effort !== undefined && change.effort !== current.effort) ||
-        (change.contextTokens !== undefined && !sameBudget(id, change.contextTokens, current.contextTokens)))
+        (change.effort !== undefined && change.effort !== current.effort))
     )
   }
 
-  /**
-   * A page loaded before budgets counted the model's tokens still sends the
-   * estimate its thread was saved with. Restated as the thread restored it,
-   * it is the thread's budget, not a change.
-   */
-  const sameBudget = (id: string, sent: number, budget: number): boolean => {
-    if (sent === budget) return true
-    const ratio = threads.get(id)?.session.contextTokenRatio
-    return ratio !== undefined && budgetFromEstimate(sent, ratio) === budget
-  }
-
-  // A pin, a drop, or a new budget reassembles between turns without a log
+  // A pin or a drop reassembles between turns without a log
   // entry, so the latest assembly answers before the log does.
   const keptOf = (thread: Thread): number | null => thread.context?.stats?.kept ?? thread.session.kept
 
@@ -1085,7 +1072,6 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono & { openVoice
           queuedId: next.id,
           profile: thread.profile,
           effort: thread.effort,
-          contextTokens: thread.session.contextTokens,
           saves: thread.saves,
           continuing: true,
         }),
@@ -1209,7 +1195,6 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono & { openVoice
       message?: unknown
       profile?: unknown
       effort?: unknown
-      contextTokens?: unknown
       saves?: unknown
       continuing?: unknown
       queue?: unknown
@@ -1225,17 +1210,12 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono & { openVoice
     if (hasFiles && !options.attachmentsRoot) return c.json({ message: 'File attachments are unavailable.' }, 400)
     // A message carries the choices visible when Send was pressed. Missing
     // choices must never turn a restarted service's defaults into consent.
-    if (body?.profile === undefined || body.contextTokens === undefined || body.saves === undefined) {
-      return c.json({ message: 'Each message needs model, reading budget, and save settings. Reload the page.' }, 400)
+    if (body?.profile === undefined || body.saves === undefined) {
+      return c.json({ message: 'Each message needs model and save settings. Reload the page.' }, 400)
     }
     if (typeof body.profile !== 'string') return c.json({ message: 'profile must be a name' }, 400)
     if (body.effort !== undefined && !isEffortOverride(body.effort))
       return c.json({ message: 'Choose a supported effort level or default.' }, 400)
-    if (
-      !(typeof body.contextTokens === 'number' && Number.isSafeInteger(body.contextTokens) && body.contextTokens >= 0)
-    ) {
-      return c.json({ message: 'contextTokens must be a whole number, zero or more' }, 400)
-    }
     if (typeof body.saves !== 'boolean') return c.json({ message: 'saves must be true or false' }, 400)
     if (body.continuing !== undefined && typeof body.continuing !== 'boolean')
       return c.json({ message: 'continuing must be true or false' }, 400)
@@ -1251,7 +1231,7 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono & { openVoice
       : priorPrefs?.profile === body.profile
         ? (priorPrefs.effort ?? 'default')
         : 'default'
-    const prefs = { profile: body.profile, effort, contextTokens: body.contextTokens, saves: body.saves }
+    const prefs = { profile: body.profile, effort, saves: body.saves }
     if (modelSettingsConflict(id, prefs))
       return c.json({ message: MODEL_SETTINGS_LOCKED, settings: settingsOf(id) }, 409)
     if (!settingsOf(id)?.modelSettingsLocked) {
@@ -1259,9 +1239,6 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono & { openVoice
         chosen = host.resolve(body.profile, effort)
       } catch (error) {
         return c.json({ message: (error as Error).message }, 400)
-      }
-      if (fitBudget(body.contextTokens, chosen.contextWindow) !== body.contextTokens) {
-        return c.json({ message: 'The reading budget exceeds this model’s limit. Choose a smaller budget.' }, 400)
       }
     }
     if (body.queue === true) {
@@ -1360,11 +1337,10 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono & { openVoice
         }
       }
       if (chosen) {
-        thread.session.setModel(chosen.model, chosen.profile, chosen.tokenRatio)
+        applyModel(thread.session, chosen, host)
         thread.modelConfig = chosen.config ? structuredClone(chosen.config) : undefined
         thread.profile = prefs.profile
         thread.effort = prefs.effort
-        if (thread.session.contextTokens !== prefs.contextTokens) thread.session.setContextTokens(prefs.contextTokens)
       }
       thread.modelSettingsLocked = true
       thread.saves = prefs.saves
@@ -1450,6 +1426,7 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono & { openVoice
             model: thread.profile,
             modelLabel: prettyModel(thread.session.modelProfile.model),
             effort: thread.session.modelProfile.effort,
+            heldTokens: thread.session.heldTokens,
             branchPoint: turn.error ? undefined : branchPoints(thread.session.turns).at(-1),
           })
           await chain
@@ -1488,40 +1465,26 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono & { openVoice
       turns?: unknown
       profile?: unknown
       effort?: unknown
-      contextTokens?: unknown
       saves?: unknown
     } | null
     if (!body || !Number.isSafeInteger(body.after) || (body.after as number) < 0 || !isSpokenTurns(body.turns)) {
       return c.json({ message: 'expected a conversation position and voice transcript' }, 400)
     }
     const host = options.settings
-    if (
-      !host ||
-      typeof body.profile !== 'string' ||
-      typeof body.saves !== 'boolean' ||
-      typeof body.contextTokens !== 'number' ||
-      !Number.isSafeInteger(body.contextTokens) ||
-      body.contextTokens < 0
-    ) {
-      return c.json(
-        { message: 'Voice needs the chat’s model, reading budget, and save settings. Reload the page.' },
-        400,
-      )
+    if (!host || typeof body.profile !== 'string' || typeof body.saves !== 'boolean') {
+      return c.json({ message: 'Voice needs the chat’s model and save settings. Reload the page.' }, 400)
     }
     if (body.effort !== undefined && !isEffortOverride(body.effort))
       return c.json({ message: 'Choose a supported effort level or default.' }, 400)
     await restored
     const current = settingsOf(id)
     const effort = isEffortOverride(body.effort) ? body.effort : (current?.effort ?? 'default')
-    const prefs = { profile: body.profile, effort, contextTokens: body.contextTokens, saves: body.saves }
+    const prefs = { profile: body.profile, effort, saves: body.saves }
     if (modelSettingsConflict(id, prefs)) return c.json({ message: MODEL_SETTINGS_LOCKED, settings: current }, 409)
     let chosen: ReturnType<ChatSettingsHost['resolve']> | undefined
     if (!current?.modelSettingsLocked) {
       try {
         chosen = host.resolve(body.profile, effort)
-        if (fitBudget(body.contextTokens, chosen.contextWindow) !== body.contextTokens) {
-          return c.json({ message: 'The reading budget exceeds this model’s limit.' }, 400)
-        }
       } catch (error) {
         return c.json({ message: (error as Error).message }, 400)
       }
@@ -1551,11 +1514,10 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono & { openVoice
       try {
         reserved = true
         if (chosen) {
-          thread.session.setModel(chosen.model, chosen.profile, chosen.tokenRatio)
+          applyModel(thread.session, chosen, host)
           thread.modelConfig = chosen.config ? structuredClone(chosen.config) : undefined
           thread.profile = prefs.profile
           thread.effort = prefs.effort
-          thread.session.setContextTokens(prefs.contextTokens)
         }
         thread.saves = prefs.saves
         thread.modelSettingsLocked = true
@@ -1626,6 +1588,8 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono & { openVoice
       interrupted: thread.interrupted,
       documents: thread.session.paths.length,
       kept: keptOf(thread),
+      // What the conversation holds, in the model's tokens: the page shows it against the model's window.
+      heldTokens: thread.session.heldTokens,
       busy: thread.busy || voicePositions.has(id),
       voice: voicePositions.has(id),
       plan: thread.plan.plan,
@@ -1809,7 +1773,6 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono & { openVoice
         profile:
           typeof found.resume.recovery?.host?.profile === 'string' ? found.resume.recovery.host.profile : undefined,
         effort: isEffortOverride(found.resume.recovery?.host?.effort) ? found.resume.recovery.host.effort : undefined,
-        // The budget comes back as saved, or from an older save's estimate, as the thread opens (restoredModelPrefs).
       },
     })
     return c.json({ id, opened: true }, 201)
@@ -1892,7 +1855,6 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono & { openVoice
         modelConfig: source.modelConfig,
         profile: source.profile,
         effort: source.effort,
-        contextTokens: source.session.contextTokens,
         saves: source.saves,
       },
     })
@@ -1916,22 +1878,17 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono & { openVoice
     const body = (await c.req.json().catch(() => null)) as {
       profile?: unknown
       effort?: unknown
-      contextTokens?: unknown
       saves?: unknown
     } | null
     await restored
     if (accepting.has(id)) return c.json({ message: 'a turn is still running on this thread' }, 409)
     const profile = body?.profile
-    const tokens = body?.contextTokens
     const saves = body?.saves
     const effort = body?.effort
-    if (profile === undefined && tokens === undefined && saves === undefined && effort === undefined) {
-      return c.json({ message: 'expected { profile?, effort?, contextTokens?, saves? }' }, 400)
+    if (profile === undefined && saves === undefined && effort === undefined) {
+      return c.json({ message: 'expected { profile?, effort?, saves? }' }, 400)
     }
     if (profile !== undefined && typeof profile !== 'string') return c.json({ message: 'profile must be a name' }, 400)
-    if (tokens !== undefined && !(typeof tokens === 'number' && Number.isInteger(tokens) && tokens >= 0)) {
-      return c.json({ message: 'contextTokens must be a whole number, zero or more' }, 400)
-    }
     if (saves !== undefined && typeof saves !== 'boolean')
       return c.json({ message: 'saves must be true or false' }, 400)
     if (effort !== undefined && !isEffortOverride(effort))
@@ -1939,7 +1896,7 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono & { openVoice
     const thread = threads.get(id)
     const held = pending.get(id)
     if (settingsOf(id)?.modelSettingsLocked) {
-      if (modelSettingsConflict(id, { profile, effort, contextTokens: tokens } as ThreadPrefs))
+      if (modelSettingsConflict(id, { profile, effort } as ThreadPrefs))
         return c.json({ message: MODEL_SETTINGS_LOCKED, settings: settingsOf(id) }, 409)
       if (thread?.busy) return c.json({ message: 'a turn is still running on this thread' }, 409)
       if (typeof saves === 'boolean') {
@@ -1966,22 +1923,14 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono & { openVoice
       }
     }
 
-    // The budget is fitted to the model it will ride with: the one chosen
-    // now, else the thread's. A model with a smaller window lowers a budget
-    // that no longer fits, whether or not this change names one.
-    const window = chosen ? chosen.contextWindow : windowOf(host, ridingWith)
-    const standing = thread?.session.contextTokens ?? held?.contextTokens ?? host.defaultContextTokens
-    const budget = fitBudget(typeof tokens === 'number' ? tokens : standing, window)
-    const budgetChanges = typeof tokens === 'number' || budget !== standing
     if (thread) {
       if (thread.busy) return c.json({ message: 'a turn is still running on this thread' }, 409)
       if (chosen) {
-        thread.session.setModel(chosen.model, chosen.profile, chosen.tokenRatio)
+        applyModel(thread.session, chosen, host)
         thread.modelConfig = chosen.config ? structuredClone(chosen.config) : undefined
         thread.profile = ridingWith
         thread.effort = nextEffort
       }
-      if (budgetChanges) thread.session.setContextTokens(budget)
       if (typeof saves === 'boolean') {
         thread.saves = saves
       }
@@ -1993,7 +1942,6 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono & { openVoice
         prefs.profile = ridingWith
         prefs.effort = nextEffort
       }
-      if (budgetChanges) prefs.contextTokens = budget
       if (typeof saves === 'boolean') prefs.saves = saves
       pending.set(id, prefs)
     }
@@ -2135,8 +2083,6 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono & { openVoice
       after % 2 !== 0 ||
       typeof prefs.profile !== 'string' ||
       !isEffortOverride(prefs.effort) ||
-      !Number.isSafeInteger(prefs.contextTokens) ||
-      prefs.contextTokens < 0 ||
       typeof prefs.saves !== 'boolean'
     )
       throw new Error('Voice needs this chat’s current position and settings. Reload the page.')
@@ -2144,8 +2090,6 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono & { openVoice
     if (modelSettingsConflict(id, prefs)) throw new Error(MODEL_SETTINGS_LOCKED)
     const current = settingsOf(id)
     const chosen = current?.modelSettingsLocked ? undefined : host.resolve(prefs.profile, prefs.effort)
-    if (chosen && fitBudget(prefs.contextTokens, chosen.contextWindow) !== prefs.contextTokens)
-      throw new Error('The reading budget exceeds this model’s limit.')
     accepting.add(id)
     let closed = false
     const release = () => {
@@ -2163,11 +2107,10 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono & { openVoice
       if (thread.session.turns.length !== after || thread.busy)
         throw new Error('This chat changed. Reload it before starting voice.')
       if (chosen) {
-        thread.session.setModel(chosen.model, chosen.profile, chosen.tokenRatio)
+        applyModel(thread.session, chosen, host)
         thread.modelConfig = chosen.config ? structuredClone(chosen.config) : undefined
         thread.profile = prefs.profile
         thread.effort = prefs.effort
-        thread.session.setContextTokens(prefs.contextTokens)
       }
       thread.saves = prefs.saves
       voicePositions.set(id, after + 1)

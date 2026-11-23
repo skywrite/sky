@@ -29,7 +29,6 @@ export function useChatVoice(chat: Chat) {
       turns: voice.latest().turns,
       profile: settings.model.current,
       effort: settings.effort ?? 'default',
-      contextTokens: settings.contextTokens,
       saves: settings.saves,
     })
     if (mounted.current) setSyncing(true)
@@ -104,7 +103,6 @@ export function useChatVoice(chat: Chat) {
         after: after.current,
         profile: settings.model.current,
         effort: settings.effort ?? 'default',
-        contextTokens: settings.contextTokens,
         saves: settings.saves,
       })
     } catch (error) {

@@ -203,7 +203,7 @@ test(
       })
 
       const sent = await page.request.post(`${base}/chat/main/messages`, {
-        data: { message: 'Draft an email to Jane.', profile: 'test-thread-model', contextTokens: 0, saves: true },
+        data: { message: 'Draft an email to Jane.', profile: 'test-thread-model', saves: true },
       })
       if (!sent.ok() || (await sent.text()).includes('event: error')) throw new Error(await sent.text())
       await page.goto(`${base}/thread/main`)

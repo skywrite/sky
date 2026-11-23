@@ -123,7 +123,6 @@ export function registerUnwind(app: Hono, host: UnwindHost): void {
         modelConfig: thread.modelConfig,
         profile: thread.profile,
         effort: thread.effort,
-        contextTokens: session.contextTokens,
         saves: thread.saves,
       }
       // A thread with no messages writes no snapshot, so the old one is removed rather than replaced.

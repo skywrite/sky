@@ -105,21 +105,34 @@
   background: var(--sky-s2);
   font-size: 16px;
 }
+/* What the chat holds now against all its model can hold: a read-only track where the slider was. */
 .sky-chat-context-field {
   grid-column: 1 / -1;
   display: grid;
-  grid-template-columns: 142px minmax(0, 1fr) 45px;
-  gap: 20px;
-  align-items: start;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 16px;
+  align-items: center;
   font-size: 15.5px;
   color: var(--sky-text-2);
 }
-.sky-chat-context-field .sky-budget {
-  margin: 4px 8px 22px;
-}
 .sky-chat-context-field strong {
   font-size: 15.5px;
-  text-align: right;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--mantine-color-text);
+}
+.sky-chat-context-meter {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--sky-s2);
+  overflow: hidden;
+}
+.sky-chat-context-meter > span {
+  display: block;
+  height: 100%;
+  min-width: 2px;
+  border-radius: 3px;
+  background: var(--mantine-primary-color-filled);
 }
 .sky-chat-controls-note {
   margin: -8px 0 16px;
@@ -215,10 +228,6 @@
   .sky-chat-effort-field {
     grid-template-columns: 92px minmax(0, 1fr);
   }
-  .sky-chat-context-field {
-    grid-template-columns: 92px minmax(0, 1fr) 40px;
-    gap: 16px;
-  }
   .sky-chat-controls-toggle {
     gap: 7px;
     font-size: 13px;
@@ -240,22 +249,12 @@
   .sky-chat-effort-field > span {
     line-height: 1.5;
   }
-  .sky-chat-context-field {
-    grid-template-columns: minmax(0, 1fr) 40px;
-    gap: 12px;
-  }
-  .sky-chat-context-field > span {
-    grid-column: 1 / -1;
-  }
   .sky-chat-controls-toggle {
     max-width: 100%;
     flex-wrap: nowrap;
     font-size: 12.5px;
     gap: 5px;
     padding-inline: 10px;
-  }
-  .sky-chat-controls-fields .sky-budget .mantine-Slider-markLabel {
-    font-size: 10px;
   }
 }
 @media (max-width: 900px) {

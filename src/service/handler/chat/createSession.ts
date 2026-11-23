@@ -68,7 +68,7 @@ import { isAIChatPath, parseTimePath } from '#shared/nbfs/mod.ts'
 import truncate from '#shared/strings/truncate.ts'
 import type { ChatPlan } from '#universal/ai/chatPlan.ts'
 import { effectiveEffort, effortLevels, isEffortOverride, optionsWithoutEffort } from '#universal/ai/effort.ts'
-import { fitBudget } from '#universal/ai/readingBudget.ts'
+import { readingCap } from '#universal/ai/readingBudget.ts'
 import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import { profileLabel, PROVIDER_LABEL, ROLE_LABEL } from '../settings/mod.ts'
 import { approvalCard } from './approvalCard.ts'
@@ -87,7 +87,7 @@ import type {
   ThreadRestore,
   ToolOutputEvent,
 } from './mod.ts'
-import { storedContextTokens, storedModelConfig } from './modelSettings.ts'
+import { storedModelConfig } from './modelSettings.ts'
 import { PLAN_INSTRUCTIONS } from './plan.ts'
 import { readSession } from './readSession.ts'
 import { chatSourceLinks, sourceChatHref } from './sourceLinks.ts'
@@ -96,17 +96,23 @@ import { createTaskTools } from './taskTools.ts'
 import { restoreToolRuns } from './toolRuns.ts'
 
 /**
- * What a new web thread reads: the defaults every host shares, with the
- * budget fitted to the window of the model it rides. The stored preference,
- * when there is one, is the person's budget choice.
+ * The reading budget a model gets: all its window leaves once the prompt, the tools and the
+ * reply have their room. Nobody chooses it. A profile that declares no window reads the
+ * fixed default, since there is nothing to measure against.
  */
-export function webReading(
-  storedBudget: number | undefined,
-  contextWindow: number | undefined,
-): { days: number; contextTokens: number; summaryBaseline: boolean } {
+export function webReadingBudget(contextWindow: number | undefined): number {
+  return readingCap(contextWindow) ?? CHAT_READING.contextTokens
+}
+
+/** What a web thread reads: the defaults every host shares, and as much as its model holds. */
+export function webReading(contextWindow: number | undefined): {
+  days: number
+  contextTokens: number
+  summaryBaseline: boolean
+} {
   return {
     days: CHAT_READING.days,
-    contextTokens: fitBudget(storedBudget ?? CHAT_READING.contextTokens, contextWindow),
+    contextTokens: webReadingBudget(contextWindow),
     summaryBaseline: CHAT_READING.summaryBaseline,
   }
 }
@@ -318,7 +324,7 @@ export function createChatSettingsHost(): ChatSettingsHost {
     get defaultModel() {
       return roleProfile('chat')
     },
-    defaultContextTokens: CHAT_READING.contextTokens,
+    readingBudget: webReadingBudget,
     choices: modelChoices,
     // A logged model id back to a profile name: the thread's own when it is that model, else the first that is.
     profileFor: (model, current) => {
@@ -445,7 +451,7 @@ export function createChatHost(config: typeof ConfigModule, env: Record<string, 
       startTime,
       // The thread id keys OpenAI's prompt cache for the conversation's life, restarts included.
       cacheKey: id,
-      ...webReading(prefs.contextTokens, profile.contextWindow),
+      ...webReading(profile.contextWindow),
       tokenRatio: ratioFor(profile.model),
       baseDir: config.DIR_BASE,
       timeDir: config.DIR_TIME,
@@ -609,15 +615,12 @@ export function createChatHost(config: typeof ConfigModule, env: Record<string, 
             typeof host?.profile === 'string'
               ? host.profile
               : Object.entries(getAllProfiles()).find(([, candidate]) => candidate.model === priorModel)?.[0]
-          // The budget in the model's tokens; an older snapshot has only the estimate below.
-          const contextTokens = storedContextTokens(host?.contextTokens)
           const prefs: ThreadPrefs = {
             modelSettingsLocked: true,
             modelConfig: storedModelConfig(host?.modelConfig),
             effort: isEffortOverride(host?.effort) ? host.effort : undefined,
             saves: typeof host?.saves === 'boolean' ? host.saves : true,
             ...(profile ? { profile } : {}),
-            ...(contextTokens === undefined ? {} : { contextTokens }),
           }
           const saved = typeof host?.saved === 'string' ? await openSaved(host.saved) : null
           restores.push({
@@ -633,7 +636,6 @@ export function createChatHost(config: typeof ConfigModule, env: Record<string, 
             parent,
             interrupted,
             prefs,
-            budget: recovery?.contextTokens,
             title: typeof host?.title === 'string' ? host.title : null,
             parentId: typeof host?.parentId === 'string' ? host.parentId : null,
             ...(saved

@@ -88,7 +88,7 @@ export function calendarApprovalTestHost(root: string) {
     timeDir: path.join(root, 'time'),
     settings: {
       defaultModel: 'test',
-      defaultContextTokens: 0,
+      readingBudget: () => 0,
       choices: () => [{ name: 'test', label: 'Test model', provider: 'Test', roles: [] }],
       resolve: () => ({ model: {} as ResolvedModel, profile: { model: 'test' } }),
       profileFor: () => 'test',

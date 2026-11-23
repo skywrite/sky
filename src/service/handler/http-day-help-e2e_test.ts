@@ -58,7 +58,7 @@ test(
           }),
       },
       async ({ page, origin, file, errors }) => {
-        const sent: Array<{ message: string; saves: boolean; profile: string; contextTokens: number }> = []
+        const sent: Array<{ message: string; saves: boolean; profile: string }> = []
         page.on('request', (request) => {
           if (request.method() === 'POST' && new URL(request.url()).pathname.endsWith('/messages'))
             sent.push(request.postDataJSON())
@@ -168,7 +168,6 @@ test(
               message: body.message === draft,
               saves: body.saves,
               profile: body.profile,
-              contextTokens: body.contextTokens,
               calls: modelCalls,
               requests: sent.length,
               draft: await composerText(composer),
@@ -177,7 +176,6 @@ test(
               message: true,
               saves: false,
               profile: 'test-thread-model',
-              contextTokens: 0,
               calls: index + 1,
               requests: index + 1,
               draft: '',

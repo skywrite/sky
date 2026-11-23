@@ -63,9 +63,9 @@ provider reported — requests without tool results only, since tool JSON
 counts leaner than prose — seeded per family (1.75 on the Opus 4.7 tokenizer line,
 Haiku 5.5 included; 1.25 on Haiku 4.5; 1.15 on GPT-6) and kept in `<userData>/state/ai/token-ratios.json`.
 The context assembles within the budget's estimate; every count a person
-sees — the slider, the Context panel, the terminal — is in the model's
-tokens. The saved log and a saved budget stay estimates, converted as they
-are shown or restored ([2026-10-11](2026-10-11-reading-budget-in-model-tokens.md)).
+sees — the Context panel, the terminal — is in the model's
+tokens. The saved log stays in estimates, converted as it is shown
+([2026-10-11](2026-10-11-reading-budget-in-model-tokens.md)).
 Each chat turn also records the real size of its first request
 (`requestTokens` on the turn log), shown in the Context panel beside what
 the notebook took.

@@ -170,7 +170,7 @@ the overlay through queued instructions, resends and saved transcripts without s
 Photo edits offer PNG, JPEG and WebP; new GIF/SVG requests go through chat's image tool.
 The dialog's page title names the photo and restores the current chat title on close.
 
-The message route accepts multipart uploads with the same model, budget, and
+The message route accepts multipart uploads with the same model and
 filing settings as text messages. It reads through the console's `read_file`
 implementation: PDFs and images become native model inputs, and supported
 documents and spreadsheets become text under the same conversion and length
@@ -387,9 +387,15 @@ a person can see and touch:
   queries are labeled as context carried forward, not new executions.
   Queries returning no files remain recorded. See
   [2026-09-06](2026-09-06-queries-beside-the-wait.md).
-- **Model, effort, and notebook context.** One centered summary above the
-  composer opens a connected panel upward. Model and effort share a row; the
-  context slider is directly adjustable above. A new chat opens on the Chat
+- **Model and effort.** One centered summary above the
+  composer opens a connected panel upward, where model and effort share a row.
+  A chat reads what its model holds: the reading budget is all the model's
+  window leaves once the prompt, the tools and the reply have room, and nobody
+  chooses it ([2026-11-22](2026-11-22-a-chat-reads-what-its-model-holds.md)).
+  The panel and the summary show what the chat holds now against the model's
+  window, `212k of 1M context`: the last model request as the provider counted
+  it, plus its reply (`heldTokens` with each reply and on `GET /chat/:id`).
+  A new chat opens on the Chat
   role's preset (shipped: GPT 6.1 Sol on the Ultrafast tier); the Thinking role
   still writes the chat summary when the chat is saved. Built-in presets differing
   only in effort share one model choice, while custom named presets stay
@@ -404,30 +410,22 @@ a person can see and touch:
   before the object were rewritten into it. The file's YAML header names
   no provider or model any more; the per-turn record owns reply provenance
   ([2026-09-16](2026-09-16-every-turn-keeps-its-settings.md)).
-  Model, effort, and the selected context allowance become fixed when the first
+  Model and effort become fixed when the first
   message is accepted. The panel remains viewable with disabled controls and an
   explanation; unsent drafts remain adjustable. Branches and reply threads inherit
   the lock before their first own message. Snapshots also retain the actual model
   configuration so changing or removing a global preset cannot switch the provider
   beneath an existing conversation's file references and model history. Older chats
   recover their last recorded settings; filing preferences remain adjustable.
-  Context stops are Off, 25k, 50k, 100k, 300k, 500k, 750k, counted in the
-  model's own tokens, so a 1M window reaches 750k (see the model registry's
-  notes). A model whose host
-  serves less than the stops ask (Cerebras serves Qwen at 131,072 tokens a
-  request) ends the slider at the last stop that fits, 50k there; the
-  stops past it stay drawn, grayed, and a budget above them drops to that
-  stop — on the page, in the routes, and behind `sky ai:chat
-  --ai-max-context`, which says so ([2026-09-05](2026-09-05-the-budget-is-a-slider.md)).
-  The selected allowance stays fixed when the complete model request needs less
-  notebook material. A notice under the reply and in Context records that
-  reduction; the [chat model](../../../../_shared-ts/models/Chat/docs/README.md#fitting-a-conversation-to-its-model)
-  owns request counting and fitting, including tool-loop growth.
-  Every message POST carries `{ message, profile, effort, contextTokens, saves }`
+  A request that cannot hold what the chat has read is compacted. A line in
+  the conversation and a notice in Context record it; the [chat model](../../../../_shared-ts/models/Chat/docs/README.md#fitting-a-conversation-to-its-model)
+  owns request counting and compaction, including tool-loop growth.
+  Every message POST carries `{ message, profile, effort, saves }`
   captured from the composer, including connection retries. These choices
   are required (effort may be omitted by older clients): a client that omits
   the original choices must reload, and an unknown
-  profile or incompatible budget is refused before context or model work.
+  profile is refused before context or model work. A page loaded before the
+  slider went still sends `contextTokens`, and the routes ignore it.
   The routes reserve the turn before restoration or construction, build a
   new thread with its request's choices, and require subsequent messages to match
   its fixed model settings. A mismatch returns 409 with the current settings before
@@ -436,22 +434,21 @@ a person can see and touch:
   while the composer loads or applies settings.
   `GET /chat/:id/settings` answers the
   tuning — the thread's own, else what was chosen before its first
-  message, else the host's defaults (the Thinking role, ai:chat's 300k).
-  `POST /chat/:id/settings` with `{ profile?, effort?, contextTokens?, saves? }`
+  message, else the host's defaults.
+  `POST /chat/:id/settings` with `{ profile?, effort?, saves? }`
   changes unsent drafts; after the first message it accepts identical model
   settings and filing changes only. `modelSettingsLocked` in the response tells
-  the composer which controls are available. The first stop is
-  **Nothing** (`contextTokens: 0`): the notebook stays closed. No baseline
+  the composer which controls are available. A model whose window leaves
+  nothing for the notebook (`contextTokens: 0` in the settings) keeps it
+  closed. No baseline
   is gathered, no question is turned into queries, the model answers
   from the conversation and the tools it calls, and the context prompt
   says so outright rather than showing an empty activity block. The
   gather line reads "not reading your notebook", the Context panel says
   the notebook is closed, and each turn
-  enters the story as "Notebook closed". A budget chosen later opens it:
-  the next message gathers the baseline and runs as the first gathering
-  turn, whose entry records the universe. The rule lives in the context
-  model, and the terminal offers the same stop: `sky ai:chat --no-context`
-  (or `--max-context 0`) starts closed, fetches nothing, and says so.
+  enters the story as "Notebook closed". The rule lives in the context
+  model, and the terminal can ask for it: `sky ai:chat --ai-no-context`
+  (or `--ai-max-context 0`) starts closed, fetches nothing, and says so.
 - **The context, turn by turn.** The Context panel opens with the story:
   the notebook read at the start (files found, how many fit),
   what a later question brought in, what the budget pushed out to make
@@ -467,7 +464,7 @@ a person can see and touch:
   reads its own snapshots back — a thread id in the name, never a
   terminal's pid — and every one becomes a thread again: in the day's list
   and the rail with its turns on the page at once, its context restored at
-  its next message, and the same model, reading budget, and filing preference.
+  its next message, and the same model and filing preference.
   The restore renders the system prompt again, which Fable 5.2 refuses for a reply it already gave:
   see [Fable 5.2 refuses a chat that was reopened](../../../../_shared-ts/ai/docs/2026-11-09-fable-5-2-refuses-a-reopened-chat.md).
   Recovery includes the full model history with tool calls and results and
@@ -761,8 +758,8 @@ failed check reads as usual. See
 - The wire never carries the whole universe twice: the stream carries
   counts, the context route carries the current records and the story's
   changes.
-- The count shown anywhere is the latest assembly's. A pin, a drop, or a
-  new budget reassembles between turns without a log entry, so the routes
+- The count shown anywhere is the latest assembly's. A pin or a drop
+  reassembles between turns without a log entry, so the routes
   read the last rebuild report before the log.
 - A closed turn still logs: zero kept under a zero budget is how the story
   tells "read nothing on purpose" from a recording gap. It is not the
