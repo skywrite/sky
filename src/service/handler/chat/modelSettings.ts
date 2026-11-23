@@ -19,6 +19,22 @@ export function storedModelConfig(value: unknown): ModelProfile | undefined {
   return parsed.success ? (parsed.data as ModelProfile) : undefined
 }
 
+/**
+ * The reading budget a thread saved in the model's tokens, when the value reads as one.
+ * A session saves its budget as the estimate its context reads within, and converting
+ * that back goes through the model's learned ratio, which moves between saves. A chat
+ * restored that way could come back at another size than its page shows, and the page's
+ * next message would be refused as a settings change.
+ */
+export function storedContextTokens(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : undefined
+}
+
+/**
+ * A thread's settings as it opens. A restored chat comes back at the budget it saved in the
+ * model's tokens; only a save from before that record converts its estimate back, at the
+ * ratio the model counts with now.
+ */
 export function restoredModelPrefs(
   prefs: ThreadPrefs,
   restore: ThreadRestore | undefined,
@@ -52,6 +68,7 @@ function fromRestore(prefs: ThreadPrefs, restore: ThreadRestore, catalog: ChatSe
     (typeof host?.profile === 'string' ? host.profile : undefined) ??
     last?.preset ??
     (last && catalog?.profileFor?.(last.model, catalog.defaultModel))
+  const contextTokens = prefs.contextTokens ?? storedContextTokens(host?.contextTokens)
   return {
     ...prefs,
     modelSettingsLocked:
@@ -59,6 +76,7 @@ function fromRestore(prefs: ThreadPrefs, restore: ThreadRestore, catalog: ChatSe
     modelConfig: withProfileName(prefs.modelConfig ?? storedModelConfig(host?.modelConfig), profile, catalog),
     profile,
     effort: prefs.effort ?? (isEffortOverride(host?.effort) ? host.effort : undefined) ?? last?.effort ?? 'default',
+    ...(contextTokens === undefined ? {} : { contextTokens }),
   }
 }
 

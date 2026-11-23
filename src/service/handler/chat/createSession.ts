@@ -87,7 +87,7 @@ import type {
   ThreadRestore,
   ToolOutputEvent,
 } from './mod.ts'
-import { storedModelConfig } from './modelSettings.ts'
+import { storedContextTokens, storedModelConfig } from './modelSettings.ts'
 import { PLAN_INSTRUCTIONS } from './plan.ts'
 import { readSession } from './readSession.ts'
 import { chatSourceLinks, sourceChatHref } from './sourceLinks.ts'
@@ -611,12 +611,15 @@ export function createChatHost(config: typeof ConfigModule, env: Record<string, 
             typeof host?.profile === 'string'
               ? host.profile
               : Object.entries(getAllProfiles()).find(([, candidate]) => candidate.model === priorModel)?.[0]
+          // The budget in the model's tokens; an older snapshot has only the estimate below.
+          const contextTokens = storedContextTokens(host?.contextTokens)
           const prefs: ThreadPrefs = {
             modelSettingsLocked: true,
             modelConfig: storedModelConfig(host?.modelConfig),
             effort: isEffortOverride(host?.effort) ? host.effort : undefined,
             saves: typeof host?.saves === 'boolean' ? host.saves : true,
             ...(profile ? { profile } : {}),
+            ...(contextTokens === undefined ? {} : { contextTokens }),
           }
           const saved = typeof host?.saved === 'string' ? await openSaved(host.saved) : null
           restores.push({

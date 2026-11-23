@@ -1563,6 +1563,39 @@ test('chat route - a page loaded before budgets counted the model’s tokens kee
   })
 })
 
+test('chat route - a restart keeps the chosen budget after the model’s token ratio moves', async () => {
+  // The ratio is learned from every call, so it can move between a save and the next boot.
+  let ratio = 1.25
+  const host = await testHost({ settings: { ...settingsHost, tokenRatio: () => ratio }, canonicalSnapshots: true })
+  const production = createChatHost(
+    { ...config, DIR_STATE_AI_CHATS: host.tmp, DIR_BASE: BASE_DIR, DIR_TIME: path.join(BASE_DIR, 'time') },
+    {},
+  )
+  host.snapshots = production.snapshots
+  const prefs = { profile: 'test-quick', contextTokens: 500_000, saves: true }
+  try {
+    await (await post(appWith(host), '/chat/moved/messages', { message: 'Plan the demo.', ...prefs })).text()
+    ratio = 1
+    const restarted = appWith(host)
+    const settings = await getJson(restarted, '/chat/moved/settings')
+    // The page still holds the settings it loaded before the restart.
+    const response = await post(restarted, '/chat/moved/messages', { message: 'Continue.', ...prefs })
+    const frames = parseSSE(await response.text())
+    assert({
+      given: 'a 500k thread restored from disk after its model’s ratio moved from 1.25 to 1, and a page still on 500k',
+      should: 'restore 500k exactly and take the page’s next message',
+      actual: {
+        budget: settings.contextTokens,
+        status: response.status,
+        answered: frames.some((f) => f.event === 'turn'),
+      },
+      expected: { budget: 500_000, status: 200, answered: true },
+    })
+  } finally {
+    await rm(host.tmp, { recursive: true, force: true })
+  }
+})
+
 test("chat route - a kept thread's snapshot holds the message before the reply comes", async () => {
   let midTurn: string[] | null = null
   const host = await testHost({

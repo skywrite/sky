@@ -98,6 +98,25 @@ test('restoredModelPrefs - a saved budget converts at the ratio of the model the
   })
 })
 
+test('restoredModelPrefs - a budget saved in the model’s tokens comes back as saved', () => {
+  const saved = (budget: unknown) => {
+    const restore = savedEstimate(400_000)
+    restore.resume!.recovery!.host!.contextTokens = budget
+    return restore
+  }
+  assert({
+    given: 'a chat saved at 500k beside its 400k estimate, opened once its model counts 1.803 tokens per estimated one',
+    should:
+      'keep 500k, let a snapshot’s own budget stand over the saved file’s, and convert the estimate when the budget is unreadable',
+    actual: [
+      restoredModelPrefs({}, saved(500_000), counted).contextTokens,
+      restoredModelPrefs({ contextTokens: 300_000 }, saved(500_000), counted).contextTokens,
+      restoredModelPrefs({}, saved('500k'), counted).contextTokens,
+    ],
+    expected: [500_000, 300_000, 750_000],
+  })
+})
+
 test('restoredModelPrefs - a saved configuration keeps its name, or takes its profile’s name back', () => {
   const unnamed = {
     provider: 'openai',

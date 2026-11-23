@@ -910,6 +910,8 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono & { openVoice
             saves: thread.saves,
             profile: thread.profile,
             effort: thread.effort,
+            // In the model's tokens, so a restart restores the size the page shows (storedContextTokens).
+            contextTokens: thread.session.contextTokens,
             modelSettingsLocked: thread.modelSettingsLocked,
             modelConfig: thread.modelConfig,
             title: thread.title,
@@ -1807,7 +1809,7 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono & { openVoice
         profile:
           typeof found.resume.recovery?.host?.profile === 'string' ? found.resume.recovery.host.profile : undefined,
         effort: isEffortOverride(found.resume.recovery?.host?.effort) ? found.resume.recovery.host.effort : undefined,
-        // The budget comes back from the saved estimate as the thread opens (restoredModelPrefs).
+        // The budget comes back as saved, or from an older save's estimate, as the thread opens (restoredModelPrefs).
       },
     })
     return c.json({ id, opened: true }, 201)
