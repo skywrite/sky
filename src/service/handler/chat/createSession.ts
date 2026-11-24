@@ -35,6 +35,7 @@ import CommandService from '#commands/lib/core/CommandService.ts'
 import { commandNameToToolName } from '#commands/lib/jsonSchema.ts'
 import { EventOutput, type OutputEvent } from '#commands/lib/output/EventOutput.ts'
 import { CalendarSchedulerClient } from '#lib/calendarScheduler/client.ts'
+import { createDecisionChat } from '#lib/decisionWizard/chat.ts'
 import { legalReviewBrief, legalReviewContext } from '#lib/legalReview/chat.ts'
 import { createLegalReviewer } from '#lib/legalReview/runtime.ts'
 import { summarizeTranscript } from '#lib/notebook/enrich/summarize.ts'
@@ -353,6 +354,8 @@ export function createChatSettingsHost(): ChatSettingsHost {
 export function createChatHost(config: typeof ConfigModule, env: Record<string, string>): ChatRoutesOptions {
   const writingDrafts = createWritingDrafts(config)
   const sourceLinks = chatSourceLinks(path.join(config.DIR_STATE_AI_CHATS, 'source-links'))
+  // A chat opened from the decision wizard is told the decision each turn, and its saved file points to it.
+  const decisions = createDecisionChat(path.join(config.DIR_USER_DATA, 'future', 'decisions'))
   /** A thread's crash copy: the service's own snapshot, named by the thread id. */
   const snapshotPath = (id: string, startTime: PlainDateTime) =>
     path.join(config.DIR_STATE_AI_CHATS, chatAutosaveFilename(startTime, id))
@@ -493,6 +496,7 @@ export function createChatHost(config: typeof ConfigModule, env: Record<string, 
       tools: async (hooks) => {
         const { onExternalFiles, onAttachments, onImages } = hooks
         const unsaved = () => unsavedDrafts(hooks.writingDrafts?.list() ?? [])
+        const decision = await decisions.context(id)
         return {
           prepareApproval: async (name, input, signal) => {
             const prepared = await prepareApproval(name, input, signal)
@@ -506,10 +510,14 @@ export function createChatHost(config: typeof ConfigModule, env: Record<string, 
               : '',
             await legalReviewBrief(hooks, config),
             WRITING_DRAFT_CHAT_INSTRUCTIONS,
+            decision?.instructions ?? '',
           ]
             .filter(Boolean)
             .join('\n\n'),
-          referenceData: await writingDraftList(hooks, writingDrafts, await unsaved()),
+          referenceData:
+            [await writingDraftList(hooks, writingDrafts, await unsaved()), decision?.reference]
+              .filter(Boolean)
+              .join('\n\n') || undefined,
           tools: {
             ...(plan
               ? createTaskTools({
@@ -592,6 +600,7 @@ export function createChatHost(config: typeof ConfigModule, env: Record<string, 
       },
       autosavePath: snapshotPath(id, startTime),
       onSaved: (saved) => sourceLinks.set(id, path.relative(config.DIR_BASE, saved.path)),
+      about: () => decisions.rel(id),
       onEvent,
     })
   }

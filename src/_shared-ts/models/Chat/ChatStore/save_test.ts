@@ -1486,6 +1486,20 @@ test('saveChat - explicit notebook reads become canonical rel entries even with 
   })
 })
 
+test('saveChat - a chat opened on a record carries that record in rel, with or without auto-rel', async () => {
+  const { report } = await saveNew({
+    autoRel: false,
+    readPaths: ['people/Jane-Doe.md'],
+    aboutRefs: ['decisions/Hire-CTO', 'people/Jane-Doe'],
+  })
+  assert({
+    given: 'a chat the host opened on a decision, which also read a person the host names again',
+    should: 'add the decision as a fact after what the chat read, without repeating the person',
+    actual: [...ChatDocument.fromMarkdown(await readTextFile(report.path)).rel],
+    expected: ['people/Jane-Doe', 'decisions/Hire-CTO'],
+  })
+})
+
 test('saveChat - the summary goes between the title and the conversation, under its writer', async () => {
   let asked: { turns: number; earlier: number } | undefined
   const { report } = await saveNew({

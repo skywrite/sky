@@ -261,6 +261,8 @@ export interface ChatSessionOptions {
   autosavePath: string | null
   /** Record durable links before ending clears the recovery snapshot. */
   onSaved?: (report: SaveChatReport) => Promise<void>
+  /** The records this chat was opened on, as rel references; asked at each save, since a record can be filed later. */
+  about?: () => Promise<readonly string[]>
   onEvent?: (event: ChatSessionEvent) => void
   /** Test seams — production uses the real model, service, clock, and error log. */
   invokeModel?: ModelInvoker
@@ -1175,6 +1177,7 @@ export default class ChatSession {
       attachments: [...this.attachments.values()],
       createdPaths: [...this.createdDocuments],
       readPaths: this.notebookReads.map((read) => read.path),
+      aboutRefs: await this.opts.about?.().catch(() => []),
       approvals: this.opts.approvals?.(),
       autoTag: opts.autoTag,
       autoRel: opts.autoRel,

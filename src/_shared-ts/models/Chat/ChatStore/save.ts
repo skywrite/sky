@@ -334,6 +334,11 @@ export interface SaveChatInput {
   createdPaths?: readonly string[]
   /** Original notebook paths explicitly read by tools; factual relationships, even with auto-rel disabled. */
   readPaths?: readonly string[]
+  /**
+   * Records the host knows this chat is about, as rel references (`decisions/<Name>`). A chat opened on a
+   * record is about that record, whatever it read: they join rel as facts on every save.
+   */
+  aboutRefs?: readonly string[]
   /** Choose tags from the archived-chat corpus when the chat has none */
   autoTag?: boolean
   /** Suggest entities when rel is empty, and add explicitly referenced notebook records on every save */
@@ -564,7 +569,11 @@ export async function saveChat(input: SaveChatInput): Promise<SaveChatReport> {
         baseDir,
         relDay,
       ),
-      [...(createdRefs(input.createdPaths, baseDir) ?? []), ...readRefs(input.readPaths, baseDir, savePath)],
+      [
+        ...(createdRefs(input.createdPaths, baseDir) ?? []),
+        ...readRefs(input.readPaths, baseDir, savePath),
+        ...(input.aboutRefs ?? []),
+      ],
       baseDir,
       relDay,
     ),
