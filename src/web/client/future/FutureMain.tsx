@@ -1,5 +1,5 @@
 import { Button } from '@mantine/core'
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import type { FutureReport } from '../../../service/handler/future/types.ts'
 import { AddGoalDialog } from './AddGoalDialog.tsx'
 import { niceDate } from './dates.ts'
@@ -7,12 +7,14 @@ import { DecisionsList } from './DecisionsList.tsx'
 import { FutureLink } from './FutureLink.tsx'
 import { GoalBlock } from './GoalBlock.tsx'
 import { GoalPage } from './GoalPage.tsx'
-import { NewDecision } from './NewDecision.tsx'
 import { PastGoals } from './PastGoals.tsx'
-import { type FutureRoute, goalHref } from './routes.ts'
+import { futureRequest } from './request.ts'
+import { type FutureRoute, goalHref, wizardHref } from './routes.ts'
 import { TieLink } from './TieLink.tsx'
 import { useFutureReport } from './useFutureReport.ts'
 import { useGoal } from './useGoal.ts'
+import { Wizard } from './wizard/Wizard.tsx'
+import { WizardStart } from './wizard/WizardStart.tsx'
 import { listed } from './words.ts'
 import './FutureMain.css'
 
@@ -59,7 +61,19 @@ export function FutureMain({ route, navigate }: { route: FutureRoute; navigate: 
     await other.refresh()
   }
   // The tab names the goal that is open; while it loads, or when it is gone, it still says which area this is.
-  const title = goal?.title ?? (route.adding ? 'New decision' : route.tab === 'decisions' ? 'Decisions' : 'Future')
+  // A wizard run names the tab itself: thinking, then the decision's wording.
+  const [runTitle, setRunTitle] = useState<{ run: string; title: string } | null>(null)
+  const named = useCallback(
+    (text: string) => setRunTitle(route.run ? { run: route.run, title: text } : null),
+    [route.run],
+  )
+  const title =
+    goal?.title ??
+    (route.adding
+      ? ((runTitle?.run === route.run ? runTitle?.title : null) ?? 'New decision')
+      : route.tab === 'decisions'
+        ? 'Decisions'
+        : 'Future')
   useEffect(() => {
     document.title = `sky · ${title}`
   }, [title])
@@ -99,15 +113,18 @@ export function FutureMain({ route, navigate }: { route: FutureRoute; navigate: 
               </div>
             )
           ) : route.adding ? (
-            <NewDecision
-              goals={report.goals}
-              today={report.today}
-              navigate={navigate}
-              onCreated={async () => {
-                await refresh()
-                navigate('/future/decisions')
-              }}
-            />
+            route.run ? (
+              <Wizard
+                key={route.run}
+                id={route.run}
+                today={report.today}
+                navigate={navigate}
+                onTitle={named}
+                onChanged={refresh}
+              />
+            ) : (
+              <WizardStart navigate={navigate} onChanged={refresh} />
+            )
           ) : (
             <>
               <header className="sky-future-head">
@@ -118,8 +135,8 @@ export function FutureMain({ route, navigate }: { route: FutureRoute; navigate: 
                   </p>
                 </div>
                 {route.tab === 'decisions'
-                  ? report.decisions.length > 0 && (
-                      <Button variant="primary" onClick={() => navigate('/future/decisions/new')}>
+                  ? report.decisions.length + report.wizards.length > 0 && (
+                      <Button variant="primary" onClick={() => navigate(wizardHref())}>
                         ＋ Add a decision
                       </Button>
                     )
@@ -134,15 +151,24 @@ export function FutureMain({ route, navigate }: { route: FutureRoute; navigate: 
                   Goals<small>{report.goals.length}</small>
                 </FutureLink>
                 <FutureLink to="/future/decisions" navigate={navigate} current={route.tab === 'decisions'}>
-                  Decisions<small>{report.decisions.filter((decision) => decision.state !== 'decided').length}</small>
+                  Decisions
+                  <small>
+                    {report.decisions.filter((decision) => decision.state !== 'decided').length +
+                      report.wizards.filter((wizard) => !wizard.open).length}
+                  </small>
                 </FutureLink>
               </nav>
               {route.tab === 'decisions' ? (
                 <DecisionsList
                   decisions={report.decisions}
+                  wizards={report.wizards}
+                  onDiscard={async (id) => {
+                    await futureRequest(`/decisions/wizard/${id}/discard`, {})
+                    await refresh()
+                  }}
                   today={report.today}
                   navigate={navigate}
-                  onAdd={() => navigate('/future/decisions/new')}
+                  onAdd={() => navigate(wizardHref())}
                 />
               ) : (
                 <>

@@ -1,5 +1,5 @@
 // Run with SKY_BROWSER_TESTS=1 bun test service/handler/http-future-e2e_test.ts.
-import { mkdir } from 'node:fs/promises'
+import { mkdir, readdir, readFile } from 'node:fs/promises'
 import * as path from 'node:path'
 import { serve } from '@hono/node-server'
 import { type Browser, chromium, type Page } from 'playwright'
@@ -21,7 +21,7 @@ async function open(f: Fixture) {
     [path.join(f.root, 'time'), path.join(f.root, 'goals'), path.join(f.root, 'decisions')],
     {
       now: () => new ZonedDateTime(new PlainDateTime('08:15', TRACKING_TODAY), 'America/Chicago'),
-      future: { store: f.store },
+      future: { store: f.store, wizard: f.wizard },
       tracking: { store: f.tracking.store },
       chat: { timeDir: path.join(f.root, 'time'), createSession: unavailable },
     },
@@ -53,6 +53,36 @@ async function open(f: Fixture) {
     await close()
     throw error
   }
+}
+
+/** The wizard's controls, as a person finds them: a choice by its title, a chip by its words, a step by its question. */
+function wizardControls(page: Page) {
+  const step = (name: string) => page.getByRole('heading', { level: 2, name, exact: true })
+  return {
+    step,
+    choice: (title: string) => page.locator('.sky-wizard-opt').filter({ hasText: title }).first(),
+    chip: (name: string) => page.getByRole('radio', { name, exact: true }),
+    ticked: () => page.locator('.sky-wizard-opt[aria-checked="true"] .sky-wizard-opt-title').allInnerTexts(),
+    typed: () => page.locator('.sky-wizard-own textarea'),
+    use: () => page.getByRole('button', { name: 'Use this', exact: true }).click(),
+    go: () => page.getByRole('button', { name: 'Continue', exact: true }).click(),
+    /** Continue, and wait for the next step's question. */
+    on: async (name: string) => {
+      await page.getByRole('button', { name: 'Continue', exact: true }).click()
+      await step(name).waitFor()
+    },
+  }
+}
+const flat = (text: string) => text.replace(/\s+/g, ' ').trim()
+
+/** The decision file whose text holds `words`, as its path under decisions/ and its text. */
+async function decisionFile(root: string, words: string): Promise<{ file: string; text: string } | undefined> {
+  const dir = path.join(root, 'decisions')
+  for (const file of (await readdir(dir, { recursive: true })).filter((name) => name.endsWith('.md')).sort()) {
+    const text = await readFile(path.join(dir, file), 'utf8')
+    if (text.includes(words)) return { file, text }
+  }
+  return undefined
 }
 
 test(
@@ -388,13 +418,14 @@ test(
 
 test(
   {
-    name: 'Future lists decisions, drafts one with Sky from plain words, and saves it',
+    name: 'Future lists decisions and works one through the wizard: checks first, picks it up later, and saves the call',
     ignore: env.get('SKY_BROWSER_TESTS') !== '1',
-    timeout: 120000,
+    timeout: 180000,
   },
   async () => {
     const f = await futureFixture()
     const { page, origin, errors, shot, waitForTitle, close } = await open(f)
+    const { step, choice, chip, ticked, typed, use, go, on } = wizardControls(page)
     try {
       await page.goto(`${origin}/future`)
       await page.getByRole('link', { name: /^Decisions/ }).click()
@@ -412,11 +443,11 @@ test(
           'list the open one and the one in force with their goals and dates, count only those on the tab, and keep the made one out of the way until asked for',
         actual: [
           new URL(page.url()).pathname,
-          (await rows('To decide').allInnerTexts()).map((text) => text.replace(/\s+/g, ' ')),
-          (await rows('In force').allInnerTexts()).map((text) => text.replace(/\s+/g, ' ')),
+          (await rows('To decide').allInnerTexts()).map(flat),
+          (await rows('In force').allInnerTexts()).map(flat),
           tab,
           hidden,
-          (await rows('Decided').allInnerTexts()).map((text) => text.replace(/\s+/g, ' ')),
+          (await rows('Decided').allInnerTexts()).map(flat),
           await page.getByRole('button', { name: 'Hide decided' }).isVisible(),
         ],
         expected: [
@@ -432,102 +463,526 @@ test(
 
       await page.getByRole('button', { name: 'Add a decision' }).click()
       await waitForTitle('sky · New decision')
-      await page.getByLabel('What’s the decision?').fill('which fall race should I run')
-      await page.getByRole('button', { name: 'Draft it with Sky' }).click()
-      await page.getByLabel('The decision', { exact: true }).waitFor()
-      await shot('12-decision-draft')
+      await choice('No senior hires before the Series B closes').waitFor()
+      await shot('12-wizard-start')
+      const found = (await page.locator('.sky-wizard-opt').allInnerTexts()).map(flat)
+      const blocked = await page.getByRole('button', { name: 'Continue', exact: true }).isDisabled()
+      await choice('Hire a VP of Sales now, or after the October launch').click()
+      const stands = await chip('I’m still deciding').getAttribute('aria-checked')
+      await on('Which of these are you deciding?')
+      // The decision keeps the person's words until they choose a wording.
+      await waitForTitle('sky · Hire a VP of Sales now, or after the October launch')
       assert({
-        given: 'a decision said in plain words and drafted',
-        should: 'fill the form from the draft, tick the goal it found, and show what Sky was unsure of with its answer',
+        given: 'Add a decision',
+        should:
+          'offer the decisions Sky found that are not written down yet, each marked open or made, wait for a pick, and open the wizard on what Sky thought through',
         actual: [
-          await page.getByLabel('The decision', { exact: true }).inputValue(),
-          await page.getByLabel('What’s going on?').inputValue(),
-          await page.getByLabel('Decide by').inputValue(),
-          await page.getByLabel('Run a marathon').isChecked(),
-          await page.getByLabel('Learn Spanish').isChecked(),
-          await page.getByLabel('Is a half marathon an option?').inputValue(),
-          await page.locator('.sky-future-linked').allInnerTexts(),
+          found,
+          blocked,
+          stands,
+          /^\/future\/decisions\/new\/[0-9a-f-]{36}$/.test(new URL(page.url()).pathname),
+          f.thought,
         ],
         expected: [
-          'Which race to enter in the fall',
-          'Drafted from: which fall race should I run',
-          '2030-07-01',
+          [
+            'Hire a VP of Sales now, or after the October launch You went back and forth on this in your journal on Jun 12. Still deciding',
+            'No senior hires before the Series B closes You told the leadership meeting on Mar 12. Looks decided',
+            'Something else… Say it the way you would out loud.',
+          ],
           true,
-          false,
-          'No, the full distance only.',
-          ['streaks/run-before-work\n×'],
+          'true',
+          true,
+          [{ statement: 'Hire a VP of Sales now, or after the October launch', decided: false }],
         ],
       })
 
-      await page.getByLabel('Is a half marathon an option?').fill('No. The full distance.')
-      await page.getByRole('button', { name: 'Redraft with these answers' }).click()
-      await page.getByRole('heading', { name: /Sky wasn’t sure/ }).waitFor({ state: 'detached' })
-      await page.getByRole('button', { name: 'Remove streaks/run-before-work' }).click()
-      await page.getByText('Already decided', { exact: true }).click()
-      await page.getByLabel('What did you decide?').fill('The city marathon in October.')
-      await page.getByLabel('It’s still in force').check()
-      await page.getByLabel('When did you decide?').fill('2030-06-10')
-      await page.getByText('Personal', { exact: true }).click()
-      await page.getByRole('button', { name: 'Add decision' }).click()
-      await waitForTitle('sky · Decisions')
-      await rows('In force').nth(1).waitFor()
+      // The keyboard alone: 2 picks the second wording, Enter continues.
+      await page.keyboard.press('2')
+      const framed = await ticked()
+      await page.keyboard.press('Enter')
+      await step('How much care does it deserve?').waitFor()
+      await waitForTitle('sky · Who leads sales through the October launch')
+      const suggestedCare = await ticked()
+      const read = flat(await page.locator('.sky-wizard-read').innerText())
+      await choice('Take the full path').click()
+      await on('What do you want from it?')
+      const suggested = await ticked()
+      await choice('Keep Jane Doe, your top account executive').click()
+      await on('When these pull apart, which one comes first?')
+      await choice('Keep Jane Doe, your top account executive').click()
+      const flagged = await page.locator('.sky-wizard-flag').innerText()
+      await shot('13-wizard-comes-first')
+      await on('Which options are worth weighing?')
+      const offered = flat(await page.locator('.sky-wizard-lede').innerText())
+      await choice('Add an option…').click()
+      await typed().fill('Split the role with Jane')
+      await use()
+      const working = await page.getByRole('status').filter({ hasText: 'Sky is working out' }).innerText()
+      await choice('Split the role with Jane').waitFor()
+      await choice('Hire a VP of Sales now').click()
+      await choice('Wait until after the launch').click()
+      const weighing = await ticked()
+      const mine = flat(await choice('Split the role with Jane').innerText())
+      await shot('14-wizard-options')
       assert({
-        given: 'the redrafted decision marked as made on an earlier day and still in force, then saved',
-        should: 'run the command with what the form held, and list the decision as in force since that day',
+        given: 'the first steps of the full path',
+        should:
+          'take the keyboard, come with Sky’s suggested path picked and its answers said first, tick what Sky suggests, flag a want that is a decision in force, and work out an option that was typed in',
         actual: [
-          f.drafted.at(-1)?.conversation,
-          f.created,
-          (await rows('In force').allInnerTexts()).map((text) => text.replace(/\s+/g, ' ')),
+          framed,
+          suggestedCare,
+          read,
+          suggested,
+          flagged,
+          offered,
+          flat(working).startsWith('Sky is working out “Split the role with Jane”'),
+          weighing,
+          mine,
         ],
         expected: [
-          'Q: Is a half marathon an option?\nA: No. The full distance.',
+          ['Who leads sales through the October launch'],
+          ['Take the full path'],
+          'Why: Sky’s read Will it still matter in a year? Yes Whoever leads sales shapes the year’s bookings. How hard is it to undo? It depends on the option A senior hire takes months to reverse. A contract does not. To undo, option by option Hire a VP now Very hard Wait until November Easy Part-time lead Easy Promote Jane Costly',
+          [
+            'Keep your own time free for the October launch',
+            'Reach $4M in new bookings this year',
+            'Stay inside the hiring plan',
+          ],
+          'One of these is a decision in force. An option that breaks it means reopening that decision first.',
+          'You named two. Sky added two. Keep at least two.',
+          true,
+          [
+            'Bring in a part-time sales lead for six months',
+            'Promote Jane Doe to lead sales',
+            'Split the role with Jane',
+          ],
+          'Split the role with Jane A contractor runs the pipeline. You decide on a VP after the launch. You named this',
+        ],
+      })
+
+      await on('What could happen if you choose “Bring in a part-time sales lead for six months”?')
+      const heldBack = await page.getByRole('heading', { name: /^Sky’s read/ }).count()
+      await chip('40–60%').click()
+      const agree = await page.locator('.sky-wizard-gap').innerText()
+      await on('What could happen if you choose “Promote Jane Doe to lead sales”?')
+      await chip('Over 80%').click()
+      const apart = await page.locator('.sky-wizard-gap').innerText()
+      const waits = await page.getByRole('button', { name: 'Continue', exact: true }).isDisabled()
+      await page.getByRole('button', { name: /^Tell Sky what it is missing/ }).click()
+      await typed().fill('She asked me about the role in May.')
+      await use()
+      await page.getByText('You told Sky: “She asked me about the role in May.”').waitFor()
+      const kept = await chip('Keep mine').getAttribute('aria-checked')
+      await shot('15-wizard-odds')
+      await on('What could happen if you choose “Split the role with Jane”?')
+      await chip('20–40%').click()
+      await on('What would change your mind?')
+      const beliefs = (await page.locator('.sky-wizard-out').allInnerTexts()).map(flat)
+      await choice('Check first, then decide').click()
+      await on('When will you decide?')
+      const todos = await ticked()
+      await choice('Another day…').click()
+      await page.locator('.sky-wizard-own input[type="date"]').fill('2030-07-01')
+      await use()
+      await choice('Email Sam Rivera and Priya Shah about July').click()
+      await shot('16-wizard-check-first')
+      await page.getByRole('button', { name: 'Save as open' }).click()
+      await step('Saved as open').waitFor()
+      await waitForTitle('sky · Saved: Who leads sales through the October launch')
+      assert({
+        given: 'odds given for each option, then the choice to check first',
+        should:
+          'hold Sky’s odds back until the person answers, ask what Sky is missing when they are far apart, and save the decision as open with a day to decide by and the one check kept as a to-do',
+        actual: [
+          [heldBack, agree, apart, waits, kept],
+          beliefs,
+          todos,
+          flat(await page.locator('.sky-wizard-read').innerText()),
+          f.items,
+          f.created.map((made) => [made.title, made.target, made.decision, made.inForce, made.rel]),
+        ],
+        expected: [
+          [
+            0,
+            'You and Sky land in the same place.',
+            'You are well above Sky. What do you know that Sky doesn’t?',
+            true,
+            'true',
+          ],
+          [
+            '1 Someone you trust can start as a part-time lead in July. Neither of the two people has been asked. To check: Two emails. Bears on: Part-time lead',
+            '2 Jane wants to lead the team. You think so. You have not asked her. To check: One conversation. Bears on: Promote Jane',
+          ],
+          ['Email Sam Rivera and Priya Shah about July', 'Ask Jane whether she wants to lead the team'],
+          'What happens next Added to today’s to-dos: Ask Jane whether she wants to lead the team. Sky keeps the decision in view in every chat until you make it.',
           [
             {
-              title: 'Which race to enter in the fall',
-              context: 'Drafted from: which fall race should I run',
-              desiredOutcomes: 'A full marathon that fits the plan.',
-              decision: 'The city marathon in October.',
-              inForce: true,
-              when: '2030-06-10',
-              target: undefined,
-              rel: ['goals/Run-a-Marathon'],
-              category: 'Personal',
+              task: 'Ask Jane whether she wants to lead the team',
+              list: 'todos',
+              when: '2030-06-18',
+              category: 'Professional',
             },
           ],
           [
-            'Which race to enter in the fall Weighs on Run a marathon Since Jun 10',
-            'No late nights before a long run Weighs on Learn Spanish and Run a marathon Since Mar 2',
+            [
+              'Who leads sales through the October launch',
+              '2030-07-01',
+              undefined,
+              false,
+              ['goals/Run-a-Marathon', 'goals/Learn-Spanish', 'decisions/No-Late-Nights'],
+            ],
+          ],
+        ],
+      })
+
+      await page.getByRole('button', { name: 'See your decisions' }).click()
+      await waitForTitle('sky · Decisions')
+      const parked = rows('To decide').filter({ hasText: 'Who leads sales through the October launch' })
+      await parked.waitFor()
+      await shot('17-decisions-open')
+      const parkedRow = flat(await parked.innerText())
+      const stillWorking = await page.getByRole('region', { name: 'Being worked through' }).count()
+      await parked.getByRole('link', { name: 'Pick up where you stopped' }).click()
+      await step('Your call').waitFor()
+      const back = await page.locator('.sky-wizard-read h3').first().innerText()
+      const columns = await page.locator('.sky-wizard-grid thead th').allInnerTexts()
+      const odds = (await page.locator('.sky-wizard-odds').allInnerTexts()).map(flat)
+      const first = flat(await page.locator('.sky-wizard-grid tbody tr').first().locator('th').innerText())
+      await page.getByRole('button', { name: 'Promote Jane, Stay inside the hiring plan: No effect. Change' }).click()
+      await page.getByRole('button', { name: 'Promote Jane, Stay inside the hiring plan: Helps. Change' }).waitFor()
+      await shot('18-wizard-call')
+      await choice('Promote Jane Doe to lead sales').click()
+      await on('Sky would choose “Bring in a part-time sales lead for six months”')
+      const panels = await page.locator('.sky-wizard-read h3').allInnerTexts()
+      await choice('Keep my call').click()
+      await on('It is a year from now and this went badly. Why?')
+      await choice('You kept the big deals yourself.').click()
+      await choice('Add a reason…').click()
+      await typed().fill('Jane leaves anyway')
+      await use()
+      await choice('Jane leaves anyway').waitFor()
+      await on('What will you do if it starts going wrong?')
+      const rules = await ticked()
+      await choice('If the scope is not written by Jul 15, pause.').click()
+      await choice('If the pipeline is under $1.2M on Sep 1, reopen this decision.').click()
+      await on('What do you expect to happen?')
+      await choice('By Dec 31, $1.8M in new bookings.').click()
+      await on('How sure are you that it turns out that way?')
+      const startsFrom = await page.locator('.sky-wizard-chip[aria-checked="true"]').allInnerTexts()
+      await chip('60–80%').click()
+      await chip('Both').click()
+      await on('The record')
+      await chip('Yes. It stays in force').click()
+      await shot('19-wizard-record')
+      const preview = flat(await page.locator('.sky-wizard-doc').innerText())
+      await page.getByRole('button', { name: 'Save decision' }).click()
+      await step('Saved').waitFor()
+      assert({
+        given: 'the open decision picked up from the list',
+        should:
+          'start at the call with the options against what is wanted, hold Sky’s pick until the person chooses, and start how sure they are from the odds they gave',
+        actual: [parkedRow, stillWorking, back, columns, odds, first, panels, rules, startsFrom],
+        expected: [
+          'Who leads sales through the October launch Pick up where you stopped Weighs on Learn Spanish and Run a marathon Decide by Jul 1',
+          0,
+          'You saved this as open to check a few things first',
+          ['Part-time lead', 'Promote Jane', 'Split the role with Jane'],
+          ['You: 40–60% Sky: 40–60%', 'You: Over 80% Sky: 40–60%', 'You: 20–40% Sky: 40–60%'],
+          'Keep Jane Doe, your top account executive Comes first',
+          ['Why', 'What your call has going for it', 'The strongest case against your call'],
+          [
+            'If the scope is not written by Jul 15, pause.',
+            'If the pipeline is under $1.2M on Sep 1, reopen this decision.',
+            'Review it on Dec 31.',
+          ],
+          ['Over 80%'],
+        ],
+      })
+
+      const made = await decisionFile(f.root, 'Who leads sales through the October launch')
+      const report = await f.store.report()
+      assert({
+        given: 'the call saved',
+        should:
+          'show the record as it is saved, put the made decision in force in place of the open one, set a reminder for each day to look back, and end the run',
+        actual: [
+          preview.includes(
+            'The call Promote Jane Doe to lead sales. Sky would have chosen “Bring in a part-time sales lead for six months”.',
+          ),
+          flat(await page.locator('.sky-wizard-lede').innerText()),
+          flat(await page.locator('.sky-wizard-read').innerText()),
+          made?.file.includes('/in-force/'),
+          [
+            '## Desired Outcomes\n\n1. Keep Jane Doe, your top account executive (comes first)\n2. Keep your own time free for the October launch',
+            '- Promote Jane Doe to lead sales. My odds for the outcome I want: Over 80%. Sky’s: 40–60%. What I know that Sky did not: She asked me about the role in May.',
+            '## What I expect\n\nBy Dec 31, $1.8M in new bookings.\n\nHow sure: 60–80%. Look back: 2030-09-01 and 2030-12-31.',
+            '## What it rests on\n\n- Jane wants to lead the team. Set aside to check before deciding.',
+            '## What could sink it\n\n- You kept the big deals yourself.\n- Jane leaves anyway.',
+            '## Rules set ahead of time\n\n- Review it on Dec 31.',
+            '## Decision\n\nPromote Jane Doe to lead sales. Sky would have chosen “Bring in a part-time sales lead for six months”.',
+          ].map((part) => made?.text.includes(part)),
+          f.items.slice(1).map((item) => [item.list, item.when, item.task]),
+          report.decisions
+            .filter((decision) => decision.title === 'Who leads sales through the October launch')
+            .map((decision) => decision.state),
+          report.wizards,
+          errors,
+        ],
+        expected: [
+          true,
+          'It is on your Decisions list under In force, dated today.',
+          'What happens next A reminder to look back appears on your day page on Sep 1 and Dec 31. It asks whether it went the way you expected.',
+          true,
+          [true, true, true, true, true, true, true],
+          [
+            [
+              'reminders',
+              '2030-09-01',
+              'Look back on “Who leads sales through the October launch”: did it go the way you expected?',
+            ],
+            [
+              'reminders',
+              '2030-12-31',
+              'Look back on “Who leads sales through the October launch”: did it go the way you expected?',
+            ],
+          ],
+          ['inForce'],
+          [],
+          [],
+        ],
+      })
+    } finally {
+      await close()
+    }
+  },
+)
+
+test(
+  {
+    name: 'The decision wizard follows Sky’s thinking, decides a small one fast, records one already made on a phone, and discards one that failed',
+    ignore: env.get('SKY_BROWSER_TESTS') !== '1',
+    timeout: 180000,
+  },
+  async () => {
+    const f = await futureFixture()
+    const { page, origin, errors, shot, waitForTitle, close } = await open(f)
+    const { step, choice, chip, ticked, typed, use, go, on } = wizardControls(page)
+    try {
+      await page.goto(`${origin}/future/decisions/new`)
+      await choice('Something else…').click()
+      await typed().fill('Whether to slow down hiring')
+      await use()
+      const unsaid = await page.getByRole('button', { name: 'Continue', exact: true }).isDisabled()
+      await chip('I’m still deciding').click()
+      await go()
+      await step('Sky is thinking this through').waitFor()
+      await waitForTitle('sky · Thinking… Whether to slow down hiring')
+      await page
+        .locator('.sky-wizard-think li[data-state="now"]', { hasText: 'Thinking it through at full effort' })
+        .waitFor()
+      await shot('20-wizard-thinking')
+      const reading = flat(await page.locator('.sky-wizard-think li').first().innerText())
+      await step('Which of these are you deciding?').waitFor()
+      await waitForTitle('sky · Whether to slow down hiring')
+
+      // Their own wording changes what is being decided, so Sky thinks again and the steps start over.
+      await choice('Put it another way…').click()
+      await typed().fill('Which laptop to buy')
+      await use()
+      await step('Sky is thinking this through').waitFor()
+      await step('Which of these are you deciding?').waitFor()
+      assert({
+        given: 'a decision said in the person’s own words, then put another way',
+        should:
+          'wait to hear whether it is made, follow Sky’s thinking in the page and the tab, and think again from the new wording',
+        actual: [unsaid, reading, f.thought],
+        expected: [
+          true,
+          'Read what bears on this: 2 goals, 1 decision in force, 9 notes',
+          [
+            { statement: 'Whether to slow down hiring', decided: false },
+            { statement: 'Which laptop to buy', decided: false },
+          ],
+        ],
+      })
+
+      await choice('Who leads sales through the October launch').click()
+      await on('How much care does it deserve?')
+      await choice('Decide fast').click()
+      await on('Your call')
+      const grid = await page.locator('.sky-wizard-grid').count()
+      const where = [
+        await page.locator('.sky-wizard-path [aria-current="step"]').innerText(),
+        await page.locator('.sky-wizard-path li').count(),
+      ]
+      await choice('Bring in a part-time sales lead for six months').click()
+      await on('Sky would make the same call')
+      const against = flat(await page.locator('.sky-wizard-read').innerText())
+      await choice('Look at the options again').click()
+      await on('Your call')
+      await on('Sky would make the same call')
+      await choice('Keep my call').click()
+      await on('What do you expect to happen?')
+      await choice('Say it another way…').click()
+      await typed().fill('The pipeline holds at $1.5M through October')
+      await use()
+      await on('How sure are you that it turns out that way?')
+      const unset = await page.locator('.sky-wizard-chip[aria-checked="true"]').count()
+      await chip('40–60%').click()
+      await chip('Sep 1').click()
+      await on('The record')
+      await chip('Personal').click()
+      await shot('21-wizard-fast-record')
+      await page.getByRole('button', { name: 'Save decision' }).click()
+      await step('Saved').waitFor()
+      assert({
+        given: 'a small decision taken down the fast path',
+        should:
+          'skip the comparison, say when Sky agrees and still give the case against, go back to the options when asked, and save the call with what is expected',
+        actual: [grid, where, against, unset, f.created.at(-1), f.items],
+        expected: [
+          0,
+          ['Your call', 3],
+          'The strongest case against it Part-time lead leaves the hard part for later.',
+          0,
+          {
+            title: 'Who leads sales through the October launch',
+            context: 'You lead sales yourself, and the October launch needs most of your time from July.',
+            desiredOutcomes: '',
+            record: [
+              '## What I expect\n\nThe pipeline holds at $1.5M through October.\n\nHow sure: 40–60%. Look back: 2030-09-01.',
+              '## What it rests on\n\n- Someone you trust can start as a part-time lead in July. Not checked.',
+            ].join('\n\n'),
+            decision: 'Bring in a part-time sales lead for six months.',
+            inForce: false,
+            rel: [],
+            category: 'Personal',
+            when: undefined,
+          },
+          [
+            {
+              task: 'Look back on “Who leads sales through the October launch”: did it go the way you expected?',
+              list: 'reminders',
+              when: '2030-09-01',
+              category: 'Personal',
+            },
           ],
         ],
       })
 
       await page.setViewportSize({ width: 390, height: 844 })
       await page.goto(`${origin}/future/decisions/new`)
-      await page.getByLabel('What’s the decision?').fill('Whether to hire a coach again')
-      await page.getByRole('button', { name: 'Write it myself' }).click()
-      const add = page.getByRole('button', { name: 'Add decision' })
-      await add.waitFor()
-      const blocked = await add.isDisabled()
-      await page.getByLabel('What’s going on?').fill('The plan ends in July.')
-      await page.getByLabel('What do you want out of it?').fill('Stay injury free.')
-      await shot('13-decision-phone')
+      await choice('No senior hires before the Series B closes').click()
+      const looksMade = await chip('I’ve already decided').getAttribute('aria-checked')
+      await on('What did you decide?')
+      await choice('No senior hires before the Series B closes').click()
+      await on('When did you decide it?')
+      await choice('Mar 12').click()
+      await on('What did you know that day?')
+      const knew = await ticked()
+      await on('What did you want from it?')
+      await on('What else was on the table?')
+      await choice('Freeze all hiring, not only senior roles').click()
+      await on('Does it still bind what you do?')
+      await choice('Yes, until the Series B closes').click()
+      await on('What did you expect to happen?')
+      await choice('By Sep 30 the Series B has closed').click()
+      await on('How sure were you?')
+      await chip('60–80%').click()
+      await chip('Sep 30').click()
+      await on('The record')
       const fits = await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)
-      await add.click()
-      await waitForTitle('sky · Decisions')
-      await rows('To decide').nth(1).waitFor()
+      await shot('22-wizard-made-phone')
+      await page.getByRole('button', { name: 'Save decision' }).click()
+      await step('Saved').waitFor()
       assert({
-        given: 'a decision written by hand on a phone, with no draft',
+        given: 'a decision already made, written down on a phone',
         should:
-          'start from the words as the title, wait for the two required fields, fit the screen, and save it as open',
+          'start from Sky’s read that it is made, rest only on what was known that day, fit the screen, and save it dated the day it was made and still in force',
         actual: [
-          blocked,
+          looksMade,
+          knew,
           fits,
-          f.created.at(-1)?.title,
-          f.created.at(-1)?.decision,
-          (await rows('To decide').allInnerTexts()).some((text) => text.includes('Whether to hire a coach again')),
-          errors,
+          flat(await page.locator('.sky-wizard-lede').innerText()),
+          f.created.at(-1),
+          f.items.at(-1),
         ],
-        expected: [true, true, 'Whether to hire a coach again', undefined, true, []],
+        expected: [
+          'true',
+          [
+            'Burn was $520k a month against a plan of $450k.',
+            'The lead investor wanted the round closed before any new senior salaries.',
+          ],
+          true,
+          'It is on your Decisions list under In force, dated Mar 12.',
+          {
+            title: 'No senior hires before the Series B closes',
+            context: 'Burn was over plan in March and the lead investor wanted the round closed first.',
+            desiredOutcomes:
+              '- Get burn back under $450k a month\n- Close the Series B without new senior salaries on the books',
+            record: [
+              '## Options not taken\n\n- Freeze all hiring, not only senior roles.',
+              '## What I knew that day\n\n- Burn was $520k a month against a plan of $450k. (Finance review, Mar 8)\n- The lead investor wanted the round closed before any new senior salaries. (Call notes, Mar 5)',
+              '## What I expected\n\nBy Sep 30 the Series B has closed, with no new senior salaries added.\n\nHow sure I was: 60–80%. Look back: 2030-09-30.',
+              '## Learned since\n\n- The round slipped from July to the third quarter. (Investor update, Jun 6)',
+            ].join('\n\n'),
+            decision: 'No senior hires before the Series B closes. It holds until the Series B closes.',
+            inForce: true,
+            rel: ['goals/Learn-Spanish'],
+            category: 'Professional',
+            when: '2030-03-12',
+          },
+          {
+            task: 'Look back on “No senior hires before the Series B closes”: did it go the way you expected?',
+            list: 'reminders',
+            when: '2030-09-30',
+            category: 'Professional',
+          },
+        ],
+      })
+
+      await page.setViewportSize({ width: 1440, height: 1100 })
+      await page.goto(`${origin}/future/decisions/new`)
+      await choice('Something else…').click()
+      await typed().fill('Whether to fail fast on the new pricing')
+      await use()
+      await chip('I’m still deciding').click()
+      await go()
+      await step('Sky could not finish thinking').waitFor()
+      const why = flat(await page.locator('.sky-wizard-lede').innerText())
+      await page.getByRole('link', { name: 'Decisions', exact: true }).click()
+      await waitForTitle('sky · Decisions')
+      const working = page.getByRole('region', { name: 'Being worked through' }).locator('.sky-future-row')
+      await working.waitFor()
+      await shot('23-decisions-being-worked-through')
+      const row = flat(await working.innerText())
+      const tab = flat(
+        await page
+          .getByRole('link', { name: /^Decisions/ })
+          .last()
+          .innerText(),
+      )
+      await working.getByRole('button', { name: 'Discard' }).click()
+      const asks = flat(await working.locator('.sky-future-row-confirm > span').first().innerText())
+      await working.getByRole('button', { name: 'Keep it' }).click()
+      const keptRun = (await f.store.report()).wizards.length
+      await working.getByRole('button', { name: 'Discard' }).click()
+      await working.getByRole('group').getByRole('button', { name: 'Discard' }).click()
+      await working.waitFor({ state: 'detached' })
+      assert({
+        given: 'a decision Sky could not think through',
+        should:
+          'say what went wrong, keep it on the Decisions list as being worked through, and discard it only after asking',
+        actual: [why, row, tab, asks, keptRun, (await f.store.report()).wizards, errors],
+        expected: [
+          'Sky could not think this through: The model did not answer.',
+          'Whether to fail fast on the new pricing Discard Not in your notebook yet. It is saved when you finish. Sky could not finish thinking',
+          'Decisions4',
+          'Discard this? Sky’s thinking and your answers so far are deleted.',
+          1,
+          [],
+          [],
+        ],
       })
     } finally {
       await close()

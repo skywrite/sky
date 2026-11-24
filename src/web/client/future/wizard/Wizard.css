@@ -1,0 +1,919 @@
+/*
+ * The decision wizard, in Sky's own type, surfaces and action colors.
+ * Two kinds of surface carry the page: what Sky says sits on the quiet tinted
+ * panel, and what the person can choose is a white card. Color means something
+ * wherever it appears: blue is the person's pick, green helps, red costs.
+ */
+.sky-wizard {
+  --sky-wizard-decision-fill: var(--sky-workstream-violet-fill);
+  --sky-wizard-decision-ink: var(--sky-workstream-violet-ink);
+  --sky-wizard-good-fill: var(--sky-workstream-green-fill);
+  --sky-wizard-good-ink: var(--sky-workstream-green-ink);
+  --sky-wizard-mid-fill: var(--sky-workstream-orange-fill);
+  --sky-wizard-mid-ink: var(--sky-workstream-orange-ink);
+  --sky-wizard-bad-fill: var(--sky-workstream-red-fill);
+  --sky-wizard-bad-ink: var(--sky-workstream-red-ink);
+  --sky-wizard-pick: var(--sky-accent);
+  --sky-wizard-pick-soft: var(--sky-accent-soft);
+}
+
+/* The decision's name steps back once the questions start: the question is what the screen is about. */
+.sky-wizard-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+}
+.sky-wizard-head .mantine-Button-root {
+  flex: none;
+  margin-top: -6px;
+}
+.sky-wizard[data-view='steps'] h1 {
+  font-size: 24px;
+  font-weight: 620;
+  letter-spacing: -0.018em;
+  line-height: 1.3;
+}
+
+/* The whole path, named, so the person sees where this goes and how far along they are. */
+.sky-wizard-path {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  gap: 6px;
+  margin: 22px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.sky-wizard-path li {
+  padding-top: 10px;
+  border-top: 4px solid var(--sky-border-soft);
+  color: var(--sky-dim);
+  font-size: 13.5px;
+  line-height: 1.3;
+}
+.sky-wizard-path li[data-state='done'] {
+  border-top-color: var(--sky-text-2);
+  color: var(--sky-text-2);
+}
+.sky-wizard-path li[data-state='now'] {
+  border-top-color: var(--sky-wizard-pick);
+  color: var(--sky-text);
+  font-weight: 620;
+}
+.sky-wizard-where {
+  display: none;
+  margin: 10px 0 0;
+  color: var(--sky-dim);
+  font-size: 14.5px;
+}
+.sky-wizard-where b {
+  color: var(--sky-text);
+  font-weight: 620;
+}
+
+.sky-wizard-cols {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  gap: 56px;
+  align-items: start;
+  margin-top: 44px;
+}
+.sky-wizard-cols[data-wide='true'] {
+  grid-template-columns: minmax(0, 1fr);
+}
+.sky-wizard-start {
+  max-width: 760px;
+  margin-top: 34px;
+}
+.sky-wizard-q {
+  /* The number a key press picks is counted across the whole step, in reading order. */
+  counter-reset: sky-wizard-option;
+}
+
+.sky-wizard-q h2 {
+  margin: 0;
+  font-size: 30px;
+  font-weight: 650;
+  letter-spacing: -0.022em;
+  line-height: 1.2;
+  text-wrap: balance;
+}
+.sky-wizard-lede {
+  max-width: 60ch;
+  margin: 12px 0 0;
+  color: var(--sky-text-2);
+  font-size: 18px;
+  line-height: 1.55;
+}
+.sky-wizard-ask {
+  margin: 38px 0 0;
+  font-size: 22px;
+  font-weight: 640;
+  letter-spacing: -0.014em;
+  line-height: 1.3;
+  text-wrap: balance;
+}
+.sky-wizard-note {
+  margin: 8px 0 0;
+  color: var(--sky-dim);
+  font-size: 15px;
+  line-height: 1.55;
+}
+.sky-wizard-group {
+  margin: 30px 0 0;
+  color: var(--sky-text-2);
+  font-size: 15.5px;
+  font-weight: 620;
+}
+.sky-wizard-group + .sky-wizard-opts {
+  margin-top: 10px;
+}
+.sky-wizard-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--sky-accent);
+  font: inherit;
+  cursor: pointer;
+}
+.sky-wizard-link:hover {
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
+/* A choice: a card the person clicks. The only bordered, raised thing on the page. */
+.sky-wizard-opts {
+  display: grid;
+  gap: 10px;
+  margin-top: 24px;
+}
+.sky-wizard-opts[data-side-by-side] {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.sky-wizard-opts[data-side-by-side] .sky-wizard-opt {
+  grid-template-columns: auto minmax(0, 1fr);
+  height: 100%;
+}
+.sky-wizard-opts[data-side-by-side] .sky-wizard-tag {
+  grid-column: 2;
+  justify-self: start;
+}
+.sky-wizard-opt {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 16px;
+  width: 100%;
+  padding: 16px 18px;
+  border: 1px solid var(--sky-border-soft);
+  border-radius: 16px;
+  background: var(--sky-card, var(--sky-bg));
+  box-shadow: var(--sky-card-shadow);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 0.12s ease,
+    background-color 0.12s ease,
+    box-shadow 0.12s ease;
+}
+.sky-wizard-opt:hover {
+  border-color: color-mix(in srgb, var(--sky-wizard-pick) 50%, var(--sky-border-soft));
+}
+.sky-wizard-opt:focus-visible,
+.sky-wizard-chip:focus-visible,
+.sky-wizard-band:focus-visible,
+.sky-wizard-cell:focus-visible,
+.sky-wizard-feel:focus-visible {
+  outline: 2px solid var(--sky-action-focus);
+  outline-offset: 2px;
+}
+.sky-wizard-opt[aria-checked='true'] {
+  border-color: var(--sky-wizard-pick);
+  background: var(--sky-wizard-pick-soft);
+  box-shadow: inset 0 0 0 1px var(--sky-wizard-pick);
+}
+.sky-wizard-opt[data-other='true'] {
+  border-style: dashed;
+  background: none;
+  box-shadow: none;
+}
+.sky-wizard-opt[data-other='true'] .sky-wizard-opt-title {
+  color: var(--sky-text-2);
+  font-weight: 520;
+}
+.sky-wizard-key {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  margin-top: 1px;
+  border: 1px solid var(--sky-border-soft);
+  border-radius: 8px;
+  background: var(--sky-bg);
+  color: var(--sky-dim);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.sky-wizard-key::before {
+  counter-increment: sky-wizard-option;
+  content: counter(sky-wizard-option);
+}
+.sky-wizard-opt[aria-checked='true'] .sky-wizard-key {
+  border-color: var(--sky-wizard-pick);
+  background: var(--sky-wizard-pick);
+  color: #fff;
+}
+.sky-wizard-opt-title {
+  display: block;
+  font-size: 19px;
+  font-weight: 600;
+  letter-spacing: -0.008em;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+.sky-wizard-opt-why {
+  display: block;
+  margin-top: 3px;
+  color: var(--sky-text-2);
+  font-size: 15.5px;
+  line-height: 1.5;
+}
+.sky-wizard-tag {
+  align-self: center;
+  padding: 2px 11px;
+  border-radius: 999px;
+  background: var(--sky-hover);
+  color: var(--sky-text-2);
+  font-size: 13px;
+  white-space: nowrap;
+}
+.sky-wizard-tag[data-kind='sky'] {
+  background: var(--sky-wizard-pick-soft);
+  color: var(--sky-wizard-pick);
+}
+.sky-wizard-opt[aria-checked='true'] .sky-wizard-tag[data-kind='sky'] {
+  background: var(--sky-bg);
+}
+.sky-wizard-tag[data-kind='force'] {
+  background: var(--sky-wizard-decision-fill);
+  color: var(--sky-wizard-decision-ink);
+}
+.sky-wizard-own {
+  padding: 18px;
+  border: 1px solid var(--sky-wizard-pick);
+  border-radius: 16px;
+  box-shadow: inset 0 0 0 1px var(--sky-wizard-pick);
+}
+.sky-wizard-own label {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 15px;
+  font-weight: 620;
+}
+.sky-wizard-own textarea,
+.sky-wizard-own input {
+  width: 100%;
+  padding: 11px 13px;
+  border: 1px solid var(--sky-border-soft);
+  border-radius: 11px;
+  background: var(--sky-bg);
+  color: inherit;
+  font: inherit;
+  font-size: 18px;
+  line-height: 1.5;
+  resize: vertical;
+}
+.sky-wizard-own textarea:focus,
+.sky-wizard-own input:focus {
+  border-color: var(--sky-wizard-pick);
+  outline: none;
+}
+.sky-wizard-own-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+/* Back and Continue stay within reach on a long step. */
+.sky-wizard-actions {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 40px;
+  padding: 14px 0 16px;
+  border-top: 1px solid var(--sky-border-soft);
+  background: color-mix(in srgb, var(--sky-bg) 90%, transparent);
+  backdrop-filter: blur(10px);
+}
+.sky-wizard-hint {
+  margin-left: auto;
+  color: var(--sky-dim);
+  font-size: 13.5px;
+}
+
+/* Sky speaking: the quiet tinted panel, marked with Sky's dot. */
+.sky-wizard-read {
+  margin-top: 26px;
+  padding: 22px 26px 24px;
+  border-radius: var(--sky-card-radius);
+  background: var(--sky-side);
+}
+.sky-wizard-read > h3 {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 0 0 8px;
+  color: var(--sky-text);
+  font-size: 15.5px;
+  font-weight: 620;
+}
+.sky-wizard-read > h3::before {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--sky-wizard-pick);
+  content: '';
+}
+.sky-wizard-read p {
+  max-width: 68ch;
+  margin: 0;
+  color: var(--sky-text-2);
+  font-size: 17px;
+  line-height: 1.6;
+}
+.sky-wizard-read p + p {
+  margin-top: 8px;
+}
+/* The answer first, large; the reason under it. */
+.sky-wizard-verdicts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 22px 36px;
+  margin-top: 14px;
+}
+.sky-wizard-verdict-q {
+  display: block;
+  color: var(--sky-dim);
+  font-size: 14.5px;
+}
+.sky-wizard-verdict strong {
+  display: block;
+  margin: 4px 0 8px;
+  color: var(--sky-text);
+  font-size: 25px;
+  font-weight: 650;
+  letter-spacing: -0.018em;
+  line-height: 1.22;
+  text-wrap: balance;
+}
+.sky-wizard-verdict strong[data-long] {
+  font-size: 20px;
+  letter-spacing: -0.012em;
+  line-height: 1.3;
+}
+.sky-wizard-read .sky-wizard-verdict p {
+  font-size: 16px;
+  line-height: 1.55;
+}
+.sky-wizard-undo {
+  margin-top: 22px;
+  padding-top: 18px;
+  border-top: 1px solid var(--sky-border-soft);
+}
+.sky-wizard-undo ul {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 36px;
+  margin-top: 6px;
+}
+.sky-wizard-undo li {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--sky-border-soft);
+  color: var(--sky-text);
+  font-size: 16px;
+  line-height: 1.4;
+}
+.sky-wizard-level {
+  flex: none;
+  padding: 1px 11px;
+  border-radius: 999px;
+  background: var(--sky-hover);
+  color: var(--sky-text-2);
+  font-size: 13.5px;
+  font-style: normal;
+  white-space: nowrap;
+}
+.sky-wizard-level[data-level='Easy'] {
+  background: var(--sky-wizard-good-fill);
+  color: var(--sky-wizard-good-ink);
+}
+.sky-wizard-level[data-level='Costly'] {
+  background: var(--sky-wizard-mid-fill);
+  color: var(--sky-wizard-mid-ink);
+}
+.sky-wizard-level[data-level='Very hard'] {
+  background: var(--sky-wizard-bad-fill);
+  color: var(--sky-wizard-bad-ink);
+}
+.sky-wizard-flag {
+  margin: 18px 0 0;
+  padding: 12px 16px;
+  border-radius: 14px;
+  background: var(--sky-wizard-decision-fill);
+  color: var(--sky-wizard-decision-ink);
+  font-size: 15.5px;
+  line-height: 1.5;
+}
+
+.sky-wizard-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+.sky-wizard-chip {
+  padding: 8px 17px;
+  border: 1px solid var(--sky-border-soft);
+  border-radius: 999px;
+  background: var(--sky-card, var(--sky-bg));
+  color: inherit;
+  font: inherit;
+  font-size: 16px;
+  cursor: pointer;
+  transition:
+    border-color 0.12s ease,
+    background-color 0.12s ease;
+}
+.sky-wizard-chip:hover {
+  border-color: color-mix(in srgb, var(--sky-wizard-pick) 50%, var(--sky-border-soft));
+}
+.sky-wizard-chip[aria-checked='true'] {
+  border-color: var(--sky-wizard-pick);
+  background: var(--sky-wizard-pick);
+  color: #fff;
+  font-weight: 560;
+}
+
+/* The odds: one scale, the person's pick on top and Sky's under it on the same five steps. */
+.sky-wizard-scale {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px 10px;
+  margin-top: 16px;
+}
+.sky-wizard-scale-who {
+  color: var(--sky-text-2);
+  font-size: 14px;
+  font-weight: 620;
+}
+.sky-wizard-scale-bands {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 4px;
+}
+.sky-wizard-band {
+  min-height: 48px;
+  padding: 6px 4px;
+  border: 1px solid var(--sky-border-soft);
+  border-radius: 8px;
+  background: var(--sky-card, var(--sky-bg));
+  color: inherit;
+  font: inherit;
+  font-size: 15.5px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+  cursor: pointer;
+  transition:
+    border-color 0.12s ease,
+    background-color 0.12s ease;
+}
+.sky-wizard-band:first-child,
+.sky-wizard-band-sky:first-child {
+  border-radius: 14px 8px 8px 14px;
+}
+.sky-wizard-band:last-child,
+.sky-wizard-band-sky:last-child {
+  border-radius: 8px 14px 14px 8px;
+}
+.sky-wizard-band:hover {
+  border-color: color-mix(in srgb, var(--sky-wizard-pick) 50%, var(--sky-border-soft));
+}
+.sky-wizard-band[aria-checked='true'] {
+  border-color: var(--sky-wizard-pick);
+  background: var(--sky-wizard-pick);
+  color: #fff;
+  font-weight: 600;
+}
+.sky-wizard-band-sky {
+  display: grid;
+  place-items: center;
+  min-height: 30px;
+  border-radius: 8px;
+  background: var(--sky-hover);
+  color: #fff;
+  font-size: 13.5px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+.sky-wizard-band-sky[data-on] {
+  background: var(--sky-text-2);
+}
+.sky-wizard-gap {
+  margin: 22px 0 0;
+  font-size: 18px;
+  font-weight: 620;
+  line-height: 1.4;
+}
+
+/* What could follow from an option. */
+.sky-wizard-outs {
+  margin-top: 24px;
+  border-top: 1px solid var(--sky-border-soft);
+}
+.sky-wizard-out {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: baseline;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--sky-border-soft);
+  font-size: 18px;
+  line-height: 1.5;
+}
+.sky-wizard-out-n {
+  color: var(--sky-dim);
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+.sky-wizard-feel {
+  padding: 3px 12px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--sky-hover);
+  color: var(--sky-text-2);
+  font: inherit;
+  font-size: 13.5px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.sky-wizard-feel[data-feel='like'] {
+  background: var(--sky-wizard-good-fill);
+  color: var(--sky-wizard-good-ink);
+}
+.sky-wizard-feel[data-feel='dislike'] {
+  background: var(--sky-wizard-bad-fill);
+  color: var(--sky-wizard-bad-ink);
+}
+
+/* Options across, what the person wants down. The option they pick lights its whole column. */
+.sky-wizard-grid {
+  margin-top: 26px;
+  overflow-x: auto;
+  border: 1px solid var(--sky-border-soft);
+  border-radius: var(--sky-card-radius);
+  background: var(--sky-card, var(--sky-bg));
+  box-shadow: var(--sky-card-shadow);
+}
+.sky-wizard-grid table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 15.5px;
+}
+.sky-wizard-grid th,
+.sky-wizard-grid td {
+  padding: 13px 16px;
+  border-top: 1px solid var(--sky-border-soft);
+  text-align: left;
+  vertical-align: top;
+  transition: background-color 0.12s ease;
+}
+.sky-wizard-grid thead th,
+.sky-wizard-grid thead td {
+  padding-top: 16px;
+  padding-bottom: 14px;
+  border-top: 0;
+  font-size: 16px;
+  font-weight: 640;
+  letter-spacing: -0.006em;
+  line-height: 1.3;
+}
+.sky-wizard-grid tbody th {
+  min-width: 230px;
+  color: var(--sky-text-2);
+  font-weight: 400;
+  line-height: 1.4;
+}
+.sky-wizard-grid [data-picked] {
+  background: var(--sky-wizard-pick-soft);
+}
+.sky-wizard-grid tr[data-sep='true'] th,
+.sky-wizard-grid tr[data-sep='true'] td {
+  border-top-width: 2px;
+}
+.sky-wizard-first {
+  display: block;
+  color: var(--sky-wizard-pick);
+  font-size: 12.5px;
+}
+.sky-wizard-cell {
+  padding: 3px 12px;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  color: var(--sky-dim);
+  font: inherit;
+  font-size: 14px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.sky-wizard-cell[data-effect='helps'] {
+  background: var(--sky-wizard-good-fill);
+  color: var(--sky-wizard-good-ink);
+}
+.sky-wizard-cell[data-effect='costs'] {
+  background: var(--sky-wizard-bad-fill);
+  color: var(--sky-wizard-bad-ink);
+}
+.sky-wizard-cell[data-effect='none'] {
+  padding-left: 0;
+}
+.sky-wizard-odds b {
+  display: block;
+  font-variant-numeric: tabular-nums;
+  font-weight: 620;
+}
+.sky-wizard-odds small {
+  color: var(--sky-dim);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The record so far: a running slip beside the question, once there is something on it. */
+.sky-wizard-rail {
+  position: sticky;
+  top: 20px;
+  padding: 20px 22px 22px;
+  border: 1px solid var(--sky-border-soft);
+  border-radius: var(--sky-card-radius);
+}
+.sky-wizard-rail h3 {
+  margin: 0 0 4px;
+  font-size: 15.5px;
+  font-weight: 620;
+}
+.sky-wizard-rail dl,
+.sky-wizard-rail dd {
+  margin: 0;
+}
+.sky-wizard-rail dl > div {
+  padding: 12px 0;
+  border-bottom: 1px solid var(--sky-border-soft);
+}
+.sky-wizard-rail dl > div:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+.sky-wizard-rail dt {
+  color: var(--sky-dim);
+  font-size: 13.5px;
+}
+.sky-wizard-rail dd {
+  margin-top: 3px;
+  font-size: 15.5px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.sky-wizard-rail dd small {
+  display: block;
+  color: var(--sky-dim);
+  font-size: 13.5px;
+  font-variant-numeric: tabular-nums;
+}
+.sky-wizard-rail-line {
+  display: block;
+}
+.sky-wizard-rail-line + .sky-wizard-rail-line {
+  margin-top: 6px;
+}
+
+/* The finished record, as the file will read. */
+.sky-wizard-doc {
+  margin-top: 26px;
+  padding: 30px 34px 32px;
+  border: 1px solid var(--sky-border-soft);
+  border-radius: var(--sky-card-radius);
+  background: var(--sky-card, var(--sky-bg));
+  box-shadow: var(--sky-card-shadow);
+}
+.sky-wizard-doc h3 {
+  margin: 24px 0 5px;
+  color: var(--sky-dim);
+  font-size: 14.5px;
+  font-weight: 500;
+}
+.sky-wizard-doc > h3:first-child {
+  margin-top: 0;
+}
+.sky-wizard-doc > h3:first-child + p {
+  font-size: 22px;
+  font-weight: 640;
+  letter-spacing: -0.014em;
+  line-height: 1.3;
+}
+.sky-wizard-doc p {
+  max-width: 76ch;
+  margin: 0;
+  font-size: 18px;
+  line-height: 1.55;
+}
+.sky-wizard-doc p + p {
+  margin-top: 6px;
+}
+.sky-wizard-doc ul,
+.sky-wizard-doc ol {
+  max-width: 76ch;
+  margin: 0;
+  padding-left: 1.2em;
+  list-style: revert;
+  font-size: 18px;
+  line-height: 1.6;
+}
+.sky-wizard-doc small {
+  color: var(--sky-dim);
+  font-size: 14.5px;
+}
+.sky-wizard-state {
+  display: inline-block;
+  padding: 1px 11px;
+  border-radius: 999px;
+  background: var(--sky-wizard-decision-fill);
+  color: var(--sky-wizard-decision-ink);
+  font-size: 13.5px;
+}
+
+/* The one long wait: a clock, and the three things Sky does, in order. */
+.sky-wizard-wait {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 40px;
+  margin-top: 34px;
+}
+.sky-wizard-clock {
+  min-width: 150px;
+  color: var(--sky-text);
+  font-size: 60px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 650;
+  letter-spacing: -0.035em;
+  line-height: 1;
+}
+.sky-wizard-clock small {
+  display: block;
+  margin-top: 8px;
+  color: var(--sky-dim);
+  font-size: 14.5px;
+  font-weight: 400;
+  letter-spacing: 0;
+}
+.sky-wizard-think {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.sky-wizard-think li {
+  position: relative;
+  display: flex;
+  gap: 14px;
+  align-items: baseline;
+  padding: 9px 0;
+  color: var(--sky-dim);
+  font-size: 17.5px;
+  line-height: 1.4;
+}
+.sky-wizard-think li + li::before {
+  position: absolute;
+  top: -11px;
+  left: 4px;
+  width: 1px;
+  height: 22px;
+  background: var(--sky-border-soft);
+  content: '';
+}
+.sky-wizard-think li[data-state='done'] {
+  color: var(--sky-text-2);
+}
+.sky-wizard-think li[data-state='now'] {
+  color: var(--sky-text);
+  font-weight: 620;
+}
+.sky-wizard-think li i {
+  flex: none;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--sky-border-soft);
+}
+.sky-wizard-think li[data-state='done'] i {
+  background: var(--sky-text-2);
+}
+.sky-wizard-think li[data-state='now'] i {
+  background: var(--sky-wizard-pick);
+  box-shadow: 0 0 0 5px var(--sky-wizard-pick-soft);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sky-wizard * {
+    transition: none !important;
+  }
+}
+@media (max-width: 1180px) {
+  .sky-wizard-cols {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 34px;
+  }
+  .sky-wizard-rail {
+    position: static;
+  }
+}
+@media (max-width: 900px) {
+  .sky-wizard-path {
+    gap: 5px;
+  }
+  .sky-wizard-path li {
+    padding-top: 0;
+    font-size: 0;
+  }
+  .sky-wizard-where {
+    display: block;
+  }
+  .sky-wizard-cols {
+    margin-top: 30px;
+  }
+}
+@media (max-width: 760px) {
+  .sky-wizard-head {
+    flex-direction: column;
+    gap: 4px;
+  }
+  .sky-wizard-head .mantine-Button-root {
+    margin: 0 0 0 -18px;
+  }
+  .sky-wizard-q h2 {
+    font-size: 25px;
+  }
+  .sky-wizard-opt {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+  .sky-wizard-opt .sky-wizard-tag {
+    grid-column: 2;
+    justify-self: start;
+  }
+  .sky-wizard-out {
+    grid-template-columns: 22px minmax(0, 1fr);
+  }
+  .sky-wizard-out .sky-wizard-feel,
+  .sky-wizard-out .sky-wizard-tag {
+    grid-column: 2;
+    justify-self: start;
+  }
+  .sky-wizard-verdicts,
+  .sky-wizard-undo ul,
+  .sky-wizard-opts[data-side-by-side] {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .sky-wizard-read {
+    padding: 18px 18px 20px;
+  }
+  .sky-wizard-doc {
+    padding: 22px 20px 24px;
+  }
+  .sky-wizard-scale {
+    grid-template-columns: 30px minmax(0, 1fr);
+    gap: 8px 6px;
+  }
+  .sky-wizard-band {
+    font-size: 13px;
+  }
+  .sky-wizard-wait {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 22px;
+  }
+  .sky-wizard-hint {
+    display: none;
+  }
+}

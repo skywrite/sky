@@ -1,8 +1,11 @@
 import { readFile } from 'node:fs/promises'
 import * as path from 'node:path'
 import { writeDecision } from '#commands/all/decisions/lib/write.ts'
+import { sampleDecidedPlan, sampleDecidingPlan } from '#lib/decisionWizard/testHelpers.ts'
+import type { DecisionThinking } from '#lib/decisionWizard/think.ts'
 import slugify from '#lib/string/slugify.ts'
 import { sleepInput, TRACKING_TODAY, trackingFixture } from '#lib/tracking/testHelpers.ts'
+import DecisionDocument from '#shared/models/Decision/mod.ts'
 import DecisionStore from '#shared/models/Store/DecisionStore/mod.ts'
 import GoalStore from '#shared/models/Store/GoalStore/mod.ts'
 import IdeaStore from '#shared/models/Store/IdeaStore/mod.ts'
@@ -11,6 +14,7 @@ import { PlainDate, PlainDateTime, ZonedDateTime } from '#universal/dates/nbdt/m
 import type { DecisionCommands, DecisionCreate } from './decisionCommands.ts'
 import { createFutureRoutes } from './mod.ts'
 import { type FutureNotebook, FutureStore } from './store.ts'
+import { DecisionWizard } from './wizard.ts'
 
 const decision = (name: string, summary: string, extra: string, rel: string[]) =>
   [
@@ -115,61 +119,106 @@ export async function futureFixture({ ready = true, goals = true } = {}) {
     ideas: await IdeaStore.build(path.join(root, 'ideas')),
     streaks: await StreakStore.build(path.join(root, 'streaks')),
   }
-  // The two decision commands, stood in for: the draft is canned, and the write goes through the
-  // same write core the real command uses, into this notebook.
+  // The decision commands, stood in for: the writes go through the same write core the real
+  // commands use, into this notebook, and each to-do or reminder asked for is kept to look at.
   const created: DecisionCreate[] = []
-  const drafted: Array<{ statement: string; conversation?: string }> = []
+  const items: Array<{ task: string; list: string; when: string; category: string }> = []
+  const dirs = { decisionsDir: path.join(root, 'decisions'), timeDir: path.join(root, 'time') }
+  const at = (day: string) => new ZonedDateTime(new PlainDateTime('08:15', day), 'America/Chicago')
   const commands: DecisionCommands = {
-    async draft(input) {
-      drafted.push(input)
-      if (input.statement.includes('fail')) throw new Error('The model did not answer.')
-      return {
-        title: 'Which race to enter in the fall',
-        decision: null,
-        target: '2030-07-01',
-        context: `Drafted from: ${input.statement}`,
-        desiredOutcomes: input.conversation ? 'A full marathon that fits the plan.' : 'A race that fits the plan.',
-        rel: ['goals/Run-a-Marathon', 'streaks/run-before-work'],
-        openQuestions: input.conversation
-          ? []
-          : [
-              {
-                question: 'Is a half marathon an option?',
-                why: 'It changes the training plan.',
-                proposed: 'No, the full distance only.',
-              },
-            ],
-      }
-    },
     async create(input) {
       created.push(input)
       const name = slugify(input.title, { suggestedLength: 25, preserveCase: true })
+      const { rel, category, when, ...fields } = input
       const written = await writeDecision(
-        {
-          name,
-          title: input.title,
-          context: input.context,
-          desiredOutcomes: input.desiredOutcomes,
-          target: input.target,
-          decision: input.decision,
-          inForce: input.inForce,
-          rel: input.rel,
-          now: new ZonedDateTime(new PlainDateTime('08:15', input.when ?? TRACKING_TODAY), 'America/Chicago'),
-          category: `${input.category} Complete`,
-        },
-        { decisionsDir: path.join(root, 'decisions'), timeDir: path.join(root, 'time') },
+        { ...fields, name, rel, now: at(when ?? TRACKING_TODAY), category: `${category} Complete` },
+        dirs,
       )
       return { name, file: written.file }
     },
+    async settle({ file, rel, category, ...fields }) {
+      const open = DecisionDocument.fromMarkdown(await readFile(file, 'utf8'))
+      const written = await writeDecision(
+        {
+          ...fields,
+          name: open.name,
+          rel,
+          now: at(TRACKING_TODAY),
+          category: `${category} Complete`,
+          settles: { file, identified: open.identified ?? at(TRACKING_TODAY) },
+        },
+        dirs,
+      )
+      return { name: open.name, file: written.file }
+    },
+    async addItem(input) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(input.when)) throw new Error('That is not a day.')
+      items.push(input)
+    },
   }
+  // Sky's thinking, stood in for: the sample plans, at once. A statement with "fail" in it does not come back,
+  // and one with "slow" in it takes a few seconds, long enough for a page to be seen following it.
+  const thought: Array<{ statement: string; decided: boolean }> = []
+  const read = { goals: 2, inForce: 1, notes: 9 }
+  const thinking: DecisionThinking = {
+    async find({ known }) {
+      if (known.includes('fail to look')) throw new Error('The model did not answer.')
+      return [
+        {
+          title: 'Hire a VP of Sales now, or after the October launch',
+          why: 'You went back and forth on this in your journal on Jun 12.',
+          decided: false,
+        },
+        {
+          title: 'No senior hires before the Series B closes',
+          why: 'You told the leadership meeting on Mar 12.',
+          decided: true,
+        },
+        { title: 'Which race to enter', why: 'It is already written down.', decided: false },
+      ]
+    },
+    async plan(input, progress) {
+      thought.push({ statement: input.statement, decided: input.decided })
+      progress('reading')
+      progress('thinking', read)
+      if (input.statement.includes('fail')) throw new Error('The model did not answer.')
+      if (input.statement.includes('slow')) await new Promise((resolve) => setTimeout(resolve, 3000))
+      progress('writing', read)
+      return {
+        plan: input.decided ? sampleDecidedPlan() : sampleDecidingPlan(),
+        read,
+        related: 'the notes it rested on',
+      }
+    },
+    async addOption({ plan, text }) {
+      if (text.includes('fail')) throw new Error('The model did not answer.')
+      const added = { ...plan.options[2]!, title: text, short: text, mine: true, hinges: [] }
+      return { ...plan, options: [...plan.options, added], rank: [...plan.rank, plan.options.length] }
+    },
+    async addWant({ plan, text }) {
+      return {
+        ...plan,
+        wants: [...plan.wants, { title: text, why: 'You added this.', ref: null, inForce: false }],
+        options: plan.options.map((option) => ({ ...option, effects: [...option.effects, 'none' as const] })),
+      }
+    },
+  }
+  const today = async () => new PlainDate(TRACKING_TODAY)
+  const wizard = new DecisionWizard({
+    dir: path.join(root, '.state', 'decisions'),
+    thinking,
+    commands,
+    notebook: () => (ready ? notebook : null),
+    today,
+  })
   const store = new FutureStore(
     { root, goalsDir: path.join(root, 'goals') },
     () => (ready ? notebook : null),
     tracking.store,
-    async () => new PlainDate(TRACKING_TODAY),
-    commands,
+    today,
+    () => wizard.list(),
   )
-  const app = createFutureRoutes({ store })
+  const app = createFutureRoutes({ store, wizard })
   const post = (url: string, body: unknown, headers: Record<string, string> = {}) =>
     app.request(url, {
       method: 'POST',
@@ -177,5 +226,27 @@ export async function futureFixture({ ready = true, goals = true } = {}) {
       body: JSON.stringify(body),
     })
   const goalFile = (name: string, folder = 'active') => readFile(path.join(root, 'goals', folder, `${name}.md`), 'utf8')
-  return { root, store, app, post, goalFile, tracking, created, drafted, dispose: tracking.dispose }
+  /** Wait for a run's thinking to come back, as the page does by reading it again. */
+  const settled = async (id: string) => {
+    for (let tries = 0; tries < 200; tries++) {
+      const run = await wizard.get(id)
+      if (run.status !== 'thinking' && !(run.adding && !run.adding.error)) return run
+      await new Promise((resolve) => setTimeout(resolve, 5))
+    }
+    throw new Error('The run never settled.')
+  }
+  return {
+    root,
+    store,
+    wizard,
+    app,
+    post,
+    goalFile,
+    tracking,
+    created,
+    items,
+    thought,
+    settled,
+    dispose: tracking.dispose,
+  }
 }

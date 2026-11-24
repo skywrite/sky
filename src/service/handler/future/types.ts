@@ -1,3 +1,5 @@
+import type { WizardSummary } from '#lib/decisionWizard/session.ts'
+
 /** What the Future screen reads: each active goal, where it stands, what is tied to it, and the goals that ended. */
 
 /** How a goal ended; the folder its file sits in */
@@ -26,27 +28,6 @@ export interface FutureDecision extends FutureDecisionTie {
   target: string | null
   /** The active goals it weighs on */
   goals: FutureGoalTie[]
-}
-
-/** Something Sky could not settle from the person's words, with the answer it would assume */
-export interface FutureOpenQuestion {
-  question: string
-  why?: string
-  proposed: string
-}
-
-/** A decision drafted from the person's own words, for them to correct before it is saved */
-export interface FutureDecisionDraft {
-  title: string
-  /** What was decided, when the words say the decision is already made */
-  decision: string | null
-  /** A decide-by day, when the words give one */
-  target: string | null
-  context: string
-  desiredOutcomes: string
-  /** Notebook references the draft found: goals, people, projects */
-  rel: string[]
-  openQuestions: FutureOpenQuestion[]
 }
 
 export interface FutureIdeaTie {
@@ -153,6 +134,8 @@ export interface FutureReport {
   past: FuturePastGoal[]
   /** Every decision: the open ones first, then those in force, then the ones made, newest first */
   decisions: FutureDecision[]
+  /** Decision wizards that were started and not finished */
+  wizards: WizardSummary[]
   /** Decisions in force, each with the goals it serves */
   inForce: Array<FutureDecisionTie & { goals: FutureGoalTie[] }>
 }

@@ -1,17 +1,24 @@
+import * as path from 'node:path'
+import { writeDecision } from '#commands/all/decisions/lib/write.ts'
 import CommandContext from '#commands/lib/core/CommandContext.ts'
 import CommandService from '#commands/lib/core/CommandService.ts'
 import type * as ConfigModule from '#shared/config.ts'
-import type { FutureDecisionDraft } from './types.ts'
+import { readTextFile } from '#shared/fs/mod.ts'
+import DecisionDocument from '#shared/models/Decision/mod.ts'
+import { fetchNow } from '#shared/nbfs/mod.ts'
+import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 
-/** What `decisions:create` takes, as the page fills it in */
+/** What `decisions:create` takes, as the wizard's record fills it in */
 export interface DecisionCreate {
   title: string
   context: string
   desiredOutcomes: string
+  /** More sections of the record, as Markdown starting at `## ` */
+  record?: string
   /** What was decided; absent for a decision that is still open */
   decision?: string
   inForce: boolean
-  /** "YYYY-MM-DD", when it was made or came up on an earlier day */
+  /** "YYYY-MM-DD", when it was made on an earlier day */
   when?: string
   /** "YYYY-MM-DD", the day an open decision should be made by */
   target?: string
@@ -19,28 +26,38 @@ export interface DecisionCreate {
   category: 'Personal' | 'Professional'
 }
 
-/** The two commands behind the page's two buttons */
+/** A call that settles an open decision: the fields of the made decision, and the open decision's file */
+export interface DecisionSettle extends Omit<DecisionCreate, 'when' | 'target'> {
+  file: string
+  decision: string
+}
+
+/** The writes behind the wizard's buttons */
 export interface DecisionCommands {
-  /** `decisions:clarify`: draft a decision from the person's words and the notebook */
-  draft(input: { statement: string; conversation?: string }): Promise<FutureDecisionDraft>
   /** `decisions:create`: write the decision and its day line; returns the file it wrote */
   create(input: DecisionCreate): Promise<{ name: string; file: string }>
+  /** The made call takes the place of an open decision's file, and keeps the day it came up */
+  settle(input: DecisionSettle): Promise<{ name: string; file: string }>
+  /** `day:items:add`: a to-do for a day, or a reminder that surfaces on a later one */
+  addItem(input: {
+    task: string
+    list: 'todos' | 'reminders'
+    when: string
+    category: 'Personal' | 'Professional'
+  }): Promise<void>
 }
 
 /**
- * Each button is one in-process command run, exactly the run the terminal
- * and chat do: the same draft prompt, the same file, day line and dates.
+ * Each write is the one the terminal and chat make: `decisions:create` for a
+ * new decision, `day:items:add` for a to-do or a reminder, both run in-process.
+ *
+ * Settling an open decision has no command to run. `decisions:resolve` asks
+ * for the decision at a terminal prompt, so the wizard goes through the same
+ * write core that command and `decisions:create` share.
  */
 export function createDecisionCommands(config: typeof ConfigModule, env: Record<string, string>): DecisionCommands {
   const createTasks = () => new CommandService(CommandContext.server(config, env))
   return {
-    async draft({ statement, conversation }) {
-      const result = await createTasks().run('decisions:clarify', { statement, conversation })
-      if (result.status !== 'success' || !result.data)
-        throw new Error(result.message ?? 'Sky could not draft this decision.')
-      const { title, decision, target, context, desiredOutcomes, rel, openQuestions } = result.data
-      return { title, decision, target, context, desiredOutcomes, rel, openQuestions }
-    },
     async create({ rel, category, ...fields }) {
       const result = await createTasks().run('decisions:create', {
         ...fields,
@@ -50,6 +67,27 @@ export function createDecisionCommands(config: typeof ConfigModule, env: Record<
       })
       if (result.status !== 'success' || !result.data) throw new Error(result.message ?? 'The decision was not saved.')
       return { name: result.data.name, file: result.data.file }
+    },
+    async settle({ file, rel, category, ...fields }) {
+      const open = DecisionDocument.fromMarkdown(await readTextFile(file))
+      const now = await fetchNow()
+      const name = open.name || path.basename(file, '.md')
+      const written = await writeDecision({
+        ...fields,
+        name,
+        // What the open decision was already tied to stays tied.
+        rel: [...new Set([...open.rel, ...rel])],
+        // An open decision with no tags stays without them, as a new one is written.
+        tags: open.tags.size ? open.tags : undefined,
+        now,
+        category: `${category} Complete`,
+        settles: { file, identified: open.identified ?? now },
+      })
+      return { name, file: written.file }
+    },
+    async addItem({ task, list, when, category }) {
+      const result = await createTasks().run('day:items:add', { task, list, category, when: new PlainDate(when) })
+      if (result.status !== 'success') throw new Error(result.message ?? 'The item was not added.')
     },
   }
 }
