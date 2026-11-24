@@ -1,6 +1,11 @@
 import * as path from 'node:path'
-import { parseDecisionMoment, writeDecision, SlugCollisionError } from '#commands/all/decisions/lib/write.ts'
-import { exists, makeTempDir, readTextFile } from '#shared/fs/mod.ts'
+import {
+  parseDecisionMoment,
+  SlugCollisionError,
+  updateOpenDecision,
+  writeDecision,
+} from '#commands/all/decisions/lib/write.ts'
+import { exists, makeTempDir, readTextFile, writeTextFile } from '#shared/fs/mod.ts'
 import { assert, test } from '#test'
 import { PlainDate, ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
 
@@ -285,5 +290,94 @@ test('writeDecision - a made call settles an open decision and carries the rest 
       at('## Decision') < at('## Outcome') &&
       !content.includes('Options being weighed'),
     expected: true,
+  })
+})
+
+test('updateOpenDecision - rewrites an open decision in place, and leaves one edited by hand alone', async () => {
+  const decisionsDir = await makeTempDir({ prefix: 'decisions-' })
+  const timeDir = await makeTempDir({ prefix: 'time-' })
+  const open = await writeDecision(
+    {
+      name: 'Choose-Vendor',
+      title: 'Choose Vendor',
+      context: 'Two vendors are in play.',
+      desiredOutcomes: '- A signed contract',
+      rel: ['Atlas'],
+      now: NOW,
+      category: 'Professional Complete',
+    },
+    { decisionsDir, timeDir },
+  )
+  const fields = {
+    file: open.file,
+    title: 'Which vendor signs the Atlas contract',
+    context: 'Two vendors are in play.',
+    desiredOutcomes: '1. A signed contract (comes first)\n2. No lock-in',
+    record: '## Options being weighed\n\n- Vendor A. My odds for the outcome I want: 40–60%.',
+    target: '2026-03-20',
+    rel: ['atlas', 'goals/Launch'],
+    today: new PlainDate('2026-03-08'),
+  }
+  const first = await updateOpenDecision({ ...fields, expected: open.markdown })
+  const same = await updateOpenDecision({ ...fields, expected: first.markdown })
+  const written = await readTextFile(open.file)
+  assert({
+    given: 'an open decision worked on further, three days after it came up',
+    should:
+      'keep its file, name and the day it came up, take the new wording, record and day to decide by, add only the new reference, and write nothing when nothing changed',
+    actual: [
+      [first.changed, first.edited, same.changed],
+      written === first.markdown,
+      /\nname: Choose-Vendor\nsummary: Which vendor signs the Atlas contract\n/.test(written),
+      /\nidentified: 2026-03-05 09:15[^\n]*\ntarget: 2026-03-20\nresolved:\ncreated: 2026-03-05\nupdated: 2026-03-08\n/.test(
+        written,
+      ),
+      written.includes('rel:\n  - Atlas\n  - goals/Launch\n'),
+      written.includes(
+        '## Desired Outcomes\n\n1. A signed contract (comes first)\n2. No lock-in\n\n## Options being weighed\n\n- Vendor A. My odds for the outcome I want: 40–60%.\n\n## Decision',
+      ),
+    ],
+    expected: [[true, false, false], true, true, true, true, true],
+  })
+
+  await writeTextFile(open.file, `${written}\nA note I added by hand.\n`)
+  const kept = await updateOpenDecision({ ...fields, title: 'Another wording', expected: first.markdown })
+  const afterKept = await readTextFile(open.file)
+  const cleared = await updateOpenDecision({ ...fields, target: null })
+  assert({
+    given: 'the file changed by hand since it was last written, then an update that expects nothing',
+    should: 'leave the hand-edited file alone and say so, and clear the day to decide by when told to',
+    actual: [
+      [kept.changed, kept.edited],
+      afterKept.includes('A note I added by hand.') && !afterKept.includes('Another wording'),
+      /\ntarget:\n/.test(cleared.markdown),
+    ],
+    expected: [[false, true], true, true],
+  })
+
+  const made = await writeDecision(
+    {
+      name: 'Made-Call',
+      title: 'Made call',
+      context: 'c',
+      desiredOutcomes: 'd',
+      decision: 'Yes.',
+      rel: [],
+      now: NOW,
+      category: 'Professional Complete',
+    },
+    { decisionsDir, timeDir },
+  )
+  let refused = ''
+  try {
+    await updateOpenDecision({ ...fields, file: made.file })
+  } catch (error) {
+    refused = (error as Error).message
+  }
+  assert({
+    given: 'a decision that was already made',
+    should: 'refuse to rewrite it',
+    actual: refused,
+    expected: 'The decision "Made-Call" is already made.',
   })
 })

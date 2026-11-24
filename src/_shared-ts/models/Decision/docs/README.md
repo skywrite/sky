@@ -78,6 +78,9 @@ edit.
 The write core can settle an open decision in place (`settles`): the made call takes the open file's place and
 keeps the day the decision came up.
 `decisions:resolve` does the same from a terminal prompt; the wizard cannot answer a prompt, so it uses the core.
+An open decision can also be rewritten in place while it is worked on (`updateOpenDecision`): its name, the day it
+came up, its tags and its references are kept, and a file changed by hand since the last write is left alone.
+`decisions:create --no-editor` writes the file without opening it, for a caller that is not a terminal.
 
 `decisions:create` tags the decision and adds rel with the enrichment other captures get
 (`commands/all/decisions/lib/enrich.ts`).

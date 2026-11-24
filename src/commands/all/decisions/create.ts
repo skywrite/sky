@@ -49,6 +49,7 @@ const params = {
   rel: Flag.string('Semicolon-separated notebook references, from decisions_clarify', { optional: true }),
   noAutoTag: Flag.bool('Skip automatic tagging from the archived-journal tag corpus', { default: false }),
   noAutoRel: Flag.bool('Skip automatic rel proposals from the entity graph', { default: false }),
+  noEditor: Flag.bool('Do not open the written file in the editor', { default: false }),
   category: categoryComplete(),
 }
 
@@ -204,11 +205,13 @@ export default class DecisionsCreateTask extends Command {
       output.log(colors.yellow(`Warning: Could not add day item: ${written.dayItemWarning}`))
     }
 
-    try {
-      openEditor([{ file: written.file, line: written.markdown.split('\n').length }])
-      await delay(500)
-    } catch {
-      // Editor opening is best-effort
+    if (!args.noEditor) {
+      try {
+        openEditor([{ file: written.file, line: written.markdown.split('\n').length }])
+        await delay(500)
+      } catch {
+        // Editor opening is best-effort
+      }
     }
 
     return CommandResult.success({ file: written.file, name: finalName, dayItem: written.dayItem })
