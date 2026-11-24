@@ -1,0 +1,69 @@
+.sky-nr-icon {
+  flex: none;
+  align-self: flex-start;
+  width: 17px;
+  height: 17px;
+  margin-top: calc((1lh - 17px) / 2);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.sky-nr-icon > svg {
+  width: 17px;
+  height: 17px;
+  display: block;
+}
+
+.sky-prow .sky-nr-link {
+  flex: 1;
+  min-width: 0;
+  color: inherit;
+  text-decoration: none;
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+
+.sky-nr-link:hover .sky-nr-summary,
+.sky-nr-link:hover .sky-nr-sender {
+  text-decoration: underline;
+}
+
+.sky-nr-sender {
+  font-weight: 500;
+}
+
+.sky-nr-context {
+  margin-left: 6px;
+  font-size: 14px;
+  color: var(--sky-dim);
+}
+
+.sky-nr-summary {
+  margin-left: 8px;
+  color: var(--sky-text-2, var(--sky-dim));
+}
+
+.sky-nr-age {
+  flex: none;
+  align-self: flex-start;
+  min-width: 34px;
+  margin-top: calc((1lh - 20px) / 2);
+  text-align: right;
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--sky-dim);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.sky-nr-error {
+  margin: 0 0 8px;
+  font-size: 14px;
+  color: var(--sky-danger, var(--sky-dim));
+}

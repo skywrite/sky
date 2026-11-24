@@ -109,6 +109,7 @@ export interface HttpHandlerOptions {
   clock?: ClockRoutesOptions
   meetings?: CalendarSchedulerHost
   mostImportant?: MostImportantAI
+  needsResponse?: import('#lib/needsResponse/mod.ts').NeedsResponseHost
   todoPriority?: import('./day/mod.ts').DayRoutesOptions['todoPriority']
   reminderPriority?: import('./day/mod.ts').DayRoutesOptions['reminderPriority']
   journal?: JournalOptions
@@ -250,6 +251,7 @@ export function createHttpApp(options: HttpHandlerOptions): Hono {
       }),
       workstreams: options.workstreams?.store,
       mostImportant: options.mostImportant,
+      needsResponse: options.needsResponse,
       todoPriority: options.todoPriority,
       reminderPriority: options.reminderPriority,
     }

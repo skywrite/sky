@@ -104,6 +104,7 @@ export interface ServerOptions {
   places?: import('./handler/places/types.ts').PlacesOptions
   workstreams?: WorkstreamsRoutesOptions
   dayReview?: ReviewRuntime
+  needsResponse?: import('#lib/needsResponse/mod.ts').NeedsResponseHost
   tracking?: TrackingRoutesOptions
   streaks?: StreaksRoutesOptions
   future?: FutureRoutesOptions
@@ -288,6 +289,7 @@ export function createServer(options: ServerOptions): Server {
       workstreams: options.workstreams,
       dayReview: options.dayReview,
       tracking: options.tracking,
+      needsResponse: options.needsResponse,
       streaks: options.streaks,
       future: options.future,
       week,

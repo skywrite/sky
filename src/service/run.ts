@@ -20,6 +20,7 @@ import { hold } from './activity.ts'
 import { createAutomationsHost } from './handler/automations/createAutomationsHost.ts'
 import { createChatHost } from './handler/chat/createSession.ts'
 import { createClockHost } from './handler/clock/createClockHost.ts'
+import { createServiceNeedsResponseHost } from './handler/day/needsResponse.ts'
 import { keptOwnerAddresses } from './handler/day/ownerAddresses.ts'
 import { createReviewRuntime } from './handler/day/review/createReviewHost.ts'
 import { createExtensionsHost } from './handler/extensions/createExtensionsHost.ts'
@@ -173,6 +174,13 @@ customRoutes.set('/service/restart', (req: Request) => {
 // Create server using factory
 // Tracking and Future read the same trackers through one store.
 const tracking = createTrackingHost(config)
+const ownerAddresses = keptOwnerAddresses(() => listOwnAddresses(new KeychainSecretsProvider()))
+const needsResponse = createServiceNeedsResponseHost({
+  config,
+  store,
+  markdownStore: () => server.markdownStore,
+  ownerAddresses,
+})
 const server = createServer({
   port: config.PORT_SERVER as number,
   markdownDirs: config.DIRS_MARKDOWN,
@@ -207,13 +215,14 @@ const server = createServer({
   extensions: createExtensionsHost(config, env.toObject()),
   workstreams: createWorkstreamsHost(config),
   dayReview: createReviewRuntime(config, env.toObject()),
+  needsResponse,
   tracking,
   streaks: createStreaksHost(config),
   future: createFutureHost(config, env.toObject(), () => server.markdownStore, tracking.store),
   week: createWeekHost(config, env.toObject()),
   imports: createImportHost(config, env.toObject()),
   // The day page knows the owner's mail by every address it uses, Gmail aliases included
-  ownerAddresses: keptOwnerAddresses(() => listOwnAddresses(new KeychainSecretsProvider())),
+  ownerAddresses,
   userDataDir: config.DIR_USER_DATA,
   // undefined → uses MarkdownStore.buildFromAll(); tests pass explicit config for fixture dirs
   markdownStoreConfig: undefined,
@@ -249,6 +258,8 @@ export default async function run() {
   // 5 minutes: a steady-state Slack pull is one call to find the channels
   // with anything new, then reads of those alone.
   const SLACK_PULL_TICKS = 5
+  // 5 minutes: scans Gmail Inbox (read-only via historyId cache) + recent Slack/Beeper captures.
+  const NEEDS_RESPONSE_TICKS = 5
   const SLEEP_IDLE_MS = 3 * 3_600_000 // 3 hours
   let heartbeatRunning = false
   let heartbeatTick = 0
@@ -522,6 +533,32 @@ export default async function run() {
             day: recapped.data.day,
             channels: recapped.data.channels,
             messages: recapped.data.messages,
+          })
+        }
+      }
+
+      // Needs Response: scan recent Slack/Beeper captures and Gmail Inbox (read-only)
+      // on tick 1 after boot and every 5 minutes thereafter.
+      if (heartbeatTick === 1 || heartbeatTick % NEEDS_RESPONSE_TICKS === 0) {
+        release.update('Needs response scan')
+        try {
+          const scanned = await needsResponse.scan()
+          tick.set({
+            needsResponseActive: scanned.active,
+            needsResponseGmailChecked: scanned.gmailThreadsChecked,
+            needsResponseScreened: scanned.screened,
+          })
+          if (scanned.errors.length > 0) {
+            logHeartbeat.error('Needs response scan: {count} error(s): {message}', {
+              event: 'needs-response-errors',
+              count: scanned.errors.length,
+              message: scanned.errors[0],
+            })
+          }
+        } catch (err) {
+          logHeartbeat.error('Needs response scan failed: {message}', {
+            event: 'needs-response-failed',
+            message: err instanceof Error ? err.message : String(err),
           })
         }
       }

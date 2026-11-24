@@ -191,6 +191,7 @@ export async function runWysiwygE2e(
     now?: ZonedDateTime
     meetings?: (userDataDir: string) => CalendarSchedulerHost
     mostImportant?: MostImportantAI
+    needsResponse?: import('#lib/needsResponse/mod.ts').NeedsResponseHost
     todoPriority?: import('./day/mod.ts').DayRoutesOptions['todoPriority']
     reminderPriority?: import('./day/mod.ts').DayRoutesOptions['reminderPriority']
     journal?: import('./journal/mod.ts').JournalOptions
@@ -268,6 +269,7 @@ export async function runWysiwygE2e(
           : {}),
         meetings: options.meetings?.(userDataDir),
         mostImportant: options.mostImportant,
+        needsResponse: options.needsResponse,
         reminderPriority: options.reminderPriority ?? {
           rank: async ({ tasks }) => tasks.map(() => 0),
           context: async () => [],

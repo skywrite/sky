@@ -48,6 +48,8 @@ export type MacMessagesStatus = {
 
 export type MacSenderLookup = {
   resolve(handle: string): MacSender | null
+  /** Whether a person with this display name (case-insensitive) has a card in Mac Contacts. */
+  hasContactName?: (name: string) => boolean
   status: MacMessagesStatus
 }
 
@@ -217,6 +219,19 @@ export async function readMacSenders(
     books.push(book.rows)
   }
   const names = namesOf(books)
+  const contactNames = new Set<string>()
+  const addContactName = (value: string) => {
+    const normalized = value.trim().toLowerCase().replace(/\s+/g, ' ')
+    if (normalized) contactNames.add(normalized)
+  }
+  for (const entry of names.values()) addContactName(entry.name)
+  for (const rows of books) {
+    for (const row of rows) {
+      const full = [row.first?.trim(), row.last?.trim()].filter(Boolean).join(' ')
+      if (full) addContactName(full)
+      if (row.org?.trim()) addContactName(row.org)
+    }
+  }
   const chats = await rowsOf<ChatRow>(paths.messages, [CHAT_QUERY])
   const known = new Map<string, boolean>()
   for (const row of chats.rows) {
@@ -246,6 +261,10 @@ export async function readMacSenders(
         const verdict = known.get(key)
         if (named === null && verdict === undefined) return null
         return { name: named?.name ?? null, known: verdict ?? null, handles: named?.handles ?? [key] }
+      },
+      hasContactName(name) {
+        const normalized = name.trim().toLowerCase().replace(/\s+/g, ' ')
+        return normalized ? contactNames.has(normalized) : false
       },
     },
   }

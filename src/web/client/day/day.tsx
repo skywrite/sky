@@ -43,6 +43,7 @@ import { DayRail } from './dayRail.tsx'
 import { NextDayBlock, NightStartLine, StartButton, useStartDay } from './dayStart.tsx'
 import { DaySummaryView } from './daySummary.tsx'
 import { DayTracking } from './dayTracking.tsx'
+import { NeedsResponseCard } from './NeedsResponseCard.tsx'
 import { organizeGroup, priorityItems } from './priorityItems.ts'
 import { PriorityStatus } from './PriorityStatus.tsx'
 import { revealOpacity, useSwipeToDelete } from './swipe.ts'
@@ -1810,6 +1811,7 @@ export function DayView({
                         </PlanCard>
                       )}
                     </DayMostImportant>
+                    <NeedsResponseCard enabled={isToday && !summarized} />
                     <TodoCard
                       key={'todos-' + view!.day.ymd}
                       items={[...record.commitments, ...record.todos]}

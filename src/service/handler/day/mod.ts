@@ -9,6 +9,7 @@ import * as path from 'node:path'
 import { Hono } from 'hono'
 import type { MostImportantAI } from '#lib/mostImportant/types.ts'
 import { planningDate } from '#lib/nbfs/taskDestination.ts'
+import type { NeedsResponseHost } from '#lib/needsResponse/mod.ts'
 import { OutboxError } from '#lib/outbox/types.ts'
 import { resolveWorkstreamDayItems } from '#lib/workstreams/day.ts'
 import type { WorkstreamStore } from '#lib/workstreams/store.ts'
@@ -26,6 +27,7 @@ import isDay from './isDay.ts'
 import { createItemRoutes } from './item.ts'
 import type { ItemRoutesOptions } from './itemContext.ts'
 import { createMostImportantRoutes } from './mostImportant.ts'
+import { createNeedsResponseRoutes } from './needsResponse.ts'
 import { createNoteRoutes } from './notes.ts'
 import { createDayPriority, type DayPriorityOptions } from './priority.ts'
 import { buildDayRecord, type DayRecord, loadOwnerNames } from './record.ts'
@@ -59,6 +61,7 @@ export interface DayRoutesOptions {
   /** Test seam for a failed planning write. */
   writePlanning?: ItemRoutesOptions['writePlanning']
   mostImportant?: MostImportantAI
+  needsResponse?: NeedsResponseHost
   todoPriority?: Pick<DayPriorityOptions, 'rank' | 'context'>
   reminderPriority?: Pick<DayPriorityOptions, 'rank' | 'context'>
 }
@@ -286,6 +289,9 @@ export function createDayRoutes(options: DayRoutesOptions): Hono {
       error instanceof WorkstreamError || error instanceof OutboxError ? error.status : 500,
     ),
   )
+  // Mounted before `/:ymd` so `/day/needs-response` never hits the date wildcard.
+  if (options.needsResponse) app.route('/', createNeedsResponseRoutes(options.needsResponse))
+  else app.get('/needs-response', (c) => c.json({ items: [], lastScanAt: null }))
   app.get('/', async (c) => c.json(await view()))
   app.get('/:ymd', async (c) => {
     const ymd = c.req.param('ymd')

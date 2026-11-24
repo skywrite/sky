@@ -83,6 +83,12 @@ test('mac messages - a handle resolves to the contact’s name and the phone’s
         pick(lookup?.resolve('+442079460958')),
         pick(lookup?.resolve('+1 555 010 0000')),
         pick(lookup?.resolve('  ')),
+        [
+          lookup?.hasContactName?.('Maya Okafor'),
+          lookup?.hasContactName?.('jane doe'),
+          lookup?.hasContactName?.('Joe’s Cafe'),
+          lookup?.hasContactName?.('Unknown Person'),
+        ],
         { ...status, binary: typeof status.binary },
       ],
       expected: [
@@ -93,6 +99,7 @@ test('mac messages - a handle resolves to the contact’s name and the phone’s
         { name: 'Jane Doe', known: null },
         null,
         null,
+        [true, true, true, false],
         {
           supported: true,
           messages: 'readable',

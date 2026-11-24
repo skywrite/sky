@@ -44,6 +44,7 @@ export function createTestHttpApp(
     clock?: ClockRoutesOptions
     meetings?: CalendarSchedulerHost
     mostImportant?: MostImportantAI
+    needsResponse?: import('#lib/needsResponse/mod.ts').NeedsResponseHost
     todoPriority?: import('./day/mod.ts').DayRoutesOptions['todoPriority']
     reminderPriority?: import('./day/mod.ts').DayRoutesOptions['reminderPriority']
     journal?: import('./journal/mod.ts').JournalOptions
@@ -80,6 +81,7 @@ export function createTestHttpApp(
     clock: options.clock,
     meetings: options.meetings,
     mostImportant: options.mostImportant,
+    needsResponse: options.needsResponse,
     todoPriority: options.todoPriority ?? { rank: async ({ tasks }) => tasks.map(() => 0), context: async () => [] },
     reminderPriority: options.reminderPriority ?? {
       rank: async ({ tasks }) => tasks.map(() => 0),
