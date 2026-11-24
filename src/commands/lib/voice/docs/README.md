@@ -1,11 +1,11 @@
 ---
 created: 2026-09-06
-updated: 2026-10-16
+updated: 2026-11-23
 ---
 
 # Browser voice
 
-Sky is the single speaking participant. `gpt-live-1` listens and speaks over
+Sky is the single speaking participant. `gpt-live-1.1` listens and speaks over
 one browser WebRTC connection. Its managed Responses backend is
 `gpt-6.1-sol`, with `service_tier: ultrafast` and `reasoning.effort: high`.
 The retired second voice and Qwen/Astra research loops are no longer part of

@@ -266,7 +266,7 @@ test('voice shares chat tools, approvals, files and drafts and retains results f
         competing.status,
         fixture.calls.length,
       ],
-      expected: [200, 'gpt-live-1', true, true, true, 409, 0],
+      expected: [200, 'gpt-live-1.1', true, true, true, 409, 0],
     })
     const call = (name: string, input: object, callId: string, delegationId = 'request') =>
       post(app, '/voice/call/tools', {

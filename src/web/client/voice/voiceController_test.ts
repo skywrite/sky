@@ -121,7 +121,7 @@ function harness(serverTools = false) {
         return Response.json({
           sessionId: 'live_test',
           sdp: 'test-answer',
-          model: 'gpt-live-1',
+          model: 'gpt-live-1.1',
           voice: 'marin',
           opening: 'Say hello, then listen.',
           tools: ['read_file'],

@@ -13,14 +13,14 @@ const ECHO: FunctionTool = { type: 'function', name: 'echo', parameters: { type:
 const BOOM: FunctionTool = { type: 'function', name: 'boom', parameters: { type: 'object' } }
 
 const SESSION: MediaSessionConfig = {
-  model: 'gpt-live-1',
+  model: 'gpt-live-1.1',
   instructions: 'You are Sky. Speak naturally.',
   audio: { output: { voice: 'marin' } },
   delegation: { type: 'responses', responses: { model: 'gpt-6.1-sol', tools: [ECHO, BOOM] } },
 }
 
 const AUDITION: MediaSessionConfig = {
-  model: 'gpt-live-1',
+  model: 'gpt-live-1.1',
   audio: { output: { voice: 'ash' } },
 }
 
@@ -56,7 +56,7 @@ function hostWith(
           passage: 'Hey Jane, ready when you are.',
           groups: { male: ['ash'], female: ['sage'] },
           current: 'ash',
-          model: 'gpt-live-1',
+          model: 'gpt-live-1.1',
         }),
       prepare: (voice, passage) => {
         prepared.push([voice, passage])
@@ -116,7 +116,7 @@ test({ name: 'voice route - a session connects an SDP answer for the trusted thr
       {
         sessionId: 'live_test',
         sdp: 'test-answer',
-        model: 'gpt-live-1',
+        model: 'gpt-live-1.1',
         voice: 'marin',
         opening: 'The audio is ready. Immediately greet the user by saying exactly \"Hey.\", then pause and listen.',
         tools: ['echo', 'boom'],
@@ -367,7 +367,7 @@ test(
           passage: 'Hey Jane, ready when you are.',
           groups: { male: ['ash'], female: ['sage'] },
           current: 'ash',
-          model: 'gpt-live-1',
+          model: 'gpt-live-1.1',
         },
       ],
     })

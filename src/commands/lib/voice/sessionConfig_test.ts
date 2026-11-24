@@ -37,7 +37,7 @@ test('voice config selects GPT-Live with Sol 6.1 Ultrafast high and delegates op
     should: 'use the requested models and keep processing out of the speech prompt',
     actual: session,
     expected: {
-      model: 'gpt-live-1',
+      model: 'gpt-live-1.1',
       instructions: 'Be Sky.',
       audio: { output: { voice: 'marin' } },
       store: false,
@@ -78,7 +78,7 @@ test('voice config keeps the selected Sky voice and previews it without notebook
       preview.delegation,
       preview.store,
     ],
-    expected: ['marin', 'ash', 'marin', 'gpt-live-1', 'ash', { type: 'client' }, false],
+    expected: ['marin', 'ash', 'marin', 'gpt-live-1.1', 'ash', { type: 'client' }, false],
   })
   assert({
     given: 'the voice groups',

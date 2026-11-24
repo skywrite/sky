@@ -4,7 +4,7 @@ import { loadSkyConfig } from '#shared/config/loader.ts'
 import { readPromptFile } from '#shared/prompts/load.ts'
 import { type RenderInput, renderPromptFile, renderTemplate } from '#shared/prompts/mod.ts'
 
-export const DEFAULT_VOICE_MODEL = 'gpt-live-1'
+export const DEFAULT_VOICE_MODEL = 'gpt-live-1.1'
 export const VOICE_PROCESSING_MODEL = 'gpt-6.1-sol'
 export const VOICE_PROCESSING_TIER = 'ultrafast'
 export const VOICE_PROCESSING_EFFORT = 'high'
