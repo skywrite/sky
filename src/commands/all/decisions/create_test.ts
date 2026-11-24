@@ -42,6 +42,8 @@ test('decisions:create --when dates, files and logs a decision on the day it was
             inForce: true,
             when,
             category: 'Personal Complete',
+            noAutoTag: true,
+            noAutoRel: true,
           },
           context: { output: { log() {}, error() {} } },
         })
