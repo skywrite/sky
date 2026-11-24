@@ -496,6 +496,29 @@ test(
         ],
       })
 
+      // Talking it through opens a Sky chat named for this run, beside the wizard.
+      const [chat] = await Promise.all([
+        page.context().waitForEvent('page'),
+        page.getByRole('button', { name: 'Talk it through' }).click(),
+      ])
+      const run = new URL(page.url()).pathname.split('/').at(-1)
+      const talk = new URL(chat.url())
+      const lead = chat.getByText('About the decision “Hire a VP of Sales now, or after the October launch”:')
+      await lead.waitFor()
+      await chat.close()
+      await page.bringToFront()
+      assert({
+        given: 'Talk it through, pressed on a step of the wizard',
+        should:
+          'open the chat about this decision in a new tab with the decision named in the composer, and leave the wizard where it was',
+        actual: [
+          talk.pathname,
+          talk.searchParams.get('returnTo'),
+          await step('Which of these are you deciding?').isVisible(),
+        ],
+        expected: [`/thread/decision-${run}`, `/future/decisions/new/${run}`, true],
+      })
+
       // The keyboard alone: 2 picks the second wording, Enter continues.
       await page.keyboard.press('2')
       const framed = await ticked()
@@ -589,17 +612,26 @@ test(
       await page.getByRole('button', { name: 'Save as open' }).click()
       await step('Saved as open').waitFor()
       await waitForTitle('sky · Saved: Who leads sales through the October launch')
+      const parkedFile = await decisionFile(f.root, 'Who leads sales through the October launch')
       assert({
         given: 'odds given for each option, then the choice to check first',
         should:
-          'hold Sky’s odds back until the person answers, ask what Sky is missing when they are far apart, and save the decision as open with a day to decide by and the one check kept as a to-do',
+          'hold Sky’s odds back until the person answers, ask what Sky is missing when they are far apart, and leave the decision in the notebook as open with a day to decide by, what was worked out so far, and the one check kept as a to-do',
         actual: [
           [heldBack, agree, apart, waits, kept],
           beliefs,
           todos,
           flat(await page.locator('.sky-wizard-read').innerText()),
           f.items,
-          f.created.map((made) => [made.title, made.target, made.decision, made.inForce, made.rel]),
+          f.created.map((made) => [made.title, made.noEditor, made.decision, made.inForce]),
+          [
+            parkedFile?.file.includes('/pending/'),
+            /\ntarget: 2030-07-01\n/.test(parkedFile?.text ?? ''),
+            parkedFile?.text.includes(
+              '  - goals/Run-a-Marathon\n  - goals/Learn-Spanish\n  - decisions/No-Late-Nights\n',
+            ),
+            parkedFile?.text.includes('- Promote Jane Doe to lead sales. My odds for the outcome I want: Over 80%.'),
+          ],
         ],
         expected: [
           [
@@ -623,15 +655,9 @@ test(
               category: 'Professional',
             },
           ],
-          [
-            [
-              'Who leads sales through the October launch',
-              '2030-07-01',
-              undefined,
-              false,
-              ['goals/Run-a-Marathon', 'goals/Learn-Spanish', 'decisions/No-Late-Nights'],
-            ],
-          ],
+          // Written once, as open, when the first step was left; the rest went into that file step by step.
+          [['Who leads sales through the October launch', true, undefined, false]],
+          [true, true, true, true],
         ],
       })
 
@@ -838,8 +864,8 @@ test(
       assert({
         given: 'a small decision taken down the fast path',
         should:
-          'skip the comparison, say when Sky agrees and still give the case against, go back to the options when asked, and save the call with what is expected',
-        actual: [grid, where, against, unset, f.created.at(-1), f.items],
+          'skip the comparison, say when Sky agrees and still give the case against, go back to the options when asked, and settle the open decision with the call and what is expected',
+        actual: [grid, where, against, unset, f.made.at(-1), f.items],
         expected: [
           0,
           ['Your call', 3],
@@ -857,7 +883,6 @@ test(
             inForce: false,
             rel: [],
             category: 'Personal',
-            when: undefined,
           },
           [
             {

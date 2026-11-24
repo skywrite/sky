@@ -24,9 +24,12 @@ import { FutureError } from './types.ts'
  * The decision wizard's server side: the runs in progress, Sky's thinking for
  * each, and the writes a run ends in.
  *
- * A run is Sky's working state, kept as one JSON file in the state folder. The
- * notebook is written only when the person saves: a decision file, the to-dos
- * they asked for, and a reminder on each day they chose to look back.
+ * A run is Sky's working state, kept as one JSON file in the state folder. A
+ * decision being made is also written to the notebook as an open decision
+ * once the person moves past the first step, and rewritten at each step.
+ * Saving at the end settles it, and adds the to-dos they asked for and a
+ * reminder on each day they chose to look back. A decision already made is
+ * written once, when it is saved.
  *
  * Thinking takes minutes, so it runs in the background and the page reads the
  * run to see where it stands. A run outlives the page, the tab and a service
@@ -39,7 +42,12 @@ const StartInput = z.object({
   why: z.string().trim().max(600).nullish(),
   decided: z.boolean(),
 })
-const ProgressInput = z.object({ answers: z.record(z.string(), z.unknown()), step: z.string().max(40).nullable() })
+const ProgressInput = z.object({
+  answers: z.record(z.string(), z.unknown()),
+  step: z.string().max(40).nullable(),
+  /** The person is leaving the step or the page: the notebook's copy is brought up to date now */
+  now: z.boolean().optional(),
+})
 const AddInput = z.object({
   kind: z.enum(['option', 'want']),
   text: z.string().trim().min(1, 'Say what to add.').max(600),
@@ -63,6 +71,8 @@ export interface DecisionWizardOptions {
   commands: DecisionCommands
   notebook: () => FutureNotebook | null
   today: () => Promise<PlainDate>
+  /** The run's decision is now in the notebook under this name: a chat about the decision can point to it */
+  filed?: (run: string, name: string) => Promise<void>
 }
 
 export class DecisionWizard {
@@ -70,6 +80,8 @@ export class DecisionWizard {
   private readonly running = new Set<string>()
   /** One write at a time per run: the think reports progress while the page saves answers */
   private readonly queues = new Map<string, Promise<unknown>>()
+  /** One write at a time to a run's open decision in the notebook */
+  private readonly filing = new Map<string, Promise<void>>()
   private finding = false
 
   constructor(private readonly options: DecisionWizardOptions) {}
@@ -220,12 +232,82 @@ export class DecisionWizard {
 
   /** Keep the person's answers and the step they are on, so a reload or a later visit picks up there. */
   async progress(id: string, input: unknown): Promise<WizardSession> {
-    const { answers, step } = ProgressInput.parse(input)
+    const { answers, step, now } = ProgressInput.parse(input)
     if (JSON.stringify(answers).length > MAX_ANSWERS) throw new FutureError('Those answers are too large to keep.')
-    return this.change(id, (session) => {
+    await this.change(id, (session) => {
       if (session.status !== 'ready') throw new FutureError('Sky is still thinking this through.', 409)
       Object.assign(session, { answers, step })
     })
+    // The answers are kept either way; a notebook write that fails is retried at the next step.
+    await this.keepFiled(id, now === true).catch(() => {})
+    return this.load(id)
+  }
+
+  /**
+   * Keep the notebook's copy in step with the wizard. A decision being made is
+   * written as an open decision once the person moves past the first step, and
+   * rewritten each time they move on, so it is a real record from the start:
+   * listed under To decide, pinned in every chat, and there to point to.
+   *
+   * A file the person changed by hand is left alone from then on; saving the
+   * decision at the end still settles it.
+   */
+  private keepFiled(id: string, force = false): Promise<void> {
+    const next = (this.filing.get(id) ?? Promise.resolve())
+      .catch(() => {})
+      .then(async () => {
+        const session = await this.load(id)
+        const { plan } = session
+        if (session.status !== 'ready' || plan?.kind !== 'deciding') return
+        const answers = session.answers as DecidingAnswers
+        const record = decidingRecord(plan, answers, true, session.statement)
+        const { desiredOutcomes, record: sections } = recordMarkdown(record)
+        if (!session.open) {
+          const first = decidingScreens(plan, answers)[0]?.id
+          const started = session.step !== null && session.step !== first && Object.keys(answers).length > 0
+          if (!started) return
+          const created = await this.options.commands.create({
+            title: record.title,
+            context: record.context,
+            desiredOutcomes,
+            record: sections || undefined,
+            inForce: false,
+            target: record.target ?? undefined,
+            rel: this.refs(record),
+            category: record.category,
+            noEditor: true,
+          })
+          await this.noted(created.file)
+          const text = await readTextFile(created.file).catch(() => null)
+          await this.change(
+            id,
+            (current) => void Object.assign(current, { open: created.name, openText: text, openStep: session.step }),
+          )
+          await this.filed(id, created.name, [])
+          return
+        }
+        const file = this.openFile(session)
+        if (!file || session.openText == null) return
+        if (!force && session.openStep === session.step) return
+        const written = await this.options.commands.update({
+          file,
+          title: record.title,
+          context: record.context,
+          desiredOutcomes,
+          record: sections || undefined,
+          target: record.target,
+          rel: this.refs(record),
+          expected: session.openText,
+        })
+        await this.change(
+          id,
+          (current) =>
+            void Object.assign(current, { openText: written.edited ? null : written.text, openStep: session.step }),
+        )
+        if (!written.edited) await this.noted(file)
+      })
+    this.filing.set(id, next)
+    return next
   }
 
   /** Start the thinking again after it failed or was cut short. */
@@ -348,6 +430,15 @@ export class DecisionWizard {
     return entry && entry.path.includes('/pending/') ? entry.path : undefined
   }
 
+  /** Tell whoever ties a chat to its decision. The decision is saved either way, so a failure is only said. */
+  private async filed(id: string, name: string, warnings: string[]): Promise<void> {
+    try {
+      await this.options.filed?.(id, name)
+    } catch (error) {
+      warnings.push(`The chat about this decision was not tied to it: ${said(error)}`)
+    }
+  }
+
   private async noted(file: string, old?: string): Promise<void> {
     const notebook = this.options.notebook()
     if (!notebook) return
@@ -361,20 +452,24 @@ export class DecisionWizard {
   }
 
   /**
-   * Save the decision before the call is made: an open decision in the
-   * notebook with what has been worked out so far, a day to decide by, and the
-   * checks the person asked for as to-dos. The run stays, and the wizard picks
-   * up at the call when the person comes back.
+   * Stop before the call is made, to check something first. The decision is
+   * already in the notebook as open; this brings it up to date with the day to
+   * decide by and adds the checks the person asked for as to-dos. The run
+   * stays, and the wizard picks up at the call when the person comes back.
    */
   async saveOpen(id: string): Promise<WizardSaved> {
+    const before = await this.ready(id)
+    if (before.plan.kind !== 'deciding') throw new FutureError('A decision already made is saved in one step.')
+    // The open decision is written, or brought up to date with the day to decide by.
+    await this.keepFiled(id, true)
     const session = await this.ready(id)
-    const { plan } = session
-    if (plan.kind !== 'deciding') throw new FutureError('A decision already made is saved in one step.')
+    const plan = session.plan as DecidingPlan
     const answers = session.answers as DecidingAnswers
-    const record = decidingRecord(plan, answers, true)
+    const record = decidingRecord(plan, answers, true, session.statement)
     const warnings: string[] = []
     let name = session.open
     if (!this.openFile(session)) {
+      // A run that never left its first step has no file yet.
       const { desiredOutcomes, record: sections } = recordMarkdown(record)
       const created = await this.options.commands.create({
         title: record.title,
@@ -385,11 +480,20 @@ export class DecisionWizard {
         target: record.target ?? undefined,
         rel: this.refs(record),
         category: record.category,
+        noEditor: true,
       })
       name = created.name
       await this.noted(created.file)
-      await this.change(id, (current) => void (current.open = created.name))
-    }
+      const text = await readTextFile(created.file).catch(() => null)
+      await this.change(
+        id,
+        (current) => void Object.assign(current, { open: created.name, openText: text, openStep: session.step }),
+      )
+      await this.filed(id, created.name, warnings)
+    } else if (session.openText == null)
+      warnings.push(
+        'The decision’s file was changed by hand, so Sky left it as it is. The day to decide by is not in it.',
+      )
     const today = (await this.options.today()).ymd
     const chosen = chosenOptions(plan, answers)
     const checks = chosen.flatMap((option) => plan.options[option]!.hinges)
@@ -458,6 +562,7 @@ export class DecisionWizard {
     await this.noted(written.file, open)
 
     const warnings: string[] = []
+    await this.filed(id, written.name, warnings)
     const look: string[] = []
     for (const day of record.look) {
       try {

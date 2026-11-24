@@ -381,7 +381,7 @@ export function DecidingStep(props: DecidingStepProps) {
               {
                 id: 'check',
                 title: 'Check first, then decide',
-                why: 'Sky saves this as open with everything so far, and adds the checks to your to-dos.',
+                why: 'Stop here for now. Sky sets a day to decide by and adds the checks to your to-dos.',
               },
               {
                 id: 'now',

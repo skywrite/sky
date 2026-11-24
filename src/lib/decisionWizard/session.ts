@@ -39,6 +39,13 @@ export interface WizardSession {
   adding: { kind: 'option' | 'want'; text: string; since: number; error: string | null } | null
   /** The open decision this wizard saved before the call was made, by name */
   open: string | null
+  /**
+   * The open decision's file as the wizard last wrote it. The file is rewritten only while it still reads this
+   * way: null means it was changed by hand, or the run is older than this, and the wizard leaves it alone.
+   */
+  openText?: string | null
+  /** The step the open decision's file was last written at */
+  openStep?: string | null
 }
 
 /** A wizard that was started and not finished, as the Decisions list shows it */

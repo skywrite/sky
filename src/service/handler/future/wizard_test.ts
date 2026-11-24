@@ -109,10 +109,10 @@ test('decision wizard: answers are kept, and only a typed-in option or want send
     })
     assert({
       given: 'answers saved on the way through',
-      should: 'keep them with the step, and list the run under its chosen wording',
+      should: 'keep them with the step, and list the run under its chosen wording, tied to its open decision',
       actual: [
         await f.wizard.get(run.id).then((session) => [session.answers, session.step]),
-        (await f.store.report()).wizards,
+        (await f.store.report()).wizards.map((wizard) => ({ ...wizard, open: typeof wizard.open })),
       ],
       expected: [
         [{ frame: 1, care: 'full', wants: [0, 2] }, 'wants'],
@@ -122,7 +122,7 @@ test('decision wizard: answers are kept, and only a typed-in option or want send
             title: 'Who leads sales through the October launch',
             status: 'ready',
             decided: false,
-            open: null,
+            open: 'string',
           },
         ],
       ],
@@ -276,8 +276,8 @@ test('decision wizard: "check first" saves an open decision, and finishing later
       given: 'the run after it was saved as open',
       should:
         'wait at the call, with the checks marked as set aside, so coming back does not ask to save it as open again',
-      actual: [(parked.answers as { hinge?: string }).hinge, parked.step],
-      expected: ['checked', 'call'],
+      actual: [(parked.answers as { hinge?: string }).hinge, parked.step, f.filed],
+      expected: ['checked', 'call', [[run.id, opened.name]]],
     })
 
     await f.wizard.progress(run.id, { answers: { ...FULL, force: true }, step: 'record' })
@@ -290,6 +290,7 @@ test('decision wizard: "check first" saves an open decision, and finishing later
       should: 'put the made decision in place of the open one, with reminders to look back, and end the run',
       actual: [
         [saved.name === opened.name, saved.open, saved.inForce, saved.look],
+        f.filed.map(([id, name]) => [id === run.id, name === opened.name]),
         files.some((file) => file === openFile),
         f.items.slice(2),
         (await f.store.report()).wizards,
@@ -297,6 +298,11 @@ test('decision wizard: "check first" saves an open decision, and finishing later
       ],
       expected: [
         [true, false, true, ['2030-09-01', '2030-12-31']],
+        // Once when it was saved as open, and again when the call was made.
+        [
+          [true, true],
+          [true, true],
+        ],
         false,
         [
           {
@@ -433,6 +439,102 @@ test('decision wizard: the notebook is searched for decisions once a day, and wh
       should: 'stop offering it',
       actual: (await f.wizard.finds([])).finds.map((find) => find.title),
       expected: ['Hire a VP of Sales now, or after the October launch', 'Which race to enter'],
+    })
+  } finally {
+    await f.dispose()
+  }
+})
+
+test('decision wizard: the decision is in the notebook as open once past the first step, and kept in step', async () => {
+  const f = await futureFixture()
+  try {
+    const before = await decisionFiles(f.root)
+    const run = await f.wizard.start({ statement: 'Hire a VP of Sales now, or after the launch', decided: false })
+    await f.settled(run.id)
+    const step = (answers: DecidingAnswers, at: string, now?: boolean) =>
+      f.post(`/decisions/wizard/${run.id}/progress`, { answers, step: at, ...(now ? { now } : {}) })
+    const file = async () => (await decisionFiles(f.root)).find((name) => !before.includes(name))
+    const text = async () => readFile(path.join(f.root, 'decisions', (await file())!), 'utf8')
+
+    await step({ frame: 1 }, 'frame')
+    const atFirst = await file()
+    await step({ frame: 1 }, 'care')
+    const created = await text()
+    const filed = (await f.wizard.get(run.id)).open
+    assert({
+      given: 'a wording picked on the first step, then the move to the second',
+      should:
+        'write nothing while on the first step, then file an open decision under the chosen wording, without opening the editor, and say so to whoever ties a chat to it',
+      actual: [
+        atFirst,
+        (await file())?.includes('/pending/'),
+        f.created.map((made) => [made.title, made.noEditor, made.decision]),
+        created.includes('summary: Who leads sales through the October launch'),
+        created.includes('## Options being weighed\n\n- Hire a VP of Sales now.\n- Wait until after the launch.'),
+        f.filed,
+        (await f.store.report()).decisions.filter((decision) => decision.name === filed).map((d) => d.state),
+      ],
+      expected: [
+        undefined,
+        true,
+        [['Who leads sales through the October launch', true, undefined]],
+        true,
+        true,
+        [[run.id, filed]],
+        ['open'],
+      ],
+    })
+
+    const picked: DecidingAnswers = {
+      frame: 1,
+      care: 'full',
+      wants: [0, 3],
+      top: 3,
+      options: [2, 3],
+      odds: { 2: 2, 3: 3 },
+    }
+    await step(picked, 'wants')
+    await step({ ...picked, hinge: 'now', call: 3 }, 'wants')
+    const sameStep = await text()
+    await step({ ...picked, hinge: 'now', call: 3, final: 'keep' }, 'wants', true)
+    const leaving = await text()
+    await step(
+      { ...picked, hinge: 'now', call: 3, final: 'keep', expect: { 3: 'By Dec 31 Jane runs the team.' } },
+      'sure',
+    )
+    const later = await text()
+    assert({
+      given: 'more answers on one step, then leaving the page, then a later step',
+      should:
+        'rewrite the file when the step changes or the person leaves, not on every answer, and carry what is wanted, the odds, the leaning and what is expected',
+      actual: [
+        sameStep.includes('1. Keep Jane Doe, your top account executive (comes first)\n2. Keep your own time free'),
+        sameStep.includes('Leaning toward'),
+        leaving.includes(
+          '## Leaning toward\n\nPromote Jane Doe to lead sales. Sky would have chosen “Bring in a part-time sales lead for six months”.',
+        ),
+        later.includes('## What I expect\n\nBy Dec 31 Jane runs the team.'),
+        later.includes('- Promote Jane Doe to lead sales. My odds for the outcome I want: 60–80%. Sky’s: 40–60%.'),
+        later.includes('## Decision\n\n\n\n## Outcome'),
+        f.updated.length,
+        (await file())?.includes('/pending/'),
+      ],
+      expected: [true, false, true, true, true, true, 3, true],
+    })
+
+    await writeFile(path.join(f.root, 'decisions', (await file())!), `${later}\nMy own note.\n`)
+    await step({ ...picked, hinge: 'now', call: 2, final: 'keep' }, 'record')
+    const mine = await text()
+    await step({ ...picked, hinge: 'now', call: 2, final: 'keep' }, 'rules')
+    assert({
+      given: 'the file changed by hand, then two more steps',
+      should: 'leave the person’s file as they wrote it from then on',
+      actual: [
+        mine.endsWith('My own note.\n'),
+        mine.includes('Leaning toward\n\nPromote Jane'),
+        (await text()) === mine,
+      ],
+      expected: [true, true, true],
     })
   } finally {
     await f.dispose()

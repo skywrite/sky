@@ -62,7 +62,19 @@ Its id is an opaque job id, not a content record, so it carries no date or title
 A run outlives the page, the tab and a service restart, and unfinished runs are listed on the Decisions tab.
 The thinking holds the service from reloading while it runs.
 A think that a restart cut short is reported as such and can be started again.
-The notebook is written only when the person saves.
+
+## The decision is in the notebook from the second step
+
+A decision being made is written to the notebook as an open decision once the person moves past the first step.
+It is rewritten each time they move to another step or leave the page, and settled when they save.
+So it is a real record while it is worked on: listed under To decide, pinned in every chat like any open decision,
+and there for a chat's `rel:` to point to.
+The first version wrote nothing until the final save, and a chat opened on the decision had no record to pin.
+
+The run remembers the file's text as it last wrote it (`openText`).
+A file that reads differently was changed by hand, and the wizard leaves it alone from then on.
+The file is created through `decisions:create --no-editor`, because the person is working in the page.
+A decision already made is written once, when it is saved: it was never open.
 
 ## What Sky reads
 
@@ -73,10 +85,25 @@ which are the evidence the plan most needs.
 
 ## Saved as open, then picked up
 
-Choosing to check something first saves the decision as open, with a day to decide by and the checks as to-dos.
+Choosing to check something first stops the wizard there: the open decision gets a day to decide by, and the
+checks become to-dos.
 The run stays, and coming back lands on the call.
 The answers then carry `hinge: 'checked'`: the wizard does not know how the checks came out, and the record says
 the belief was set aside to check, without claiming a result.
+
+## Talking a decision through
+
+"Talk it through" opens a Sky chat about the decision, in a new tab.
+The chat is the thread `decision-<run id>` (`thread.ts`): the id is the tie, so no thread state has to remember it.
+
+- Each turn the chat host asks `createDecisionChat` (`chat.ts`) for the decision as it stands and sends it as
+  reference data: everything in the plan and every answer so far (`brief.ts`).
+  It marks what the wizard has not shown yet, and tells the chat to hold Sky's odds and pick until asked.
+- Each save asks for the decision's reference, so the saved chat's `rel:` carries `decisions/<Name>`.
+  A chat filed before its decision was gets the reference added when the decision is written.
+- The chat cannot change the wizard. A new option goes in through "Add an option".
+
+The raw notes the long think read are not replayed into the chat; it finds notes the way every chat does.
 
 ## Notes
 

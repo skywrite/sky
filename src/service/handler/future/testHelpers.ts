@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises'
 import * as path from 'node:path'
-import { writeDecision } from '#commands/all/decisions/lib/write.ts'
+import { updateOpenDecision, writeDecision } from '#commands/all/decisions/lib/write.ts'
 import { sampleDecidedPlan, sampleDecidingPlan } from '#lib/decisionWizard/testHelpers.ts'
 import type { DecisionThinking } from '#lib/decisionWizard/think.ts'
 import slugify from '#lib/string/slugify.ts'
@@ -11,7 +11,7 @@ import GoalStore from '#shared/models/Store/GoalStore/mod.ts'
 import IdeaStore from '#shared/models/Store/IdeaStore/mod.ts'
 import StreakStore from '#shared/models/Store/StreakStore/mod.ts'
 import { PlainDate, PlainDateTime, ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
-import type { DecisionCommands, DecisionCreate } from './decisionCommands.ts'
+import type { DecisionCommands, DecisionCreate, DecisionSettle } from './decisionCommands.ts'
 import { createFutureRoutes } from './mod.ts'
 import { type FutureNotebook, FutureStore } from './store.ts'
 import { DecisionWizard } from './wizard.ts'
@@ -122,6 +122,10 @@ export async function futureFixture({ ready = true, goals = true } = {}) {
   // The decision commands, stood in for: the writes go through the same write core the real
   // commands use, into this notebook, and each to-do or reminder asked for is kept to look at.
   const created: DecisionCreate[] = []
+  /** Each open decision settled as made, as the wizard asked for it */
+  const made: Array<Omit<DecisionSettle, 'file'>> = []
+  /** Each rewrite of an open decision's file, by the title it was written with */
+  const updated: string[] = []
   const items: Array<{ task: string; list: string; when: string; category: string }> = []
   const dirs = { decisionsDir: path.join(root, 'decisions'), timeDir: path.join(root, 'time') }
   const at = (day: string) => new ZonedDateTime(new PlainDateTime('08:15', day), 'America/Chicago')
@@ -129,14 +133,20 @@ export async function futureFixture({ ready = true, goals = true } = {}) {
     async create(input) {
       created.push(input)
       const name = slugify(input.title, { suggestedLength: 25, preserveCase: true })
-      const { rel, category, when, ...fields } = input
+      const { rel, category, when, noEditor: _noEditor, ...fields } = input
       const written = await writeDecision(
         { ...fields, name, rel, now: at(when ?? TRACKING_TODAY), category: `${category} Complete` },
         dirs,
       )
       return { name, file: written.file }
     },
+    async update(input) {
+      updated.push(input.title)
+      const written = await updateOpenDecision({ ...input, today: new PlainDate(TRACKING_TODAY) })
+      return { text: written.markdown, edited: written.edited }
+    },
     async settle({ file, rel, category, ...fields }) {
+      made.push({ ...fields, rel, category })
       const open = DecisionDocument.fromMarkdown(await readFile(file, 'utf8'))
       const written = await writeDecision(
         {
@@ -204,12 +214,15 @@ export async function futureFixture({ ready = true, goals = true } = {}) {
     },
   }
   const today = async () => new PlainDate(TRACKING_TODAY)
+  // Each decision the wizard reports as in the notebook, for the chat about it to point to.
+  const filed: Array<[run: string, name: string]> = []
   const wizard = new DecisionWizard({
     dir: path.join(root, '.state', 'decisions'),
     thinking,
     commands,
     notebook: () => (ready ? notebook : null),
     today,
+    filed: async (run, name) => void filed.push([run, name]),
   })
   const store = new FutureStore(
     { root, goalsDir: path.join(root, 'goals') },
@@ -244,7 +257,10 @@ export async function futureFixture({ ready = true, goals = true } = {}) {
     goalFile,
     tracking,
     created,
+    updated,
+    made,
     items,
+    filed,
     thought,
     settled,
     dispose: tracking.dispose,

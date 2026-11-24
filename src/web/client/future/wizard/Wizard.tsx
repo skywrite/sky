@@ -10,7 +10,9 @@ import {
   pathOf,
   STAGES,
 } from '#lib/decisionWizard/screens.ts'
-import type { WizardSaved } from '#lib/decisionWizard/session.ts'
+import type { WizardSaved, WizardSession } from '#lib/decisionWizard/session.ts'
+import { decisionThreadId } from '#lib/decisionWizard/thread.ts'
+import { stageChatDraft } from '../../chat/chatDraft.ts'
 import { niceDate } from '../dates.ts'
 import { FutureLink } from '../FutureLink.tsx'
 import { futureRequest } from '../request.ts'
@@ -99,6 +101,8 @@ export function Wizard({
   const [saved, setSaved] = useState<WizardSaved | null>(null)
   const [busy, setBusy] = useState(false)
   const [problem, setProblem] = useState('')
+  // The name the decision has in the notebook, once it is written there as open.
+  const [filedAs, setFiledAs] = useState<string | null>(null)
   const plan = run?.status === 'ready' ? run.plan : null
   const adding = Boolean(run?.adding && !run.adding.error)
 
@@ -127,6 +131,7 @@ export function Wizard({
     adopted.current = { shape, options: counts?.options ?? 0, wants: counts?.wants ?? 0 }
     setAnswers(next)
     setAt(run.step)
+    setFiledAs(run.open)
   }, [plan, run, shape, counts?.options, counts?.wants])
 
   const screens = !plan
@@ -150,10 +155,21 @@ export function Wizard({
   const queue = useRef<Promise<unknown>>(Promise.resolve())
   const pending = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const keep = useCallback(
-    (next: WizardAnswers, step: string | null) => {
+    (next: WizardAnswers, step: string | null, now = false) => {
       queue.current = queue.current
         .catch(() => {})
-        .then(() => futureRequest(`/decisions/wizard/${id}/progress`, { answers: next, step }))
+        .then(() =>
+          futureRequest<WizardSession>(`/decisions/wizard/${id}/progress`, {
+            answers: next,
+            step,
+            // Leaving the step or the page: the notebook's copy of the decision is brought up to date now.
+            ...(now ? { now: true } : {}),
+          }),
+        )
+        .then((session) => {
+          setFiledAs(session.open)
+          return session
+        })
       return queue.current
     },
     [id],
@@ -167,7 +183,7 @@ export function Wizard({
   /** Keep the answers now, ahead of a step that depends on the server having them. */
   const flush = () => {
     clearTimeout(pending.current)
-    return keep(answers, screen?.id ?? null)
+    return keep(answers, screen?.id ?? null, true)
   }
 
   // The decision keeps the person's own words until they choose a wording. Sky's suggestion is an offer, not a rename.
@@ -300,6 +316,25 @@ export function Wizard({
 
   const stages = STAGES[pathOf(plan, answers)]
   const wide = screen.id === 'call' || screen.id === 'record'
+  // A Sky chat about this decision, beside the wizard. The chat is told the decision as it stands each turn,
+  // so what was just answered is kept first.
+  const talk = () => {
+    void flush().catch(() => {})
+    const thread = decisionThreadId(id)
+    try {
+      // The first time, the composer opens on the decision's name, so the chat's first message says what it is
+      // about. After that it is left alone: whatever the person has typed there is theirs.
+      const opened = `sky.future.decisionChat.${id}`
+      if (!localStorage.getItem(opened)) {
+        stageChatDraft(thread, `About the decision “${title}”: `)
+        localStorage.setItem(opened, '1')
+      }
+    } catch {
+      // A browser that keeps nothing opens the chat on an empty composer.
+    }
+    const back = encodeURIComponent(wizardHref(id))
+    window.open(`/thread/${encodeURIComponent(thread)}?returnTo=${back}`, '_blank', 'noopener')
+  }
   const later = () =>
     void guarded(async () => {
       await flush()
@@ -311,10 +346,24 @@ export function Wizard({
       {crumbs}
       <div className="sky-wizard-head">
         <h1>{title}</h1>
-        <Button disabled={busy} onClick={later}>
-          Finish later
-        </Button>
+        <div className="sky-wizard-head-actions">
+          <Button
+            onClick={(event) => {
+              // Focus goes back to the page, so Enter still continues the wizard and does not open the chat again.
+              event.currentTarget.blur()
+              talk()
+            }}
+          >
+            Talk it through
+          </Button>
+          <Button disabled={busy} onClick={later}>
+            Finish later
+          </Button>
+        </div>
       </div>
+      {filedAs && plan.kind === 'deciding' && (
+        <p className="sky-wizard-filed">In your notebook as an open decision. Sky updates it at each step.</p>
+      )}
       <ol className="sky-wizard-path" aria-label="Where you are">
         {stages.map((stage, n) => (
           <li

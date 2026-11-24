@@ -24,8 +24,10 @@
   justify-content: space-between;
   gap: 24px;
 }
-.sky-wizard-head .mantine-Button-root {
+.sky-wizard-head-actions {
+  display: flex;
   flex: none;
+  gap: 4px;
   margin-top: -6px;
 }
 .sky-wizard[data-view='steps'] h1 {
@@ -33,6 +35,12 @@
   font-weight: 620;
   letter-spacing: -0.018em;
   line-height: 1.3;
+}
+
+.sky-wizard-filed {
+  margin: 6px 0 0;
+  color: var(--sky-dim);
+  font-size: 14.5px;
 }
 
 /* The whole path, named, so the person sees where this goes and how far along they are. */
@@ -870,7 +878,7 @@
     flex-direction: column;
     gap: 4px;
   }
-  .sky-wizard-head .mantine-Button-root {
+  .sky-wizard-head-actions {
     margin: 0 0 0 -18px;
   }
   .sky-wizard-q h2 {

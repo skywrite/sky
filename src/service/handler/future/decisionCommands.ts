@@ -1,6 +1,6 @@
 import * as path from 'node:path'
 import { enrichDecision } from '#commands/all/decisions/lib/enrich.ts'
-import { writeDecision } from '#commands/all/decisions/lib/write.ts'
+import { updateOpenDecision, writeDecision } from '#commands/all/decisions/lib/write.ts'
 import CommandContext from '#commands/lib/core/CommandContext.ts'
 import CommandService from '#commands/lib/core/CommandService.ts'
 import type * as ConfigModule from '#shared/config.ts'
@@ -25,6 +25,22 @@ export interface DecisionCreate {
   target?: string
   rel: string[]
   category: 'Personal' | 'Professional'
+  /** The page is where the person is working: the file is written without opening it in the editor */
+  noEditor?: boolean
+}
+
+/** The record of an open decision as it stands, to rewrite its file with */
+export interface DecisionUpdate {
+  file: string
+  title: string
+  context: string
+  desiredOutcomes: string
+  record?: string
+  /** "YYYY-MM-DD"; null clears it */
+  target?: string | null
+  rel: string[]
+  /** The file's text as the wizard last wrote it: a file changed by hand since is left alone */
+  expected: string
 }
 
 /** A call that settles an open decision: the fields of the made decision, and the open decision's file */
@@ -37,6 +53,8 @@ export interface DecisionSettle extends Omit<DecisionCreate, 'when' | 'target'> 
 export interface DecisionCommands {
   /** `decisions:create`: write the decision and its day line; returns the file it wrote */
   create(input: DecisionCreate): Promise<{ name: string; file: string }>
+  /** Rewrite an open decision's file with its record as it stands; `edited` says it was changed by hand and left */
+  update(input: DecisionUpdate): Promise<{ text: string; edited: boolean }>
   /** The made call takes the place of an open decision's file, and keeps the day it came up */
   settle(input: DecisionSettle): Promise<{ name: string; file: string }>
   /** `day:items:add`: a to-do for a day, or a reminder that surfaces on a later one */
@@ -74,6 +92,11 @@ export function createDecisionCommands(
       })
       if (result.status !== 'success' || !result.data) throw new Error(result.message ?? 'The decision was not saved.')
       return { name: result.data.name, file: result.data.file }
+    },
+    async update(input) {
+      const today = (await fetchNow()).plainDateTime.plainDate
+      const written = await updateOpenDecision({ ...input, today })
+      return { text: written.markdown, edited: written.edited }
     },
     async settle({ file, rel, category, ...fields }) {
       const open = DecisionDocument.fromMarkdown(await readTextFile(file))

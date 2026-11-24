@@ -37,17 +37,29 @@ const section = (heading: string, lines: string[], list = true) => (lines.length
 const sentence = (text: string) => (/[.!?…”"]$/.test(text.trim()) ? text.trim() : `${text.trim()}.`)
 
 /**
- * A decision worked through in the wizard. `open` is the record of one saved
- * before the call was made: what is wanted, what is being weighed, and what
- * still needs checking.
+ * A decision worked through in the wizard. `open` is the record while the call
+ * is not made: what is wanted, what is being weighed, what still needs
+ * checking, and what the person leans toward once they have picked.
  */
-export function decidingRecord(plan: DecidingPlan, answers: DecidingAnswers, open = false): DecisionRecord {
+export function decidingRecord(
+  plan: DecidingPlan,
+  answers: DecidingAnswers,
+  open = false,
+  /** The decision in the person's own words, used until they choose a wording */
+  statement?: string,
+): DecisionRecord {
   const fast = answers.care === 'fast'
   const chosen = chosenOptions(plan, answers)
   const wants = orderedWants(plan, answers)
-  const call = open ? undefined : finalCall(plan, answers)
+  // While it is open the pick is a leaning: it is written down, and it is not yet the call.
+  const call = finalCall(plan, answers)
   const option = call === undefined ? undefined : plan.options[call]!
   const sky = skyPick(plan, answers)
+  // Sky's own pick is said only once the wizard has shown it.
+  const skyNote =
+    option && call !== sky && answers.final !== undefined && answers.final !== 'switch'
+      ? `Sky would have chosen “${plan.options[sky]!.title}”.`
+      : null
   const weighed = chosen.map((index) => {
     const odds = finalOdds(plan, answers, index)
     const note = answers.oddsNote?.[index]
@@ -68,28 +80,29 @@ export function decidingRecord(plan: DecidingPlan, answers: DecidingAnswers, ope
           `${sentence(hinge.belief)} ${answers.hinge === 'checked' ? 'Set aside to check before deciding.' : 'Not checked.'}`,
       )
   const expect = call === undefined ? undefined : answers.expect?.[call]
-  const look = open ? [] : [...new Set(answers.look ?? [])].sort()
+  const lookDays = [...new Set(answers.look ?? [])].sort()
   return {
-    title: plan.frames[answers.frame ?? plan.frame]?.title ?? plan.frames[0]!.title,
+    title:
+      plan.frames[answers.frame ?? -1]?.title ?? statement ?? plan.frames[plan.frame]?.title ?? plan.frames[0]!.title,
     category: answers.category ?? plan.category,
     context: plan.context,
     when: null,
-    call: option ? sentence(option.title) : null,
-    callNote:
-      option && call !== sky && answers.final !== 'switch'
-        ? `Sky would have chosen “${plan.options[sky]!.title}”.`
-        : null,
+    call: option && !open ? sentence(option.title) : null,
+    callNote: open ? null : skyNote,
     inForce: !open && answers.force === true,
     wants: fast ? [] : wants.map((want) => plan.wants[want]!.title),
     wantsOrdered: !fast && wants.length > 1,
     sections: [
       ...(fast && !open ? [] : section(open ? 'Options being weighed' : 'Options weighed', weighed)),
+      ...(open && option
+        ? section('Leaning toward', [[sentence(option.title), skyNote].filter(Boolean).join(' ')], false)
+        : []),
       ...(expect
         ? section(
             'What I expect',
             [
               sentence(expect),
-              `How sure: ${answers.sure === undefined ? 'not said' : BANDS[answers.sure]}. Look back: ${look.join(' and ') || 'no date set'}.`,
+              `How sure: ${answers.sure === undefined ? 'not said' : BANDS[answers.sure]}. Look back: ${lookDays.join(' and ') || 'no date set'}.`,
             ],
             false,
           )
@@ -99,7 +112,7 @@ export function decidingRecord(plan: DecidingPlan, answers: DecidingAnswers, ope
       ...(call === undefined ? [] : section('Rules set ahead of time', (answers.rules?.[call] ?? []).map(sentence))),
     ],
     rel: [...new Set(wants.flatMap((want) => (plan.wants[want]!.ref ? [plan.wants[want]!.ref!] : [])))],
-    look,
+    look: open ? [] : lookDays,
     target: open ? (answers.by ?? null) : null,
   }
 }
