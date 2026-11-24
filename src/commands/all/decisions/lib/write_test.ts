@@ -1,6 +1,6 @@
 import * as path from 'node:path'
 import { parseDecisionMoment, writeDecision, SlugCollisionError } from '#commands/all/decisions/lib/write.ts'
-import { makeTempDir, readTextFile } from '#shared/fs/mod.ts'
+import { exists, makeTempDir, readTextFile } from '#shared/fs/mod.ts'
 import { assert, test } from '#test'
 import { PlainDate, ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
 
@@ -222,5 +222,68 @@ test('writeDecision - a decision recorded after the fact keeps its own day and s
       updated: true,
       dayItem: '15:00 > decisions/No-Friday-Releases -> Decided | No releases on Fridays',
     },
+  })
+})
+
+test('writeDecision - a made call settles an open decision and carries the rest of the record', async () => {
+  const decisionsDir = await makeTempDir({ prefix: 'decisions-' })
+  const timeDir = await makeTempDir({ prefix: 'time-' })
+  const shared = {
+    name: 'Choose-Vendor',
+    title: 'Choose Vendor',
+    context: 'Two vendors are in play.',
+    desiredOutcomes: '1. A signed contract',
+    category: 'Professional Complete',
+  }
+
+  const open = await writeDecision(
+    { ...shared, record: '## Options being weighed\n\n- Atlas\n- Nimbus', target: '2026-03-20', now: NOW },
+    { decisionsDir, timeDir },
+  )
+  const later = new ZonedDateTime('2026-04-02 10:00', 'America/Chicago')
+  const made = await writeDecision(
+    {
+      ...shared,
+      record: '## Options weighed\n\n- Atlas\n- Nimbus\n\n## What I expect\n\nA contract by May.',
+      decision: 'Atlas.',
+      now: later,
+      settles: { file: open.file, identified: NOW },
+    },
+    { decisionsDir, timeDir },
+  )
+  const content = await readTextFile(made.file)
+  const at = (heading: string) => content.indexOf(heading)
+
+  assert({
+    given: 'an open decision with what was being weighed, then the call made four weeks later',
+    should: 'file the made decision by the day it was made, take the open file away, and log it as resolved',
+    actual: [made.file, await exists(open.file), made.dayItem],
+    expected: [
+      path.join(decisionsDir, '2026', 'resolved', '04', 'Choose-Vendor.md'),
+      false,
+      '10:00 > decisions/Choose-Vendor -> Resolved | Choose Vendor',
+    ],
+  })
+  assert({
+    given: 'the settled decision',
+    should: 'keep the day it first came up, and say when it was made and last written',
+    actual: [
+      content.includes('identified: 2026-03-05 09:15'),
+      content.includes('resolved: 2026-04-02 10:00'),
+      content.includes('created: 2026-03-05'),
+      content.includes('updated: 2026-04-02'),
+    ],
+    expected: [true, true, true, true],
+  })
+  assert({
+    given: 'more sections of the record',
+    should: 'write them between the desired outcomes and the decision, in the order given',
+    actual:
+      at('## Desired Outcomes') < at('## Options weighed') &&
+      at('## Options weighed') < at('## What I expect') &&
+      at('## What I expect') < at('## Decision') &&
+      at('## Decision') < at('## Outcome') &&
+      !content.includes('Options being weighed'),
+    expected: true,
   })
 })

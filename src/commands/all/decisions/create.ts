@@ -39,6 +39,10 @@ const params = {
   target: Flag.string('Decide-by date for a still-open decision: "YYYY-MM-DD" or "YYYY-MM-DD HH:MM"', {
     optional: true,
   }),
+  record: Flag.string(
+    'More of the record, as Markdown sections starting at "## ": options weighed, what is expected, rules set ahead of time. Omit unless the conversation worked these out.',
+    { optional: true },
+  ),
   name: Flag.string('Slug override (otherwise derived from the title)', { short: 'n', optional: true }),
   tags: Flag.string('Comma- or semicolon-separated tags; omit unless the user named some', { optional: true }),
   rel: Flag.string('Semicolon-separated notebook references, from decisions_clarify', { optional: true }),
@@ -161,6 +165,7 @@ export default class DecisionsCreateTask extends Command {
         title,
         context: args.context,
         desiredOutcomes: args.desiredOutcomes,
+        record: args.record?.trim() || undefined,
         target,
         decision,
         inForce: args.inForce,

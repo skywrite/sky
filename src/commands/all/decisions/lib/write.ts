@@ -4,6 +4,7 @@
  * files, day items, and collision behavior.
  */
 
+import { rm } from 'node:fs/promises'
 import * as path from 'node:path'
 import { DIR_DECISIONS } from '#config'
 import { writeDayItems } from '#lib/nbfs/mod.ts'
@@ -66,6 +67,17 @@ export interface WriteDecisionInput {
    * Means nothing without `decision`.
    */
   inForce?: boolean
+  /**
+   * More of the record, as Markdown sections starting at `## `: options
+   * weighed, what is expected, rules set ahead of time. Written between
+   * Desired Outcomes and Decision.
+   */
+  record?: string
+  /**
+   * The open decision this call settles. Its file is replaced by the new one,
+   * and the decision keeps the day it first came up: `now` is when it was made.
+   */
+  settles?: { file: string; identified: ZonedDateTime }
   tags?: TagSet
   /** Entity references (rel: vocabulary), pre-validated by the caller */
   rel?: string[]
@@ -96,7 +108,8 @@ export interface WriteDecisionResult {
  * Create the decision document — under pending/ for an open decision, under
  * resolved/ when the call was already made, or under in-force/ when that made
  * call still binds what the person does — refuse slug collisions,
- * and record the day item. Directory overrides exist for tests only.
+ * and record the day item. With `settles`, the made call takes the place of
+ * the open decision's file. Directory overrides exist for tests only.
  */
 export async function writeDecision(
   input: WriteDecisionInput,
@@ -120,11 +133,12 @@ export async function writeDecision(
 
   let doc = DecisionDocument.create({
     name: input.name,
-    identified: now,
+    identified: input.settles?.identified ?? now,
     target: input.target,
     title: input.title,
     context: input.context,
     desiredOutcomes: input.desiredOutcomes,
+    record: input.record,
     decision: madeCall,
     resolved: madeCall ? now : undefined,
     inForce,
@@ -134,11 +148,15 @@ export async function writeDecision(
   if (input.recorded && input.recorded.ymd !== now.plainDateTime.plainDate.ymd) {
     doc = doc.updateYaml({ updated: input.recorded.ymd })
   }
+  // A settled decision keeps the day it came up as `created`; `updated` is the day it was made.
+  if (input.settles) doc = doc.updateYaml({ updated: now.plainDateTime.plainDate.ymd })
 
   const markdown = doc.toMarkdown()
   await outputFile(file, markdown)
+  // The open decision's file goes only once the made one is safely written.
+  if (input.settles && input.settles.file !== file) await rm(input.settles.file, { force: true })
 
-  const verb = madeCall ? 'Decided' : 'Identified'
+  const verb = input.settles && madeCall ? 'Resolved' : madeCall ? 'Decided' : 'Identified'
   const dayItem = `${now.plainDateTime.time} > decisions/${input.name} -> ${verb} | ${input.title}`
   let dayItemWarning: string | undefined
   try {

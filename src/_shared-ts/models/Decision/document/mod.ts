@@ -172,6 +172,12 @@ export default class DecisionDocument extends Document {
     desiredOutcomes?: string
     /** The decision as made — fills the Decision section */
     decision?: string
+    /**
+     * More of the record, as Markdown sections starting at `## `: options
+     * weighed, what is expected, rules set ahead of time. They sit between
+     * Desired Outcomes and Decision.
+     */
+    record?: string
     /** When the decision was made; a decision captured after the fact is born resolved */
     resolved?: ZonedDateTime
     /** The made decision still binds what the person does */
@@ -201,6 +207,7 @@ export default class DecisionDocument extends Document {
       title: input.title ?? input.name,
       context: input.context,
       desiredOutcomes: input.desiredOutcomes,
+      record: input.record,
       decision: input.decision,
     })
 
@@ -220,12 +227,14 @@ export default class DecisionDocument extends Document {
     title?: string
     context?: string
     desiredOutcomes?: string
+    record?: string
     decision?: string
     outcome?: string
   }): string {
     const title = input.title ?? 'Decision'
     const context = input.context ?? ''
     const desiredOutcomes = input.desiredOutcomes ?? ''
+    const record = input.record?.trim() ?? ''
     const decision = input.decision ?? ''
     const outcome = input.outcome ?? ''
 
@@ -240,6 +249,12 @@ ${context}
 ## Desired Outcomes
 
 ${desiredOutcomes}
+`
+    }
+
+    if (record) {
+      markdown += `
+${record}
 `
     }
 
