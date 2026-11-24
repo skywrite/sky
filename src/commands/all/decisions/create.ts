@@ -10,6 +10,7 @@ import MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
 import TagSet from '#shared/models/TagSet/mod.ts'
 import { fetchNow, readDay } from '#shared/nbfs/mod.ts'
 import { ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
+import { enrichDecision } from './lib/enrich.ts'
 import { isParseableTarget, parseDecisionMoment, SlugCollisionError, writeDecision } from './lib/write.ts'
 
 // -----------------------------------------------------------------------------
@@ -46,6 +47,8 @@ const params = {
   name: Flag.string('Slug override (otherwise derived from the title)', { short: 'n', optional: true }),
   tags: Flag.string('Comma- or semicolon-separated tags; omit unless the user named some', { optional: true }),
   rel: Flag.string('Semicolon-separated notebook references, from decisions_clarify', { optional: true }),
+  noAutoTag: Flag.bool('Skip automatic tagging from the archived-journal tag corpus', { default: false }),
+  noAutoRel: Flag.bool('Skip automatic rel proposals from the entity graph', { default: false }),
   category: categoryComplete(),
 }
 
@@ -137,6 +140,20 @@ export default class DecisionsCreateTask extends Command {
       }
     }
 
+    // Tags and rel from the same enrichment other captures get; what was passed in stays.
+    const enriched = await enrichDecision(
+      {
+        title,
+        context: args.context,
+        desiredOutcomes: args.desiredOutcomes,
+        record: args.record,
+        decision,
+        rel,
+        tags,
+      },
+      { autoTag: !args.noAutoTag, autoRel: !args.noAutoRel },
+    )
+
     // A decision made earlier is dated, filed and logged on the day it was made
     const today = await fetchNow()
     let now = today
@@ -169,8 +186,8 @@ export default class DecisionsCreateTask extends Command {
         target,
         decision,
         inForce: args.inForce,
-        tags,
-        rel,
+        tags: enriched.tags,
+        rel: enriched.rel,
         now,
         recorded: today.plainDateTime.plainDate,
         category,

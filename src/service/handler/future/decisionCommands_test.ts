@@ -30,7 +30,8 @@ test('Future saves a decision by running decisions:create itself, with the field
         await mkdir(path.dirname(file), { recursive: true })
         await writeFile(file, '---\\nstarted: 08:00\\ntz: UTC\\n---\\n\\n# ' + day.ymd + '\\n\\n## Personal Complete\\n-\\n')
       }
-      const commands = createDecisionCommands(config, {})
+      // No service stands behind this notebook, so the tag and rel lookups are left out.
+      const commands = createDecisionCommands(config, {}, { enrich: false })
       const fields = { context: 'Two Friday releases needed weekend fixes.', desiredOutcomes: 'No weekend fixes.', rel: [], category: 'Personal' }
 
       const kept = await commands.create({ ...fields, title: 'No releases on Fridays', decision: 'None, until the rota is staffed.', inForce: true, when: made.ymd })

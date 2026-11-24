@@ -1,4 +1,5 @@
 import * as path from 'node:path'
+import { enrichDecision } from '#commands/all/decisions/lib/enrich.ts'
 import { writeDecision } from '#commands/all/decisions/lib/write.ts'
 import CommandContext from '#commands/lib/core/CommandContext.ts'
 import CommandService from '#commands/lib/core/CommandService.ts'
@@ -55,7 +56,12 @@ export interface DecisionCommands {
  * for the decision at a terminal prompt, so the wizard goes through the same
  * write core that command and `decisions:create` share.
  */
-export function createDecisionCommands(config: typeof ConfigModule, env: Record<string, string>): DecisionCommands {
+export function createDecisionCommands(
+  config: typeof ConfigModule,
+  env: Record<string, string>,
+  /** `enrich: false` saves without looking up tags and rel, for a notebook with no service behind it */
+  { enrich = true }: { enrich?: boolean } = {},
+): DecisionCommands {
   const createTasks = () => new CommandService(CommandContext.server(config, env))
   return {
     async create({ rel, category, ...fields }) {
@@ -64,6 +70,7 @@ export function createDecisionCommands(config: typeof ConfigModule, env: Record<
         rel: rel.join(';') || undefined,
         // The command's own parser turns "Personal" into the day list it writes to; an in-process run passes that form.
         category: `${category} Complete`,
+        ...(enrich ? {} : { noAutoTag: true, noAutoRel: true }),
       })
       if (result.status !== 'success' || !result.data) throw new Error(result.message ?? 'The decision was not saved.')
       return { name: result.data.name, file: result.data.file }
@@ -72,13 +79,15 @@ export function createDecisionCommands(config: typeof ConfigModule, env: Record<
       const open = DecisionDocument.fromMarkdown(await readTextFile(file))
       const now = await fetchNow()
       const name = open.name || path.basename(file, '.md')
+      // What the open decision was already tied to and tagged with stays; the finished record can add to it,
+      // as it would for a decision written in one go.
+      const kept = { rel: [...new Set([...open.rel, ...rel])], tags: open.tags.size ? open.tags : undefined }
+      const enriched = enrich ? await enrichDecision({ ...fields, ...kept }) : kept
       const written = await writeDecision({
         ...fields,
         name,
-        // What the open decision was already tied to stays tied.
-        rel: [...new Set([...open.rel, ...rel])],
-        // An open decision with no tags stays without them, as a new one is written.
-        tags: open.tags.size ? open.tags : undefined,
+        rel: enriched.rel,
+        tags: enriched.tags,
         now,
         category: `${category} Complete`,
         settles: { file, identified: open.identified ?? now },
