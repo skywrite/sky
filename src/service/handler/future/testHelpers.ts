@@ -216,6 +216,8 @@ export async function futureFixture({ ready = true, goals = true } = {}) {
   const today = async () => new PlainDate(TRACKING_TODAY)
   // Each decision the wizard reports as in the notebook, for the chat about it to point to.
   const filed: Array<[run: string, name: string]> = []
+  /** Where a run's chat was filed, for a run whose chat has been closed */
+  const filedChats = new Map<string, string>()
   const wizard = new DecisionWizard({
     dir: path.join(root, '.state', 'decisions'),
     thinking,
@@ -223,6 +225,7 @@ export async function futureFixture({ ready = true, goals = true } = {}) {
     notebook: () => (ready ? notebook : null),
     today,
     filed: async (run, name) => void filed.push([run, name]),
+    chatFiledAt: async (run) => filedChats.get(run) ?? null,
   })
   const store = new FutureStore(
     { root, goalsDir: path.join(root, 'goals') },
@@ -261,6 +264,7 @@ export async function futureFixture({ ready = true, goals = true } = {}) {
     made,
     items,
     filed,
+    filedChats,
     thought,
     settled,
     dispose: tracking.dispose,

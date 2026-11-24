@@ -64,6 +64,7 @@ export function createFutureRoutes({ store, wizard }: FutureRoutesOptions): Hono
   )
   app.post('/decisions/wizard', async (c) => c.json(await runs().start(await c.req.json()), 201))
   app.get('/decisions/wizard/:id', async (c) => c.json(await runs().get(c.req.param('id'))))
+  app.get('/decisions/wizard/:id/chat', async (c) => c.json(await runs().chat(c.req.param('id'))))
   app.post('/decisions/wizard/:id/progress', async (c) =>
     c.json(await runs().progress(c.req.param('id'), await c.req.json())),
   )

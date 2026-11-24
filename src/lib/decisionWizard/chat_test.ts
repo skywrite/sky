@@ -87,6 +87,23 @@ test('A chat about a decision is told the decision as it stands, and its rel poi
       ],
     })
 
+    // Filed, the chat's own thread is gone: reopened from its file it runs under a new id.
+    const at = 'time/2030/W25/06-18/actions/ai-chats/09-00_Who-signs-first.md'
+    await chat.filed(thread, at)
+    await chat.filed('7f3c', 'time/2030/W25/06-18/actions/ai-chats/10-00_Something-else.md')
+    assert({
+      given: 'the chat filed, then reopened from its file under another thread id',
+      should: 'remember where the decision’s chat was filed, and treat the reopened chat as the same one',
+      actual: [
+        await chat.filedAt(RUN),
+        await chat.rel('0b7c1c1e', at),
+        (await chat.context('0b7c1c1e', at))?.instructions.includes('decisions/Who-Leads-Sales'),
+        await chat.context('0b7c1c1e', 'time/2030/W25/06-18/actions/ai-chats/10-00_Something-else.md'),
+        await chat.rel(decisionThreadId(RUN)),
+      ],
+      expected: [at, ['decisions/Who-Leads-Sales'], true, null, ['decisions/Who-Leads-Sales']],
+    })
+
     const filed = path.join(dir, 'chat.md')
     await writeFile(
       filed,

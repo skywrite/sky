@@ -39,6 +39,15 @@ export function createFutureHost(
     commands: createDecisionCommands(config, env),
     notebook,
     today,
+    async chatFiledAt(run) {
+      const known = await decisionChat.filedAt(run)
+      if (known) return known
+      // A chat filed before the run kept its place: the chat's own index still has it, and the run learns it now.
+      const thread = decisionThreadId(run)
+      const at = await filedChats.get(thread)
+      if (at) await decisionChat.filed(thread, at)
+      return at
+    },
     async filed(run, name) {
       // A chat still open learns the name from here when it is saved.
       await decisionChat.saved(run, name)

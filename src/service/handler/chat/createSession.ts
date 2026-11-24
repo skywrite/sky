@@ -449,6 +449,9 @@ export function createChatHost(config: typeof ConfigModule, env: Record<string, 
       }
     }
 
+    // A chat reopened from its file runs under a new thread id; the file is how a decision's chat is known again.
+    const filedAt = restore?.resume ? path.relative(config.DIR_BASE, restore.resume.filePath) : undefined
+
     return new ChatSession({
       today,
       startTime,
@@ -496,7 +499,7 @@ export function createChatHost(config: typeof ConfigModule, env: Record<string, 
       tools: async (hooks) => {
         const { onExternalFiles, onAttachments, onImages } = hooks
         const unsaved = () => unsavedDrafts(hooks.writingDrafts?.list() ?? [])
-        const decision = await decisions.context(id)
+        const decision = await decisions.context(id, filedAt)
         return {
           prepareApproval: async (name, input, signal) => {
             const prepared = await prepareApproval(name, input, signal)
@@ -599,8 +602,13 @@ export function createChatHost(config: typeof ConfigModule, env: Record<string, 
         return decision
       },
       autosavePath: snapshotPath(id, startTime),
-      onSaved: (saved) => sourceLinks.set(id, path.relative(config.DIR_BASE, saved.path)),
-      about: () => decisions.rel(id),
+      onSaved: async (saved) => {
+        const at = path.relative(config.DIR_BASE, saved.path)
+        await sourceLinks.set(id, at)
+        // A decision's chat is found again by where it was filed, once its own thread is gone.
+        await decisions.filed(id, at).catch(() => {})
+      },
+      about: () => decisions.rel(id, filedAt),
       onEvent,
     })
   }

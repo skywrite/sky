@@ -502,21 +502,53 @@ test(
         page.getByRole('button', { name: 'Talk it through' }).click(),
       ])
       const run = new URL(page.url()).pathname.split('/').at(-1)
+      // The tab opens blank and is pointed at the chat once the page knows which one to open.
+      await chat.waitForURL('**/thread/decision-**')
       const talk = new URL(chat.url())
       const lead = chat.getByText('About the decision “Hire a VP of Sales now, or after the October launch”:')
       await lead.waitFor()
       await chat.close()
       await page.bringToFront()
+
+      // Once that chat was closed and filed, talking it through reopens the filed conversation.
+      f.filedChats.set(run!, 'time/2030/W25/06-18/actions/ai-chats/09-00_Who-signs-first.md')
+      let reopening: unknown
+      await page.route('**/chat/open', async (route) => {
+        reopening = route.request().postDataJSON()
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: '{"id":"reopened-chat","opened":true}',
+        })
+      })
+      const [again] = await Promise.all([
+        page.context().waitForEvent('page'),
+        page.getByRole('button', { name: 'Talk it through' }).click(),
+      ])
+      await again.waitForURL('**/thread/reopened-chat**')
+      const reopened = new URL(again.url())
+      await again.close()
+      await page.unroute('**/chat/open')
+      f.filedChats.clear()
+      await page.bringToFront()
       assert({
         given: 'Talk it through, pressed on a step of the wizard',
         should:
-          'open the chat about this decision in a new tab with the decision named in the composer, and leave the wizard where it was',
+          'open the chat about this decision in a new tab with the decision named in the composer, reopen the filed conversation once it was closed, and leave the wizard where it was',
         actual: [
           talk.pathname,
           talk.searchParams.get('returnTo'),
+          reopening,
+          [reopened.pathname, reopened.searchParams.get('returnTo')],
           await step('Which of these are you deciding?').isVisible(),
         ],
-        expected: [`/thread/decision-${run}`, `/future/decisions/new/${run}`, true],
+        expected: [
+          `/thread/decision-${run}`,
+          `/future/decisions/new/${run}`,
+          { chat: 'time/2030/W25/06-18/actions/ai-chats/09-00_Who-signs-first.md' },
+          ['/thread/reopened-chat', `/future/decisions/new/${run}`],
+          true,
+        ],
       })
 
       // The keyboard alone: 2 picks the second wording, Enter continues.

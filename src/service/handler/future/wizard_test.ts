@@ -279,6 +279,19 @@ test('decision wizard: "check first" saves an open decision, and finishing later
       actual: [(parked.answers as { hinge?: string }).hinge, parked.step, f.filed],
       expected: ['checked', 'call', [[run.id, opened.name]]],
     })
+    const talking = await (await f.app.request(`/decisions/wizard/${run.id}/chat`)).json()
+    f.filedChats.set(run.id, 'time/2030/W25/06-18/actions/ai-chats/09-00_Who-signs-first.md')
+    const filedChat = await (await f.app.request(`/decisions/wizard/${run.id}/chat`)).json()
+    assert({
+      given: 'where to talk the decision through, before and after its chat was closed and filed',
+      should: 'name the chat’s own thread, and then also the file to reopen it from',
+      actual: [talking, filedChat, (await f.app.request('/decisions/wizard/not-a-run/chat')).status],
+      expected: [
+        { thread: `decision-${run.id}`, filed: null },
+        { thread: `decision-${run.id}`, filed: 'time/2030/W25/06-18/actions/ai-chats/09-00_Who-signs-first.md' },
+        404,
+      ],
+    })
 
     await f.wizard.progress(run.id, { answers: { ...FULL, force: true }, step: 'record' })
     const saved = await (await f.post(`/decisions/wizard/${run.id}/save`, {})).json()

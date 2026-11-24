@@ -13,6 +13,7 @@ import {
 } from '#lib/decisionWizard/screens.ts'
 import type { FindsView, WizardSaved, WizardSession, WizardSummary } from '#lib/decisionWizard/session.ts'
 import type { DecisionThinking } from '#lib/decisionWizard/think.ts'
+import { decisionThreadId } from '#lib/decisionWizard/thread.ts'
 import { readTextFile } from '#shared/fs/mod.ts'
 import type { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import { hold } from '../../activity.ts'
@@ -73,6 +74,8 @@ export interface DecisionWizardOptions {
   today: () => Promise<PlainDate>
   /** The run's decision is now in the notebook under this name: a chat about the decision can point to it */
   filed?: (run: string, name: string) => Promise<void>
+  /** The notebook path the run's chat was filed at, once it has been closed and filed */
+  chatFiledAt?: (run: string) => Promise<string | null>
 }
 
 export class DecisionWizard {
@@ -204,6 +207,16 @@ export class DecisionWizard {
     await writeFile(this.file(session.id), JSON.stringify(session, null, 2))
     this.think(session.id)
     return session
+  }
+
+  /**
+   * Where to talk the decision through: the chat's own thread, and the file it was put in if it has been
+   * closed and filed. A filed chat is reopened from its file, so the conversation carries on.
+   */
+  async chat(id: string): Promise<{ thread: string; filed: string | null }> {
+    await this.load(id)
+    const filed = await this.options.chatFiledAt?.(id).catch(() => null)
+    return { thread: decisionThreadId(id), filed: filed ?? null }
   }
 
   async get(id: string): Promise<WizardSession> {

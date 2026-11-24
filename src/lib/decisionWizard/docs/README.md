@@ -1,6 +1,6 @@
 ---
 created: 2026-11-23
-updated: 2026-11-23
+updated: 2026-11-24
 ---
 
 # The decision wizard
@@ -102,6 +102,13 @@ The chat is the thread `decision-<run id>` (`thread.ts`): the id is the tie, so 
 - Each save asks for the decision's reference, so the saved chat's `rel:` carries `decisions/<Name>`.
   A chat filed before its decision was gets the reference added when the decision is written.
 - The chat cannot change the wizard. A new option goes in through "Add an option".
+- A chat that was closed and filed is reopened from its file, not started again.
+  The thread id is free once a chat is filed, so the button first asks whether the decision's thread is live, then
+  where its chat was filed, and only then starts a new one.
+  The run keeps that path (`chats/<run>.json`), which is also how the reopened chat, now under another thread id,
+  is known to be the decision's.
+  The first version went by the thread id alone: after the morning review filed a long conversation, the button
+  opened an empty chat.
 
 The raw notes the long think read are not replayed into the chat; it finds notes the way every chat does.
 
