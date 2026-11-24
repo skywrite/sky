@@ -1,6 +1,6 @@
 ---
 created: 2026-11-22
-updated: 2026-11-22
+updated: 2026-11-23
 ---
 
 # Decisions — pending, in force, resolved
@@ -68,6 +68,23 @@ it was made.
 The notebook already held the real moment, in a journal entry.
 The tool description therefore tells chat to find that moment in the notebook before creating, and to pass it.
 
+## More of the record, tags and rel
+
+`decisions:create --record` takes more of the record as Markdown sections starting at `## `: options weighed, what
+is expected, rules set ahead of time.
+They are written between Desired Outcomes and Decision, and a section the document model does not know survives an
+edit.
+
+The write core can settle an open decision in place (`settles`): the made call takes the open file's place and
+keeps the day the decision came up.
+`decisions:resolve` does the same from a terminal prompt; the wizard cannot answer a prompt, so it uses the core.
+
+`decisions:create` tags the decision and adds rel with the enrichment other captures get
+(`commands/all/decisions/lib/enrich.ts`).
+Rel keeps every substantive tie, because a decision's record names the people and organizations it turns on.
+Sky is passed as the other party to the record.
+A record worked out with Sky quotes Sky, and without that the bare name was matched to a contact who shares it.
+
 ## Who reads in-force decisions
 
 - **Chat** pins them in every session, beside pending decisions and active goals:
@@ -75,8 +92,8 @@ The tool description therefore tells chat to find that moment in the notebook be
 - **Most Important and journal questions** read them through `readInForceDecisions()`.
 - **GraphQL** exposes `inForce` on `Decision` and as a filter. `pending` excludes them and `decided` includes them.
 - **The Future screen** (`service/handler/future`) lists every decision as open, in force or made, with the goals
-  whose `goals/<name>` its `rel:` holds. Its "Add a decision" page runs `decisions:clarify` to draft and
-  `decisions:create` to save, the same two runs chat makes.
+  whose `goals/<name>` its `rel:` holds. Its "Add a decision" page is the decision wizard, which saves through
+  `decisions:create` (see [the wizard's note](../../../../lib/decisionWizard/docs/README.md)).
 
 ## Not here yet
 
