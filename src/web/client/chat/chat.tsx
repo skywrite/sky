@@ -32,6 +32,7 @@ import { ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
 import type { BranchPoint } from '../../../service/handler/chat/branchPoint.ts'
 import type { ToolFilePath } from '../../../service/handler/chat/toolFilePath.ts'
 import type { UnwindBlocker } from '../../../service/handler/chat/unwind.ts'
+import { threadsChanged } from '../day/day.tsx'
 import { renderStatic } from '../editor/wysiwyg/render.ts'
 import { fileHref } from '../explorer/explorer.tsx'
 import { RenderedBlocks, RenderedHtml } from '../lib/renderedHtml.tsx'
@@ -2188,6 +2189,7 @@ export function ThreadColumn({
         try {
           const made = await branch(point)
           if ('id' in made) {
+            threadsChanged()
             if (tab) tab.location.href = `/thread/${made.id}`
             else onBranched(made.id)
           } else {

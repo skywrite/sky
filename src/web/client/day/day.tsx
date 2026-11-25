@@ -181,6 +181,13 @@ export interface ThreadSummary {
   saved: string | null
 }
 
+const THREADS_CHANGED = 'sky:threads-changed'
+
+/** Ask mounted live-thread lists to re-read `/chat` immediately after a send, approval, or close. */
+export function threadsChanged() {
+  window.dispatchEvent(new Event(THREADS_CHANGED))
+}
+
 /** The live threads, re-read every few seconds — the list is in memory on the service, so this is cheap. */
 export function useThreads(): ThreadSummary[] {
   const [threads, setThreads] = useState<ThreadSummary[]>([])
@@ -192,10 +199,12 @@ export function useThreads(): ThreadSummary[] {
         .then((body) => alive && setThreads((body as { threads: ThreadSummary[] }).threads))
         .catch(() => {})
     void read()
+    window.addEventListener(THREADS_CHANGED, read)
     const timer = setInterval(read, 2500)
     return () => {
       alive = false
       clearInterval(timer)
+      window.removeEventListener(THREADS_CHANGED, read)
     }
   }, [])
   return threads

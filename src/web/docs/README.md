@@ -1,6 +1,6 @@
 ---
 created: 2026-09-03
-updated: 2026-11-22
+updated: 2026-11-24
 ---
 
 # The web app's shell and client
@@ -208,8 +208,11 @@ day or week keeps its selected state, including direct date URLs and a
 day's files. Chat and other sections keep the date list hidden. The mobile
 drawer follows the same rule and closes after navigation.
 
-Chat follows Today's date group as a standard navigation row. It starts
-a new thread and stays highlighted for any open conversation.
+Chat follows Today's date group as a standard navigation row with no badge outside Chat.
+On chat pages, open live chats expand beneath it in the same indented style as Today's dates, nesting live branches
+under their live parent and surfacing active, waiting, failed, and temporary states.
+An unsent new chat highlights Chat itself; an active live chat highlights its row and shows a quiet `+` action on Chat
+for starting a new thread.
 
 The four primary rows pair their labels with 22px outline icons from
 `client/shell/sidebarIcon.tsx`: a sun, speech bubble, outgoing tray, and branching

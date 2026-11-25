@@ -8,8 +8,9 @@ import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import { type Kept, undoKeep } from './attachments/files.tsx'
 import { AutomationDetail, AutomationsMain, AutomationsSideNav, NewAutomation } from './automations/automations.tsx'
 import { ChatMain, threadTitle, useChat } from './chat/chat.tsx'
+import { SidebarChats } from './chat/SidebarChats.tsx'
 import { ClockAmbient, ClockMain, clockChanged, useClockNow } from './clock/clock.tsx'
-import { DayView, useThreads } from './day/day.tsx'
+import { DayView, threadsChanged, useThreads } from './day/day.tsx'
 import type { ChatCloseNotice } from './day/dayChatClose.tsx'
 import { DayFilesMain, filesRouteOf, shortLabel } from './day/dayFiles.tsx'
 import { useItemHelpChat } from './day/dayItemHelp.tsx'
@@ -200,6 +201,17 @@ function Canvas() {
 
   const chat = useChat(threadId ?? '')
   const currentChat = chat.state.id === threadId ? chat.state : null
+  useEffect(() => {
+    if (!threadId) return
+    threadsChanged()
+  }, [
+    threadId,
+    currentChat?.phase,
+    currentChat?.turns.length,
+    currentChat?.approvals.length,
+    currentChat?.settings?.saves,
+    currentChat?.gather,
+  ])
   const chatTitle =
     currentChat?.title ??
     threads.find((thread) => thread.id === threadId)?.title ??
@@ -390,6 +402,7 @@ function Canvas() {
     const saving = chat.end(chat.state.settings?.saves !== false)
     navigate(chatHome.path)
     void saving.then((result) => {
+      threadsChanged()
       if (result) setChatNotices((prev) => [...prev.filter((n) => n.id !== id), { id, title, ...result }])
     })
   }
@@ -593,16 +606,13 @@ function Canvas() {
                 <SidebarIcon name="future" />
                 <span>Future</span>
               </button>
-              <button
-                type="button"
-                className="sky-thread sky-side-primary"
-                data-active={threadId !== null}
-                aria-current={threadId !== null ? 'page' : undefined}
-                onClick={newChat}
-              >
-                <SidebarIcon name="chat" />
-                <span>Chat</span>
-              </button>
+              <SidebarChats
+                threads={others}
+                activeThreadId={threadId}
+                todayYmd={day?.today.ymd ?? null}
+                hrefOf={threadHref}
+                onNewChat={newChat}
+              />
               {sidebarExperiments.outbox && (
                 <button
                   type="button"
