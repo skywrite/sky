@@ -93,17 +93,65 @@ export function createPlanningRoutes(options: ItemRoutesOptions): Hono {
     }
     return { sources, entries }
   }
+  const nextItems = (entries: NextEntry[]) =>
+    entries.map(({ raw: _raw, item: _item, at: _at, ...entry }) => ({
+      ...entry,
+      path: path.relative(options.markdownBaseDir, path.join(options.timeDir, entry.file)),
+    }))
 
   app.get('/:ymd/item/next', async (c) => {
     const day = await dayFileOf(c, options, true)
     if (day instanceof Response) return day
     const { entries } = await readNext(day.content)
-    return c.json({
-      items: entries.map(({ raw: _raw, item: _item, at: _at, ...entry }) => ({
-        ...entry,
-        path: path.relative(options.markdownBaseDir, path.join(options.timeDir, entry.file)),
-      })),
+    return c.json({ items: nextItems(entries) })
+  })
+
+  app.post('/:ymd/item/next/delete', async (c) => {
+    const body = await bodyOf(c)
+    if (
+      !body ||
+      typeof body.id !== 'string' ||
+      !body.id ||
+      typeof body.requestId !== 'string' ||
+      !/^[a-f0-9-]{36}$/.test(body.requestId)
+    )
+      return c.json({ error: 'Select a Next item to delete.' }, 400)
+    const day = await dayFileOf(c, options, true)
+    if (day instanceof Response) return day
+    const request = JSON.stringify({ id: body.id })
+    const requestId = body.requestId
+    cleanup()
+    const previous = operations.get(requestId)
+    if (previous) {
+      if (previous.day !== day.ymd || previous.request !== request || previous.undone)
+        throw new PlanningError('This request has already been used. Try again.')
+      return c.json({
+        items: nextItems((await readNext(day.content)).entries),
+        undo: requestId,
+        message: previous.message,
+      })
+    }
+    const { sources, entries } = await readNext(day.content)
+    const entry = entries.find((item) => item.id === body.id)
+    if (!entry) throw new PlanningError('This item changed in its Next list. Refresh and try again.')
+    if (!entry.deletable) throw new PlanningError('Open the source to delete an item with notes.')
+    const before = sources.get(entry.file)!
+    const deletion = removePlanItem(before, entry.list, entry.raw, entry.at)
+    if (deletion.kind === 'missing')
+      throw new PlanningError('This item changed in its Next list. Refresh and try again.')
+    const file = path.join(options.timeDir, entry.file)
+    const changes: Change[] = [{ file, before, after: deletion.content }]
+    await writeChanges(changes, options.writePlanning)
+    const message = `Deleted — “${entry.text}”`
+    remember(requestId, {
+      day: day.ymd,
+      request,
+      changes,
+      added: [],
+      removed: [{ file, list: entry.list, raw: entry.raw, at: entry.at }],
+      message,
     })
+    return c.json({ items: nextItems((await readNext(day.content)).entries), undo: requestId, message })
   })
 
   app.post('/:ymd/item/add', async (c) => {

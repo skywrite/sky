@@ -9,7 +9,7 @@ import { dayFile } from '#shared/nbfs/mod.ts'
 import { assert, test } from '#test'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import { createDayRoutes, type DayRoutesOptions, type DayView } from './mod.ts'
-import type { DayPlanResult, NextDayItem } from './planningTypes.ts'
+import type { DayPlanResult, NextDayItem, NextDeleteResult } from './planningTypes.ts'
 
 const DAY = new PlainDate('2026-01-27')
 const EMPTY = `---
@@ -560,6 +560,7 @@ test({ name: 'summarizing a day closes every planning mutation including an outs
       post('add', { kind: 'todos', text: 'Another task', requestId: randomUUID() }),
       post('add', { kind: 'complete', text: 'A sample entry', time: '09:30', requestId: randomUUID() }),
       post('pull', { kind: 'todos', ids: [entry.id], requestId: randomUUID() }),
+      post('next/delete', { id: entry.id, requestId: randomUUID() }),
       post('undo', { id: added.undo }),
     ])
     assert({
@@ -571,7 +572,94 @@ test({ name: 'summarizing a day closes every planning mutation including an outs
         await readFile(file, 'utf8'),
         await readFile(professional, 'utf8'),
       ],
-      expected: [[409, 409, 409, 409], true, ended, PROFESSIONAL],
+      expected: [[409, 409, 409, 409, 409], true, ended, PROFESSIONAL],
+    })
+  })
+})
+
+test('Next delete removes single-line items, supports idempotent retries and exact or partial Undo, and guards notes', async () => {
+  await withNotebook(async ({ app, next, post, file, professional, personal }) => {
+    const entries = await next()
+    const draft = entries.find((item) => item.text === 'Review the draft')!
+    const requestId = randomUUID()
+    const response = await post('next/delete', { id: draft.id, requestId })
+    const deleted = (await response.json()) as NextDeleteResult
+    const retry = await post('next/delete', { id: draft.id, requestId })
+    const stale = await post('next/delete', { id: draft.id, requestId: randomUUID() })
+    const bad = await post('next/delete', { id: '', requestId: randomUUID() })
+    const crossOrigin = await app.request(`/${DAY.ymd}/item/next/delete`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', origin: 'https://example.com' },
+      body: JSON.stringify({ id: draft.id, requestId: randomUUID() }),
+    })
+    assert({
+      given: 'deleting a Next item, retrying with the same requestId, and sending stale or cross-origin requests',
+      should: 'delete only the unfinished line, keep the completed duplicate, and reject unsafe requests',
+      actual: {
+        statuses: [response.status, retry.status, stale.status, bad.status, crossOrigin.status],
+        message: deleted.message,
+        completedKept: (await readFile(professional, 'utf8')).includes('- ~~Review the draft~~'),
+        unfinishedGone: !deleted.items.some((item) => item.text === 'Review the draft'),
+        dayUntouched: (await readFile(file, 'utf8')) === EMPTY,
+      },
+      expected: {
+        statuses: [200, 200, 409, 400, 403],
+        message: 'Deleted — “Review the draft”',
+        completedKept: true,
+        unfinishedGone: true,
+        dayUntouched: true,
+      },
+    })
+
+    await writeFile(professional, (await readFile(professional, 'utf8')).replace('## Next', 'A later note.\n\n## Next'))
+    const undone = await post('undo', { id: deleted.undo })
+    assert({
+      given: 'Undo after an unrelated edit to the Next file',
+      should: 'restore the deleted line and preserve the later edit',
+      actual: [undone.status, await readFile(professional, 'utf8')],
+      expected: [200, PROFESSIONAL.replace('## Next', 'A later note.\n\n## Next')],
+    })
+
+    const water = (await next()).find((item) => item.text === 'Water the plants')!
+    const deletedLast = (await (
+      await post('next/delete', { id: water.id, requestId: randomUUID() })
+    ).json()) as NextDeleteResult
+    assert({
+      given: 'deleting the only item in a Next list',
+      should: 'leave an empty bullet slot so the heading stays a list',
+      actual: await readFile(personal, 'utf8'),
+      expected: '# Personal\n\n## Next\n\n-\n',
+    })
+    await post('undo', { id: deletedLast.undo })
+    assert({
+      given: 'Undo of deleting the only item in a Next list',
+      should: 'restore the file byte for byte',
+      actual: await readFile(personal, 'utf8'),
+      expected: PERSONAL,
+    })
+
+    await writeFile(
+      professional,
+      PROFESSIONAL + '\n## Content\n\n- 09:30 > A timed event\n- Task with notes\n  - A nested note\n',
+    )
+    await post('add', { kind: 'reminders', text: 'Water the plants', requestId: randomUUID() })
+    const latest = await next()
+    const nested = latest.find((item) => item.text === 'Task with notes')!
+    const timed = latest.find((item) => item.text === '09:30 > A timed event')!
+    const already = latest.find((item) => item.text === 'Water the plants')!
+    assert({
+      given: 'items with nested notes, timed items, and items already on the day',
+      should: 'refuse deleting hidden nested notes while allowing single-line deletes',
+      actual: [
+        nested.deletable,
+        timed.deletable,
+        already.deletable,
+        (await post('next/delete', { id: nested.id, requestId: randomUUID() })).status,
+        (await post('next/delete', { id: timed.id, requestId: randomUUID() })).status,
+        (await post('next/delete', { id: already.id, requestId: randomUUID() })).status,
+        (await readFile(professional, 'utf8')).includes('A nested note'),
+      ],
+      expected: [false, true, true, 409, 200, 200, true],
     })
   })
 })

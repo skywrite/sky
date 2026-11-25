@@ -1,6 +1,6 @@
 ---
 created: 2026-09-03
-updated: 2026-11-11
+updated: 2026-11-24
 ---
 
 # The day's items, the day's rail, and the day's files
@@ -177,7 +177,7 @@ and reconciles its streaks. Do not run day-start routines merely to schedule an
 item. See the [day-file lifecycle](../../../../commands/all/day/docs/README.md#day-files-are-created-as-needed).
 
 **From next lists** moves unfinished, untimed items from `next-professional.md`
-and `next-personal.md` into To-dos or Reminders. Category follows the source.
+and `next-personal.md` into To-dos or Reminders, and lets single-line items be deleted directly from those Next lists with the same eight-second Undo. Category follows the source.
 Schedule files stay with the existing day-start flow. `planning.ts` checks
 selected items again, resolves reference links and rebases relative links for
 the day file. It writes the destination first and rolls back failed writes
@@ -243,6 +243,7 @@ Filed documents, attachments, and continuing chats remain accessible.
 | `POST /day/:ymd/item/edit/undo` | `{id}` → undo an edit without overwriting later task changes |
 | `POST /day/:ymd/item/add` | `{kind, text, category?, time?, length?, requestId}` → add an item, answers `{view, undo, message}` |
 | `GET /day/:ymd/item/next` | The current Next candidates, including already-on-day and unavailable rows |
+| `POST /day/:ymd/item/next/delete` | `{id, requestId}` → delete a single-line item from its Next list, answers `{items, undo, message}` |
 | `POST /day/:ymd/item/pull` | `{kind, ids, requestId}` → move selected Next items, answers `{view, undo, message}` |
 | `POST /day/:ymd/item/undo` | `{id}` → reverse an addition or move, answers the view |
 | `POST /day/:ymd/item` | `{list, raw, occurrence?, revision?, done}` → strike or un-strike, answers the view with an `itemUndo` token for addressed rows |

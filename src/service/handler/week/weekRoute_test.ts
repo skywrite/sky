@@ -428,29 +428,36 @@ test({ name: 'week route - the × takes the line out, and an emptied date leaves
     list: 'Week-Next',
     raw: 'Board update draft (pushed 2026-W36)',
   })
+  const backlog = await post(app, '/2026-W37/queue/remove', {
+    file: 'next-professional.md',
+    list: 'Next',
+    raw: 'Write the hiring rubric',
+  })
   const scheduleFile = await readFile(path.join(timeDir, 'schedule-professional.md'), 'utf8')
   const nextFile = await readFile(path.join(timeDir, 'next-professional.md'), 'utf8')
 
   assert({
-    given: "a date's only item removed, the same removal again, and one of two queue lines removed",
+    given: "a date's only item removed, the same removal again, and queue and Next backlog lines removed",
     should:
-      'drop the line and its heading, answer 404 the second time, and leave the other queue line and heading standing',
+      'drop the line and its heading, answer 404 the second time, and leave the other lines and headings standing',
     actual: {
-      statuses: [removed.status, stale.status, one.status],
+      statuses: [removed.status, stale.status, one.status, backlog.status],
       headingGone: !scheduleFile.includes('2026-09-15'),
       othersKept: scheduleFile.includes(
         '## 2026-09-07\n\n- 10:00 > Kick off the Atlas retro\n- Send the September invoice run\n',
       ),
       staleError: stale.error,
       queueKept: nextFile.includes('## Week-Next\n\n- Decide the vendor contract renewal (pushed 2026-W36)\n\n## Next'),
+      backlogKept: backlog.view?.queue?.next.professional.map((i) => i.text),
       later: removed.view?.queue?.scheduled.later,
     },
     expected: {
-      statuses: [200, 404, 200],
+      statuses: [200, 404, 200, 200],
       headingGone: true,
       othersKept: true,
       staleError: 'no such line — the file changed under the page',
       queueKept: true,
+      backlogKept: ['Follow up with the vendor on the SLA'],
       later: [],
     },
   })

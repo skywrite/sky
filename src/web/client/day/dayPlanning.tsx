@@ -10,12 +10,22 @@ import {
   type DayPlanInput,
   type DayPlanResult,
   type NextDayItem,
+  type NextDeleteResult,
   type NextDestination,
 } from '../../../service/handler/day/planningTypes.ts'
 import { fileHref } from '../explorer/explorer.tsx'
 import type { DayData } from './day.tsx'
 import { LinkedText } from './dayItemText.tsx'
+import { revealOpacity, useSwipeToDelete } from './swipe.ts'
 import { useItemCategory } from './useItemCategory.ts'
+
+function DeleteCross() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+      <path d="M2.5 2.5L9.5 9.5M9.5 2.5L2.5 9.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+    </svg>
+  )
+}
 
 const LABELS: Record<DayAddKind, string> = {
   todos: 'to-do',
@@ -262,20 +272,118 @@ function PlanComposer({
   )
 }
 
+function NextOptionRow({
+  item,
+  checked,
+  busy,
+  onToggle,
+  onDelete,
+}: {
+  item: NextDayItem
+  checked: boolean
+  busy: boolean
+  onToggle: (checked: boolean) => void
+  onDelete: () => Promise<void>
+}) {
+  const [removing, setRemoving] = useState(false)
+  const triggerDelete = () => {
+    if (!item.deletable || busy || removing) return
+    setRemoving(true)
+    void onDelete().finally(() => setRemoving(false))
+  }
+  const swipe = useSwipeToDelete(triggerDelete)
+  useEffect(() => {
+    if (!removing) swipe.close()
+  }, [removing])
+  const swipeable = item.deletable && !busy && !removing
+  return (
+    <div
+      className="sky-next-option-row"
+      data-swiping={swipe.offset < 0 || undefined}
+      data-removing={removing || undefined}
+      ref={swipe.ref}
+    >
+      {item.deletable && swipe.offset < 0 && (
+        <div className="sky-irow-back" style={{ width: -swipe.offset }}>
+          <button
+            type="button"
+            className="sky-irow-delete"
+            style={{ opacity: revealOpacity(swipe.offset) }}
+            tabIndex={swipe.open ? 0 : -1}
+            disabled={busy || removing}
+            onClick={swipe.commit}
+          >
+            Delete
+          </button>
+        </div>
+      )}
+      <div
+        className="sky-next-option"
+        data-disabled={item.already || Boolean(item.unavailable)}
+        data-selected={checked}
+        data-dragging={(item.deletable && swipe.dragging) || undefined}
+        style={item.deletable && swipe.offset ? { transform: `translateX(${swipe.offset}px)` } : undefined}
+        onClickCapture={(event) => {
+          if (!item.deletable || !swipe.open) return
+          event.preventDefault()
+          event.stopPropagation()
+          swipe.close()
+        }}
+        {...(swipeable ? swipe.handlers : {})}
+      >
+        <Checkbox
+          className="sky-next-check"
+          label={
+            <span>
+              <LinkedText text={item.text} inert />
+              {(item.already || item.unavailable) && (
+                <small>{item.already ? 'Already on this day' : item.unavailable}</small>
+              )}
+            </span>
+          }
+          checked={checked}
+          disabled={busy || removing || item.already || Boolean(item.unavailable)}
+          onChange={(event) => onToggle(event.currentTarget.checked)}
+        />
+        {item.deletable && (
+          <button
+            type="button"
+            className="sky-x sky-next-delete"
+            aria-label={`Delete ${item.text}`}
+            title="Delete"
+            disabled={busy || removing}
+            onClick={triggerDelete}
+          >
+            <DeleteCross />
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
+
 function NextPicker({
   opened,
   busy,
   error,
+  undo,
   onClose,
   onLoad,
   onMove,
+  onDelete,
+  onUndo,
+  onDismissUndo,
 }: {
   opened: boolean
   busy: boolean
   error: string | null
+  undo: { id: string; message: string } | null
   onClose: () => void
   onLoad: () => Promise<{ items: NextDayItem[] }>
   onMove: (kind: NextDestination, ids: string[], requestId: string) => Promise<void>
+  onDelete: (item: NextDayItem, requestId: string) => Promise<NextDayItem[] | null>
+  onUndo: () => Promise<boolean>
+  onDismissUndo: () => void
 }) {
   const mobile = useMediaQuery('(max-width: 900px)')
   const [items, setItems] = useState<NextDayItem[] | null>(null)
@@ -318,6 +426,52 @@ function NextPicker({
     const payload = JSON.stringify({ kind, ids })
     if (request.current?.payload !== payload) request.current = { payload, id: crypto.randomUUID() }
     void onMove(kind, ids, request.current.id)
+  }
+  const reconcileSelected = (nextItems: NextDayItem[], removedId?: string) => {
+    setSelected((previous) => {
+      if (!previous.size || !items) return new Set()
+      const kept = items.filter((entry) => entry.id !== removedId && previous.has(entry.id))
+      const nextSelected = new Set<string>()
+      const used = new Set<string>()
+      for (const oldItem of kept) {
+        const match = nextItems.find(
+          (candidate) =>
+            !used.has(candidate.id) &&
+            !candidate.already &&
+            !candidate.unavailable &&
+            candidate.file === oldItem.file &&
+            candidate.list === oldItem.list &&
+            candidate.text === oldItem.text,
+        )
+        if (match) {
+          used.add(match.id)
+          nextSelected.add(match.id)
+        }
+      }
+      return nextSelected
+    })
+  }
+  const remove = async (item: NextDayItem) => {
+    if (busy || !item.deletable) return
+    request.current = null
+    const nextItems = await onDelete(item, crypto.randomUUID())
+    if (!nextItems) return
+    reconcileSelected(nextItems, item.id)
+    setItems(nextItems)
+  }
+  const handleUndo = async () => {
+    if (busy || !undo) return
+    request.current = null
+    const ok = await onUndo()
+    if (!ok) return
+    try {
+      const data = await load.current()
+      reconcileSelected(data.items)
+      setItems(data.items)
+      setLoadError(null)
+    } catch (failure) {
+      setLoadError(failure instanceof Error ? failure.message : 'Could not refresh next lists.')
+    }
   }
   const body = (
     <div className="sky-next-picker">
@@ -366,34 +520,21 @@ function NextPicker({
                 </a>
               </div>
               {rows.map((item) => (
-                <div
-                  className="sky-next-option"
+                <NextOptionRow
                   key={item.id}
-                  data-disabled={item.already || Boolean(item.unavailable)}
-                  data-selected={selected.has(item.id)}
-                >
-                  <Checkbox
-                    label={
-                      <span>
-                        <LinkedText text={item.text} inert />
-                        {(item.already || item.unavailable) && (
-                          <small>{item.already ? 'Already on this day' : item.unavailable}</small>
-                        )}
-                      </span>
-                    }
-                    checked={selected.has(item.id)}
-                    disabled={busy || item.already || Boolean(item.unavailable)}
-                    onChange={(event) => {
-                      const checked = event.currentTarget.checked
-                      setSelected((previous) => {
-                        const next = new Set(previous)
-                        if (checked) next.add(item.id)
-                        else next.delete(item.id)
-                        return next
-                      })
-                    }}
-                  />
-                </div>
+                  item={item}
+                  checked={selected.has(item.id)}
+                  busy={busy}
+                  onToggle={(checked) => {
+                    setSelected((previous) => {
+                      const next = new Set(previous)
+                      if (checked) next.add(item.id)
+                      else next.delete(item.id)
+                      return next
+                    })
+                  }}
+                  onDelete={() => remove(item)}
+                />
               ))}
             </section>
           )
@@ -407,6 +548,17 @@ function NextPicker({
           <Button disabled={busy} onClick={() => setRevision((value) => value + 1)}>
             Refresh lists
           </Button>
+        </div>
+      )}
+      {undo && (
+        <div className="sky-next-undo" role="status" key={undo.id}>
+          <span className="sky-next-undo-text">{undo.message}</span>
+          <Button variant="secondary" size="compact-sm" loading={busy} onClick={() => void handleUndo()}>
+            Undo
+          </Button>
+          <ActionIcon aria-label="Dismiss notification" disabled={busy} onClick={onDismissUndo}>
+            ×
+          </ActionIcon>
         </div>
       )}
       <div className="sky-dialog-footer sky-next-footer">
@@ -427,7 +579,7 @@ function NextPicker({
             Move {selected.size || ''} to this day
           </Button>
         </div>
-        <p className="sky-plan-note">Moved items leave their Next list. You can undo the move.</p>
+        <p className="sky-plan-note">Moved items leave their Next list. You can undo moves and deletes.</p>
       </div>
     </div>
   )
@@ -463,7 +615,7 @@ export function useDayPlanning(
   const [active, setActive] = useState<DayAddKind | 'next' | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [undo, setUndo] = useState<{ id: string; message: string } | null>(null)
+  const [undo, setUndo] = useState<{ id: string; message: string; next?: boolean } | null>(null)
   const scope = `${ymd}/${enabled}`
   const current = useRef(scope)
   current.current = scope
@@ -512,15 +664,34 @@ export function useDayPlanning(
       if (current.current === scope) setBusy(false)
     }
   }
-  const revert = async () => {
-    if (!undo || busy || !enabled) return
+  const deleteNext = async (item: NextDayItem, requestId: string): Promise<NextDayItem[] | null> => {
+    if (busy || !enabled) return null
+    setBusy(true)
+    setError(null)
+    try {
+      const result = await request<NextDeleteResult>('next/delete', { id: item.id, requestId })
+      dismissItemUndo()
+      setUndo({ id: result.undo, message: result.message, next: true })
+      return result.items
+    } catch (failure) {
+      if (current.current === scope)
+        setError(failure instanceof Error ? failure.message : 'Could not delete the item. Try again.')
+      return null
+    } finally {
+      if (current.current === scope) setBusy(false)
+    }
+  }
+  const revert = async (): Promise<boolean> => {
+    if (!undo || busy || !enabled) return false
     setBusy(true)
     setError(null)
     try {
       applyView(await request<DayData>('undo', { id: undo.id }))
       setUndo(null)
+      return true
     } catch (failure) {
       if (current.current === scope) setError(failure instanceof Error ? failure.message : 'Could not undo. Try again.')
+      return false
     } finally {
       if (current.current === scope) setBusy(false)
     }
@@ -590,6 +761,7 @@ export function useDayPlanning(
         opened={active === 'next'}
         busy={busy}
         error={error}
+        undo={undo?.next ? undo : null}
         onClose={() => {
           if (!busy) {
             setActive(null)
@@ -601,10 +773,16 @@ export function useDayPlanning(
           return request<{ items: NextDayItem[] }>('next')
         }}
         onMove={(kind, ids, requestId) => save('pull', { kind, ids, requestId })}
+        onDelete={deleteNext}
+        onUndo={revert}
+        onDismissUndo={() => {
+          setUndo(null)
+          setError(null)
+        }}
       />
     ) : null,
     toast:
-      enabled && undo ? (
+      enabled && undo && active !== 'next' ? (
         <div className="sky-undo sky-plan-undo" role="status" key={undo.id}>
           <span className="sky-undo-text">{error && !active ? error : undo.message}</span>
           <Button variant="secondary" loading={busy} onClick={() => void revert()}>

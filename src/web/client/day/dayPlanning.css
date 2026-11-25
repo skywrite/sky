@@ -138,14 +138,73 @@
   overflow-wrap: anywhere;
 }
 
-.sky-next-option {
-  padding: var(--sky-space-3);
+.sky-next-option-row {
+  position: relative;
   margin-inline: calc(-1 * var(--sky-space-3));
+  touch-action: pan-y;
+}
+
+.sky-next-option-row[data-swiping] {
+  overflow-x: clip;
+}
+
+.sky-next-option-row[data-removing] {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+.sky-next-option {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sky-space-2);
+  padding: var(--sky-space-3);
   border-radius: var(--mantine-radius-md);
+  position: relative;
+  transition: transform 0.22s ease;
+}
+
+.sky-next-option[data-dragging] {
+  transition: none;
 }
 
 .sky-next-option[data-selected='true'] {
   background: var(--sky-accent-soft);
+}
+
+.sky-next-check {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.sky-next-delete {
+  flex: none;
+  align-self: flex-start;
+  font-size: var(--sky-content-font-size);
+  line-height: 1.5;
+  margin: calc((1lh - 24px) / 2) 0 0;
+}
+
+.sky-next-option-row:hover .sky-next-delete,
+.sky-next-delete:focus-visible {
+  opacity: 1;
+}
+
+.sky-next-undo {
+  display: flex;
+  align-items: center;
+  gap: var(--sky-space-2);
+  padding: var(--sky-space-2) var(--sky-dialog-padding);
+  border-top: 1px solid var(--sky-border-soft);
+  background: var(--sky-side);
+  font-size: 0.9rem;
+}
+
+.sky-next-undo-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .sky-next-option .mantine-Checkbox-label {
@@ -212,6 +271,7 @@
   }
 
   .sky-next-tools,
+  .sky-next-undo,
   .sky-next-footer {
     flex-shrink: 0;
   }
@@ -227,5 +287,11 @@
   .sky-next-move-controls > button {
     width: 100%;
     min-height: 44px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sky-next-option {
+    transition: none;
   }
 }

@@ -39,7 +39,8 @@ export function nextEntries(content: string, file: NextFile, dayContent: string)
       const item = raw.replace(/^\[ \]\s+/, '')
       const index = at++
       if (!item || row.checked || DayDocument.isItemDone(item)) continue
-      const unavailable = /\r?\n/.test(row.raw.trimEnd())
+      const hasNotes = /\r?\n/.test(row.raw.trimEnd())
+      const unavailable = hasNotes
         ? 'Open the source to move an item with notes.'
         : /^\d{1,2}:\d{2}\s*>/.test(item)
           ? 'Timed items belong in the schedule.'
@@ -57,6 +58,7 @@ export function nextEntries(content: string, file: NextFile, dayContent: string)
         text: cleanItemText(item),
         already: present.has(normalizeForMatch(item)),
         unavailable,
+        deletable: !hasNotes,
       })
     }
   }
@@ -126,10 +128,11 @@ export function removePlanItem(
   content: string,
   list: string,
   raw: string,
+  at?: number,
 ): { kind: 'written'; content: string } | { kind: 'missing' } {
   const lines = content.split('\n')
   const rows = planningRows(content, list)
-  const row = rows.find((row) => row.raw === raw.trim())
+  const row = at !== undefined && rows[at]?.raw === raw.trim() ? rows[at] : rows.find((row) => row.raw === raw.trim())
   if (!row || row.length > 1) return { kind: 'missing' }
   if (rows.length === 1) lines[row.line] = lines[row.line].replace(/^(\s*[-*+]).*$/, '$1')
   else lines.splice(row.line, 1)

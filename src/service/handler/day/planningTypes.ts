@@ -26,6 +26,13 @@ export interface NextDayItem {
   text: string
   already: boolean
   unavailable: string | null
+  deletable: boolean
+}
+
+export interface NextDeleteResult {
+  items: NextDayItem[]
+  undo: string
+  message: string
 }
 
 export interface DayPlanResult {

@@ -110,6 +110,54 @@ test(
         await page.goto(`${origin}/${DAY.ymd}?view=record`)
         await page.getByRole('button', { name: 'From next lists', exact: true }).click()
         let dialog = page.getByRole('dialog')
+        const outlineRow = dialog.locator('.sky-next-option-row', { hasText: 'Review the outline' })
+        await outlineRow.hover()
+        const outlineDelete = outlineRow.getByRole('button', { name: 'Delete Review the outline', exact: true })
+        const [labelBox, deleteBox] = await Promise.all([
+          outlineRow.locator('.mantine-Checkbox-label').boundingBox(),
+          outlineDelete.boundingBox(),
+        ])
+        assert({
+          given: 'a short Next list item on desktop',
+          should: 'place the × button directly after the item text rather than at the far dialog edge',
+          actual: Boolean(labelBox && deleteBox && deleteBox.x - (labelBox.x + labelBox.width) < 32),
+          expected: true,
+        })
+        await outlineDelete.click()
+        await outlineRow.waitFor({ state: 'detached' })
+        await dialog.locator('.sky-next-undo').getByText('Deleted — “Review the outline”', { exact: true }).waitFor()
+        const root = path.resolve(file, ...FILE.split('/').map(() => '..'))
+        assert({
+          given: 'deleting an item with × inside From next lists',
+          should: 'remove it from the open picker and file, keep the dialog open, and offer inline Undo',
+          actual: [
+            (await readFile(path.join(root, 'time/next-professional.md'), 'utf8')).includes('Review the outline'),
+            await dialog.isVisible(),
+          ],
+          expected: [false, true],
+        })
+        await dialog.locator('.sky-next-undo').getByRole('button', { name: 'Undo', exact: true }).click()
+        await outlineRow.waitFor()
+        assert({
+          given: 'Undo inside From next lists',
+          should: 'restore the deleted item immediately in the picker and source file',
+          actual: await readFile(path.join(root, 'time/next-professional.md'), 'utf8'),
+          expected: NEXT,
+        })
+        await dialog.getByRole('checkbox', { name: 'Review the outline', exact: true }).check()
+        const briefRow = dialog.locator('.sky-next-option-row', { hasText: 'Read Atlas brief' })
+        await briefRow.hover()
+        await briefRow.getByRole('button', { name: 'Delete Read Atlas brief', exact: true }).click()
+        await briefRow.waitFor({ state: 'detached' })
+        assert({
+          given: 'deleting an item above a checked item in the same Next list',
+          should: 'keep the other checked item selected with a fresh id',
+          actual: await dialog.getByRole('checkbox', { name: 'Review the outline', exact: true }).isChecked(),
+          expected: true,
+        })
+        await dialog.locator('.sky-next-undo').getByRole('button', { name: 'Undo', exact: true }).click()
+        await briefRow.waitFor()
+        await dialog.getByRole('checkbox', { name: 'Review the outline', exact: true }).uncheck()
         await dialog.getByRole('checkbox', { name: 'Read Atlas brief', exact: true }).check()
         await dialog.getByRole('textbox', { name: 'Search next lists' }).fill('Water')
         await dialog.getByRole('checkbox', { name: 'Water the plants', exact: true }).check()
@@ -159,7 +207,6 @@ test(
         await page.locator('.sky-ptext').filter({ hasText: 'Water the plants' }).waitFor()
         await page.locator('.sky-plan-undo').getByRole('button', { name: 'Undo', exact: true }).click()
         await page.locator('.sky-ptext').filter({ hasText: 'Water the plants' }).waitFor({ state: 'detached' })
-        const root = path.resolve(file, ...FILE.split('/').map(() => '..'))
         assert({
           given: 'both moves undone',
           should: 'restore the day and Next files without touching the schedule',

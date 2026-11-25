@@ -552,6 +552,7 @@ function NextBlock({ next, actions }: { next: NonNullable<WeekData['queue']>['ne
         <button type="button" className="sky-mv" onClick={() => actions.promote(item.file, item.list, item.raw)}>
           Next week ›
         </button>
+        <RemoveButton onClick={() => actions.remove(item.file, item.list, item.raw)} />
       </div>
     ))
   const folded = !open && next.professional.length > NEXT_FOLD + 2
