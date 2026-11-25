@@ -1,4 +1,6 @@
-import { TypeSafeClient } from '@typesafe-ai/sdk'
+import { createSecret } from '#lib/secrets/marshal.ts'
+import { TestSecretsProvider } from '#lib/secrets/TestSecretsProvider.ts'
+import { decisionModel } from '#shared/ai/decisions.ts'
 import type { AIUsageRecord } from '#shared/ai/usageLog.ts'
 import type { ConversationMessage } from '#shared/models/Chat/type.d.ts'
 import { assert, test } from '#test'
@@ -18,13 +20,16 @@ function judge(noul: number) {
     return new Response(JSON.stringify(answer), { status: 200, headers: { 'content-type': 'application/json' } })
   }) as typeof fetch
   let tick = 0
-  const client = new TypeSafeClient({ apiKey: 'tsk-test', fetch: fetchFn, logLevel: 'off' })
+  const model = decisionModel('default', {
+    secrets: new TestSecretsProvider({ 'typesafe/main': createSecret('tsk-test') }),
+    fetch: fetchFn,
+  })
   // The usage record goes to this sink, never to the real usage log.
   const records: AIUsageRecord[] = []
   return {
     bodies,
     records,
-    preflight: contextPreflight(client, { now: () => (tick += 45), sink: (r) => void records.push(r) }),
+    preflight: contextPreflight(model, { now: () => (tick += 45), sink: (r) => void records.push(r) }),
   }
 }
 

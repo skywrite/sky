@@ -6,7 +6,7 @@ import { readJson, writeJson } from '#lib/jobs/files.ts'
 import { priorityAddressKey, priorityOrderRows, type PriorityGroup } from '#lib/nbfs/priorityOrder.ts'
 import { hash, readOptional } from '#lib/outbox/files.ts'
 import { KeychainSecretsProvider } from '#lib/secrets/KeychainSecretsProvider.ts'
-import { createTypeSafeClient, JEV_MODEL, MISSING_TYPESAFE_KEY, TYPESAFE_SECRET } from '#shared/ai/typesafe/client.ts'
+import { decisionModel, isDecisionMissingKeyError, missingDecisionKeyError } from '#shared/ai/decisions.ts'
 import { hasDaySummary } from '#shared/nbfs/daySummary.ts'
 import { dayFile } from '#shared/nbfs/mod.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
@@ -44,13 +44,13 @@ export function createDayPriority(options: DayPriorityOptions, group: PriorityGr
   const endpoint = group === 'todos' ? 'todo-priority' : 'reminder-priority'
   const label = group === 'todos' ? 'To-dos' : 'Reminders'
   const statusKey = group === 'todos' ? 'todoPriority' : 'reminderPriority'
-  const fingerprintOf = (content: string, context: PriorityEvidence['context']) =>
-    hash(JSON.stringify(['day-priority-v5', JEV_MODEL, group, content, context]))
+  const secrets = new KeychainSecretsProvider()
+  const activeModel = () => decisionModel('default', { secrets })
+  const fingerprintOf = (content: string, context: PriorityEvidence['context'], modelId: string) =>
+    hash(JSON.stringify(['day-priority-v5', modelId, group, content, context]))
   const groupItems = (view: DayView) =>
     group === 'todos' ? [...view.record.commitments, ...view.record.todos] : view.record.reminders
   const dir = options.stateDir ?? path.join(tmpdir(), `sky-day-${hash(options.timeDir)}`, endpoint)
-  const secrets = new KeychainSecretsProvider()
-  const rank = options.rank ?? createDayPrioritizer(createTypeSafeClient({ secrets }))
   const pending = new Map<string, Promise<void>>()
   const warnings = new Map<string, { warning: string; connection: boolean }>()
   const failures = new Map<string, number>()
@@ -64,7 +64,7 @@ export function createDayPriority(options: DayPriorityOptions, group: PriorityGr
     [...view.record.mostImportant, ...view.record.commitments, ...view.record.todos, ...view.record.reminders].flatMap(
       (item) => (!item.done && item.link ? [item.link.path] : []),
     )
-  const inputs = async (view: DayView, content: string) => {
+  const inputs = async (view: DayView, content: string, modelId: string) => {
     const date = new PlainDate(view.day.ymd)
     const links = contextLinks(view)
     const context = await (options.context?.(date, links) ??
@@ -75,10 +75,15 @@ export function createDayPriority(options: DayPriorityOptions, group: PriorityGr
         ...context.map((document) => document.path),
       ]),
     ]
-    return { context, sources, revision: fingerprintOf(content, context), snapshot: prioritySnapshot(content, context) }
+    return {
+      context,
+      sources,
+      revision: fingerprintOf(content, context, modelId),
+      snapshot: prioritySnapshot(content, context),
+    }
   }
-  const reuse = (saved: Receipt | null, input: { snapshot?: PrioritySnapshot; sources: string[] }) =>
-    saved?.model === JEV_MODEL && saved.snapshot && saved.order && input.snapshot
+  const reuse = (saved: Receipt | null, input: { snapshot?: PrioritySnapshot; sources: string[] }, modelId: string) =>
+    saved?.model === modelId && saved.snapshot && saved.order && input.snapshot
       ? reusePrioritySnapshot(saved.snapshot, input.snapshot, input.sources)
       : null
   const orderItems = (
@@ -158,7 +163,8 @@ export function createDayPriority(options: DayPriorityOptions, group: PriorityGr
     view.record[statusKey] = { source: saved ? 'sky' : 'saved', ...warnings.get(view.day.ymd) }
     const content = await readOptional(file(view.day.ymd))
     if (!content) return view
-    const input = await inputs(view, content).catch(() => {
+    const model = activeModel()
+    const input = await inputs(view, content, model.model).catch(() => {
       view.record[statusKey]!.warning =
         `Sky could not read the context for ${label} priorities. Your existing order is still available. Retry after the source files are readable.`
       return {
@@ -172,7 +178,7 @@ export function createDayPriority(options: DayPriorityOptions, group: PriorityGr
         ),
       }
     })
-    const identities = reuse(saved, input)
+    const identities = reuse(saved, input, model.model)
     Object.assign(view.record[statusKey]!, {
       inputRevision: input.revision,
       revision: identities ? input.revision : saved?.fingerprint,
@@ -187,10 +193,11 @@ export function createDayPriority(options: DayPriorityOptions, group: PriorityGr
     const content = await readOptional(file(ymd))
     if (!content || (await hasDaySummary(file(ymd)))) return
     const current = await view()
-    const input = await inputs(current, content)
+    const model = activeModel()
+    const input = await inputs(current, content, model.model)
     const fingerprint = input.revision
     const saved = await read(ymd)
-    if (saved?.fingerprint === fingerprint || reuse(saved, input)) {
+    if (saved?.fingerprint === fingerprint || reuse(saved, input, model.model)) {
       warnings.delete(ymd)
       return
     }
@@ -222,17 +229,17 @@ export function createDayPriority(options: DayPriorityOptions, group: PriorityGr
         manual: item.priorityManual ?? false,
       })),
     }
-    if (!options.rank && !(await secrets.get(TYPESAFE_SECRET.category, TYPESAFE_SECRET.name)))
-      throw new Error(MISSING_TYPESAFE_KEY)
+    if (!options.rank && !(await model.hasKey())) throw missingDecisionKeyError(model.provider)
+    const rank = options.rank ?? createDayPrioritizer(model)
     const scores = await rank(evidence, AbortSignal.timeout(20_000))
     if (scores.length !== tasks.length || scores.some((score) => !Number.isFinite(score) || score < 0 || score > 4))
       throw new Error('Priority suggestions were incomplete.')
     // A late answer cannot publish against edited tasks, new overrides or a closed day.
     if ((await readOptional(file(ymd))) !== content || (await hasDaySummary(file(ymd)))) return
-    if ((await inputs(current, content)).revision !== fingerprint) return
+    if ((await inputs(current, content, model.model)).revision !== fingerprint) return
     const receipt: Receipt = {
       fingerprint,
-      model: JEV_MODEL,
+      model: model.model,
       snapshot: input.snapshot,
       order: saved?.order,
       scores: tasks.map((item, index) => {
@@ -252,7 +259,7 @@ export function createDayPriority(options: DayPriorityOptions, group: PriorityGr
       const release = hold(`prioritizing ${group}`)
       job = update(ymd, view)
         .catch((error: unknown) => {
-          const connection = error instanceof Error && error.message === MISSING_TYPESAFE_KEY
+          const connection = isDecisionMissingKeyError(error)
           warnings.set(ymd, {
             warning: connection
               ? `Connect TypeSafe to let Sky prioritize ${label}. Your saved order is still available.`

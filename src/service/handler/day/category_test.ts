@@ -1,6 +1,6 @@
 import { createSecret } from '#lib/secrets/marshal.ts'
 import { TestSecretsProvider } from '#lib/secrets/TestSecretsProvider.ts'
-import { createTypeSafeClient, JEV_MODEL } from '#shared/ai/typesafe/client.ts'
+import { decisionModel, decisionModelId } from '#shared/ai/decisions.ts'
 import type { AIUsageRecord } from '#shared/ai/usageLog.ts'
 import { assert, test } from '#test'
 import { createItemCategorizer, createItemCategoryRoutes, type ItemCategory } from './category.ts'
@@ -25,7 +25,7 @@ function fixture(hasKey = true) {
   const usage: AIUsageRecord[] = []
   const control = { response: () => Response.json(answer('Personal')) }
   const categorize = createItemCategorizer({
-    client: createTypeSafeClient({
+    model: decisionModel('default', {
       secrets: new TestSecretsProvider(hasKey ? { 'typesafe/main': createSecret('synthetic-key') } : {}),
       fetch: (async (_url, init) => {
         calls.push(JSON.parse(String(init?.body)))
@@ -64,8 +64,8 @@ test('day item suggestions ask the pinned Jev for one category and record usage'
       { category: 'Personal' },
       { category: 'Professional' },
       [
-        [JEV_MODEL, { text: 'Water the plants' }, ['day_category']],
-        [JEV_MODEL, { text: 'Prepare the Atlas proposal' }, ['day_category']],
+        [decisionModelId(), { text: 'Water the plants' }, ['day_category']],
+        [decisionModelId(), { text: 'Prepare the Atlas proposal' }, ['day_category']],
       ],
       [
         ['typesafe', 'jev-test', 100],

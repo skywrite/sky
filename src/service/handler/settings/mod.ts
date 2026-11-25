@@ -21,8 +21,13 @@ import {
 } from '#commands/all/audio/transcript/lib/models.ts'
 import type { WritingDraftStore } from '#lib/writingVoice/drafts.ts'
 import { DEFAULT_WRITING_VOICE_PROFILE } from '#lib/writingVoice/model.ts'
+import {
+  DECISION_PROFILES,
+  decisionRoleProfile,
+  getAllDecisionProfiles,
+  type DecisionProvider,
+} from '#shared/ai/decisions.ts'
 import { currentProfileName, type ModelProfile } from '#shared/ai/models.ts'
-import { JEV_MODEL } from '#shared/ai/typesafe/client.ts'
 import { ENV_OVERRIDES, remindersConfig } from '#shared/config/loader.ts'
 import type { GoogleAccountCategory, RemindersConfig, SkyConfig } from '#shared/config/types.ts'
 import type { PromptCatalog } from '#shared/prompts/catalog.ts'
@@ -101,7 +106,7 @@ const SECTIONS: ReadonlyArray<{ id: string; title: string; keys: string[]; group
     id: 'ai',
     title: 'AI',
     keys: ['ai.models.strong', 'ai.models.fast', 'ai.models.transcription', 'ai.writingVoiceProfile'],
-    groups: ['ai.profiles', 'ai.roles'],
+    groups: ['ai.profiles', 'ai.roles', 'ai.decisionProfiles', 'ai.decisionRoles'],
   },
   { id: 'web', title: 'Web', keys: ['web.theme', 'web.textSize', 'voice.voice'] },
   { id: 'slack', title: 'Slack', keys: ['slack.workspace'] },
@@ -248,9 +253,10 @@ export interface ProfileInput {
   options?: Record<string, unknown>
 }
 
-/** Decision model settings — currently locked to TypeSafe's pinned Jev release. */
+/** Decision model settings — resolved from the active decision profile, currently locked to TypeSafe Jev. */
 export interface DecisionSettings {
-  provider: 'typesafe'
+  profile?: string
+  provider: DecisionProvider
   providerLabel: string
   model: string
   locked: boolean
@@ -449,16 +455,20 @@ async function settingsData(host: SettingsHost): Promise<SettingsData> {
   const snapshot = host.load()
   const { config, home } = snapshot
   const [editors, memoryNotes, about] = await Promise.all([host.editors(), host.memoryNotes(), host.about()])
+  const decisionProfileName = decisionRoleProfile('default', config.ai)
+  const decisionProfile =
+    getAllDecisionProfiles(config.ai)[decisionProfileName] ?? DECISION_PROFILES['default-typesafe-jev']
   return {
     theme: config.web.theme ?? 'system',
     dayReview: { idleHours: config.dayReview?.idleHours ?? 5 },
     reminders: remindersConfig(config),
     decisions: {
-      provider: 'typesafe',
-      providerLabel: 'TypeSafe Jev',
-      model: JEV_MODEL,
+      profile: decisionProfileName,
+      provider: decisionProfile.provider,
+      providerLabel: decisionProfile.label ?? decisionProfile.model,
+      model: decisionProfile.model,
       locked: true,
-      configured: (await host.hasProviderKey?.('typesafe')) === true,
+      configured: (await host.hasProviderKey?.(decisionProfile.provider)) === true,
     },
     transcription: {
       value: transcriptionModelValue(config.ai.models.transcription),

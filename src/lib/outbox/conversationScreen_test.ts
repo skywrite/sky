@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import * as path from 'node:path'
 import { createSecret } from '#lib/secrets/marshal.ts'
 import { TestSecretsProvider } from '#lib/secrets/TestSecretsProvider.ts'
-import { createTypeSafeClient } from '#shared/ai/typesafe/client.ts'
+import { decisionModel } from '#shared/ai/decisions.ts'
 import type { AIUsageRecord } from '#shared/ai/usageLog.ts'
 import { assert, test } from '#test'
 import { AnalysisCache } from './analysisCache.ts'
@@ -49,7 +49,7 @@ async function fixture() {
   const usage: AIUsageRecord[] = []
   const control = { response: (_init?: RequestInit): Response | Promise<Response> => response() }
   const secrets = new TestSecretsProvider({ 'typesafe/main': createSecret('tsk-test-key') })
-  const client = createTypeSafeClient({
+  const model = decisionModel('default', {
     secrets,
     fetch: (async (_url, init) => {
       calls.push(JSON.parse(String(init?.body)))
@@ -57,7 +57,7 @@ async function fixture() {
     }) as typeof fetch,
   })
   const screen = (options: { ownerContext?: string; today?: string; initiatives?: OwnerInitiative[] } = {}) =>
-    createConversationScreen(client, {
+    createConversationScreen(model, {
       ownerContext: PROFILE,
       today: TODAY,
       sink: (record) => void usage.push(record),
@@ -69,7 +69,7 @@ async function fixture() {
     usage,
     control,
     secrets,
-    client,
+    model,
     screen,
     cache: new AnalysisCache(root, 'atlas'),
     clean: () => rm(root, { recursive: true, force: true }),
@@ -229,7 +229,7 @@ test('The new policy never reuses a historical negative screen without an aggreg
     const legacyVersion = hash(
       JSON.stringify([
         'conversation-screen-v1',
-        f.client.defaultModel,
+        f.model.model,
         PROFILE,
         [],
         TODAY,

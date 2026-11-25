@@ -1,5 +1,4 @@
-import { choice, noul, type TypeSafeClient } from '@typesafe-ai/sdk'
-import { askTypeSafe } from '#shared/ai/typesafe/systemOne.ts'
+import { choice, noul, type DecisionModel } from '#shared/ai/decisions.ts'
 import type { AIUsageRecord } from '#shared/ai/usageLog.ts'
 import type { ConversationMessage } from '#shared/models/Chat/type.d.ts'
 import truncate from '#shared/strings/truncate.ts'
@@ -36,7 +35,7 @@ export type TaskAdmission = () => Promise<TaskIntent>
 
 /** Lazy and cached for one turn: normal answers pay no extra model call. */
 export function taskAdmission(
-  client: TypeSafeClient,
+  model: DecisionModel,
   conversation: readonly ConversationMessage[],
   plan: ChatPlan | null,
   options: { sink?: (record: AIUsageRecord) => void | Promise<void> } = {},
@@ -46,8 +45,7 @@ export function taskAdmission(
 
   async function assess(): Promise<TaskIntent> {
     try {
-      const result = await askTypeSafe(
-        client,
+      const result = await model.ask(
         {
           state: {
             conversation: conversation

@@ -43,13 +43,18 @@ export const MISSING_TYPESAFE_KEY =
 /** Per attempt. Jev answers in well under a second; a page must not hang on a host that does not. */
 const TIMEOUT_MS = 10_000
 
-/** A client keyed from the keychain, asking `JEV_MODEL`. Builds at once; the key is read on the first request. */
-export function createTypeSafeClient(options: { secrets: SecretsProvider; fetch?: typeof fetch }): TypeSafeClient {
+/** A client keyed from the keychain, asking `model` (default `JEV_MODEL`). Builds at once; the key is read on the first request. */
+export function createTypeSafeClient(options: {
+  secrets: SecretsProvider
+  model?: string
+  baseURL?: string
+  fetch?: typeof fetch
+}): TypeSafeClient {
   return new TypeSafeClient({
     // The SDK insists on a key at construction; the real one rides in on the fetch.
     apiKey: 'keychain',
-    baseURL: TYPESAFE_BASE_URL,
-    defaultModel: JEV_MODEL,
+    baseURL: options.baseURL ?? TYPESAFE_BASE_URL,
+    defaultModel: options.model ?? JEV_MODEL,
     fetch: keychainAuthFetch(options.secrets, TYPESAFE_SECRET, MISSING_TYPESAFE_KEY, options.fetch),
     logLevel: 'off',
     timeout: TIMEOUT_MS,

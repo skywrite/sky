@@ -43,6 +43,7 @@ import type { SecretsProvider } from '#lib/secrets/SecretsProvider.ts'
 import { WRITING_DRAFT_CHAT_INSTRUCTIONS, writingDraftList, writingDraftTools } from '#lib/writingVoice/draftChat.ts'
 import { createWritingDrafts } from '#lib/writingVoice/runtime.ts'
 import { createWritingVoiceTools } from '#lib/writingVoice/tools.ts'
+import { decisionModel } from '#shared/ai/decisions.ts'
 import { logAIError } from '#shared/ai/errorLog.ts'
 import {
   aiModel,
@@ -54,7 +55,6 @@ import {
   roleProfile,
 } from '#shared/ai/models.ts'
 import { ratioFor } from '#shared/ai/tokenRatio.ts'
-import { createTypeSafeClient } from '#shared/ai/typesafe/client.ts'
 import type * as ConfigModule from '#shared/config.ts'
 import { readSkyConfigFile } from '#shared/config/loader.ts'
 import { exists } from '#shared/fs/mod.ts'
@@ -129,7 +129,7 @@ function contextPreflightFor(secrets: SecretsProvider, currentPlan: () => ChatPl
   let judge: Preflight | undefined
   return (message, recent, state) => {
     if (readSkyConfigFile()?.parsed.experimental?.contextPreflight !== true) return Promise.resolve(null)
-    judge ??= contextPreflight(createTypeSafeClient({ secrets }))
+    judge ??= contextPreflight(decisionModel('default', { secrets }))
     return judge(message, recent, { ...state, task: preflightTaskContext(currentPlan()) })
   }
 }
@@ -526,7 +526,7 @@ export function createChatHost(config: typeof ConfigModule, env: Record<string, 
               ? createTaskTools({
                   plan,
                   admit: taskAdmission(
-                    createTypeSafeClient({ secrets: context.secrets }),
+                    decisionModel('default', { secrets: context.secrets }),
                     hooks.context.conversation,
                     plan.plan,
                   ),

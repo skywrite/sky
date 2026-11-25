@@ -74,6 +74,7 @@ export interface ConfigView {
 }
 
 export interface DecisionSettings {
+  profile?: string
   provider: 'typesafe'
   providerLabel: string
   model: string

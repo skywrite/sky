@@ -1,6 +1,5 @@
-import { choice, type TypeSafeClient } from '@typesafe-ai/sdk'
 import { z } from 'zod'
-import { askTypeSafe } from '#shared/ai/typesafe/systemOne.ts'
+import { choice, type DecisionModel } from '#shared/ai/decisions.ts'
 import type { AIUsageRecord } from '#shared/ai/usageLog.ts'
 import type { StartFields } from './jobs.ts'
 
@@ -24,7 +23,7 @@ const questions = {
 
 /** A suggestion from the first three sentences; an unavailable judge must not stop the import preview. */
 export async function recordingCategory(
-  client: TypeSafeClient,
+  model: DecisionModel,
   transcript: string,
   options: { sink?: (record: AIUsageRecord) => void | Promise<void> } = {},
 ): Promise<StartFields['category'] | undefined> {
@@ -35,8 +34,7 @@ export async function recordingCategory(
     .trim()
   if (!opening) return undefined
   try {
-    const result = await askTypeSafe(
-      client,
+    const result = await model.ask(
       { state: { opening }, questions },
       { timeout: 3000, retry: { maxRetries: 0 }, sink: options.sink },
     )

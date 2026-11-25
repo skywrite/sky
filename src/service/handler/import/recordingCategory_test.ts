@@ -1,6 +1,6 @@
 import { createSecret } from '#lib/secrets/marshal.ts'
 import { TestSecretsProvider } from '#lib/secrets/TestSecretsProvider.ts'
-import { createTypeSafeClient } from '#shared/ai/typesafe/client.ts'
+import { decisionModel } from '#shared/ai/decisions.ts'
 import type { AIUsageRecord } from '#shared/ai/usageLog.ts'
 import { assert, test } from '#test'
 import { recordingCategory } from './recordingCategory.ts'
@@ -29,7 +29,7 @@ function fixture() {
     respond: (_signal?: AbortSignal | null): Response | Promise<Response> => response(answer('Personal')),
   }
   const secrets = new TestSecretsProvider({ 'typesafe/main': createSecret('tsk-test-key') })
-  const client = createTypeSafeClient({
+  const model = decisionModel('default', {
     secrets,
     fetch: (async (_url, init) => {
       calls.push(JSON.parse(String(init?.body)))
@@ -41,7 +41,7 @@ function fixture() {
     usage,
     control,
     secrets,
-    classify: (text: string) => recordingCategory(client, text, { sink: (record) => void usage.push(record) }),
+    classify: (text: string) => recordingCategory(model, text, { sink: (record) => void usage.push(record) }),
   }
 }
 

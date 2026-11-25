@@ -1,7 +1,4 @@
-import { choice, type TypeSafeClient } from '@typesafe-ai/sdk'
-import { KeychainSecretsProvider } from '#lib/secrets/KeychainSecretsProvider.ts'
-import { createTypeSafeClient } from '#shared/ai/typesafe/client.ts'
-import { askTypeSafe } from '#shared/ai/typesafe/systemOne.ts'
+import { choice, decisionModel, type DecisionModel } from '#shared/ai/decisions.ts'
 import type { AIUsageRecord } from '#shared/ai/usageLog.ts'
 import { keepHeadAndTail } from '#shared/models/Chat/enrich.ts'
 import { DayCategoryAnswer } from './messageDayCategory.ts'
@@ -31,14 +28,13 @@ const questions = {
 
 /** Returns only a day section. A failed request rejects, and the save's own category stands. */
 export function createChatDayCategorizer(options: {
-  client: TypeSafeClient
+  model: DecisionModel
   signal?: AbortSignal
   sink?: (record: AIUsageRecord) => void | Promise<void>
 }): CategorizeChatDay {
   return async (chat) => {
     options.signal?.throwIfAborted()
-    const result = await askTypeSafe(
-      options.client,
+    const result = await options.model.ask(
       {
         state: { title: chat.summary, conversation: keepHeadAndTail(chat.transcript, MAX_CONVERSATION_CHARS) },
         questions,
@@ -52,12 +48,7 @@ export function createChatDayCategorizer(options: {
   }
 }
 
-let notebookCategorizer: CategorizeChatDay | undefined
-
-/** A saved chat's day section, asked of Jev with the TypeSafe key in the keychain. */
+/** A saved chat's day section, resolved through the configured decision profile. */
 export function chatDayCategory(chat: ChatDayCategoryInput): Promise<ChatDayCategory> {
-  notebookCategorizer ??= createChatDayCategorizer({
-    client: createTypeSafeClient({ secrets: new KeychainSecretsProvider() }),
-  })
-  return notebookCategorizer(chat)
+  return createChatDayCategorizer({ model: decisionModel() })(chat)
 }

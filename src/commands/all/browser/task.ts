@@ -16,10 +16,10 @@ import { createTaskDir } from '#lib/browser/task/taskDir.ts'
 import { prepareBrowserUploads } from '#lib/browser/task/uploads.ts'
 import { PasswordManagerSettingsStore } from '#lib/credentials/passwordManagers.ts'
 import type { SecretsProvider } from '#lib/secrets/SecretsProvider.ts'
+import { decisionModel } from '#shared/ai/decisions.ts'
 import { hasKey } from '#shared/ai/keychainAuthFetch.ts'
 import { OPENAI_SECRET } from '#shared/ai/llm/openaiProvider.ts'
 import { aiModelByProfile, getProfile, resolveProfile, roleProfile } from '#shared/ai/models.ts'
-import { createTypeSafeClient } from '#shared/ai/typesafe/client.ts'
 import { readSkyConfigFile } from '#shared/config/loader.ts'
 import type { ChatEngineEvent } from '#shared/models/Chat/ChatEngine/mod.ts'
 import type { Attachment } from '#shared/models/Markdown/Document/attachment.ts'
@@ -264,7 +264,7 @@ export default class BrowserTaskCommand extends Command {
       try {
         jevResult = await runJevTask({
           objective,
-          ask: askWith(createTypeSafeClient({ secrets: context.secrets })),
+          ask: askWith(decisionModel('default', { secrets: context.secrets })),
           typingModel: language,
           adviserModel: language,
           readerModel: language,

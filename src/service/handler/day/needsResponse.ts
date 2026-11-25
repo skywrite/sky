@@ -11,7 +11,7 @@ import {
 } from '#lib/needsResponse/mod.ts'
 import { KeychainSecretsProvider } from '#lib/secrets/KeychainSecretsProvider.ts'
 import type { SecretsProvider } from '#lib/secrets/SecretsProvider.ts'
-import { createTypeSafeClient, TYPESAFE_SECRET } from '#shared/ai/typesafe/client.ts'
+import { decisionModel } from '#shared/ai/decisions.ts'
 import type * as Config from '#shared/config.ts'
 import type MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
 import { fetchNowSync } from '#shared/nbfs/mod.ts'
@@ -100,9 +100,9 @@ export function createServiceNeedsResponseHost(options: {
     now: () => Instant.fromEpochMilliseconds(fetchNowSync().epochMilliseconds),
     gmail,
     createScreen: async () => {
-      const hasKey = await secrets.get(TYPESAFE_SECRET.category, TYPESAFE_SECRET.name).catch(() => null)
-      if (!hasKey) return null
-      return createNeedsResponseScreen(createTypeSafeClient({ secrets }))
+      const model = decisionModel('default', { secrets })
+      if (!(await model.hasKey())) return null
+      return createNeedsResponseScreen(model)
     },
     openBeeper: async (chatId) => {
       try {

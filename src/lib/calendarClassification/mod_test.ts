@@ -4,7 +4,7 @@ import * as path from 'node:path'
 import type { CalendarEvent } from '#lib/google/calendar.ts'
 import { createSecret } from '#lib/secrets/marshal.ts'
 import { TestSecretsProvider } from '#lib/secrets/TestSecretsProvider.ts'
-import { createTypeSafeClient } from '#shared/ai/typesafe/client.ts'
+import { decisionModel } from '#shared/ai/decisions.ts'
 import type { AIUsageRecord } from '#shared/ai/usageLog.ts'
 import { assert, test } from '#test'
 import type { CalendarOwnerContext } from './context.ts'
@@ -55,7 +55,7 @@ async function fixture() {
     preparations: 0,
   }
   const secrets = new TestSecretsProvider({ 'typesafe/main': createSecret('tsk-test-key') })
-  const client = createTypeSafeClient({
+  const model = decisionModel('default', {
     secrets,
     fetch: (async (_url, init) => {
       calls.push(JSON.parse(String(init?.body)))
@@ -66,7 +66,7 @@ async function fixture() {
     classifyCalendarEvents(events, {
       dir,
       enabled,
-      client,
+      model,
       owner,
       prepare: async () => {
         control.preparations += 1
@@ -311,7 +311,7 @@ test('invalid answers and oversized evidence stay visible, but a partial guest l
     const missing = await classifyCalendarEvents([event('no-key')], {
       dir: f.dir,
       enabled: true,
-      client: createTypeSafeClient({ secrets: f.secrets }),
+      model: decisionModel('default', { secrets: f.secrets }),
       sink: () => {},
     })
     assert({

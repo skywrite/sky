@@ -1,4 +1,4 @@
-import { choice, noul } from '@typesafe-ai/sdk'
+import { choice, noul } from '#shared/ai/decisions.ts'
 import { type ActionRow, type ActionTable, describeRow } from './table.ts'
 
 // The questions Jev answers about a page, all in one request: which

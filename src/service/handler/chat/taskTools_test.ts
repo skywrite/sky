@@ -1,6 +1,8 @@
-import { TypeSafeClient } from '@typesafe-ai/sdk'
 import { CommandResult } from '#commands/mod.ts'
 import { browserTaskHost } from '#lib/browser/task/host.ts'
+import { createSecret } from '#lib/secrets/marshal.ts'
+import { TestSecretsProvider } from '#lib/secrets/TestSecretsProvider.ts'
+import { decisionModel } from '#shared/ai/decisions.ts'
 import { assert, test } from '#test'
 import { ChatPlanController } from './plan.ts'
 import { samplePlan } from './planTestHelpers.ts'
@@ -14,9 +16,8 @@ test('an email question cannot create a checklist or launch a browser even when 
   let decisions = 0
   let browsers = 0
   const bodies: Array<{ state: { conversation: unknown[] } }> = []
-  const client = new TypeSafeClient({
-    apiKey: 'test',
-    logLevel: 'off',
+  const model = decisionModel('default', {
+    secrets: new TestSecretsProvider({ 'typesafe/main': createSecret('test') }),
     fetch: (async (_input, init) => {
       decisions++
       bodies.push(JSON.parse(String(init?.body)))
@@ -41,7 +42,7 @@ test('an email question cannot create a checklist or launch a browser even when 
   const plan = controller()
   const tools = createTaskTools({
     plan,
-    admit: taskAdmission(client, conversation, null, { sink: () => {} }),
+    admit: taskAdmission(model, conversation, null, { sink: () => {} }),
     runBrowser: async () => {
       browsers++
       return CommandResult.success()
@@ -244,9 +245,8 @@ test('retrying one source continues an existing plan while questions and unrelat
     await plan.update(samplePlan())
     await plan.pause()
     let tracked = false
-    const client = new TypeSafeClient({
-      apiKey: 'test',
-      logLevel: 'off',
+    const model = decisionModel('default', {
+      secrets: new TestSecretsProvider({ 'typesafe/main': createSecret('test') }),
       fetch: (async () =>
         Response.json({
           model: 'test',
@@ -263,7 +263,7 @@ test('retrying one source continues an existing plan while questions and unrelat
           },
         })) as unknown as typeof fetch,
     })
-    const admit = taskAdmission(client, [{ role: 'user', content: scenario.request }], plan.plan, { sink: () => {} })
+    const admit = taskAdmission(model, [{ role: 'user', content: scenario.request }], plan.plan, { sink: () => {} })
     const tools = createTaskTools({
       plan,
       admit,
@@ -287,14 +287,13 @@ test('retrying one source continues an existing plan while questions and unrelat
 })
 
 test('an unavailable intent adviser does not become a prerequisite for browser access or plan creation', async () => {
-  const client = new TypeSafeClient({
-    apiKey: 'test',
-    logLevel: 'off',
+  const model = decisionModel('default', {
+    secrets: new TestSecretsProvider({ 'typesafe/main': createSecret('test') }),
     fetch: (async () => new Response('{}', { status: 401 })) as unknown as typeof fetch,
   })
   const plan = controller()
   const admit = taskAdmission(
-    client,
+    model,
     [{ role: 'user', content: 'Collect the example tax documents and check the folder.' }],
     null,
     { sink: () => {} },

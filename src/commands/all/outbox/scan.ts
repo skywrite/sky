@@ -11,7 +11,7 @@ import { scanOutbox } from '#lib/outbox/scan.ts'
 import { createTriage } from '#lib/outbox/triage.ts'
 import { OutboxError, type ScanReport } from '#lib/outbox/types.ts'
 import { createWritingVoice } from '#lib/writingVoice/runtime.ts'
-import { createTypeSafeClient } from '#shared/ai/typesafe/client.ts'
+import { decisionModel } from '#shared/ai/decisions.ts'
 
 declare module '#commands/lib/core/CommandTypesRegistry.ts' {
   interface CommandTypesRegistry {
@@ -46,7 +46,7 @@ export default class OutboxScan extends Command {
           ownerContext,
           initiatives,
           today: context.systemNow.date,
-          screen: createConversationScreen(createTypeSafeClient({ secrets: context.secrets }), {
+          screen: createConversationScreen(decisionModel('default', { secrets: context.secrets }), {
             ownerContext,
             initiatives,
             today: context.systemNow.date,

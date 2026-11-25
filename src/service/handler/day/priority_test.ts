@@ -4,7 +4,7 @@ import { setPlanOrder } from '#lib/nbfs/planOrder.ts'
 import { priorityOrderRows, type PriorityGroup } from '#lib/nbfs/priorityOrder.ts'
 import { createSecret } from '#lib/secrets/marshal.ts'
 import { TestSecretsProvider } from '#lib/secrets/TestSecretsProvider.ts'
-import { createTypeSafeClient } from '#shared/ai/typesafe/client.ts'
+import { decisionModel } from '#shared/ai/decisions.ts'
 import type { AIUsageRecord } from '#shared/ai/usageLog.ts'
 import { dayFile } from '#shared/nbfs/mod.ts'
 import { assert, test } from '#test'
@@ -147,7 +147,7 @@ test('Jev rates every to-do against contextual evidence through the metered clie
   const calls: Array<{ state: PriorityEvidence; questions: Record<string, unknown> }> = []
   const usage: AIUsageRecord[] = []
   let malformed = false
-  const client = createTypeSafeClient({
+  const model = decisionModel('default', {
     secrets: new TestSecretsProvider({ 'typesafe/main': createSecret('tsk-test-key') }),
     fetch: (async (_url, init) => {
       calls.push(JSON.parse(String(init?.body)))
@@ -169,7 +169,7 @@ test('Jev rates every to-do against contextual evidence through the metered clie
       })
     }) as typeof fetch,
   })
-  const rank = createDayPrioritizer(client, (record) => {
+  const rank = createDayPrioritizer(model, (record) => {
     usage.push(record)
   })
   const scores = await rank(evidence)

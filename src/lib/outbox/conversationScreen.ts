@@ -1,7 +1,6 @@
 import * as path from 'node:path'
-import { noul, type TypeSafeClient } from '@typesafe-ai/sdk'
 import { z } from 'zod'
-import { askTypeSafe } from '#shared/ai/typesafe/systemOne.ts'
+import { noul, type DecisionModel } from '#shared/ai/decisions.ts'
 import type { AIUsageRecord } from '#shared/ai/usageLog.ts'
 import AboutMe from '#shared/models/AboutMe/document/mod.ts'
 import { readPromptFile } from '#shared/prompts/load.ts'
@@ -43,7 +42,7 @@ export type ConversationScreen = {
 
 /** A negative screen saves reading work; it never resolves or replaces an existing request ledger. */
 export function createConversationScreen(
-  client: TypeSafeClient,
+  model: DecisionModel,
   options: {
     ownerContext: string
     initiatives?: OwnerInitiative[]
@@ -88,7 +87,7 @@ export function createConversationScreen(
     hash(
       JSON.stringify([
         'conversation-screen-v2',
-        client.defaultModel,
+        model.model,
         options.ownerContext,
         initiatives,
         options.today,
@@ -160,8 +159,7 @@ export function createConversationScreen(
       } else {
         const started = performance.now()
         try {
-          const result = await askTypeSafe(
-            client,
+          const result = await model.ask(
             { state, questions: await questions },
             { timeout: SCREEN_TIMEOUT_MS, retry: { maxRetries: 0 }, sink: options.sink },
           )

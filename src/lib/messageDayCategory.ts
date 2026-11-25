@@ -1,9 +1,7 @@
-import { choice, type TypeSafeClient } from '@typesafe-ai/sdk'
 import { z } from 'zod'
 import { readCalendarOwnerContext, type CalendarOwnerContext } from '#lib/calendarClassification/context.ts'
 import type { SecretsProvider } from '#lib/secrets/SecretsProvider.ts'
-import { createTypeSafeClient } from '#shared/ai/typesafe/client.ts'
-import { askTypeSafe } from '#shared/ai/typesafe/systemOne.ts'
+import { choice, decisionModel, type DecisionModel } from '#shared/ai/decisions.ts'
 import type { AIUsageRecord } from '#shared/ai/usageLog.ts'
 import { normalizeName } from '#shared/models/Store/normalize.ts'
 import { handleKey, recordHandleKeys } from '#shared/models/Store/PeopleStore/handles.ts'
@@ -93,7 +91,7 @@ function relationshipProfiles(names: string[], context: RelationshipContext) {
 }
 
 type ClassifierOptions = {
-  client: TypeSafeClient
+  model: DecisionModel
   context: () => Promise<RelationshipContext>
   signal?: AbortSignal
   warn?: (message: string) => void
@@ -120,8 +118,7 @@ export function createMessageDayCategorizer(options: ClassifierOptions): Categor
       }
       // Do not cut away relationship evidence and treat a partial exchange as clear business context.
       if (JSON.stringify(state).length > MAX_INPUT_CHARS) return 'Personal'
-      const result = await askTypeSafe(
-        options.client,
+      const result = await options.model.ask(
         { state, questions },
         {
           timeout: 10_000,
@@ -151,7 +148,7 @@ export function notebookMessageDayCategorizer(
   options: { people?: PeopleStore | null; signal?: AbortSignal; warn?: (message: string) => void } = {},
 ): CategorizeMessageDay {
   return createMessageDayCategorizer({
-    client: createTypeSafeClient({ secrets }),
+    model: decisionModel('default', { secrets }),
     signal: options.signal,
     warn: options.warn,
     context: async () => ({

@@ -1,6 +1,6 @@
 import { createSecret } from '#lib/secrets/marshal.ts'
 import { TestSecretsProvider } from '#lib/secrets/TestSecretsProvider.ts'
-import { createTypeSafeClient } from '#shared/ai/typesafe/client.ts'
+import { decisionModel } from '#shared/ai/decisions.ts'
 import type { AIUsageRecord } from '#shared/ai/usageLog.ts'
 import PeopleStore from '#shared/models/Store/PeopleStore/mod.ts'
 import { assert, test } from '#test'
@@ -43,7 +43,7 @@ async function fixture() {
   const usage: AIUsageRecord[] = []
   const warnings: string[] = []
   const control = { response: () => Response.json(answer('Personal')), contexts: 0 }
-  const client = createTypeSafeClient({
+  const model = decisionModel('default', {
     secrets: new TestSecretsProvider({ 'typesafe/main': createSecret('synthetic-key') }),
     fetch: (async (_url, init) => {
       calls.push(JSON.parse(String(init?.body)))
@@ -51,7 +51,7 @@ async function fixture() {
     }) as typeof fetch,
   })
   const categorize = createMessageDayCategorizer({
-    client,
+    model,
     context: async () => {
       control.contexts++
       return { people, owner: { name: 'Jane Doe', family: 'Alex Doe is my spouse.' } }
@@ -163,7 +163,7 @@ test('other networks keep their default and oversized iMessages are never judged
 test('an unconfigured notebook can capture iMessages without a TypeSafe key', async () => {
   let requests = 0
   const categorize = createMessageDayCategorizer({
-    client: createTypeSafeClient({
+    model: decisionModel('default', {
       secrets: new TestSecretsProvider(),
       fetch: (async (_url, _init) => {
         requests++

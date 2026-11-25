@@ -1,19 +1,18 @@
 import { createHash } from 'node:crypto'
 import * as path from 'node:path'
-import {
-  APITimeoutError,
-  AuthenticationError,
-  choice,
-  PermissionDeniedError,
-  type TypeSafeClient,
-} from '@typesafe-ai/sdk'
 import { z } from 'zod'
 import { FILE_ABOUT_ME } from '#config'
 import type { CalendarEvent } from '#lib/google/calendar.ts'
 import { readJson, writeJson } from '#lib/jobs/files.ts'
 import type { SecretsProvider } from '#lib/secrets/SecretsProvider.ts'
-import { createTypeSafeClient, MISSING_TYPESAFE_KEY, TYPESAFE_SECRET } from '#shared/ai/typesafe/client.ts'
-import { askTypeSafe } from '#shared/ai/typesafe/systemOne.ts'
+import {
+  choice,
+  decisionModel,
+  isDecisionAuthError,
+  isDecisionTimeoutError,
+  missingDecisionKeyError,
+  type DecisionModel,
+} from '#shared/ai/decisions.ts'
 import type { AIUsageRecord } from '#shared/ai/usageLog.ts'
 import { loadSkyConfig } from '#shared/config/loader.ts'
 import { readCalendarOwnerContext, type CalendarOwnerContext } from './context.ts'
@@ -85,7 +84,7 @@ export async function classifyCalendarEvents(
   options: {
     dir: string
     enabled: boolean
-    client: TypeSafeClient
+    model: DecisionModel
     owner?: CalendarOwnerContext
     /** Credential lookup has its own deadline and must finish before the model request's timeout starts. */
     prepare?: () => Promise<void>
@@ -136,7 +135,7 @@ export async function classifyCalendarEvents(
         key,
         state,
         questions,
-        options.client.defaultModel,
+        options.model.model,
         MIN_PROBABILITY,
       ])
       const file = path.join(options.dir, 'cache', `${fingerprint}.json`)
@@ -149,8 +148,7 @@ export async function classifyCalendarEvents(
         if (!request) {
           request = (async () => {
             await (preparation ??= options.prepare?.() ?? Promise.resolve())
-            const response = await askTypeSafe(
-              options.client,
+            const response = await options.model.ask(
               { state, questions },
               {
                 timeout: 30_000,
@@ -181,14 +179,11 @@ export async function classifyCalendarEvents(
       return result(confident ? answer.choice : 'uncertain', 'automatic')
     } catch (error) {
       unavailable = true
-      warning =
-        error instanceof APITimeoutError
-          ? 'Calendar sorting timed out. Unsorted events remain in Meetings.'
-          : error instanceof AuthenticationError ||
-              error instanceof PermissionDeniedError ||
-              (error instanceof Error && error.message === MISSING_TYPESAFE_KEY)
-            ? 'Connect TypeSafe in Settings to sort calendar events.'
-            : 'Calendar sorting is temporarily unavailable. Unsorted events remain in Meetings.'
+      warning = isDecisionTimeoutError(error)
+        ? 'Calendar sorting timed out. Unsorted events remain in Meetings.'
+        : isDecisionAuthError(error)
+          ? 'Connect TypeSafe in Settings to sort calendar events.'
+          : 'Calendar sorting is temporarily unavailable. Unsorted events remain in Meetings.'
       return result('uncertain', 'fallback')
     }
   }
@@ -207,13 +202,14 @@ export async function classifyCalendarEvents(
 /** Read the switch afresh: changing it applies to the next schedule or meeting check without restarting. */
 export async function classifyDayEvents(events: CalendarEvent[], secrets: SecretsProvider) {
   const config = loadSkyConfig()
+  const model = decisionModel('default', { secrets })
   return classifyCalendarEvents(events, {
     dir: classificationDir(config.userDataDir),
     enabled: config.calendar?.classifyEvents === true,
-    client: createTypeSafeClient({ secrets }),
+    model,
     owner: config.calendar?.classifyEvents === true ? await readCalendarOwnerContext(FILE_ABOUT_ME) : undefined,
     prepare: async () => {
-      if (!(await secrets.get(TYPESAFE_SECRET.category, TYPESAFE_SECRET.name))) throw new Error(MISSING_TYPESAFE_KEY)
+      if (!(await model.hasKey())) throw missingDecisionKeyError(model.provider)
     },
   })
 }

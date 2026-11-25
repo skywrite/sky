@@ -1,6 +1,6 @@
 ---
 created: 2026-09-01
-updated: 2026-11-22
+updated: 2026-11-24
 ---
 
 # Model registry — roles, profiles, providers
@@ -122,25 +122,27 @@ images and files. OpenAI's registry provider (`llm/openaiProvider.ts`) supplies
 the scoped counting fetch; the contract and fallback behavior live in
 [Chat request fitting](../../models/Chat/docs/README.md#fitting-a-conversation-to-its-model).
 
-## Decisions: TypeSafe's Jev
+## Decisions: profiles and roles
 
-`typesafe/client.ts` is a different modality and is not in the registry:
-no profile, no role. TypeSafe's Jev answers typed questions about a state
-— pick one of these labels, rate on this rubric, yes or no — with
-calibrated probabilities, and never writes text; a language-model call
-site cannot be pointed at it. Its key is the keychain entry
-`typesafe/main`, stored from Settings → Connections once TypeSafe has
-accepted it, or blind with `sky secrets:set typesafe main`, and read on
-the first request through the same keychain fetch as Cerebras. A caller
-builds its client there and asks through `typesafe/systemOne.ts`, which
-records each request in the usage log under provider `typesafe`. Every
-question names the release in `JEV_MODEL`, never an alias: TypeSafe's
-aliases move the day a release ships, and every gate in Sky was measured
-on the pinned release, so the pin moves on purpose, after a replay. The
-first caller is the web chat's experimental preflight; see the
-[2026-09-17](2026-09-17-typesafe-jev.md) note.
-The [Outbox conversation screen](../../../lib/outbox/docs/README.md#finding-responses-and-decisions)
-also uses Jev to skip clearly irrelevant conversations before request extraction.
+`decisions.ts` is the sibling registry for decision models — the same three-tier
+swap model as `models.ts` (`role -> profile -> provider`), kept separate from
+language models because decision models answer typed questions (`choice`,
+`score`, `noul`) about a state with calibrated probabilities and never write
+text. Call sites resolve through `decisionModel('default')` (built-in preset
+`default-typesafe-jev` in `DECISION_PROFILES`, backed by TypeSafe's pinned
+`JEV_MODEL` via `typesafe/client.ts` and `typesafe/systemOne.ts`). Config keys
+`ai.decisionProfiles` and `ai.decisionRoles` mirror `ai.profiles` and
+`ai.roles` and are read fresh per resolution.
+
+TypeSafe's key lives in the keychain entry `typesafe/main`, stored from
+Settings → Connections once TypeSafe has accepted it, or blind with
+`sky secrets:set typesafe main`, and read on the first request through the same
+keychain fetch as Cerebras. Every request records usage under provider
+`typesafe`. Every built-in profile pins an explicit release rather than a
+moving vendor alias (`jev-latest`, `jev-preview`), because Sky's gates were
+measured on the pinned release; move the pin on purpose after replaying
+recorded verdicts. See the [2026-09-17](2026-09-17-typesafe-jev.md) note and
+[Outbox conversation screen](../../../lib/outbox/docs/README.md#finding-responses-and-decisions).
 
 ## Catalog policy
 

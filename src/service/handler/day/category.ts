@@ -1,10 +1,7 @@
-import { choice, type TypeSafeClient } from '@typesafe-ai/sdk'
 import { Hono } from 'hono'
 import { bodyLimit } from 'hono/body-limit'
 import { DayCategoryAnswer } from '#lib/messageDayCategory.ts'
-import { KeychainSecretsProvider } from '#lib/secrets/KeychainSecretsProvider.ts'
-import { createTypeSafeClient } from '#shared/ai/typesafe/client.ts'
-import { askTypeSafe } from '#shared/ai/typesafe/systemOne.ts'
+import { choice, decisionModel, type DecisionModel } from '#shared/ai/decisions.ts'
 import type { AIUsageRecord } from '#shared/ai/usageLog.ts'
 import isDay from './isDay.ts'
 import { bodyOf } from './itemContext.ts'
@@ -25,13 +22,12 @@ const questions = {
 }
 
 export function createItemCategorizer(options: {
-  client: TypeSafeClient
+  model: DecisionModel
   sink?: (record: AIUsageRecord) => void | Promise<void>
 }): CategorizeItem {
   return async (text, signal) => {
     signal?.throwIfAborted()
-    const result = await askTypeSafe(
-      options.client,
+    const result = await options.model.ask(
       { state: { text }, questions },
       { timeout: 3000, retry: { maxRetries: 0 }, signal, sink: options.sink },
     )
@@ -39,13 +35,7 @@ export function createItemCategorizer(options: {
   }
 }
 
-let notebookCategorizer: CategorizeItem | undefined
-const categorizeItem: CategorizeItem = (text, signal) => {
-  notebookCategorizer ??= createItemCategorizer({
-    client: createTypeSafeClient({ secrets: new KeychainSecretsProvider() }),
-  })
-  return notebookCategorizer(text, signal)
-}
+const categorizeItem: CategorizeItem = (text, signal) => createItemCategorizer({ model: decisionModel() })(text, signal)
 
 /** A draft suggestion only: no day file is read or written, and no planning lock is held. */
 export function createItemCategoryRoutes(categorize: CategorizeItem = categorizeItem): Hono {

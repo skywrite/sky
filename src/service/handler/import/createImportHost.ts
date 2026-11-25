@@ -27,8 +27,8 @@ import { probeMedia, runFfmpeg } from '#lib/media/ffmpeg/mod.ts'
 import { imageSize } from '#lib/media/image/mod.ts'
 import { readAudioHeader } from '#lib/media/readAudioHeader.ts'
 import { KeychainSecretsProvider } from '#lib/secrets/KeychainSecretsProvider.ts'
+import { decisionModel } from '#shared/ai/decisions.ts'
 import { aiModel } from '#shared/ai/models.ts'
-import { createTypeSafeClient } from '#shared/ai/typesafe/client.ts'
 import type * as ConfigModule from '#shared/config.ts'
 import { loadSkyConfig } from '#shared/config/loader.ts'
 import { readTextFile } from '#shared/fs/mod.ts'
@@ -130,7 +130,6 @@ export function filedPaths(
 
 export function createImportHost(config: typeof ConfigModule, env: Record<string, string>): ImportRoutesOptions {
   const secrets = new KeychainSecretsProvider()
-  const typeSafe = createTypeSafeClient({ secrets })
 
   const read: ImportRoutesOptions['read'] = async ({ path: filePath, name, size }) => {
     const source = sourceOf(name, await readAudioHeader(filePath))
@@ -196,7 +195,10 @@ export function createImportHost(config: typeof ConfigModule, env: Record<string
   const listen = async (filePath: string, jobDir: string): Promise<Listen | null> => {
     const heard = await hear(filePath, jobDir)
     if (!heard) return null
-    const [kind, category] = await Promise.all([classify(heard), recordingCategory(typeSafe, heard)])
+    const [kind, category] = await Promise.all([
+      classify(heard),
+      recordingCategory(decisionModel('default', { secrets }), heard),
+    ])
     return { kind, opening: opening(heard), guess: GUESS[kind], category }
   }
 

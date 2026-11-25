@@ -46,7 +46,8 @@ Pages:
   remain visible, and accepting a suggestion changes the draft until Save.
   The existing memory count and notebook link live here too.
 - **AI → Decisions** — `/settings/ai/decisions`: decision provider, pinned model,
-  and TypeSafe API key availability. Currently locked to TypeSafe (`JEV_MODEL`).
+  and TypeSafe API key availability. Backed by the `default` decision role
+  (`default-typesafe-jev` in `_shared-ts/ai/decisions.ts`), currently locked to TypeSafe Jev.
 - **AI → Audio transcription** — `/settings/ai/transcription`: provider, model,
   upload limit, and API key availability. Selecting MacWhisper loads its
   installed local models, with refresh and setup guidance. Saves to `ai.models.transcription`;

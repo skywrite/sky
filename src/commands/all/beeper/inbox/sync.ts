@@ -17,7 +17,7 @@ import type { BeeperSyncResult } from '#lib/beeper/mod.ts'
 import { openMacSenderLookup } from '#lib/macMessages/mod.ts'
 import probeMedia from '#lib/media/ffmpeg/probeMedia.ts'
 import { notebookMessageDayCategorizer } from '#lib/messageDayCategory.ts'
-import { createTypeSafeClient } from '#shared/ai/typesafe/client.ts'
+import { decisionModel } from '#shared/ai/decisions.ts'
 import { readTextFile } from '#shared/fs/mod.ts'
 import { AboutMeDocument } from '#shared/models/AboutMe/mod.ts'
 import PeopleStore from '#shared/models/Store/PeopleStore/mod.ts'
@@ -101,7 +101,7 @@ export default class BeeperInboxSyncTask extends Command {
         chatLimit: args.limit,
         names: notebookSenderNames(people, await openMacSenderLookup()),
         screenFirstContactPitch: createFirstContactPitchScreen({
-          client: createTypeSafeClient({ secrets }),
+          model: decisionModel('default', { secrets }),
           signal: context.signal,
         }),
         categorizeIMessage: notebookMessageDayCategorizer({ DIR_PEOPLE, DIR_PEOPLE_OLD, FILE_ABOUT_ME }, secrets, {

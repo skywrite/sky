@@ -1,6 +1,5 @@
-import { noul, type TypeSafeClient } from '@typesafe-ai/sdk'
 import { z } from 'zod'
-import { askTypeSafe } from '#shared/ai/typesafe/systemOne.ts'
+import { noul, type DecisionModel } from '#shared/ai/decisions.ts'
 import type { AIUsageRecord } from '#shared/ai/usageLog.ts'
 import type { NeedsResponseScreen, NeedsResponseScreenVerdict } from './types.ts'
 
@@ -27,16 +26,16 @@ const QUESTIONS = {
 }
 
 /**
- * Fast Jev-powered classifier for Needs Response.
+ * Fast decision-model classifier for Needs Response.
  *
- * Returns `null` when TypeSafe is unavailable so a transient outage degrades cleanly
+ * Returns `null` when the decision provider is unavailable so a transient outage degrades cleanly
  * without blocking Today or wiping previously cached items.
  */
 export function createNeedsResponseScreen(
-  client: TypeSafeClient,
+  model: DecisionModel,
   sink?: (record: AIUsageRecord) => void | Promise<void>,
 ): NeedsResponseScreen {
-  const version = `${SCREEN_POLICY_VERSION}:${client.defaultModel}`
+  const version = `${SCREEN_POLICY_VERSION}:${model.model}`
   let unavailable = false
 
   return {
@@ -44,8 +43,7 @@ export function createNeedsResponseScreen(
     assess: async ({ candidate, ownerName, today }): Promise<NeedsResponseScreenVerdict | null> => {
       if (unavailable) return null
       try {
-        const response = await askTypeSafe(
-          client,
+        const response = await model.ask(
           {
             state: {
               today,

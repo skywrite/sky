@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import * as path from 'node:path'
 import { createSecret } from '#lib/secrets/marshal.ts'
 import { TestSecretsProvider } from '#lib/secrets/TestSecretsProvider.ts'
-import { createTypeSafeClient } from '#shared/ai/typesafe/client.ts'
+import { decisionModel } from '#shared/ai/decisions.ts'
 import { exists } from '#shared/fs/mod.ts'
 import { assert, test } from '#test'
 import { loadBeeperSyncState, markKnown, syncBeeper, type BeeperSyncOptions } from './capture.ts'
@@ -44,7 +44,7 @@ async function fixture() {
     scores: [0.99, 0.99, 0.01],
     fail: false,
   }
-  const client = createTypeSafeClient({
+  const model = decisionModel('default', {
     secrets: new TestSecretsProvider({ 'typesafe/main': createSecret('synthetic-key') }),
     fetch: (async (_url, _init) => {
       control.requests++
@@ -68,7 +68,7 @@ async function fixture() {
     dayTimezone: async () => 'UTC',
     now: '2026-03-11T10:00:00Z',
     ownerName: 'Jane Doe',
-    screenFirstContactPitch: createFirstContactPitchScreen({ client, sink: () => {} }),
+    screenFirstContactPitch: createFirstContactPitchScreen({ model, sink: () => {} }),
     client: {
       accounts: async () => [{ accountID: 'telegram', network: 'Telegram', user: { id: 'me', fullName: 'Jane Doe' } }],
       searchChats: async (params) => ({

@@ -1,6 +1,6 @@
 import { createSecret } from '#lib/secrets/marshal.ts'
 import { TestSecretsProvider } from '#lib/secrets/TestSecretsProvider.ts'
-import { createTypeSafeClient } from '#shared/ai/typesafe/client.ts'
+import { decisionModel } from '#shared/ai/decisions.ts'
 import type { AIUsageRecord } from '#shared/ai/usageLog.ts'
 import { assert, test } from '#test'
 import { createChatDayCategorizer, type ChatDayCategoryInput } from './chatDayCategory.ts'
@@ -31,7 +31,7 @@ function fixture(signal?: AbortSignal) {
   const control = { response: () => Response.json(answer('Personal')) }
   const categorize = createChatDayCategorizer({
     signal,
-    client: createTypeSafeClient({
+    model: decisionModel('default', {
       secrets: new TestSecretsProvider({ 'typesafe/main': createSecret('synthetic-key') }),
       fetch: (async (_url, init) => {
         calls.push(JSON.parse(String(init?.body)))
@@ -140,7 +140,7 @@ test('a long chat is judged on its opening and ending', async () => {
 test('without a Jev key, categorizing rejects without a request', async () => {
   let requests = 0
   const categorize = createChatDayCategorizer({
-    client: createTypeSafeClient({
+    model: decisionModel('default', {
       secrets: new TestSecretsProvider({}),
       fetch: (async (_url, _init) => {
         requests++

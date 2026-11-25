@@ -1,7 +1,6 @@
-import { score, type TypeSafeClient } from '@typesafe-ai/sdk'
 import { z } from 'zod'
 import type { PriorityGroup } from '#lib/nbfs/priorityOrder.ts'
-import { askTypeSafe } from '#shared/ai/typesafe/systemOne.ts'
+import { score, type DecisionModel } from '#shared/ai/decisions.ts'
 import type { AIUsageRecord } from '#shared/ai/usageLog.ts'
 
 export interface PriorityEvidence {
@@ -57,7 +56,7 @@ export const MAX_PRIORITY_ITEMS = 100
 export const MAX_PRIORITY_EVIDENCE_CHARS = 60_000
 
 export function createDayPrioritizer(
-  client: TypeSafeClient,
+  model: DecisionModel,
   sink?: (record: AIUsageRecord) => void | Promise<void>,
 ): PrioritizeDayItems {
   return async (evidence, signal) => {
@@ -75,8 +74,7 @@ export function createDayPrioritizer(
         ),
       ]),
     )
-    const response = await askTypeSafe(
-      client,
+    const response = await model.ask(
       { state: { ...evidence }, questions },
       {
         timeout: 15_000,

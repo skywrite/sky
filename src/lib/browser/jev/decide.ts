@@ -1,5 +1,4 @@
-import type { TypeSafeClient } from '@typesafe-ai/sdk'
-import { askTypeSafe } from '#shared/ai/typesafe/systemOne.ts'
+import type { DecisionModel } from '#shared/ai/decisions.ts'
 import { jevQuestions, type Operation, TARGET_QUESTION } from './questions.ts'
 import { type ActionRow, type ActionTable, describeRow } from './table.ts'
 
@@ -68,9 +67,9 @@ export class JevAnswerError extends Error {
   }
 }
 
-/** Jev over a client, as the loop calls it. */
-export function askWith(client: TypeSafeClient): AskJev {
-  return (request) => askTypeSafe(client, request as never) as unknown as Promise<LooseResult>
+/** Decision model over the shared registry, as the browser loop calls it. */
+export function askWith(model: DecisionModel): AskJev {
+  return (request) => model.ask(request as never) as unknown as Promise<LooseResult>
 }
 
 function validChoice(name: string, answer: LooseAnswer | undefined, criteria: Record<string, unknown>): string {

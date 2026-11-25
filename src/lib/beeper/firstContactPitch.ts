@@ -1,7 +1,6 @@
 import { createHash } from 'node:crypto'
-import { noul, type TypeSafeClient } from '@typesafe-ai/sdk'
 import { z } from 'zod'
-import { askTypeSafe } from '#shared/ai/typesafe/systemOne.ts'
+import { noul, type DecisionModel } from '#shared/ai/decisions.ts'
 import type { AIUsageRecord } from '#shared/ai/usageLog.ts'
 import type { BeeperMessage } from './client.ts'
 import { beeperText } from './text.ts'
@@ -71,7 +70,7 @@ const unavailableNote =
   'First-time pitch screening is unavailable; messages follow the other saving rules. Check TypeSafe under Settings → Connections.'
 
 export function createFirstContactPitchScreen(options: {
-  client: TypeSafeClient
+  model: DecisionModel
   signal?: AbortSignal
   sink?: (record: AIUsageRecord) => void | Promise<void>
 }): FirstContactPitchScreen {
@@ -110,22 +109,14 @@ export function createFirstContactPitchScreen(options: {
       }
     const key = createHash('sha256')
       .update(
-        JSON.stringify([
-          'first-contact-pitch-v1',
-          options.client.defaultModel,
-          questions,
-          HOLD_AT,
-          MAX_UNCERTAINTY,
-          state,
-        ]),
+        JSON.stringify(['first-contact-pitch-v1', options.model.model, questions, HOLD_AT, MAX_UNCERTAINTY, state]),
       )
       .digest('hex')
     let receipt = prior?.key === key ? prior : undefined
     if (!receipt) {
       if (unavailable) return { hold: false, note: unavailableNote }
       try {
-        const result = await askTypeSafe(
-          options.client,
+        const result = await options.model.ask(
           { state, questions },
           {
             timeout: 3000,

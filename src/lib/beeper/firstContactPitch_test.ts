@@ -1,6 +1,6 @@
 import { createSecret } from '#lib/secrets/marshal.ts'
 import { TestSecretsProvider } from '#lib/secrets/TestSecretsProvider.ts'
-import { createTypeSafeClient } from '#shared/ai/typesafe/client.ts'
+import { decisionModel } from '#shared/ai/decisions.ts'
 import type { AIUsageRecord } from '#shared/ai/usageLog.ts'
 import { assert, test } from '#test'
 import {
@@ -46,7 +46,7 @@ function fixture(signal?: AbortSignal) {
   const calls: { state: { messages: { text: string }[] }; questions: unknown }[] = []
   const usage: AIUsageRecord[] = []
   const control = { response: () => Response.json(answer()) }
-  const client = createTypeSafeClient({
+  const model = decisionModel('default', {
     secrets: new TestSecretsProvider({ 'typesafe/main': createSecret('synthetic-key') }),
     fetch: (async (_url, init) => {
       calls.push(JSON.parse(String(init?.body)))
@@ -57,9 +57,9 @@ function fixture(signal?: AbortSignal) {
     calls,
     usage,
     control,
-    client,
+    model,
     screen: createFirstContactPitchScreen({
-      client,
+      model,
       signal,
       sink: (record) => {
         usage.push(record)
@@ -117,11 +117,7 @@ test('pitch receipts avoid repeat model calls and expire when evidence or model 
   }
   const changed = await f.screen(revised, first.receipt)
   const otherModel = createFirstContactPitchScreen({
-    client: {
-      ...f.client,
-      defaultModel: 'different-model',
-      systemOne: f.client.systemOne.bind(f.client),
-    } as typeof f.client,
+    model: { ...f.model, model: 'different-model' },
     sink: () => {},
   })
   await otherModel(input, first.receipt)

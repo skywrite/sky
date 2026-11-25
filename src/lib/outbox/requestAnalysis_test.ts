@@ -5,7 +5,7 @@ import { MockLanguageModelV4 } from 'ai/test'
 import { createSecret } from '#lib/secrets/marshal.ts'
 import { TestSecretsProvider } from '#lib/secrets/TestSecretsProvider.ts'
 import type { VoiceWriter } from '#lib/writingVoice/types.ts'
-import { createTypeSafeClient } from '#shared/ai/typesafe/client.ts'
+import { decisionModel } from '#shared/ai/decisions.ts'
 import Document from '#shared/models/Markdown/Document/mod.ts'
 import { resolveTimeRef } from '#shared/nbfs/timeRef.ts'
 import { assert, test } from '#test'
@@ -221,7 +221,7 @@ function screening() {
     fail: false,
     beforeReply: async () => {},
   }
-  const client = createTypeSafeClient({
+  const model = decisionModel('default', {
     secrets: new TestSecretsProvider({ 'typesafe/main': createSecret('tsk-test-key') }),
     fetch: (async (_url, init) => {
       calls.push(JSON.parse(String(init?.body)))
@@ -255,7 +255,7 @@ function screening() {
     calls,
     control,
     screen: () =>
-      createConversationScreen(client, {
+      createConversationScreen(model, {
         ownerContext: '---\nname: Alex Example\n---\nI lead Example Company.',
         today: TODAY,
         sink: () => {},

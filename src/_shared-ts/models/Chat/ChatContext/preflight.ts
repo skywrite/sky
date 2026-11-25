@@ -1,5 +1,4 @@
-import { noul, type TypeSafeClient } from '@typesafe-ai/sdk'
-import { askTypeSafe } from '#shared/ai/typesafe/systemOne.ts'
+import { noul, type DecisionModel } from '#shared/ai/decisions.ts'
 import type { AIUsageRecord } from '#shared/ai/usageLog.ts'
 import type { PreflightVerdict } from '#shared/models/Chat/document/ContextLog/mod.ts'
 import type { ConversationMessage } from '../type.d.ts'
@@ -69,9 +68,9 @@ const NEEDS_MORE = noul(
   RETRIEVAL_ANSWERS,
 )
 
-/** A preflight over a TypeSafe client. Test seams: `now` for the timing, `sink` for where the usage record goes. */
+/** A preflight over a decision model. Test seams: `now` for the timing, `sink` for where the usage record goes. */
 export function contextPreflight(
-  client: TypeSafeClient,
+  model: DecisionModel,
   options: { now?: () => number; sink?: (record: AIUsageRecord) => void | Promise<void> } = {},
 ): Preflight {
   const now = options.now ?? (() => performance.now())
@@ -88,8 +87,8 @@ export function contextPreflight(
     }
     const question = state.assembled ? 'needs_more' : 'needs_notebook'
     const result = state.assembled
-      ? await askTypeSafe(client, { state: seen, questions: { needs_more: NEEDS_MORE } }, ask)
-      : await askTypeSafe(client, { state: seen, questions: { needs_notebook: NEEDS_NOTEBOOK } }, ask)
+      ? await model.ask({ state: seen, questions: { needs_more: NEEDS_MORE } }, ask)
+      : await model.ask({ state: seen, questions: { needs_notebook: NEEDS_NOTEBOOK } }, ask)
     const answer = 'needs_more' in result.answers ? result.answers.needs_more : result.answers.needs_notebook
     return {
       needsNotebook: answer.noul,
