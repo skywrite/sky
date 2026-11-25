@@ -1,3 +1,5 @@
+import { readFile } from 'node:fs/promises'
+import * as path from 'node:path'
 import { assert, test } from '#test'
 import { futureFixture } from './testHelpers.ts'
 
@@ -358,6 +360,84 @@ test('Future: decisions are listed by where they stand, with the goals they weig
         'open: Which race to enter [Run-a-Marathon]',
         'inForce: No late nights before a long run [Learn-Spanish, Run-a-Marathon]',
         'decided: Hire a coach [Run-a-Marathon]',
+      ],
+    })
+  } finally {
+    await f.dispose()
+  }
+})
+
+test('FutureStore.decision gives a decision’s page: where it stands, its record by section, and what it is tied to', async () => {
+  const f = await futureFixture()
+  try {
+    await f.tracking.put(
+      'decisions/2030/pending/03/Which-Race.md',
+      [
+        '---',
+        'name: Which-Race',
+        'summary: Which race to enter',
+        'identified: 2030-03-02T09:00:00-06:00[America/Chicago]',
+        'target: 2030-07-01',
+        'rel:',
+        '  - goals/Run-a-Marathon',
+        '  - decisions/No-Late-Nights',
+        '---',
+        '',
+        '# Which race to enter',
+        '',
+        'Two races fit the plan. <b>One</b> is in October.',
+        '',
+        '## Desired Outcomes',
+        '',
+        '1. A full marathon (comes first)',
+        '2. A course without hills',
+        '',
+        '## Options being weighed',
+        '',
+        '- The city marathon. My odds for the outcome I want: 40–60%.',
+        '',
+        '## Decision',
+        '',
+        '',
+        '',
+        '## Outcome',
+        '',
+      ].join('\n'),
+    )
+    const notebook = f.store.notebook()!
+    notebook.decisions.set(
+      path.join(f.root, 'decisions/2030/pending/03/Which-Race.md'),
+      await readFile(path.join(f.root, 'decisions/2030/pending/03/Which-Race.md'), 'utf8'),
+    )
+    const { decision, today } = await f.store.decision('which-race')
+    let missing = ''
+    try {
+      await f.store.decision('No-Such-Decision')
+    } catch (error) {
+      missing = (error as Error).message
+    }
+    assert({
+      given:
+        'an open decision with a day to decide by, a record of two sections, a goal and another decision in its rel',
+      should:
+        'find it whatever the case, give the situation and each written section as safe HTML, leave empty sections out, and name the goal and the decision it is tied to',
+      actual: [
+        [today, decision.name, decision.title, decision.state, decision.target, decision.since],
+        decision.contextHtml.trim(),
+        decision.sections.map((section) => section.heading),
+        decision.sections[0]?.html.includes('<li>A full marathon (comes first)</li>'),
+        decision.goals,
+        decision.decisions.map((other) => [other.name, other.state]),
+        missing,
+      ],
+      expected: [
+        ['2030-06-18', 'Which-Race', 'Which race to enter', 'open', '2030-07-01', '2030-03-02'],
+        '<p>Two races fit the plan. &lt;b&gt;One&lt;/b&gt; is in October.</p>',
+        ['Desired Outcomes', 'Options being weighed'],
+        true,
+        [{ name: 'Run-a-Marathon', title: 'Run a marathon' }],
+        [['No-Late-Nights', 'inForce']],
+        '"No-Such-Decision" is not one of your decisions. It may have been renamed.',
       ],
     })
   } finally {

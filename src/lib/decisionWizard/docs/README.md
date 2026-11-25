@@ -112,6 +112,27 @@ The chat is the thread `decision-<run id>` (`thread.ts`): the id is the tie, so 
 
 The raw notes the long think read are not replayed into the chat; it finds notes the way every chat does.
 
+## A decision's own page
+
+`/future/decisions/<name>` is one decision's page (`web/client/future/DecisionPage.tsx`).
+Every decision has one: where it stands, its record section by section as its file holds it, the goals it weighs
+on and the decisions its `rel:` names.
+
+A decision that went through the wizard also shows how its options stand against what the person wants
+(`Weighing.tsx`, counted in `tally.ts`): options across, wants down, and in each cell Helps, Costs or No effect
+with one line of why.
+The weighing comes from the run while one is open on the decision.
+When the call is saved the run ends, so the plan and the answers are kept beside the wizard's runs
+(`weighed/<name>.json`) and the page still shows what was weighed, with the call marked.
+
+- The one-line reasons are part of the plan (`effectsWhy`), asked for since 2026-11-24.
+  A plan made before then shows the marks without them.
+- The page holds back what the wizard holds back.
+  Sky's odds show only beside the person's own, and Sky's pick is said only once the wizard has shown it.
+- The wordings Sky gave that are wider than the one kept show as the bigger questions the decision sits under.
+- The call is not made on this page. The wizard has the person answer before it shows Sky's answer, and a
+  "choose this" button here would skip that, so the page sends them back into the wizard.
+
 ## Notes
 
 - 2026-11-23: on a small made-up notebook, the plan for an open decision took 650 s and for a made one 356 s;
@@ -122,4 +143,5 @@ The raw notes the long think read are not replayed into the chat; it finds notes
 
 - Asking how the checks came out when a decision saved as open is picked up.
 - Looking back: the reminder only reminds; nothing walks the person through what they expected against what happened.
-- A decision's own page.
+- Ending or retiring a decision in force from its page: no command ends one yet.
+- Decisions that wait on each other.

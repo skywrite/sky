@@ -21,6 +21,7 @@ import {
   type FutureCheckpoint,
   type FutureDecision,
   type FutureDecisionTie,
+  type FutureDecisionView,
   type FutureEnding,
   FutureError,
   type FutureGoal,
@@ -302,6 +303,47 @@ export class FutureStore {
   /** The titles of every decision already written down. */
   async decisionTitles(): Promise<string[]> {
     return this.tied(this.ready()).decisions.map((decision) => decision.tie.title)
+  }
+
+  /**
+   * One decision's page: where it stands, its record as its file holds it, and what it is tied to.
+   * The weighing comes from the wizard, so the routes add it.
+   */
+  async decision(name: string): Promise<Omit<FutureDecisionView, 'weighing'>> {
+    const notebook = this.ready()
+    const today = await this.today()
+    const wanted = reference(name)
+    const found = notebook.decisions
+      .getAll()
+      .getAllItems()
+      .find(({ path: file }) => reference(baseName(file)) === wanted)
+    if (!found) throw new FutureError(`"${name}" is not one of your decisions. It may have been renamed.`, 404)
+    const tied = this.tied(notebook)
+    const mine = tied.decisions.find((decision) => decision.tie.file === this.relative(found.path))!
+    const active = this.shown(notebook).filter((goal) => goal.status === 'active')
+    // The file's own shape: the situation under the title, then one `## ` section after another.
+    const [lead = '', ...parts] = found.doc.markdown.replace(/^\s*# [^\n]*\n?/, '').split(/^## +/m)
+    const sections = parts.flatMap((part) => {
+      const at = part.indexOf('\n')
+      const [heading, text] = at < 0 ? [part.trim(), ''] : [part.slice(0, at).trim(), part.slice(at + 1).trim()]
+      return heading && text ? [{ heading, html: markdown.parse(text, { async: false }) }] : []
+    })
+    return {
+      today: today.ymd,
+      decision: {
+        ...mine.tie,
+        state: mine.state === 'pending' ? 'open' : mine.state,
+        target: mine.target,
+        goals: active
+          .filter((goal) => mine.rel.has(goal.key))
+          .map((goal) => ({ name: goal.name, title: goal.doc.title })),
+        contextHtml: markdown.parse(lead.trim(), { async: false }),
+        sections,
+        decisions: tied.decisions
+          .filter((other) => other !== mine && mine.rel.has(reference(`decisions/${other.tie.name}`)))
+          .map((other) => ({ ...other.tie, state: other.state === 'pending' ? ('open' as const) : other.state })),
+      },
+    }
   }
 
   /** One goal's page, whether it is being pursued or has ended. */

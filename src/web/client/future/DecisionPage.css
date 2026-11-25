@@ -1,0 +1,358 @@
+/*
+ * A decision's own page. The weighing is the page: options across, what the person wants down, and in each
+ * cell whether the option helps or costs it. Color carries the comparison: green helps, red costs, and the
+ * option picked is the one tinted column.
+ */
+.sky-decision {
+  --sky-decision-helps-fill: var(--sky-workstream-green-fill);
+  --sky-decision-helps-ink: var(--sky-workstream-green-ink);
+  --sky-decision-helps: var(--sky-workstream-green-accent);
+  --sky-decision-costs-fill: var(--sky-workstream-red-fill);
+  --sky-decision-costs-ink: var(--sky-workstream-red-ink);
+  --sky-decision-costs: var(--sky-workstream-red-accent);
+  --sky-decision-mid-fill: var(--sky-workstream-orange-fill);
+  --sky-decision-mid-ink: var(--sky-workstream-orange-ink);
+  --sky-decision-pick-soft: var(--sky-accent-soft);
+}
+.sky-decision-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px 16px;
+}
+.sky-future-state[data-state='open'],
+.sky-future-state[data-state='inForce'] {
+  background: var(--sky-workstream-violet-fill);
+  color: var(--sky-workstream-violet-ink);
+}
+.sky-decision-context {
+  max-width: 70ch;
+  margin-top: 14px;
+  color: var(--sky-text-2);
+  font-size: 18px;
+  line-height: 1.6;
+}
+.sky-decision-context > * + * {
+  margin-top: 0.6em;
+}
+.sky-decision-context a {
+  color: var(--sky-accent);
+}
+/* The bigger question this decision is one answer to. */
+.sky-decision-under {
+  max-width: 70ch;
+  margin-top: 16px;
+  padding-left: 16px;
+  border-left: 3px solid var(--sky-border-soft);
+  color: var(--sky-text-2);
+  font-size: 16px;
+  line-height: 1.55;
+}
+.sky-decision-under b {
+  display: block;
+  color: var(--sky-text);
+  font-size: 17px;
+  font-weight: 600;
+}
+.sky-decision-under small {
+  display: block;
+  color: var(--sky-dim);
+  font-size: 14px;
+}
+.sky-decision-under p + p {
+  margin-top: 10px;
+}
+
+.sky-decision-grid {
+  margin: 34px -14px 0;
+  overflow-x: auto;
+}
+.sky-decision-grid table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 12px 0;
+  table-layout: fixed;
+}
+.sky-decision-grid th,
+.sky-decision-grid td {
+  padding: 18px 14px;
+  border-top: 1px solid var(--sky-border-soft);
+  font-weight: 400;
+  text-align: left;
+  vertical-align: top;
+}
+.sky-decision-grid thead th,
+.sky-decision-grid thead td {
+  padding-top: 16px;
+  border-top: 0;
+}
+.sky-decision-grid thead td,
+.sky-decision-grid tbody th {
+  width: 232px;
+  padding-left: 14px;
+}
+.sky-decision-grid thead th {
+  min-width: 172px;
+  border-radius: 16px 16px 0 0;
+}
+.sky-decision-grid tbody tr:last-child td {
+  border-radius: 0 0 16px 16px;
+}
+.sky-decision-grid [data-picked] {
+  background: var(--sky-decision-pick-soft);
+}
+.sky-decision-grid tr[data-facts='true'] th,
+.sky-decision-grid tr[data-facts='true'] td {
+  padding-top: 14px;
+  padding-bottom: 14px;
+}
+.sky-decision-call {
+  display: inline-block;
+  margin-bottom: 8px;
+  padding: 1px 11px;
+  border-radius: 999px;
+  background: var(--sky-accent);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 560;
+}
+.sky-decision-option {
+  display: block;
+  font-size: 20px;
+  font-weight: 640;
+  letter-spacing: -0.014em;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+.sky-decision-about {
+  display: block;
+  margin-top: 6px;
+  color: var(--sky-dim);
+  font-size: 15px;
+  line-height: 1.45;
+}
+.sky-decision-tally {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  margin-top: 14px;
+  color: var(--sky-text-2);
+  font-size: 14px;
+}
+.sky-decision-bars {
+  display: inline-flex;
+  gap: 4px;
+}
+.sky-decision-bars i {
+  width: 20px;
+  height: 5px;
+  border-radius: 999px;
+  background: var(--sky-hover);
+}
+.sky-decision-bars i[data-effect='helps'] {
+  background: var(--sky-decision-helps);
+}
+.sky-decision-bars i[data-effect='costs'] {
+  background: var(--sky-decision-costs);
+}
+.sky-decision-want {
+  display: flex;
+  align-items: baseline;
+  font-size: 17px;
+  font-weight: 620;
+  line-height: 1.35;
+}
+.sky-decision-want > span {
+  overflow-wrap: break-word;
+}
+/* Where the want comes from, kept to two lines so a row is as tall as what it compares. */
+.sky-decision-from {
+  display: -webkit-box;
+  margin-top: 4px;
+  padding-left: 21px;
+  overflow: hidden;
+  color: var(--sky-dim);
+  font-size: 14px;
+  line-height: 1.45;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+.sky-decision-first {
+  display: block;
+  margin-top: 4px;
+  padding-left: 21px;
+  color: var(--sky-accent);
+  font-size: 13px;
+}
+.sky-future-mark[data-kind='want'] {
+  border-radius: 50%;
+  background: var(--sky-border, var(--sky-border-soft));
+}
+.sky-decision-effect {
+  display: inline-block;
+  padding: 1px 10px;
+  border-radius: 999px;
+  background: var(--sky-hover);
+  color: var(--sky-dim);
+  font-size: 13px;
+  font-weight: 560;
+}
+.sky-decision-effect[data-effect='helps'] {
+  background: var(--sky-decision-helps-fill);
+  color: var(--sky-decision-helps-ink);
+}
+.sky-decision-effect[data-effect='costs'] {
+  background: var(--sky-decision-costs-fill);
+  color: var(--sky-decision-costs-ink);
+}
+.sky-decision-why {
+  display: block;
+  margin-top: 8px;
+  font-size: 16px;
+  line-height: 1.5;
+}
+.sky-decision-effect[data-effect='none'] + .sky-decision-why {
+  color: var(--sky-dim);
+}
+.sky-decision-fact {
+  display: block;
+  padding-left: 21px;
+  color: var(--sky-text-2);
+  font-size: 15px;
+}
+.sky-decision-odds {
+  display: block;
+  font-size: 16px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 620;
+}
+.sky-decision-quiet {
+  display: block;
+  color: var(--sky-dim);
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+.sky-decision-level {
+  display: inline-block;
+  padding: 1px 11px;
+  border-radius: 999px;
+  background: var(--sky-hover);
+  color: var(--sky-text-2);
+  font-size: 13.5px;
+}
+.sky-decision-level[data-level='Easy'] {
+  background: var(--sky-decision-helps-fill);
+  color: var(--sky-decision-helps-ink);
+}
+.sky-decision-level[data-level='Costly'] {
+  background: var(--sky-decision-mid-fill);
+  color: var(--sky-decision-mid-ink);
+}
+.sky-decision-level[data-level='Very hard'] {
+  background: var(--sky-decision-costs-fill);
+  color: var(--sky-decision-costs-ink);
+}
+
+/* Sky speaking: the quiet tinted panel, marked with Sky's dot, as in the wizard. */
+.sky-decision-sky {
+  margin-top: 30px;
+  padding: 22px 26px 24px;
+  border-radius: var(--sky-card-radius);
+  background: var(--sky-side);
+}
+.sky-decision-sky h2 {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 16px;
+  font-weight: 620;
+}
+.sky-decision-sky h2::before {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--sky-accent);
+  content: '';
+}
+.sky-decision-sky p {
+  max-width: 70ch;
+  margin-top: 8px;
+  color: var(--sky-text-2);
+  font-size: 18px;
+  line-height: 1.6;
+}
+.sky-decision-sky-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 16px;
+}
+.sky-decision-settled {
+  margin-top: 30px;
+  padding: 24px 26px 26px;
+  border-radius: var(--sky-card-radius);
+  background: var(--sky-side);
+}
+.sky-decision-settled h2 {
+  font-size: 22px;
+  font-weight: 640;
+  letter-spacing: -0.014em;
+}
+.sky-decision-settled p {
+  max-width: 70ch;
+  margin-top: 8px;
+  color: var(--sky-text-2);
+  font-size: 17px;
+  line-height: 1.6;
+}
+
+/* The record, as the decision's file holds it. */
+.sky-decision-record {
+  margin-top: 14px;
+  padding: 28px 32px 30px;
+  border: 1px solid var(--sky-border-soft);
+  border-radius: var(--sky-card-radius);
+  background: var(--sky-card, var(--sky-bg));
+  box-shadow: var(--sky-card-shadow);
+}
+.sky-decision-record > div + div {
+  margin-top: 24px;
+}
+.sky-decision-record h3 {
+  color: var(--sky-dim);
+  font-size: 14.5px;
+  font-weight: 500;
+}
+.sky-decision-record .sky-future-document {
+  max-width: 76ch;
+  margin-top: 5px;
+  color: var(--sky-text);
+}
+.sky-decision-note {
+  margin-top: 6px;
+  color: var(--sky-dim);
+  font-size: 15px;
+}
+
+@media (max-width: 760px) {
+  .sky-decision-grid thead td,
+  .sky-decision-grid tbody th {
+    width: 164px;
+    min-width: 164px;
+  }
+  .sky-decision-grid table {
+    table-layout: auto;
+  }
+  .sky-decision-want {
+    font-size: 15.5px;
+  }
+  .sky-decision-record {
+    padding: 22px 20px 24px;
+  }
+  .sky-decision-sky,
+  .sky-decision-settled {
+    padding: 18px 18px 20px;
+  }
+}

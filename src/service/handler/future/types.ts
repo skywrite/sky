@@ -1,3 +1,5 @@
+import type { DecidingAnswers } from '#lib/decisionWizard/answers.ts'
+import type { DecidingPlan } from '#lib/decisionWizard/plan.ts'
 import type { WizardSummary } from '#lib/decisionWizard/session.ts'
 
 /** What the Future screen reads: each active goal, where it stands, what is tied to it, and the goals that ended. */
@@ -28,6 +30,40 @@ export interface FutureDecision extends FutureDecisionTie {
   target: string | null
   /** The active goals it weighs on */
   goals: FutureGoalTie[]
+}
+
+/** One section of a decision's record, as its file holds it */
+export interface FutureDecisionSection {
+  heading: string
+  html: string
+}
+
+/** A decision as its own page shows it */
+export interface FutureDecisionDetail extends FutureDecision {
+  /** The situation: the text under the decision's title, as safe HTML */
+  contextHtml: string
+  /** The rest of its record, section by section; a section with nothing in it is left out */
+  sections: FutureDecisionSection[]
+  /** Other decisions its `rel:` names */
+  decisions: Array<FutureDecisionTie & { state: FutureDecision['state'] }>
+}
+
+/**
+ * How the options stood against what the person wants, from the decision wizard: the plan Sky wrote and the
+ * person's answers. `run` is the wizard run still open on the decision; null once the call was saved, when
+ * this is the weighing as it stood that day.
+ */
+export interface FutureWeighing {
+  run: string | null
+  plan: DecidingPlan
+  answers: DecidingAnswers
+}
+
+export interface FutureDecisionView {
+  today: string
+  decision: FutureDecisionDetail
+  /** Null for a decision that never went through the wizard */
+  weighing: FutureWeighing | null
 }
 
 export interface FutureIdeaTie {

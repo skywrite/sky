@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from 'react'
 import type { FutureReport } from '../../../service/handler/future/types.ts'
 import { AddGoalDialog } from './AddGoalDialog.tsx'
 import { niceDate } from './dates.ts'
+import { DecisionPage } from './DecisionPage.tsx'
 import { DecisionsList } from './DecisionsList.tsx'
 import { FutureLink } from './FutureLink.tsx'
 import { GoalBlock } from './GoalBlock.tsx'
@@ -61,19 +62,15 @@ export function FutureMain({ route, navigate }: { route: FutureRoute; navigate: 
     await other.refresh()
   }
   // The tab names the goal that is open; while it loads, or when it is gone, it still says which area this is.
-  // A wizard run names the tab itself: thinking, then the decision's wording.
-  const [runTitle, setRunTitle] = useState<{ run: string; title: string } | null>(null)
-  const named = useCallback(
-    (text: string) => setRunTitle(route.run ? { run: route.run, title: text } : null),
-    [route.run],
-  )
+  // A wizard run and a decision's page name the tab themselves: the run while it thinks and then by the
+  // decision's wording, the page by the decision's title.
+  const opened = route.run ?? route.decision
+  const [ownTitle, setOwnTitle] = useState<{ of: string; title: string } | null>(null)
+  const named = useCallback((text: string) => setOwnTitle(opened ? { of: opened, title: text } : null), [opened])
   const title =
     goal?.title ??
-    (route.adding
-      ? ((runTitle?.run === route.run ? runTitle?.title : null) ?? 'New decision')
-      : route.tab === 'decisions'
-        ? 'Decisions'
-        : 'Future')
+    (ownTitle?.of === opened ? ownTitle?.title : null) ??
+    (route.adding ? 'New decision' : route.decision ? 'Decision' : route.tab === 'decisions' ? 'Decisions' : 'Future')
   useEffect(() => {
     document.title = `sky · ${title}`
   }, [title])
@@ -112,6 +109,8 @@ export function FutureMain({ route, navigate }: { route: FutureRoute; navigate: 
                 </Button>
               </div>
             )
+          ) : route.decision !== null ? (
+            <DecisionPage key={route.decision} name={route.decision} navigate={navigate} onTitle={named} />
           ) : route.adding ? (
             route.run ? (
               <Wizard

@@ -700,7 +700,37 @@ test(
       await shot('17-decisions-open')
       const parkedRow = flat(await parked.innerText())
       const stillWorking = await page.getByRole('region', { name: 'Being worked through' }).count()
-      await parked.getByRole('link', { name: 'Pick up where you stopped' }).click()
+      await parked.getByRole('link', { name: 'Who leads sales through the October launch' }).click()
+      await waitForTitle('sky · Who leads sales through the October launch')
+      const grid = page.locator('.sky-decision-grid')
+      await grid.waitFor()
+      await shot('17b-decision-page')
+      const openPage = {
+        path: new URL(page.url()).pathname,
+        state: await page.locator('.sky-decision-title .sky-future-state').innerText(),
+        stands: flat(await page.locator('.sky-decision .sky-future-sub').innerText()),
+        columns: (await grid.locator('thead th').allInnerTexts()).map(flat),
+        wants: (await grid.locator('tbody tr:not([data-facts]) th .sky-decision-want').allInnerTexts()).map(flat),
+        first: flat(await grid.locator('tbody tr').first().locator('th').innerText()),
+        cell: flat(await grid.locator('tbody tr').first().locator('td').nth(1).innerText()),
+        odds: (await grid.locator('tr[data-facts]').first().locator('td').allInnerTexts()).map(flat),
+        leaning: await grid.locator('.sky-decision-call').count(),
+        sky: flat(await page.locator('.sky-decision-sky p').innerText()),
+        record: await page.locator('.sky-decision-record h3').allInnerTexts(),
+        goals: (
+          await page
+            .getByRole('region', { name: /^Goals it weighs on/ })
+            .locator('.sky-future-row')
+            .allInnerTexts()
+        ).map(flat),
+        tied: (
+          await page
+            .getByRole('region', { name: /^Decisions it is tied to/ })
+            .locator('.sky-future-row')
+            .allInnerTexts()
+        ).map(flat),
+      }
+      await page.getByRole('button', { name: 'Pick up where you stopped' }).click()
       await step('Your call').waitFor()
       const back = await page.locator('.sky-wizard-read h3').first().innerText()
       const columns = await page.locator('.sky-wizard-grid thead th').allInnerTexts()
@@ -739,10 +769,36 @@ test(
         given: 'the open decision picked up from the list',
         should:
           'start at the call with the options against what is wanted, hold Sky’s pick until the person chooses, and start how sure they are from the odds they gave',
-        actual: [parkedRow, stillWorking, back, columns, odds, first, panels, rules, startsFrom],
+        actual: [parkedRow, stillWorking, openPage, back, columns, odds, first, panels, rules, startsFrom],
         expected: [
           'Who leads sales through the October launch Pick up where you stopped Weighs on Learn Spanish and Run a marathon Decide by Jul 1',
           0,
+          // Its own page: the options across with their tallies, what is wanted down, Sky's reason in a cell,
+          // the person's odds beside Sky's, and nothing leaned toward yet.
+          {
+            path: '/future/decisions/Who-leads-sales-through-the',
+            state: 'Open',
+            stands: 'Decide by Jul 1',
+            columns: [
+              'Part-time lead Bring in a part-time sales lead for six months Helps 2',
+              'Promote Jane Promote Jane Doe to lead sales Helps 3',
+              'Split the role with Jane Helps 2',
+            ],
+            wants: [
+              'Keep Jane Doe, your top account executive',
+              'Keep your own time free for the October launch',
+              'Reach $4M in new bookings this year',
+              'Stay inside the hiring plan',
+            ],
+            first: 'Keep Jane Doe, your top account executive Comes first From your notes on the Jun 12 one-on-one.',
+            cell: 'Helps She gets the job she asked about.',
+            odds: ['You: 40–60% Sky: 40–60%', 'You: Over 80% Sky: 40–60%', 'You: 20–40% Sky: 40–60%'],
+            leaning: 0,
+            sky: '“Promote Jane” helps three of the four things you want, more than any other option. Sky’s read is that “Part-time lead” and “Promote Jane” come out close, so you cannot be far wrong between them.',
+            record: ['Desired Outcomes', 'Options being weighed', 'What it rests on'],
+            goals: ['Learn Spanish', 'Run a marathon'],
+            tied: ['No late nights before a long run In force'],
+          },
           'You saved this as open to check a few things first',
           ['Part-time lead', 'Promote Jane', 'Split the role with Jane'],
           ['You: 40–60% Sky: 40–60%', 'You: Over 80% Sky: 40–60%', 'You: 20–40% Sky: 40–60%'],
@@ -806,6 +862,58 @@ test(
           ],
           ['inForce'],
           [],
+          [],
+        ],
+      })
+
+      // The made decision's page keeps how it was weighed, with the call marked, and says it is in force.
+      await page.getByRole('button', { name: 'See your decisions' }).click()
+      await waitForTitle('sky · Decisions')
+      await rows('In force').getByRole('link', { name: 'Who leads sales through the October launch' }).click()
+      await page.locator('.sky-decision-settled').waitFor()
+      await shot('19b-decision-made')
+      const madePage = [
+        await page.locator('.sky-decision-title .sky-future-state').innerText(),
+        flat(await page.locator('.sky-decision-grid thead th[data-picked]').innerText()),
+        await page.getByRole('button', { name: 'Pick up where you stopped' }).count(),
+        flat(await page.locator('.sky-decision-sky p').innerText()).endsWith('Sky would choose “Part-time lead”.'),
+        flat(await page.locator('.sky-decision-settled').innerText()),
+        (await page.locator('.sky-decision-record h3').allInnerTexts()).includes('Rules set ahead of time'),
+      ]
+      await page.setViewportSize({ width: 390, height: 844 })
+      const fitsPhone = await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)
+      await shot('19c-decision-phone')
+      await page.setViewportSize({ width: 1440, height: 1100 })
+      // A decision that never went through the wizard: its record, and no weighing.
+      await page.goto(`${origin}/future/decisions/Hire-a-Coach`)
+      await page.locator('.sky-decision-settled').waitFor()
+      await waitForTitle('sky · Hire a coach')
+      const older = [
+        await page.locator('.sky-decision-grid').count(),
+        flat(await page.locator('.sky-decision .sky-future-sub').innerText()),
+        flat(await page.locator('.sky-decision-settled h2').innerText()),
+      ]
+      await page.goto(`${origin}/future/decisions/No-Such-Decision`)
+      const gone = flat(await page.locator('.sky-future-empty').innerText())
+      assert({
+        given:
+          'the made decision’s page, the same page on a phone, a decision made without the wizard, and one that is not there',
+        should:
+          'keep the weighing with the call marked and Sky’s pick said, fit a phone, show an older decision by its record alone, and say plainly when a decision is missing',
+        actual: [madePage, fitsPhone, older, gone, errors],
+        expected: [
+          [
+            'In force',
+            // Four, not Sky's three: the person changed one cell to Helps on the way through, and that is kept.
+            'Your call Promote Jane Promote Jane Doe to lead sales Helps 4',
+            0,
+            true,
+            'Nothing to check off. Sky keeps this in view in every chat and says so when a plan cuts against it.',
+            true,
+          ],
+          true,
+          [0, 'Decided Apr 1', 'This one is settled.'],
+          'This decision isn’t here "No-Such-Decision" is not one of your decisions. It may have been renamed. See your decisions',
           [],
         ],
       })

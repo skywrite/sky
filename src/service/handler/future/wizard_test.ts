@@ -279,6 +279,25 @@ test('decision wizard: "check first" saves an open decision, and finishing later
       actual: [(parked.answers as { hinge?: string }).hinge, parked.step, f.filed],
       expected: ['checked', 'call', [[run.id, opened.name]]],
     })
+    const page = await (await f.app.request(`/decision/${opened.name}`)).json()
+    assert({
+      given: 'the open decision’s own page',
+      should: 'give its record from the file, and how its options stand from the run still open on it',
+      actual: [
+        [page.decision.title, page.decision.state, page.decision.target],
+        page.decision.sections.map((section: { heading: string }) => section.heading),
+        [page.weighing.run === run.id, page.weighing.plan.options.length, page.weighing.answers.options],
+        (await (await f.app.request('/decision/Hire-a-Coach')).json()).weighing,
+        (await f.app.request('/decision/No-Such-Decision')).status,
+      ],
+      expected: [
+        ['Who leads sales through the October launch', 'open', '2030-07-01'],
+        ['Desired Outcomes', 'Options being weighed', 'What it rests on'],
+        [true, 4, [0, 2, 3]],
+        null,
+        404,
+      ],
+    })
     const talking = await (await f.app.request(`/decisions/wizard/${run.id}/chat`)).json()
     f.filedChats.set(run.id, 'time/2030/W25/06-18/actions/ai-chats/09-00_Who-signs-first.md')
     const filedChat = await (await f.app.request(`/decisions/wizard/${run.id}/chat`)).json()
@@ -308,6 +327,8 @@ test('decision wizard: "check first" saves an open decision, and finishing later
         f.items.slice(2),
         (await f.store.report()).wizards,
         await exists(path.join(f.root, '.state', 'decisions', 'runs', `${run.id}.json`)),
+        // The run is gone; what was weighed stays with the decision, for its page.
+        await f.wizard.weighing(opened.name).then((kept) => [kept?.run, kept?.plan.options.length, kept?.answers.call]),
       ],
       expected: [
         [true, false, true, ['2030-09-01', '2030-12-31']],
@@ -333,6 +354,7 @@ test('decision wizard: "check first" saves an open decision, and finishing later
         ],
         [],
         false,
+        [null, 4, FULL.call],
       ],
     })
     assert({

@@ -19,7 +19,7 @@ import type { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import { hold } from '../../activity.ts'
 import type { DecisionCommands } from './decisionCommands.ts'
 import type { FutureNotebook } from './store.ts'
-import { FutureError } from './types.ts'
+import { FutureError, type FutureWeighing } from './types.ts'
 
 /**
  * The decision wizard's server side: the runs in progress, Sky's thinking for
@@ -225,6 +225,16 @@ export class DecisionWizard {
 
   /** Every run that was started and not finished, for the Decisions list. */
   async list(): Promise<WizardSummary[]> {
+    return (await this.sessions()).map((session) => ({
+      id: session.id,
+      title: this.titleOf(session),
+      status: session.status,
+      decided: session.decided,
+      open: session.open,
+    }))
+  }
+
+  private async sessions(): Promise<WizardSession[]> {
     const names = await readdir(path.join(this.options.dir, 'runs')).catch(() => [] as string[])
     const sessions: WizardSession[] = []
     for (const name of names.filter((file) => file.endsWith('.json')).sort()) {
@@ -234,13 +244,30 @@ export class DecisionWizard {
         // A file that is not a run is not listed.
       }
     }
-    return sessions.map((session) => ({
-      id: session.id,
-      title: this.titleOf(session),
-      status: session.status,
-      decided: session.decided,
-      open: session.open,
-    }))
+    return sessions
+  }
+
+  /** Where the weighing of a decision is kept once its call is saved and its run is gone. */
+  private weighedFile(name: string): string | null {
+    return /^[\w.-]+$/.test(name) ? path.join(this.options.dir, 'weighed', `${name}.json`) : null
+  }
+
+  /**
+   * How the options stood against what the person wants, for the decision's own page: from the run still open
+   * on it, or as it stood the day the call was saved. Null for a decision that never went through the wizard.
+   */
+  async weighing(name: string): Promise<FutureWeighing | null> {
+    for (const session of await this.sessions())
+      if (session.open === name && session.plan?.kind === 'deciding')
+        return { run: session.id, plan: session.plan, answers: session.answers as DecidingAnswers }
+    const file = this.weighedFile(name)
+    if (!file) return null
+    try {
+      const kept = JSON.parse(await readFile(file, 'utf8')) as Pick<FutureWeighing, 'plan' | 'answers'>
+      return kept.plan?.kind === 'deciding' ? { run: null, plan: kept.plan, answers: kept.answers ?? {} } : null
+    } catch {
+      return null
+    }
   }
 
   /** Keep the person's answers and the step they are on, so a reload or a later visit picks up there. */
@@ -589,6 +616,12 @@ export class DecisionWizard {
       } catch (error) {
         warnings.push(`The reminder for ${day} was not set: ${said(error)}`)
       }
+    }
+    // The run ends here. What was weighed stays with the decision, so its page can still show it.
+    const weighed = session.plan.kind === 'deciding' ? this.weighedFile(written.name) : null
+    if (weighed) {
+      await mkdir(path.dirname(weighed), { recursive: true })
+      await writeFile(weighed, JSON.stringify({ plan: session.plan, answers: session.answers })).catch(() => {})
     }
     await this.discard(id)
     return {

@@ -52,6 +52,12 @@ export function createFutureRoutes({ store, wizard }: FutureRoutesOptions): Hono
     c.json(await store.removeCheckpoint(c.req.param('name'), await c.req.json())),
   )
 
+  // One decision's page: its record from its file, and how its options were weighed, when the wizard weighed them.
+  app.get('/decision/:name', async (c) => {
+    const name = c.req.param('name')
+    return c.json({ ...(await store.decision(name)), weighing: (await wizard?.weighing(name)) ?? null })
+  })
+
   // The decision wizard: a run thinks in the background, and the page reads it to see where it stands.
   const runs = (): DecisionWizard => {
     if (!wizard) throw new FutureError('Decisions cannot be added from here.', 503)

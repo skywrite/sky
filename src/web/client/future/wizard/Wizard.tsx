@@ -11,8 +11,6 @@ import {
   STAGES,
 } from '#lib/decisionWizard/screens.ts'
 import type { WizardSaved, WizardSession } from '#lib/decisionWizard/session.ts'
-import { decisionThreadId } from '#lib/decisionWizard/thread.ts'
-import { stageChatDraft } from '../../chat/chatDraft.ts'
 import { niceDate } from '../dates.ts'
 import { FutureLink } from '../FutureLink.tsx'
 import { futureRequest } from '../request.ts'
@@ -20,6 +18,7 @@ import { wizardHref } from '../routes.ts'
 import { DecidedStep } from './DecidedStep.tsx'
 import { DecidingStep } from './DecidingStep.tsx'
 import { Rail } from './Rail.tsx'
+import { talkItThrough } from './talk.ts'
 import { Thinking } from './Thinking.tsx'
 import { useRun } from './useRun.ts'
 import { useWizardKeys } from './useWizardKeys.ts'
@@ -319,40 +318,9 @@ export function Wizard({
   // A Sky chat about this decision, beside the wizard. The chat is told the decision as it stands each turn,
   // so what was just answered is kept first.
   const talk = () => {
+    // The chat is told the decision as it stands each turn, so what was just answered is kept first.
     void flush().catch(() => {})
-    // The tab opens on the click itself, and is pointed at the chat once it is known which one to open.
-    const tab = window.open('', '_blank')
-    if (tab) tab.opener = null
-    const back = `?returnTo=${encodeURIComponent(wizardHref(id))}`
-    const show = (thread: string) => {
-      const href = `/thread/${encodeURIComponent(thread)}${back}`
-      if (tab && !tab.closed) tab.location.href = href
-      else window.location.assign(href)
-    }
-    const own = decisionThreadId(id)
-    void (async () => {
-      try {
-        // The chat's own thread while it is open. Once it was closed and filed, the conversation is reopened
-        // from its file, so it carries on where it stopped.
-        const live = await fetch(`/chat/${encodeURIComponent(own)}`).then((response) => response.ok)
-        if (live) return show(own)
-        const { filed } = await futureRequest<{ thread: string; filed: string | null }>(`/decisions/wizard/${id}/chat`)
-        if (filed) {
-          const response = await fetch('/chat/open', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ chat: filed }),
-          })
-          const reopened = (await response.json().catch(() => null)) as { id?: string } | null
-          if (response.ok && reopened?.id) return show(reopened.id)
-        }
-        // A first conversation: the composer opens on the decision's name, so the first message says what it is about.
-        stageChatDraft(own, `About the decision “${title}”: `)
-      } catch {
-        // Whatever could not be asked, the chat's own thread still opens.
-      }
-      show(own)
-    })()
+    talkItThrough(id, title, wizardHref(id))
   }
   const later = () =>
     void guarded(async () => {
