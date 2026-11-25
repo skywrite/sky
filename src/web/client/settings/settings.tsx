@@ -39,6 +39,7 @@ import './settings.css'
 
 export type Theme = 'system' | 'light' | 'dark'
 export type TextSize = 'default' | 'large'
+export type OpenSavedTarget = 'browser' | 'code' | 'none'
 
 interface ModelRow {
   role: string
@@ -105,6 +106,7 @@ export interface SettingsData {
     outputDir: string
     editor: string | null
     editors: string[]
+    openSavedIn?: OpenSavedTarget
   }
   about: { version: string | null; date: string | null }
   advanced: ConfigView
@@ -615,6 +617,24 @@ function NotebookPane({ data, change }: { data: SettingsData; change: ReturnType
                 notebook: { ...current.notebook, editor: value },
               }))
             }}
+          />
+        </Row>
+        <Row label="Open saved items in" sub="Where email (Sky/Follow) and Slack saved items open after capture.">
+          <SegmentedControl
+            aria-label="Open saved items in"
+            value={notebook.openSavedIn ?? 'browser'}
+            onChange={(value) => {
+              const openSavedIn = value as OpenSavedTarget
+              change('openSavedIn', openSavedIn, (current) => ({
+                ...current,
+                notebook: { ...current.notebook, openSavedIn },
+              }))
+            }}
+            data={[
+              { value: 'browser', label: 'Browser' },
+              { value: 'code', label: 'Code' },
+              { value: 'none', label: 'None' },
+            ]}
           />
         </Row>
         <Row label="Save exports to" sub="PDFs, images, transcripts.">

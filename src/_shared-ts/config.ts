@@ -5,7 +5,7 @@ import { loadSkyConfig } from './config/loader.ts'
 import { notebookDirs } from './config/notebookDirs.ts'
 import type { AiProfileConfig } from './config/types.ts'
 
-export type { AiProfileConfig, SkyConfig } from './config/types.ts'
+export type { AiProfileConfig, OpenSavedTarget, SkyConfig } from './config/types.ts'
 export { SKY_CONFIG_DIR, SKY_CONFIG_PATH } from './config/loader.ts'
 
 const skyConfig = loadSkyConfig()
@@ -18,6 +18,7 @@ export const DIR_CODE = skyConfig.codeDir
 export const DIR_INPUT = skyConfig.inputDir
 export const DIR_OUTPUT = skyConfig.outputDir
 export const EDITOR = skyConfig.editor
+export const OPEN_SAVED_IN = skyConfig.openSavedIn ?? 'browser'
 export const CATEGORIES = skyConfig.categories
 export const DEFAULT_CATEGORY = skyConfig.categories[0]
 export const COMMAND_DIRS = skyConfig.commands.dirs

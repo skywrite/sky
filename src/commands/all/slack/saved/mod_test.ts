@@ -8,6 +8,7 @@ import CommandService from '#commands/lib/core/CommandService.ts'
 import { BufferedOutput } from '#commands/lib/output/BufferedOutput.ts'
 import transformTypedParamsArgs from '#commands/lib/transformTypedParamsArgs/mod.ts'
 import * as config from '#config'
+import * as savedOpener from '#lib/shell/openSavedFiles.ts'
 import * as nbfs from '#shared/nbfs/mod.ts'
 import { assert, test } from '#test'
 import { PlainDateTime, ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
@@ -713,4 +714,49 @@ test('slack:saved tells a first-time user how to put something in Saved', async 
     new Map(),
     { in_progress: 0, saved: 0, todo: 0 },
   )
+})
+
+test('slack:saved and slack:saved:day open captured files through openSavedFiles and tolerate opener failures', async () => {
+  await fixture(async ({ invoke, invokeDay, output }) => {
+    const openedCalls: Array<{ files: readonly string[]; port?: number }> = []
+    const captureSpy = spyOn(capture, 'captureLaterItems').mockResolvedValue({
+      captured: ['time/2025/W24/06-15/slack_Atlas_Update.md'],
+      completed: 1,
+      openRows: [],
+      openTargets: ['/home/jane/Sky/time/2025/W24/06-15/slack_Atlas_Update.md'],
+      skipped: [],
+      failures: [],
+    })
+    const openSpy = spyOn(savedOpener, 'openSavedFiles').mockImplementation(async (files, options) => {
+      openedCalls.push({ files: [...files], port: options?.port })
+      if (openedCalls.length === 2) throw new Error('browser unavailable')
+      return { target: 'browser', opened: files.length }
+    })
+    try {
+      const saved = await invoke({ channel: 'atlas', captureBatch: 1 })
+      const day = await invokeDay({ channel: 'atlas', captureBatch: 1 })
+      assert({
+        given: 'captured files from slack:saved and slack:saved:day (second opener failing)',
+        should: 'delegate notebook-relative paths to openSavedFiles and warn without failing on opener errors',
+        actual: [
+          saved.ok,
+          day.ok,
+          openedCalls,
+          output.hasLog('Warning: could not open captured files (browser unavailable)'),
+        ],
+        expected: [
+          true,
+          true,
+          [
+            { files: ['time/2025/W24/06-15/slack_Atlas_Update.md'], port: config.PORT_SERVER },
+            { files: ['time/2025/W24/06-15/slack_Atlas_Update.md'], port: config.PORT_SERVER },
+          ],
+          true,
+        ],
+      })
+    } finally {
+      captureSpy.mockRestore()
+      openSpy.mockRestore()
+    }
+  })
 })

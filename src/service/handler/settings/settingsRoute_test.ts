@@ -379,6 +379,7 @@ test({ name: 'settings route - one payload carries every pane' }, async () => {
       outputDir: '~/Desktop',
       editor: 'code',
       editors: ['code', 'zed'],
+      openSavedIn: 'browser',
     },
   })
   assert({
@@ -433,8 +434,9 @@ test({ name: 'settings route - set writes only known keys with valid values' }, 
   const badResearcherVoice = await post(app, '/settings/_api/set', { key: 'voice.researcherVoice', value: 'hal9000' })
   const badKey = await post(app, '/settings/_api/set', { key: 'server.port', value: '80' })
   const badEditor = await post(app, '/settings/_api/set', { key: 'editor', value: 'vim' })
+  const badOpenSavedIn = await post(app, '/settings/_api/set', { key: 'openSavedIn', value: 'terminal' })
   assert({
-    given: 'a bad value, a bad voice, an unsettable key, an unknown editor',
+    given: 'a bad value, a bad voice, an unsettable key, an unknown editor, an invalid openSavedIn',
     should: 'refuse each with 400 and write nothing more',
     actual: [
       badTheme.status,
@@ -442,9 +444,48 @@ test({ name: 'settings route - set writes only known keys with valid values' }, 
       badResearcherVoice.status,
       badKey.status,
       badEditor.status,
+      badOpenSavedIn.status,
       writes.length,
     ],
-    expected: [400, 400, 400, 400, 400, 2],
+    expected: [400, 400, 400, 400, 400, 400, 2],
+  })
+})
+
+test('openSavedIn defaults to browser and accepts browser, code, and none live', async () => {
+  const config = structuredClone(CONFIG)
+  const { host, writes } = hostWith(config)
+  host.write = async (key, value) => {
+    writes.push([key, value])
+    if (key === 'openSavedIn') config.openSavedIn = value as SkyConfig['openSavedIn']
+  }
+  const app = await appWith(host)
+  const read = async () =>
+    ((await (await app.request('/settings/_api/settings')).json()) as SettingsData).notebook.openSavedIn
+  const before = await read()
+  const toCode = await post(app, '/settings/_api/set', { key: 'openSavedIn', value: 'code' })
+  const afterCode = await read()
+  const toNone = await post(app, '/settings/_api/set', { key: 'openSavedIn', value: 'none' })
+  const afterNone = await read()
+  const toBrowser = await post(app, '/settings/_api/set', { key: 'openSavedIn', value: 'browser' })
+  const afterBrowser = await read()
+  assert({
+    given: 'openSavedIn switched across code, none, and browser',
+    should: 'default to browser, save each valid choice, and reflect updates immediately',
+    actual: [before, toCode.status, afterCode, toNone.status, afterNone, toBrowser.status, afterBrowser, writes],
+    expected: [
+      'browser',
+      200,
+      'code',
+      200,
+      'none',
+      200,
+      'browser',
+      [
+        ['openSavedIn', 'code'],
+        ['openSavedIn', 'none'],
+        ['openSavedIn', 'browser'],
+      ],
+    ],
   })
 })
 

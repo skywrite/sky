@@ -66,7 +66,7 @@ export default class SlackSavedTask extends Command {
       'before gets only its new replies, and an archived one that has come',
       'back to life is followed again. Summary, auto-tags, and auto-rel apply',
       'either way, each item is then marked complete in Slack, and captured',
-      'files open in the editor when done.',
+      'files open according to your Open saved items setting (Explorer in the browser by default).',
       '--capture-all captures every available matching item in this fetch,',
       'in the selected sort order. Use --limit to increase the fetch size.',
       '',

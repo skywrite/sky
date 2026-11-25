@@ -2,17 +2,18 @@ import * as path from 'node:path'
 import * as p from '@clack/prompts'
 import { Command, CommandPlatform, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
-import { DIR_BASE } from '#config'
 import { AccountResolutionError, resolveLabel } from '#lib/google/mod.ts'
 import type { GoogleClient } from '#lib/google/mod.ts'
-import openEditor from '#lib/shell/openEditor.ts'
+import { openSavedFiles } from '#lib/shell/openSavedFiles.ts'
+import { loadSkyConfig, openSavedIn } from '#shared/config/loader.ts'
+import type { OpenSavedTarget } from '#shared/config/types.ts'
 import { writeTextFile } from '#shared/fs/mod.ts'
 import EmailFollowRegistry from '#shared/models/Follow/EmailFollowRegistry.ts'
 import Follow from '#shared/models/Follow/mod.ts'
 import { fetchNow } from '#shared/nbfs/mod.ts'
 import { PlainDate, PlainDateTime } from '#universal/dates/nbdt/mod.ts'
 import { fetchUnsavedThreads } from '../../lib/fetchUnsavedThreads.ts'
-import type { FetchUnsavedResult } from '../../lib/fetchUnsavedThreads.ts'
+import type { FetchedThread, FetchUnsavedResult } from '../../lib/fetchUnsavedThreads.ts'
 import {
   applyNowLabelSwaps,
   continueFollow,
@@ -44,7 +45,7 @@ const params = {
   }),
   noAutoTag: Flag.bool('Skip automatic tagging from the archived-email tag corpus', { default: false }),
   noAutoRel: Flag.bool('Skip automatic rel suggestion from the entity graph', { default: false }),
-  noEditor: Flag.bool('Skip opening captured entries in the editor', { default: false }),
+  noEditor: Flag.bool('Skip opening captured entries', { default: false }),
 }
 
 type Params = InferParams<typeof params>
@@ -64,8 +65,52 @@ declare module '#commands/lib/core/CommandTypesRegistry.ts' {
 
 const NOTHING_SYNCED: SyncResult = { newFollows: 0, updatedFollows: 0, bornExpired: 0, expired: [], fetchedMessages: 0 }
 
-/** Most entries a console run opens for review — past this, the closing report is the review surface. */
-const MAX_EDITOR_OPENS = 10
+/** Most entries a run opens for review — past this, the closing report is the review surface. */
+export const MAX_EDITOR_OPENS = 10
+
+/**
+ * Open newly captured email entries according to platform rules and the user's
+ * `openSavedIn` setting (`browser`, `code`, or `none`). Console runs open every
+ * captured entry; heartbeat (`Server`) runs open only first captures.
+ */
+export async function openCapturedEntries(opts: {
+  platform: CommandPlatform
+  noEditor: boolean
+  allThreads: FetchedThread[]
+  firstCaptures: ReadonlySet<string>
+  baseDir: string
+  port: number
+  output: { log: (msg: string) => void }
+  target?: OpenSavedTarget
+  openFiles?: typeof openSavedFiles
+}): Promise<void> {
+  const { platform, noEditor, allThreads, firstCaptures, baseDir, port, output } = opts
+  const created = allThreads.flatMap((t) => t.messages)
+  const reviewable =
+    platform === CommandPlatform.Console
+      ? created
+      : platform === CommandPlatform.Server
+        ? allThreads.filter((t) => firstCaptures.has(t.threadId)).flatMap((t) => t.messages)
+        : []
+  const target = opts.target ?? openSavedIn(loadSkyConfig())
+  if (noEditor || target === 'none' || reviewable.length === 0) return
+
+  const toOpen = reviewable.slice(0, MAX_EDITOR_OPENS)
+  const rest = reviewable.length - toOpen.length
+  const where = target === 'browser' ? ' in browser' : ' in code editor'
+  output.log(
+    `  Opening ${toOpen.length} captured entr${toOpen.length === 1 ? 'y' : 'ies'}${where}${rest > 0 ? ` (${rest} more listed in the report below)` : ''}`,
+  )
+  try {
+    await (opts.openFiles ?? openSavedFiles)(
+      toOpen.map((m) => m.path),
+      { target, baseDir, port },
+    )
+  } catch (err) {
+    // A heartbeat must never fail over an opener that couldn't launch.
+    output.log(`  Warning: could not open captured entries (${(err as Error).message})`)
+  }
+}
 
 type PickedThread = { threadId: string; door: 'now' | 'bucket' }
 
@@ -276,28 +321,15 @@ export default class GoogleEmailInboxFollowSyncTask extends Command {
       // continuations inherit already-reviewed fields. Capped — a backlog
       // drain creates dozens of files, and a wall of tabs reviews worse
       // than the report below.
-      const allThreads = [...nowFetch.threads, ...bucketFetch.threads]
-      const allFirstCaptures = new Set([...nowDoor.firstCaptures, ...bucketDoor.firstCaptures])
-      const created = allThreads.flatMap((t) => t.messages)
-      const reviewable =
-        context.platform === CommandPlatform.Console
-          ? created
-          : context.platform === CommandPlatform.Server
-            ? allThreads.filter((t) => allFirstCaptures.has(t.threadId)).flatMap((t) => t.messages)
-            : []
-      if (!noEditor && reviewable.length > 0) {
-        const toOpen = reviewable.slice(0, MAX_EDITOR_OPENS)
-        const rest = reviewable.length - toOpen.length
-        output.log(
-          `  Opening ${toOpen.length} captured entr${toOpen.length === 1 ? 'y' : 'ies'}${rest > 0 ? ` (${rest} more listed in the report below)` : ''}`,
-        )
-        try {
-          await openEditor(toOpen.map((m) => ({ file: path.join(DIR_BASE, m.path) })))
-        } catch (err) {
-          // A heartbeat must never fail over an editor that couldn't spawn.
-          output.log(`  Warning: could not open editor (${(err as Error).message})`)
-        }
-      }
+      await openCapturedEntries({
+        platform: context.platform,
+        noEditor,
+        allThreads: [...nowFetch.threads, ...bucketFetch.threads],
+        firstCaptures: new Set([...nowDoor.firstCaptures, ...bucketDoor.firstCaptures]),
+        baseDir: context.config.DIR_BASE,
+        port: context.config.PORT_SERVER,
+        output,
+      })
 
       // ── Phase 5: Expire quiet follows (parity with slack:follow:check) ───
       // After capture, so a thread's final unsaved messages land before its

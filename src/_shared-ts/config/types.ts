@@ -1,6 +1,9 @@
 /** The side of the day file a Google account's saved mail is filed under. */
 export type GoogleAccountCategory = 'Professional' | 'Personal'
 
+/** Where saved items from email (Sky/Follow) and Slack saved open after capture. */
+export type OpenSavedTarget = 'browser' | 'code' | 'none'
+
 export interface AiProfileConfig {
   provider: string
   model: string
@@ -30,6 +33,8 @@ export interface SkyConfig {
   /** Where commands write files for the user — generated images, PDF exports, saved transcripts (default: ~/Desktop). */
   outputDir: string
   editor: string | undefined
+  /** Where saved items from email (Sky/Follow) and Slack saved open after capture (default: 'browser'). */
+  openSavedIn?: OpenSavedTarget
   categories: string[]
   commands: {
     dirs: string[]

@@ -10,7 +10,7 @@ export type PathLike = {
   column?: number
 }
 
-export default async function openEditor(files: PathLike[]) {
-  oe(files)
+export default async function openEditor(files: PathLike[], options?: { editor?: string }) {
+  await oe(files, options?.editor ? { editor: options.editor } : undefined)
   await delay(500)
 }

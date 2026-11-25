@@ -3,9 +3,10 @@ import * as p from '@clack/prompts'
 import type { ImapFlow } from 'imapflow'
 import { Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
-import { DIR_BASE, DIR_STATE_FOLLOW_EMAIL_ACTIVE } from '#config'
-import openEditor from '#lib/shell/openEditor.ts'
+import { DIR_STATE_FOLLOW_EMAIL_ACTIVE } from '#config'
+import { openSavedFiles } from '#lib/shell/openSavedFiles.ts'
 import slugify from '#lib/string/slugify.ts'
+import { loadSkyConfig, openSavedIn } from '#shared/config/loader.ts'
 import { outputFile, writeTextFile } from '#shared/fs/mod.ts'
 import EmailFollowRegistry from '#shared/models/Follow/EmailFollowRegistry.ts'
 import Follow from '#shared/models/Follow/mod.ts'
@@ -186,9 +187,18 @@ export default class EmailInboxFollowSyncTask extends Command {
       if (pickedThreadId) {
         const picked = fetchResult.threads.find((t) => t.threadId === pickedThreadId)
         const latest = picked?.messages.at(-1)
-        if (latest) {
+        const target = openSavedIn(loadSkyConfig())
+        if (latest && target !== 'none') {
           output.log(`  Opening ${latest.path}`)
-          await openEditor([{ file: path.join(DIR_BASE, latest.path) }])
+          try {
+            await openSavedFiles([latest.path], {
+              target,
+              baseDir: context.config.DIR_BASE,
+              port: context.config.PORT_SERVER,
+            })
+          } catch (err) {
+            output.log(`  Warning: could not open ${latest.path} (${(err as Error).message})`)
+          }
         }
       }
 

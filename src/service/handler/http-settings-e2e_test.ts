@@ -61,6 +61,7 @@ test(
         outputDir: '/Output',
         editor: 'code',
         editors: ['code'],
+        openSavedIn: 'browser',
       },
       about: { version: 'sample', date: '2026-01-15' },
       advanced: { path: '/Config/config.jsonc', exists: true, version: 1, sections: [] },
@@ -109,6 +110,7 @@ test(
       }
       if (input.key === 'web.theme') settings.theme = input.value
       if (input.key === 'web.textSize') settings.textSize = input.value
+      if (input.key === 'openSavedIn') settings.notebook.openSavedIn = input.value
       if (input.key === 'experimental.workstreams') {
         if (persistBeforeRefusal) settings.experimental.workstreams = input.value === true || input.value === 'true'
         if (refuseWorkstreamSave) return c.json({ message: 'This setting could not be saved.' }, 503)
@@ -444,17 +446,36 @@ test(
         await page.goto(`${base}${route}`)
         await page.getByRole('heading', { name: title, exact: true }).waitFor()
         if (route === '/settings/notebook') {
+          const openSavedControl = page.locator('[aria-label="Open saved items in"]')
+          await openSavedControl.locator('input[value="browser"]:checked').waitFor({ state: 'attached' })
+          const savedChoice = page.waitForResponse(
+            (response) =>
+              response.url().endsWith('/settings/_api/set') &&
+              response.request().method() === 'POST' &&
+              response.request().postDataJSON().key === 'openSavedIn',
+          )
+          await openSavedControl.getByText('Code', { exact: true }).click()
+          await savedChoice
           const expireDays = page.getByLabel('Expire days', { exact: true })
           await expireDays.fill('5')
           await page.getByRole('button', { name: 'Save reminder settings', exact: true }).click()
           await page.getByText('Saved', { exact: true }).waitFor()
           await page.reload()
           await expireDays.waitFor()
+          await openSavedControl.locator('input[value="code"]:checked').waitFor({ state: 'attached' })
+          const savedNone = page.waitForResponse(
+            (response) =>
+              response.url().endsWith('/settings/_api/set') &&
+              response.request().method() === 'POST' &&
+              response.request().postDataJSON().key === 'openSavedIn',
+          )
+          await openSavedControl.getByText('None', { exact: true }).click()
+          await savedNone
           assert({
-            given: 'updated reminder expiry days under Notebook settings',
-            should: 'save and reload the preference',
-            actual: [await expireDays.inputValue(), settings.reminders],
-            expected: ['5', { autoRollover: true, expireDays: 5 }],
+            given: 'updated openSavedIn and reminder expiry days under Notebook settings',
+            should: 'save and reload both preferences',
+            actual: [await expireDays.inputValue(), settings.reminders, settings.notebook.openSavedIn],
+            expected: ['5', { autoRollover: true, expireDays: 5 }, 'none'],
           })
         }
         if (route === '/settings/voice') {

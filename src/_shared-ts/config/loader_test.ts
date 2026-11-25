@@ -193,3 +193,31 @@ test('reminders rollover and expireDays default cleanly and reject invalid value
     await rm(dir, { recursive: true, force: true })
   }
 })
+
+test('openSavedIn defaults to browser, validates allowed targets, and preserves JSONC comments on write', async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'sky-open-saved-config-'))
+  const file = path.join(dir, 'config.jsonc')
+  try {
+    const values: unknown[] = [loadSkyConfig(file).openSavedIn]
+    for (const openSavedIn of ['browser', 'code', 'none', 'terminal', 1, null]) {
+      await writeFile(file, JSON.stringify({ openSavedIn }))
+      values.push(loadSkyConfig(file).openSavedIn)
+    }
+    await writeFile(file, '{\n  // Keep my editor.\n  "editor": "code"\n}\n')
+    setConfigValue(['openSavedIn'], 'none', file)
+    const text = await readFile(file, 'utf8')
+    assert({
+      given: 'missing, valid, and invalid openSavedIn values, then a settings write',
+      should: 'default to browser, accept browser/code/none, and keep existing settings and comments',
+      actual: [
+        values,
+        loadSkyConfig(file).openSavedIn,
+        loadSkyConfig(file).editor,
+        text.includes('// Keep my editor.'),
+      ],
+      expected: [['browser', 'browser', 'code', 'none', 'browser', 'browser', 'browser'], 'none', 'code', true],
+    })
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})

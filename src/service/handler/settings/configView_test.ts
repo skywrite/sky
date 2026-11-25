@@ -17,6 +17,7 @@ function configWith(overrides: Partial<SkyConfig> = {}): SkyConfig {
     inputDir: `${HOME}/Desktop`,
     outputDir: `${HOME}/Desktop`,
     editor: 'code',
+    openSavedIn: 'browser',
     categories: ['Professional', 'Personal'],
     commands: { dirs: [`${HOME}/sky-extras`], day: { start: ['day:sr:update', 'util:weather'] } },
     bins: {},
@@ -112,6 +113,12 @@ test({ name: 'settings view - every value, with where it came from' }, () => {
     should: 'credit the file',
     actual: rows.get('slack.workspace'),
     expected: { key: 'slack.workspace', value: 'https://atlas.slack.com', source: 'file' },
+  })
+  assert({
+    given: 'openSavedIn omitted from the file',
+    should: 'show the browser default under notebook',
+    actual: rows.get('openSavedIn'),
+    expected: { key: 'openSavedIn', value: 'browser', source: 'default' },
   })
   assert({
     given: 'the version',

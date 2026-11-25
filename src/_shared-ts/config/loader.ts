@@ -4,7 +4,7 @@ import * as path from 'node:path'
 import process from 'node:process'
 import { parse } from 'jsonc-parser'
 import { DEFAULT_LAYOUT_PATTERN, LAYOUT_PATTERNS, layoutByPattern } from '../nbfs/layout/registry.ts'
-import type { GoogleAccountCategory, RemindersConfig, SkyConfig, SlackForYou } from './types.ts'
+import type { GoogleAccountCategory, OpenSavedTarget, RemindersConfig, SkyConfig, SlackForYou } from './types.ts'
 
 export const SKY_CONFIG_DIR = path.join(os.homedir(), '.sky')
 export const SKY_CONFIG_PATH = path.join(SKY_CONFIG_DIR, 'config.jsonc')
@@ -86,6 +86,7 @@ function defaults(): SkyConfig {
     inputDir: path.join(os.homedir(), 'Desktop'),
     outputDir: path.join(os.homedir(), 'Desktop'),
     editor: undefined,
+    openSavedIn: DEFAULT_OPEN_SAVED_IN,
     categories: ['Professional', 'Personal'],
     commands: {
       dirs: [],
@@ -125,6 +126,15 @@ export const SLACK_FOR_YOU_DEFAULTS: SlackForYou = { dms: true, mentions: true, 
 
 export const REMINDERS_DEFAULTS: RemindersConfig = { autoRollover: true, expireDays: 3 }
 
+export const OPEN_SAVED_TARGETS: readonly OpenSavedTarget[] = ['browser', 'code', 'none']
+
+export const DEFAULT_OPEN_SAVED_IN: OpenSavedTarget = 'browser'
+
+/** Where saved items from email (Sky/Follow) and Slack saved open, defaulting to browser (Explorer). */
+export function openSavedIn(config?: Pick<SkyConfig, 'openSavedIn'>): OpenSavedTarget {
+  return config?.openSavedIn ?? DEFAULT_OPEN_SAVED_IN
+}
+
 /** The For you rules, whole, whatever the file left out. */
 export function slackForYou(config: Pick<SkyConfig, 'slack'>): SlackForYou {
   return { ...SLACK_FOR_YOU_DEFAULTS, ...config.slack.forYou }
@@ -154,6 +164,12 @@ export function loadSkyConfig(configPath = SKY_CONFIG_PATH): SkyConfig {
     if (parsed.inputDir) config.inputDir = expandTilde(parsed.inputDir)
     if (parsed.outputDir) config.outputDir = expandTilde(parsed.outputDir)
     if (parsed.editor) config.editor = parsed.editor
+    if (
+      typeof parsed.openSavedIn === 'string' &&
+      (OPEN_SAVED_TARGETS as readonly string[]).includes(parsed.openSavedIn)
+    ) {
+      config.openSavedIn = parsed.openSavedIn as OpenSavedTarget
+    }
     if (parsed.categories) config.categories = parsed.categories
     if (parsed.commands?.dirs) config.commands.dirs = parsed.commands.dirs.map(expandTilde)
     if (parsed.commands?.day?.start) config.commands.day.start = parsed.commands.day.start

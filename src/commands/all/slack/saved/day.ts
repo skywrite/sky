@@ -1,10 +1,9 @@
-import { setTimeout as delay } from 'node:timers/promises'
-import openEditor from 'open-editor'
 import colors from 'picocolors'
 import type { AgentSlackLaterItem } from '#commands/all/slack/cli/lib/agent-slack/types.ts'
 import { formatSlackTimestamp } from '#commands/all/slack/lib/mod.ts'
 import { Arg, Command, CommandResult, Flag } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
+import { openSavedFiles } from '#lib/shell/openSavedFiles.ts'
 import { notebookTimeAt } from '#shared/nbfs/mod.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import { captureLaterItems, openInSlack } from './lib/capture.ts'
@@ -115,8 +114,8 @@ export default class SlackSavedDayTask extends Command {
       'before gets only its new replies, and an archived one that has come',
       'back to life is followed again. Summary, auto-tags, and auto-rel apply',
       'either way, the item is then marked complete in Slack — the Saved section',
-      'stays the ledger of what remains — and captured files open in the',
-      'editor when done.',
+      'stays the ledger of what remains — and captured files open according to',
+      'your Open saved items setting (Explorer in the browser by default).',
       '--capture-all captures every available item matching the day and channel',
       'filters in this fetch; --limit controls the fetch size (default 600).',
       '',
@@ -373,8 +372,16 @@ export default class SlackSavedDayTask extends Command {
     }
 
     if (outcome.openTargets.length > 0) {
-      openEditor(outcome.openTargets.map((file) => ({ file })))
-      await delay(500)
+      const filesToOpen =
+        outcome.captured.length === outcome.openTargets.length ? outcome.captured : outcome.openTargets
+      try {
+        await openSavedFiles(filesToOpen, {
+          baseDir: context.config.DIR_BASE,
+          port: context.config.PORT_SERVER,
+        })
+      } catch (err) {
+        output.log(colors.dim(`  Warning: could not open captured files (${(err as Error).message})`))
+      }
     }
     // Slack last, so the user lands there ready to respond
     if (openBare) await openInSlack(outcome.openRows, output, { conversations })

@@ -28,8 +28,8 @@ import {
   type DecisionProvider,
 } from '#shared/ai/decisions.ts'
 import { currentProfileName, type ModelProfile } from '#shared/ai/models.ts'
-import { ENV_OVERRIDES, remindersConfig } from '#shared/config/loader.ts'
-import type { GoogleAccountCategory, RemindersConfig, SkyConfig } from '#shared/config/types.ts'
+import { ENV_OVERRIDES, OPEN_SAVED_TARGETS, openSavedIn, remindersConfig } from '#shared/config/loader.ts'
+import type { GoogleAccountCategory, OpenSavedTarget, RemindersConfig, SkyConfig } from '#shared/config/types.ts'
 import type { PromptCatalog } from '#shared/prompts/catalog.ts'
 import { isEffort, optionsWithEffort, presetEffort } from '#universal/ai/effort.ts'
 import { prettyModel } from '#universal/ai/modelName.ts'
@@ -93,7 +93,17 @@ const SECTIONS: ReadonlyArray<{ id: string; title: string; keys: string[]; group
   {
     id: 'notebook',
     title: 'Notebook',
-    keys: ['dir', 'userDataDir', 'inputDir', 'outputDir', 'codeDir', 'editor', 'categories', 'nbfs.layout'],
+    keys: [
+      'dir',
+      'userDataDir',
+      'inputDir',
+      'outputDir',
+      'codeDir',
+      'editor',
+      'openSavedIn',
+      'categories',
+      'nbfs.layout',
+    ],
     groups: ['reminders'],
   },
   {
@@ -291,6 +301,8 @@ export interface SettingsData {
     editor: string | null
     /** Editor commands present on this machine, the configured one included */
     editors: string[]
+    /** Where saved items from email (Sky/Follow) and Slack saved open after capture */
+    openSavedIn?: OpenSavedTarget
   }
   about: { version: string | null; date: string | null }
   advanced: ConfigView
@@ -360,6 +372,7 @@ export const SETTABLE_KEYS = {
   'ai.roles.balanced': ['ai', 'roles', 'balanced'],
   'ai.roles.vision': ['ai', 'roles', 'vision'],
   editor: ['editor'],
+  openSavedIn: ['openSavedIn'],
   'experimental.contextPreflight': ['experimental', 'contextPreflight'],
   'experimental.workstreams': ['experimental', 'workstreams'],
   'experimental.outbox': ['experimental', 'outbox'],
@@ -429,6 +442,10 @@ async function refuse(host: SettingsHost, key: SettableKey, value: string): Prom
       const editors = await host.editors()
       return editors.includes(value) ? null : `no such editor on this machine: ${value}`
     }
+    case 'openSavedIn':
+      return (OPEN_SAVED_TARGETS as readonly string[]).includes(value)
+        ? null
+        : `openSavedIn must be one of ${OPEN_SAVED_TARGETS.join(', ')}`
     case 'ai.writingVoiceProfile':
     case 'ai.roles.chat':
     case 'ai.roles.reasoning':
@@ -497,6 +514,7 @@ async function settingsData(host: SettingsHost): Promise<SettingsData> {
       outputDir: contractHome(config.outputDir, home),
       editor: config.editor ?? null,
       editors,
+      openSavedIn: openSavedIn(config),
     },
     about,
     advanced: describeConfig(snapshot),
