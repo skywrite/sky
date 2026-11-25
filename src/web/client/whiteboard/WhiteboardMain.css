@@ -1,0 +1,460 @@
+/* Persistent Whiteboard: clean header, underline tabs, WYSIWYG editor, and syntax-highlighted Raw plain text. */
+
+.sky-wb {
+  min-height: 0;
+  position: relative;
+}
+
+.sky-wb-chrome {
+  width: 100%;
+  max-width: 1096px;
+  margin: 0 auto;
+  padding: 8px 48px 0;
+  flex: none;
+}
+
+.sky-wb-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.sky-wb-head h1 {
+  margin: 0;
+  font-size: 32px;
+  line-height: 1.2;
+  letter-spacing: -0.025em;
+  font-weight: 650;
+}
+
+.sky-wb-head-right {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px;
+  flex: none;
+}
+
+.sky-wb-conflict-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-right: 4px;
+}
+
+/* Tabs row — matches FutureMain.css (.sky-future-tabs) */
+.sky-wb-tabs-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 14px;
+  border-bottom: 1px solid var(--sky-border-soft);
+}
+
+.sky-wb-tabs {
+  display: flex;
+  gap: 28px;
+}
+
+.sky-wb-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  margin-bottom: -1px;
+  padding: 8px 0 10px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--sky-dim);
+  font-family: inherit;
+  font-size: 17px;
+  font-weight: 550;
+  cursor: pointer;
+  transition:
+    color 140ms ease,
+    border-color 140ms ease;
+}
+
+.sky-wb-tab:hover {
+  color: var(--sky-text);
+}
+
+.sky-wb-tab[aria-selected='true'] {
+  border-bottom-color: var(--sky-text);
+  color: var(--sky-text);
+}
+
+.sky-wb-tab:focus-visible {
+  outline: 2px solid var(--sky-action-focus);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.sky-wb-tab-badge {
+  font-size: 12.5px;
+  font-weight: 500;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--sky-s2);
+  color: var(--sky-text-2);
+}
+
+.sky-wb-tab[aria-selected='true'] .sky-wb-tab-badge {
+  background: var(--sky-accent-soft);
+  color: var(--sky-accent);
+}
+
+.sky-wb-tab-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-bottom: 4px;
+}
+
+.sky-wb-file-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--mantine-font-family-monospace);
+  font-size: 13px;
+  color: var(--sky-dim);
+}
+
+.sky-wb-notice {
+  margin: 10px 0 0;
+  font-size: 14.5px;
+  line-height: 1.5;
+  color: var(--sky-text-2);
+}
+
+.sky-wb-notice[role='alert'] {
+  color: var(--sky-amber);
+}
+
+.sky-wb-panel {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.sky-wb-tools-wrap {
+  width: 100%;
+  max-width: 1096px;
+  margin: 0 auto;
+  padding: 0 48px;
+  flex: none;
+}
+
+/* Align shared NoteToolbar directly with the Whiteboard column width. */
+.sky-wb-tools-wrap > .sky-note-tools {
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: 6px 0;
+}
+
+.sky-wb-body {
+  padding-top: 28px;
+  max-width: 1096px;
+}
+
+.sky-wb-rich[data-blank='true'] > p:first-of-type::before {
+  content: 'Start writing, or type / for headings, checklists, tables and more.';
+  float: left;
+  height: 0;
+  color: var(--sky-dim);
+  pointer-events: none;
+}
+
+/* Raw utility strip */
+.sky-wb-raw-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--sky-border-soft);
+}
+
+.sky-wb-raw-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: var(--sky-text-2);
+  min-width: 0;
+}
+
+.sky-wb-raw-note-short {
+  display: none;
+}
+
+.sky-wb-raw-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--sky-green);
+  flex: none;
+}
+
+.sky-wb-raw-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+}
+
+.sky-wb-copy-btn[data-copied='true'] {
+  color: var(--sky-green);
+}
+
+.sky-wb-copy-short {
+  display: none;
+}
+
+/* Highlighted plain-text stage: <pre> and <textarea> share one CSS Grid cell so metrics never drift. */
+.sky-wb-raw-stage {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  position: relative;
+  min-height: 54vh;
+  width: 100%;
+  min-width: 0;
+}
+
+.sky-wb-raw-highlight,
+.sky-wb-raw-textarea {
+  grid-area: 1 / 1;
+  margin: 0;
+  padding: 0 0 80px;
+  border: 0;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  min-height: 54vh;
+  font-family: var(--mantine-font-family-monospace);
+  font-size: calc(15.5px * var(--sky-doc-scale, 1));
+  font-weight: 400;
+  font-style: normal;
+  line-height: 1.75;
+  letter-spacing: 0;
+  tab-size: 2;
+  font-variant-ligatures: none;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: normal;
+}
+
+.sky-wb-raw-highlight {
+  pointer-events: none;
+  user-select: none;
+  color: var(--sky-text);
+  z-index: 1;
+}
+
+.sky-wb-raw-textarea {
+  position: relative;
+  z-index: 2;
+  outline: 0;
+  resize: none;
+  overflow: hidden;
+  background: transparent;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  caret-color: var(--sky-accent);
+}
+
+.sky-wb-raw-textarea::selection {
+  background: color-mix(in srgb, var(--sky-accent) 22%, transparent);
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+}
+
+.sky-wb-raw-textarea::placeholder {
+  color: var(--sky-dim);
+  -webkit-text-fill-color: var(--sky-dim);
+  font-family: var(--mantine-font-family);
+  font-size: 17px;
+  line-height: 1.65;
+}
+
+/* Color-only Markdown tokens (never alter glyph advance width). */
+.sky-wb-md-punct,
+.sky-wb-md-hr,
+.sky-wb-md-link-url {
+  color: var(--sky-dim);
+}
+
+.sky-wb-md-heading {
+  color: var(--sky-code-title);
+}
+
+.sky-wb-md-strong {
+  color: var(--sky-code-keyword);
+}
+
+.sky-wb-md-em {
+  color: var(--sky-code-type);
+}
+
+.sky-wb-md-strike,
+.sky-wb-md-done-text {
+  color: var(--sky-dim);
+  text-decoration: line-through;
+}
+
+.sky-wb-md-code {
+  color: var(--sky-code-string);
+  background: color-mix(in srgb, var(--sky-s2) 85%, transparent);
+  border-radius: 3px;
+}
+
+.sky-wb-md-fence {
+  color: var(--sky-code-string);
+}
+
+.sky-wb-md-link-text {
+  color: var(--sky-accent);
+}
+
+.sky-wb-md-bullet,
+.sky-wb-md-check-open {
+  color: var(--sky-code-number);
+}
+
+.sky-wb-md-check-done {
+  color: var(--sky-green);
+}
+
+.sky-wb-md-quote {
+  color: var(--sky-text-2);
+}
+
+.sky-wb-md-frontmatter-key {
+  color: var(--sky-code-type);
+}
+
+.sky-wb-raw-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--sky-border-soft);
+  font-size: 13.5px;
+  color: var(--sky-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.sky-wb-dialog-copy {
+  margin: 0 0 22px;
+  font-size: 16px;
+  line-height: 1.55;
+  color: var(--sky-text-2);
+}
+
+.sky-wb-dialog-copy code {
+  font-family: var(--mantine-font-family-monospace);
+  font-size: 0.9em;
+}
+
+.sky-wb-undo {
+  position: fixed;
+  left: 50%;
+  bottom: max(28px, env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  z-index: 150;
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+  padding: 11px 18px;
+  border-radius: 999px;
+  background: var(--sky-text);
+  color: var(--sky-bg);
+  font-size: 14.5px;
+  font-weight: 500;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.18);
+}
+
+.sky-wb-undo button {
+  border: 0;
+  background: transparent;
+  color: var(--mantine-color-blue-3);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0;
+}
+
+[data-mantine-color-scheme='dark'] .sky-wb-undo button {
+  color: var(--mantine-color-blue-8);
+}
+
+@media (max-width: 900px) {
+  .sky-wb-chrome {
+    padding: 4px 16px 0;
+  }
+
+  .sky-wb-head h1 {
+    font-size: 26px;
+  }
+
+  .sky-wb-tabs-row {
+    margin-top: 8px;
+  }
+
+  .sky-wb-tabs {
+    gap: 22px;
+  }
+
+  .sky-wb-tab-meta {
+    display: none;
+  }
+
+  .sky-wb-tools-wrap {
+    padding: 0 16px;
+  }
+
+  .sky-wb-tools-wrap > .sky-note-tools {
+    width: 100%;
+    padding: 4px 0;
+  }
+
+  .sky-wb-tools-wrap > .sky-note-tools .sky-action-icon {
+    min-width: 40px;
+    width: 40px;
+    height: 40px;
+  }
+
+  .sky-wb-tools-wrap > .sky-note-tools .sky-note-style {
+    height: 40px;
+  }
+
+  .sky-wb-raw-note-full,
+  .sky-wb-copy-full {
+    display: none;
+  }
+
+  .sky-wb-raw-note-short,
+  .sky-wb-copy-short {
+    display: inline;
+  }
+
+  .sky-wb-body {
+    padding: 18px 16px max(88px, env(safe-area-inset-bottom));
+  }
+
+  /* 16px minimum prevents iOS Safari from zooming on textarea focus. */
+  .sky-wb-raw-highlight,
+  .sky-wb-raw-textarea {
+    font-size: max(16px, calc(16px * var(--sky-doc-scale, 1)));
+    line-height: 1.65;
+  }
+}

@@ -230,11 +230,11 @@ Voice lives in the chat composer, immediately after Send; its conversation
 handoff and lifecycle are described in the [chat design](../../service/handler/chat/docs/README.md#voice-in-the-conversation).
 The main sidebar has no Talk destination.
 
-Automations, Explorer, and Settings share a persistent footer in every sidebar
-section. `client/shell/sidebarUtilities.tsx` renders the bolt, folder, and gear as 24px
-outline icons in three equal columns, each with a 44px target. The current
-section uses the primary accent and `aria-current`; hover and keyboard focus
-show the destination's name. Native links support opening a section in another
+Whiteboard, Automations, Explorer, and Settings share a persistent footer in every sidebar
+section. `client/shell/sidebarUtilities.tsx` renders the board, bolt, folder, and gear as 24px
+outline icons in four equal columns, each with a 44px target on desktop and a captioned 54px target
+in the mobile drawer. The current section uses the primary accent and `aria-current`; hover and
+keyboard focus show the destination's name. Native links support opening a section in another
 tab, while ordinary clicks use the app's navigation and close the mobile drawer.
 
 The sidebar's content scrolls inside `sky-side-scroll`, keeping the footer

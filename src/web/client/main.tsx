@@ -54,6 +54,8 @@ import { StreaksMain } from './streaks/streaks.tsx'
 import { TrackingMain } from './tracking/tracking.tsx'
 import { AuditionMain } from './voice/audition.tsx'
 import { useWeek, weekHref, weekIdOf, WeekMain } from './week/week.tsx'
+import { isWhiteboardPath } from './whiteboard/routes.ts'
+import { WhiteboardMain } from './whiteboard/WhiteboardMain.tsx'
 import { WorkstreamsMain } from './workstreams/WorkstreamsMain.tsx'
 
 /**
@@ -162,6 +164,7 @@ function Canvas() {
   const isTracking = path === '/tracking' || path.startsWith('/tracking/')
   const isStreaks = path === '/streaks' || path.startsWith('/streaks/')
   const isSearch = path === '/search'
+  const isWhiteboard = isWhiteboardPath(path)
   const isWorkstreams = path === '/workstreams' || path.startsWith('/workstreams/')
   const workstreamId = path.startsWith('/workstreams/') ? decodeURIComponent(path.slice('/workstreams/'.length)) : null
   // '' is the explorer itself, a path is a file open in it, null is any other page.
@@ -253,6 +256,7 @@ function Canvas() {
     !isTracking &&
     !isStreaks &&
     !isSearch &&
+    !isWhiteboard &&
     !isWorkstreams &&
     !isWeek &&
     filesRoute === null &&
@@ -276,6 +280,7 @@ function Canvas() {
       isFuture ||
       isTracking ||
       isStreaks ||
+      isWhiteboard ||
       importId ||
       explorerFile !== null
     )
@@ -307,6 +312,7 @@ function Canvas() {
     isRecurring,
     isFuture,
     isTracking,
+    isWhiteboard,
     importId,
     explorerFile,
     onDayPage,
@@ -417,6 +423,7 @@ function Canvas() {
     if (
       !url.pathname.startsWith('/thread/') &&
       !url.pathname.startsWith('/explorer/') &&
+      !isWhiteboardPath(url.pathname) &&
       filesRouteOf(url.pathname) === null &&
       meetingRouteOf(url.pathname) === null &&
       noteRouteOf(url.pathname) === null &&
@@ -647,13 +654,15 @@ function Canvas() {
           )}
           <SidebarUtilities
             active={
-              isAutomations
-                ? 'automations'
-                : explorerFile !== null
-                  ? 'explorer'
-                  : isSettings || peopleRoute || placesRoute !== null || isRecurring
-                    ? 'settings'
-                    : null
+              isWhiteboard
+                ? 'whiteboard'
+                : isAutomations
+                  ? 'automations'
+                  : explorerFile !== null
+                    ? 'explorer'
+                    : isSettings || peopleRoute || placesRoute !== null || isRecurring
+                      ? 'settings'
+                      : null
             }
             navigate={navigate}
           />
@@ -714,6 +723,8 @@ function Canvas() {
           <TrackingMain path={path} navigate={navigate} />
         ) : isStreaks ? (
           <StreaksMain path={path} search={search} onNavigate={navigate} />
+        ) : isWhiteboard ? (
+          <WhiteboardMain search={search} navigate={navigate} />
         ) : isWorkstreams ? (
           <WorkstreamsMain id={workstreamId} navigate={navigate} />
         ) : isNewAutomation ? (

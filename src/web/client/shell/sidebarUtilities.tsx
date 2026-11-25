@@ -3,18 +3,34 @@ import type { MouseEvent } from 'react'
 
 const utilities = [
   {
+    id: 'whiteboard',
+    label: 'Whiteboard',
+    shortLabel: 'Board',
+    icon: (
+      <>
+        <rect x="3" y="4" width="18" height="13" rx="2" />
+        <path d="M2 17h20" />
+        <path d="M13 17v-2.5h4V17" />
+        <path d="M8 21l2-4M16 21l-2-4" />
+      </>
+    ),
+  },
+  {
     id: 'automations',
     label: 'Automations',
+    shortLabel: 'Auto',
     icon: <path d="m13.3 2-9 11h6.8L10.7 22l9-12h-6.8L13.3 2Z" />,
   },
   {
     id: 'explorer',
     label: 'Explorer',
+    shortLabel: 'Files',
     icon: <path d="M3 7V5a2 2 0 0 1 2-2h5l3 4h6a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z" />,
   },
   {
     id: 'settings',
     label: 'Settings',
+    shortLabel: 'Settings',
     icon: (
       <>
         <path d="m9.5 3-.5 2a7.5 7.5 0 0 0-1.4.8l-2-.5-2.5 4.3 1.5 1.4a7.5 7.5 0 0 0 0 1.6L3.1 14l2.5 4.3 2-.5a7.5 7.5 0 0 0 1.4.8l.5 2h5l.5-2a7.5 7.5 0 0 0 1.4-.8l2 .5 2.5-4.3-1.5-1.4a7.5 7.5 0 0 0 0-1.6l1.5-1.4-2.5-4.3-2 .5A7.5 7.5 0 0 0 15 5l-.5-2h-5Z" />
@@ -33,7 +49,7 @@ export function SidebarUtilities({
 }) {
   return (
     <div className="sky-side-utilities" role="group" aria-label="Tools">
-      {utilities.map(({ id, label, icon }) => (
+      {utilities.map(({ id, label, shortLabel, icon }) => (
         <Tooltip
           key={id}
           label={label}
@@ -78,6 +94,9 @@ export function SidebarUtilities({
             >
               {icon}
             </svg>
+            <span className="sky-side-utility-caption" aria-hidden="true">
+              {shortLabel}
+            </span>
           </ActionIcon>
         </Tooltip>
       ))}
