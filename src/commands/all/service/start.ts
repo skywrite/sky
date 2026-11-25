@@ -1,3 +1,5 @@
+import { exit } from '#shared/sys/mod.ts'
+
 if (import.meta.main) {
   const { default: run } = await import('#service/run.ts')
 
@@ -8,5 +10,6 @@ if (import.meta.main) {
 
   run().catch((err) => {
     console.error(err)
+    exit(1)
   })
 }

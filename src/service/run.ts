@@ -229,436 +229,449 @@ const server = createServer({
 })
 
 export default async function run() {
-  // One wide boot event carries the phase timings; a boot that dies before
-  // emitting it leaves the tz line as the last record, and the throw itself
-  // lands in the /tmp crash-catcher.
+  // One wide boot event carries the phase timings (or boot failure); the
+  // rethrown error also lands in the /tmp stderr crash-catcher so the launcher
+  // exits non-zero and launchd retries instead of wedging on a held 'boot'.
   const boot = beginEvent(logServer, 'boot')
   boot.set({ openFds })
   const booting = hold('boot')
-  logServer.info('Notebook server is starting')
+  try {
+    logServer.info('Notebook server is starting')
 
-  const scanStarted = performance.now()
-  await server.scan()
-  boot.set({ scanMs: Math.round(performance.now() - scanStarted) })
+    const scanStarted = performance.now()
+    await server.scan()
+    boot.set({ scanMs: Math.round(performance.now() - scanStarted) })
 
-  // Heartbeat: periodic cadence runner (follow checks, inbox scans, etc.)
-  // See docs/ideas/heartbeat-system.md for design
-  const HEARTBEAT_INTERVAL_MS = 60_000 // 1 minute
-  // 15 minutes: a steady-state email sync with nothing new is ~45 Gmail
-  // metadata calls and no AI calls, so cadence is purely capture freshness —
-  // and the tick counter resets with every service restart, so a shorter fuse
-  // actually fires on edit-heavy days.
-  const EMAIL_SYNC_TICKS = 15
-  // Every minute: a steady-state Beeper sync with nothing new is one local
-  // chat search and a page per chat that moved, no AI calls; the desktop app
-  // answers from its own database. A message the person sends is in the
-  // notebook within the minute — and the tick counter restarts with the
-  // service, so a longer fuse rarely burned down on edit-heavy days.
-  const BEEPER_SYNC_TICKS = 1
-  // 5 minutes: a steady-state Slack pull is one call to find the channels
-  // with anything new, then reads of those alone.
-  const SLACK_PULL_TICKS = 5
-  // 5 minutes: scans Gmail Inbox (read-only via historyId cache) + recent Slack/Beeper captures.
-  const NEEDS_RESPONSE_TICKS = 5
-  const SLEEP_IDLE_MS = 3 * 3_600_000 // 3 hours
-  let heartbeatRunning = false
-  let heartbeatTick = 0
-  let heartbeatSleeping = false
-  const automationProcess = createAutomationProcess(config, env.toObject())
+    // Heartbeat: periodic cadence runner (follow checks, inbox scans, etc.)
+    // See docs/ideas/heartbeat-system.md for design
+    const HEARTBEAT_INTERVAL_MS = 60_000 // 1 minute
+    // 15 minutes: a steady-state email sync with nothing new is ~45 Gmail
+    // metadata calls and no AI calls, so cadence is purely capture freshness —
+    // and the tick counter resets with every service restart, so a shorter fuse
+    // actually fires on edit-heavy days.
+    const EMAIL_SYNC_TICKS = 15
+    // Every minute: a steady-state Beeper sync with nothing new is one local
+    // chat search and a page per chat that moved, no AI calls; the desktop app
+    // answers from its own database. A message the person sends is in the
+    // notebook within the minute — and the tick counter restarts with the
+    // service, so a longer fuse rarely burned down on edit-heavy days.
+    const BEEPER_SYNC_TICKS = 1
+    // 5 minutes: a steady-state Slack pull is one call to find the channels
+    // with anything new, then reads of those alone.
+    const SLACK_PULL_TICKS = 5
+    // 5 minutes: scans Gmail Inbox (read-only via historyId cache) + recent Slack/Beeper captures.
+    const NEEDS_RESPONSE_TICKS = 5
+    const SLEEP_IDLE_MS = 3 * 3_600_000 // 3 hours
+    let heartbeatRunning = false
+    let heartbeatTick = 0
+    let heartbeatSleeping = false
+    const automationProcess = createAutomationProcess(config, env.toObject())
 
-  function isQuietHours(): boolean {
-    const hour = new Date().getHours()
-    return hour >= 22 || hour < 4
-  }
-
-  // Wake endpoint: POST /heartbeat/wake
-  customRoutes.set('/heartbeat/wake', async (req: Request) => {
-    if (req.method === 'POST') {
-      heartbeatSleeping = false
-      logHeartbeat.info('wake', { event: 'wake', reason: 'endpoint' })
-      return createJsonResponse(jsend.success({ sleeping: false }))
+    function isQuietHours(): boolean {
+      const hour = new Date().getHours()
+      return hour >= 22 || hour < 4
     }
-    return new Response('Method not allowed', { status: 405 })
-  })
 
-  let intervalCount = 0
-
-  setInterval(async () => {
-    if (heartbeatRunning) return
-    heartbeatRunning = true
-    const release = hold('background activity check')
-    // One wide event per tick, at debug so steady-state stays quiet; anything
-    // that actually happens gets its own info/error record below.
-    const tick = beginEvent(logHeartbeat, 'tick', { level: 'debug' })
-    try {
-      const idleMs = await getDarwinIdleMs()
-      tick.set({ idleMs, tz: trackedTimezone })
-
-      // Hourly pulse at info (and on the first tick after boot): the always-on
-      // trail of tz and idle state — the tripwire for the recurring
-      // Intl-flips-to-UTC bug, bounded to 60-minute resolution.
-      intervalCount++
-      if (intervalCount % 60 === 1) {
-        logHeartbeat.info('heartbeat', {
-          event: 'heartbeat',
-          tz: trackedTimezone,
-          idleMs,
-          sleeping: heartbeatSleeping,
-        })
-      }
-
-      // Sleep: quiet hours (10pm–4am) + idle > 3hrs
-      if (!heartbeatSleeping && isQuietHours() && idleMs != null && idleMs >= SLEEP_IDLE_MS) {
-        heartbeatSleeping = true
-        logHeartbeat.info('sleep', { event: 'sleep', reason: 'quiet hours + idle > 3h', idleMs })
-      }
-
-      // Auto-wake when quiet hours end
-      if (heartbeatSleeping && !isQuietHours()) {
+    // Wake endpoint: POST /heartbeat/wake
+    customRoutes.set('/heartbeat/wake', async (req: Request) => {
+      if (req.method === 'POST') {
         heartbeatSleeping = false
-        logHeartbeat.info('wake', { event: 'wake', reason: 'quiet hours ended' })
+        logHeartbeat.info('wake', { event: 'wake', reason: 'endpoint' })
+        return createJsonResponse(jsend.success({ sleeping: false }))
       }
+      return new Response('Method not allowed', { status: 405 })
+    })
 
-      if (heartbeatSleeping) {
-        tick.emit('sleeping')
-        return
-      }
+    const startStarted = performance.now()
+    await server.start()
+    boot.emit('ok', {
+      startMs: Math.round(performance.now() - startStarted),
+      port: server.port,
+      tz: trackedTimezone,
+    })
 
-      heartbeatTick++
-      const ctx = CommandContext.server(config, env.toObject())
-      const commandService = new CommandService(ctx)
+    let intervalCount = 0
 
-      // Slack follow check (every tick — has its own per-follow backoff)
-      release.update('Slack follow check')
-      const result = await commandService.run('slack:follow:check', {})
+    // Start heartbeat and file watcher AFTER server is listening —
+    // chokidar's initial directory scan competes for I/O with buildMarkdownStore(),
+    // and a failed boot must not leave background ticks running.
+    setInterval(async () => {
+      if (heartbeatRunning) return
+      heartbeatRunning = true
+      const release = hold('background activity check')
+      // One wide event per tick, at debug so steady-state stays quiet; anything
+      // that actually happens gets its own info/error record below.
+      const tick = beginEvent(logHeartbeat, 'tick', { level: 'debug' })
+      try {
+        const idleMs = await getDarwinIdleMs()
+        tick.set({ idleMs, tz: trackedTimezone })
 
-      if (result.status === 'success') {
-        const data = result.data as
-          | {
-              checked: number
-              polled: number
-              exportFailures: number
-              exportFailure: string | null
-              expired: string[]
-              skipped: string[]
-              errors: string[]
-              withActivity: { fileName: string }[]
-            }
-          | undefined
-        tick.set({
-          checked: data?.checked ?? 0,
-          withActivity: data?.withActivity.length ?? 0,
-          expired: data?.expired?.length ?? 0,
-          skipped: data?.skipped?.length ?? 0,
-        })
-        if (data && data.checked > 0) {
-          logHeartbeat.info('Checked {checked} follow(s), {withActivity} with activity', {
-            event: 'follows-checked',
-            checked: data.checked,
-            withActivity: data.withActivity.length,
+        // Hourly pulse at info (and on the first tick after boot): the always-on
+        // trail of tz and idle state — the tripwire for the recurring
+        // Intl-flips-to-UTC bug, bounded to 60-minute resolution.
+        intervalCount++
+        if (intervalCount % 60 === 1) {
+          logHeartbeat.info('heartbeat', {
+            event: 'heartbeat',
+            tz: trackedTimezone,
+            idleMs,
+            sleeping: heartbeatSleeping,
           })
         }
-        if (data && data.expired && data.expired.length > 0) {
-          logHeartbeat.info('Expired {count} follow(s)', {
-            event: 'follows-expired',
-            count: data.expired.length,
-            expired: data.expired,
-          })
-        }
-        if (data && data.skipped && data.skipped.length > 0) {
-          logHeartbeat.info('Skipped {count} follow(s)', {
-            event: 'follows-skipped',
-            count: data.skipped.length,
-            skipped: data.skipped,
-          })
-        }
-        // Every polled follow failing to export is not follow trouble, it is a
-        // dead spawn path (expired Slack auth, EBADF past the fd cliff) — and
-        // it stays that way until someone acts, so it must not hide at INFO
-        // among the per-follow skips.
-        if (data && data.polled > 0 && data.exportFailures === data.polled) {
-          logHeartbeat.error('Every follow export failed ({count}): {reason}', {
-            event: 'follows-export-failed',
-            count: data.exportFailures,
-            reason: data.exportFailure,
-          })
-        }
-        if (data && data.errors && data.errors.length > 0) {
-          logHeartbeat.error('{count} follow error(s)', { count: data.errors.length, errors: data.errors })
-        }
-      } else {
-        logHeartbeat.error('follow check failed: {message}', { message: result.message })
-      }
 
-      // Email follow sync: capture new mail in the Sky/Follow bucket across
-      // every Gmail-scoped account and retire quiet follows. Bounded per run
-      // (25 unsaved threads/account) so a backlog drains across ticks instead
-      // of holding this one — the slack check above shares the
-      // heartbeatRunning guard.
-      if (heartbeatTick % EMAIL_SYNC_TICKS === 0) {
-        release.update('email follow sync')
-        const sweep = await syncGmailFollowAccounts({ secrets: ctx.secrets, tasks: commandService })
-        const totals = sweepTotals(sweep)
-        tick.set({
-          emailAccounts: sweep.ran.length,
-          emailNew: totals.newFollows,
-          emailUpdated: totals.updatedFollows,
-          emailBornExpired: totals.bornExpired,
-          emailExpired: totals.expired,
-          emailMessages: totals.fetchedMessages,
-        })
-        if (sweep.unavailable) {
-          tick.set({ emailSync: sweep.unavailable })
-        } else if (totals.fetchedMessages > 0 || totals.newFollows > 0 || totals.expired > 0) {
-          logHeartbeat.info(
-            'Email sync: {emailNew} new, {emailUpdated} updated, {emailBornExpired} captured+closed, {emailMessages} message(s), {emailExpired} expired',
-            {
-              event: 'email-synced',
-              emailNew: totals.newFollows,
-              emailUpdated: totals.updatedFollows,
-              emailBornExpired: totals.bornExpired,
-              emailMessages: totals.fetchedMessages,
-              emailExpired: totals.expired,
-              accounts: sweep.ran.map((a) => a.account),
-            },
-          )
+        // Sleep: quiet hours (10pm–4am) + idle > 3hrs
+        if (!heartbeatSleeping && isQuietHours() && idleMs != null && idleMs >= SLEEP_IDLE_MS) {
+          heartbeatSleeping = true
+          logHeartbeat.info('sleep', { event: 'sleep', reason: 'quiet hours + idle > 3h', idleMs })
         }
-        for (const skipped of sweep.skipped) {
-          logHeartbeat.info('Email sync skipped {account}: {reason}', {
-            event: 'email-sync-skipped',
-            account: skipped.account,
-            reason: skipped.reason,
-          })
-        }
-        for (const failed of sweep.ran.filter((a) => a.error)) {
-          logHeartbeat.error('Email sync failed for {account}: {message}', {
-            account: failed.account,
-            message: failed.error,
-          })
-        }
-      }
 
-      // Beeper: the chats on this Mac. Nothing to do reads as a note, not an
-      // error: no grant stored, or the desktop app closed.
-      if (heartbeatTick % BEEPER_SYNC_TICKS === 0) {
-        release.update('Beeper inbox sync')
-        const synced = await commandService.run('beeper:inbox:sync', {})
-        if (synced.status !== 'success') {
-          logHeartbeat.error('Beeper sync failed: {message}', { event: 'beeper-sync-failed', message: synced.message })
-        } else if (synced.data && 'unavailable' in synced.data) {
-          tick.set({ beeperSync: synced.data.unavailable })
-        } else if (synced.data) {
-          tick.set({ beeperChats: synced.data.chats, beeperMessages: synced.data.messages })
-          if (synced.data.messages > 0) {
-            logHeartbeat.info('Beeper sync: {messages} message(s) in {chats} chat(s)', {
-              event: 'beeper-synced',
-              messages: synced.data.messages,
-              chats: synced.data.chats,
-              files: synced.data.files,
+        // Auto-wake when quiet hours end
+        if (heartbeatSleeping && !isQuietHours()) {
+          heartbeatSleeping = false
+          logHeartbeat.info('wake', { event: 'wake', reason: 'quiet hours ended' })
+        }
+
+        if (heartbeatSleeping) {
+          tick.emit('sleeping')
+          return
+        }
+
+        heartbeatTick++
+        const ctx = CommandContext.server(config, env.toObject())
+        const commandService = new CommandService(ctx)
+
+        // Slack follow check (every tick — has its own per-follow backoff)
+        release.update('Slack follow check')
+        const result = await commandService.run('slack:follow:check', {})
+
+        if (result.status === 'success') {
+          const data = result.data as
+            | {
+                checked: number
+                polled: number
+                exportFailures: number
+                exportFailure: string | null
+                expired: string[]
+                skipped: string[]
+                errors: string[]
+                withActivity: { fileName: string }[]
+              }
+            | undefined
+          tick.set({
+            checked: data?.checked ?? 0,
+            withActivity: data?.withActivity.length ?? 0,
+            expired: data?.expired?.length ?? 0,
+            skipped: data?.skipped?.length ?? 0,
+          })
+          if (data && data.checked > 0) {
+            logHeartbeat.info('Checked {checked} follow(s), {withActivity} with activity', {
+              event: 'follows-checked',
+              checked: data.checked,
+              withActivity: data.withActivity.length,
             })
           }
-          for (const note of synced.data.notes) {
-            logHeartbeat.info('Beeper sync: {note}', { event: 'beeper-sync-note', note })
+          if (data && data.expired && data.expired.length > 0) {
+            logHeartbeat.info('Expired {count} follow(s)', {
+              event: 'follows-expired',
+              count: data.expired.length,
+              expired: data.expired,
+            })
           }
+          if (data && data.skipped && data.skipped.length > 0) {
+            logHeartbeat.info('Skipped {count} follow(s)', {
+              event: 'follows-skipped',
+              count: data.skipped.length,
+              skipped: data.skipped,
+            })
+          }
+          // Every polled follow failing to export is not follow trouble, it is a
+          // dead spawn path (expired Slack auth, EBADF past the fd cliff) — and
+          // it stays that way until someone acts, so it must not hide at INFO
+          // among the per-follow skips.
+          if (data && data.polled > 0 && data.exportFailures === data.polled) {
+            logHeartbeat.error('Every follow export failed ({count}): {reason}', {
+              event: 'follows-export-failed',
+              count: data.exportFailures,
+              reason: data.exportFailure,
+            })
+          }
+          if (data && data.errors && data.errors.length > 0) {
+            logHeartbeat.error('{count} follow error(s)', { count: data.errors.length, errors: data.errors })
+          }
+        } else {
+          logHeartbeat.error('follow check failed: {message}', { message: result.message })
         }
-      }
 
-      // Slack channel cache: every channel the owner is in, into the state
-      // area. Skipped without a workspace; the command's own lock keeps a
-      // pull started by hand and this one apart.
-      if (heartbeatTick % SLACK_PULL_TICKS === 0 && config.SLACK_WORKSPACE) {
-        release.update('Slack channel pull')
-        const pulled = await commandService.run('slack:pull', {})
-        if (pulled.status !== 'success') {
-          logHeartbeat.error('Slack pull failed: {message}', { event: 'slack-pull-failed', message: pulled.message })
-        } else if (pulled.data) {
-          const added = pulled.data.pulled.reduce((sum, channel) => sum + channel.added, 0)
-          const threads = pulled.data.pulled.reduce((sum, channel) => sum + channel.threads, 0)
-          tick.set({ slackChannelsRead: pulled.data.pulled.length, slackMessages: added })
-          if (added > 0) {
-            logHeartbeat.info('Slack pull: {messages} message(s) in {channels} channel(s), {threads} thread(s)', {
-              event: 'slack-pulled',
-              messages: added,
-              channels: pulled.data.pulled.filter((channel) => channel.added > 0).length,
-              threads,
-            })
-          }
-          if (pulled.data.errors.length > 0) {
-            logHeartbeat.error('Slack pull: {count} channel(s) failed: {message}', {
-              event: 'slack-pull-errors',
-              count: pulled.data.errors.length,
-              message: pulled.data.errors[0].message,
-            })
-          }
-        }
-        // What Slack addressed to the owner lands in the day: one feed call, then the
-        // conversations it names. Its own lock keeps a pass started by hand apart.
-        release.update('Slack landing')
-        const landed = await commandService.run('slack:land', {})
-        if (landed.status !== 'success') {
-          logHeartbeat.error('Slack landing failed: {message}', { event: 'slack-land-failed', message: landed.message })
-        } else if (landed.data) {
-          tick.set({ slackLanded: landed.data.docs, slackLandErrors: landed.data.errors.length })
-          if (landed.data.docs > 0) {
+        // Email follow sync: capture new mail in the Sky/Follow bucket across
+        // every Gmail-scoped account and retire quiet follows. Bounded per run
+        // (25 unsaved threads/account) so a backlog drains across ticks instead
+        // of holding this one — the slack check above shares the
+        // heartbeatRunning guard.
+        if (heartbeatTick % EMAIL_SYNC_TICKS === 0) {
+          release.update('email follow sync')
+          const sweep = await syncGmailFollowAccounts({ secrets: ctx.secrets, tasks: commandService })
+          const totals = sweepTotals(sweep)
+          tick.set({
+            emailAccounts: sweep.ran.length,
+            emailNew: totals.newFollows,
+            emailUpdated: totals.updatedFollows,
+            emailBornExpired: totals.bornExpired,
+            emailExpired: totals.expired,
+            emailMessages: totals.fetchedMessages,
+          })
+          if (sweep.unavailable) {
+            tick.set({ emailSync: sweep.unavailable })
+          } else if (totals.fetchedMessages > 0 || totals.newFollows > 0 || totals.expired > 0) {
             logHeartbeat.info(
-              'Slack landing: {docs} document(s) from {threads} thread(s), {conversations} conversation(s)',
+              'Email sync: {emailNew} new, {emailUpdated} updated, {emailBornExpired} captured+closed, {emailMessages} message(s), {emailExpired} expired',
               {
-                event: 'slack-landed',
-                docs: landed.data.docs,
-                threads: landed.data.threads.filter((thread) => thread.outcome.status === 'landed').length,
-                conversations: landed.data.conversations.filter((c) => c.outcome.status === 'landed').length,
+                event: 'email-synced',
+                emailNew: totals.newFollows,
+                emailUpdated: totals.updatedFollows,
+                emailBornExpired: totals.bornExpired,
+                emailMessages: totals.fetchedMessages,
+                emailExpired: totals.expired,
+                accounts: sweep.ran.map((a) => a.account),
               },
             )
           }
-          if (landed.data.errors.length > 0) {
-            logHeartbeat.error('Slack landing: {count} failed: {message}', {
-              event: 'slack-land-errors',
-              count: landed.data.errors.length,
-              message: landed.data.errors[0],
+          for (const skipped of sweep.skipped) {
+            logHeartbeat.info('Email sync skipped {account}: {reason}', {
+              event: 'email-sync-skipped',
+              account: skipped.account,
+              reason: skipped.reason,
             })
           }
-        }
-        // Yesterday's Slack recap, once today has started: the channel digest
-        // the day summary reads. The command answers 'nothing' until a day is due.
-        release.update('Slack recap')
-        const recapped = await commandService.run('recap:slack', { whenDue: true, noEditor: true })
-        if (recapped.status !== 'success') {
-          logHeartbeat.error('Slack recap failed: {message}', {
-            event: 'slack-recap-failed',
-            message: recapped.message,
-          })
-        } else if (recapped.data?.outcome === 'recapped') {
-          logHeartbeat.info('Slack recap: {day} from {channels} channel(s), {messages} message(s)', {
-            event: 'slack-recapped',
-            day: recapped.data.day,
-            channels: recapped.data.channels,
-            messages: recapped.data.messages,
-          })
-        }
-      }
-
-      // Needs Response: scan recent Slack/Beeper captures and Gmail Inbox (read-only)
-      // on tick 1 after boot and every 5 minutes thereafter.
-      if (heartbeatTick === 1 || heartbeatTick % NEEDS_RESPONSE_TICKS === 0) {
-        release.update('Needs response scan')
-        try {
-          const scanned = await needsResponse.scan()
-          tick.set({
-            needsResponseActive: scanned.active,
-            needsResponseGmailChecked: scanned.gmailThreadsChecked,
-            needsResponseScreened: scanned.screened,
-          })
-          if (scanned.errors.length > 0) {
-            logHeartbeat.error('Needs response scan: {count} error(s): {message}', {
-              event: 'needs-response-errors',
-              count: scanned.errors.length,
-              message: scanned.errors[0],
-            })
-          }
-        } catch (err) {
-          logHeartbeat.error('Needs response scan failed: {message}', {
-            event: 'needs-response-failed',
-            message: err instanceof Error ? err.message : String(err),
-          })
-        }
-      }
-
-      // Only follow capture holds the service. The scheduled pass owns its
-      // command calls and ledger in another process; a later tick, including
-      // after a restart, reads its result before launching the next pass.
-      release.update('scheduled automation status check')
-      const automationJob = await automationProcess.status()
-      const pass = automationJob?.status === 'complete' ? automationJob.result : undefined
-      tick.set({ automationsRunning: automationJob?.status === 'running' })
-      if (automationJob?.status === 'failed') {
-        logAutomations.error('Scheduled pass stopped: {message}', {
-          event: 'automation-pass-failed',
-          message: automationJob.error ?? 'worker stopped without a result',
-        })
-      }
-      if (automationJob?.status !== 'running') {
-        release.update('scheduled automation startup')
-        const started = await automationProcess.start(automationPassInput(new ZonedDateTime()))
-        if (started.status === 'failed') throw new Error(started.error ?? 'Scheduled worker could not start.')
-        tick.set({ automationsRunning: true })
-      }
-
-      if (pass) {
-        tick.set({ automationsConsidered: pass.considered, automationsRan: pass.ran.length })
-
-        for (const ran of pass.ran) {
-          if (ran.outcome === 'failed') {
-            logAutomations.error('{name} failed: {message}', {
-              event: 'automation-failed',
-              name: ran.name,
-              run: ran.run,
-              lateMinutes: ran.lateMinutes,
-              message: ran.message ?? 'no detail given',
-            })
-          } else {
-            logAutomations.info('ran {name} → {outcome}', {
-              event: 'automation-ran',
-              name: ran.name,
-              run: ran.run,
-              outcome: ran.outcome,
-              lateMinutes: ran.lateMinutes,
+          for (const failed of sweep.ran.filter((a) => a.error)) {
+            logHeartbeat.error('Email sync failed for {account}: {message}', {
+              account: failed.account,
+              message: failed.error,
             })
           }
         }
 
-        for (const problem of pass.charterErrors) {
-          reportAutomationProblemOnce(`charter:${problem.path}:${problem.error}`, () =>
-            logAutomations.error('unreadable charter {path}: {error}', {
-              event: 'automation-charter-error',
-              path: problem.path,
-              error: problem.error,
-            }),
-          )
+        // Beeper: the chats on this Mac. Nothing to do reads as a note, not an
+        // error: no grant stored, or the desktop app closed.
+        if (heartbeatTick % BEEPER_SYNC_TICKS === 0) {
+          release.update('Beeper inbox sync')
+          const synced = await commandService.run('beeper:inbox:sync', {})
+          if (synced.status !== 'success') {
+            logHeartbeat.error('Beeper sync failed: {message}', {
+              event: 'beeper-sync-failed',
+              message: synced.message,
+            })
+          } else if (synced.data && 'unavailable' in synced.data) {
+            tick.set({ beeperSync: synced.data.unavailable })
+          } else if (synced.data) {
+            tick.set({ beeperChats: synced.data.chats, beeperMessages: synced.data.messages })
+            if (synced.data.messages > 0) {
+              logHeartbeat.info('Beeper sync: {messages} message(s) in {chats} chat(s)', {
+                event: 'beeper-synced',
+                messages: synced.data.messages,
+                chats: synced.data.chats,
+                files: synced.data.files,
+              })
+            }
+            for (const note of synced.data.notes) {
+              logHeartbeat.info('Beeper sync: {note}', { event: 'beeper-sync-note', note })
+            }
+          }
         }
 
-        for (const warning of pass.unknownKeys) {
-          reportAutomationProblemOnce(`keys:${warning.name}:${warning.keys.join(',')}`, () =>
-            logAutomations.warn('{name} carries frontmatter nothing reads: {keys}', {
-              event: 'automation-unknown-keys',
-              name: warning.name,
-              keys: warning.keys,
-            }),
-          )
+        // Slack channel cache: every channel the owner is in, into the state
+        // area. Skipped without a workspace; the command's own lock keeps a
+        // pull started by hand and this one apart.
+        if (heartbeatTick % SLACK_PULL_TICKS === 0 && config.SLACK_WORKSPACE) {
+          release.update('Slack channel pull')
+          const pulled = await commandService.run('slack:pull', {})
+          if (pulled.status !== 'success') {
+            logHeartbeat.error('Slack pull failed: {message}', { event: 'slack-pull-failed', message: pulled.message })
+          } else if (pulled.data) {
+            const added = pulled.data.pulled.reduce((sum, channel) => sum + channel.added, 0)
+            const threads = pulled.data.pulled.reduce((sum, channel) => sum + channel.threads, 0)
+            tick.set({ slackChannelsRead: pulled.data.pulled.length, slackMessages: added })
+            if (added > 0) {
+              logHeartbeat.info('Slack pull: {messages} message(s) in {channels} channel(s), {threads} thread(s)', {
+                event: 'slack-pulled',
+                messages: added,
+                channels: pulled.data.pulled.filter((channel) => channel.added > 0).length,
+                threads,
+              })
+            }
+            if (pulled.data.errors.length > 0) {
+              logHeartbeat.error('Slack pull: {count} channel(s) failed: {message}', {
+                event: 'slack-pull-errors',
+                count: pulled.data.errors.length,
+                message: pulled.data.errors[0].message,
+              })
+            }
+          }
+          // What Slack addressed to the owner lands in the day: one feed call, then the
+          // conversations it names. Its own lock keeps a pass started by hand apart.
+          release.update('Slack landing')
+          const landed = await commandService.run('slack:land', {})
+          if (landed.status !== 'success') {
+            logHeartbeat.error('Slack landing failed: {message}', {
+              event: 'slack-land-failed',
+              message: landed.message,
+            })
+          } else if (landed.data) {
+            tick.set({ slackLanded: landed.data.docs, slackLandErrors: landed.data.errors.length })
+            if (landed.data.docs > 0) {
+              logHeartbeat.info(
+                'Slack landing: {docs} document(s) from {threads} thread(s), {conversations} conversation(s)',
+                {
+                  event: 'slack-landed',
+                  docs: landed.data.docs,
+                  threads: landed.data.threads.filter((thread) => thread.outcome.status === 'landed').length,
+                  conversations: landed.data.conversations.filter((c) => c.outcome.status === 'landed').length,
+                },
+              )
+            }
+            if (landed.data.errors.length > 0) {
+              logHeartbeat.error('Slack landing: {count} failed: {message}', {
+                event: 'slack-land-errors',
+                count: landed.data.errors.length,
+                message: landed.data.errors[0],
+              })
+            }
+          }
+          // Yesterday's Slack recap, once today has started: the channel digest
+          // the day summary reads. The command answers 'nothing' until a day is due.
+          release.update('Slack recap')
+          const recapped = await commandService.run('recap:slack', { whenDue: true, noEditor: true })
+          if (recapped.status !== 'success') {
+            logHeartbeat.error('Slack recap failed: {message}', {
+              event: 'slack-recap-failed',
+              message: recapped.message,
+            })
+          } else if (recapped.data?.outcome === 'recapped') {
+            logHeartbeat.info('Slack recap: {day} from {channels} channel(s), {messages} message(s)', {
+              event: 'slack-recapped',
+              day: recapped.data.day,
+              channels: recapped.data.channels,
+              messages: recapped.data.messages,
+            })
+          }
         }
 
-        if (pass.stateError) {
-          const stateError = pass.stateError
-          reportAutomationProblemOnce(`state:${stateError}`, () =>
-            logAutomations.error('run-state unusable, every charter reads as never run: {error}', {
-              event: 'automation-state-error',
-              error: stateError,
-            }),
-          )
+        // Needs Response: scan recent Slack/Beeper captures and Gmail Inbox (read-only)
+        // on tick 1 after boot and every 5 minutes thereafter.
+        if (heartbeatTick === 1 || heartbeatTick % NEEDS_RESPONSE_TICKS === 0) {
+          release.update('Needs response scan')
+          try {
+            const scanned = await needsResponse.scan()
+            tick.set({
+              needsResponseActive: scanned.active,
+              needsResponseGmailChecked: scanned.gmailThreadsChecked,
+              needsResponseScreened: scanned.screened,
+            })
+            if (scanned.errors.length > 0) {
+              logHeartbeat.error('Needs response scan: {count} error(s): {message}', {
+                event: 'needs-response-errors',
+                count: scanned.errors.length,
+                message: scanned.errors[0],
+              })
+            }
+          } catch (err) {
+            logHeartbeat.error('Needs response scan failed: {message}', {
+              event: 'needs-response-failed',
+              message: err instanceof Error ? err.message : String(err),
+            })
+          }
         }
+
+        // Only follow capture holds the service. The scheduled pass owns its
+        // command calls and ledger in another process; a later tick, including
+        // after a restart, reads its result before launching the next pass.
+        release.update('scheduled automation status check')
+        const automationJob = await automationProcess.status()
+        const pass = automationJob?.status === 'complete' ? automationJob.result : undefined
+        tick.set({ automationsRunning: automationJob?.status === 'running' })
+        if (automationJob?.status === 'failed') {
+          logAutomations.error('Scheduled pass stopped: {message}', {
+            event: 'automation-pass-failed',
+            message: automationJob.error ?? 'worker stopped without a result',
+          })
+        }
+        if (automationJob?.status !== 'running') {
+          release.update('scheduled automation startup')
+          const started = await automationProcess.start(automationPassInput(new ZonedDateTime()))
+          if (started.status === 'failed') throw new Error(started.error ?? 'Scheduled worker could not start.')
+          tick.set({ automationsRunning: true })
+        }
+
+        if (pass) {
+          tick.set({ automationsConsidered: pass.considered, automationsRan: pass.ran.length })
+
+          for (const ran of pass.ran) {
+            if (ran.outcome === 'failed') {
+              logAutomations.error('{name} failed: {message}', {
+                event: 'automation-failed',
+                name: ran.name,
+                run: ran.run,
+                lateMinutes: ran.lateMinutes,
+                message: ran.message ?? 'no detail given',
+              })
+            } else {
+              logAutomations.info('ran {name} → {outcome}', {
+                event: 'automation-ran',
+                name: ran.name,
+                run: ran.run,
+                outcome: ran.outcome,
+                lateMinutes: ran.lateMinutes,
+              })
+            }
+          }
+
+          for (const problem of pass.charterErrors) {
+            reportAutomationProblemOnce(`charter:${problem.path}:${problem.error}`, () =>
+              logAutomations.error('unreadable charter {path}: {error}', {
+                event: 'automation-charter-error',
+                path: problem.path,
+                error: problem.error,
+              }),
+            )
+          }
+
+          for (const warning of pass.unknownKeys) {
+            reportAutomationProblemOnce(`keys:${warning.name}:${warning.keys.join(',')}`, () =>
+              logAutomations.warn('{name} carries frontmatter nothing reads: {keys}', {
+                event: 'automation-unknown-keys',
+                name: warning.name,
+                keys: warning.keys,
+              }),
+            )
+          }
+
+          if (pass.stateError) {
+            const stateError = pass.stateError
+            reportAutomationProblemOnce(`state:${stateError}`, () =>
+              logAutomations.error('run-state unusable, every charter reads as never run: {error}', {
+                event: 'automation-state-error',
+                error: stateError,
+              }),
+            )
+          }
+        }
+      } catch (err) {
+        tick.fail(err)
+        return
+      } finally {
+        heartbeatRunning = false
+        release()
       }
-    } catch (err) {
-      tick.fail(err)
-      return
-    } finally {
-      heartbeatRunning = false
-      release()
-    }
-    tick.emit()
-  }, HEARTBEAT_INTERVAL_MS)
-  logHeartbeat.info('Started (every {intervalSecs}s)', { intervalSecs: HEARTBEAT_INTERVAL_MS / 1000 })
+      tick.emit()
+    }, HEARTBEAT_INTERVAL_MS)
+    logHeartbeat.info('Started (every {intervalSecs}s)', { intervalSecs: HEARTBEAT_INTERVAL_MS / 1000 })
 
-  const startStarted = performance.now()
-  await server.start()
-  boot.emit('ok', {
-    startMs: Math.round(performance.now() - startStarted),
-    port: server.port,
-    tz: trackedTimezone,
-  })
-
-  // Start file watcher AFTER server is listening —
-  // chokidar's initial directory scan competes for I/O with buildMarkdownStore()
-  watchFiles()
-  booting()
+    watchFiles()
+  } catch (err) {
+    boot.fail(err)
+    throw err
+  } finally {
+    booting()
+  }
 }
 
 // Entity/score stores are add-only during incremental updates, so removals
