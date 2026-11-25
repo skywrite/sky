@@ -815,11 +815,11 @@ export function createHttpApp(options: HttpHandlerOptions): Hono {
   app.get('/outbox/*', (c) =>
     c.req.path.startsWith('/outbox/_api/') ? c.json({ message: 'Not found.' }, 404) : c.html(renderAppHtml('sky')),
   )
-  app.get('/streaks', (c) => c.html(renderAppHtml('sky · streaks')))
+  app.get('/streaks', (c) => c.html(renderAppHtml('sky · Streaks')))
   app.get('/streaks/*', (c) =>
     c.req.path === '/streaks/_api' || c.req.path.startsWith('/streaks/_api/')
       ? c.json({ message: 'Streaks is unavailable.' }, 404)
-      : c.html(renderAppHtml('sky · streaks')),
+      : c.html(renderAppHtml('sky · Streaks')),
   )
   app.get('/future', (c) => c.html(renderAppHtml('sky · Future')))
   app.get('/future/*', (c) =>

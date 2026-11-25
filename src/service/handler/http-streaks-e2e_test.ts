@@ -135,12 +135,19 @@ test(
 
       await page.goto(`${origin}/${TODAY.ymd}`)
       await page.getByRole('link', { name: 'View all streaks' }).waitFor()
+      const rowTitles = () => page.locator('.sky-streaks-habit-title > span').allTextContents()
       const complete = page.getByRole('button', { name: 'Complete Read a chapter today', exact: true })
       assert({
         given: 'a completed habit whose title contains another habit’s full title',
         should: 'keep the shorter habit incomplete',
         actual: await complete.getAttribute('aria-pressed'),
         expected: 'false',
+      })
+      assert({
+        given: 'today’s streaks with one completed habit and two incomplete habits of different lengths',
+        should: 'sort done streaks first and then by consecutive days descending',
+        actual: await rowTitles(),
+        expected: ['Read a chapter slowly', 'Read a chapter', 'Walk outside'],
       })
       await complete.click()
       await page.getByRole('button', { name: 'Undo Read a chapter today', exact: true }).waitFor()
@@ -150,21 +157,36 @@ test(
         actual: await readFile(f.todayFile, 'utf8'),
         expected: f.original.replace('- Read a chapter — 2d', '- ~~Read a chapter — 2d~~'),
       })
+      assert({
+        given: 'completing a streak whose new consecutive run is longer than the other done streak',
+        should: 'move it to the top of the done streaks',
+        actual: await rowTitles(),
+        expected: ['Read a chapter', 'Read a chapter slowly', 'Walk outside'],
+      })
       await page.getByRole('button', { name: 'Undo', exact: true }).click()
       await complete.waitFor()
       assert({
         given: 'Undo after completing a streak',
-        should: 'restore the exact original day file',
-        actual: await readFile(f.todayFile, 'utf8'),
-        expected: f.original,
+        should: 'restore the exact original day file and sort order',
+        actual: [await readFile(f.todayFile, 'utf8'), await rowTitles()],
+        expected: [f.original, ['Read a chapter slowly', 'Read a chapter', 'Walk outside']],
       })
       await shot('today-desktop')
 
       await page.getByRole('link', { name: 'View all streaks' }).click()
       await page.waitForURL('**/streaks')
+      await page.locator('.sky-streaks-habit-title').first().waitFor()
+      await page.waitForFunction(() => document.title === 'sky · Streaks')
+      assert({
+        given: 'the streaks overview page',
+        should: 'sort done streaks first and then by consecutive days descending',
+        actual: [await page.title(), await rowTitles()],
+        expected: ['sky · Streaks', ['Read a chapter slowly', 'Read a chapter', 'Walk outside']],
+      })
       await page.locator('a.sky-streaks-habit-title[href*="/read-a-chapter?"]').click()
       await page.waitForURL('**/streaks/read-a-chapter*')
       await page.getByRole('heading', { name: 'Read a chapter', exact: true }).waitFor()
+      await page.waitForFunction(() => document.title === 'sky · Read a chapter')
       assert({
         given: 'the detailed month calendar',
         should: 'show check marks for recorded completions',
@@ -200,12 +222,13 @@ test(
       await refresh()
       assert({
         given: 'a selection spanning two formatted paragraphs during a report refresh',
-        should: 'preserve the selection and its original text nodes',
+        should: 'preserve the selection, its original text nodes, and the streak page title',
         actual: [
           await page.evaluate(() => window.getSelection()!.toString()),
           await selectedParagraph!.evaluate((paragraph) => paragraph.isConnected),
+          await page.title(),
         ],
-        expected: [selectedText, true],
+        expected: [selectedText, true, 'sky · Read a chapter'],
       })
       const definitionFile = path.join(f.dirs.streaksDir, 'active', 'read-a-chapter.md')
       await writeFile(
@@ -292,16 +315,19 @@ test(
       })
       await page.locator('.sky-streaks-mini-month[data-month="2026-05"]').click()
       await page.waitForURL('**/streaks/read-a-chapter?*')
+      await page.waitForFunction(() => document.title === 'sky · Read a chapter')
       await page.goBack()
+      await page.waitForFunction(() => document.title === 'sky · Streaks · History')
       assert({
         given: 'browser Back after a month drill-down',
-        should: 'restore the same history view',
-        actual: new URL(page.url()).search,
-        expected: originHistory,
+        should: 'restore the same history view and page title',
+        actual: [new URL(page.url()).search, await page.title()],
+        expected: [originHistory, 'sky · Streaks · History'],
       })
 
       await page.goto(`${origin}/streaks`)
       await page.getByRole('button', { name: 'New streak', exact: true }).click()
+      await page.waitForFunction(() => document.title === 'sky · New streak')
       await dialog.getByRole('textbox', { name: 'What’s the habit?', exact: true }).fill('Read a chapter')
       await dialog
         .getByRole('textbox', { name: 'What counts as done?', exact: true })

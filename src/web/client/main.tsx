@@ -275,6 +275,7 @@ function Canvas() {
       isRecurring ||
       isFuture ||
       isTracking ||
+      isStreaks ||
       importId ||
       explorerFile !== null
     )
@@ -285,15 +286,13 @@ function Canvas() {
         ? `sky:chat - ${chatTitle}`
         : isAudition
           ? 'sky · audition'
-          : isStreaks
-            ? 'sky · streaks'
-            : settingsSection === 'connections'
-              ? `sky · ${connectionPage ? CONNECTION_PAGE_LABEL[connectionPage] : 'Connections'}`
-              : settingsSection
-                ? `sky · ${SETTINGS_PAGES[settingsSection].label}`
-                : isClock
-                  ? 'sky · Clock'
-                  : 'sky'
+          : settingsSection === 'connections'
+            ? `sky · ${connectionPage ? CONNECTION_PAGE_LABEL[connectionPage] : 'Connections'}`
+            : settingsSection
+              ? `sky · ${SETTINGS_PAGES[settingsSection].label}`
+              : isClock
+                ? 'sky · Clock'
+                : 'sky'
   }, [
     threadId,
     chatTitle,

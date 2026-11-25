@@ -10,6 +10,7 @@ import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import type { StreakReport, StreakView } from '../../../service/handler/streaks/types.ts'
 import { renderStatic } from '../editor/wysiwyg/render.ts'
 import { RenderedHtml } from '../lib/renderedHtml.tsx'
+import { sortStreaks } from './sort.ts'
 import {
   StreakCompactCalendars,
   StreakDetailedCalendar,
@@ -98,45 +99,43 @@ function HabitRows({
           <span>{streaks.every((streak) => streak.status === 'archived') ? 'Final streak' : 'Current streak'}</span>
         </div>
       )}
-      {streaks
-        .toSorted((a, b) => b.current - a.current)
-        .map((streak) => (
-          <div className="sky-streaks-habit-row" key={streak.relativePath}>
-            <div className="sky-streaks-habit-main">
-              <StreakCheck
-                streak={streak}
-                date={date}
-                today={report.today}
-                disabled={
-                  actions.busy ||
-                  ambiguousStreak(report, streak) ||
-                  !writable ||
-                  !streakTracked(streak, new PlainDate(date)) ||
-                  (date === report.today && streak.status === 'archived')
-                }
-                onClick={() => void completion(actions, streak, date)}
-              />
-              <StreakLink className="sky-streaks-habit-title" href={href(streak)} onNavigate={onNavigate}>
-                <span>{streak.title}</span>
-                <small>{habitCaption(streak, date, report.today)}</small>
-              </StreakLink>
-            </div>
-            {!compact && <StreakMarks streak={streak} today={report.today} onDay={onDay} />}
-            <StreakLink className="sky-streaks-habit-run" href={href(streak)} onNavigate={onNavigate}>
-              <span>
-                {date === report.today ? (
-                  <>
-                    <b>{streak.current}</b> {streak.current === 1 ? 'day' : 'days'}
-                  </>
-                ) : (
-                  'History'
-                )}
-                <StreakIcon name="right" size={16} />
-              </span>
-              {!compact && <small>Best {streak.best} days</small>}
+      {sortStreaks(streaks, date).map((streak) => (
+        <div className="sky-streaks-habit-row" key={streak.relativePath}>
+          <div className="sky-streaks-habit-main">
+            <StreakCheck
+              streak={streak}
+              date={date}
+              today={report.today}
+              disabled={
+                actions.busy ||
+                ambiguousStreak(report, streak) ||
+                !writable ||
+                !streakTracked(streak, new PlainDate(date)) ||
+                (date === report.today && streak.status === 'archived')
+              }
+              onClick={() => void completion(actions, streak, date)}
+            />
+            <StreakLink className="sky-streaks-habit-title" href={href(streak)} onNavigate={onNavigate}>
+              <span>{streak.title}</span>
+              <small>{habitCaption(streak, date, report.today)}</small>
             </StreakLink>
           </div>
-        ))}
+          {!compact && <StreakMarks streak={streak} today={report.today} onDay={onDay} />}
+          <StreakLink className="sky-streaks-habit-run" href={href(streak)} onNavigate={onNavigate}>
+            <span>
+              {date === report.today ? (
+                <>
+                  <b>{streak.current}</b> {streak.current === 1 ? 'day' : 'days'}
+                </>
+              ) : (
+                'History'
+              )}
+              <StreakIcon name="right" size={16} />
+            </span>
+            {!compact && <small>Best {streak.best} days</small>}
+          </StreakLink>
+        </div>
+      ))}
     </div>
   )
 }
@@ -667,6 +666,20 @@ export function StreaksMain({ path, search, onNavigate }: { path: string; search
   const selected = report?.streaks.find((streak) => streak.name === name)
   const tab = params.get('tab') === 'history' ? 'history' : 'overview'
   const status = params.get('status') === 'archived' ? 'archived' : 'active'
+  const pageTitle = creating
+    ? 'New streak'
+    : name
+      ? selected?.title || 'Streaks'
+      : tab === 'history'
+        ? status === 'archived'
+          ? 'Archived streaks · History'
+          : 'Streaks · History'
+        : status === 'archived'
+          ? 'Archived streaks'
+          : 'Streaks'
+  useEffect(() => {
+    document.title = `sky · ${pageTitle}`
+  }, [pageTitle])
   const scope: StreakScope =
     params.get('scope') === 'year' ? 'year' : params.get('scope') === 'quarter' ? 'quarter' : 'month'
   const month = streakMonth(
