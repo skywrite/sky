@@ -1,4 +1,6 @@
-export { scanCapturedConversations, type CaptureScanOptions } from './captures.ts'
+export { scanCapturedConversations, type CaptureScanOptions, type CaptureScanResult } from './captures.ts'
+export { countedMs, localDateOf, marksPassed, nextDropAt, pointsAt } from './clock.ts'
+export { type EarnedEntry, type ResponseScore, type ResponseScoreDay, summarizeEarned } from './earned.ts'
 export {
   GMAIL_INBOX_THREAD_LIMIT,
   type GmailInboxClient,
@@ -6,6 +8,8 @@ export {
   type ScanGmailInboxOptions,
   type ScanGmailInboxResult,
 } from './gmailInbox.ts'
+export { QUIET_HOURS, RESPONSE_MARK_HOURS, RESPONSE_POINTS } from './marks.ts'
+export { calendarDayOf, createDayResolver, type DayOf } from './notebookDay.ts'
 export {
   computeNeedsResponsePriority,
   isNeedsResponseExpired,
@@ -25,8 +29,15 @@ export {
   resolveSender,
   type SenderLookup,
 } from './sender.ts'
-export { createNeedsResponseHost, type NeedsResponseHost, type NeedsResponseHostOptions } from './store.ts'
+export {
+  createNeedsResponseHost,
+  type NeedsResponseClear,
+  type NeedsResponseHost,
+  type NeedsResponseHostOptions,
+  type NeedsResponseList,
+} from './store.ts'
 export type {
+  AnsweredExchange,
   CachedGmailThread,
   CachedScreenReceipt,
   DismissedEntry,

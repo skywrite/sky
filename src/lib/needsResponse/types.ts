@@ -45,6 +45,18 @@ export interface NeedsResponseCandidate {
   savedPath?: string
 }
 
+/** A stretch of inbound messages the owner has already answered. */
+export interface AnsweredExchange {
+  /** Same conversation key as a candidate's `id`. */
+  id: string
+  /** UTC ISO instant of the last inbound message before the reply. */
+  lastInboundAt: string
+  /** UTC ISO instant of the owner's reply, read from the conversation itself. */
+  repliedAt: string
+  /** True when the message was addressed to the owner: a 1:1 chat, an email, or an @mention. */
+  direct: boolean
+}
+
 /** Stored active candidate after passing Jev screening and sender resolution. */
 export interface StoredNeedsResponseEntry {
   id: string
@@ -64,6 +76,11 @@ export interface StoredNeedsResponseEntry {
   resolvedBeeperName?: boolean
   target: NeedsResponseTarget | null
   savedPath?: string
+  /**
+   * UTC ISO instant the wait began: when the message Sky first flagged arrived.
+   * A follow-up from the sender moves `receivedAt` but not this. Absent in state written before the response score.
+   */
+  waitingSince?: string
   screen: {
     needsResponse: number
     ownerAddressed: number
@@ -81,7 +98,12 @@ export interface NeedsResponseItem {
   summary: string
   receivedAt: string
   receivedLocal: string
+  /** Hours the sender has waited since the message Sky first flagged; a follow-up does not restart it. */
   ageHours: number
+  /** What a reply earns right now: 100, 80, 60, 40, 20 or 0. */
+  points: number
+  /** Minutes until the next drop in points, or null once the message is worth nothing. */
+  dropsInMinutes: number | null
   personScore: number
   /** True when the sender matched a card in Mac Contacts (elevated with bonus ranking points). */
   inMacContacts?: boolean

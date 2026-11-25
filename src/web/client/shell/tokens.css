@@ -162,3 +162,37 @@
 [data-mantine-color-scheme='dark'] {
   --sky-amber: var(--mantine-color-orange-4);
 }
+
+/* Response score: one pink, lighter as a reply is worth less. Gray is a message nobody answered. */
+:root {
+  --sky-score-5: #e3038a;
+  --sky-score-4: #ff209e;
+  --sky-score-3: #ff68ae;
+  --sky-score-2: #ff92c0;
+  --sky-score-1: #feb5d2;
+  --sky-score-0: var(--mantine-color-gray-5);
+  --sky-score-5-ink: #ffffff;
+  --sky-score-4-ink: #ffffff;
+  --sky-score-3-ink: #ffffff;
+  --sky-score-2-ink: #0b0b0b;
+  --sky-score-1-ink: #0b0b0b;
+  --sky-score-0-ink: #0b0b0b;
+  --sky-score-empty: var(--mantine-color-gray-4);
+}
+
+/* On a dark page the shades fade toward the background instead of toward white. */
+[data-mantine-color-scheme='dark'] {
+  --sky-score-5: #ff73b3;
+  --sky-score-4: #fd3ca1;
+  --sky-score-3: #e51b8d;
+  --sky-score-2: #c80179;
+  --sky-score-1: #a90065;
+  --sky-score-0: var(--mantine-color-dark-3);
+  --sky-score-5-ink: #0b0b0b;
+  --sky-score-4-ink: #ffffff;
+  --sky-score-3-ink: #ffffff;
+  --sky-score-2-ink: #ffffff;
+  --sky-score-1-ink: #ffffff;
+  --sky-score-0-ink: #ffffff;
+  --sky-score-empty: var(--mantine-color-dark-3);
+}

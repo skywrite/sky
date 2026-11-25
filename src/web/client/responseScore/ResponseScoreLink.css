@@ -1,0 +1,40 @@
+.sky-score-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: 14px;
+  color: var(--sky-accent);
+  font-size: 14.5px;
+  font-weight: 400;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.sky-score-link:hover {
+  text-decoration: underline;
+}
+
+.sky-score-link b {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.sky-score-link svg {
+  flex: none;
+}
+
+.sky-score-link-short {
+  display: none;
+}
+
+@media (max-width: 600px) {
+  .sky-score-link {
+    margin-left: 6px;
+  }
+  .sky-score-link-full {
+    display: none;
+  }
+  .sky-score-link-short {
+    display: inline;
+  }
+}

@@ -225,3 +225,240 @@ Bumping this — need an answer before 5pm!
     await rm(root, { recursive: true, force: true })
   }
 })
+
+test('NeedsResponseHost scores replies: a tick or a reply earns the message, a follow-up keeps the clock, the X earns nothing', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'sky-nr-score-'))
+  try {
+    const today = new PlainDate('2025-03-15')
+    let now = Instant.from('2025-03-15T09:30:00Z')
+    let day = today
+
+    const slackDm = (channel: string, turns: Array<[time: string, who: string, text: string]>) =>
+      `---\nmedium: Slack\nfrom: ${turns[0][1]}\nlink: https://example.slack.com/archives/${channel}/p1742029200000100\ntz: UTC\n---\n\n` +
+      turns.map(([time, who, text]) => `## 2025-03-15 ${time} - ${who}\n\n${text}\n`).join('\n')
+    const write = async (file: string, content: string) => {
+      const full = path.join(root, 'time', dayActionDir('message', today), file)
+      await mkdir(path.dirname(full), { recursive: true })
+      await writeFile(full, content)
+    }
+
+    await write('09-00_Slack_Jane.md', slackDm('D1', [['09:00', 'Jane Doe', 'Can you sign off on the budget?']]))
+    await write('09-10_Slack_Alex.md', slackDm('D2', [['09:10', 'Alex Rivera', 'Which day works for the review?']]))
+    await write('09-25_Slack_Pat.md', slackDm('D4', [['09:25', 'Pat Kim', 'Did you see the Atlas notes?']]))
+    await write('09-26_Slack_Lee.md', slackDm('D6', [['09:26', 'Lee Wong', 'Can we move Thursday?']]))
+    const casey = (turns: string) =>
+      `---\nmedium: iMessage\nfrom: Casey Arden\nto: Sam Owner\nchat: "!imsg-casey"\naccount: imessage\ntz: UTC\n---\n\n${turns}`
+    await write('09-20_iMessage_Casey.md', casey('## 2025-03-15 09:20 - **Casey Arden**\n\nAre you free for a call?\n'))
+
+    const scores = new Map<string, number>([
+      ['jane doe', 500],
+      ['alex rivera', 40],
+      ['pat kim', 30],
+      ['lee wong', 20],
+    ])
+    const host = createNeedsResponseHost({
+      stateDir: path.join(root, 'state', 'needs-response'),
+      markdownBaseDir: root,
+      timeDir: path.join(root, 'time'),
+      getOwnerNames: async () => ['Sam Owner', 'Sam'],
+      getSenderLookup: () => ({ scoreLookup: (name) => scores.get(name.toLowerCase()) ?? 0 }),
+      getTimezone: () => 'UTC',
+      now: () => now,
+      today: () => day,
+      createScreen: async () => ({
+        version: 'test-screen-v1',
+        assess: async () => ({ needsResponse: 0.9, ownerAddressed: 0.95 }),
+      }),
+    })
+    const bySender = (items: Awaited<ReturnType<typeof host.list>>['items'], sender: string) =>
+      items.find((item) => item.sender === sender)!
+
+    await host.scan()
+    const first = await host.list()
+
+    assert({
+      given: 'five fresh messages, none answered',
+      should: 'be worth 100 each, with under an hour waited and nothing earned yet',
+      actual: {
+        points: first.items.map((item) => item.points),
+        fresh: first.items.every((item) => item.ageHours < 1),
+        todayPoints: first.todayPoints,
+      },
+      expected: { points: [100, 100, 100, 100, 100], fresh: true, todayPoints: 0 },
+    })
+
+    // Alex follows up in the afternoon: the message changes, the wait does not start over.
+    await write(
+      '09-10_Slack_Alex.md',
+      slackDm('D2', [
+        ['09:10', 'Alex Rivera', 'Which day works for the review?'],
+        ['14:45', 'Alex Rivera', 'Any update on this?'],
+      ]),
+    )
+    now = Instant.from('2025-03-15T15:00:00Z')
+    await host.scan()
+    const afterFollowUp = await host.list()
+    const alex = bySender(afterFollowUp.items, 'Alex Rivera')
+
+    assert({
+      given: 'a follow-up from the sender five and a half hours in',
+      should: 'keep the clock running from the first message, now past the 1-hour and 4-hour marks',
+      actual: {
+        receivedAt: alex.receivedAt,
+        ageHours: alex.ageHours,
+        points: alex.points,
+        dropsInMinutes: alex.dropsInMinutes,
+      },
+      expected: {
+        receivedAt: '2025-03-15T14:45:00Z',
+        ageHours: 5.8,
+        points: 60,
+        dropsInMinutes: 370,
+      },
+    })
+
+    // The tick earns what the message is worth now; Undo takes it back; the X earns nothing.
+    const jane = bySender(afterFollowUp.items, 'Jane Doe')
+    const ticked = await host.dismiss(jane.id, jane.version, 'responded')
+    const undone = await host.undismiss(jane.id)
+    const tickedAgain = await host.dismiss(jane.id, jane.version, 'responded')
+    const pat = bySender(afterFollowUp.items, 'Pat Kim')
+    const crossed = await host.dismiss(pat.id, pat.version)
+
+    assert({
+      given: 'a tick six hours in, an Undo, the tick again, then another message cleared with the X',
+      should: 'earn 60 for the tick, return to 0 on Undo, earn 60 again, and add nothing for the X',
+      actual: [ticked.todayPoints, undone.todayPoints, tickedAgain.todayPoints, crossed.todayPoints],
+      expected: [60, 0, 60, 60],
+    })
+
+    // Sky finds two replies in the conversations themselves: one to a listed message, one that never reached the list.
+    await write(
+      '09-20_iMessage_Casey.md',
+      casey(
+        '## 2025-03-15 09:20 - **Casey Arden**\n\nAre you free for a call?\n\n## 2025-03-15 10:00 - **Sam Owner**\n\nYes, calling at 11.\n',
+      ),
+    )
+    await write(
+      '15-00_Slack_Maya.md',
+      slackDm('D5', [
+        ['15:00', 'Maya Lin', 'Lunch tomorrow?'],
+        ['15:05', 'Sam Owner', 'Yes!'],
+        ['15:06', 'Maya Lin', 'Noon?'],
+        ['15:07', 'Sam Owner', 'Perfect.'],
+      ]),
+    )
+    now = Instant.from('2025-03-15T15:10:00Z')
+    await host.scan()
+    const afterReplies = await host.list()
+
+    assert({
+      given: 'a reply sent 40 minutes after a listed message, and a quick back-and-forth Sky never listed',
+      should: 'take the answered message off the list and earn 100 for each conversation, once',
+      actual: {
+        waiting: afterReplies.items.map((item) => item.sender).sort(),
+        todayPoints: afterReplies.todayPoints,
+        weekPoints: afterReplies.weekPoints,
+      },
+      expected: { waiting: ['Alex Rivera', 'Lee Wong'], todayPoints: 260, weekPoints: 260 },
+    })
+
+    // Alex gets an answer late in the evening: more than 12 hours after the first message.
+    await write(
+      '09-10_Slack_Alex.md',
+      slackDm('D2', [
+        ['09:10', 'Alex Rivera', 'Which day works for the review?'],
+        ['14:45', 'Alex Rivera', 'Any update on this?'],
+        ['21:30', 'Sam Owner', 'Tuesday works.'],
+      ]),
+    )
+    now = Instant.from('2025-03-15T21:40:00Z')
+    await host.scan()
+    const score = await host.score()
+
+    assert({
+      given: 'a reply 12 hours and 20 minutes after the first message',
+      should: 'earn 40 from the first message, and add the day up with no cap',
+      actual: { today: score.today, week: score.week, waits: score.waits, days: score.days.length },
+      expected: {
+        today: { points: 300, replies: 4, quick: 2 },
+        week: { points: 300, replies: 4 },
+        waits: [2, 0, 1, 1, 0, 0],
+        days: 30,
+      },
+    })
+
+    // A week on, Lee never got a reply. Pat was cleared with the X, so Pat is not counted as ignored.
+    now = Instant.from('2025-03-22T10:00:00Z')
+    day = new PlainDate('2025-03-22')
+    await host.scan()
+    const weekLater = await host.score()
+    const listWeekLater = await host.list()
+
+    assert({
+      given: 'seven days with no reply to one message, and another that was cleared with the X',
+      should: 'record only the unanswered one as no reply, worth nothing, with the old points out of the last 7 days',
+      actual: {
+        waits: weekLater.waits,
+        today: weekLater.today.points,
+        list: [listWeekLater.todayPoints, listWeekLater.weekPoints],
+      },
+      expected: { waits: [0, 0, 0, 0, 0, 1], today: 0, list: [0, 0] },
+    })
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('NeedsResponseHost counts a reply for the notebook day that is still open past midnight', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'sky-nr-openday-'))
+  try {
+    const openDay = new PlainDate('2025-03-15')
+    // Half past midnight on the calendar, and the notebook is still on the 15th.
+    const now = Instant.from('2025-03-16T00:30:00Z')
+    const full = path.join(root, 'time', dayActionDir('message', openDay), '23-50_Slack_Jane.md')
+    await mkdir(path.dirname(full), { recursive: true })
+    await writeFile(
+      full,
+      `---\nmedium: Slack\nfrom: Jane Doe\nlink: https://example.slack.com/archives/D1/p1742029200000100\ntz: UTC\n---\n\n## 2025-03-15 23:50 - Jane Doe\n\nStill up? Can you confirm the Atlas date?\n`,
+    )
+
+    const host = createNeedsResponseHost({
+      stateDir: path.join(root, 'state', 'needs-response'),
+      markdownBaseDir: root,
+      timeDir: path.join(root, 'time'),
+      getOwnerNames: async () => ['Sam Owner', 'Sam'],
+      getSenderLookup: () => ({ scoreLookup: () => 100 }),
+      getTimezone: () => 'UTC',
+      getDayOf: () => () => openDay.ymd,
+      now: () => now,
+      today: () => openDay,
+      createScreen: async () => ({
+        version: 'test-screen-v1',
+        assess: async () => ({ needsResponse: 0.9, ownerAddressed: 0.95 }),
+      }),
+    })
+
+    await host.scan()
+    const [jane] = (await host.list()).items
+    const ticked = await host.dismiss(jane.id, jane.version, 'responded')
+    const score = await host.score()
+
+    assert({
+      given: 'a tick at half past midnight while the notebook day is still the day before',
+      should: 'count the points for the open day, which is the last of the 30 days shown',
+      actual: {
+        todayPoints: ticked.todayPoints,
+        today: score.today,
+        lastDay: score.days.at(-1),
+      },
+      expected: {
+        todayPoints: 100,
+        today: { points: 100, replies: 1, quick: 1 },
+        lastDay: { date: '2025-03-15', points: 100, replies: 1 },
+      },
+    })
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})

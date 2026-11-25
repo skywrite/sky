@@ -131,7 +131,7 @@ Are we still on for dinner at 7?
 `,
     )
 
-    const candidates = await scanCapturedConversations({
+    const { candidates } = await scanCapturedConversations({
       markdownBaseDir: root,
       timeDir: path.join(root, 'time'),
       slackDmsDir,
@@ -291,7 +291,7 @@ Sent it over!
 `,
     )
 
-    const candidates = await scanCapturedConversations({
+    const { candidates, exchanges } = await scanCapturedConversations({
       markdownBaseDir: root,
       timeDir: path.join(root, 'time'),
       slackDmsDir,
@@ -306,6 +306,26 @@ Sent it over!
       should: 'join both days and auto-clear both conversations',
       actual: candidates,
       expected: [],
+    })
+
+    assert({
+      given: 'the same two conversations, each answered the next morning',
+      should: "report each reply with the message's time and the reply's own time",
+      actual: exchanges.toSorted((a, b) => a.id.localeCompare(b.id)),
+      expected: [
+        {
+          id: 'Beeper:whatsapp:!wa-chat-9',
+          lastInboundAt: '2025-03-14T20:00:00Z',
+          repliedAt: '2025-03-15T08:30:00Z',
+          direct: true,
+        },
+        {
+          id: 'Slack:dm:https://example.slack.com:D555',
+          lastInboundAt: '2025-03-14T18:00:00Z',
+          repliedAt: '2025-03-15T09:00:00Z',
+          direct: true,
+        },
+      ],
     })
   } finally {
     await rm(root, { recursive: true, force: true })
@@ -399,7 +419,7 @@ Benchmarks are done — ready for your call on phase 2?
 `,
     )
 
-    const candidates = await scanCapturedConversations({
+    const { candidates } = await scanCapturedConversations({
       markdownBaseDir: root,
       timeDir: path.join(root, 'time'),
       today,

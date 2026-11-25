@@ -826,6 +826,7 @@ export function createHttpApp(options: HttpHandlerOptions): Hono {
     c.req.path.startsWith('/outbox/_api/') ? c.json({ message: 'Not found.' }, 404) : c.html(renderAppHtml('sky')),
   )
   app.get('/streaks', (c) => c.html(renderAppHtml('sky · Streaks')))
+  app.get('/responses', (c) => c.html(renderAppHtml('sky · Response score')))
   app.get('/streaks/*', (c) =>
     c.req.path === '/streaks/_api' || c.req.path.startsWith('/streaks/_api/')
       ? c.json({ message: 'Streaks is unavailable.' }, 404)

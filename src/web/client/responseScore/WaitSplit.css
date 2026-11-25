@@ -1,0 +1,91 @@
+.sky-rs-split-bar {
+  display: flex;
+  gap: 2px;
+  height: 28px;
+}
+
+.sky-rs-split-part {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  padding-left: 9px;
+  border-radius: 4px;
+  font-size: 14px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  cursor: default;
+}
+
+.sky-rs-split-part:empty {
+  padding-left: 0;
+}
+
+.sky-rs-split-part:hover,
+.sky-rs-split-part:focus-visible {
+  filter: brightness(1.08);
+}
+
+.sky-rs-split-part:focus-visible {
+  outline: 2px solid var(--sky-accent);
+  outline-offset: 2px;
+}
+
+.sky-rs-split-part[data-level='5'],
+.sky-rs-legend i[data-level='5'] {
+  background: var(--sky-score-5);
+  color: var(--sky-score-5-ink);
+}
+.sky-rs-split-part[data-level='4'],
+.sky-rs-legend i[data-level='4'] {
+  background: var(--sky-score-4);
+  color: var(--sky-score-4-ink);
+}
+.sky-rs-split-part[data-level='3'],
+.sky-rs-legend i[data-level='3'] {
+  background: var(--sky-score-3);
+  color: var(--sky-score-3-ink);
+}
+.sky-rs-split-part[data-level='2'],
+.sky-rs-legend i[data-level='2'] {
+  background: var(--sky-score-2);
+  color: var(--sky-score-2-ink);
+}
+.sky-rs-split-part[data-level='1'],
+.sky-rs-legend i[data-level='1'] {
+  background: var(--sky-score-1);
+  color: var(--sky-score-1-ink);
+}
+.sky-rs-split-part[data-level='0'],
+.sky-rs-legend i[data-level='0'] {
+  background: var(--sky-score-0);
+  color: var(--sky-score-0-ink);
+}
+
+.sky-rs-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 22px;
+  margin: 14px 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 14.5px;
+  color: var(--sky-text-2);
+}
+
+.sky-rs-legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sky-rs-legend i {
+  flex: none;
+  width: 11px;
+  height: 11px;
+  border-radius: 3px;
+}
+
+.sky-rs-legend b {
+  font-weight: 600;
+  color: var(--sky-text);
+}

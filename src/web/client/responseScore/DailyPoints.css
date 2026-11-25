@@ -1,0 +1,72 @@
+.sky-rs-daily-readout {
+  margin: 0 0 6px;
+  font-size: 14.5px;
+  color: var(--sky-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.sky-rs-daily-readout b {
+  margin-right: 8px;
+  font-weight: 600;
+  color: var(--sky-text-2);
+}
+
+.sky-rs-daily svg {
+  touch-action: pan-y;
+}
+
+.sky-rs-daily svg:focus-visible {
+  outline: 2px solid var(--sky-accent);
+  outline-offset: 4px;
+  border-radius: 4px;
+}
+
+.sky-rs-daily-bar {
+  fill: var(--sky-score-5);
+}
+
+.sky-rs-daily-band {
+  fill: var(--sky-side);
+}
+
+.sky-rs-numbers {
+  margin-top: 12px;
+  font-size: 14.5px;
+  color: var(--sky-dim);
+}
+
+.sky-rs-numbers summary {
+  width: fit-content;
+  padding: 4px 0;
+  cursor: pointer;
+}
+
+.sky-rs-numbers-scroll {
+  max-height: 240px;
+  margin-top: 8px;
+  overflow: auto;
+  border: 1px solid var(--sky-border-soft);
+  border-radius: 10px;
+}
+
+.sky-rs-numbers table {
+  width: 100%;
+  border-collapse: collapse;
+  color: var(--sky-text-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.sky-rs-numbers th,
+.sky-rs-numbers td {
+  padding: 6px 14px;
+  border-bottom: 1px solid var(--sky-border-soft);
+  font-weight: 400;
+  text-align: left;
+}
+
+.sky-rs-numbers th {
+  position: sticky;
+  top: 0;
+  background: var(--sky-side);
+  font-weight: 600;
+}

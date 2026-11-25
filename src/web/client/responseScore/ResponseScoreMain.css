@@ -1,0 +1,222 @@
+/* The response score page: one reading column, the same sections and rules as the day page. */
+
+.sky-rs-col {
+  width: 100%;
+  max-width: 844px;
+  margin: 0 auto;
+  padding: 44px 48px 72px;
+  color: var(--sky-text);
+}
+
+.sky-rs-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 30px;
+}
+
+.sky-rs-head h1 {
+  margin: 0;
+  font-size: 19px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.sky-rs-head a {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--sky-accent);
+  font-size: 15px;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.sky-rs-head a:hover {
+  text-decoration: underline;
+}
+
+.sky-rs-status {
+  margin: 0;
+  font-size: var(--sky-content-font-size);
+  line-height: 1.55;
+  color: var(--sky-text-2);
+}
+
+.sky-rs-status p {
+  margin: 0 0 14px;
+  max-width: 56ch;
+}
+
+.sky-rs-status button {
+  padding: 8px 20px;
+  border: 1px solid var(--sky-border-soft);
+  border-radius: 12px;
+  background: var(--sky-bg);
+  color: var(--sky-text);
+  font: inherit;
+  font-size: 17px;
+  cursor: pointer;
+}
+
+.sky-rs-status button:hover {
+  background: var(--sky-side);
+}
+
+.sky-rs-hero {
+  display: flex;
+  align-items: center;
+  gap: 28px;
+  margin: 4px 0 30px;
+}
+
+.sky-rs-hero-number {
+  font-size: 92px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -0.04em;
+}
+
+.sky-rs-hero-read {
+  margin: 0;
+  font-size: 19px;
+  line-height: 1.5;
+  color: var(--sky-text-2);
+}
+
+.sky-rs-hero-read span {
+  display: block;
+  max-width: 44ch;
+}
+
+.sky-rs-hero-read b {
+  font-weight: 600;
+  color: var(--sky-text);
+}
+
+.sky-rs-hero-read small {
+  display: block;
+  margin-top: 6px;
+  font-size: 14.5px;
+  color: var(--sky-dim);
+}
+
+.sky-rs-section {
+  padding: 24px 0 26px;
+  border-top: 1px solid var(--sky-border-soft);
+}
+
+.sky-rs-section-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 14px;
+  margin-bottom: 12px;
+  font-size: 15.5px;
+  font-weight: 600;
+  line-height: 1.6;
+  color: var(--sky-text-2);
+}
+
+.sky-rs-section-head h2 {
+  margin: 0;
+  font: inherit;
+  color: inherit;
+}
+
+.sky-rs-section-head span {
+  font-size: 14.5px;
+  font-weight: 400;
+  color: var(--sky-dim);
+}
+
+/* Both charts: recessive grid, text in the page's own inks, never in a data color. */
+.sky-rs-chart svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+
+.sky-rs-chart text {
+  font-family: inherit;
+  font-size: 13px;
+  fill: var(--sky-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.sky-rs-grid {
+  stroke: var(--sky-border-soft);
+  stroke-width: 1;
+}
+
+.sky-rs-axis {
+  stroke: var(--sky-score-empty);
+  stroke-width: 1;
+}
+
+.sky-rs-caption {
+  max-width: 62ch;
+  margin: 12px 0 0;
+  font-size: 16px;
+  line-height: 1.55;
+  color: var(--sky-text-2);
+}
+
+.sky-rs-rules {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 17px;
+  line-height: 1.55;
+  color: var(--sky-text-2);
+}
+
+.sky-rs-rules li {
+  max-width: 62ch;
+  padding: 9px 0;
+}
+
+.sky-rs-rules li + li {
+  border-top: 1px solid var(--sky-border-soft);
+}
+
+@media (max-width: 900px) {
+  .sky-rs-col {
+    padding: 18px 14px 56px;
+  }
+
+  .sky-rs-head {
+    margin-bottom: 22px;
+  }
+
+  .sky-rs-hero {
+    gap: 18px;
+  }
+
+  .sky-rs-hero-number {
+    font-size: 72px;
+  }
+
+  .sky-rs-hero-read {
+    font-size: 18px;
+  }
+
+  .sky-rs-section {
+    padding: 18px 0 20px;
+  }
+
+  .sky-rs-section-head span {
+    flex-basis: 100%;
+  }
+}
+
+/* A score in the thousands leaves no room beside it on a phone: the reading goes underneath. */
+@media (max-width: 600px) {
+  .sky-rs-hero {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+}

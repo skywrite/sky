@@ -4,6 +4,7 @@ import { resolveGmailClient } from '#commands/all/google/email/lib/resolveGmailC
 import { getThread, hasGmailScope, listAccountEmails, listThreads, loadAccountTokens } from '#lib/google/mod.ts'
 import { type MacSenderLookup, openMacSenderLookup } from '#lib/macMessages/mod.ts'
 import {
+  createDayResolver,
   createNeedsResponseHost,
   createNeedsResponseScreen,
   type GmailInboxClient,
@@ -14,8 +15,8 @@ import type { SecretsProvider } from '#lib/secrets/SecretsProvider.ts'
 import { decisionModel } from '#shared/ai/decisions.ts'
 import type * as Config from '#shared/config.ts'
 import type MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
-import { fetchNowSync } from '#shared/nbfs/mod.ts'
-import { Instant } from '#universal/dates/nbdt/mod.ts'
+import { fetchNowSync, readDaySync } from '#shared/nbfs/mod.ts'
+import { Instant, PlainDate } from '#universal/dates/nbdt/mod.ts'
 import { createScoreLookup } from '../../scoring/contacts.ts'
 import type { Store } from '../../store.ts'
 import { beeperOutboxClient, openBeeperChat, outboxErrorFromBeeper } from '../outbox/beeper.ts'
@@ -96,6 +97,18 @@ export function createServiceNeedsResponseHost(options: {
       }
     },
     getTimezone: () => fetchNowSync().timezone,
+    // The score follows notebook days: a day stays open past midnight until the next one is started.
+    getDayOf: () =>
+      createDayResolver({
+        timezone: fetchNowSync().timezone,
+        startOf: (date) => {
+          try {
+            return readDaySync(new PlainDate(date), options.config.DIR_TIME).started?.epochMilliseconds ?? null
+          } catch {
+            return null
+          }
+        },
+      }),
     today: () => fetchNowSync().plainDateTime.plainDate,
     now: () => Instant.fromEpochMilliseconds(fetchNowSync().epochMilliseconds),
     gmail,
@@ -133,6 +146,8 @@ export function createNeedsResponseRoutes(host: NeedsResponseHost): Hono {
     return c.json(result)
   })
 
+  app.get('/needs-response/score', async (c) => c.json(await host.score()))
+
   app.post('/needs-response/refresh', async (c) => {
     const blocked = checkSameOrigin(c.req.raw)
     if (blocked) return c.json({ error: blocked }, 403)
@@ -147,11 +162,12 @@ export function createNeedsResponseRoutes(host: NeedsResponseHost): Hono {
     if (!c.req.header('Content-Type')?.startsWith('application/json')) {
       return c.json({ error: 'Expected a JSON request.' }, 400)
     }
-    const body = (await c.req.json().catch(() => null)) as { id?: unknown; version?: unknown } | null
+    const body = (await c.req.json().catch(() => null)) as { id?: unknown; version?: unknown; how?: unknown } | null
     if (!body || typeof body.id !== 'string' || !body.id || typeof body.version !== 'string' || !body.version) {
       return c.json({ error: 'Choose an item to clear.' }, 400)
     }
-    return c.json(await host.dismiss(body.id, body.version))
+    // The tick says the message was answered and earns its points; the X clears it for nothing.
+    return c.json(await host.dismiss(body.id, body.version, body.how === 'responded' ? 'responded' : 'dismissed'))
   })
 
   app.post('/needs-response/undismiss', async (c) => {

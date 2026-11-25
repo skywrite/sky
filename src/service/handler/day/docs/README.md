@@ -1,11 +1,14 @@
 ---
 created: 2026-09-03
-updated: 2026-11-24
+updated: 2026-11-25
 ---
 
 # The day's items, the day's rail, and the day's files
 
 Stable activity references and two-way updates with ongoing work are implemented by `lib/workstreams/day.ts`; the complete model is described in the [workstream design](../../../../../docs/topics/workstreams/README.md).
+
+Needs response, the card below Most important on Today, and its response score are described in the
+[needs-response design](../../../../lib/needsResponse/docs/README.md).
 
 Design notes for `src/service/handler/day/` and the page that drives it,
 `web/client/day/day.tsx` with `dayRail.tsx`.

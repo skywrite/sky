@@ -2,6 +2,8 @@ import { UnstyledButton } from '@mantine/core'
 import { useEffect, useState } from 'react'
 import type { NeedsResponseItem } from '#lib/needsResponse/types.ts'
 import { fileHref } from '../explorer/explorer.tsx'
+import { ResponseScoreLink } from '../responseScore/ResponseScoreLink.tsx'
+import { ScoreDots } from '../responseScore/ScoreDots.tsx'
 import { Block, Cross } from './day.tsx'
 import { ServiceLogo } from './ServiceLogo.tsx'
 import { revealOpacity, useSwipeToDelete } from './swipe.ts'
@@ -12,6 +14,22 @@ function formatWaitingAge(ageHours: number): string {
   if (ageHours < 1) return `${Math.max(1, Math.round(ageHours * 60))}m`
   if (ageHours < 24) return `${Math.round(ageHours)}h`
   return `${Math.round(ageHours / 24)}d`
+}
+
+/** A message that drops within this many minutes is called out in the card's head. */
+const SOON_MINUTES = 180
+
+function untilText(minutes: number): string {
+  if (minutes < 60) return `${Math.max(1, minutes)} min`
+  if (minutes < 36 * 60) return `${Math.round(minutes / 60)} h`
+  return `${Math.round(minutes / (24 * 60))} days`
+}
+
+/** What the dots mean, in words, for the pointer and for screen readers. */
+function worthNote(item: NeedsResponseItem): string {
+  const waited = `Waiting ${formatWaitingAge(item.ageHours)}.`
+  if (item.dropsInMinutes === null) return `${waited} A reply earns nothing now.`
+  return `${waited} A reply earns ${item.points} now, ${item.points - 20} in ${untilText(item.dropsInMinutes)}.`
 }
 
 function compactContextLabel(label: string | undefined): string | undefined {
@@ -132,30 +150,53 @@ function NeedsResponseRow({
           <Cross />
         </button>
         <span className="sky-nr-age">{formatWaitingAge(item.ageHours)}</span>
+        <span className="sky-nr-dots" title={worthNote(item)}>
+          <ScoreDots points={item.points} />
+        </span>
       </div>
     </div>
   )
 }
 
 /** Today's cross-app queue of messages awaiting a reply, ordered by age waiting + person score. */
-export function NeedsResponseCard({ enabled }: { enabled: boolean }) {
-  const { items, removing, undo, openError, clearItem, revertUndo, openInApp } = useNeedsResponse(enabled)
+export function NeedsResponseCard({ enabled, navigate }: { enabled: boolean; navigate: (path: string) => void }) {
+  const { items, todayPoints, weekPoints, removing, undo, openError, clearItem, revertUndo, openInApp } =
+    useNeedsResponse(enabled)
   const [showAll, setShowAll] = useState(false)
 
-  if (!enabled || (items.length === 0 && !undo)) return null
+  // With points earned this week the card stays even when nothing is waiting: it holds the only link to the score.
+  const scoring = weekPoints > 0
+  if (!enabled || (items.length === 0 && !undo && !scoring)) return null
 
   const visible = showAll ? items : items.slice(0, 5)
   const mini = items.length > 0 ? `${items.length > 5 && !showAll ? 'Top 5 · ' : ''}${items.length} waiting` : undefined
 
+  const soon = items.filter((item) => item.dropsInMinutes !== null && item.dropsInMinutes <= SOON_MINUTES).length
+
   return (
     <>
-      {items.length > 0 && (
-        <Block head="Needs response" mini={mini} className="sky-needs-response">
+      {(items.length > 0 || scoring) && (
+        <Block
+          head="Needs response"
+          mini={mini}
+          action={
+            <>
+              {soon > 0 && (
+                <span className="sky-nr-soon">
+                  {soon} {soon === 1 ? 'loses' : 'lose'} points within 3 hours
+                </span>
+              )}
+              <ResponseScoreLink points={todayPoints} navigate={navigate} />
+            </>
+          }
+          className="sky-needs-response"
+        >
           {openError && (
             <p className="sky-nr-error" role="alert">
               {openError}
             </p>
           )}
+          {items.length === 0 && <p className="sky-nr-clear">Nothing is waiting on you.</p>}
           <div className="sky-nr-list">
             {visible.map((item) => (
               <NeedsResponseRow

@@ -12,7 +12,7 @@ import { resolveTimeRef, toTimeRef } from '#shared/nbfs/timeRef.ts'
 import { Instant, PlainDate, PlainDateTime, ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
 import { NEEDS_RESPONSE_EXPIRY_DAYS } from './score.ts'
 import { isAutomatedSender, isOwnerAuthor } from './sender.ts'
-import type { NeedsResponseCandidate, NeedsResponseKind, NeedsResponseTarget } from './types.ts'
+import type { AnsweredExchange, NeedsResponseCandidate, NeedsResponseKind, NeedsResponseTarget } from './types.ts'
 
 export interface CaptureScanOptions {
   markdownBaseDir: string
@@ -259,12 +259,19 @@ function buildTranscript(turns: readonly ParsedTurn[]): string {
   return joined.slice(joined.length - MAX_TRANSCRIPT_CHARS)
 }
 
+export interface CaptureScanResult {
+  /** Conversations still waiting on the owner. */
+  candidates: NeedsResponseCandidate[]
+  /** Stretches the owner has answered inside the window, with the reply's own time. */
+  exchanges: AnsweredExchange[]
+}
+
 /**
  * Scan recent captured Slack and Beeper conversations in `actions/messages/`
  * across the rolling window, joining multi-day threads so replies on a later day
  * automatically clear earlier unanswered messages.
  */
-export async function scanCapturedConversations(options: CaptureScanOptions): Promise<NeedsResponseCandidate[]> {
+export async function scanCapturedConversations(options: CaptureScanOptions): Promise<CaptureScanResult> {
   const lookbackDays = options.lookbackDays ?? NEEDS_RESPONSE_EXPIRY_DAYS
   const cutoffYmd = options.today.addDays(-lookbackDays).ymd
   const cutoffMs = options.now.epochMilliseconds - lookbackDays * 24 * 3_600_000
@@ -439,6 +446,8 @@ export async function scanCapturedConversations(options: CaptureScanOptions): Pr
   }
 
   const candidates: NeedsResponseCandidate[] = []
+  const exchanges: AnsweredExchange[] = []
+  const isOwner = (turn: ParsedTurn) => isOwnerAuthor(turn.author, options.ownerNames, ownerAddresses)
 
   for (const group of groups.values()) {
     group.sort((a, b) => a.relPath.localeCompare(b.relPath))
@@ -458,10 +467,47 @@ export async function scanCapturedConversations(options: CaptureScanOptions): Pr
     allTurns.sort((a, b) => a.normalizedTime.localeCompare(b.normalizedTime))
     if (allTurns.length === 0) continue
 
+    // One key names the conversation whether a message is waiting in it or was just answered.
+    const linkInfo = latestDoc.beeper ? undefined : [...group].reverse().find((c) => c.slackLink)?.slackLink
+    const dmRecord = linkInfo ? dmRecords.get(linkInfo.channelId) : undefined
+    const slackDm = Boolean(linkInfo && (dmRecord || linkInfo.channelId.startsWith('D')))
+    const conversationId = latestDoc.beeper
+      ? `Beeper:${latestDoc.beeper.account}:${latestDoc.beeper.chat}`
+      : slackDm
+        ? `Slack:dm:${linkInfo!.origin}:${linkInfo!.channelId}`
+        : linkInfo
+          ? `Slack:thread:${linkInfo.origin}:${linkInfo.channelId}:${linkInfo.rootTs}`
+          : `Slack:saved:${group[0].relPath}`
+    const oneToOne = latestDoc.beeper ? !latestDoc.beeper.group : slackDm && (dmRecord?.kind ?? 'dm') === 'dm'
+
+    // Every stretch the owner answered. The reply's time comes from the conversation, not from this scan.
+    let inbound: ParsedTurn[] = []
+    for (const turn of allTurns) {
+      if (!isOwner(turn)) {
+        inbound.push(turn)
+        continue
+      }
+      const answered = inbound
+      inbound = []
+      const last = answered.at(-1)
+      if (!last) continue
+      const lastInbound = toInstant(last.normalizedTime, last.timezone)
+      const replied = toInstant(turn.normalizedTime, turn.timezone)
+      if (!lastInbound || !replied || replied.epochMilliseconds < cutoffMs) continue
+      const author = extractSenderParts(last.author)
+      if (isAutomatedSender({ name: author.name, email: author.email })) continue
+      exchanges.push({
+        id: conversationId,
+        lastInboundAt: lastInbound.toString(),
+        repliedAt: replied.toString(),
+        direct: oneToOne || answered.some((entry) => mentionsOwner(entry.body, options.ownerNames)),
+      })
+    }
+
     const lastTurn = allTurns.at(-1)!
 
     // Auto-clear: if the owner sent the latest message, no response is owed.
-    if (isOwnerAuthor(lastTurn.author, options.ownerNames, ownerAddresses)) continue
+    if (isOwner(lastTurn)) continue
 
     const receivedInstant = toInstant(lastTurn.normalizedTime, lastTurn.timezone)
     if (!receivedInstant) continue
@@ -471,23 +517,19 @@ export async function scanCapturedConversations(options: CaptureScanOptions): Pr
     const sender = extractSenderParts(lastTurn.author)
     if (isAutomatedSender({ name: sender.name, email: sender.email })) continue
 
-    const lastOwnerIdx = allTurns.findLastIndex((turn) =>
-      isOwnerAuthor(turn.author, options.ownerNames, ownerAddresses),
-    )
+    const lastOwnerIdx = allTurns.findLastIndex(isOwner)
     const ownerParticipated = lastOwnerIdx >= 0
     const unansweredTurns = allTurns.slice(lastOwnerIdx + 1)
     const ownerMentioned = unansweredTurns.some((turn) => mentionsOwner(turn.body, options.ownerNames))
     const hasPriorHistory = group.some((cap) => Boolean(cap.previousRelPath))
     const resolvedBeeperName = Boolean(latestDoc.beeper && sender.name && !sender.phone && !sender.email)
 
-    // Determine canonical conversation ID, kind, and native app destination.
-    let id: string
+    // Determine the kind and the native app destination.
     let kind: NeedsResponseKind
     let target: NeedsResponseTarget | null = null
     let contextLabel: string | undefined
 
     if (latestDoc.beeper) {
-      id = `Beeper:${latestDoc.beeper.account}:${latestDoc.beeper.chat}`
       kind = latestDoc.beeper.group ? 'group' : 'dm'
       target = {
         medium: 'Beeper',
@@ -499,24 +541,13 @@ export async function scanCapturedConversations(options: CaptureScanOptions): Pr
         contextLabel = latestDoc.doc.yaml.to
       }
     } else {
-      const linkInfo = [...group].reverse().find((c) => c.slackLink)?.slackLink
-      const dmRecord = linkInfo ? dmRecords.get(linkInfo.channelId) : undefined
-      const isDmChannel = Boolean(linkInfo?.channelId.startsWith('D'))
-
-      if (dmRecord) {
-        kind = dmRecord.kind
-        id = `Slack:dm:${linkInfo!.origin}:${linkInfo!.channelId}`
-      } else if (isDmChannel && linkInfo) {
-        kind = 'dm'
-        id = `Slack:dm:${linkInfo.origin}:${linkInfo.channelId}`
+      if (slackDm) {
+        kind = dmRecord?.kind ?? 'dm'
       } else {
         // Non-DM Slack channel threads (e.g. manually followed FYI threads) only involve
         // the owner when they participated in the thread or were explicitly @mentioned.
         if (!ownerParticipated && !ownerMentioned) continue
         kind = ownerMentioned ? 'mention' : 'thread'
-        id = linkInfo
-          ? `Slack:thread:${linkInfo.origin}:${linkInfo.channelId}:${linkInfo.rootTs}`
-          : `Slack:saved:${group[0].relPath}`
       }
 
       if (linkInfo) {
@@ -534,7 +565,7 @@ export async function scanCapturedConversations(options: CaptureScanOptions): Pr
     ).slice(0, 16)
 
     candidates.push({
-      id,
+      id: conversationId,
       version,
       source: latestDoc.sourceLabel,
       medium: latestDoc.medium,
@@ -555,5 +586,5 @@ export async function scanCapturedConversations(options: CaptureScanOptions): Pr
     })
   }
 
-  return candidates
+  return { candidates, exchanges }
 }

@@ -1820,7 +1820,7 @@ export function DayView({
                         </PlanCard>
                       )}
                     </DayMostImportant>
-                    <NeedsResponseCard enabled={isToday && !summarized} />
+                    <NeedsResponseCard enabled={isToday && !summarized} navigate={navigate} />
                     <TodoCard
                       key={'todos-' + view!.day.ymd}
                       items={[...record.commitments, ...record.todos]}

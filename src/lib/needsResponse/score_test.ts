@@ -97,6 +97,8 @@ test('sortNeedsResponseItems sorts by priority descending then oldest received f
     receivedAt: '2025-03-14T12:00:00Z',
     receivedLocal: '2025-03-14 12:00',
     ageHours: 10,
+    points: 80,
+    dropsInMinutes: 120,
     personScore: 100,
     priority: 10,
     href: 'https://example.slack.com/archives/D1/p1',

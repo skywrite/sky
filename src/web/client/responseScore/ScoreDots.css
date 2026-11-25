@@ -1,0 +1,46 @@
+.sky-score-dots {
+  --sky-score-dot: var(--sky-score-0);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+}
+
+.sky-score-dots i {
+  box-sizing: border-box;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  border: 1.5px solid var(--sky-score-empty);
+}
+
+.sky-score-dots i[data-on] {
+  border-color: var(--sky-score-dot);
+  background: var(--sky-score-dot);
+}
+
+.sky-score-dots[data-level='5'] {
+  --sky-score-dot: var(--sky-score-5);
+}
+.sky-score-dots[data-level='4'] {
+  --sky-score-dot: var(--sky-score-4);
+}
+.sky-score-dots[data-level='3'] {
+  --sky-score-dot: var(--sky-score-3);
+}
+.sky-score-dots[data-level='2'] {
+  --sky-score-dot: var(--sky-score-2);
+}
+.sky-score-dots[data-level='1'] {
+  --sky-score-dot: var(--sky-score-1);
+}
+
+@media (max-width: 900px) {
+  .sky-score-dots {
+    gap: 3px;
+  }
+  .sky-score-dots i {
+    width: 9px;
+    height: 9px;
+  }
+}

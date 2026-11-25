@@ -34,6 +34,8 @@ import { outboxItemOf, outboxLegacyItemPath } from './outbox/outboxRoutes.ts'
 import { PeopleMain, peopleRouteOf } from './people/people.tsx'
 import { PlacesMain, placesRouteOf } from './places/places.tsx'
 import { RecurringMain } from './recurring/RecurringMain.tsx'
+import { ResponseScoreMain } from './responseScore/ResponseScoreMain.tsx'
+import { isResponseScorePath } from './responseScore/routes.ts'
 import { SchedulePage } from './schedule/SchedulePage.tsx'
 import { SearchWorkspace } from './search/search.tsx'
 import { SettingsMain, useSettingsBoot } from './settings/settings.tsx'
@@ -163,6 +165,7 @@ function Canvas() {
   const isFuture = futureRoute !== null
   const isTracking = path === '/tracking' || path.startsWith('/tracking/')
   const isStreaks = path === '/streaks' || path.startsWith('/streaks/')
+  const isResponseScore = isResponseScorePath(path)
   const isSearch = path === '/search'
   const isWhiteboard = isWhiteboardPath(path)
   const isWorkstreams = path === '/workstreams' || path.startsWith('/workstreams/')
@@ -255,6 +258,7 @@ function Canvas() {
     !isFuture &&
     !isTracking &&
     !isStreaks &&
+    !isResponseScore &&
     !isSearch &&
     !isWhiteboard &&
     !isWorkstreams &&
@@ -280,6 +284,7 @@ function Canvas() {
       isFuture ||
       isTracking ||
       isStreaks ||
+      isResponseScore ||
       isWhiteboard ||
       importId ||
       explorerFile !== null
@@ -306,6 +311,7 @@ function Canvas() {
     isSchedule,
     isAudition,
     isStreaks,
+    isResponseScore,
     isOutbox,
     peopleRoute,
     placesRoute,
@@ -334,6 +340,7 @@ function Canvas() {
     onDayPage ||
     isWeek ||
     isStreaks ||
+    isResponseScore ||
     filesRoute !== null ||
     meetingRoute !== null ||
     noteRoute !== null
@@ -344,7 +351,11 @@ function Canvas() {
       ? (job.fields?.when ?? job.suggestedWhen).slice(0, 10) === (activeDayYmd ?? day?.today.ymd)
       : isToday || (job.fields?.kind === 'meeting' && job.fields.when.slice(0, 10) === activeDayYmd),
   )
-  const todayActive = isStreaks || (onDayPage && isToday) || (showDateNav && !isWeek && activeDayYmd === day?.today.ymd)
+  const todayActive =
+    isStreaks ||
+    isResponseScore ||
+    (onDayPage && isToday) ||
+    (showDateNav && !isWeek && activeDayYmd === day?.today.ymd)
   const tomorrowYmd = day ? new PlainDate(day.today.ymd).addDays(1).ymd : null
   const tomorrowActive = showDateNav && !isWeek && tomorrowYmd !== null && activeDayYmd === tomorrowYmd
 
@@ -723,6 +734,8 @@ function Canvas() {
           <TrackingMain path={path} navigate={navigate} />
         ) : isStreaks ? (
           <StreaksMain path={path} search={search} onNavigate={navigate} />
+        ) : isResponseScore ? (
+          <ResponseScoreMain navigate={navigate} />
         ) : isWhiteboard ? (
           <WhiteboardMain search={search} navigate={navigate} />
         ) : isWorkstreams ? (

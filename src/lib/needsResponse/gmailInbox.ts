@@ -3,7 +3,7 @@ import { hash } from '#lib/outbox/files.ts'
 import { Instant } from '#universal/dates/nbdt/mod.ts'
 import { NEEDS_RESPONSE_EXPIRY_DAYS } from './score.ts'
 import { isAutomatedSender, isOwnerAuthor, isSenderEligible, resolveSender, type SenderLookup } from './sender.ts'
-import type { CachedGmailThread, NeedsResponseCandidate } from './types.ts'
+import type { AnsweredExchange, CachedGmailThread, NeedsResponseCandidate } from './types.ts'
 
 export const GMAIL_INBOX_THREAD_LIMIT = 50
 const GMAIL_CACHE_VERSION = 2
@@ -30,6 +30,8 @@ export interface ScanGmailInboxOptions {
 
 export interface ScanGmailInboxResult {
   candidates: NeedsResponseCandidate[]
+  /** Threads the owner has answered, with the reply's own time. */
+  exchanges: AnsweredExchange[]
   nextCache: Record<string, CachedGmailThread>
   threadsChecked: number
   errors: string[]
@@ -69,6 +71,27 @@ function isOwnerMessage(
   const fromName = msg.from?.name?.trim()
   if (fromName && isOwnerAuthor(fromName, ownerNames, addresses)) return true
   return false
+}
+
+/** The reply that answered a thread's last inbound message, when the owner's message is the newest. */
+function answeredExchange(
+  id: string,
+  messages: readonly GmailMessage[],
+  account: string,
+  ownerNames: readonly string[],
+  ownerAddresses: readonly string[],
+): AnsweredExchange | null {
+  const lastInbound = messages.findLastIndex((msg) => !isOwnerMessage(msg, account, ownerNames, ownerAddresses))
+  const inbound = messages[lastInbound]
+  const reply = messages[lastInbound + 1]
+  if (!inbound || !reply) return null
+  if (isAutomatedSender({ name: inbound.from?.name, email: inbound.from?.address, labels: inbound.labelIds })) {
+    return null
+  }
+  const lastInboundAt = messageInstant(inbound)
+  const repliedAt = messageInstant(reply)
+  if (!lastInboundAt || !repliedAt) return null
+  return { id, lastInboundAt: lastInboundAt.toString(), repliedAt: repliedAt.toString(), direct: true }
 }
 
 function stripHtml(html: string): string {
@@ -142,8 +165,13 @@ export async function scanGmailInbox(options: ScanGmailInboxOptions): Promise<Sc
   }
 
   const candidates: NeedsResponseCandidate[] = []
+  const exchanges: AnsweredExchange[] = []
   const errors: string[] = []
   let threadsChecked = 0
+  const noteReply = (id: string, messages: readonly GmailMessage[], account: string) => {
+    const exchange = answeredExchange(id, messages, account, options.ownerNames, options.ownerAddresses)
+    if (exchange && Instant.from(exchange.repliedAt).epochMilliseconds >= cutoffMs) exchanges.push(exchange)
+  }
 
   let accounts: string[]
   try {
@@ -151,6 +179,7 @@ export async function scanGmailInbox(options: ScanGmailInboxOptions): Promise<Sc
   } catch (error) {
     return {
       candidates: [],
+      exchanges: [],
       nextCache,
       threadsChecked: 0,
       errors: [error instanceof Error ? error.message : String(error)],
@@ -217,6 +246,7 @@ export async function scanGmailInbox(options: ScanGmailInboxOptions): Promise<Sc
 
       // Auto-clear: owner sent the most recent message in this thread.
       if (isOwnerMessage(lastMsg, account, options.ownerNames, options.ownerAddresses)) {
+        noteReply(id, nonDrafts, account)
         nextCache[id] = { historyId, status: 'replied', checkedAt: nowStr, cacheVersion: GMAIL_CACHE_VERSION }
         continue
       }
@@ -290,10 +320,24 @@ export async function scanGmailInbox(options: ScanGmailInboxOptions): Promise<Sc
     const prefix = `Email:${accountKey}:`
     for (const [key, entry] of Object.entries(nextCache)) {
       if (key.startsWith(prefix) && entry.status === 'active' && !seenInInbox.has(key)) {
+        // Reply-and-archive takes the thread out of the inbox: read it once more for the reply's time.
+        const target = entry.candidate?.target
+        if (target?.medium === 'Email') {
+          try {
+            const archived = await options.client.getThread(account, target.thread, 'metadata')
+            noteReply(
+              key,
+              archived.filter((msg) => !msg.labelIds.includes('DRAFT')),
+              account,
+            )
+          } catch {
+            // A deleted thread has no reply to find; the item simply leaves the list.
+          }
+        }
         delete nextCache[key]
       }
     }
   }
 
-  return { candidates, nextCache, threadsChecked, errors }
+  return { candidates, exchanges, nextCache, threadsChecked, errors }
 }

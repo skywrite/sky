@@ -67,3 +67,43 @@
   font-size: 14px;
   color: var(--sky-danger, var(--sky-dim));
 }
+
+.sky-nr-dots {
+  flex: none;
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  margin-top: calc((1lh - 20px) / 2);
+}
+
+.sky-nr-soon {
+  margin-left: -4px;
+  font-weight: 400;
+  font-size: 14.5px;
+  color: var(--sky-dim);
+  white-space: nowrap;
+}
+
+.sky-nr-soon::before {
+  content: '· ';
+}
+
+.sky-nr-clear {
+  margin: 0;
+  padding: 8px 0;
+  color: var(--sky-dim);
+}
+
+@media (max-width: 900px) {
+  .sky-nr-soon {
+    display: none;
+  }
+}
+
+/* On a phone the dots stand in for the age, which stays in their description. */
+@media (max-width: 600px) {
+  .sky-nr-row .sky-nr-age {
+    display: none;
+  }
+}

@@ -3,7 +3,21 @@ import { readJson, withProcessLock, writeJson } from '#lib/jobs/files.ts'
 import { hash } from '#lib/outbox/files.ts'
 import { Instant, instantNow, PlainDate } from '#universal/dates/nbdt/mod.ts'
 import { scanCapturedConversations } from './captures.ts'
+import { nextDropAt, pointsAt } from './clock.ts'
+import {
+  creditListed,
+  creditQuickReply,
+  type EarnedEntry,
+  type EarnedFile,
+  pruneEarned,
+  recentPoints,
+  recordExpired,
+  removeChecked,
+  type ResponseScore,
+  summarizeEarned,
+} from './earned.ts'
 import { type GmailInboxClient, scanGmailInbox } from './gmailInbox.ts'
+import { calendarDayOf, type DayOf } from './notebookDay.ts'
 import {
   computeNeedsResponsePriority,
   isNeedsResponseExpired,
@@ -13,6 +27,7 @@ import {
 } from './score.ts'
 import { isSenderEligible, resolveSender, type SenderLookup } from './sender.ts'
 import type {
+  AnsweredExchange,
   NeedsResponseCandidate,
   NeedsResponseItem,
   NeedsResponseScanReport,
@@ -35,6 +50,11 @@ export interface NeedsResponseHostOptions {
   getOwnerAddresses?: () => Promise<string[]>
   getSenderLookup: () => SenderLookup
   getTimezone: () => string
+  /**
+   * Which day an instant counts for. Asked for once per operation, so a notebook host can read each day file once.
+   * Without it, days are calendar days in the timezone.
+   */
+  getDayOf?: () => DayOf
   now?: () => Instant
   today?: () => PlainDate
   /** Optional live Gmail Inbox scanner (read-only across authorized accounts). */
@@ -46,11 +66,27 @@ export interface NeedsResponseHostOptions {
   expiryDays?: number
 }
 
+/** How the owner cleared a message: the tick says it was answered, the X says it needs no reply. */
+export type NeedsResponseClear = 'responded' | 'dismissed'
+
+export interface NeedsResponseList {
+  items: NeedsResponseItem[]
+  lastScanAt: string | null
+  /** Points earned so far on the current calendar day. */
+  todayPoints: number
+  /** Points earned over the last 7 calendar days, today included. Above zero, Today keeps its link to the score. */
+  weekPoints: number
+}
+
 export interface NeedsResponseHost {
-  list: () => Promise<{ items: NeedsResponseItem[]; lastScanAt: string | null }>
+  list: () => Promise<NeedsResponseList>
   scan: () => Promise<NeedsResponseScanReport>
-  dismiss: (id: string, version: string) => Promise<{ items: NeedsResponseItem[]; lastScanAt: string | null }>
-  undismiss: (id: string) => Promise<{ items: NeedsResponseItem[]; lastScanAt: string | null }>
+  /** A tick (`responded`) earns what the message is worth now; the X (`dismissed`, the default) earns nothing. */
+  dismiss: (id: string, version: string, how?: NeedsResponseClear) => Promise<NeedsResponseList>
+  /** Undo: the message returns to the list and a tick's points are taken back. */
+  undismiss: (id: string) => Promise<NeedsResponseList>
+  /** Points earned per day, with no cap, and how long people waited. */
+  score: () => Promise<ResponseScore>
   openInApp: (id: string) => Promise<void>
   /** Trigger a non-blocking refresh when no scan has happened within the 5-minute freshness window. */
   refreshIfStale: () => void
@@ -84,13 +120,33 @@ async function readStateSafely(file: string): Promise<NeedsResponseStateFile> {
   }
 }
 
+async function readEarned(file: string): Promise<EarnedEntry[]> {
+  try {
+    const raw = await readJson<EarnedFile>(file)
+    return raw?.version === 1 && Array.isArray(raw.entries) ? raw.entries : []
+  } catch {
+    return []
+  }
+}
+
+/** When an item's wait began. State written before the response score has only the latest message's time. */
+function waitingSinceOf(entry: StoredNeedsResponseEntry): string {
+  return entry.waitingSince ?? entry.receivedAt
+}
+
 function screenCacheKey(candidate: NeedsResponseCandidate, screenVersion: string): string {
   return hash(JSON.stringify([candidate.id, candidate.version, screenVersion])).slice(0, 24)
 }
 
-function toPublicItem(entry: StoredNeedsResponseEntry, nowMs: number, lookup: SenderLookup): NeedsResponseItem {
-  const receivedMs = Instant.from(entry.receivedAt).epochMilliseconds
-  const ageHours = Math.max(0, (nowMs - receivedMs) / 3_600_000)
+function toPublicItem(
+  entry: StoredNeedsResponseEntry,
+  nowMs: number,
+  lookup: SenderLookup,
+  timezone: string,
+): NeedsResponseItem {
+  const sinceMs = Instant.from(waitingSinceOf(entry)).epochMilliseconds
+  const ageHours = Math.max(0, (nowMs - sinceMs) / 3_600_000)
+  const dropsAt = nextDropAt(sinceMs, nowMs, timezone)
   const resolved = resolveSender({ name: entry.senderName, email: entry.senderEmail, phone: entry.senderPhone }, lookup)
   const priority = computeNeedsResponsePriority({
     personScore: resolved.personScore,
@@ -111,6 +167,8 @@ function toPublicItem(entry: StoredNeedsResponseEntry, nowMs: number, lookup: Se
     receivedAt: entry.receivedAt,
     receivedLocal: entry.receivedLocal,
     ageHours: Math.round(ageHours * 10) / 10,
+    points: pointsAt(sinceMs, nowMs, timezone),
+    dropsInMinutes: dropsAt === null ? null : Math.max(0, Math.round((dropsAt - nowMs) / 60_000)),
     personScore: Math.round(resolved.personScore * 10) / 10,
     ...(resolved.inMacContacts ? { inMacContacts: true } : {}),
     priority,
@@ -122,7 +180,11 @@ function toPublicItem(entry: StoredNeedsResponseEntry, nowMs: number, lookup: Se
 
 export function createNeedsResponseHost(options: NeedsResponseHostOptions): NeedsResponseHost {
   const statePath = path.join(options.stateDir, 'state.json')
+  // Kept beside the list's own state so a version of Sky without the response score leaves it alone.
+  const earnedPath = path.join(options.stateDir, 'earned.json')
   const lockPath = path.join(options.stateDir, 'state.lock')
+  const writeEarned = (entries: EarnedEntry[]) => writeJson(earnedPath, { version: 1, entries } satisfies EarnedFile, 2)
+  const dayResolver = (): DayOf => options.getDayOf?.() ?? calendarDayOf(options.getTimezone())
   const expiryDays = options.expiryDays ?? NEEDS_RESPONSE_EXPIRY_DAYS
   const nowFn = options.now ?? (() => Instant.from(instantNow()))
   const todayFn = options.today ?? (() => PlainDate.today())
@@ -133,6 +195,7 @@ export function createNeedsResponseHost(options: NeedsResponseHostOptions): Need
   const projectItems = (state: NeedsResponseStateFile): NeedsResponseItem[] => {
     const nowMs = nowFn().epochMilliseconds
     const lookup = options.getSenderLookup()
+    const timezone = options.getTimezone()
     const visible: NeedsResponseItem[] = []
 
     for (const entry of Object.values(state.items)) {
@@ -163,10 +226,20 @@ export function createNeedsResponseHost(options: NeedsResponseHostOptions): Need
         continue
       }
 
-      visible.push(toPublicItem(entry, nowMs, lookup))
+      visible.push(toPublicItem(entry, nowMs, lookup, timezone))
     }
 
     return sortNeedsResponseItems(visible)
+  }
+
+  const listOf = async (state: NeedsResponseStateFile): Promise<NeedsResponseList> => {
+    const points = recentPoints(await readEarned(earnedPath), todayFn().ymd)
+    return {
+      items: projectItems(state),
+      lastScanAt: state.lastScanAt,
+      todayPoints: points.today,
+      weekPoints: points.week,
+    }
   }
 
   const list = async () => {
@@ -178,7 +251,7 @@ export function createNeedsResponseHost(options: NeedsResponseHostOptions): Need
         // Ignore bad timestamp
       }
     }
-    return { items: projectItems(state), lastScanAt: state.lastScanAt }
+    return listOf(state)
   }
 
   const performScan = async (): Promise<NeedsResponseScanReport> => {
@@ -195,8 +268,10 @@ export function createNeedsResponseHost(options: NeedsResponseHostOptions): Need
 
     // 1. Scan captured Slack & Beeper conversations in actions/messages/.
     let captureCandidates: NeedsResponseCandidate[] = []
+    // Stretches the owner has answered, from every source, with each reply's own time.
+    const exchanges: AnsweredExchange[] = []
     try {
-      captureCandidates = await scanCapturedConversations({
+      const captured = await scanCapturedConversations({
         markdownBaseDir: options.markdownBaseDir,
         timeDir: options.timeDir,
         slackDmsDir: options.slackDmsDir,
@@ -208,6 +283,8 @@ export function createNeedsResponseHost(options: NeedsResponseHostOptions): Need
         ownerAddresses,
         lookbackDays: expiryDays,
       })
+      captureCandidates = captured.candidates
+      exchanges.push(...captured.exchanges)
     } catch (error) {
       errors.push(`Captures: ${error instanceof Error ? error.message : String(error)}`)
     }
@@ -228,6 +305,7 @@ export function createNeedsResponseHost(options: NeedsResponseHostOptions): Need
         lookbackDays: expiryDays,
       })
       gmailCandidates = gmailResult.candidates
+      exchanges.push(...gmailResult.exchanges)
       nextGmailCache = gmailResult.nextCache
       gmailThreadsChecked = gmailResult.threadsChecked
       errors.push(...gmailResult.errors)
@@ -269,6 +347,20 @@ export function createNeedsResponseHost(options: NeedsResponseHostOptions): Need
       }
     }
 
+    // The first reply sent after a wait began ends that wait.
+    const replyTo = (id: string, since: string): AnsweredExchange | undefined => {
+      const sinceMs = Instant.from(since).epochMilliseconds
+      let first: AnsweredExchange | undefined
+      for (const exchange of exchanges) {
+        if (exchange.id !== id) continue
+        if (Instant.from(exchange.lastInboundAt).epochMilliseconds < sinceMs) continue
+        if (!first || Instant.compare(Instant.from(exchange.repliedAt), Instant.from(first.repliedAt)) < 0) {
+          first = exchange
+        }
+      }
+      return first
+    }
+
     const nextItems: Record<string, StoredNeedsResponseEntry> = {}
     let screenedCount = 0
 
@@ -298,6 +390,16 @@ export function createNeedsResponseHost(options: NeedsResponseHostOptions): Need
 
       if (!verdict || !passesNeedsResponseScreen(verdict)) continue
 
+      // The wait runs from the message Sky first flagged. A follow-up keeps it running;
+      // a reply, or a clear followed by a new message, starts it over.
+      const priorSince = priorItem ? waitingSinceOf(priorItem) : null
+      const clearedSince =
+        priorItem !== undefined &&
+        initialState.dismissed[candidate.id]?.version === priorItem.version &&
+        candidate.version !== priorItem.version
+      const waitingSince =
+        priorSince && !clearedSince && !replyTo(candidate.id, priorSince) ? priorSince : candidate.receivedAt
+
       nextItems[candidate.id] = {
         id: candidate.id,
         version: candidate.version,
@@ -316,6 +418,7 @@ export function createNeedsResponseHost(options: NeedsResponseHostOptions): Need
         ...(candidate.resolvedBeeperName ? { resolvedBeeperName: true } : {}),
         target: candidate.target,
         ...(candidate.savedPath ? { savedPath: candidate.savedPath } : {}),
+        waitingSince,
         screen: verdict,
       }
     }
@@ -333,6 +436,44 @@ export function createNeedsResponseHost(options: NeedsResponseHostOptions): Need
           // Drop malformed entries
         }
       }
+      // What this scan learned about waits that ended.
+      const timezone = options.getTimezone()
+      const dayOf = dayResolver()
+      const earnedBefore = await readEarned(earnedPath)
+      let earned = earnedBefore
+      for (const prior of Object.values(initialState.items)) {
+        const since = waitingSinceOf(prior)
+        const reply = replyTo(prior.id, since)
+        if (reply) {
+          earned = creditListed(earned, {
+            id: prior.id,
+            waitingSince: since,
+            closedAt: reply.repliedAt,
+            how: 'replied',
+            timezone,
+            dayOf,
+          })
+          continue
+        }
+        const clearedByOwner = latest.dismissed[prior.id]?.version === prior.version
+        const waitedMs = now.epochMilliseconds - Instant.from(since).epochMilliseconds
+        if (!nextItems[prior.id] && !clearedByOwner && waitedMs >= expiryDays * 24 * 3_600_000) {
+          earned = recordExpired(earned, { id: prior.id, waitingSince: since, expiredAt: nowStr, dayOf })
+        }
+      }
+      for (const exchange of exchanges) {
+        if (!exchange.direct) continue
+        earned = creditQuickReply(earned, {
+          id: exchange.id,
+          lastInboundAt: exchange.lastInboundAt,
+          repliedAt: exchange.repliedAt,
+          timezone,
+          dayOf,
+        })
+      }
+      earned = pruneEarned(earned, now.epochMilliseconds)
+      if (JSON.stringify(earned) !== JSON.stringify(earnedBefore)) await writeEarned(earned)
+
       await writeJson(
         statePath,
         {
@@ -367,14 +508,28 @@ export function createNeedsResponseHost(options: NeedsResponseHostOptions): Need
     return activeScan
   }
 
-  const dismiss = async (id: string, version: string) => {
+  const dismiss = async (id: string, version: string, how: NeedsResponseClear = 'dismissed') => {
     const state = await withProcessLock(lockPath, async () => {
       const current = await readStateSafely(statePath)
-      current.dismissed[id] = { version, dismissedAt: nowFn().toString() }
+      const clearedAt = nowFn().toString()
+      current.dismissed[id] = { version, dismissedAt: clearedAt }
       await writeJson(statePath, current, 2)
+      const entry = current.items[id]
+      if (how === 'responded' && entry && entry.version === version) {
+        await writeEarned(
+          creditListed(await readEarned(earnedPath), {
+            id,
+            waitingSince: waitingSinceOf(entry),
+            closedAt: clearedAt,
+            how: 'checked',
+            timezone: options.getTimezone(),
+            dayOf: dayResolver(),
+          }),
+        )
+      }
       return current
     })
-    return { items: projectItems(state), lastScanAt: state.lastScanAt }
+    return listOf(state)
   }
 
   const undismiss = async (id: string) => {
@@ -382,10 +537,15 @@ export function createNeedsResponseHost(options: NeedsResponseHostOptions): Need
       const current = await readStateSafely(statePath)
       delete current.dismissed[id]
       await writeJson(statePath, current, 2)
+      const earned = await readEarned(earnedPath)
+      const withoutTick = removeChecked(earned, id)
+      if (withoutTick.length !== earned.length) await writeEarned(withoutTick)
       return current
     })
-    return { items: projectItems(state), lastScanAt: state.lastScanAt }
+    return listOf(state)
   }
+
+  const score = async () => summarizeEarned(await readEarned(earnedPath), { today: todayFn().ymd })
 
   const openInApp = async (id: string) => {
     const state = await readStateSafely(statePath)
@@ -405,5 +565,5 @@ export function createNeedsResponseHost(options: NeedsResponseHostOptions): Need
     void scan().catch(() => {})
   }
 
-  return { list, scan, dismiss, undismiss, openInApp, refreshIfStale }
+  return { list, scan, dismiss, undismiss, score, openInApp, refreshIfStale }
 }

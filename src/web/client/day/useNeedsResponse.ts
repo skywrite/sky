@@ -7,6 +7,13 @@ const REMOVE_ANIM_MS = 220
 
 export type NeedsResponseDismissKind = 'responded' | 'dismissed'
 
+/** What the service sends back: the list as it now stands, and the points earned today. */
+interface NeedsResponseUpdate {
+  items?: NeedsResponseItem[]
+  todayPoints?: number
+  weekPoints?: number
+}
+
 export interface NeedsResponseUndo {
   key: string
   id: string
@@ -16,26 +23,36 @@ export interface NeedsResponseUndo {
 
 export function useNeedsResponse(enabled: boolean) {
   const [items, setItems] = useState<NeedsResponseItem[]>([])
+  const [todayPoints, setTodayPoints] = useState(0)
+  const [weekPoints, setWeekPoints] = useState(0)
   const [removing, setRemoving] = useState<Record<string, boolean>>({})
   const [undo, setUndo] = useState<NeedsResponseUndo | null>(null)
   const [openError, setOpenError] = useState<string | null>(null)
   const undoTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const undoSeq = useRef(0)
 
+  const take = useCallback((data: NeedsResponseUpdate) => {
+    if (Array.isArray(data.items)) setItems(data.items)
+    if (typeof data.todayPoints === 'number') setTodayPoints(data.todayPoints)
+    if (typeof data.weekPoints === 'number') setWeekPoints(data.weekPoints)
+  }, [])
+
   const load = useCallback(async () => {
     try {
       const response = await fetch('/day/needs-response')
       if (!response.ok) return
-      const data = (await response.json()) as { items?: NeedsResponseItem[] }
-      if (Array.isArray(data.items)) setItems(data.items)
+      const data = (await response.json()) as NeedsResponseUpdate
+      take(data)
     } catch {
       // Transient service error: keep existing items intact.
     }
-  }, [])
+  }, [take])
 
   useEffect(() => {
     if (!enabled) {
       setItems([])
+      setTodayPoints(0)
+      setWeekPoints(0)
       return
     }
     let alive = true
@@ -69,34 +86,37 @@ export function useNeedsResponse(enabled: boolean) {
     }
   }, [])
 
-  const clearItem = useCallback(async (item: NeedsResponseItem, how: NeedsResponseDismissKind) => {
-    setOpenError(null)
-    setRemoving((prev) => ({ ...prev, [item.id]: true }))
-    try {
-      const [response] = await Promise.all([
-        fetch('/day/needs-response/dismiss', {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ id: item.id, version: item.version }),
-        }),
-        new Promise((resolve) => setTimeout(resolve, REMOVE_ANIM_MS)),
-      ])
-      if (response.ok) {
-        const data = (await response.json()) as { items?: NeedsResponseItem[] }
-        if (Array.isArray(data.items)) setItems(data.items)
-        const key = `${item.id}:${++undoSeq.current}`
-        setUndo({ key, id: item.id, sender: item.sender, how })
-        if (undoTimer.current) clearTimeout(undoTimer.current)
-        undoTimer.current = setTimeout(() => setUndo(null), UNDO_MS)
+  const clearItem = useCallback(
+    async (item: NeedsResponseItem, how: NeedsResponseDismissKind) => {
+      setOpenError(null)
+      setRemoving((prev) => ({ ...prev, [item.id]: true }))
+      try {
+        const [response] = await Promise.all([
+          fetch('/day/needs-response/dismiss', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ id: item.id, version: item.version, how }),
+          }),
+          new Promise((resolve) => setTimeout(resolve, REMOVE_ANIM_MS)),
+        ])
+        if (response.ok) {
+          const data = (await response.json()) as NeedsResponseUpdate
+          take(data)
+          const key = `${item.id}:${++undoSeq.current}`
+          setUndo({ key, id: item.id, sender: item.sender, how })
+          if (undoTimer.current) clearTimeout(undoTimer.current)
+          undoTimer.current = setTimeout(() => setUndo(null), UNDO_MS)
+        }
+      } finally {
+        setRemoving((prev) => {
+          const next = { ...prev }
+          delete next[item.id]
+          return next
+        })
       }
-    } finally {
-      setRemoving((prev) => {
-        const next = { ...prev }
-        delete next[item.id]
-        return next
-      })
-    }
-  }, [])
+    },
+    [take],
+  )
 
   const revertUndo = useCallback(async () => {
     if (!undo) return
@@ -109,13 +129,13 @@ export function useNeedsResponse(enabled: boolean) {
         body: JSON.stringify({ id: targetId }),
       })
       if (response.ok) {
-        const data = (await response.json()) as { items?: NeedsResponseItem[] }
-        if (Array.isArray(data.items)) setItems(data.items)
+        const data = (await response.json()) as NeedsResponseUpdate
+        take(data)
       }
     } catch {
       void load()
     }
-  }, [undo, dismissUndo, load])
+  }, [undo, dismissUndo, load, take])
 
   const openInApp = useCallback(async (item: NeedsResponseItem) => {
     setOpenError(null)
@@ -134,5 +154,16 @@ export function useNeedsResponse(enabled: boolean) {
     }
   }, [])
 
-  return { items, removing, undo, openError, clearItem, revertUndo, dismissUndo, openInApp }
+  return {
+    items,
+    todayPoints,
+    weekPoints,
+    removing,
+    undo,
+    openError,
+    clearItem,
+    revertUndo,
+    dismissUndo,
+    openInApp,
+  }
 }
