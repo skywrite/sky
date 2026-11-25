@@ -1563,7 +1563,12 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono & { openVoice
     c.header('Cache-Control', 'no-store')
     if (threads.has(id)) return c.redirect(`/thread/${encodeURIComponent(id)}`)
     const saved = await options.sourceLinks?.get(id)
-    if (saved && (await options.openSaved?.(saved))) return c.redirect(explorerHref(saved))
+    if (saved) {
+      for (const [liveId, thread] of threads) {
+        if (savedOf(thread, baseDir) === saved) return c.redirect(`/thread/${encodeURIComponent(liveId)}`)
+      }
+      if (await options.openSaved?.(saved)) return c.redirect(explorerHref(saved))
+    }
     return c.text('This source chat is no longer available. It may have been temporary or deleted.', 404)
   })
 
@@ -1761,7 +1766,7 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono & { openVoice
     const found = await options.openSaved(chat)
     if (!found) return c.json({ message: `no saved chat at ${chat}` }, 404)
     const id = crypto.randomUUID()
-    await open(id, {
+    const thread = await open(id, {
       id,
       startTime: found.startTime,
       state: found.resume.state,
@@ -1775,6 +1780,9 @@ export function createChatRoutes(options: ChatRoutesOptions): Hono & { openVoice
         effort: isEffortOverride(found.resume.recovery?.host?.effort) ? found.resume.recovery.host.effort : undefined,
       },
     })
+    const saved = savedOf(thread, baseDir)
+    if (saved) await options.sourceLinks?.set(id, saved)
+    await snapshotThread(thread)
     return c.json({ id, opened: true }, 201)
   })
 

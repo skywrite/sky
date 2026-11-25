@@ -12,7 +12,7 @@ import type { ProducerResult } from '#shared/models/Chat/ChatContext/mod.ts'
 import type { ModelInvoker } from '#shared/models/Chat/ChatEngine/mod.ts'
 import ChatSession from '#shared/models/Chat/ChatSession/mod.ts'
 import type { ChatSessionEvent } from '#shared/models/Chat/ChatSession/mod.ts'
-import { chatAutosaveFilename } from '#shared/models/Chat/ChatStore/autosave.ts'
+import { chatAutosaveFilename, isThreadSnapshot, listChatAutosaves } from '#shared/models/Chat/ChatStore/autosave.ts'
 import { loadResumeSession } from '#shared/models/Chat/ChatStore/mod.ts'
 import type { SaveChatReport, SaveEnricher } from '#shared/models/Chat/ChatStore/save.ts'
 import { setUserSpeakerLabel } from '#shared/models/Chat/document/mod.ts'
@@ -29,7 +29,14 @@ import { approvalCard } from './approvalCard.ts'
 import type { BranchPoint } from './branchPoint.ts'
 import { createChatHost } from './createSession.ts'
 import { interruptedOf } from './interrupted.ts'
-import type { ChatRoutesOptions, ChatSessionFactory, ChatSettingsHost, ThreadSummary, ToolOutputEvent } from './mod.ts'
+import type {
+  ChatRoutesOptions,
+  ChatSessionFactory,
+  ChatSettingsHost,
+  ThreadRestore,
+  ThreadSummary,
+  ToolOutputEvent,
+} from './mod.ts'
 import { chatSourceLinks, sourceChatHref } from './sourceLinks.ts'
 import { restoreToolRuns } from './toolRuns.ts'
 
@@ -259,6 +266,83 @@ test('source chat links follow live chats and survive saving, closing and restar
         (await app.request(sourceChatHref('temporary-source'))).status,
       ],
       expected: [null, 404],
+    })
+  } finally {
+    await rm(host.tmp, { recursive: true, force: true })
+  }
+})
+
+test('reopened saved chats survive restarts before a new turn and keep durable source links when closed unchanged', async () => {
+  const host = await testHost({ canonicalSnapshots: true, sourceLinks: true })
+  const openSaved: NonNullable<ChatRoutesOptions['openSaved']> = async (chat) => {
+    const file = path.resolve(path.dirname(host.tmp), chat)
+    if (!file.startsWith(host.tmp + path.sep) || !(await exists(file))) return null
+    return { resume: await loadResumeSession(file, logHome(host)), startTime: START }
+  }
+  host.openSaved = openSaved
+  const readSnapshots: NonNullable<ChatRoutesOptions['snapshots']> = async () => {
+    const refs = (await listChatAutosaves(host.tmp)).filter(isThreadSnapshot)
+    const restores: ThreadRestore[] = []
+    for (const ref of refs) {
+      const loaded = await loadResumeSession(ref.path, { baseDir: path.dirname(host.tmp), snapshot: true })
+      const hostState = loaded.recovery?.host
+      const saved = typeof hostState?.saved === 'string' ? await openSaved(hostState.saved) : null
+      restores.push({
+        id: ref.session,
+        startTime: ref.startTime,
+        state: loaded.state,
+        parent: loaded.parent,
+        title: typeof hostState?.title === 'string' ? hostState.title : null,
+        ...(saved ? { resume: { ...saved.resume, state: loaded.state } } : {}),
+      })
+    }
+    return restores
+  }
+  try {
+    const app = appWith(host)
+    await (await send(app, '/chat/atlas-initial/messages', { message: 'Plan the Atlas rollout.' })).text()
+    const { saved } = (await (await post(app, '/chat/atlas-initial/end', { save: true })).json()) as {
+      saved: SaveChatReport
+    }
+    const rel = path.relative(path.dirname(host.tmp), saved.path)
+    const opened = (await (await post(app, '/chat/open', { chat: rel })).json()) as { id: string; opened: boolean }
+
+    // Restart before any new message is sent on the reopened chat.
+    const restarted = appWith({
+      ...host,
+      sourceLinks: chatSourceLinks(path.join(host.tmp, 'source-links')),
+      snapshots: readSnapshots,
+    })
+    const liveList = (await getJson(restarted, '/chat')) as { threads: Array<{ id: string; saved: string | null }> }
+    const whileLive = await restarted.request(sourceChatHref(opened.id))
+    const originalWhileLive = await restarted.request(sourceChatHref('atlas-initial'))
+
+    // Close unchanged: snapshot leaves, file stays intact, and the source link still redirects to the saved file.
+    const closed = await post(restarted, `/chat/${opened.id}/end`, { save: true })
+    const afterClose = await restarted.request(sourceChatHref(opened.id))
+    const remainingSnapshots = (await listChatAutosaves(host.tmp)).filter(isThreadSnapshot)
+
+    assert({
+      given: 'a saved chat reopened via /chat/open, restarted before any new turn, and later closed unchanged',
+      should: 'restore into live chats across the restart and keep /chat/source/:id resolving after close',
+      actual: {
+        opened: opened.opened,
+        restoredIds: liveList.threads.map((thread) => [thread.id, thread.saved]),
+        whileLive: [whileLive.status, whileLive.headers.get('location')],
+        originalWhileLive: [originalWhileLive.status, originalWhileLive.headers.get('location')],
+        closedStatus: closed.status,
+        remainingSnapshots: remainingSnapshots.length,
+        afterClose: [afterClose.status, afterClose.headers.get('location')],
+      },
+      expected: {
+        opened: true,
+        restoredIds: [[opened.id, rel]],
+        whileLive: [302, `/thread/${opened.id}`],
+        originalWhileLive: [302, `/thread/${opened.id}`],
+        closedStatus: 200,
+        remainingSnapshots: 0,
+        afterClose: [302, `/explorer/${rel.split('/').map(encodeURIComponent).join('/')}`],
+      },
     })
   } finally {
     await rm(host.tmp, { recursive: true, force: true })
