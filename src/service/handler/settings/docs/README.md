@@ -1,6 +1,6 @@
 ---
 created: 2026-08-30
-updated: 2026-11-02
+updated: 2026-11-24
 ---
 
 # Settings — the web's settings section
@@ -20,7 +20,7 @@ People & Orgs appears above the Settings heading in this sidebar. Its pages and
 record storage are owned by [People & Orgs](../../people/docs/README.md).
 
 Settings use one level of navigation: Appearance; Me (About me, Writing style);
-AI (Models, Audio transcription, Voice, Prompts); Connections; Browser automation;
+AI (Models, Decisions, Audio transcription, Voice, Prompts); Connections; Browser automation;
 Extensions; Notebook; Advanced; Experimental; About Sky.
 Group labels open their first page; the adjacent disclosure toggles their children.
 `web/client/settings/settingsRoutes.ts` owns canonical paths and legacy aliases, including
@@ -45,6 +45,8 @@ Pages:
   reads are bounded. Web text is evidence, never instructions. Failed sources
   remain visible, and accepting a suggestion changes the draft until Save.
   The existing memory count and notebook link live here too.
+- **AI → Decisions** — `/settings/ai/decisions`: decision provider, pinned model,
+  and TypeSafe API key availability. Currently locked to TypeSafe (`JEV_MODEL`).
 - **AI → Audio transcription** — `/settings/ai/transcription`: provider, model,
   upload limit, and API key availability. Selecting MacWhisper loads its
   installed local models, with refresh and setup guidance. Saves to `ai.models.transcription`;

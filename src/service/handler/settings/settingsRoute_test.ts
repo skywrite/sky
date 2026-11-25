@@ -1,5 +1,6 @@
 import { createSecret } from '#lib/secrets/marshal.ts'
 import { TestSecretsProvider } from '#lib/secrets/TestSecretsProvider.ts'
+import { JEV_MODEL } from '#shared/ai/typesafe/client.ts'
 import type { SkyConfig } from '#shared/config/types.ts'
 import { makeTempDir } from '#shared/fs/mod.ts'
 import { assert, test } from '#test'
@@ -901,6 +902,29 @@ test('reminders settings validate autoRollover and expireDays and read live', as
       { autoRollover: true, expireDays: 3 },
       [200, 400, 200, 400, 400, 400, 400, 200],
       { autoRollover: false, expireDays: 0 },
+    ],
+  })
+})
+
+test('decisions settings stay locked to TypeSafe and report key presence only', async () => {
+  const config = structuredClone(CONFIG)
+  const { host } = hostWith(config)
+  let hasTypeSafeKey = false
+  host.hasProviderKey = async (provider) => provider === 'typesafe' && hasTypeSafeKey
+  const app = await appWith(host)
+  const read = async () => ((await (await app.request('/settings/_api/settings')).json()) as SettingsData).decisions
+  const before = await read()
+  hasTypeSafeKey = true
+  const after = await read()
+  const refused = await post(app, '/settings/_api/set', { key: 'ai.decisions.provider', value: 'openai' })
+  assert({
+    given: 'the locked decisions section before and after a TypeSafe key is stored',
+    should: 'report TypeSafe with the pinned Jev model, reflect key presence, and refuse writes',
+    actual: [before, after, refused.status],
+    expected: [
+      { provider: 'typesafe', providerLabel: 'TypeSafe Jev', model: JEV_MODEL, locked: true, configured: false },
+      { provider: 'typesafe', providerLabel: 'TypeSafe Jev', model: JEV_MODEL, locked: true, configured: true },
+      400,
     ],
   })
 })

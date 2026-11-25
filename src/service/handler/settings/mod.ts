@@ -22,6 +22,7 @@ import {
 import type { WritingDraftStore } from '#lib/writingVoice/drafts.ts'
 import { DEFAULT_WRITING_VOICE_PROFILE } from '#lib/writingVoice/model.ts'
 import { currentProfileName, type ModelProfile } from '#shared/ai/models.ts'
+import { JEV_MODEL } from '#shared/ai/typesafe/client.ts'
 import { ENV_OVERRIDES, remindersConfig } from '#shared/config/loader.ts'
 import type { GoogleAccountCategory, RemindersConfig, SkyConfig } from '#shared/config/types.ts'
 import type { PromptCatalog } from '#shared/prompts/catalog.ts'
@@ -247,10 +248,20 @@ export interface ProfileInput {
   options?: Record<string, unknown>
 }
 
+/** Decision model settings — currently locked to TypeSafe's pinned Jev release. */
+export interface DecisionSettings {
+  provider: 'typesafe'
+  providerLabel: string
+  model: string
+  locked: boolean
+  configured: boolean
+}
+
 /** Everything the page shows, in one payload. */
 export interface SettingsData {
   dayReview?: { idleHours: number }
   reminders?: RemindersConfig
+  decisions?: DecisionSettings
   transcription: TranscriptionSettings
   calendar: { classifyEvents: boolean }
   /** Each Google account's category, by lower-case email; an account not listed files as Professional */
@@ -442,6 +453,13 @@ async function settingsData(host: SettingsHost): Promise<SettingsData> {
     theme: config.web.theme ?? 'system',
     dayReview: { idleHours: config.dayReview?.idleHours ?? 5 },
     reminders: remindersConfig(config),
+    decisions: {
+      provider: 'typesafe',
+      providerLabel: 'TypeSafe Jev',
+      model: JEV_MODEL,
+      locked: true,
+      configured: (await host.hasProviderKey?.('typesafe')) === true,
+    },
     transcription: {
       value: transcriptionModelValue(config.ai.models.transcription),
       choices: await Promise.all(

@@ -12,6 +12,7 @@ import { createWritingLessons } from '#lib/writingVoice/runtime.ts'
 import { hasKey } from '#shared/ai/keychainAuthFetch.ts'
 import { PROVIDER_KEYS, type ProviderKeyId } from '#shared/ai/llm/providerKeys.ts'
 import { KNOWN_PROVIDERS, PROFILES, ROLES } from '#shared/ai/models.ts'
+import { TYPESAFE_SECRET } from '#shared/ai/typesafe/client.ts'
 import { loadSkyConfig, readSkyConfigFile, SKY_CONFIG_PATH } from '#shared/config/loader.ts'
 import { removeConfigValue, setConfigValue } from '#shared/config/write.ts'
 import { createPromptCatalog } from '#shared/prompts/load.ts'
@@ -60,9 +61,11 @@ export function createSettingsHost(): SettingsRoutesOptions {
       env: process.env,
     }),
     hasProviderKey: (provider) =>
-      provider in PROVIDER_KEYS
-        ? hasKey(connections.secrets, PROVIDER_KEYS[provider as ProviderKeyId].secret)
-        : Promise.resolve(false),
+      provider === 'typesafe'
+        ? hasKey(connections.secrets, TYPESAFE_SECRET)
+        : provider in PROVIDER_KEYS
+          ? hasKey(connections.secrets, PROVIDER_KEYS[provider as ProviderKeyId].secret)
+          : Promise.resolve(false),
     voices: () => ({ current: preferredVoice(), groups: VOICE_GROUPS }),
     models: (): ModelRow[] =>
       Object.entries(ROLES).map(([role, profileName]) => {

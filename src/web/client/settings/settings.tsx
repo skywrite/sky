@@ -17,6 +17,7 @@ import type { TranscriptionSettings } from '#commands/all/audio/transcript/lib/m
 import { ExtensionsPane } from '../extensions/extensions.tsx'
 import { playVoicePreview } from '../voice/voicePreview.ts'
 import { WritingVoicePane } from '../writing/writingVoice.tsx'
+import { DecisionsSettings } from './DecisionsSettings.tsx'
 import { RemindersSettings } from './RemindersSettings.tsx'
 import { AboutMePane } from './settingsAboutMe.tsx'
 import { BeeperMain } from './settingsBeeper.tsx'
@@ -72,9 +73,18 @@ export interface ConfigView {
   sections: Array<{ id: string; title: string; rows: ConfigRow[] }>
 }
 
+export interface DecisionSettings {
+  provider: 'typesafe'
+  providerLabel: string
+  model: string
+  locked: boolean
+  configured: boolean
+}
+
 export interface SettingsData {
   dayReview?: { idleHours: number }
   reminders?: { autoRollover: boolean; expireDays: number }
+  decisions?: DecisionSettings
   transcription: TranscriptionSettings
   calendar: { classifyEvents: boolean }
   /** Each Google account's category, by lower-case email; an account not listed files as Professional */
@@ -766,6 +776,19 @@ export function SettingsMain({
               />
             ) : section === 'models' ? (
               <AIPane data={data} reload={reload} />
+            ) : section === 'decisions' ? (
+              <DecisionsSettings
+                decisions={
+                  data.decisions ?? {
+                    provider: 'typesafe',
+                    providerLabel: 'TypeSafe Jev',
+                    model: 'jev-1.13.0',
+                    locked: true,
+                    configured: false,
+                  }
+                }
+                navigate={navigate}
+              />
             ) : section === 'transcription' ? (
               <TranscriptionPane settings={data.transcription} reload={reload} />
             ) : section === 'extensions' ? (

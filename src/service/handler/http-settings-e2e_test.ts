@@ -33,6 +33,13 @@ test(
       },
     )
     const settings: SettingsData = {
+      decisions: {
+        provider: 'typesafe',
+        providerLabel: 'TypeSafe Jev',
+        model: 'jev-1.13.0',
+        locked: true,
+        configured: false,
+      },
       transcription: {
         value: 'openai/gpt-transcribe',
         choices: TRANSCRIPTION_MODELS.map((model) => ({ ...model, configured: model.provider === 'openai' })),
@@ -197,6 +204,27 @@ test(
       await page.locator('.sky-preset-toggle').filter({ hasText: 'sample' }).click()
       await page.getByRole('combobox', { name: 'Preset model', exact: true }).waitFor()
       await capture('models-light')
+      await nav.getByRole('button', { name: 'Decisions', exact: true }).click()
+      await page.getByRole('heading', { name: 'Decisions', exact: true }).waitFor()
+      await page.waitForFunction(() => document.title === 'sky · Decisions')
+      const decisionProvider = page.getByRole('combobox', { name: 'Decision provider', exact: true })
+      assert({
+        given: 'the Decisions page under AI',
+        should: 'show TypeSafe as the locked provider, the pinned model, and key status',
+        actual: [
+          await nav.locator('[aria-current="page"]').innerText(),
+          await decisionProvider.inputValue(),
+          await decisionProvider.isDisabled(),
+          await page.getByText('Locked', { exact: true }).isVisible(),
+          await page.getByText('jev-1.13.0', { exact: true }).isVisible(),
+          await page.getByText('Not configured', { exact: true }).isVisible(),
+        ],
+        expected: ['Decisions', 'TypeSafe Jev', true, true, true, true],
+      })
+      await nav.getByRole('button', { name: 'Models', exact: true }).click()
+      await page.waitForFunction(() => document.title === 'sky · Models')
+      await page.goBack()
+      await page.waitForFunction(() => document.title === 'sky · Decisions')
       await nav.getByRole('button', { name: 'Audio transcription', exact: true }).click()
       const transcription = page.getByRole('combobox', { name: 'Transcription provider', exact: true })
       await transcription.click()
@@ -402,6 +430,8 @@ test(
       for (const [route, title] of [
         ['/settings/writing-voice', 'Writing style'],
         ['/settings/ai', 'Models'],
+        ['/settings/ai/decisions', 'Decisions'],
+        ['/settings/decisions', 'Decisions'],
         ['/settings/voice', 'Voice'],
         ['/settings/ai/transcription', 'Audio transcription'],
         ['/settings/prompts', 'Prompts'],

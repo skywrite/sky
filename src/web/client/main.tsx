@@ -39,7 +39,12 @@ import { SettingsMain, useSettingsBoot } from './settings/settings.tsx'
 import { useAboutMeDraftGuard } from './settings/settingsAboutMe.tsx'
 import { SettingsNav } from './settings/settingsNav.tsx'
 import { usePromptDraftGuard } from './settings/settingsPrompts.tsx'
-import { CONNECTION_PAGE_LABEL, connectionPageOf, settingsSectionOf } from './settings/settingsRoutes.ts'
+import {
+  CONNECTION_PAGE_LABEL,
+  connectionPageOf,
+  SETTINGS_PAGES,
+  settingsSectionOf,
+} from './settings/settingsRoutes.ts'
 import { RestartPending } from './shell/serviceStatus.tsx'
 import { SidebarIcon } from './shell/sidebarIcon.tsx'
 import { SidebarUtilities } from './shell/sidebarUtilities.tsx'
@@ -272,17 +277,11 @@ function Canvas() {
             ? 'sky · streaks'
             : settingsSection === 'connections'
               ? `sky · ${connectionPage ? CONNECTION_PAGE_LABEL[connectionPage] : 'Connections'}`
-              : settingsSection === 'writing-voice'
-                ? 'sky · Writing style'
-                : settingsSection === 'browser-automation'
-                  ? 'sky · Browser automation'
-                  : settingsSection === 'voice'
-                    ? 'sky · Voice'
-                    : settingsSection === 'about-me'
-                      ? 'sky · About me'
-                      : isClock
-                        ? 'sky · Clock'
-                        : 'sky'
+              : settingsSection
+                ? `sky · ${SETTINGS_PAGES[settingsSection].label}`
+                : isClock
+                  ? 'sky · Clock'
+                  : 'sky'
   }, [
     threadId,
     chatTitle,

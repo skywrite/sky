@@ -23,6 +23,12 @@ export const SETTINGS_PAGES = {
     group: 'AI',
     description: 'The models Sky uses to think, write, and understand your world.',
   },
+  decisions: {
+    label: 'Decisions',
+    href: '/settings/ai/decisions',
+    group: 'AI',
+    description: 'Fast, structured judgments Sky makes in the background — routing, sorting, and screening.',
+  },
   transcription: {
     label: 'Audio transcription',
     href: '/settings/ai/transcription',
@@ -104,6 +110,7 @@ export function settingsSectionOf(path: string): SettingsSection | null {
       return id as SettingsSection
   }
   if (clean === '/settings/ai') return 'models'
+  if (clean === '/settings/decisions') return 'decisions'
   if (clean === '/settings/credentials/typesafe') return 'connections'
   if (clean === '/settings/credentials' || clean.startsWith('/settings/credentials/')) return 'browser-automation'
   if (clean === '/settings/appearance') return 'appearance'
