@@ -61,6 +61,8 @@ export interface PlanOption {
   outside: string | null
   /** The effect on each want, in the order of the plan's wants */
   effects: Effect[]
+  /** One short line on why, for each effect; empty where Sky gave none. Absent on a plan made before these. */
+  effectsWhy?: string[]
   /** What this option has going for it */
   for: string
   /** The strongest case against it */

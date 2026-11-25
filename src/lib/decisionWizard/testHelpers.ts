@@ -112,6 +112,12 @@ export function sampleDecidingPlan(): DecidingPlan {
         short: 'Part-time lead',
         why: 'A contractor runs the pipeline. You decide on a VP after the launch.',
         effects: ['helps', 'helps', 'none', 'none'],
+        effectsWhy: [
+          'A contractor takes the weekly pipeline off you.',
+          'The pipeline keeps moving through the launch.',
+          'No senior hire is made.',
+          '',
+        ],
         hinges: [
           {
             belief: 'Someone you trust can start as a part-time lead in July.',
@@ -128,6 +134,12 @@ export function sampleDecidingPlan(): DecidingPlan {
         undo: 'Costly',
         odds: 2,
         effects: ['helps', 'helps', 'none', 'helps'],
+        effectsWhy: [
+          'She already runs the weekly pipeline call.',
+          'The team keeps its best closer selling.',
+          'A promotion is not a senior hire.',
+          'She gets the job she asked about.',
+        ],
         hinges: [
           {
             belief: 'Jane wants to lead the team.',

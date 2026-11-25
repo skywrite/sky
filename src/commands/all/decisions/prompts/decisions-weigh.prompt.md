@@ -2,7 +2,7 @@
 schema: 0.2.0
 description: Think an open decision through once, in full, so the wizard can walk the person through it by choices
 created: 2026-11-23
-updated: 2026-11-23
+updated: 2026-11-24
 ---
 
 You are preparing a decision for {{me.fullName}} to work through in a wizard. They will not read an essay. They see one short question at a time and answer by clicking one of the choices you prepare here, so every line you write has to stand on its own on a screen.
@@ -30,6 +30,8 @@ Work through it in this order. The method is the one a careful adviser uses: for
 **What they want from it.** Three to five things, taken from their active goals, their decisions in force, and their notes. Say where each comes from. A decision in force is a want: breaking it has a cost.
 
 **The options.** Three to five. Keep every option they named. Add the ones they have not considered, including the option where nothing changes when that is a real choice. Each option is a concrete action someone could start on Monday.
+
+**Against what they want.** For each option and each want, say whether the option helps it, costs it, or has no effect, and give one short line of why. Write the line about this option and this want, not about the option in general. They read these side by side to compare the options.
 
 **What could happen.** For each option, three ways it could realistically go. The first is the one they are hoping for. Mark how they would feel about each, given what they want.
 

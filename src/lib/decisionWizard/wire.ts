@@ -51,7 +51,13 @@ const WireOption = z.object({
   oddsWhy: text('At most two sentences: the evidence from their notebook behind your odds, with the note and its day'),
   outside: maybe('One sentence on how this usually goes for people in the same position; null when you do not know'),
   effects: z
-    .array(z.object({ want: text('The key of a want'), effect: word(EFFECTS) }))
+    .array(
+      z.object({
+        want: text('The key of a want'),
+        effect: word(EFFECTS),
+        why: maybe('One short line, under 14 words, on why this option has that effect on this want'),
+      }),
+    )
     .describe('One entry for every want'),
   for: text('One or two sentences: the best honest case for this option'),
   against: text('One or two sentences: the strongest honest case against it'),
@@ -170,7 +176,13 @@ export const WireOptionExtension = z.object({
 export const WireWantExtension = z.object({
   want: WireWant,
   effects: z
-    .array(z.object({ option: text('The key of an option'), effect: word(EFFECTS) }))
+    .array(
+      z.object({
+        option: text('The key of an option'),
+        effect: word(EFFECTS),
+        why: maybe('One short line, under 14 words, on why that option has this effect on the want'),
+      }),
+    )
     .describe('One entry for every option'),
 })
 
@@ -220,6 +232,7 @@ function toOption(wire: WireOption, wants: Array<{ key: string }>, today: string
     effects: wants.map((want) =>
       oneOf(wire.effects.find((entry) => same(entry.want, want.key))?.effect, EFFECTS, 'none'),
     ),
+    effectsWhy: wants.map((want) => clean(wire.effects.find((entry) => same(entry.want, want.key))?.why)),
     for: clean(wire.for),
     against: clean(wire.against),
     wrongMine: lines(wire.wrongMine, 3),
@@ -390,6 +403,11 @@ export function withWant(plan: DecidingPlan, wire: z.infer<typeof WireWantExtens
       effects: [
         ...option.effects,
         oneOf(wire.effects.find((entry) => same(entry.option, optionKey(at)))?.effect, EFFECTS, 'none'),
+      ],
+      // A plan from before reasons were kept has none for its earlier wants; the new one still gets its own.
+      effectsWhy: [
+        ...(option.effectsWhy ?? option.effects.map(() => '')),
+        clean(wire.effects.find((entry) => same(entry.option, optionKey(at)))?.why),
       ],
     })),
   }

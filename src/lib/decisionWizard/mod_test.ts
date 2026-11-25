@@ -226,7 +226,7 @@ test('wizard plan: a loosely written answer from the model still makes a sound p
     question: '',
     odds: key === 'A' ? '20–40%' : 'Over 80 percent',
     oddsWhy: 'why',
-    effects: [{ want: 'w2', effect: 'Helps' }],
+    effects: [{ want: 'w2', effect: 'Helps', why: ' It  frees a day a week. ' }],
     for: 'f',
     against: 'a',
     hinges: [{ belief: 'b', sure: 's', cost: 'c' }],
@@ -260,11 +260,14 @@ test('wizard plan: a loosely written answer from the model still makes a sound p
     actual: [
       [plan.category, plan.context, plan.frame, plan.care.suggest, plan.wantsSuggested, plan.close, plan.rank],
       [first.short, first.undo, first.breaks, first.odds, plan.options[1]!.odds, first.effects, first.question],
+      first.effectsWhy,
       [first.outcomes.map((outcome) => outcome.feel), first.wrongMine, first.look, first.hinges[0]?.todo],
     ],
     expected: [
       ['Professional', 'A situation.', 0, 'full', [1], [1, 0], [1, 0]],
       ['Alpha', 'Easy', null, 1, 4, ['none', 'helps'], 'How likely is the first one?'],
+      // One line of why beside each effect, tidied, and empty where Sky gave none.
+      ['', 'It frees a day a week.'],
       [['like', 'mixed', 'dislike'], ['m1', 'm2', 'm3'], ['2030-09-01'], null],
     ],
   })
@@ -276,12 +279,23 @@ test('wizard plan: a loosely written answer from the model still makes a sound p
   })
   const wider = withWant(plan, {
     want: { key: 'W3', title: 'Third', why: 'You added this.', ref: 'goals/x', inForce: true },
-    effects: [{ option: 'b', effect: 'costs' }],
+    effects: [{ option: 'b', effect: 'costs', why: 'It takes the budget.' }],
   })
   assert({
     given: 'a want the person typed in, with an effect for only one option',
     should: 'add it as theirs, and give every option an effect for it',
-    actual: [wider.wants.at(-1), wider.options.map((item) => item.effects.at(-1))],
-    expected: [{ title: 'Third', why: 'You added this.', ref: null, inForce: false }, ['none', 'costs']],
+    actual: [
+      wider.wants.at(-1),
+      wider.options.map((item) => item.effects.at(-1)),
+      wider.options.map((item) => item.effectsWhy),
+    ],
+    expected: [
+      { title: 'Third', why: 'You added this.', ref: null, inForce: false },
+      ['none', 'costs'],
+      [
+        ['', 'It frees a day a week.', ''],
+        ['', 'It frees a day a week.', 'It takes the budget.'],
+      ],
+    ],
   })
 })
