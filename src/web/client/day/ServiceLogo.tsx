@@ -51,7 +51,7 @@ export function ServiceLogo({ service }: { service: string }) {
       <span className="sky-nr-icon" role="img" aria-label={label} title={label}>
         <svg viewBox="0 0 24 24" aria-hidden="true">
           <path
-            fill="#34c759"
+            fill="#007aff"
             d="M12 3C6.8 3 2.5 6.7 2.5 11.3c0 2.6 1.4 5 3.6 6.5-.2 1.4-.9 2.6-1.7 3.3 1.9-.1 3.7-.7 5-1.6.8.2 1.7.3 2.6.3 5.2 0 9.5-3.7 9.5-8.5S17.2 3 12 3z"
           />
         </svg>
