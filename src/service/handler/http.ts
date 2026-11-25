@@ -78,6 +78,7 @@ import {
 } from './vocabulary/mod.ts'
 import { createVoiceRoutes, type VoiceRoutesOptions } from './voice/mod.ts'
 import { createWeekRoutes, type WeekCommands } from './week/mod.ts'
+import { createWhiteboardRoutes } from './whiteboard/mod.ts'
 import { createWorkstreamFileRoutes } from './workstreams/files.ts'
 import { createWorkstreamRoutes, type WorkstreamsRoutesOptions } from './workstreams/mod.ts'
 
@@ -212,6 +213,15 @@ export function createHttpApp(options: HttpHandlerOptions): Hono {
       options.journal,
       options.now,
     ),
+  )
+
+  app.route(
+    '/whiteboard/_api',
+    createWhiteboardRoutes({
+      markdownBaseDir,
+      timeDir: chat?.timeDir ?? path.join(markdownBaseDir, 'time'),
+      markdownStore,
+    }),
   )
 
   // GraphQL HTTP queries (WebSocket upgrades handled at server level)
@@ -865,6 +875,15 @@ export function createHttpApp(options: HttpHandlerOptions): Hono {
       },
     }),
   )
+  app.get('/whiteboard', (c) =>
+    c.html(renderAppHtml(c.req.query('tab') === 'raw' ? 'sky · Whiteboard · Raw' : 'sky · Whiteboard')),
+  )
+  app.get('/whiteboard/*', (c) =>
+    c.req.path.startsWith('/whiteboard/_api/')
+      ? c.json({ message: 'Not found.' }, 404)
+      : c.html(renderAppHtml('sky · Whiteboard')),
+  )
+
   app.get('/explorer', (c) => {
     return c.html(renderAppHtml('sky'))
   })

@@ -128,6 +128,7 @@ export const FILE_SCHEDULE_PROFESSIONAL = path.join(DIR_TIME, 'schedule-professi
 export const FILE_SCHEDULE_PERSONAL = path.join(DIR_TIME, 'schedule-personal.md')
 
 export const FILE_REMINDERS = path.join(DIR_TIME, 'reminders.md')
+export const FILE_WHITEBOARD = path.join(DIR_TIME, 'whiteboard.md')
 
 export const FILE_ABOUT_ME = path.join(DIR_ME, 'about.md')
 
