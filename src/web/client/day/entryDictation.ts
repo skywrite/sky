@@ -3,7 +3,7 @@ import { liveOffer } from '../voice/liveTransport.ts'
 import { describeVoiceError, micConstraints } from '../voice/voiceController.ts'
 import { MicrophoneLevel } from './microphoneLevel.ts'
 
-export type DictationPhase = 'idle' | 'connecting' | 'listening' | 'finishing'
+export type DictationPhase = 'idle' | 'connecting' | 'listening' | 'finishing' | 'checking'
 export interface DictationView {
   phase: DictationPhase
   speech: string
@@ -17,13 +17,18 @@ export function appendDictation(draft: string, speech: string): string {
   return draft + ' ' + phrase
 }
 
+const NAMES_UNCHECKED = 'Sky could not check the names in this text. Review them before saving.'
+
 // A day can have an inline composer and a Most Important dialog open together.
 let recording: EntryDictation | undefined
 export function stopDayMicrophone(): void {
   recording?.stop()
 }
 
-/** One press starts one transcription turn. Stop releases the mic, then waits for that turn's final text. */
+/**
+ * One press starts one transcription turn. Stop releases the mic, then waits for that turn's final text.
+ * The final text is checked once for misheard names before it becomes an editable draft.
+ */
 export class EntryDictation {
   readonly microphone = new MicrophoneLevel()
   private abort = new AbortController()
@@ -72,8 +77,41 @@ export class EntryDictation {
     window.removeEventListener('pagehide', this.pageHidden)
     document.removeEventListener('visibilitychange', this.visibilityChanged)
     this.releaseMic()
+    this.hangUp()
+  }
+
+  /** The provider's part is over: nothing it sends or drops from here on concerns this draft. */
+  private hangUp(): void {
+    window.clearTimeout(this.reconnect)
+    if (this.channel) this.channel.onmessage = this.channel.onclose = this.channel.onerror = null
+    if (this.peer) this.peer.onconnectionstatechange = null
     this.channel?.close()
     this.peer?.close()
+  }
+
+  /** Names the transcriber misheard are put right while the words are still read-only. */
+  private async checkNames(): Promise<void> {
+    const speech = [...this.parts.values()].reduce(appendDictation, '')
+    if (!speech.trim()) return this.finish()
+    this.phase = 'checking'
+    this.hangUp()
+    window.clearTimeout(this.deadline)
+    this.deadline = window.setTimeout(() => this.finish(NAMES_UNCHECKED), 7000)
+    this.publish()
+    try {
+      const response = await fetch(`/day/${this.ymd}/item/dictation/names`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ text: speech }),
+        signal: this.abort.signal,
+      })
+      const data = (await response.json()) as { text?: string; error?: string }
+      if (!response.ok || typeof data.text !== 'string') return this.finish(data.error ?? NAMES_UNCHECKED)
+      this.parts = new Map([['checked', data.text]])
+      this.finish()
+    } catch {
+      this.finish(NAMES_UNCHECKED)
+    }
   }
 
   finish(error?: string): void {
@@ -120,7 +158,7 @@ export class EntryDictation {
         )
         return
     }
-    if (this.phase === 'finishing' && this.committed && this.completed.has(this.committed)) this.finish()
+    if (this.phase === 'finishing' && this.committed && this.completed.has(this.committed)) void this.checkNames()
   }
 
   private async credential(): Promise<string> {
@@ -208,7 +246,7 @@ export class EntryDictation {
   }
 
   stop(): void {
-    if (this.abort.signal.aborted || this.phase === 'finishing') return
+    if (this.abort.signal.aborted || this.phase === 'finishing' || this.phase === 'checking') return
     if (this.phase !== 'listening') return this.finish()
     this.phase = 'finishing'
     this.releaseMic()

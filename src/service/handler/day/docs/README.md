@@ -205,10 +205,15 @@ completed activity does not hide it from Done today.
 Done today, To-dos, Reminders, and Most important share the same dictation field.
 The microphone on a card opens its input and streams audio from the browser directly to OpenAI.
 Sky issues a short-lived credential for `gpt-live-transcribe`.
+The session carries the notebook's names as keywords, so most names are spelled right as the words stream.
 The browser offers a normal audio track with `addTrack`. OpenAI answers a send-only offer with inactive audio,
 even though the data channel opens. A transcription session has no audio playback.
-Stop releases the microphone and commits the audio once. The final transcript replaces the provisional words
-in the editable draft. Each form keeps its usual save action.
+Stop releases the microphone and commits the audio once. The final transcript replaces the provisional words.
+One check then reads that text against the same names and puts misheard ones right.
+The draft stays read-only under "Checking names…" until the check answers.
+It becomes editable either way: a failed check keeps every word and says the names went unchecked.
+Each form keeps its usual save action.
+Why this takes two steps, and what was rejected: [names in live dictation](2026-11-26-names-in-live-dictation.md).
 Most important accepts the task into the day only after the person reviews the generated draft.
 
 A saved `summary.md` beside the day file makes its task lists read-only, including Done today, deletion and Undo.

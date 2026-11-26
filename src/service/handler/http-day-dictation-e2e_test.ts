@@ -138,6 +138,7 @@ async function finishSpeech(page: Page, form: Locator, transcript: string) {
   await sendEvent(page, { type: 'conversation.item.input_audio_transcription.completed', item_id: 'word', transcript })
   await stop.waitFor({ state: 'detached' })
   await form.getByRole('button', { name: 'Finishing dictation' }).waitFor({ state: 'detached' })
+  await form.getByRole('button', { name: 'Checking names' }).waitFor({ state: 'detached' })
 }
 
 test(
@@ -554,6 +555,122 @@ test(
           should: 'send its text when Rethink is chosen',
           actual: [directions.at(-1), errors],
           expected: ['Focus on Atlas.', []],
+        })
+      },
+    )
+  },
+)
+
+test(
+  { name: 'a dictated draft has its names checked before it can be edited or saved', timeout: 45_000 },
+  async (t) => {
+    const checked: string[] = []
+    let release: () => void = () => {}
+    await runWysiwygE2e(
+      t,
+      {
+        initialMarkdown: EMPTY,
+        tempPrefix: 'sky-dictation-names-',
+        file: 'time/' + dayFile(DAY),
+        day: true,
+        dictation: {
+          keywords: async () => [],
+          correct: async (text) => {
+            checked.push(text)
+            await new Promise<void>((resolve) => {
+              release = resolve
+            })
+            if (text.includes('Atlus')) throw new Error('synthetic model outage')
+            return text.replace('Jane Doh', 'Jane Doe')
+          },
+        },
+      },
+      async ({ page, origin, file, errors }) => {
+        await page.setViewportSize({ width: 390, height: 844 })
+        await connectPeers(page)
+        await page.goto(`${origin}/${DAY.ymd}?view=record`)
+        await page.getByRole('button', { name: 'Dictate to-do', exact: true }).click()
+        const form = page.getByRole('form', { name: 'Add a to-do', exact: true })
+        const add = form.getByRole('button', { name: 'Add to-do', exact: true })
+        const editor = form.getByRole('textbox', { name: 'Item text' })
+        const speak = async (transcript: string, item: string) => {
+          const stop = form.getByRole('button', { name: 'Stop dictation', exact: true })
+          await stop.waitFor()
+          const commits = await page.evaluate(() => (window as unknown as DictationWindow).entryAudio.commits)
+          await stop.click()
+          await page.waitForFunction(
+            (previous) => (window as unknown as DictationWindow).entryAudio.commits > previous,
+            commits,
+          )
+          await sendEvent(page, { type: 'input_audio_buffer.committed', item_id: item })
+          await sendEvent(page, {
+            type: 'conversation.item.input_audio_transcription.completed',
+            item_id: item,
+            transcript,
+          })
+          await form.getByRole('button', { name: 'Checking names' }).waitFor()
+        }
+        await speak("Review Jane Doh's plan", 'first')
+        assert({
+          given: 'a final transcript whose names are still being checked',
+          should: 'show the words read-only, say what Sky is doing, and hold saving',
+          actual: [
+            await form.getByRole('status').innerText(),
+            await form.getByRole('group', { name: 'Live to-do text' }).innerText(),
+            await editor.count(),
+            await add.isDisabled(),
+            await form.getByRole('button', { name: 'Checking names' }).isDisabled(),
+            await page.title(),
+            checked,
+          ],
+          expected: [
+            'Checking names…',
+            "Review Jane Doh's plan",
+            0,
+            true,
+            true,
+            `sky · ${DAY.ymd} · Dictating to-do`,
+            ["Review Jane Doh's plan"],
+          ],
+        })
+        release()
+        await editor.waitFor()
+        assert({
+          given: 'the check answering with the name the notebook lists',
+          should: 'put the corrected text in the editable draft with no warning',
+          actual: [await editor.inputValue(), await form.getByRole('alert').count(), await add.isDisabled()],
+          expected: ["Review Jane Doe's plan", 0, false],
+        })
+        await form.getByRole('button', { name: 'Continue dictating to-do' }).click()
+        await speak('with the Atlus team', 'second')
+        release()
+        await form.getByRole('alert').filter({ hasText: 'could not check the names' }).waitFor()
+        assert({
+          given: 'a names check that fails',
+          should: 'keep every word, say the names went unchecked, and leave the draft editable',
+          actual: [
+            await editor.inputValue(),
+            await form.getByRole('alert').innerText(),
+            await add.isDisabled(),
+            await readFile(file, 'utf8'),
+          ],
+          expected: [
+            "Review Jane Doe's plan with the Atlus team",
+            'Sky could not check the names in this text. Review them before saving.',
+            false,
+            EMPTY,
+          ],
+        })
+        await add.click()
+        await form.waitFor({ state: 'hidden' })
+        assert({
+          given: 'the explicit Add to-do action after the check',
+          should: 'save the reviewed text; the refused check is the only browser error',
+          actual: [
+            (await readFile(file, 'utf8')).includes("Review Jane Doe's plan with the Atlus team"),
+            errors.map((line) => line.includes('502')),
+          ],
+          expected: [true, [true]],
         })
       },
     )

@@ -69,7 +69,9 @@ export function DictationInput({ dictation, field, inputRef, micRef, label, disa
             ? 'Connecting microphone…'
             : dictation.phase === 'finishing'
               ? 'Finishing transcript…'
-              : 'Listening'}
+              : dictation.phase === 'checking'
+                ? 'Checking names…'
+                : 'Listening'}
         </div>
       )}
       {selected && dictation.error && (

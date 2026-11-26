@@ -23,6 +23,7 @@ export function EntryMicrophone({
     connecting: 'Cancel dictation',
     listening: 'Stop dictation',
     finishing: 'Finishing dictation',
+    checking: 'Checking names',
   }[phase]
   return (
     <ActionIcon
@@ -32,7 +33,7 @@ export function EntryMicrophone({
       className="sky-entry-mic"
       aria-label={label}
       title={label}
-      disabled={disabled || phase === 'finishing'}
+      disabled={disabled || phase === 'finishing' || phase === 'checking'}
       onClick={onClick}
     >
       {phase === 'idle' ? (
