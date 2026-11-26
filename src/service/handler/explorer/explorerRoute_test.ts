@@ -149,3 +149,20 @@ test({ name: 'explorer - a file comes back rendered, frontmatter aside, comments
     expected: [404, 403],
   })
 })
+
+test({ name: 'explorer - single newlines inside a paragraph render as line breaks' }, async () => {
+  const { base, app } = await notebook()
+  await writeFile(
+    path.join(base, 'projects', 'Atlas', 'Notes.md'),
+    'First paragraph.\n\n100 apples\n200 oranges\n300 pears\n',
+  )
+
+  const doc = await json<ExplorerDoc>(app, '/doc?path=projects%2FAtlas%2FNotes.md')
+
+  assert({
+    given: 'a paragraph with bare single newlines between lines',
+    should: 'preserve them as <br> tags while keeping blank lines as separate paragraphs',
+    actual: doc.html.trim(),
+    expected: '<p>First paragraph.</p>\n<p>100 apples<br>200 oranges<br>300 pears</p>',
+  })
+})

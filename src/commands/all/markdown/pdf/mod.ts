@@ -76,7 +76,7 @@ export default class MarkdownPdfTask extends Command {
     const cleaned = markdown.replace(/<!--[\s\S]*?-->/g, '').trim()
 
     // 4. Convert markdown → HTML
-    const bodyHtml = await marked.parse(cleaned)
+    const bodyHtml = await marked.parse(cleaned, { gfm: true, breaks: true })
 
     // 5. Wrap in styled HTML document
     const fullHtml = buildHtmlDocument(title, bodyHtml, css)

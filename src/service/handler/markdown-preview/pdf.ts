@@ -18,7 +18,7 @@ export async function exportMarkdownPreviewPdf(filePath: string, theme: Markdown
 
   const { markdown } = splitYamlMarkdown(raw)
   const cleaned = markdown.replace(/<!--[\s\S]*?-->/g, '').trim()
-  const bodyHtml = await marked.parse(cleaned)
+  const bodyHtml = await marked.parse(cleaned, { gfm: true, breaks: true })
   const html = buildHtmlDocument(basename, bodyHtml, css)
 
   await mkdir(path.dirname(pdfPath), { recursive: true })

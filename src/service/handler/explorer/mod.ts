@@ -136,7 +136,11 @@ async function readDoc(
       doc: {
         path: request.value.relativePath,
         frontmatter: yaml,
-        html: body.length > 0 ? resolveImageSources(await marked.parse(body), request.value.relativePath) : '',
+        // Captured messages and the editor's Shift+Enter write bare single newlines; keep them visible when reading.
+        html:
+          body.length > 0
+            ? resolveImageSources(await marked.parse(body, { gfm: true, breaks: true }), request.value.relativePath)
+            : '',
         version: snapshot.version,
         ...(time?.kind === 'day' ? { day: time.date.toString() } : {}),
       },
