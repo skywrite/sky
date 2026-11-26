@@ -1,6 +1,6 @@
 ---
 created: 2026-08-29
-updated: 2026-11-08
+updated: 2026-11-26
 ---
 
 # Day commands
@@ -69,7 +69,7 @@ Calendar event types and notification exclusions follow the
 
 `day:meeting:check <day>` cross-references the day's Google Calendar
 meetings against the notebook's meeting records and warns about the ones
-with no record, plus records whose `when:` states no end time. Its rules:
+with no record. Its rules:
 
 - **Warn, never fail.** The command always succeeds; an unreachable
   calendar or service degrades to a warning line. Call sites run it bare.

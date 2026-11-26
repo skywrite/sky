@@ -2,7 +2,7 @@ import colors from 'picocolors'
 import { formatEventWhen, formatEventWho } from '#commands/all/google/calendar/lib/dayMeetings.ts'
 import { Command, CommandResult, dayNoFutureArg } from '#commands/mod.ts'
 import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod.ts'
-import { checkDayMeetings, type Endless } from './lib/meetingCheck.ts'
+import { checkDayMeetings } from './lib/meetingCheck.ts'
 
 const params = {
   day: dayNoFutureArg(),
@@ -14,7 +14,6 @@ type Result = {
   checked: number
   recorded: number
   missing: Array<{ title: string; start: string; end: string }>
-  endless: Endless[]
   errors: string[]
 }
 
@@ -32,16 +31,11 @@ declare module '#commands/lib/core/CommandTypesRegistry.ts' {
  * command is its terminal voice. An unreachable calendar or service
  * degrades to a warning: a check must never hold the notebook hostage.
  * day:start runs this on the previous day; the review shows the same gaps.
- *
- * Also warns about the day's meetings and events that state no end time or
- * length — summary:day's Time section can only count what `when:` states,
- * so open-ended records get named here while memory is fresh. This check
- * needs only the notebook, so it runs even when the calendar doesn't.
  */
 export default class DayMeetingCheckTask extends Command {
   static override description: CommandDescription = {
     name: 'day:meeting:check',
-    description: 'Warn about calendar meetings missing a notebook record, and records missing end times.',
+    description: 'Warn about calendar meetings missing a notebook record.',
     usage: ['sky day:meeting:check', 'sky day:meeting:check 7'],
     params,
   }
@@ -97,20 +91,6 @@ export default class DayMeetingCheckTask extends Command {
       output.log('')
     }
 
-    // End-time nudge: notebook-only, so it shows regardless of calendar state.
-    if (check.endless.length > 0) {
-      const word = check.endless.length === 1 ? 'record states' : 'records state'
-      output.log(
-        colors.yellow(`  ${check.endless.length} ${word} no end time — add "- HH:MM" or a length ("45m") to when::`),
-      )
-      for (const e of check.endless) {
-        output.log(
-          `    ${colors.yellow('⚠')} ${e.start}  ${e.label}${e.kind === 'event' ? colors.dim('  (event)') : ''}`,
-        )
-      }
-      output.log('')
-    }
-
-    return CommandResult.success({ checked, recorded, missing, endless: check.endless, errors: check.errors })
+    return CommandResult.success({ checked, recorded, missing, errors: check.errors })
   }
 }

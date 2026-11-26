@@ -12,15 +12,11 @@
  * or a conversation, hostage.
  */
 
-import * as path from 'node:path'
 import { fetchDayMeetings, formatEventWhen, formatEventWho } from '#commands/all/google/calendar/lib/dayMeetings.ts'
 import type { CalendarEvent } from '#lib/google/mod.ts'
 import type { SecretsProvider } from '#lib/secrets/SecretsProvider.ts'
 import { PORT_SERVER } from '#shared/config.ts'
-import { readDir, readTextFile } from '#shared/fs/mod.ts'
-import { dayActionDir } from '#shared/nbfs/mod.ts'
 import { type PlainDate, PlainDateTime } from '#universal/dates/nbdt/mod.ts'
-import hasEndOrLength from './hasEndOrLength.ts'
 
 const GRAPHQL_URL = `http://localhost:${PORT_SERVER}/graphql`
 
@@ -33,20 +29,13 @@ const NAMED_ATTENDEES = 8
 export interface NotebookMeeting {
   who: string
   medium: string
-  when: { datetime: string; end: string | null } | null
+  when: { datetime: string } | null
 }
 
 /** A calendar meeting and the notebook meeting that records it, if one does. */
 export interface CheckedMeeting {
   event: CalendarEvent
   record: NotebookMeeting | null
-}
-
-/** A meeting or event record whose `when:` states no end time or length. */
-export interface Endless {
-  start: string
-  label: string
-  kind: 'meeting' | 'event'
 }
 
 export interface MeetingCheck {
@@ -62,12 +51,10 @@ export interface MeetingCheck {
   notebookRead: boolean
   /** The calendar's meetings in start order, each with its record */
   meetings: CheckedMeeting[]
-  /** Records missing an end time, in start order — notebook-only, so present whatever the calendar did */
-  endless: Endless[]
   errors: string[]
 }
 
-/** The three sources, each already fetched or failed. */
+/** The two sources, each already fetched or failed. */
 export interface MeetingCheckSources {
   calendar: {
     timeZone: string | null
@@ -78,8 +65,6 @@ export interface MeetingCheckSources {
   }
   /** The notebook's meetings, or null when the service could not answer */
   notebook: NotebookMeeting[] | null
-  /** Start-only records from the day's events folder */
-  events: Endless[]
 }
 
 /** `HH:MM` (extended hours legal) to minutes; the sign belongs to the hour bucket. */
@@ -99,22 +84,13 @@ function recordOf(event: CalendarEvent, notebook: NotebookMeeting[]): NotebookMe
 
 /** Match the sources for one day. Pure: every read has already happened. */
 export function compareDayMeetings(day: string, sources: MeetingCheckSources): MeetingCheck {
-  const { calendar, notebook, events } = sources
+  const { calendar, notebook } = sources
   // Account errors alongside meetings still make a check; errors alone do not.
   const calendarRead =
     calendar.meetings.length > 0 || Boolean(calendar.notifications?.length) || calendar.errors.length === 0
   const meetings: CheckedMeeting[] = calendarRead
     ? calendar.meetings.map((event) => ({ event, record: notebook ? recordOf(event, notebook) : null }))
     : []
-
-  const endless: Endless[] = []
-  for (const m of notebook ?? []) {
-    if (m.when && !m.when.end) {
-      endless.push({ start: m.when.datetime.slice(11, 16), label: `${m.medium}: ${m.who}`, kind: 'meeting' })
-    }
-  }
-  endless.push(...events)
-  endless.sort((a, b) => a.start.localeCompare(b.start))
 
   return {
     day,
@@ -124,7 +100,6 @@ export function compareDayMeetings(day: string, sources: MeetingCheckSources): M
     meetings,
     notifications: calendar.notifications,
     classificationWarning: calendar.classificationWarning,
-    endless,
     errors: calendar.errors,
   }
 }
@@ -135,7 +110,7 @@ export async function checkDayMeetings(
   day: PlainDate,
   timeDir: string,
 ): Promise<MeetingCheck> {
-  const [calendar, notebook, events] = await Promise.all([
+  const [calendar, notebook] = await Promise.all([
     // Even a keychain failure below the calendar fetch degrades to an error line.
     fetchDayMeetings(secrets, day, timeDir).catch((err: unknown) => ({
       timeZone: null,
@@ -143,14 +118,13 @@ export async function checkDayMeetings(
       errors: [err instanceof Error ? err.message : String(err)],
     })),
     fetchNotebookMeetings(day.ymd),
-    fetchEndlessEvents(timeDir, day),
   ])
-  return compareDayMeetings(day.ymd, { calendar, notebook, events })
+  return compareDayMeetings(day.ymd, { calendar, notebook })
 }
 
 /** The day's meetings from the local service, or null when it can't answer. */
 async function fetchNotebookMeetings(ymd: string): Promise<NotebookMeeting[] | null> {
-  const query = `{ meetings(where: { date: "${ymd}" }) { who medium when { datetime end } } }`
+  const query = `{ meetings(where: { date: "${ymd}" }) { who medium when { datetime } } }`
   try {
     const response = await fetch(GRAPHQL_URL, {
       method: 'POST',
@@ -165,30 +139,6 @@ async function fetchNotebookMeetings(ymd: string): Promise<NotebookMeeting[] | n
   } catch {
     return null
   }
-}
-
-/**
- * Start-only records from the day's events folder — calendar-sourced
- * events aren't queryable on the service yet, and this is a frontmatter
- * completeness read of one bounded directory, not record matching (which
- * stays on GraphQL). Any failure reads as "no events".
- */
-async function fetchEndlessEvents(timeDir: string, day: PlainDate): Promise<Endless[]> {
-  const eventsDir = path.join(timeDir, dayActionDir('event', day))
-  const endless: Endless[] = []
-  try {
-    for await (const entry of readDir(eventsDir)) {
-      if (!entry.name.endsWith('.md')) continue
-      const content = await readTextFile(path.join(eventsDir, entry.name))
-      const when = content.match(/^when:[ \t]*(.+)$/m)?.[1]?.trim()
-      if (!when || hasEndOrLength(when)) continue
-      const what = content.match(/^what:[ \t]*(.+)$/m)?.[1]?.trim()
-      endless.push({ start: when.slice(11, 16), label: what || entry.name.replace(/\.md$/, ''), kind: 'event' })
-    }
-  } catch {
-    // No events directory, or unreadable — nothing to nudge about.
-  }
-  return endless
 }
 
 // ---------------------------------------------------------------------------
@@ -317,12 +267,6 @@ export function renderMeetingCheck(check: MeetingCheck, now: CheckClock): string
       lines.push(`- ${formatEventWhen(event)} ${event.title || '(untitled)'}${formatEventWho(event, NAMED_ATTENDEES)}`)
   }
   if (check.classificationWarning) lines.push('', check.classificationWarning)
-
-  if (check.endless.length > 0) {
-    const items = check.endless.map((e) => `${e.start} ${e.label}${e.kind === 'event' ? ' (event)' : ''}`)
-    lines.push('')
-    lines.push(`Records stating no end time — the when: needs "- HH:MM" or a length: ${items.join('; ')}.`)
-  }
 
   return lines.join('\n')
 }

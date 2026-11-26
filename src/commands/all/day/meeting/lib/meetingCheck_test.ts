@@ -14,7 +14,6 @@ test('classified notifications remain in calendar context without missing-meetin
       errors: ['Another account unavailable'],
     },
     notebook: [],
-    events: [],
   })
   const text = renderMeetingCheck(check, { date: DAY, time: '18:00' })
   assert({
@@ -53,8 +52,8 @@ function event(start: string, end: string, title: string, others: string[] = ['J
   }
 }
 
-function meeting(start: string, who: string, end: string | null): NotebookMeeting {
-  return { who, medium: 'call', when: { datetime: `${DAY} ${start}`, end: end && `${DAY} ${end}` } }
+function meeting(start: string, who: string): NotebookMeeting {
+  return { who, medium: 'call', when: { datetime: `${DAY} ${start}` } }
 }
 
 const CALENDAR = {
@@ -69,17 +68,13 @@ const CALENDAR = {
 }
 
 const NOTEBOOK = [
-  meeting('09:05', 'Jane Doe', '09:50'), // five minutes late: the standup's record
-  meeting('12:20', 'Bob Smith', null), // twenty minutes late is another meeting, and it never ended
-  meeting('16:00', 'Sam Roe', '16:20'), // an ad-hoc call the calendar never saw
+  meeting('09:05', 'Jane Doe'), // five minutes late: the standup's record
+  meeting('12:20', 'Bob Smith'), // twenty minutes late is another meeting
+  meeting('16:00', 'Sam Roe'), // an ad-hoc call the calendar never saw
 ]
 
 test({ name: 'compareDayMeetings - records match by start time within the tolerance' }, () => {
-  const check = compareDayMeetings(DAY, {
-    calendar: CALENDAR,
-    notebook: NOTEBOOK,
-    events: [{ start: '18:00', label: 'Dinner', kind: 'event' }],
-  })
+  const check = compareDayMeetings(DAY, { calendar: CALENDAR, notebook: NOTEBOOK })
   assert({
     given: 'notebook meetings 5 and 20 minutes after two calendar meetings',
     should: 'record the one within 15 minutes and leave the other unrecorded',
@@ -92,34 +87,23 @@ test({ name: 'compareDayMeetings - records match by start time within the tolera
     actual: [check.calendarRead, check.notebookRead, check.timeZone, check.errors],
     expected: [true, true, ZONE, []],
   })
-  assert({
-    given: 'an endless notebook meeting and a start-only event',
-    should: 'list both in start order, the meeting labeled by medium and who',
-    actual: check.endless,
-    expected: [
-      { start: '12:20', label: 'call: Bob Smith', kind: 'meeting' },
-      { start: '18:00', label: 'Dinner', kind: 'event' },
-    ],
-  })
 })
 
 test({ name: 'compareDayMeetings - an unread side is reported, never thrown' }, () => {
   const noCalendar = compareDayMeetings(DAY, {
     calendar: { timeZone: null, meetings: [], errors: ['keychain locked'] },
     notebook: NOTEBOOK,
-    events: [],
   })
   assert({
     given: 'errors and no meetings from the calendar',
-    should: 'leave the calendar unread with the errors, and still nudge about endless records',
-    actual: [noCalendar.calendarRead, noCalendar.meetings, noCalendar.errors, noCalendar.endless.length],
-    expected: [false, [], ['keychain locked'], 1],
+    should: 'leave the calendar unread with the errors',
+    actual: [noCalendar.calendarRead, noCalendar.meetings, noCalendar.errors],
+    expected: [false, [], ['keychain locked']],
   })
 
   const partial = compareDayMeetings(DAY, {
     calendar: { ...CALENDAR, errors: ['other@example.com: token expired'] },
     notebook: NOTEBOOK,
-    events: [],
   })
   assert({
     given: 'meetings from one account and an error from another',
@@ -128,21 +112,17 @@ test({ name: 'compareDayMeetings - an unread side is reported, never thrown' }, 
     expected: [true, 4, 1],
   })
 
-  const noNotebook = compareDayMeetings(DAY, {
-    calendar: CALENDAR,
-    notebook: null,
-    events: [{ start: '18:00', label: 'Dinner', kind: 'event' }],
-  })
+  const noNotebook = compareDayMeetings(DAY, { calendar: CALENDAR, notebook: null })
   assert({
     given: 'no answer from the service',
-    should: 'list the calendar with no records, and only the events side of the end-time nudge',
-    actual: [noNotebook.notebookRead, noNotebook.meetings.map((m) => m.record), noNotebook.endless],
-    expected: [false, [null, null, null, null], [{ start: '18:00', label: 'Dinner', kind: 'event' }]],
+    should: 'list the calendar with no records',
+    actual: [noNotebook.notebookRead, noNotebook.meetings.map((m) => m.record)],
+    expected: [false, [null, null, null, null]],
   })
 })
 
 test({ name: 'renderMeetingCheck - each meeting is judged against the notebook clock' }, () => {
-  const check = compareDayMeetings(DAY, { calendar: CALENDAR, notebook: NOTEBOOK, events: [] })
+  const check = compareDayMeetings(DAY, { calendar: CALENDAR, notebook: NOTEBOOK })
   const text = renderMeetingCheck(check, { date: DAY, time: '14:05' })
   const lines = text.split('\n')
   assert({
@@ -164,17 +144,13 @@ test({ name: 'renderMeetingCheck - each meeting is judged against the notebook c
   })
   assert({
     given: 'the same render',
-    should: 'close the list with the matching rule and the end-time nudge',
+    should: 'close the list with the matching rule and no end-time nudge',
     actual: [
       lines[7].startsWith('A notebook meeting starting within 15 minutes'),
       lines[7].includes('never invent what happened in it'),
-      lines.at(-1),
+      lines.length,
     ],
-    expected: [
-      true,
-      true,
-      'Records stating no end time — the when: needs "- HH:MM" or a length: 12:20 call: Bob Smith.',
-    ],
+    expected: [true, true, 8],
   })
 
   const morning = renderMeetingCheck(check, { date: DAY, time: '08:00' })
@@ -187,7 +163,7 @@ test({ name: 'renderMeetingCheck - each meeting is judged against the notebook c
 })
 
 test({ name: 'renderMeetingCheck - the distance is said in whole words at the scale that matters' }, () => {
-  const check = compareDayMeetings(DAY, { calendar: CALENDAR, notebook: NOTEBOOK, events: [] })
+  const check = compareDayMeetings(DAY, { calendar: CALENDAR, notebook: NOTEBOOK })
   const at = (date: string, time: string) => renderMeetingCheck(check, { date, time }).split('\n')
   assert({
     given: 'a clock on the hour before a meeting, and on its start minute',
@@ -217,7 +193,6 @@ test({ name: 'renderMeetingCheck - the notebook clock runs past midnight' }, () 
       errors: [],
     },
     notebook: [],
-    events: [],
   })
   assert({
     given: 'a 25:30 notebook clock, which is 01:30 the next civil day',
@@ -236,21 +211,18 @@ test({ name: 'renderMeetingCheck - the notebook clock runs past midnight' }, () 
 test({ name: 'renderMeetingCheck - what the model reads when a side could not be read' }, () => {
   const noCalendar = compareDayMeetings(DAY, {
     calendar: { timeZone: null, meetings: [], errors: ['No Google accounts are authorized yet. Run: sky google:auth'] },
-    notebook: [meeting('12:20', 'Bob Smith', null)],
-    events: [],
+    notebook: [meeting('12:20', 'Bob Smith')],
   })
   assert({
     given: 'an unread calendar',
-    should: 'say so with the reason, and still carry the end-time nudge',
+    should: 'say so with the reason',
     actual: renderMeetingCheck(noCalendar, { date: DAY, time: '14:05' }).split('\n'),
     expected: [
       `The calendar for ${DAY} could not be checked as of ${DAY} 14:05: No Google accounts are authorized yet. Run: sky google:auth`,
-      '',
-      'Records stating no end time — the when: needs "- HH:MM" or a length: 12:20 call: Bob Smith.',
     ],
   })
 
-  const empty = compareDayMeetings(DAY, { calendar: { ...CALENDAR, meetings: [] }, notebook: [], events: [] })
+  const empty = compareDayMeetings(DAY, { calendar: { ...CALENDAR, meetings: [] }, notebook: [] })
   assert({
     given: 'an empty calendar',
     should: 'say so in one line',
@@ -258,7 +230,7 @@ test({ name: 'renderMeetingCheck - what the model reads when a side could not be
     expected: `No meetings on the calendar for ${DAY} (${ZONE}), as of ${DAY} 14:05.`,
   })
 
-  const noNotebook = compareDayMeetings(DAY, { calendar: CALENDAR, notebook: null, events: [] })
+  const noNotebook = compareDayMeetings(DAY, { calendar: CALENDAR, notebook: null })
   const lines = renderMeetingCheck(noNotebook, { date: DAY, time: '14:05' }).split('\n')
   assert({
     given: 'an unread notebook',
