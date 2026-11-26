@@ -214,3 +214,49 @@ test({ name: 'theme assets - a browser that accepts compression gets the same bu
     })
   })
 })
+
+test('app install - the shell links a manifest that installs Sky as its own app, with icons that are served', async () => {
+  await withApp(async (app) => {
+    const html = await (await app.request('http://localhost/')).text()
+    const response = await app.request('http://localhost/manifest.webmanifest')
+    const manifest = (await response.json()) as {
+      name: string
+      start_url: string
+      display: string
+      icons: Array<{ src: string; sizes: string; type: string }>
+    }
+
+    assert({
+      given: 'the app shell and the manifest it links',
+      should: 'name Sky, open the app at / in a window of its own, and say what kind of file it is',
+      actual: {
+        linked: html.includes('<link rel="manifest" href="/manifest.webmanifest" />'),
+        type: response.headers.get('content-type'),
+        name: manifest.name,
+        start: manifest.start_url,
+        display: manifest.display,
+      },
+      expected: { linked: true, type: 'application/manifest+json', name: 'Sky', start: '/', display: 'standalone' },
+    })
+
+    const icons = await Promise.all(
+      manifest.icons.map(async (icon) => {
+        const served = await app.request(`http://localhost${icon.src}`)
+        const header = new DataView(await served.arrayBuffer())
+        return `${served.status} ${served.headers.get('content-type')} ${header.getUint32(16)}x${header.getUint32(20)}`
+      }),
+    )
+    assert({
+      given: 'each icon the manifest lists',
+      should: 'be served as a PNG of the size the manifest states, including the two sizes installs need',
+      actual: icons,
+      expected: manifest.icons.map((icon) => `200 image/png ${icon.sizes}`),
+    })
+    assert({
+      given: 'the manifest’s icon sizes',
+      should: 'include 192 and 512 pixels',
+      actual: manifest.icons.map((icon) => icon.sizes),
+      expected: ['192x192', '512x512'],
+    })
+  })
+})

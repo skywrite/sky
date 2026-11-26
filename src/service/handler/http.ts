@@ -16,7 +16,7 @@ import { createChatActivityReader } from '#shared/models/Chat/ChatStore/dayActiv
 import type MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
 import { fetchNowSync } from '#shared/nbfs/mod.ts'
 import type { PlainDate, ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
-import { APP_ICONS, APP_ICONS_DIR, assetBody, getThemeAsset, renderAppHtml } from '../../web/bundle.ts'
+import { APP_ICONS, APP_ICONS_DIR, APP_MANIFEST, assetBody, getThemeAsset, renderAppHtml } from '../../web/bundle.ts'
 import { parseDocumentPageRequests, readDocumentPages } from '../context/document.ts'
 import { resolveContext } from '../context/mod.ts'
 import * as jsend from '../jsend.ts'
@@ -918,7 +918,13 @@ export function createHttpApp(options: HttpHandlerOptions): Hono {
     return c.html(renderAppHtml(c.req.param('slug') === 'new' ? 'sky · New note' : 'sky · Note'))
   })
 
-  // The app's icon, at the two addresses the shell gives browsers and phones.
+  // The app's icons, at the addresses the shell and the manifest give browsers and phones.
+  app.get('/manifest.webmanifest', (c) =>
+    c.body(JSON.stringify(APP_MANIFEST), 200, {
+      'content-type': 'application/manifest+json',
+      'cache-control': 'max-age=3600',
+    }),
+  )
   for (const name of APP_ICONS) {
     app.get(`/${name}`, async (c) =>
       c.body(await readFile(path.join(APP_ICONS_DIR, name)), 200, {

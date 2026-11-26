@@ -44,8 +44,25 @@ const GENERATED = path.join(CLIENT_DIR, 'extensions', 'extensionsGenerated.ts')
  */
 const TAB_ICON = 'favicon.png'
 const HOME_ICON = 'apple-touch-icon.png'
-export const APP_ICONS = [TAB_ICON, HOME_ICON]
+const INSTALL_ICONS = ['icon-192.png', 'icon-512.png']
+export const APP_ICONS = [TAB_ICON, HOME_ICON, ...INSTALL_ICONS]
 export const APP_ICONS_DIR = path.join(__dirname, 'icon')
+
+/** What a phone or browser reads to install Sky as an app of its own, served at /manifest.webmanifest. */
+export const APP_MANIFEST = {
+  name: 'Sky',
+  short_name: 'Sky',
+  id: '/',
+  start_url: '/',
+  scope: '/',
+  display: 'standalone',
+  background_color: '#ffffff',
+  theme_color: '#ffffff',
+  icons: INSTALL_ICONS.map((name) => {
+    const size = name.match(/\d+/)![0]
+    return { src: `/${name}`, sizes: `${size}x${size}`, type: 'image/png' }
+  }),
+}
 
 let built: { sourcesAt: number; assets: Promise<Map<string, ThemeAsset>> } | null = null
 let extensionBuildError: string | null = null
@@ -237,6 +254,9 @@ export function renderAppHtml(title: string): string {
     <link rel="icon" type="image/png" href="/${TAB_ICON}" />
     <link rel="apple-touch-icon" href="/${HOME_ICON}" />
     <meta name="apple-mobile-web-app-title" content="Sky" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#242424" />
     <style>html { font-size: 112.5%; }</style>
     <link rel="stylesheet" href="/_assets/main.css" />
   </head>
