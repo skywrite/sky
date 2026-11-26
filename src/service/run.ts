@@ -10,6 +10,7 @@ import { listOwnAddresses } from '#lib/google/ownAddresses.ts'
 import { createLinkedInHost } from '#lib/linkedin/mod.ts'
 import { KeychainSecretsProvider } from '#lib/secrets/KeychainSecretsProvider.ts'
 import { getDarwinIdleMs, openFdCount, readSystemTimezone } from '#lib/sys/mod.ts'
+import { tailnetIdentity } from '#lib/tailscale/identity.ts'
 import { routeAISDKWarningsToLog } from '#shared/ai/errorLog.ts'
 import * as config from '#shared/config.ts'
 import { beginEvent, configureLogging, logger } from '#shared/log.ts'
@@ -194,6 +195,7 @@ const server = createServer({
   },
   store,
   customRoutes,
+  tailnet: tailnetIdentity(),
   chat: createChatHost(config, env.toObject()),
   voice: createVoiceHost(config, env.toObject()),
   settings: createSettingsHost(),

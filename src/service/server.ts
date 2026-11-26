@@ -33,6 +33,7 @@ import { serve } from '@hono/node-server'
 import type { ServerType } from '@hono/node-server'
 import { DIR_USER_DATA } from '#config'
 import type { CalendarSchedulerHost } from '#lib/calendarScheduler/types.ts'
+import type { Tailnet } from '#lib/tailscale/identity.ts'
 import { beginEvent, logger } from '#shared/log.ts'
 import { executeQuery } from '#shared/models/DomainCollection/query/execute.ts'
 import MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
@@ -46,6 +47,7 @@ import type { ExtensionRoutesOptions } from './handler/extensions/routes.ts'
 import type { FutureRoutesOptions } from './handler/future/mod.ts'
 import { createHttpApp } from './handler/http.ts'
 import type { ImportRoutesOptions } from './handler/import/mod.ts'
+import { throughTailnet } from './handler/localRequest.ts'
 import type { OutboxRoutesOptions } from './handler/outbox/mod.ts'
 import type { PeopleOptions } from './handler/people/types.ts'
 import type { SettingsRoutesOptions } from './handler/settings/mod.ts'
@@ -116,6 +118,8 @@ export interface ServerOptions {
   ownerAddresses?: () => Promise<string[]>
   /** The user-data directory: day attachments and the media mirror of the notebook's directories */
   userDataDir?: string
+  /** This Mac on the owner's tailnet, as Tailscale reports it; absent, only programs on this Mac are answered */
+  tailnet?: () => Promise<Tailnet | null>
   /** Reference date for recency calculations (for deterministic testing) */
   referenceDate?: PlainDate
   /** Configuration for MarkdownStore (enables rich document queries) */
@@ -330,13 +334,16 @@ export function createServer(options: ServerOptions): Server {
       // TODO: Add file watcher support when enableFileWatcher is true
 
       // Attach WebSocket handler to the node:http server's upgrade event
-      wsHandler = createWebSocketHandler(store, notebookChanges)
+      wsHandler = createWebSocketHandler(store, notebookChanges, options.tailnet)
 
       await new Promise<void>((resolve) => {
         // Loopback only. Nothing off this machine talks to the service directly:
         // remote access (phone, tailnet) goes through `tailscale serve`, which
-        // proxies from tailscaled on this host to 127.0.0.1.
-        httpServer = serve({ fetch: app.fetch, port, hostname: '127.0.0.1' }, () => {
+        // proxies from tailscaled on this host to 127.0.0.1. What it brings from
+        // the owner's devices is answered under the Mac's tailnet name.
+        const fetch = async (request: Request, env: unknown) =>
+          app.fetch(await throughTailnet(request, options.tailnet), env as object)
+        httpServer = serve({ fetch, port, hostname: '127.0.0.1' }, () => {
           const addr = httpServer?.address()
           if (addr && typeof addr === 'object') {
             actualPort = addr.port

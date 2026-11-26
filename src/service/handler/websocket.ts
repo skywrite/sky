@@ -9,9 +9,10 @@ import { Buffer } from 'node:buffer'
 import type { IncomingMessage } from 'node:http'
 import type { Duplex } from 'node:stream'
 import { type WebSocket, WebSocketServer } from 'ws'
+import type { Tailnet } from '#lib/tailscale/identity.ts'
 import type { NotebookChanges } from '../notebookChanges.ts'
 import type { Store } from '../store.ts'
-import { isLocalRequest } from './localRequest.ts'
+import { isLocalRequest, ownerTailnetHost } from './localRequest.ts'
 
 /**
  * Create a WebSocket server for GraphQL subscriptions.
@@ -21,7 +22,11 @@ import { isLocalRequest } from './localRequest.ts'
  * server.on('upgrade', wsHandler.handleUpgrade)
  * ```
  */
-export function createWebSocketHandler(store: Store, changes?: NotebookChanges) {
+export function createWebSocketHandler(
+  store: Store,
+  changes?: NotebookChanges,
+  tailnet?: () => Promise<Tailnet | null>,
+) {
   const wss = new WebSocketServer({
     noServer: true,
     handleProtocols: (protocols: Set<string>) =>
@@ -36,73 +41,85 @@ export function createWebSocketHandler(store: Store, changes?: NotebookChanges) 
       const value = req.headers[name]
       return Array.isArray(value) ? value[0] : value
     }
-    const local = isLocalRequest({
-      url: `http://${req.headers.host ?? ''}${req.url}`,
-      method: req.method ?? 'GET',
-      origin: header('origin'),
-      site: header('sec-fetch-site'),
-      mode: header('sec-fetch-mode'),
-      dest: header('sec-fetch-dest'),
-    })
-    if (!local) {
-      socket.write('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n')
-      socket.destroy()
-      return
-    }
+    // A handshake through `tailscale serve` carries a login; only then is Tailscale asked who this Mac is.
+    const login = header('tailscale-user-login')
+    if (login && tailnet)
+      void tailnet().then(
+        (identity) => upgrade(ownerTailnetHost(req.headers.host, login, identity)),
+        () => upgrade(),
+      )
+    else upgrade()
 
-    wss.handleUpgrade(req, socket, head, (ws: WebSocket) => {
-      if (notebook) {
-        const off = notebook.subscribe((change) => {
-          // A sleeping client reconnects and reads again instead of buffering an unbounded backlog.
-          if (ws.bufferedAmount > 64 * 1024) return ws.terminate()
-          if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(change))
-        })
-        ws.on('message', (data: Buffer) => {
-          if (data.toString() === 'ping') ws.send('pong')
-        })
-        ws.on('close', off)
-        ws.on('error', () => ws.terminate())
+    function upgrade(tailnetHost?: string) {
+      const local = isLocalRequest({
+        url: `${tailnetHost ? 'https' : 'http'}://${req.headers.host ?? ''}${req.url}`,
+        method: req.method ?? 'GET',
+        origin: header('origin'),
+        site: header('sec-fetch-site'),
+        mode: header('sec-fetch-mode'),
+        dest: header('sec-fetch-dest'),
+        tailnetHost,
+      })
+      if (!local) {
+        socket.write('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n')
+        socket.destroy()
         return
       }
-      console.log('WebSocket client connected')
-      const listeners: Array<{ event: string; fn: (...args: any[]) => void }> = []
 
-      ws.on('message', (data: Buffer) => {
-        try {
-          const message = JSON.parse(data.toString())
+      wss.handleUpgrade(req, socket, head, (ws: WebSocket) => {
+        if (notebook) {
+          const off = notebook.subscribe((change) => {
+            // A sleeping client reconnects and reads again instead of buffering an unbounded backlog.
+            if (ws.bufferedAmount > 64 * 1024) return ws.terminate()
+            if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(change))
+          })
+          ws.on('message', (data: Buffer) => {
+            if (data.toString() === 'ping') ws.send('pong')
+          })
+          ws.on('close', off)
+          ws.on('error', () => ws.terminate())
+          return
+        }
+        console.log('WebSocket client connected')
+        const listeners: Array<{ event: string; fn: (...args: any[]) => void }> = []
 
-          if (message.type === 'ping') {
-            ws.send(JSON.stringify({ type: 'pong' }))
-            return
-          }
+        ws.on('message', (data: Buffer) => {
+          try {
+            const message = JSON.parse(data.toString())
 
-          console.log('WebSocket message:', message)
-
-          if (message.type === 'connection_init') {
-            ws.send(JSON.stringify({ type: 'connection_ack' }))
-          } else if (message.type === 'subscribe') {
-            const { id, payload } = message
-            if (id && payload?.query) {
-              setupSubscription(ws, store, id, payload.query, listeners)
+            if (message.type === 'ping') {
+              ws.send(JSON.stringify({ type: 'pong' }))
+              return
             }
+
+            console.log('WebSocket message:', message)
+
+            if (message.type === 'connection_init') {
+              ws.send(JSON.stringify({ type: 'connection_ack' }))
+            } else if (message.type === 'subscribe') {
+              const { id, payload } = message
+              if (id && payload?.query) {
+                setupSubscription(ws, store, id, payload.query, listeners)
+              }
+            }
+          } catch (error) {
+            console.error('WebSocket message error:', error)
           }
-        } catch (error) {
-          console.error('WebSocket message error:', error)
-        }
-      })
+        })
 
-      ws.on('close', () => {
-        console.log('WebSocket client disconnected')
-        for (const { event, fn } of listeners) {
-          store.off(event, fn)
-        }
-        listeners.length = 0
-      })
+        ws.on('close', () => {
+          console.log('WebSocket client disconnected')
+          for (const { event, fn } of listeners) {
+            store.off(event, fn)
+          }
+          listeners.length = 0
+        })
 
-      ws.on('error', (error: Error) => {
-        console.error('WebSocket error:', error)
+        ws.on('error', (error: Error) => {
+          console.error('WebSocket error:', error)
+        })
       })
-    })
+    }
   }
 
   return {

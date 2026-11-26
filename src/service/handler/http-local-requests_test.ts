@@ -3,6 +3,7 @@ import * as os from 'node:os'
 import * as path from 'node:path'
 import { assert, test } from '#test'
 import { createTestHttpApp } from './httpTestHelpers.ts'
+import { fromTailnet } from './localRequest.ts'
 
 const OTHER_SITE = {
   Origin: 'https://example.com',
@@ -75,6 +76,53 @@ test('the app answers Sky pages and programs on this Mac, and refuses other site
       should: 'reach their routes',
       actual: answered.map((response) => response.status),
       expected: [200, 200, 200, 302],
+    })
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('the owner’s phone through tailscale serve reads and saves; anyone else on the tailnet is refused', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'http-tailnet-requests-'))
+  try {
+    const notes = path.join(root, 'notes')
+    await mkdir(notes, { recursive: true })
+    const file = path.join(notes, 'atlas.md')
+    await writeFile(file, '# Atlas\n')
+    const app = createTestHttpApp([notes])
+    const tailnet = { host: 'atlas-mac.tail-example.ts.net', login: 'jane@example.com' }
+    // As `tailscale serve` hands a request to Sky: the Mac's tailnet name over plain HTTP, and the requester's login.
+    const served = (login: string, address: string, init: RequestInit = {}) =>
+      fromTailnet(
+        new Request(`http://${tailnet.host}${address}`, {
+          ...init,
+          headers: {
+            Origin: `https://${tailnet.host}`,
+            'Sec-Fetch-Site': 'same-origin',
+            'Tailscale-User-Login': login,
+            ...(init.headers as Record<string, string> | undefined),
+          },
+        }),
+        tailnet,
+      )
+    const read = await app.request(served(tailnet.login, '/docs/_api/content/notes/atlas.md'))
+    const { version } = (await read.clone().json()) as { version: string }
+    const save = (login: string) =>
+      app.request(
+        served(login, '/docs/_api/content/notes/atlas.md', {
+          method: 'PUT',
+          headers: JSON_BODY,
+          body: JSON.stringify({ content: '# Atlas, from the phone\n', version }),
+        }),
+      )
+    const stranger = await save('joe@example.com')
+    const afterStranger = await readFile(file, 'utf8')
+    const owner = await save(tailnet.login)
+    assert({
+      given: 'a read and a save from the owner’s phone, and a save from another person on the tailnet',
+      should: 'answer the owner both times and refuse the other person before the file changes',
+      actual: [read.status, stranger.status, afterStranger, owner.status, await readFile(file, 'utf8')],
+      expected: [200, 403, '# Atlas\n', 200, '# Atlas, from the phone\n'],
     })
   } finally {
     await rm(root, { recursive: true, force: true })

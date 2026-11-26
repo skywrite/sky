@@ -110,3 +110,28 @@ test('notebook subscriptions broadcast changes, acknowledge heartbeats and rejec
     server.close()
   }
 })
+
+test('a handshake tailscale serve brings from the owner upgrades; anyone else on the tailnet is refused', async () => {
+  const tailnet = { host: 'atlas-mac.tail-example.ts.net', login: 'jane@example.com' }
+  const server = http.createServer()
+  server.on('upgrade', createWebSocketHandler(new Store(), undefined, async () => tailnet).handleUpgrade)
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+  try {
+    const { port } = server.address() as net.AddressInfo
+    const served = (login: string) => ({
+      Host: tailnet.host,
+      Origin: `https://${tailnet.host}`,
+      'Sec-Fetch-Site': 'same-origin',
+      'Sec-Fetch-Mode': 'websocket',
+      'Tailscale-User-Login': login,
+    })
+    assert({
+      given: 'handshakes through tailscale serve from the owner’s phone and from another person',
+      should: 'upgrade only the owner’s',
+      actual: [await handshake(port, served(tailnet.login)), await handshake(port, served('joe@example.com'))],
+      expected: ['HTTP/1.1 101 Switching Protocols', 'HTTP/1.1 403 Forbidden'],
+    })
+  } finally {
+    server.close()
+  }
+})
