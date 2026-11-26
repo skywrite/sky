@@ -436,6 +436,22 @@
     gap: 8px 24px;
   }
 
+  /* The words keep a readable width; a wide control, such as a choice of three, moves under them. */
+  .sky-set-txt {
+    flex: 1 1 200px;
+  }
+
+  /* A control wider than the screen, such as a folder path beside its button, wraps instead of running off. */
+  .sky-set-ctl {
+    flex-wrap: wrap;
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .sky-set-ctl .sky-set-mono {
+    overflow-wrap: anywhere;
+  }
+
   .sky-set-voices {
     grid-template-columns: 1fr;
   }
