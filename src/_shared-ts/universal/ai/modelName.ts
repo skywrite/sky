@@ -1,3 +1,12 @@
+export const PROVIDER_LABEL: Record<string, string> = {
+  anthropic: 'Anthropic',
+  openai: 'OpenAI',
+  gemini: 'Gemini',
+  ollama: 'Ollama',
+  'lm-studio': 'LM Studio',
+  cerebras: 'Cerebras',
+}
+
 /** claude-opus-5-5 → Claude Opus 5.5 · claude-haiku-5-5 → Claude Haiku 5.5 · gpt-5.5 → GPT 5.5 */
 export function prettyModel(id: string): string {
   const joined = id

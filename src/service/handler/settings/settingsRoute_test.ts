@@ -226,9 +226,10 @@ test('roles select presets and effort edits preserve all other preset settings',
       options: { effort: 'xhigh', thinking: { type: 'adaptive' } },
     },
   ]
-  host.write = async (key, value) => {
+  host.write = async (key, value, rolePreset) => {
     if (key === 'ai.roles.reasoning') config.ai.roles = { ...config.ai.roles, reasoning: value }
     if (key === 'ai.roles.frontier') config.ai.roles = { ...config.ai.roles, frontier: value }
+    if (rolePreset) config.ai.profiles![value] = rolePreset
   }
   host.writeProfile = async (name, profile) => {
     config.ai.profiles![name] = profile
@@ -287,6 +288,29 @@ test('roles select presets and effort edits preserve all other preset settings',
       400,
       400,
     ],
+  })
+  const assign = (value: string, effort: string) =>
+    post(app, '/settings/_api/set', { key: 'ai.roles.frontier', value, effort })
+  const combined = await assign('default-opus-5.5', 'high')
+  const refused = await assign('deep-work', 'unsupported')
+  const duplicate = await post(app, '/settings/_api/profile', {
+    name: 'default-opus-5.5',
+    provider: 'ollama',
+    model: 'sample',
+    createOnly: true,
+  })
+  assert({
+    given: 'one save of an assignment and effort, followed by an invalid save and a duplicate preset name',
+    should: 'keep the last complete assignment and preserve the shared preset',
+    actual: [
+      combined.status,
+      refused.status,
+      duplicate.status,
+      config.ai.roles?.frontier,
+      config.ai.profiles['default-opus-5.5']?.options?.effort,
+      config.ai.profiles['deep-work']?.options?.serviceTier,
+    ],
+    expected: [200, 400, 409, 'default-opus-5.5', 'high', 'priority'],
   })
 })
 

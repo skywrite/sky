@@ -3,7 +3,7 @@ import * as os from 'node:os'
 import * as path from 'node:path'
 import { parse } from 'jsonc-parser'
 import { assert, test } from '#test'
-import { removeConfigValue, setConfigValue } from './write.ts'
+import { removeConfigValue, setConfigValue, setConfigValues } from './write.ts'
 
 const FILE = `{
   // Sky configuration — https://github.com/skywrite/sky
@@ -66,6 +66,28 @@ test({ name: 'config write - an existing key changes in place' }, async () => {
       should: 'leave the last value, once',
       actual: [parsed.editor, parsed.web?.theme, text.split('"theme"').length - 1],
       expected: ['zed', 'system', 1],
+    })
+  })
+})
+
+test('config write publishes a role and its named preset together', async () => {
+  await withDir(async (dir) => {
+    const file = path.join(dir, 'config.jsonc')
+    await writeFile(file, FILE)
+    const preset = { provider: 'ollama', model: 'sample' }
+    setConfigValues(
+      [
+        { path: ['ai', 'roles', 'chat'], value: 'sample.v2' },
+        { path: ['ai', 'profiles', 'sample.v2'], value: preset },
+      ],
+      file,
+    )
+    const text = await readFile(file, 'utf-8')
+    assert({
+      given: 'two related edits under a new branch of a commented configuration',
+      should: 'preserve both paths, the literal preset name, and the existing comments',
+      actual: [parse(text).ai, text.includes('// Preferred editor')],
+      expected: [{ roles: { chat: 'sample.v2' }, profiles: { 'sample.v2': preset } }, true],
     })
   })
 })

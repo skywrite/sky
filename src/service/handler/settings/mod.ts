@@ -32,7 +32,7 @@ import { ENV_OVERRIDES, OPEN_SAVED_TARGETS, openSavedIn, remindersConfig } from 
 import type { GoogleAccountCategory, OpenSavedTarget, RemindersConfig, SkyConfig } from '#shared/config/types.ts'
 import type { PromptCatalog } from '#shared/prompts/catalog.ts'
 import { isEffort, optionsWithEffort, presetEffort } from '#universal/ai/effort.ts'
-import { prettyModel } from '#universal/ai/modelName.ts'
+import { prettyModel, PROVIDER_LABEL } from '#universal/ai/modelName.ts'
 import { createAboutMeRoutes, type AboutMeHost } from './aboutMe.ts'
 import type { BrowserAutomationHost } from './browserAutomation/host.ts'
 import { createBrowserAutomationRoutes } from './browserAutomation/routes.ts'
@@ -338,8 +338,8 @@ export interface SettingsHost {
   memoryNotes: () => Promise<number>
   /** The build the service runs; nulls when unknowable */
   about: () => Promise<SettingsData['about']>
-  /** One settable key into the config file */
-  write: (key: SettableKey, value: string) => Promise<void>
+  /** A role assignment can also update the selected preset's effort in the same config write. */
+  write: (key: SettableKey, value: string, rolePreset?: ProfileInput) => Promise<void>
   /** Writes google.accountCategories.<email> into the file */
   writeAccountCategory: (email: string, category: GoogleAccountCategory) => Promise<void>
   /** Opens a folder, or the config file, on this machine */
@@ -568,14 +568,29 @@ export function createSettingsRoutes(options: SettingsRoutesOptions): Hono {
 
   // One preference into the file. The client applies the change itself.
   app.post('/set', async (c) => {
-    const body = (await c.req.json().catch(() => null)) as { key?: unknown; value?: unknown } | null
+    const body = (await c.req.json().catch(() => null)) as { key?: unknown; value?: unknown; effort?: unknown } | null
     const key = typeof body?.key === 'string' ? body.key : ''
     if (!(key in SETTABLE_KEYS)) return c.json({ message: `not a settable key: ${key || '(missing)'}` }, 400)
     if (typeof body?.value !== 'string') return c.json({ message: 'expected { key, value }' }, 400)
     const refusal = await refuse(options, key as SettableKey, body.value)
     if (refusal) return c.json({ message: refusal }, 400)
+    let rolePreset: ProfileInput | undefined
+    if (body.effort !== undefined) {
+      if (!key.startsWith('ai.roles.') || (body.effort !== null && !isEffort(body.effort))) {
+        return c.json({ message: 'Choose a supported effort for a model role.' }, 400)
+      }
+      // Work from the current effective definition so an effort edit preserves the other provider options.
+      const preset = profileRows(options, options.load().config).find((row) => row.name === body.value)
+      if (!preset) return c.json({ message: 'This preset is unavailable. Choose another preset.' }, 409)
+      const { provider, model, baseUrl, contextWindow } = preset
+      try {
+        rolePreset = { provider, model, baseUrl, contextWindow, options: optionsWithEffort(preset, body.effort) }
+      } catch (error) {
+        return c.json({ message: (error as Error).message }, 400)
+      }
+    }
     try {
-      await options.write(key as SettableKey, body.value)
+      await options.write(key as SettableKey, body.value, rolePreset)
       return c.json({ ok: true })
     } catch (err) {
       return c.json({ message: err instanceof Error ? err.message : String(err) }, 500)
@@ -617,6 +632,7 @@ export function createSettingsRoutes(options: SettingsRoutesOptions): Hono {
   // Define one model configuration — ai.profiles.<name> in the file.
   app.post('/profile', async (c) => {
     const body = (await c.req.json().catch(() => null)) as {
+      createOnly?: unknown
       name?: unknown
       provider?: unknown
       model?: unknown
@@ -628,6 +644,12 @@ export function createSettingsRoutes(options: SettingsRoutesOptions): Hono {
     const name = typeof body?.name === 'string' ? body.name : ''
     if (!PROFILE_NAME.test(name)) {
       return c.json({ message: 'a name is letters, digits, dots, dashes — no spaces' }, 400)
+    }
+    if (body?.createOnly === true && profileRows(options, options.load().config).some((row) => row.name === name)) {
+      return c.json(
+        { message: `A preset named “${name}” already exists. Choose another name or edit that preset.` },
+        409,
+      )
     }
     const providers = options.providers()
     if (typeof body?.provider !== 'string' || !providers.includes(body.provider)) {
@@ -823,14 +845,7 @@ export function choiceLabel(name: string, all: Record<string, ModelProfile>): st
   return `${model} · ${effort ?? name}`
 }
 
-export const PROVIDER_LABEL: Record<string, string> = {
-  anthropic: 'Anthropic',
-  openai: 'OpenAI',
-  gemini: 'Gemini',
-  ollama: 'Ollama',
-  'lm-studio': 'LM Studio',
-  cerebras: 'Cerebras',
-}
+export { PROVIDER_LABEL }
 
 export const ROLE_LABEL: Record<string, string> = {
   chat: 'Chat',

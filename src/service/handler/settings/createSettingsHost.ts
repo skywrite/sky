@@ -14,7 +14,7 @@ import { PROVIDER_KEYS, type ProviderKeyId } from '#shared/ai/llm/providerKeys.t
 import { KNOWN_PROVIDERS, PROFILES, ROLES } from '#shared/ai/models.ts'
 import { TYPESAFE_SECRET } from '#shared/ai/typesafe/client.ts'
 import { loadSkyConfig, readSkyConfigFile, SKY_CONFIG_PATH } from '#shared/config/loader.ts'
-import { removeConfigValue, setConfigValue } from '#shared/config/write.ts'
+import { removeConfigValue, setConfigValue, setConfigValues } from '#shared/config/write.ts'
 import { createPromptCatalog } from '#shared/prompts/load.ts'
 import { createAboutMeHost } from './createAboutMeHost.ts'
 import { createBrowserAutomationHost } from './createBrowserAutomationHost.ts'
@@ -110,11 +110,14 @@ export function createSettingsHost(): SettingsRoutesOptions {
       }
     },
     about: aboutBuild,
-    write: (key, value) => {
-      setConfigValue(
-        [...SETTABLE_KEYS[key]],
-        BOOLEAN_KEYS.has(key) ? value === 'true' : NUMBER_KEYS.has(key) ? Number(value) : value,
-      )
+    write: (key, value, rolePreset) => {
+      setConfigValues([
+        {
+          path: [...SETTABLE_KEYS[key]],
+          value: BOOLEAN_KEYS.has(key) ? value === 'true' : NUMBER_KEYS.has(key) ? Number(value) : value,
+        },
+        ...(rolePreset ? [{ path: ['ai', 'profiles', value], value: rolePreset }] : []),
+      ])
       return Promise.resolve()
     },
     writeAccountCategory: (email, category) => {

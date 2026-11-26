@@ -15,14 +15,23 @@ import { SKY_CONFIG_PATH } from './loader.ts'
 const NEW_FILE = '// Sky configuration — https://github.com/skywrite/sky\n{\n}\n'
 
 export function setConfigValue(keyPath: string[], value: unknown, configPath = SKY_CONFIG_PATH): void {
-  const text = existsSync(configPath) ? readFileSync(configPath, 'utf-8') : NEW_FILE
-  const edits = modify(text, keyPath, value, {
-    formattingOptions: { insertSpaces: true, tabSize: 2, eol: '\n' },
-  })
-  const next = applyEdits(text, edits)
+  setConfigValues([{ path: keyPath, value }], configPath)
+}
+
+/** Apply related edits to the same snapshot and publish them with one rename. */
+export function setConfigValues(edits: { path: string[]; value: unknown }[], configPath = SKY_CONFIG_PATH): void {
+  let text = existsSync(configPath) ? readFileSync(configPath, 'utf-8') : NEW_FILE
+  for (const edit of edits) {
+    text = applyEdits(
+      text,
+      modify(text, edit.path, edit.value, {
+        formattingOptions: { insertSpaces: true, tabSize: 2, eol: '\n' },
+      }),
+    )
+  }
   mkdirSync(path.dirname(configPath), { recursive: true })
   const tmp = `${configPath}.tmp-${process.pid}`
-  writeFileSync(tmp, next)
+  writeFileSync(tmp, text)
   renameSync(tmp, configPath)
 }
 
