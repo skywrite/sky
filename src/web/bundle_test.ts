@@ -56,6 +56,55 @@ test({ name: 'app shell - serves the client at /' }, async () => {
   })
 })
 
+test({ name: 'app icon - the shell names it and both images are served' }, async () => {
+  await withApp(async (app) => {
+    const html = await (await app.request('http://localhost/')).text()
+
+    assert({
+      given: 'the app shell',
+      should: "name the tab's icon, the home screen's icon, and the name shown under it",
+      actual:
+        html.includes('<link rel="icon" type="image/png" href="/favicon.png" />') &&
+        html.includes('<link rel="apple-touch-icon" href="/apple-touch-icon.png" />') &&
+        html.includes('<meta name="apple-mobile-web-app-title" content="Sky" />'),
+      expected: true,
+    })
+
+    // A PNG opens with its signature; the header after it carries width, height, and color type
+    // (2 has no transparency, 6 has). A home-screen icon with clear pixels is filled in with black.
+    const icons = [
+      { name: 'favicon.png', size: 96, colorType: 6 },
+      { name: 'apple-touch-icon.png', size: 180, colorType: 2 },
+    ]
+    for (const icon of icons) {
+      const response = await app.request(`http://localhost/${icon.name}`)
+      const bytes = new Uint8Array(await response.arrayBuffer())
+      const header = new DataView(bytes.buffer)
+
+      assert({
+        given: `a request for /${icon.name}`,
+        should: 'serve the square PNG the shell points to',
+        actual: {
+          status: response.status,
+          type: response.headers.get('content-type'),
+          png: String.fromCharCode(...bytes.slice(1, 4)),
+          width: header.getUint32(16),
+          height: header.getUint32(20),
+          colorType: bytes[25],
+        },
+        expected: {
+          status: 200,
+          type: 'image/png',
+          png: 'PNG',
+          width: icon.size,
+          height: icon.size,
+          colorType: icon.colorType,
+        },
+      })
+    }
+  })
+})
+
 test({ name: 'theme assets - Bun-built bundle serves js and css' }, async () => {
   await withApp(async (app) => {
     const js = await app.request('http://localhost/_assets/main.js')

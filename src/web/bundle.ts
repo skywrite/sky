@@ -33,6 +33,16 @@ interface ThemeAsset {
 const CLIENT_DIR = path.join(__dirname, 'client')
 const GENERATED = path.join(CLIENT_DIR, 'extensions', 'extensionsGenerated.ts')
 
+/**
+ * The app's icon is a still of Sky's voice cloud: the sphere alone for a browser tab, and on a white
+ * tile for a phone's home screen, which takes a PNG and rounds the corners itself. The folder is
+ * `icon`, not `icons`: the repo's ignore rule for macOS folder icons would hide the latter from git.
+ */
+const TAB_ICON = 'favicon.png'
+const HOME_ICON = 'apple-touch-icon.png'
+export const APP_ICONS = [TAB_ICON, HOME_ICON]
+export const APP_ICONS_DIR = path.join(__dirname, 'icon')
+
 let built: { sourcesAt: number; assets: Promise<Map<string, ThemeAsset>> } | null = null
 let extensionBuildError: string | null = null
 
@@ -182,6 +192,9 @@ export function renderAppHtml(title: string): string {
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>${title}</title>
+    <link rel="icon" type="image/png" href="/${TAB_ICON}" />
+    <link rel="apple-touch-icon" href="/${HOME_ICON}" />
+    <meta name="apple-mobile-web-app-title" content="Sky" />
     <style>html { font-size: 112.5%; }</style>
     <link rel="stylesheet" href="/_assets/main.css" />
   </head>
