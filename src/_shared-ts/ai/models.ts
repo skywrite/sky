@@ -122,9 +122,9 @@ export type ProfileName = keyof typeof PROFILES
  *
  * `chat` is the profile a new chat opens on, and only that. Chat is its own lane because a long,
  * tool-driven conversation earns Sol's Ultrafast tier, while the one-shot work on `reasoning`
- * (meetings, extraction, document summaries) keeps Opus's depth without that tier's 6x price.
- * `frontier` is the top-tier lane for the hardest problems — canonical summaries (`summary:day`,
- * `summary:week`) and weekly grading (`week:checkin`) — defaulting to Fable 5.2 at xhigh effort.
+ * (daily summaries, meetings, extraction, document summaries) keeps Opus's depth without that tier's 6x price.
+ * `frontier` is the top-tier lane for the hardest problems — weekly summaries (`summary:week`)
+ * and weekly grading (`week:checkin`) — defaulting to Fable 5.2 at xhigh effort.
  * Chat summaries read `reasoning` too; a thread's picker overrides `chat` for that thread alone.
  */
 export const ROLES = {

@@ -11,8 +11,8 @@ updated: 2026-11-26
   (`chat`, `frontier`, `reasoning`, `fast`, `balanced`, `vision`) have shipped defaults in
   `ROLES`; `ai.roles` assigns them to presets in the user's configuration.
   `chat` names only what a new chat opens on; a thread's picker overrides it.
-  `frontier` is the top-tier lane for the hardest problems (`summary:day`,
-  `summary:week`, `week:checkin`) and ships on `default-fable-5.2`.
+  `frontier` is the top-tier lane for the hardest problems (`summary:week`,
+  `week:checkin`) and ships on `default-fable-5.2`.
 - **profile** — `default-opus-5.5`. A named provider + model + options tuple; an optional `label` names it
   in pickers and Settings (else the model's name). The shipped set is `defaultProfiles.ts`; a person's own come from
   `ai.profiles` in `~/.sky/config.jsonc` (config wins on a name clash).

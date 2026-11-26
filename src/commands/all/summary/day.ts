@@ -52,9 +52,8 @@ const STOPPED = 'Stopped before the summary was written.'
 const params = {
   effort: aiEffortFlag(),
   day: dayNoFutureArg(),
-  // The summary is the day's canonical record and feeds every downstream
-  // consumer — defaults to the frontier role so repoints reach it.
-  model: Flag.string('Model profile to use', { long: 'ai-model', short: 'm', default: () => roleProfile('frontier') }),
+  // Defaults to the reasoning role so repoints in Settings reach daily summaries.
+  model: Flag.string('Model profile to use', { long: 'ai-model', short: 'm', default: () => roleProfile('reasoning') }),
   force: Flag.bool('Overwrite existing summary file', { short: 'f', default: false }),
   dryRun: Flag.bool('Show prompt without calling AI', { default: false }),
   stdout: Flag.bool('Output summary to stdout instead of file', { default: false }),
