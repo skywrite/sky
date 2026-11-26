@@ -16,6 +16,7 @@ import { updateWorkstreamDay, workstreamDayReference, workstreamDayRemoval } fro
 import { writeTextFile } from '#shared/fs/mod.ts'
 import DayDocument from '#shared/models/Day/mod.ts'
 import { createItemCategoryRoutes } from './category.ts'
+import { createDictationRoutes } from './dictation.ts'
 import { createEditingRoutes } from './editing.ts'
 import { ItemEditError } from './editingText.ts'
 import isDay from './isDay.ts'
@@ -143,6 +144,7 @@ export function createItemRoutes(options: ItemRoutesOptions): Hono {
 
   app.route('/', rows.routes)
   app.route('/', createItemCategoryRoutes())
+  app.route('/', createDictationRoutes(options.timeDir))
   app.route('/', createPlanningRoutes(options))
   const organizer = createDayOrganizer(options)
   app.route('/', organizer.routes)
