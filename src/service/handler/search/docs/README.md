@@ -1,6 +1,6 @@
 ---
 created: 2026-09-08
-updated: 2026-09-27
+updated: 2026-11-26
 ---
 
 # Notebook search
@@ -27,6 +27,9 @@ search still works. A place opens at its ref, unless another record claims
 the same ref: the page cannot tell them apart, so both open in Explorer.
 
 `web/client/search/search.tsx` owns the persistent header and `/search` page.
+Below the 900px narrow layout the header stays hidden until the phone bar's search button calls `openSearch()`.
+Quick search then opens full screen. The header is shown before the field takes focus, inside the same tap,
+which is what lets a phone raise its keyboard.
 The query, filter, ordering, and page offset live in the URL so Back and
 reload restore the search. Requests cancel on query changes; results for
 an old query never remain selectable while a new one loads.

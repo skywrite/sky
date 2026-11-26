@@ -1,0 +1,37 @@
+/* More: everything the bar leaves out, floating over the page just above the bar. Rows use the shared .sky-list. */
+
+.sky-more-panel-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 38;
+  background: rgba(0, 0, 0, 0.28);
+}
+
+[data-mantine-color-scheme='dark'] .sky-more-panel-scrim {
+  background: rgba(0, 0, 0, 0.5);
+}
+
+.sky-more-panel {
+  position: fixed;
+  inset: auto 12px calc(var(--sky-bar-height, 64px) + var(--sky-bar-bottom, 14px) + 10px);
+  z-index: 39;
+  max-height: calc(100dvh - var(--sky-bar-height, 64px) - var(--sky-bar-bottom, 14px) - 72px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 6px 12px 12px;
+  border-radius: var(--sky-dialog-radius);
+  background: var(--sky-bg);
+  box-shadow: var(--sky-dialog-shadow);
+}
+
+.sky-more-panel:focus {
+  outline: none;
+}
+
+.sky-more-panel-brand {
+  padding: 14px 10px 16px;
+}
+
+.sky-more-panel .sky-restart {
+  margin: 0 0 12px;
+}

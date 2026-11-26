@@ -160,6 +160,15 @@ test(
           actual: await page.locator('.sky-search-list').isVisible(),
           expected: true,
         })
+        // A phone keeps the field out of sight until the bar's round button opens search.
+        const searchButton = page.getByRole('navigation', { name: 'Main' }).getByRole('button', { name: 'Search' })
+        assert({
+          given: 'search closed on a phone',
+          should: 'keep the field hidden behind the bar’s search button',
+          actual: await input.isVisible(),
+          expected: false,
+        })
+        await searchButton.click()
         await input.fill(DAY)
         await page.locator('.sky-search-popover').getByRole('button', { name: 'All', exact: true }).click()
         await page
@@ -176,6 +185,7 @@ test(
         })
         await input.press('Enter')
         await page.waitForURL(`${origin}/${DAY}`)
+        await searchButton.click()
         await input.fill('no-matches-in-this-notebook')
         await page.getByRole('heading', { name: 'No matches for “no-matches-in-this-notebook”' }).waitFor()
         assert({

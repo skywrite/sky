@@ -58,13 +58,6 @@
   transform: scaleX(-1);
 }
 
-/* On a phone the menu button floats over the overlay's corner; the chevron steps aside for it. */
-@media (max-width: 900px) {
-  .sky-rail-head {
-    margin-left: 40px;
-  }
-}
-
 .sky-rail-sec {
   padding: 8px 0 10px;
   border-top: 1px solid var(--sky-border-soft);

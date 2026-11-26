@@ -123,7 +123,16 @@ export function extensionHref(id: string): string {
 }
 
 /** The sidebar entries of the extensions that have a page. */
-export function ExtensionNavLinks({ active, navigate }: { active: string | null; navigate: (to: string) => void }) {
+export function ExtensionNavLinks({
+  active,
+  navigate,
+  className = 'sky-thread sky-settings-link',
+}: {
+  active: string | null
+  navigate: (to: string) => void
+  /** The settings sidebar's rows by default; More on a phone passes its own */
+  className?: string
+}) {
   return (
     <>
       {extensionModules
@@ -132,7 +141,7 @@ export function ExtensionNavLinks({ active, navigate }: { active: string | null;
           <a
             key={extension.id}
             href={extensionHref(extension.id)}
-            className="sky-thread sky-settings-link"
+            className={className}
             data-active={active === extension.id}
             aria-current={active === extension.id ? 'page' : undefined}
             onClick={(event) => {

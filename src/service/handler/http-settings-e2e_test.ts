@@ -625,52 +625,55 @@ test(
       await capture('about-me-mobile-dark')
       await page.getByLabel('Profile link 1', { exact: true }).scrollIntoViewIfNeeded()
       await capture('about-me-links-mobile-dark')
-      await page.getByRole('button', { name: 'Navigation', exact: true }).click()
-      await nav.getByRole('button', { name: 'Voice', exact: true }).click()
+      // A phone reaches the sections through the Settings list, and the tools through More.
+      const bar = page.getByRole('navigation', { name: 'Main' })
+      const more = page.getByRole('dialog', { name: 'More' })
+      const phoneWorkstreams = more.getByRole('link', { name: 'Workstreams', exact: true })
+      const settingsList = page.locator('[data-settings-section="home"]')
+      const backToSettings = page.getByRole('button', { name: '‹ Settings', exact: true })
+      await backToSettings.click()
+      await settingsList.getByRole('link', { name: 'Voice', exact: true }).click()
       await page.getByRole('heading', { name: 'Voice', exact: true }).waitFor()
       assert({
         given: 'a phone-sized settings page',
-        should: 'navigate through the existing drawer without overflow or browser errors',
+        should: 'reach another section through the Settings list without overflow or browser errors',
         actual: [
           await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth),
-          await page.getByRole('button', { name: 'Navigation', exact: true }).isVisible(),
+          await backToSettings.isVisible(),
           errors,
         ],
         expected: [false, true, []],
       })
-      await returnToday()
-      await page.getByRole('button', { name: 'Navigation', exact: true }).click()
+      await bar.getByRole('button', { name: 'More', exact: true }).click()
+      await more.waitFor()
       assert({
-        given: 'the mobile navigation drawer with Workstreams off',
+        given: 'More on a phone with Workstreams off',
         should: 'use the same saved visibility preference',
-        actual: await workstreams.count(),
+        actual: await phoneWorkstreams.count(),
         expected: 0,
       })
-      await sidebar.getByRole('link', { name: 'Settings', exact: true }).click()
-      await page.getByRole('button', { name: 'Navigation', exact: true }).click()
-      await nav.getByRole('button', { name: 'Experimental', exact: true }).click()
+      await more.getByRole('link', { name: 'Settings', exact: true }).click()
+      await settingsList.getByRole('link', { name: 'Experimental', exact: true }).click()
       await setWorkstreams(true)
       await capture('experimental-workstreams-mobile')
-      await returnToday()
-      await page.getByRole('button', { name: 'Navigation', exact: true }).click()
-      await workstreams.waitFor({ state: 'visible' })
+      await bar.getByRole('button', { name: 'More', exact: true }).click()
+      await phoneWorkstreams.waitFor({ state: 'visible' })
       assert({
         given: 'Workstreams is enabled from mobile Settings',
-        should: 'show one usable entry in the navigation drawer',
-        actual: [await workstreams.count(), await workstreams.isVisible()],
+        should: 'show one usable entry in More',
+        actual: [await phoneWorkstreams.count(), await phoneWorkstreams.isVisible()],
         expected: [1, true],
       })
-      await sidebar.getByRole('link', { name: 'Settings', exact: true }).click()
-      await page.getByRole('button', { name: 'Navigation', exact: true }).click()
-      await nav.getByRole('button', { name: 'Experimental', exact: true }).click()
+      await more.getByRole('link', { name: 'Settings', exact: true }).click()
+      await settingsList.getByRole('link', { name: 'Experimental', exact: true }).click()
       await setWorkstreams(false)
-      await returnToday()
-      await page.getByRole('button', { name: 'Navigation', exact: true }).click()
+      await bar.getByRole('button', { name: 'More', exact: true }).click()
+      await more.waitFor()
       assert({
         given: 'Workstreams is disabled again on mobile',
         should: 'hide the entry without overflow or browser errors',
         actual: [
-          await workstreams.count(),
+          await phoneWorkstreams.count(),
           settings.experimental.workstreams,
           await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth),
           errors,

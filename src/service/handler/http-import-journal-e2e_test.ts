@@ -221,10 +221,8 @@ for (const source of ['audio', 'video'] as const)
           await page.getByRole('option', { name: 'Health', exact: true }).click()
           await page.screenshot({ path: '/tmp/sky-journal-types-desktop.png', fullPage: true })
           await page.setViewportSize({ width: 390, height: 844 })
-          await page.getByRole('button', { name: 'Navigation', exact: true }).waitFor()
-          await page.waitForFunction(
-            () => (document.querySelector('.sky-side')?.getBoundingClientRect().right ?? 0) <= 0,
-          )
+          await page.getByRole('navigation', { name: 'Main' }).waitFor()
+          await page.locator('.sky-side').waitFor({ state: 'hidden' })
           assert({
             given: 'a phone-sized type checklist',
             should: 'fit without horizontal overflow',
@@ -411,10 +409,8 @@ test(
         })
         await explorer.screenshot({ path: '/tmp/sky-journals-open-desktop.png', fullPage: true })
         await explorer.setViewportSize({ width: 390, height: 844 })
-        await explorer.getByRole('button', { name: 'Navigation', exact: true }).waitFor()
-        await explorer.waitForFunction(
-          () => (document.querySelector('.sky-side')?.getBoundingClientRect().right ?? 0) <= 0,
-        )
+        await explorer.getByRole('navigation', { name: 'Main' }).waitFor()
+        await explorer.locator('.sky-side').waitFor({ state: 'hidden' })
         assert({
           given: 'a journal opened on a phone-sized screen',
           should: 'keep the document within the viewport',

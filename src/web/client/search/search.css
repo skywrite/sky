@@ -526,24 +526,24 @@
     grid-template-columns: 80px minmax(0, 1fr);
   }
 }
+/* In the narrow layout search opens from the bar's round button, full screen. Until then its header
+   stays out of sight and out of the page's flow. */
 @media (max-width: 900px) {
   .sky-global-header {
-    padding: 12px 16px 14px 60px;
+    position: fixed;
+    inset: 0 0 auto;
+    padding: 12px;
+    background: var(--sky-bg);
+  }
+  .sky-workspace:not([data-search-open]) > .sky-global-header {
+    visibility: hidden;
+  }
+  .sky-workspace[data-search-open] .sky-global-header {
+    z-index: 50;
   }
   .sky-search-scrim {
-    top: 78px;
+    display: none;
   }
-  .sky-menu {
-    top: 16px;
-  }
-  .sky-search-page {
-    padding: 8px 20px 20px;
-  }
-  .sky-search-heading h1 {
-    font-size: 25px;
-  }
-}
-@media (max-width: 650px) {
   .sky-search-field {
     height: 48px;
     padding: 0 12px;
@@ -557,13 +557,6 @@
   }
   .sky-search-cancel {
     display: inline-flex;
-  }
-  .sky-workspace[data-search-open] .sky-global-header {
-    padding: 12px;
-    z-index: 50;
-  }
-  .sky-app:has(.sky-workspace[data-search-open]) > .sky-menu {
-    display: none;
   }
   .sky-search-popover {
     position: fixed;
@@ -616,6 +609,14 @@
   .sky-search-footer > span {
     display: none;
   }
+  .sky-search-page {
+    padding: 8px 20px 20px;
+  }
+  .sky-search-heading h1 {
+    font-size: 25px;
+  }
+}
+@media (max-width: 650px) {
   .sky-search-page {
     padding: 6px 14px 16px;
   }

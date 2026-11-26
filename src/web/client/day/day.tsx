@@ -1508,8 +1508,11 @@ export function DayView({
   onDismissKept = () => {},
   onStarted = () => {},
   onReview,
+  onOpenDays,
 }: {
   onReview?: (day: string) => void
+  /** On a phone, the date opens the other days and weeks */
+  onOpenDays?: () => void
   trackingDate?: string | null
   search?: string
   navigate?: (path: string) => void
@@ -1717,7 +1720,32 @@ export function DayView({
   const header = (
     <header className="sky-head">
       <span className="sky-title">
-        {view?.day.dateLabel ?? 'Today'}
+        {onOpenDays ? (
+          <UnstyledButton
+            className="sky-day-date"
+            aria-haspopup="dialog"
+            title="Go to another day"
+            onClick={onOpenDays}
+          >
+            {view?.day.dateLabel ?? 'Today'}
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+              focusable="false"
+            >
+              <path d="m6 9.5 6 6 6-6" />
+            </svg>
+          </UnstyledButton>
+        ) : (
+          (view?.day.dateLabel ?? 'Today')
+        )}
         {!showingSummary && view?.day.dayRelativePath && (
           <ActionIcon
             component="a"

@@ -234,6 +234,20 @@
   color: var(--sky-dim);
 }
 
+/* On a phone the date itself opens the other days and weeks; the chevron says so. */
+.sky-day-date {
+  font: inherit;
+  color: inherit;
+  text-align: left;
+}
+
+.sky-day-date svg {
+  display: inline-block;
+  margin-left: 4px;
+  vertical-align: -3px;
+  color: var(--sky-accent);
+}
+
 .sky-day .sky-day-file:hover {
   color: var(--sky-text);
 }

@@ -1,6 +1,16 @@
 import { ActionIcon, Button, Menu } from '@mantine/core'
 import { useFocusTrap, useMediaQuery, useMergedRef } from '@mantine/hooks'
-import { Fragment, type KeyboardEvent, type MouseEvent, type ReactNode, useEffect, useRef, useState } from 'react'
+import {
+  Fragment,
+  type KeyboardEvent,
+  type MouseEvent,
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from 'react'
+import { flushSync } from 'react-dom'
 import type { LinkKind } from '../../../service/handler/links/types.ts'
 import {
   SEARCH_KINDS,
@@ -42,6 +52,15 @@ const FILTERS = [
   ['day', 'Days'],
 ] as const
 const OTHER_KINDS = SEARCH_KINDS.filter((kind) => !FILTERS.some(([filter]) => filter === kind))
+const OPEN_SEARCH = 'sky:open-search'
+
+/**
+ * Open quick search from elsewhere in the shell, such as the phone's bar. Call it inside the
+ * tap: the field takes focus in the same gesture, which is what lets a phone raise its keyboard.
+ */
+export function openSearch(): void {
+  window.dispatchEvent(new Event(OPEN_SEARCH))
+}
 const EXTRA_ICONS = new Set<SearchKind>(['goal', 'decision', 'idea', 'streak', 'tracking'])
 const resultCount = (count: number) => `${count} ${count === 1 ? 'result' : 'results'}`
 
@@ -366,7 +385,9 @@ export function SearchWorkspace({
   const anchor = useRef<HTMLDivElement>(null)
   const previousFocus = useRef<HTMLElement | null>(null)
   const phone = useMediaQuery('(max-width: 650px)')
-  const trap = useFocusTrap(!!phone && opened)
+  // The narrow layout opens quick search as a full screen of its own, from the bar.
+  const sheet = useMediaQuery('(max-width: 900px)')
+  const trap = useFocusTrap(!!sheet && opened)
   const anchorRef = useMergedRef(anchor, trap)
   const offset = initial.offset
   const request = useSearch(query, kind, sort, 0, false, opened)
@@ -402,16 +423,23 @@ export function SearchWorkspace({
     if (restore) previousFocus.current?.focus()
     else input.current?.blur()
   }
+  // The header shows before the field takes focus: the narrow layout hides it while search is closed.
+  const reveal = useCallback(() => {
+    if (document.activeElement !== input.current) previousFocus.current = document.activeElement as HTMLElement | null
+    flushSync(() => setOpened(true))
+    input.current?.focus()
+    input.current?.select()
+  }, [])
+  useEffect(() => {
+    window.addEventListener(OPEN_SEARCH, reveal)
+    return () => window.removeEventListener(OPEN_SEARCH, reveal)
+  }, [reveal])
   useEffect(() => {
     const shortcut = (event: globalThis.KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
         if (document.querySelector('[role="dialog"]')) return
         event.preventDefault()
-        if (document.activeElement !== input.current)
-          previousFocus.current = document.activeElement as HTMLElement | null
-        setOpened(true)
-        input.current?.focus()
-        input.current?.select()
+        reveal()
       }
       if (event.key === 'Escape' && !event.defaultPrevented && opened) {
         if (document.querySelector('.mantine-Menu-dropdown')) return
@@ -634,7 +662,7 @@ export function SearchWorkspace({
           )}
         </div>
       </header>
-      <div className="sky-workspace-page" inert={(opened && phone) || undefined}>
+      <div className="sky-workspace-page" inert={(opened && sheet) || undefined}>
         {full ? (
           <main className="sky-search-page">
             <div className="sky-search-heading">

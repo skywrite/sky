@@ -184,7 +184,7 @@ a.sky-crumb:hover {
 }
 
 @media (max-width: 900px) {
-  /* Keep the controls clear of the menu; the path gets the document's full width. */
+  /* The controls take their own row; the path gets the document's full width. */
   .sky-doc-column > .sky-head:has(> .sky-tabs) {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
@@ -199,7 +199,6 @@ a.sky-crumb:hover {
 
   .sky-doc-column > .sky-head > .sky-tabs {
     grid-row: 1;
-    margin-left: 46px;
     max-width: none;
     min-height: 40px;
   }

@@ -151,7 +151,7 @@ test(
 
 test(
   {
-    name: 'whiteboard — works cleanly on mobile (390px): drawer footer, no overflow, 16px raw editor, aligned wrapping',
+    name: 'whiteboard — works cleanly on mobile (390px): reached from More, no overflow, 16px raw editor, aligned wrapping',
     timeout: 60000,
   },
   async (t) => {
@@ -163,23 +163,16 @@ test(
       await page.setViewportSize({ width: 390, height: 844 })
       await page.goto(`${origin}/${DAY.ymd}`)
 
-      // Open mobile drawer and tap Whiteboard in the 4-icon footer.
-      await page.getByRole('button', { name: 'Navigation' }).click()
-      const tools = page.getByRole('group', { name: 'Tools' })
-      const wbLink = tools.getByRole('link', { name: 'Whiteboard' })
+      // Open More from the bar and tap Whiteboard among the tools.
+      await page.getByRole('navigation', { name: 'Main' }).getByRole('button', { name: 'More', exact: true }).click()
+      const more = page.getByRole('dialog', { name: 'More' })
+      const wbLink = more.getByRole('group', { name: 'Tools' }).getByRole('link', { name: 'Whiteboard' })
       await wbLink.waitFor()
-      const footerMetrics = await wbLink.evaluate((el) => {
-        const rect = el.getBoundingClientRect()
-        const caption = el.querySelector<HTMLElement>('.sky-side-utility-caption')
-        return {
-          height: rect.height,
-          captionVisible: caption ? getComputedStyle(caption).display !== 'none' : false,
-        }
-      })
+      const rowHeight = await wbLink.evaluate((el) => el.getBoundingClientRect().height)
 
       await wbLink.click()
       await page.waitForSelector('.sky-wb-rich')
-      const drawerClosed = await page.locator('.sky-side').getAttribute('data-open')
+      const moreOpen = await more.count()
 
       // Switch to Raw on mobile and test wrapping + 16px anti-zoom font size + no horizontal overflow.
       await page.getByRole('tab', { name: /Raw/ }).click()
@@ -209,13 +202,12 @@ test(
       })
 
       assert({
-        given: 'opening Whiteboard from the mobile drawer at 390px and editing wrapped Markdown in Raw',
+        given: 'opening Whiteboard from More at 390px and editing wrapped Markdown in Raw',
         should:
-          'show captioned >= 44px footer target, close drawer on tap, keep 16px font with aligned highlight overlay and no horizontal overflow',
+          'offer a >= 44px row, close More on tap, keep 16px font with aligned highlight overlay and no horizontal overflow',
         actual: [
-          footerMetrics.height >= 44,
-          footerMetrics.captionVisible,
-          drawerClosed,
+          rowHeight >= 44,
+          moreOpen,
           saved.includes('Mobile Atlas checklist'),
           (mobileMetrics?.fontSize ?? 0) >= 16,
           mobileMetrics?.overflow,
@@ -223,7 +215,7 @@ test(
           (mobileMetrics?.heightDiff ?? 99) < 1,
           errors,
         ],
-        expected: [true, true, 'false', true, true, false, true, true, []],
+        expected: [true, 0, true, true, false, true, true, []],
       })
     })
   },

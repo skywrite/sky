@@ -717,3 +717,10 @@
   background: color-mix(in srgb, var(--sky-green) 14%, transparent);
   color: var(--sky-green);
 }
+
+@media (max-width: 900px) {
+  /* On a phone the back button names Settings, so the trail beside it would only repeat it. */
+  .sky-set-breadcrumb {
+    display: none;
+  }
+}

@@ -8,7 +8,9 @@ import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import { type Kept, undoKeep } from './attachments/files.tsx'
 import { AutomationDetail, AutomationsMain, AutomationsSideNav, NewAutomation } from './automations/automations.tsx'
 import { ChatMain, threadTitle, useChat } from './chat/chat.tsx'
+import { LiveChats } from './chat/LiveChats.tsx'
 import { SidebarChats } from './chat/SidebarChats.tsx'
+import { sidebarChatRows } from './chat/sidebarRows.ts'
 import { ClockAmbient, ClockMain, clockChanged, useClockNow } from './clock/clock.tsx'
 import { DayView, threadsChanged, useThreads } from './day/day.tsx'
 import type { ChatCloseNotice } from './day/dayChatClose.tsx'
@@ -37,9 +39,10 @@ import { RecurringMain } from './recurring/RecurringMain.tsx'
 import { ResponseScoreMain } from './responseScore/ResponseScoreMain.tsx'
 import { isResponseScorePath } from './responseScore/routes.ts'
 import { SchedulePage } from './schedule/SchedulePage.tsx'
-import { SearchWorkspace } from './search/search.tsx'
+import { openSearch, SearchWorkspace } from './search/search.tsx'
 import { SettingsMain, useSettingsBoot } from './settings/settings.tsx'
 import { useAboutMeDraftGuard } from './settings/settingsAboutMe.tsx'
+import { SettingsHome } from './settings/SettingsHome.tsx'
 import { SettingsNav } from './settings/settingsNav.tsx'
 import { usePromptDraftGuard } from './settings/settingsPrompts.tsx'
 import {
@@ -48,10 +51,15 @@ import {
   SETTINGS_PAGES,
   settingsSectionOf,
 } from './settings/settingsRoutes.ts'
+import { type BarTab, BottomBar } from './shell/BottomBar.tsx'
+import { DayNav } from './shell/DayNav.tsx'
+import { DaysSheet } from './shell/DaysSheet.tsx'
+import { type MoreDestination, MorePanel } from './shell/MorePanel.tsx'
 import { RestartPending } from './shell/serviceStatus.tsx'
 import { SidebarIcon } from './shell/sidebarIcon.tsx'
 import { SidebarUtilities } from './shell/sidebarUtilities.tsx'
 import { skyTheme } from './shell/theme.ts'
+import { useNarrowLayout } from './shell/useNarrowLayout.ts'
 import { StreaksMain } from './streaks/streaks.tsx'
 import { TrackingMain } from './tracking/tracking.tsx'
 import { AuditionMain } from './voice/audition.tsx'
@@ -102,7 +110,10 @@ function useRoute(): [{ path: string; search: string }, (to: string, replace?: b
  */
 function Canvas() {
   const [{ path, search }, go] = useRoute()
-  const [menu, setMenu] = useState(false)
+  const narrow = useNarrowLayout()
+  // The narrow layout's More panel, and the days sheet a day's date opens there.
+  const [more, setMore] = useState(false)
+  const [daysOpen, setDaysOpen] = useState(false)
   const reviewParam = new URLSearchParams(search).get('review')
   const reviewDay = reviewParam && /^\d{4}-\d{2}-\d{2}$/.test(reviewParam) ? reviewParam : null
   const openReview = (day: string, replace = false) => {
@@ -121,9 +132,10 @@ function Canvas() {
   const sidebarExperiments = useSettingsBoot()
   usePromptDraftGuard()
   useAboutMeDraftGuard()
-  // On a phone the sidebar is a drawer; any navigation closes it.
+  // Going anywhere closes the phone's More panel and its days sheet.
   const navigate = (to: string, replace = false) => {
-    setMenu(false)
+    setMore(false)
+    setDaysOpen(false)
     go(to, replace)
   }
   const removal = useFileRemoval(navigate)
@@ -141,6 +153,8 @@ function Canvas() {
   const settingsSection = settingsSectionOf(path)
   const connectionPage = settingsSection === 'connections' ? connectionPageOf(path) : null
   const isSettings = settingsSection !== null
+  // A phone's /settings lists every section; a wide screen shows Appearance beside the sidebar's list.
+  const settingsHome = narrow && (path === '/settings' || path === '/settings/')
   const peopleRoute = peopleRouteOf(path)
   const placesRoute = placesRouteOf(path)
   const isRecurring = path === '/recurring'
@@ -226,22 +240,26 @@ function Canvas() {
   // Return to the day the conversation was opened from; filing stays anchored to its original day.
   const chatDay = currentChat?.day ?? threads.find((thread) => thread.id === threadId)?.day ?? null
   const requestedReturn = new URLSearchParams(search).get('returnTo')
+  // A chat opened from a phone's Chat page goes back there: a new chat, which lists the live ones.
+  const fromChatList = requestedReturn === 'chat'
   const returnTo =
     requestedReturn && /^\/(?:\d{4}-\d{2}-\d{2})?(?:\?review=\d{4}-\d{2}-\d{2})?$/.test(requestedReturn)
       ? requestedReturn
       : null
-  const chatHome = returnTo
-    ? {
-        path: returnTo,
-        label: returnTo.includes('?review=')
-          ? 'Day review'
-          : returnTo === '/'
-            ? 'Today'
-            : shortLabel(returnTo.slice(1)),
-      }
-    : chatDay && day && chatDay !== day.today.ymd
-      ? { path: `/${chatDay}`, label: shortLabel(chatDay) }
-      : { path: '/', label: 'Today' }
+  const chatHome: { path: string | null; label: string } = fromChatList
+    ? { path: null, label: 'Chat' }
+    : returnTo
+      ? {
+          path: returnTo,
+          label: returnTo.includes('?review=')
+            ? 'Day review'
+            : returnTo === '/'
+              ? 'Today'
+              : shortLabel(returnTo.slice(1)),
+        }
+      : chatDay && day && chatDay !== day.today.ymd
+        ? { path: `/${chatDay}`, label: shortLabel(chatDay) }
+        : { path: '/', label: 'Today' }
   const onDayPage =
     threadId === null &&
     importId === null &&
@@ -297,14 +315,17 @@ function Canvas() {
         ? `sky:chat - ${chatTitle}`
         : isAudition
           ? 'sky · audition'
-          : settingsSection === 'connections'
-            ? `sky · ${connectionPage ? CONNECTION_PAGE_LABEL[connectionPage] : 'Connections'}`
-            : settingsSection
-              ? `sky · ${SETTINGS_PAGES[settingsSection].label}`
-              : isClock
-                ? 'sky · Clock'
-                : 'sky'
+          : settingsHome
+            ? 'sky · Settings'
+            : settingsSection === 'connections'
+              ? `sky · ${connectionPage ? CONNECTION_PAGE_LABEL[connectionPage] : 'Connections'}`
+              : settingsSection
+                ? `sky · ${SETTINGS_PAGES[settingsSection].label}`
+                : isClock
+                  ? 'sky · Clock'
+                  : 'sky'
   }, [
+    settingsHome,
     threadId,
     chatTitle,
     connectionPage,
@@ -359,11 +380,61 @@ function Canvas() {
     (showDateNav && !isWeek && activeDayYmd === day?.today.ymd)
   const tomorrowYmd = day ? new PlainDate(day.today.ymd).addDays(1).ymd : null
   const tomorrowActive = showDateNav && !isWeek && tomorrowYmd !== null && activeDayYmd === tomorrowYmd
+  // Tomorrow, the past days and the two weeks: under Today in the sidebar, and in a phone's days sheet.
+  const dayNav = {
+    tomorrowYmd,
+    tomorrowActive,
+    days: (day?.days ?? []).slice(1),
+    activeDayYmd,
+    isWeek,
+    weekId,
+    thisWeek,
+    navigate,
+  }
+  // The narrow layout's bar marks where the page belongs: Chat, Future, a page behind More, or Today's world.
+  const moreActive: MoreDestination | null = isOutbox
+    ? 'outbox'
+    : isWorkstreams
+      ? 'workstreams'
+      : isWhiteboard
+        ? 'whiteboard'
+        : isAutomations
+          ? 'automations'
+          : explorerFile !== null
+            ? 'explorer'
+            : peopleRoute
+              ? 'people'
+              : placesRoute !== null
+                ? 'places'
+                : isRecurring
+                  ? 'recurring'
+                  : isSettings
+                    ? 'settings'
+                    : null
+  const barTab: BarTab | null =
+    threadId !== null || isAudition
+      ? 'chat'
+      : isFuture
+        ? 'future'
+        : moreActive !== null || extensionPage !== null || isClock
+          ? 'more'
+          : isSearch
+            ? null
+            : 'today'
+  // A phone's Chat page lists the live chats above its message box.
+  const liveRows =
+    narrow && threadId !== null
+      ? sidebarChatRows(
+          others.filter((thread) => thread.id !== threadId),
+          day?.today.ymd ?? null,
+        )
+      : []
 
   const threadHref = (id: string) => {
-    const destination = onDayPage ? (day?.day.ymd === day?.today.ymd ? '/' : path) : returnTo
+    const destination = onDayPage ? (day?.day.ymd === day?.today.ymd ? '/' : path) : fromChatList ? 'chat' : returnTo
     return `/thread/${encodeURIComponent(id)}${destination ? `?returnTo=${encodeURIComponent(destination)}` : ''}`
   }
+  const chatListHref = (id: string) => `/thread/${encodeURIComponent(id)}?returnTo=chat`
   const openThread = (id: string) => navigate(threadHref(id))
   const helpWithItem = useItemHelpChat(path, openThread)
   const openImport = (id: string) => navigate(`/import/${id}`)
@@ -394,6 +465,7 @@ function Canvas() {
   }
   const dismissKept = useCallback(() => setKept([]), [])
   const newChat = () => openThread(crypto.randomUUID())
+  const goChatHome = () => (chatHome.path === null ? newChat() : navigate(chatHome.path))
   // A saved chat opened to continue: the service makes (or finds) its thread, and the page turns to it —
   // or, given a tab opened for it, that tab does.
   const openSaved = async (chat: string, tab: Window | null = null) => {
@@ -417,7 +489,7 @@ function Canvas() {
     const id = chat.state.id
     const title = chatTitle
     const saving = chat.end(chat.state.settings?.saves !== false)
-    navigate(chatHome.path)
+    goChatHome()
     void saving.then((result) => {
       threadsChanged()
       if (result) setChatNotices((prev) => [...prev.filter((n) => n.id !== id), { id, title, ...result }])
@@ -448,18 +520,7 @@ function Canvas() {
 
   return (
     <div className="sky-app" onClick={onLinkClick} {...drop.handlers}>
-      <button
-        type="button"
-        className="sky-menu"
-        aria-label={menu ? 'Close' : 'Navigation'}
-        aria-expanded={menu}
-        onClick={() => setMenu((open) => !open)}
-      >
-        {menu ? '×' : '≡'}
-        {!menu && (thisWeek?.due || waitingImports.length > 0) && <span className="sky-menu-dot" />}
-      </button>
-      {menu && <div className="sky-scrim" onClick={() => setMenu(false)} />}
-      <nav className="sky-side" data-open={menu}>
+      <nav className="sky-side">
         <div className="sky-side-scroll">
           <div className="sky-side-top">
             <span className="sky-brand">sky</span>
@@ -548,72 +609,7 @@ function Canvas() {
                 <SidebarIcon name="today" />
                 <span>Today</span>
               </button>
-              {showDateNav && (
-                <div className="sky-side-dates">
-                  {tomorrowYmd && (
-                    <div className="sky-side-tomorrow">
-                      <button
-                        type="button"
-                        className="sky-thread"
-                        data-active={tomorrowActive}
-                        aria-current={tomorrowActive ? 'page' : undefined}
-                        onClick={() => navigate(`/${tomorrowYmd}`)}
-                      >
-                        <span>Tomorrow</span>
-                        <time className="sky-meta" dateTime={tomorrowYmd} title={tomorrowYmd}>
-                          {tomorrowYmd.slice(5)}
-                        </time>
-                      </button>
-                    </div>
-                  )}
-                  <div className="sky-side-label">Past days</div>
-                  {(day?.days ?? []).slice(1).map((d) => (
-                    <button
-                      key={d.ymd}
-                      type="button"
-                      className="sky-thread"
-                      data-active={!isWeek && activeDayYmd === d.ymd}
-                      aria-current={!isWeek && activeDayYmd === d.ymd ? 'page' : undefined}
-                      onClick={() => navigate(`/${d.ymd}`)}
-                    >
-                      <span>{d.label}</span>
-                      <time className="sky-meta" dateTime={d.ymd} title={d.ymd}>
-                        {d.ymd.slice(5)}
-                      </time>
-                    </button>
-                  ))}
-
-                  {/* The two horizons: this week, with the day waiting to start, and the next. */}
-                  <div className="sky-side-label">Week</div>
-                  <button
-                    type="button"
-                    className="sky-thread sky-side-week"
-                    data-active={isWeek && (weekId === '' || weekId === thisWeek?.id)}
-                    aria-current={isWeek && (weekId === '' || weekId === thisWeek?.id) ? 'page' : undefined}
-                    onClick={() => navigate('/week')}
-                  >
-                    <span>
-                      This week
-                      {thisWeek?.due && <span className="sky-wdot" />}
-                    </span>
-                    <span className="sky-meta">
-                      {thisWeek?.due ? `${thisWeek.due.weekday} not started` : thisWeek ? thisWeek.id.slice(5) : ''}
-                    </span>
-                  </button>
-                  {thisWeek && (
-                    <button
-                      type="button"
-                      className="sky-thread sky-side-week"
-                      data-active={isWeek && weekId === thisWeek.next.id}
-                      aria-current={isWeek && weekId === thisWeek.next.id ? 'page' : undefined}
-                      onClick={() => navigate(weekHref(thisWeek.next.id))}
-                    >
-                      <span>Next week</span>
-                      <span className="sky-meta">{thisWeek.next.planned ? 'planned' : 'no plan yet'}</span>
-                    </button>
-                  )}
-                </div>
-              )}
+              {showDateNav && <DayNav {...dayNav} />}
               <button
                 type="button"
                 className="sky-thread sky-side-primary"
@@ -765,12 +761,19 @@ function Canvas() {
           <PlacesMain route={placesRoute} navigate={navigate} />
         ) : extensionPage !== null ? (
           <ExtensionPageMain id={extensionPage} navigate={navigate} />
+        ) : settingsHome ? (
+          <SettingsHome navigate={navigate} />
         ) : settingsSection ? (
           <SettingsMain
             section={settingsSection}
             path={path}
             navigate={navigate}
-            back={{ label: 'Today', onClick: () => navigate('/') }}
+            // On a phone a section's way back is the Settings list; the bar carries Today.
+            back={
+              narrow
+                ? { label: 'Settings', onClick: () => navigate('/settings') }
+                : { label: 'Today', onClick: () => navigate('/') }
+            }
           />
         ) : isAudition ? (
           <AuditionMain back={{ label: 'Chat', onClick: newChat }} />
@@ -788,7 +791,12 @@ function Canvas() {
             <ChatMain
               chat={chat}
               title={chatTitle}
-              back={{ label: chatHome.label, onClick: () => navigate(chatHome.path) }}
+              back={{ label: chatHome.label, onClick: goChatHome }}
+              liveChats={
+                liveRows.length > 0 ? (
+                  <LiveChats rows={liveRows} hrefOf={chatListHref} navigate={navigate} />
+                ) : undefined
+              }
               onEnd={endThread}
               branches={[
                 ...branchesOf(threadId).map((b) => ({ id: b.id, title: b.title, turn: b.parent?.turn ?? 0 })),
@@ -810,6 +818,7 @@ function Canvas() {
         ) : (
           <DayView
             onReview={openReview}
+            onOpenDays={narrow ? () => setDaysOpen(true) : undefined}
             trackingDate={dayYmd}
             search={search}
             navigate={navigate}
@@ -845,6 +854,48 @@ function Canvas() {
           </Fragment>
         )}
       </SearchWorkspace>
+      {/* Below 900px the sidebar gives way to these: the bar, More, and the days a day's date opens. */}
+      <BottomBar
+        active={barTab}
+        searching={isSearch}
+        todayDot={Boolean(thisWeek?.due)}
+        moreDot={waitingImports.length > 0}
+        moreOpen={more}
+        navigate={navigate}
+        onChat={newChat}
+        onMore={() => setMore((open) => !open)}
+        onSearch={() => {
+          setMore(false)
+          openSearch()
+        }}
+      />
+      <MorePanel
+        open={more && narrow}
+        active={moreActive}
+        extensionPage={extensionPage}
+        experiments={sidebarExperiments}
+        brand={
+          <>
+            <span className="sky-brand">sky</span>
+            <ClockAmbient snap={clock} active={isClock} onOpen={() => navigate('/clock')} />
+          </>
+        }
+        notices={
+          <>
+            <RestartPending />
+            <ImportsWaiting jobs={waitingImports} onOpen={openImport} />
+          </>
+        }
+        navigate={navigate}
+        onClose={() => setMore(false)}
+      />
+      <DaysSheet
+        opened={daysOpen && narrow}
+        onClose={() => setDaysOpen(false)}
+        todayYmd={day?.today.ymd ?? null}
+        todayActive={todayActive}
+        {...dayNav}
+      />
       {shownReview && (
         <DayReviewDialog
           key={shownReview}

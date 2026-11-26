@@ -308,25 +308,28 @@ test(
         },
       })
 
-      // 9. Mobile drawer: clicking a live chat switches threads and closes the drawer.
+      // 9. Phone: the Chat page lists the live chats, and tapping one switches threads in place.
       await page.setViewportSize({ width: 390, height: 844 })
       await page.goto(atlasUrl)
       await page.getByText('Atlas rollout summary is ready.', { exact: true }).waitFor()
-      await page.getByRole('button', { name: 'Navigation', exact: true }).click()
-      await side.locator('.sky-side-chat', { hasText: 'Quick regex check' }).waitFor()
-      await side.locator('.sky-side-chat', { hasText: 'Quick regex check' }).click()
+      await page.locator('.sky-chat-back').click()
+      const bar = page.getByRole('navigation', { name: 'Main' })
+      await bar.getByRole('button', { name: 'Chat', exact: true }).click()
+      const live = page.getByRole('region', { name: 'Live chats' })
+      await live.getByRole('link', { name: /Quick regex check/ }).click()
       await page.getByText('Regex pattern is ready.', { exact: true }).waitFor()
-      await page.waitForFunction(() => document.querySelector('.sky-side')!.getBoundingClientRect().right <= 0)
 
       assert({
-        given: 'switching chats from the mobile sidebar drawer',
-        should: 'navigate cleanly, close the drawer, and leave no page errors',
+        given: 'switching chats from the phone’s Chat page',
+        should: 'navigate in place, give the conversation the whole screen, and leave no page errors',
         actual: {
           title: await page.title(),
+          bar: await bar.isVisible(),
           errors,
         },
         expected: {
           title: 'sky:chat - Quick regex check',
+          bar: false,
           errors: [],
         },
       })

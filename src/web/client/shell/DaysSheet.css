@@ -1,0 +1,40 @@
+/* The days sheet keeps the sidebar's surface and rows, at a size made for a thumb. */
+
+.sky-dialog-sheet .sky-days-sheet-content,
+.sky-dialog-sheet .sky-days-sheet-content .mantine-Drawer-header {
+  background: var(--sky-side);
+}
+
+.sky-days-sheet {
+  padding-top: 0;
+  padding-bottom: max(var(--sky-space-5), env(safe-area-inset-bottom));
+}
+
+.sky-days-sheet .sky-side-dates {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.sky-days-sheet .sky-thread {
+  padding: 12px 14px;
+  border-radius: 12px;
+  font-size: 17px;
+}
+
+.sky-days-sheet .sky-thread .sky-meta {
+  font-size: 15px;
+}
+
+.sky-days-sheet .sky-side-tomorrow {
+  margin: 0 0 6px;
+  padding-bottom: 6px;
+}
+
+.sky-days-sheet .sky-side-dates .sky-side-label {
+  padding: 12px 14px 4px;
+  font-size: 15px;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--sky-text-2);
+}

@@ -401,7 +401,6 @@
   .sky-chat-head .sky-tabs {
     grid-column: 1 / -1;
     flex-wrap: wrap;
-    margin-left: -44px;
   }
 
   .sky-chat-head .sky-tabs .mantine-Button-root {

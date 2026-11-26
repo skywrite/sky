@@ -2687,6 +2687,7 @@ export function ChatMain({
   branches,
   onBranched,
   onOpenSaved,
+  liveChats,
 }: {
   chat: Chat
   title: string
@@ -2698,6 +2699,8 @@ export function ChatMain({
   onBranched?: (id: string) => void
   /** A saved branch opens as a thread to continue */
   onOpenSaved?: (chat: string) => void
+  /** On a phone, the live chats an empty chat lists in place of its hint */
+  liveChats?: ReactNode
 }) {
   const { state } = chat
   const call = useChatVoice(chat)
@@ -2804,7 +2807,12 @@ export function ChatMain({
   }
 
   return (
-    <div className="sky-main" data-temporary={state.settings?.saves === false} onClick={onChatLinkClick}>
+    <div
+      className="sky-main"
+      data-temporary={state.settings?.saves === false}
+      data-conversation={!empty || undefined}
+      onClick={onChatLinkClick}
+    >
       <header className="sky-head sky-chat-head">
         <Button size="sm" className="sky-chat-back" onClick={back.onClick} style={{ marginLeft: -10 }}>
           ‹ {back.label}
@@ -2888,13 +2896,15 @@ export function ChatMain({
           <div className="sky-chat-viewport" hidden={voiceMode}>
             <div className="sky-scroll" ref={scrollRef}>
               {empty ? (
-                <div className="sky-blank">
-                  <p>
-                    Ask a question, or hand Sky a task.
-                    <br />
-                    For work with several steps, a live plan will track progress here.
-                  </p>
-                </div>
+                (liveChats ?? (
+                  <div className="sky-blank">
+                    <p>
+                      Ask a question, or hand Sky a task.
+                      <br />
+                      For work with several steps, a live plan will track progress here.
+                    </p>
+                  </div>
+                ))
               ) : (
                 <div className="sky-col">
                   <ThreadColumn

@@ -22,6 +22,21 @@ const icons = {
       <path d="M8.5 5h7M6 7.5V15a3 3 0 0 0 3 3h6.5" />
     </>
   ),
+  // The phone's bar: More holds everything else, and search sits beside it.
+  more: (
+    <>
+      <rect x="4" y="4" width="6.5" height="6.5" rx="1.8" />
+      <rect x="13.5" y="4" width="6.5" height="6.5" rx="1.8" />
+      <rect x="4" y="13.5" width="6.5" height="6.5" rx="1.8" />
+      <rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.8" />
+    </>
+  ),
+  search: (
+    <>
+      <circle cx="10.5" cy="10.5" r="6.5" />
+      <path d="m16 16 4.5 4.5" />
+    </>
+  ),
 }
 
 export function SidebarIcon({ name }: { name: keyof typeof icons }) {

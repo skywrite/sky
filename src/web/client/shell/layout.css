@@ -1,4 +1,4 @@
-/* Application frame, navigation, headers, scrolling columns, and the mobile drawer. */
+/* Application frame, sidebar, headers, and scrolling columns. Below 900px the bar replaces the sidebar. */
 
 html,
 body {
@@ -294,55 +294,14 @@ a.sky-thread {
   white-space: nowrap;
 }
 
-/* The menu button exists only where the sidebar is a drawer. */
-.sky-menu {
-  display: none;
-  position: fixed;
-  top: 10px;
-  left: 12px;
-  z-index: 48;
-  width: 40px;
-  height: 40px;
-  border: 0;
-  border-radius: 10px;
-  background: var(--sky-card);
-  color: var(--sky-text);
-  font-size: 22px;
-  line-height: 1;
-  cursor: pointer;
-}
-
-.sky-scrim {
-  position: fixed;
-  inset: 0;
-  z-index: 40;
-  background: rgba(0, 0, 0, 0.28);
-}
-
 @media (max-width: 900px) {
-  /* The sidebar is a drawer: off-canvas until asked for, over a scrim. */
+  /* The sidebar gives way to the bar at the bottom (BottomBar.css). */
   .sky-side {
-    position: fixed;
-    inset: 0 auto 0 0;
-    z-index: 45;
-    width: min(320px, 86vw);
-    transform: translateX(-100%);
-    transition: transform 180ms ease;
-  }
-
-  .sky-side[data-open='true'] {
-    transform: none;
-    box-shadow: 12px 0 32px rgba(0, 0, 0, 0.14);
-  }
-
-  .sky-menu {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
+    display: none;
   }
 
   .sky-head {
-    padding: 14px 16px 8px 60px;
+    padding: 14px 16px 8px;
     gap: 10px;
   }
 
@@ -354,12 +313,6 @@ a.sky-thread {
   .sky-col {
     padding-top: 18px;
     gap: 20px;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .sky-side {
-    transition: none;
   }
 }
 
@@ -402,14 +355,6 @@ a.sky-thread {
   color: var(--sky-text-2);
 }
 
-.sky-side-utility-caption {
-  display: none;
-  font-size: 11px;
-  line-height: 1.1;
-  font-weight: 500;
-  letter-spacing: -0.01em;
-}
-
 .sky-side-utility:hover {
   background: var(--sky-hover);
   color: var(--sky-text);
@@ -418,31 +363,4 @@ a.sky-thread {
 .sky-side-utility[data-active='true'] {
   background: var(--sky-accent-soft);
   color: var(--sky-accent);
-}
-
-@media (max-width: 900px) {
-  .sky-side-utility {
-    width: 100%;
-    height: 54px;
-    min-height: 54px;
-  }
-
-  .sky-side-utility .mantine-ActionIcon-icon {
-    flex-direction: column;
-    gap: 3px;
-  }
-
-  .sky-side-utility-caption {
-    display: block;
-  }
-}
-
-.sky-menu-dot {
-  position: absolute;
-  top: 7px;
-  right: 7px;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--mantine-primary-color-6);
 }

@@ -1,0 +1,46 @@
+/* A phone's Chat page: the live chats, in the shared .sky-list, with the sidebar's state colors. */
+
+.sky-live-chat {
+  min-height: 60px;
+  padding-top: 9px;
+  padding-bottom: 9px;
+}
+
+.sky-live-chats .sky-list-row + .sky-list-row::before {
+  left: 37px;
+}
+
+.sky-live-chat-title {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sky-live-chat-state {
+  display: block;
+  margin-top: 2px;
+  font-size: 14.5px;
+  color: var(--sky-dim);
+}
+
+.sky-live-chat-state[data-state='working'] {
+  color: var(--sky-accent);
+}
+
+.sky-live-chat-state[data-state='waiting'] {
+  color: var(--sky-amber);
+  font-weight: 500;
+}
+
+.sky-live-chat-state[data-state='failed'] {
+  color: var(--sky-action-danger);
+}
+
+.sky-live-chat-state[data-state='temp'] {
+  color: var(--mantine-color-violet-6);
+}
+
+[data-mantine-color-scheme='dark'] .sky-live-chat-state[data-state='temp'] {
+  color: var(--mantine-color-violet-4);
+}

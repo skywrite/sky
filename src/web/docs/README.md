@@ -1,6 +1,6 @@
 ---
 created: 2026-09-03
-updated: 2026-11-24
+updated: 2026-11-26
 ---
 
 # The web app's shell and client
@@ -30,8 +30,8 @@ tests beside them; this folder holds everything that runs in the browser.
   `client/day/` with `service/handler/day/`, and so on.
 - `client/shell/` is the frame every page shares: `theme.ts` (the Mantine
   theme), `shell.css` (the CSS entrypoint), the layout, dialog, and token
-  stylesheets, the sidebar, the Details rail's fold, the service's restart
-  notice. `client/editor/` is the one Markdown editor every page mounts,
+  stylesheets, the sidebar, the phone's bar and More panel, the Details
+  rail's fold, the service's restart notice. `client/editor/` is the one Markdown editor every page mounts,
   with the `wysiwyg/` engine under it; `client/frontmatter/` is the
   properties panel; `client/writing/` the drafts chat and outbox share;
   `client/lib/` the few pieces more than one feature uses, such as
@@ -58,8 +58,8 @@ Keep changes with the feature they affect, including its responsive rules:
 | File in `client/` | Owns |
 | --- | --- |
 | `shell/tokens.css` | Shared colors, spacing, dialog and card values, content sizes, dark and narrow overrides |
-| `shell/layout.css` | App frame, sidebar, navigation, headers, columns, mobile drawer |
-| `shell/components.css` | Shared action shapes and focus states, cards, section labels, counters, chips, activity rows, disclosure links |
+| `shell/layout.css` | App frame, sidebar, navigation, headers, columns; the sidebar's place in the narrow layout |
+| `shell/components.css` | Shared action shapes and focus states, cards, section labels, counters, chips, activity rows, disclosure links, grouped lists |
 | `shell/dialogs.css` | Modal and Drawer surfaces, headers, titles, bodies, action rows, fixed footers, mobile sheets |
 | `chat/chat.css` | Conversation turns, replies, branch actions |
 | `chat/composer.css` | Message input, composer controls |
@@ -205,8 +205,8 @@ Subdued blue text and a divider separate it from **Past days**, with no extra
 heading or primary navigation icon. Its date is the day after the notebook's
 current day. Today appears once. The current
 day or week keeps its selected state, including direct date URLs and a
-day's files. Chat and other sections keep the date list hidden. The mobile
-drawer follows the same rule and closes after navigation.
+day's files. Chat and other sections keep the date list hidden. On a phone
+the same days open from the day's date; see [Phones](#phones).
 
 Chat follows Today's date group as a standard navigation row with no badge outside Chat.
 On chat pages, open live chats expand beneath it in the same indented style as Today's dates, nesting live branches
@@ -224,7 +224,7 @@ the labels and `aria-current` identify each destination and its selected state.
 ## Sidebar utilities
 
 A faint one-pixel border separates the shared sidebar from the page on every
-screen. It uses `--sky-border-soft` in both themes and on the mobile drawer.
+screen. It uses `--sky-border-soft` in both themes.
 
 Voice lives in the chat composer, immediately after Send; its conversation
 handoff and lifecycle are described in the [chat design](../../service/handler/chat/docs/README.md#voice-in-the-conversation).
@@ -232,15 +232,42 @@ The main sidebar has no Talk destination.
 
 Whiteboard, Automations, Explorer, and Settings share a persistent footer in every sidebar
 section. `client/shell/sidebarUtilities.tsx` renders the board, bolt, folder, and gear as 24px
-outline icons in four equal columns, each with a 44px target on desktop and a captioned 54px target
-in the mobile drawer. The current section uses the primary accent and `aria-current`; hover and
-keyboard focus show the destination's name. Native links support opening a section in another
-tab, while ordinary clicks use the app's navigation and close the mobile drawer.
+outline icons in four equal columns, each with a 44px target. The current section uses the primary
+accent and `aria-current`; hover and keyboard focus show the destination's name. Native links support
+opening a section in another tab, while ordinary clicks use the app's navigation.
 
 The sidebar's content scrolls inside `sky-side-scroll`, keeping the footer
 visible in short windows and long Explorer trees. New automation stays just
-above the icons in the Automations section. The mobile footer respects the
-device's bottom safe area.
+above the icons in the Automations section.
+
+## Phones
+
+Below the 900px narrow layout the sidebar gives way to a bar at the bottom, in reach of a thumb.
+`client/shell/BottomBar.tsx` holds Today, Future, Chat and More, with search as a round button of its own beside them.
+Pages end above the bar, so nothing they show sits behind it.
+A chat with turns hides the bar: its `data-conversation` mark gives the messages and the message box the whole screen.
+`client/shell/useNarrowLayout.ts` gives the shell's code the same 900px line the stylesheets use.
+
+More (`client/shell/MorePanel.tsx`) floats over the page just above the bar.
+It holds the wordmark and clock, a restart or import waiting on the person, Outbox and Workstreams when they are on,
+the four tools, and the records kept beside settings: People & Orgs, Places, Recurring and the extensions' pages.
+Tapping outside, More again, Escape, or going anywhere closes it.
+
+The rest of the sidebar has a place on the page it belongs to:
+
+- The day's date opens Tomorrow, the past days and the weeks in a sheet (`client/shell/DaysSheet.tsx`).
+  It shares `client/shell/DayNav.tsx` with the sidebar.
+- `/settings` lists every section (`client/settings/SettingsHome.tsx`, ordered by `homeSections.ts`).
+  A wide screen still shows Appearance there, beside the sidebar's list.
+  A section's back button returns to the list, which takes the place of the trail.
+- An empty chat lists the live chats above its message box.
+  A chat opened from that list carries `returnTo=chat`, so its back button returns there.
+  A chat opened from a day still returns to that day.
+- Each folder in an Explorer path is a link: the way up without the tree.
+
+Search's header stays hidden until the bar's button opens it full screen; see the
+[notebook search contract](../../service/handler/search/docs/README.md).
+The note `2026-11-26-the-phone-gets-a-bar.md` tells why the drawer went.
 
 ## Typography
 

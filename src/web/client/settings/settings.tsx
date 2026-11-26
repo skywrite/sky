@@ -209,7 +209,7 @@ export function useSettingsBoot(): SidebarExperiments {
   return sidebar
 }
 
-function useSettings() {
+export function useSettings() {
   const [data, setData] = useState<SettingsData | null>(null)
   const [note, setNote] = useState<string | null>(null)
   const latestRead = useRef(0)
