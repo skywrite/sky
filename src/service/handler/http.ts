@@ -16,7 +16,7 @@ import { createChatActivityReader } from '#shared/models/Chat/ChatStore/dayActiv
 import type MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
 import { fetchNowSync } from '#shared/nbfs/mod.ts'
 import type { PlainDate, ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
-import { APP_ICONS, APP_ICONS_DIR, getThemeAsset, renderAppHtml } from '../../web/bundle.ts'
+import { APP_ICONS, APP_ICONS_DIR, assetBody, getThemeAsset, renderAppHtml } from '../../web/bundle.ts'
 import { parseDocumentPageRequests, readDocumentPages } from '../context/document.ts'
 import { resolveContext } from '../context/mod.ts'
 import * as jsend from '../jsend.ts'
@@ -932,8 +932,14 @@ export function createHttpApp(options: HttpHandlerOptions): Hono {
     try {
       const asset = await getThemeAsset(c.req.param('name'))
       if (!asset) return c.json({ message: 'Not found.' }, 404)
-      return new Response(asset.content, {
-        headers: { 'Content-Type': asset.type, 'Cache-Control': 'no-cache' },
+      const { body, encoding } = assetBody(asset, c.req.header('Accept-Encoding'))
+      return new Response(body, {
+        headers: {
+          'Content-Type': asset.type,
+          'Cache-Control': 'no-cache',
+          Vary: 'Accept-Encoding',
+          ...(encoding ? { 'Content-Encoding': encoding } : {}),
+        },
       })
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)

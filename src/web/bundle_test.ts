@@ -1,6 +1,7 @@
 import { mkdir, mkdtemp, rm } from 'node:fs/promises'
 import * as os from 'node:os'
 import * as path from 'node:path'
+import { brotliDecompressSync, gunzipSync } from 'node:zlib'
 import { assert, test } from '#test'
 import { createTestHttpApp } from '../service/handler/httpTestHelpers.ts'
 
@@ -160,5 +161,56 @@ test({ name: 'voice visuals do not serve retired avatar or lip-analysis assets' 
         expected: 404,
       })
     }
+  })
+})
+
+test({ name: 'theme assets - a browser that accepts compression gets the same bundle, smaller' }, async () => {
+  await withApp(async (app) => {
+    const plain = await app.request('http://localhost/_assets/main.js')
+    const raw = new Uint8Array(await plain.arrayBuffer())
+    const ask = async (accepts: string) => {
+      const response = await app.request('http://localhost/_assets/main.js', {
+        headers: { 'Accept-Encoding': accepts },
+      })
+      return {
+        encoding: response.headers.get('content-encoding'),
+        bytes: new Uint8Array(await response.arrayBuffer()),
+      }
+    }
+    const brotli = await ask('gzip, deflate, br, zstd')
+    const gzip = await ask('gzip, deflate')
+    const neither = await ask('br;q=0, gzip;q=0')
+
+    assert({
+      given: 'a request that names no compression',
+      should: 'serve the bundle as it is, and say the answer depends on what the browser accepts',
+      actual: { encoding: plain.headers.get('content-encoding'), vary: plain.headers.get('vary') },
+      expected: { encoding: null, vary: 'Accept-Encoding' },
+    })
+
+    assert({
+      given: 'browsers that accept Brotli, only gzip, or neither',
+      should: 'answer each in the smallest form it accepts',
+      actual: [brotli.encoding, gzip.encoding, neither.encoding],
+      expected: ['br', 'gzip', null],
+    })
+
+    assert({
+      given: 'the compressed answers',
+      should: 'unpack to exactly the bundle served plain',
+      actual: [
+        Buffer.compare(brotliDecompressSync(brotli.bytes), raw),
+        Buffer.compare(gunzipSync(gzip.bytes), raw),
+        Buffer.compare(neither.bytes, raw),
+      ],
+      expected: [0, 0, 0],
+    })
+
+    assert({
+      given: 'the sizes sent',
+      should: 'send well under half of the bundle to a browser that accepts Brotli or gzip',
+      actual: [brotli.bytes.length < raw.length * 0.4, gzip.bytes.length < raw.length * 0.4],
+      expected: [true, true],
+    })
   })
 })

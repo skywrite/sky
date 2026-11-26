@@ -1,6 +1,8 @@
 import { existsSync } from 'node:fs'
 import { lstat, readdir, realpath, stat } from 'node:fs/promises'
 import * as path from 'node:path'
+import { promisify } from 'node:util'
+import { brotliCompress, constants as zlib, gzip } from 'node:zlib'
 import type { BunPlugin } from 'bun'
 import { EXTENSIONS_DIR, listInstalled } from '#lib/extensions/installed.ts'
 import dirnameFilename from '#lib/util/dirnameFilename.ts'
@@ -25,9 +27,11 @@ const { __dirname } = dirnameFilename(import.meta.url)
  * without extensions and the failure is kept for the Extensions page.
  */
 
-interface ThemeAsset {
+export interface ThemeAsset {
   content: ArrayBuffer
   type: string
+  /** The same bytes, compressed once when the bundle was built. */
+  compressed: { br: ArrayBuffer; gzip: ArrayBuffer }
 }
 
 const CLIENT_DIR = path.join(__dirname, 'client')
@@ -169,9 +173,47 @@ async function buildAssets(): Promise<Map<string, ThemeAsset>> {
   for (const output of result.outputs) {
     const name = path.basename(output.path)
     const type = name.endsWith('.css') ? 'text/css; charset=utf-8' : 'text/javascript; charset=utf-8'
-    assets.set(name, { content: await output.arrayBuffer(), type })
+    const content = await output.arrayBuffer()
+    assets.set(name, { content, type, compressed: await compress(content) })
   }
   return assets
+}
+
+const compressBrotli = promisify(brotliCompress)
+const compressGzip = promisify(gzip)
+
+/**
+ * Both compressed forms of an asset, made when the bundle is built. Brotli's strongest setting is
+ * about a tenth smaller but takes seconds on the script; this one takes about a tenth of a second,
+ * so editing the client and reloading stays quick.
+ */
+async function compress(content: ArrayBuffer): Promise<ThemeAsset['compressed']> {
+  const bytes = new Uint8Array(content)
+  const [br, gz] = await Promise.all([
+    compressBrotli(bytes, { params: { [zlib.BROTLI_PARAM_QUALITY]: 9, [zlib.BROTLI_PARAM_SIZE_HINT]: bytes.length } }),
+    compressGzip(bytes),
+  ])
+  const whole = (buffer: Buffer) =>
+    buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength) as ArrayBuffer
+  return { br: whole(br), gzip: whole(gz) }
+}
+
+/** The asset in the smallest form the browser's Accept-Encoding header allows; as it is when the header names neither. */
+export function assetBody(
+  asset: ThemeAsset,
+  acceptEncoding: string | undefined,
+): { body: ArrayBuffer; encoding?: 'br' | 'gzip' } {
+  const accepted = new Set(
+    (acceptEncoding ?? '')
+      .split(',')
+      .map((part) => part.trim().toLowerCase().split(';'))
+      // "br;q=0" refuses an encoding by name.
+      .filter(([, ...params]) => !params.some((param) => /^\s*q=0(\.0*)?\s*$/.test(param)))
+      .map(([name]) => name!.trim()),
+  )
+  if (accepted.has('br')) return { body: asset.compressed.br, encoding: 'br' }
+  if (accepted.has('gzip')) return { body: asset.compressed.gzip, encoding: 'gzip' }
+  return { body: asset.content }
 }
 
 export async function getThemeAsset(name: string): Promise<ThemeAsset | undefined> {
