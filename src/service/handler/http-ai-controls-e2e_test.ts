@@ -68,9 +68,10 @@ test(
       memoryNotes: async () => 0,
       about: async () => ({ version: 'test', date: null }),
       reveal: async () => {},
-      write: async (key, value) => {
+      write: async (key, value, rolePreset) => {
         if (key.startsWith('ai.roles.'))
           config.ai.roles![key.slice('ai.roles.'.length) as keyof NonNullable<SkyConfig['ai']['roles']>] = value
+        if (rolePreset) config.ai.profiles![value] = rolePreset
       },
       writeAccountCategory: async () => {},
     }
@@ -315,99 +316,154 @@ test(
       )
       await page.goto(`${origin}/settings/ai/models`)
       await capture('settings-before-interaction')
-      const frontier = page.getByRole('combobox', { name: 'Default preset for Frontier', exact: true })
-      const frontierEffort = page.getByRole('radiogroup', { name: 'Default effort for Frontier', exact: true })
+      const openRole = (label: string) =>
+        page.getByRole('link', { name: `Change preset for ${label}`, exact: true }).click()
+      const openLibrary = () => page.getByRole('link', { name: 'Preset library', exact: true }).click()
+      const openAssignments = () => page.getByRole('link', { name: 'Assignments', exact: true }).click()
+      const dialog = page.getByRole('dialog')
+      const cancel = () => dialog.getByRole('button', { name: 'Cancel', exact: true }).click()
+      await page.getByRole('link', { name: 'Change preset', exact: true }).click()
+      const chatPreset = dialog.getByRole('combobox', { name: 'Default preset for Chat', exact: true })
+      await chatPreset.click()
+      const list = page.getByRole('listbox')
+      const local = list.getByRole('group', { name: 'LM Studio', exact: true })
+      await list.getByRole('group', { name: 'OpenAI', exact: true }).getByRole('option', { selected: true }).waitFor()
+      await capture('settings-chat-provider-groups')
+      await chatPreset.fill('lm studio')
       assert({
-        given: 'the Frontier role in Settings > AI > Models',
-        should: 'default to default-fable-5.2 at X-high effort and list the preset in use',
+        given: 'a provider search in the new-chat preset picker',
+        should: 'keep its built-in and custom presets together under one heading',
+        actual: [
+          await list.getByRole('group').count(),
+          await local.getByRole('option').filter({ hasText: 'default-local-fast' }).count(),
+          await local.getByRole('option').filter({ hasText: 'custom-effort' }).count(),
+        ],
+        expected: [1, 1, 1],
+      })
+      await chatPreset.fill('default-local-fast')
+      await chatPreset.press('ArrowDown')
+      await chatPreset.press('Enter')
+      await dialog.getByText('LM Studio · default-local-fast', { exact: true }).waitFor()
+      await cancel()
+      const openThinking = async () => {
+        await openRole('Thinking')
+        await dialog.getByRole('combobox', { name: 'Default preset for Thinking', exact: true }).click()
+        await page.getByRole('option').filter({ hasText: 'default-sonnet-5.5' }).click()
+      }
+      await openRole('Frontier')
+      const frontier = dialog.getByRole('combobox', { name: 'Default preset for Frontier', exact: true })
+      const frontierEffort = dialog.getByRole('radiogroup', { name: 'Default effort for Frontier', exact: true })
+      assert({
+        given: 'the Frontier assignment',
+        should: 'identify its preset and the X-high effort it inherits',
         actual: [
           await frontier.inputValue(),
-          await frontierEffort.getByRole('radio', { name: 'X-high', exact: true }).getAttribute('aria-checked'),
-          await page.locator('.sky-preset-toggle').filter({ hasText: 'default-fable-5.2' }).isVisible(),
+          await frontierEffort.getByRole('radio', { name: 'X-high' }).getAttribute('aria-checked'),
         ],
-        expected: ['default-fable-5.2', 'true', true],
+        expected: ['Claude Fable 5.2 · X-high effort', 'true'],
       })
-      const thinking = page.getByRole('combobox', { name: 'Default preset for Thinking', exact: true })
-      await thinking.click()
-      await page.getByRole('option', { name: 'default-sonnet-5.5', exact: true }).click()
-      const roleEffort = page.getByRole('radiogroup', { name: 'Default effort for Thinking', exact: true })
-      await page.waitForFunction(
-        () =>
-          document.querySelector('[aria-label="Default effort for Thinking"] [aria-checked="true"]')?.textContent ===
-          'High',
-      )
+      await cancel()
+      await openThinking()
+      const roleEffort = dialog.getByRole('radiogroup', { name: 'Default effort for Thinking', exact: true })
       assert({
-        given: 'Sonnet 5.5 inherited in model settings',
-        should: 'highlight High without adding an explicit effort option',
+        given: 'Sonnet 5.5 selected before saving',
+        should: 'highlight its default effort and identify the other affected roles',
         actual: [
           await roleEffort.getByRole('radio', { name: 'High', exact: true }).getAttribute('aria-checked'),
-          config.ai.profiles?.['default-sonnet-5.5']?.options?.effort,
+          await dialog.getByText(/also updates Balanced and Vision/).isVisible(),
         ],
-        expected: ['true', undefined],
+        expected: ['true', true],
       })
-      await page.locator('.sky-preset-toggle').filter({ hasText: 'default-sonnet-5.5' }).click()
+      await cancel()
+      assert({
+        given: 'a cancelled change of preset',
+        should: 'keep the assignment and its inherited effort',
+        actual: [config.ai.roles?.reasoning, config.ai.profiles?.['default-sonnet-5.5']?.options?.effort],
+        expected: [undefined, undefined],
+      })
+      await openLibrary()
+      await page.locator('a[href$="/edit/default-sonnet-5.5"]').click()
       assert({
         given: 'editing a preset that inherits the model default',
         should: 'highlight High in the preset editor',
-        actual: await page
-          .locator('.sky-preset-editor')
-          .getByRole('radio', { name: 'High', exact: true })
-          .getAttribute('aria-checked'),
+        actual: await dialog.getByRole('radio', { name: 'High', exact: true }).getAttribute('aria-checked'),
         expected: 'true',
       })
-      await page.getByRole('button', { name: 'Save preset', exact: true }).click()
-      await page.locator('.sky-preset-editor').waitFor({ state: 'hidden' })
+      await dialog.getByRole('button', { name: 'Save preset', exact: true }).click()
+      await dialog.waitFor({ state: 'hidden' })
       assert({
         given: 'saving an inherited default without changing it',
         should: 'keep the effort option omitted',
         actual: config.ai.profiles?.['default-sonnet-5.5']?.options?.effort,
         expected: undefined,
       })
+      await openAssignments()
+      await openThinking()
       await roleEffort.getByRole('radio', { name: 'Low', exact: true }).click()
-      await page.waitForFunction(
-        () =>
-          document.querySelector('[aria-label="Default effort for Balanced"] [aria-checked="true"]')?.textContent ===
-          'Low',
-      )
+      await dialog.getByRole('button', { name: 'Save changes', exact: true }).click()
+      await dialog.waitFor({ state: 'hidden' })
       assert({
-        given: 'Thinking reassigned to the preset already used by Balanced and Vision',
-        should: 'save the assignment and show the shared effort change in every role',
+        given: 'Thinking reassigned to the preset already used by Balanced and Vision with a new effort',
+        should: 'save both changes and update all three assignments',
         actual: [
           config.ai.roles?.reasoning,
           config.ai.profiles?.['default-sonnet-5.5']?.options?.effort,
-          await page
-            .getByRole('radiogroup', { name: 'Default effort for Vision' })
-            .getByRole('radio', { name: 'Low', exact: true })
-            .getAttribute('aria-checked'),
+          ...(await Promise.all(
+            ['Thinking', 'Balanced', 'Vision'].map((role) =>
+              page
+                .getByRole('link', { name: `Change preset for ${role}`, exact: true })
+                .getByText('Low', { exact: true })
+                .isVisible(),
+            ),
+          )),
         ],
-        expected: ['default-sonnet-5.5', 'low', 'true'],
+        expected: ['default-sonnet-5.5', 'low', true, true, true],
       })
       await capture('settings-defaults')
-      await page.locator('.sky-preset-toggle').filter({ hasText: 'custom-effort' }).click()
-      await page.getByRole('button', { name: 'Save preset', exact: true }).click()
-      await page.locator('.sky-preset-editor').waitFor({ state: 'hidden' })
+      await openLibrary()
+      await page.getByText('Custom', { exact: true }).click()
+      await page.locator('a[href$="/edit/custom-effort"]').click()
+      await dialog.getByRole('button', { name: 'Save preset', exact: true }).click()
+      await dialog.waitFor({ state: 'hidden' })
       assert({
         given: 'an existing custom provider effort edited in Settings',
         should: 'keep its raw provider options',
         actual: config.ai.profiles?.['custom-effort']?.options,
         expected: { reasoningEffort: 'none', temperature: 0.4 },
       })
-      await page.getByRole('button', { name: '＋ New preset', exact: true }).click()
-      await page.getByRole('textbox', { name: 'Preset name', exact: true }).fill('deep-work')
-      await page.getByRole('combobox', { name: 'Preset model', exact: true }).click()
-      await page.getByRole('option', { name: 'Claude Opus 5.5 · anthropic', exact: true }).click()
-      await page
+      await page.getByRole('link', { name: 'New preset', exact: true }).click()
+      await dialog.getByRole('textbox', { name: 'Preset name', exact: true }).fill('deep-work')
+      await dialog.getByRole('combobox', { name: 'Preset model', exact: true }).click()
+      await page.getByRole('option', { name: 'Claude Opus 5.5 · Anthropic', exact: true }).click()
+      await dialog
         .getByRole('radiogroup', { name: 'Effort', exact: true })
         .getByRole('radio', { name: 'Max', exact: true })
         .click()
-      await page.getByRole('button', { name: 'Save preset', exact: true }).click()
-      await page.locator('.sky-preset-toggle').filter({ hasText: 'deep-work' }).waitFor()
+      await dialog.getByRole('button', { name: 'Create preset', exact: true }).click()
+      await page.locator('a[href$="/edit/deep-work"]').waitFor()
       assert({
         given: 'a new named preset created with separate model and effort controls',
         should: 'save its model and default effort',
         actual: [config.ai.profiles?.['deep-work']?.model, config.ai.profiles?.['deep-work']?.options?.effort],
         expected: ['claude-opus-5-5', 'max'],
       })
+      await page.getByRole('link', { name: 'New preset', exact: true }).click()
+      await dialog.getByRole('textbox', { name: 'Preset name', exact: true }).fill('local-review')
+      await dialog.getByRole('combobox', { name: 'Preset model', exact: true }).click()
+      await page.getByRole('option', { name: 'Custom model…', exact: true }).click()
+      await dialog.getByRole('textbox', { name: 'Model ID', exact: true }).fill('sample-local-model')
+      await dialog.getByRole('combobox', { name: 'Provider', exact: true }).click()
+      await page.getByRole('option', { name: 'lm-studio', exact: true }).click()
+      await dialog.getByRole('textbox', { name: 'Other options (JSON)' }).fill('{"reasoningEffort":"none"}')
+      await dialog.getByRole('button', { name: 'Create preset', exact: true }).click()
+      await page.locator('a[href$="/edit/local-review"]').waitFor()
+      assert({
+        given: 'a new custom model that takes its own provider effort option',
+        should: 'keep the manually entered option when the preset is created',
+        actual: config.ai.profiles?.['local-review']?.options,
+        expected: { reasoningEffort: 'none' },
+      })
+      await openAssignments()
       await page.setViewportSize({ width: 390, height: 844 })
       await page.getByRole('heading', { name: 'Models', exact: true }).scrollIntoViewIfNeeded()
       await capture('settings-mobile')

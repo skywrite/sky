@@ -272,6 +272,7 @@ function Canvas() {
   useEffect(() => {
     // These screens set their own titles from the content they display.
     if (
+      settingsSection === 'models' ||
       journalRoute ||
       meetingRoute ||
       noteRoute ||

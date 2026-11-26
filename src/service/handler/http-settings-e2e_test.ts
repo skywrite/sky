@@ -203,30 +203,35 @@ test(
         ],
         expected: ['Models', 0],
       })
-      await page.locator('.sky-preset-toggle').filter({ hasText: 'sample' }).click()
-      await page.getByRole('combobox', { name: 'Preset model', exact: true }).waitFor()
       await capture('models-light')
-      await nav.getByRole('button', { name: 'Decisions', exact: true }).click()
-      await page.getByRole('heading', { name: 'Decisions', exact: true }).waitFor()
-      await page.waitForFunction(() => document.title === 'sky · Decisions')
-      const decisionProvider = page.getByRole('combobox', { name: 'Decision provider', exact: true })
+      await page.getByRole('link', { name: 'Preset library', exact: true }).click()
+      await page.waitForFunction(() => document.title === 'sky · Preset library')
+      await page.locator('a[href$="/edit/sample"]').click()
+      await page.getByRole('combobox', { name: 'Preset model', exact: true }).waitFor()
+      await page.getByRole('button', { name: 'Cancel', exact: true }).click()
+      await page.getByRole('searchbox', { name: 'Search presets', exact: true }).fill('TypeSafe')
+      await page.getByRole('link', { name: /TypeSafe Jev/ }).click()
+      const decision = page.getByRole('dialog', { name: 'Background decisions' })
+      await page.waitForFunction(() => document.title === 'sky · Background decisions')
+      await decision.getByRole('link', { name: 'Open TypeSafe connection' }).waitFor()
       assert({
-        given: 'the Decisions page under AI',
-        should: 'show TypeSafe as the locked provider, the pinned model, and key status',
+        given: 'the decision model in the preset library without a TypeSafe key',
+        should: 'identify the pinned release and link to its connection',
         actual: [
-          await nav.locator('[aria-current="page"]').innerText(),
-          await decisionProvider.inputValue(),
-          await decisionProvider.isDisabled(),
-          await page.getByText('Locked', { exact: true }).isVisible(),
-          await page.getByText('jev-1.13.0', { exact: true }).isVisible(),
-          await page.getByText('Not configured', { exact: true }).isVisible(),
+          await decision.getByText('TypeSafe Jev', { exact: true }).isVisible(),
+          await decision.getByText(/jev-1\.13\.0 · Pinned release/).isVisible(),
+          await decision.getByText('API key needed', { exact: true }).isVisible(),
+          await decision.getByRole('link', { name: 'Open TypeSafe connection' }).getAttribute('href'),
         ],
-        expected: ['Decisions', 'TypeSafe Jev', true, true, true, true],
+        expected: [true, true, true, '/settings/connections/typesafe'],
       })
-      await nav.getByRole('button', { name: 'Models', exact: true }).click()
-      await page.waitForFunction(() => document.title === 'sky · Models')
       await page.goBack()
-      await page.waitForFunction(() => document.title === 'sky · Decisions')
+      await page.waitForFunction(() => document.title === 'sky · Preset library')
+      await page.goForward()
+      await page.waitForFunction(() => document.title === 'sky · Background decisions')
+      await decision.getByRole('button', { name: 'Done' }).click()
+      await page.getByRole('link', { name: 'Assignments', exact: true }).click()
+      await page.waitForFunction(() => document.title === 'sky · Models')
       await nav.getByRole('button', { name: 'Audio transcription', exact: true }).click()
       const transcription = page.getByRole('combobox', { name: 'Transcription provider', exact: true })
       await transcription.click()
@@ -432,8 +437,8 @@ test(
       for (const [route, title] of [
         ['/settings/writing-voice', 'Writing style'],
         ['/settings/ai', 'Models'],
-        ['/settings/ai/decisions', 'Decisions'],
-        ['/settings/decisions', 'Decisions'],
+        ['/settings/ai/decisions', 'Background decisions'],
+        ['/settings/decisions', 'Background decisions'],
         ['/settings/voice', 'Voice'],
         ['/settings/ai/transcription', 'Audio transcription'],
         ['/settings/prompts', 'Prompts'],
@@ -444,7 +449,14 @@ test(
         ['/settings/about', 'About Sky'],
       ]) {
         await page.goto(`${base}${route}`)
-        await page.getByRole('heading', { name: title, exact: true }).waitFor()
+        if (title === 'Background decisions') {
+          await page.getByRole('dialog', { name: title }).waitFor()
+          await page.waitForFunction(() => document.title === 'sky · Background decisions')
+          await page.getByRole('button', { name: 'Done', exact: true }).click()
+          await page.waitForFunction(() => document.title === 'sky · Models')
+        } else {
+          await page.getByRole('heading', { name: title, exact: true }).waitFor()
+        }
         if (route === '/settings/notebook') {
           const openSavedControl = page.locator('[aria-label="Open saved items in"]')
           await openSavedControl.locator('input[value="browser"]:checked').waitFor({ state: 'attached' })

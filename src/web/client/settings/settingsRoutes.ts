@@ -21,13 +21,7 @@ export const SETTINGS_PAGES = {
     label: 'Models',
     href: '/settings/ai/models',
     group: 'AI',
-    description: 'The models Sky uses to think, write, and understand your world.',
-  },
-  decisions: {
-    label: 'Decisions',
-    href: '/settings/ai/decisions',
-    group: 'AI',
-    description: 'Fast, structured judgments Sky makes in the background — routing, sorting, and screening.',
+    description: 'Choose which models Sky uses for conversations, tasks, and background decisions.',
   },
   transcription: {
     label: 'Audio transcription',
@@ -104,13 +98,16 @@ export function settingsSectionOf(path: string): SettingsSection | null {
   for (const [id, page] of Object.entries(SETTINGS_PAGES)) {
     if (
       clean === page.href ||
-      ((id === 'prompts' || id === 'connections' || id === 'browser-automation' || id === 'extensions') &&
+      ((id === 'models' ||
+        id === 'prompts' ||
+        id === 'connections' ||
+        id === 'browser-automation' ||
+        id === 'extensions') &&
         clean.startsWith(`${page.href}/`))
     )
       return id as SettingsSection
   }
-  if (clean === '/settings/ai') return 'models'
-  if (clean === '/settings/decisions') return 'decisions'
+  if (clean === '/settings/ai' || clean === '/settings/decisions' || clean === '/settings/ai/decisions') return 'models'
   if (clean === '/settings/credentials/typesafe') return 'connections'
   if (clean === '/settings/credentials' || clean.startsWith('/settings/credentials/')) return 'browser-automation'
   if (clean === '/settings/appearance') return 'appearance'

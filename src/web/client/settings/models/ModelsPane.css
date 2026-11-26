@@ -1,0 +1,593 @@
+.sky-main[data-settings-section='models'] > .sky-head {
+  padding-top: 8px;
+  padding-bottom: 4px;
+}
+.sky-col.sky-set[data-section='models'] {
+  max-width: 1060px;
+  width: 100%;
+  padding: 27px 48px 65px;
+  gap: 0;
+}
+.sky-set[data-section='models'] .sky-set-heading {
+  margin: 0;
+}
+.sky-set[data-section='models'] .sky-set-heading h1 {
+  font-size: clamp(34px, 2.8vw, 39px);
+  letter-spacing: -0.04em;
+  line-height: 1.13;
+  margin-bottom: 9px;
+  font-weight: 630;
+}
+.sky-set[data-section='models'] .sky-set-heading p {
+  max-width: none;
+  font-size: 17px;
+}
+.sky-models,
+.sky-model-form {
+  --model-muted: color-mix(in srgb, var(--sky-dim) 68%, var(--sky-text-2));
+}
+.sky-model-icon {
+  flex: none;
+  vertical-align: middle;
+}
+.sky-models a:focus-visible {
+  outline: 2px solid var(--sky-action-focus);
+  outline-offset: 2px;
+}
+.sky-model-views {
+  display: flex;
+  gap: 26px;
+  border-bottom: 1px solid var(--sky-border-soft);
+  margin: 19px 0 22px;
+}
+.sky-model-views a {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 2px 12px;
+  color: var(--model-muted);
+  text-decoration: none;
+  font-size: 15px;
+  font-weight: 520;
+}
+.sky-model-views .sky-model-icon {
+  width: 16px;
+  height: 16px;
+}
+.sky-model-views a[aria-current='page'] {
+  color: var(--sky-text);
+  font-weight: 620;
+}
+.sky-model-views a[aria-current='page']::after {
+  content: '';
+  position: absolute;
+  bottom: -1px;
+  inset-inline: 0;
+  height: 2.5px;
+  background: var(--sky-action-primary);
+  border-radius: 3px 3px 0 0;
+}
+.sky-model-views a:hover {
+  color: var(--sky-text);
+}
+.sky-model-features {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+.sky-model-feature[data-kind='chat'],
+.sky-model-kind-icon[data-kind='chat'] {
+  --model-ink: var(--sky-workstream-blue-ink);
+  --model-tint: color-mix(in srgb, var(--sky-workstream-blue-fill) 51%, var(--sky-bg));
+  --model-edge: color-mix(in srgb, var(--sky-workstream-blue-border) 65%, var(--sky-border-soft));
+  --model-icon-bg: color-mix(in srgb, var(--sky-workstream-blue-border) 47%, transparent);
+}
+.sky-model-feature[data-kind='decision'],
+.sky-model-kind-icon[data-kind='decision'],
+.sky-model-release {
+  --model-ink: var(--sky-workstream-mint-ink);
+  --model-tint: color-mix(in srgb, var(--sky-workstream-mint-fill) 34%, var(--sky-bg));
+  --model-edge: color-mix(in srgb, var(--sky-workstream-mint-border) 52%, var(--sky-border-soft));
+  --model-icon-bg: color-mix(in srgb, var(--sky-workstream-mint-border) 47%, transparent);
+}
+.sky-model-feature {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 20px 23px 12px;
+  border: 1px solid var(--model-edge);
+  border-radius: var(--sky-card-radius);
+  background: var(--model-tint);
+}
+.sky-model-feature header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--model-ink);
+}
+.sky-model-kind-icon,
+.sky-model-row-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 33px;
+  height: 33px;
+  border-radius: 10px;
+  flex: none;
+  background: var(--model-icon-bg);
+  color: var(--model-ink);
+}
+.sky-model-feature h2 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 620;
+  letter-spacing: -0.01em;
+}
+.sky-model-name {
+  margin: 14px 0 2px;
+  color: var(--sky-text);
+  font-size: clamp(24px, 2vw, 29px);
+  line-height: 1.25;
+  font-weight: 590;
+  letter-spacing: -0.035em;
+  overflow-wrap: anywhere;
+}
+.sky-model-feature p {
+  margin: 0 0 16px;
+  font-size: 14px;
+  color: var(--sky-text-2);
+  overflow-wrap: anywhere;
+}
+.sky-model-feature footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: auto;
+  padding-top: 10px;
+  min-height: 45px;
+  border-top: 1px solid color-mix(in srgb, var(--model-ink) 16%, transparent);
+}
+.sky-model-feature footer a {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 9px;
+  margin: 0 -8px 0 auto;
+  border-radius: 999px;
+  font-size: 14px;
+  font-weight: 570;
+  color: var(--model-ink);
+  text-decoration: none;
+}
+.sky-model-feature footer a:hover {
+  background: color-mix(in srgb, var(--model-ink) 8%, transparent);
+}
+.sky-model-feature footer .sky-model-icon,
+.sky-model-effort .sky-model-icon {
+  width: 15px;
+  height: 15px;
+}
+.sky-model-key {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--sky-workstream-mint-ink);
+  font-size: 13px;
+  font-weight: 500;
+}
+.sky-model-key::before {
+  content: '';
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--sky-green);
+  flex: none;
+}
+.sky-model-key[data-configured='false'] {
+  color: var(--sky-workstream-orange-ink);
+}
+.sky-model-key[data-configured='false']::before {
+  background: var(--sky-amber);
+}
+.sky-model-effort {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--sky-text-2);
+  font-size: 14px;
+  line-height: 1.4;
+}
+.sky-model-feature .sky-model-effort {
+  font-size: 13px;
+}
+.sky-model-meter {
+  display: inline-flex;
+  align-items: flex-end;
+  height: 14px;
+  gap: 2px;
+  flex: none;
+}
+.sky-model-meter i {
+  width: 3px;
+  border-radius: 1px;
+  background: color-mix(in srgb, var(--sky-action-primary) 24%, var(--sky-bg));
+}
+.sky-model-meter i[data-on='true'] {
+  background: var(--sky-action-primary);
+}
+.sky-model-tasks {
+  margin-top: 30px;
+}
+.sky-model-tasks h2,
+.sky-model-library h2 {
+  margin: 0;
+  font-size: 22px;
+  line-height: 1.35;
+  letter-spacing: -0.025em;
+  font-weight: 600;
+}
+.sky-model-tasks h2 {
+  margin-bottom: 12px;
+}
+.sky-model-columns,
+.sky-model-row {
+  display: grid;
+  grid-template-columns: minmax(190px, 1.32fr) minmax(132px, 0.94fr) minmax(82px, 0.49fr) 16px;
+  align-items: center;
+  column-gap: 16px;
+}
+.sky-model-columns {
+  padding: 8px 10px;
+  color: var(--model-muted);
+  font-size: 12.5px;
+  font-weight: 520;
+  border-bottom: 1px solid var(--sky-border-soft);
+}
+.sky-model-row {
+  text-decoration: none;
+  padding: 11px 10px;
+  min-height: 64px;
+  border-bottom: 1px solid var(--sky-border-soft);
+  color: var(--sky-text);
+  overflow-wrap: anywhere;
+}
+.sky-model-row:hover {
+  border-radius: 9px;
+  background: var(--sky-side);
+}
+.sky-model-row > .sky-model-icon {
+  width: 15px;
+  height: 15px;
+  color: var(--model-muted);
+}
+.sky-model-row:hover > .sky-model-icon {
+  color: var(--sky-action-primary);
+}
+.sky-model-cell {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  min-width: 0;
+}
+.sky-model-row-icon {
+  width: 32px;
+  height: 32px;
+  background: var(--sky-s2);
+  color: var(--sky-text-2);
+}
+.sky-model-cell strong {
+  display: block;
+  font-size: 16px;
+  font-weight: 590;
+  line-height: 1.35;
+  letter-spacing: -0.015em;
+}
+.sky-model-cell small,
+.sky-model-option small {
+  display: block;
+  color: var(--model-muted, var(--sky-text-2));
+  font-size: 13px;
+  line-height: 1.45;
+  margin-top: 2px;
+}
+.sky-model-value {
+  font-size: 15px;
+  line-height: 1.4;
+}
+.sky-model-footnote {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  font-size: 13px;
+  color: var(--model-muted);
+  margin: 15px 0 0;
+}
+.sky-model-footnote .sky-model-icon {
+  width: 15px;
+  height: 15px;
+  margin-top: 3px;
+}
+.sky-model-library > header,
+.sky-model-tools {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+.sky-model-library > header p {
+  margin: 4px 0 0;
+  font-size: 15px;
+  color: var(--model-muted);
+}
+.sky-model-tools {
+  margin: 20px 0 8px;
+}
+.sky-model-tools .mantine-TextInput-root {
+  width: min(300px, 100%);
+}
+.sky-model-library :is(.sky-model-columns, .sky-model-row) {
+  grid-template-columns: minmax(205px, 1.45fr) minmax(112px, 0.7fr) minmax(104px, 0.7fr) 16px;
+}
+.sky-model-empty {
+  border: 1px solid var(--sky-border-soft);
+  border-radius: 14px;
+  padding: 26px 16px;
+  text-align: center;
+  margin-top: 12px;
+  font-size: 16px;
+}
+.sky-model-empty p {
+  font-size: 14px;
+  margin: 5px 0 14px;
+  color: var(--model-muted);
+}
+.sky-model-form {
+  display: grid;
+  gap: 16px;
+}
+.sky-model-intro,
+.sky-model-caption,
+.sky-model-impact {
+  margin: 0;
+  color: var(--sky-text-2);
+  font-size: 15px;
+  line-height: 1.55;
+}
+.sky-model-caption {
+  color: var(--model-muted);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.sky-model-form > .sky-model-caption {
+  margin-top: -12px;
+}
+.sky-model-field-label {
+  margin-bottom: 6px;
+  font-size: 15px;
+  font-weight: 550;
+}
+.sky-model-impact {
+  font-size: 14px;
+  background: var(--sky-side);
+  padding: 10px 13px;
+  border-radius: 10px;
+}
+.sky-model-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  padding: 12px 0;
+}
+.sky-model-fields > * {
+  min-width: 0;
+}
+.sky-model-advanced {
+  border-top: 1px solid var(--sky-border-soft);
+  padding-top: 12px;
+}
+.sky-model-advanced summary {
+  font-size: 15px;
+  color: var(--sky-text-2);
+  cursor: pointer;
+  width: fit-content;
+}
+.sky-model-advanced .sky-model-caption {
+  margin-top: 8px;
+}
+.sky-model-provider-heading {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: 1;
+  padding: 0.3rem 0.6rem;
+  background: var(--sky-side);
+  color: var(--sky-text-2);
+  font-size: 0.77rem;
+  font-weight: 650;
+}
+.sky-model-preset-option {
+  scroll-margin-block-start: 2rem;
+}
+.sky-model-form :is(.mantine-Select-input, .mantine-TextInput-input, .mantine-NumberInput-input) {
+  min-height: 42px;
+  font-size: 16px;
+}
+.sky-model-release {
+  margin-top: 18px;
+  background: var(--model-tint);
+  border: 1px solid var(--model-edge);
+  border-radius: 14px;
+  padding: 16px 17px;
+  font-size: 14px;
+  color: var(--sky-text-2);
+}
+.sky-model-release strong {
+  color: var(--sky-text);
+  font-size: 19px;
+  font-weight: 600;
+}
+.sky-model-release .sky-model-icon {
+  width: 15px;
+  height: 15px;
+}
+.sky-model-release p,
+.sky-model-access p {
+  margin: 8px 0 0;
+  line-height: 1.5;
+}
+.sky-model-access {
+  margin-top: 18px;
+  color: var(--sky-text-2);
+  font-size: 14px;
+}
+.sky-model-access header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.sky-model-access h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 590;
+  color: var(--sky-text);
+}
+.sky-model-notice:not(:empty) {
+  position: fixed;
+  bottom: 22px;
+  left: calc(50% + 138px);
+  transform: translateX(-50%);
+  z-index: 35;
+  background: var(--sky-text);
+  color: var(--sky-bg);
+  border-radius: 13px;
+  padding: 9px 17px;
+  font-size: 14px;
+  max-width: min(92vw, 540px);
+  width: max-content;
+}
+@media (min-width: 901px) and (max-width: 1190px) {
+  .sky-col.sky-set[data-section='models'] {
+    padding-inline: 28px;
+  }
+  .sky-model-feature {
+    padding-inline: 17px;
+  }
+  .sky-models :is(.sky-model-row, .sky-model-columns) {
+    column-gap: 12px;
+    grid-template-columns: minmax(154px, 1.35fr) minmax(105px, 0.94fr) minmax(66px, 0.5fr) 12px;
+  }
+  .sky-model-row-icon {
+    display: none;
+  }
+}
+@media (max-width: 900px) {
+  .sky-main[data-settings-section='models'] > .sky-head {
+    padding-left: 24px;
+  }
+  .sky-col.sky-set[data-section='models'] {
+    padding: 19px 24px 50px;
+  }
+  .sky-model-notice:not(:empty) {
+    left: 50%;
+  }
+}
+@media (max-width: 650px) {
+  .sky-main[data-settings-section='models'] > .sky-head {
+    padding-left: 18px;
+  }
+  .sky-col.sky-set[data-section='models'] {
+    padding: 16px 18px 44px;
+  }
+  .sky-set[data-section='models'] .sky-set-heading p {
+    font-size: 16px;
+    line-height: 1.5;
+  }
+  .sky-model-views {
+    margin: 13px 0 16px;
+  }
+  .sky-model-features {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+  .sky-model-feature {
+    padding: 12px 15px 9px;
+    border-radius: 15px;
+  }
+  .sky-model-feature header {
+    gap: 7px;
+  }
+  .sky-model-kind-icon {
+    width: 25px;
+    height: 25px;
+    border-radius: 7px;
+  }
+  .sky-model-kind-icon svg {
+    width: 16px;
+    height: 16px;
+  }
+  .sky-model-feature h2 {
+    font-size: 14px;
+  }
+  .sky-model-name {
+    font-size: 23px;
+    margin: 7px 0 0;
+  }
+  .sky-model-feature p {
+    font-size: 13px;
+    margin-bottom: 6px;
+  }
+  .sky-model-feature footer {
+    padding-top: 3px;
+    min-height: 30px;
+  }
+  .sky-model-tasks {
+    margin-top: 22px;
+  }
+  .sky-model-columns {
+    display: none;
+  }
+  .sky-models .sky-model-row {
+    grid-template-columns: minmax(0, 1fr) auto 12px;
+    gap: 3px 8px;
+    padding: 10px 2px;
+  }
+  .sky-model-columns + .sky-model-row {
+    border-top: 1px solid var(--sky-border-soft);
+  }
+  .sky-model-cell {
+    grid-column: 1 / 3;
+  }
+  .sky-model-row-icon,
+  .sky-model-row .sky-model-kind-icon {
+    display: none;
+  }
+  .sky-model-value {
+    grid-column: 1;
+    grid-row: 2;
+    padding-top: 3px;
+    font-size: 14px;
+    color: var(--sky-text-2);
+  }
+  .sky-model-row > .sky-model-effort {
+    grid-column: 2;
+    grid-row: 2;
+    font-size: 13px;
+  }
+  .sky-model-row > .sky-model-icon {
+    grid-column: 3;
+    grid-row: 1 / 3;
+  }
+  .sky-model-tools {
+    gap: 9px;
+  }
+  .sky-model-tools .mantine-TextInput-root {
+    flex: 1 1 155px;
+  }
+  .sky-model-fields {
+    grid-template-columns: 1fr;
+  }
+}

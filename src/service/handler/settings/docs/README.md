@@ -20,7 +20,7 @@ People & Orgs appears above the Settings heading in this sidebar. Its pages and
 record storage are owned by [People & Orgs](../../people/docs/README.md).
 
 Settings use one level of navigation: Appearance; Me (About me, Writing style);
-AI (Models, Decisions, Audio transcription, Voice, Prompts); Connections; Browser automation;
+AI (Models, Audio transcription, Voice, Prompts); Connections; Browser automation;
 Extensions; Notebook; Advanced; Experimental; About Sky.
 Group labels open their first page; the adjacent disclosure toggles their children.
 `web/client/settings/settingsRoutes.ts` owns canonical paths and legacy aliases, including
@@ -45,9 +45,6 @@ Pages:
   reads are bounded. Web text is evidence, never instructions. Failed sources
   remain visible, and accepting a suggestion changes the draft until Save.
   The existing memory count and notebook link live here too.
-- **AI → Decisions** — `/settings/ai/decisions`: decision provider, pinned model,
-  and TypeSafe API key availability. Backed by the `default` decision role
-  (`default-typesafe-jev` in `_shared-ts/ai/decisions.ts`), currently locked to TypeSafe Jev.
 - **AI → Audio transcription** — `/settings/ai/transcription`: provider, model,
   upload limit, and API key availability. Selecting MacWhisper loads its
   installed local models, with refresh and setup guidance. Saves to `ai.models.transcription`;
@@ -64,16 +61,16 @@ Pages:
   practice, revision questions, and example compaction. Storage and learning
   belong to [writing voice](../../../../lib/writingVoice/docs/README.md).
   The selection saves to `ai.writingVoiceProfile` and applies on the next call.
-- **AI → Models** — `/settings/ai/models`: Chat, Frontier, Thinking, Quick, Balanced, and
-  Vision select named presets (`ai.roles`). Each preset owns a model and
-  default effort; the inline effort control edits that preset, and shared
-  roles are identified beside it. Preset editors separate model and effort,
-  with provider ID, server, context window, and other JSON options under
-  Advanced. Edits write `ai.profiles.<name>`; built-ins can be overridden
-  and restored. Assigned custom presets cannot be deleted until their roles
-  are reassigned. The registry resolves the current config for every call,
-  without a service restart. Chat and CLI effort overrides do not mutate
-  presets. See the [registry contract](../../../../_shared-ts/ai/docs/README.md).
+- **AI → Models** — `/settings/ai/models` shows the language-model assignments and the active background decision model.
+  A language role points to a preset in `ai.roles`.
+  Saving its assignment and an optional change to the preset’s shared effort publishes both in one configuration write.
+  The preset library manages `ai.profiles`, including built-in overrides, restoration and advanced provider options.
+  Assigned custom presets must be reassigned before deletion.
+  The decision model shows its pinned release and links to its API key under Connections.
+  Its preset belongs to the decision registry and can only be used for structured judgments.
+  Both `/settings/ai/decisions` and `/settings/decisions` open its details within Models.
+  The registries read the current configuration on each call.
+  See the [registry contract](../../../../_shared-ts/ai/docs/README.md).
 - **AI → Prompts** — `/settings/ai/prompts`: a searchable list of real prompt files and
   their source references. Visual/Markdown editing, saved template links, sample
   variables, and a live rendered preview share one page. Saves create notebook

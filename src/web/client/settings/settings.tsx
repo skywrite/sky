@@ -17,7 +17,7 @@ import type { TranscriptionSettings } from '#commands/all/audio/transcript/lib/m
 import { ExtensionsPane } from '../extensions/extensions.tsx'
 import { playVoicePreview } from '../voice/voicePreview.ts'
 import { WritingVoicePane } from '../writing/writingVoice.tsx'
-import { DecisionsSettings } from './DecisionsSettings.tsx'
+import { ModelsPane } from './models/ModelsPane.tsx'
 import { RemindersSettings } from './RemindersSettings.tsx'
 import { AboutMePane } from './settingsAboutMe.tsx'
 import { BeeperMain } from './settingsBeeper.tsx'
@@ -26,7 +26,6 @@ import { BrowserAutomationMain } from './settingsBrowserAutomation.tsx'
 import { ConnectionsPane, TypeSafeMain } from './settingsConnections.tsx'
 import { DayReviewSettings } from './settingsDayReview.tsx'
 import { GoogleMain } from './settingsGoogle.tsx'
-import { AIPane } from './settingsModels.tsx'
 import { NotionMain } from './settingsNotion.tsx'
 import { PromptsMain } from './settingsPrompts.tsx'
 import { ProviderKeyMain, providerKeyPageOf } from './settingsProviderKeys.tsx'
@@ -41,7 +40,7 @@ export type Theme = 'system' | 'light' | 'dark'
 export type TextSize = 'default' | 'large'
 export type OpenSavedTarget = 'browser' | 'code' | 'none'
 
-interface ModelRow {
+export interface ModelRow {
   role: string
   label: string
   value: string
@@ -213,12 +212,15 @@ export function useSettingsBoot(): SidebarExperiments {
 function useSettings() {
   const [data, setData] = useState<SettingsData | null>(null)
   const [note, setNote] = useState<string | null>(null)
+  const latestRead = useRef(0)
 
   const reload = useCallback(() => {
+    const read = ++latestRead.current
     return fetch('/settings/_api/settings')
       .then(async (r) => {
         if (r.ok) {
           const saved = (await r.json()) as SettingsData
+          if (read !== latestRead.current) return
           setData(saved)
           const { theme, textSize, experimental } = saved
           window.dispatchEvent(
@@ -227,10 +229,12 @@ function useSettings() {
           setNote(null)
         } else {
           const body = (await r.json().catch(() => ({}))) as { message?: string }
-          setNote(body.message ?? `The service answered ${r.status}.`)
+          if (read === latestRead.current) setNote(body.message ?? `The service answered ${r.status}.`)
         }
       })
-      .catch(() => setNote(UNREACHABLE))
+      .catch(() => {
+        if (read === latestRead.current) setNote(UNREACHABLE)
+      })
   }, [])
 
   useEffect(() => {
@@ -726,7 +730,7 @@ export function SettingsMain({
 }: {
   section: SettingsSection
   path: string
-  navigate: (to: string) => void
+  navigate: (to: string, replace?: boolean) => void
   back: { label: string; onClick: () => void }
 }) {
   const { data, note, change, reload } = useSettings()
@@ -749,7 +753,7 @@ export function SettingsMain({
     )
 
   return (
-    <div className="sky-main">
+    <div className="sky-main" data-settings-section={section}>
       <header className="sky-head">
         <Button size="sm" onClick={back.onClick} style={{ marginLeft: -10 }}>
           ‹ {back.label}
@@ -772,7 +776,9 @@ export function SettingsMain({
             <p>{page.description}</p>
           </div>
           {note && <div className="sky-condensed">— {note} —</div>}
-          {section === 'about-me' ? (
+          {section === 'models' ? (
+            <ModelsPane data={data} path={path} navigate={navigate} reload={reload} loadError={Boolean(note)} />
+          ) : section === 'about-me' ? (
             <>
               {data && <DayReviewSettings hours={data.dayReview?.idleHours ?? 5} />}
               <AboutMePane memoryNotes={data?.memoryNotes ?? 0} />
@@ -794,21 +800,6 @@ export function SettingsMain({
                     writingVoice: { ...current.writingVoice, profile },
                   }))
                 }
-              />
-            ) : section === 'models' ? (
-              <AIPane data={data} reload={reload} />
-            ) : section === 'decisions' ? (
-              <DecisionsSettings
-                decisions={
-                  data.decisions ?? {
-                    provider: 'typesafe',
-                    providerLabel: 'TypeSafe Jev',
-                    model: 'jev-1.13.0',
-                    locked: true,
-                    configured: false,
-                  }
-                }
-                navigate={navigate}
               />
             ) : section === 'transcription' ? (
               <TranscriptionPane settings={data.transcription} reload={reload} />
