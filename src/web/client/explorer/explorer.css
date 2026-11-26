@@ -168,6 +168,13 @@
 .sky-crumb {
   font-weight: 500;
   color: var(--sky-dim);
+  text-decoration: none;
+}
+
+/* A directory in the path opens its listing: the way up when no tree is beside the page, as on a phone. */
+a.sky-crumb:hover {
+  color: var(--sky-text);
+  text-decoration: underline;
 }
 
 .sky-crumb-sep {

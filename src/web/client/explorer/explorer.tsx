@@ -752,7 +752,9 @@ export function DocView({
               <span className="sky-crumb-dirs">
                 {segments.slice(0, -1).map((segment, i) => (
                   <Fragment key={i}>
-                    <span className="sky-crumb">{segment}</span>
+                    <a className="sky-crumb" href={fileHref(segments.slice(0, i + 1).join('/'))}>
+                      {segment}
+                    </a>
                     <span className="sky-crumb-sep">/</span>
                   </Fragment>
                 ))}
