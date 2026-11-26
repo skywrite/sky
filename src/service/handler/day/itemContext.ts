@@ -1,5 +1,6 @@
 import * as path from 'node:path'
 import type { Context } from 'hono'
+import type { DictationNames } from '#lib/dictation/names.ts'
 import type { WorkstreamStore } from '#lib/workstreams/store.ts'
 import { exists, readTextFile } from '#shared/fs/mod.ts'
 import DayDocument from '#shared/models/Day/document/mod.ts'
@@ -15,6 +16,8 @@ export interface ItemRoutesOptions {
   /** The view to answer with once the file is written */
   view: (ymd: string) => Promise<DayView>
   workstreams?: WorkstreamStore
+  /** What the notebook knows about its own names, for live dictation; without it names go unchecked */
+  dictation?: DictationNames
   markdownBaseDir: string
   stateDir?: string
   today: () => PlainDate

@@ -144,7 +144,7 @@ export function createItemRoutes(options: ItemRoutesOptions): Hono {
 
   app.route('/', rows.routes)
   app.route('/', createItemCategoryRoutes())
-  app.route('/', createDictationRoutes(options.timeDir))
+  app.route('/', createDictationRoutes(options.timeDir, undefined, options.dictation))
   app.route('/', createPlanningRoutes(options))
   const organizer = createDayOrganizer(options)
   app.route('/', organizer.routes)

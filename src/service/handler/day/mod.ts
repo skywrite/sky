@@ -7,6 +7,7 @@
 
 import * as path from 'node:path'
 import { Hono } from 'hono'
+import type { DictationNames } from '#lib/dictation/names.ts'
 import type { MostImportantAI } from '#lib/mostImportant/types.ts'
 import { planningDate } from '#lib/nbfs/taskDestination.ts'
 import type { NeedsResponseHost } from '#lib/needsResponse/mod.ts'
@@ -61,6 +62,8 @@ export interface DayRoutesOptions {
   /** Test seam for a failed planning write. */
   writePlanning?: ItemRoutesOptions['writePlanning']
   mostImportant?: MostImportantAI
+  /** What the notebook knows about its own names, for live dictation */
+  dictation?: DictationNames
   needsResponse?: NeedsResponseHost
   todoPriority?: Pick<DayPriorityOptions, 'rank' | 'context'>
   reminderPriority?: Pick<DayPriorityOptions, 'rank' | 'context'>
@@ -335,6 +338,7 @@ export function createDayRoutes(options: DayRoutesOptions): Hono {
       today: () => planningToday(options),
       view: (ymd) => view(ymd),
       workstreams: options.workstreams,
+      dictation: options.dictation,
     }),
   )
   // The day's files: listed, served, kept from a drop, put back, removed.

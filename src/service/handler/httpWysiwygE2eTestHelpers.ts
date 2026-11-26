@@ -191,6 +191,8 @@ export async function runWysiwygE2e(
     now?: ZonedDateTime
     meetings?: (userDataDir: string) => CalendarSchedulerHost
     mostImportant?: MostImportantAI
+    /** Script the names live dictation knows and the check it runs on finished text */
+    dictation?: import('#lib/dictation/names.ts').DictationNames
     needsResponse?: import('#lib/needsResponse/mod.ts').NeedsResponseHost
     todoPriority?: import('./day/mod.ts').DayRoutesOptions['todoPriority']
     reminderPriority?: import('./day/mod.ts').DayRoutesOptions['reminderPriority']
@@ -269,6 +271,7 @@ export async function runWysiwygE2e(
           : {}),
         meetings: options.meetings?.(userDataDir),
         mostImportant: options.mostImportant,
+        dictation: options.dictation,
         needsResponse: options.needsResponse,
         reminderPriority: options.reminderPriority ?? {
           rank: async ({ tasks }) => tasks.map(() => 0),

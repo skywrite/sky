@@ -9,6 +9,7 @@ import * as path from 'node:path'
 import type { YogaServerInstance } from 'graphql-yoga'
 import { Hono } from 'hono'
 import type { CalendarSchedulerHost } from '#lib/calendarScheduler/types.ts'
+import { createDictationNames, type DictationNames } from '#lib/dictation/names.ts'
 import type { MostImportantAI } from '#lib/mostImportant/types.ts'
 import { planningDate } from '#lib/nbfs/taskDestination.ts'
 import { loadSkyConfig, remindersConfig } from '#shared/config/loader.ts'
@@ -110,6 +111,8 @@ export interface HttpHandlerOptions {
   clock?: ClockRoutesOptions
   meetings?: CalendarSchedulerHost
   mostImportant?: MostImportantAI
+  /** Test seam: production reads the notebook's names from the stores below */
+  dictation?: DictationNames
   needsResponse?: import('#lib/needsResponse/mod.ts').NeedsResponseHost
   todoPriority?: import('./day/mod.ts').DayRoutesOptions['todoPriority']
   reminderPriority?: import('./day/mod.ts').DayRoutesOptions['reminderPriority']
@@ -261,6 +264,19 @@ export function createHttpApp(options: HttpHandlerOptions): Hono {
       }),
       workstreams: options.workstreams?.store,
       mostImportant: options.mostImportant,
+      // Live dictation hears the notebook's own names: the people and companies it scores, and its projects.
+      dictation:
+        options.dictation ??
+        createDictationNames({
+          people: () => store.getPeopleWithScores(),
+          orgs: () => store.getOrganizationsWithScores(),
+          projects: () =>
+            markdownStore?.projects
+              .getAll()
+              .getAllItems()
+              .map(({ doc }) => doc.name) ?? [],
+          today: options.now ? () => options.now!().plainDateTime.plainDate : undefined,
+        }),
       needsResponse: options.needsResponse,
       todoPriority: options.todoPriority,
       reminderPriority: options.reminderPriority,

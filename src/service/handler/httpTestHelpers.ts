@@ -1,6 +1,7 @@
 import * as path from 'node:path'
 import type { YogaServerInstance } from 'graphql-yoga'
 import type { CalendarSchedulerHost } from '#lib/calendarScheduler/types.ts'
+import type { DictationNames } from '#lib/dictation/names.ts'
 import type { MostImportantAI } from '#lib/mostImportant/types.ts'
 import type MarkdownStore from '#shared/models/Markdown/Store/mod.ts'
 import type { ZonedDateTime } from '#universal/dates/nbdt/mod.ts'
@@ -44,6 +45,7 @@ export function createTestHttpApp(
     clock?: ClockRoutesOptions
     meetings?: CalendarSchedulerHost
     mostImportant?: MostImportantAI
+    dictation?: DictationNames
     needsResponse?: import('#lib/needsResponse/mod.ts').NeedsResponseHost
     todoPriority?: import('./day/mod.ts').DayRoutesOptions['todoPriority']
     reminderPriority?: import('./day/mod.ts').DayRoutesOptions['reminderPriority']
@@ -81,6 +83,8 @@ export function createTestHttpApp(
     clock: options.clock,
     meetings: options.meetings,
     mostImportant: options.mostImportant,
+    // Never the real model or the owner's saved corrections: a test that dictates scripts its own names.
+    dictation: options.dictation ?? { keywords: async () => [], correct: async (text) => text },
     needsResponse: options.needsResponse,
     todoPriority: options.todoPriority ?? { rank: async ({ tasks }) => tasks.map(() => 0), context: async () => [] },
     reminderPriority: options.reminderPriority ?? {

@@ -61,3 +61,98 @@ test('entry dictation issues a short-lived transcription credential only for an 
     await rm(dir, { recursive: true, force: true })
   }
 })
+
+test('entry dictation tells the transcriber the notebook names and checks the finished text against them', async () => {
+  const dir = await makeTempDir({ prefix: 'sky-entry-dictation-names-' })
+  const sessions: Array<{ session: { audio: { input: { transcription: unknown } } } }> = []
+  const reported: Array<{ source: string; stage?: string; message: string }> = []
+  const client = new OpenAI({
+    apiKey: 'synthetic-project-key',
+    fetch: async (input, init) => {
+      sessions.push(await new Request(input, init).json())
+      return Response.json({ value: 'synthetic-client-secret', session: { id: 'synthetic-session' } })
+    },
+  })
+  let listReadable = true
+  const names = {
+    keywords: async () => {
+      if (!listReadable) throw new Error('saved corrections unreadable')
+      return ['Jane Doe', 'Atlas Console']
+    },
+    correct: async (text: string) => {
+      if (text.includes('fail')) throw new Error('model unavailable')
+      return text.replace('Jane Doh', 'Jane Doe')
+    },
+  }
+  const app = createDictationRoutes(
+    dir,
+    async () => client,
+    names,
+    async (entry) => void reported.push(entry),
+  )
+  const post = (route: string, body: unknown, headers: Record<string, string> = {}) =>
+    app.request(`/2026-01-27/item/${route}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...headers },
+      body: JSON.stringify(body),
+    })
+  try {
+    const started = await post('dictation', {})
+    listReadable = false
+    const startedWithoutList = await post('dictation', {})
+    const fixed = await post('dictation/names', { text: "Review Jane Doh's plan" })
+    const failed = await post('dictation/names', { text: 'this will fail' })
+    const refused = await Promise.all([
+      post('dictation/names', { text: 'Review the plan' }, { origin: 'https://example.com' }),
+      post('dictation/names', { text: 'Review the plan' }, { 'content-type': 'text/plain' }),
+      post('dictation/names', { words: 'Review the plan' }),
+    ])
+    const unchecked = await createDictationRoutes(dir, async () => client).request('/2026-01-27/item/dictation/names', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ text: "Review Jane Doh's plan" }),
+    })
+    assert({
+      given: 'a day page that knows its names, then a names list that cannot be read',
+      should: 'start dictation with the names as keywords, and still start it without them',
+      actual: [
+        started.status,
+        sessions[0]?.session.audio.input.transcription,
+        startedWithoutList.status,
+        sessions[1]?.session.audio.input.transcription,
+        reported[0],
+      ],
+      expected: [
+        200,
+        { model: 'gpt-live-transcribe', delay: 'low', keywords: ['Jane Doe', 'Atlas Console'] },
+        200,
+        { model: 'gpt-live-transcribe', delay: 'low' },
+        { source: 'day:dictation', stage: 'keywords', message: 'saved corrections unreadable' },
+      ],
+    })
+    assert({
+      given:
+        'finished text with a misheard name, a check that fails, requests from elsewhere, and a page with no names',
+      should:
+        'return the corrected text, say plainly when names went unchecked, refuse outsiders, and pass text through',
+      actual: [
+        [fixed.status, await fixed.json(), fixed.headers.get('cache-control')],
+        [failed.status, await failed.json(), reported[1]],
+        refused.map((response) => response.status),
+        [unchecked.status, await unchecked.json()],
+      ],
+      expected: [
+        [200, { text: "Review Jane Doe's plan" }, 'no-store'],
+        [
+          502,
+          { error: 'Sky could not check the names in this text. Review them before saving.' },
+          { source: 'day:dictation:names', stage: 'check', message: 'model unavailable' },
+        ],
+        [403, 400, 400],
+        [200, { text: "Review Jane Doh's plan" }],
+      ],
+    })
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
