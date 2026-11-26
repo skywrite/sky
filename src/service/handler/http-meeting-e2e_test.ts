@@ -538,3 +538,206 @@ test(
     )
   },
 )
+
+test(
+  {
+    name: 'meeting composer — explains missing From account separately from conflicts, allows scheduling through conflicts, and shows the active account',
+    timeout: 60000,
+  },
+  async (t) => {
+    await runWysiwygE2e(
+      t,
+      { initialMarkdown: '# Test notebook\n', tempPrefix: 'sky-meeting-account-', day: true },
+      async ({ page, origin }) => {
+        const sent: CalendarFields[] = []
+        const artifacts = env.get('SKY_MEETING_SCREENSHOTS')
+        if (artifacts) await mkdir(artifacts, { recursive: true })
+        let defaultAccount: string | undefined
+        const fields: CalendarFields = {
+          title: 'Alex and Jane',
+          date: '2030-05-03',
+          time: '09:15',
+          timezone: 'America/Chicago',
+          duration: 60,
+          account: '',
+          guests: [],
+          description: '',
+        }
+        await page.route('**/clock/_api/now', (route) =>
+          route.fulfill({
+            json: {
+              notebook: { date: '2030-05-01', time: '10:00', timezone: fields.timezone },
+              system: { date: '2030-05-01', time: '10:00', timezone: fields.timezone },
+            },
+          }),
+        )
+        await page.route('**/meetings/_api/**', async (route) => {
+          const pathname = new URL(route.request().url()).pathname
+          if (pathname.endsWith('/setup'))
+            return route.fulfill({
+              json: {
+                date: '2030-05-01',
+                timezone: fields.timezone,
+                accounts: ['work@example.com', 'personal@example.com'],
+                ...(defaultAccount ? { defaultAccount } : {}),
+              },
+            })
+          if (pathname.endsWith('/parse'))
+            return route.fulfill({
+              json: {
+                fields,
+                assumptions: ['Using the next future Friday, 2030-05-03.'],
+                questions: [],
+                unsupported: [],
+                invitees: [
+                  {
+                    query: 'Alex',
+                    candidates: [{ id: 'alex', name: 'Alex Morgan', hint: 'Atlas', emails: ['work@example.com'] }],
+                    selected: { name: 'Alex Morgan', email: 'work@example.com' },
+                  },
+                  {
+                    query: 'Jane',
+                    candidates: [{ id: 'jane', name: 'Jane Doe', hint: 'Atlas', emails: ['jane@example.com'] }],
+                    selected: { name: 'Jane Doe', email: 'jane@example.com' },
+                  },
+                ],
+              },
+            })
+          if (pathname.endsWith('/preview'))
+            return route.fulfill({
+              json: {
+                date: fields.date,
+                timezone: fields.timezone,
+                warnings: [],
+                calendars: ['Work', 'Personal'],
+                alternatives: ['11:00', '11:15'],
+                reviewKey: 'b'.repeat(64),
+                events: [
+                  {
+                    id: 'hold',
+                    title: 'Focus block',
+                    start: `${fields.date}T08:00:00-05:00`,
+                    end: `${fields.date}T11:00:00-05:00`,
+                    allDay: false,
+                    calendar: 'Work · work@example.com',
+                    busy: true,
+                    conflict: true,
+                  },
+                ],
+              },
+            })
+          if (pathname.endsWith('/create')) {
+            const payload = route.request().postDataJSON().fields as CalendarFields
+            sent.push(payload)
+            return route.fulfill({
+              json: {
+                id: 'conflict-request',
+                state: 'created',
+                result: {
+                  title: payload.title,
+                  calendarUrl: 'https://example.com/calendar',
+                  zoomUrl: 'https://example.com/zoom',
+                },
+              },
+            })
+          }
+          return route.fulfill({ status: 404, json: { message: 'Unknown test route' } })
+        })
+
+        // 1. Multiple accounts with no default + conflict: clearly explain missing From account, never blame conflict.
+        await page.setViewportSize({ width: 1280, height: 900 })
+        await page.goto(`${origin}/schedule`)
+        await page.getByLabel('What are we scheduling?').fill('Alex and Jane Friday at 9:15 AM for 1 hr')
+        await page.getByText('1 scheduling conflict', { exact: true }).waitFor()
+        const create = page.getByRole('button', { name: 'Create & send invites', exact: true })
+        const blocker = page.getByRole('button', { name: 'Choose a From account to schedule', exact: true })
+        const fromBox = await page.locator('.sky-meeting-account').boundingBox()
+        assert({
+          given: 'multiple accounts without a default and a conflicting event',
+          should: 'keep From visible above the fold and explain why Create is disabled separately from conflicts',
+          actual: [
+            await create.isDisabled(),
+            await blocker.isVisible(),
+            await page.getByRole('button', { name: '1 conflict · Review your day', exact: true }).isVisible(),
+            !!fromBox && fromBox.y >= 0 && fromBox.y + fromBox.height <= 900,
+          ],
+          expected: [true, true, true, true],
+        })
+        if (artifacts)
+          await page.screenshot({ path: path.join(artifacts, 'meeting-missing-account.png'), animations: 'disabled' })
+
+        // Clicking the blocker opens the From picker; choosing an account enables scheduling despite the conflict.
+        await blocker.click()
+        await page.getByRole('option', { name: 'work@example.com', exact: true }).click()
+        await create.and(page.locator(':not([disabled])')).waitFor()
+        const footer = page.locator('.sky-meeting-footer')
+        assert({
+          given: 'choosing a From account while a scheduling conflict remains',
+          should: 'enable Create, show the organizer account in the footer, and mark the organizer in Invitees',
+          actual: [
+            await create.isDisabled(),
+            await footer.getByText('From work@example.com').count(),
+            await footer.getByText('1 invitation', { exact: true }).count(),
+            await page.locator('.sky-meeting-guest').first().getByText('work@example.com · Organizer').count(),
+          ],
+          expected: [false, 1, 1, 1],
+        })
+        if (artifacts)
+          await page.screenshot({ path: path.join(artifacts, 'meeting-ready-conflict.png'), animations: 'disabled' })
+
+        // Verify mobile footer layout stays in view without horizontal overflow.
+        await page.setViewportSize({ width: 390, height: 844 })
+        await page.waitForFunction(
+          () => document.querySelector('.sky-schedule-page')?.getBoundingClientRect().width === 390,
+        )
+        const mobileLayout = await page.evaluate(() => ({
+          width: document.documentElement.scrollWidth,
+          footerBottom: document.querySelector('.sky-meeting-footer')!.getBoundingClientRect().bottom,
+        }))
+        assert({
+          given: 'a ready meeting with account and conflict on a 390px phone',
+          should: 'avoid horizontal overflow and keep the action footer visible',
+          actual: [mobileLayout.width, mobileLayout.footerBottom <= 844],
+          expected: [390, true],
+        })
+        if (artifacts)
+          await page.screenshot({
+            path: path.join(artifacts, 'meeting-ready-conflict-mobile.png'),
+            animations: 'disabled',
+          })
+
+        // Scheduling succeeds straight through the conflict and confirms the organizing account.
+        await create.click()
+        await page.getByRole('heading', { name: 'Meeting scheduled', exact: true }).waitFor()
+        assert({
+          given: 'creating a meeting despite a scheduling conflict',
+          should: 'send with the chosen account and confirm it on the receipt',
+          actual: [sent[0]?.account, sent[0]?.guests, await page.getByText('From work@example.com').count()],
+          expected: ['work@example.com', [{ name: 'Jane Doe', email: 'jane@example.com' }], 1],
+        })
+
+        // 2. When setup provides a defaultAccount, pre-select it immediately and allow switching accounts.
+        defaultAccount = 'work@example.com'
+        await page.setViewportSize({ width: 1280, height: 900 })
+        await page.goto(`${origin}/schedule`)
+        await page.getByLabel('What are we scheduling?').fill('Alex and Jane Friday at 9:15 AM for 1 hr')
+        await create.and(page.locator(':not([disabled])')).waitFor()
+        const sendFrom = page.getByRole('combobox', { name: 'Send from', exact: true })
+        assert({
+          given: 'multiple accounts with a default Professional account',
+          should: 'pre-select the default account and enable scheduling right away',
+          actual: [await sendFrom.inputValue(), await footer.getByText('From work@example.com').count()],
+          expected: ['work@example.com', 1],
+        })
+        await sendFrom.click()
+        await page.getByRole('option', { name: 'personal@example.com', exact: true }).click()
+        assert({
+          given: 'switching From to the secondary account',
+          should: 'update the footer account immediately',
+          actual: await footer.getByText('From personal@example.com').count(),
+          expected: 1,
+        })
+      },
+    )
+  },
+)

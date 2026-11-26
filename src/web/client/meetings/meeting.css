@@ -66,7 +66,8 @@
   gap: 20px;
   min-width: 0;
 }
-.sky-meeting-details > .mantine-InputWrapper-root {
+.sky-meeting-details > .mantine-InputWrapper-root,
+.sky-meeting-account > .mantine-InputWrapper-root {
   display: grid;
   grid-template-columns: 74px minmax(0, 1fr);
   align-items: center;
@@ -94,8 +95,30 @@
   border-color: var(--sky-accent);
   background: var(--sky-dialog-bg);
 }
-.sky-meeting-details > .mantine-InputWrapper-root > .mantine-Input-wrapper {
+.sky-meeting-details > .mantine-InputWrapper-root > .mantine-Input-wrapper,
+.sky-meeting-account > .mantine-InputWrapper-root > .mantine-Input-wrapper {
   min-width: 0;
+}
+.sky-meeting-account .mantine-Input-input {
+  font-weight: 500;
+}
+.sky-meeting-account[data-missing] {
+  border-left: 2px solid var(--sky-amber);
+  padding-left: 14px;
+}
+.sky-meeting-account[data-missing] > .mantine-InputWrapper-root {
+  grid-template-columns: 58px minmax(0, 1fr);
+}
+.sky-meeting-account[data-missing] .mantine-Input-input {
+  border-color: var(--sky-amber);
+  background: var(--sky-hover);
+  font-weight: 400;
+}
+.sky-meeting-account-hint {
+  margin: 6px 0 0 70px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--sky-amber);
 }
 .sky-meeting-title-field .mantine-Input-input {
   font-size: 18px;
@@ -404,18 +427,86 @@
 .sky-meeting-agenda li[data-conflict] small {
   color: var(--sky-amber);
 }
+.sky-meeting-empty-schedule {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+}
 .sky-meeting-footer-summary {
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 4px;
+  min-width: 0;
+}
+.sky-meeting-footer-main,
+.sky-meeting-footer-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: 7px;
+  row-gap: 2px;
+  min-width: 0;
+}
+.sky-meeting-footer-main {
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--sky-text);
 }
 .sky-meeting-footer-summary strong {
   font-size: 14px;
-  font-weight: 500;
+  font-weight: 550;
+}
+.sky-meeting-footer-account {
+  color: var(--sky-text-2);
+  overflow-wrap: anywhere;
+}
+.sky-meeting-footer-main > .sky-meeting-footer-account > strong {
+  color: var(--sky-text);
+}
+.sky-meeting-footer-meta {
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--sky-dim);
 }
 .sky-meeting-footer-summary > span {
   font-size: 13px;
   color: var(--sky-dim);
+}
+.sky-meeting-footer-sep {
+  color: var(--sky-dim);
+}
+.sky-meeting-blocker {
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 550;
+  color: var(--sky-accent);
+  text-align: left;
+  padding: 0;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  overflow-wrap: anywhere;
+}
+.sky-meeting-blocker:focus-visible,
+.sky-meeting-review-day:focus-visible {
+  outline: 2px solid var(--sky-action-focus);
+  outline-offset: 3px;
+  border-radius: 3px;
+}
+.sky-meeting-blocker-pending {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: var(--sky-dim);
+}
+.sky-meeting-blocker-text {
+  font-size: 14px;
+  font-weight: 550;
+  color: var(--sky-amber);
 }
 .sky-meeting-footer-actions {
   display: flex;
@@ -508,8 +599,15 @@
     min-width: 100px;
   }
   .sky-meeting-details > .mantine-InputWrapper-root,
+  .sky-meeting-account > .mantine-InputWrapper-root,
   .sky-meeting-zoom {
     grid-template-columns: 72px minmax(0, 1fr);
+  }
+  .sky-meeting-account[data-missing] > .mantine-InputWrapper-root {
+    grid-template-columns: 56px minmax(0, 1fr);
+  }
+  .sky-meeting-account-hint {
+    margin-left: 68px;
   }
   .sky-meeting-guests {
     display: block;

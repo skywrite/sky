@@ -61,6 +61,7 @@ export interface CalendarSetup {
   date: string
   timezone: string
   accounts: string[]
+  defaultAccount?: string
   browserSignIn?: boolean
 }
 

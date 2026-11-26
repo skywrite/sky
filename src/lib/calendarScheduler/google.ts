@@ -5,6 +5,8 @@ import { checkCalendarBrowserSignIn, signInGoogleBrowser } from '#lib/google/bro
 import { createCalendarMeeting } from '#lib/google/createCalendarMeeting.ts'
 import {
   GoogleClient,
+  accountCategory,
+  defaultAccountEmail,
   hasCalendarScope,
   listAccountEmails,
   listEvents,
@@ -13,6 +15,8 @@ import {
 } from '#lib/google/mod.ts'
 import type { SecretsProvider } from '#lib/secrets/SecretsProvider.ts'
 import { readSystemTimezone } from '#lib/sys/mod.ts'
+import { loadSkyConfig } from '#shared/config/loader.ts'
+import type { GoogleAccountCategory } from '#shared/config/types.ts'
 import { calendarNow, PlainDate } from '#universal/dates/nbdt/mod.ts'
 import { currentTimezoneIANA } from '#universal/dates/timezones/mod.ts'
 import { createGoogleCalendarUpdates } from './googleUpdates.ts'
@@ -28,8 +32,9 @@ export function createGoogleCalendarHost(options: {
   dir: string
   secrets: SecretsProvider
   people: CalendarSchedulerHost['people']
+  categoryOf?: (email: string) => GoogleAccountCategory
 }): CalendarSchedulerHost {
-  const { dir, secrets, people } = options
+  const { dir, secrets, people, categoryOf } = options
   const accounts = async () => {
     const found: string[] = []
     for (const email of await listAccountEmails(secrets)) {
@@ -99,7 +104,21 @@ export function createGoogleCalendarHost(options: {
     readCalendars,
     setup: async () => {
       const timezone = (await readSystemTimezone()) ?? currentTimezoneIANA()
-      return { date: calendarNow(timezone).date, timezone, accounts: await accounts(), browserSignIn: true }
+      const list = await accounts()
+      const resolveCategory =
+        categoryOf ??
+        (() => {
+          const config = loadSkyConfig()
+          return (email: string) => accountCategory(email, config)
+        })()
+      const defaultAccount = defaultAccountEmail(list, resolveCategory)
+      return {
+        date: calendarNow(timezone).date,
+        timezone,
+        accounts: list,
+        ...(defaultAccount ? { defaultAccount } : {}),
+        browserSignIn: true,
+      }
     },
     browser: {
       check: checkCalendarBrowserSignIn,

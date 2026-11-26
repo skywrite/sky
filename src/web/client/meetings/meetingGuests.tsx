@@ -138,11 +138,14 @@ function Unresolved({ invitee, onChange }: { invitee: CalendarInvitee; onChange:
 
 export function MeetingGuests({
   value,
+  account,
   onChange,
 }: {
   value: CalendarInvitee[]
+  account?: string
   onChange: (value: CalendarInvitee[]) => void
 }) {
+  const organizer = account?.trim().toLowerCase() ?? ''
   const [query, setQuery] = useState('')
   const [people, setPeople] = useState<CalendarContact[]>([])
   const [busy, setBusy] = useState(false)
@@ -214,7 +217,10 @@ export function MeetingGuests({
                 </span>
                 <span>
                   <strong>{invitee.selected.name}</strong>
-                  <small>{invitee.selected.email}</small>
+                  <small>
+                    {invitee.selected.email}
+                    {organizer && invitee.selected.email.toLowerCase() === organizer && ' · Organizer'}
+                  </small>
                 </span>
                 <Button
                   size="compact-sm"

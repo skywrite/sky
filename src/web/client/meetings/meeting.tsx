@@ -1,5 +1,5 @@
 import { Alert, Button, Loader, Select, Textarea, TextInput } from '@mantine/core'
-import { useEffect, useRef, useState } from 'react'
+import { Fragment, type ReactNode, useEffect, useRef, useState } from 'react'
 import { calendarConference } from '#lib/calendarScheduler/conference.ts'
 import { recurrenceLabel } from '#lib/calendarScheduler/recurrence.ts'
 import type {
@@ -11,6 +11,7 @@ import type {
   CalendarSetup,
 } from '#lib/calendarScheduler/types.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
+import { createBlocker, defaultMeetingAccount, type MeetingBlockerTarget } from './createBlocker.ts'
 import { MeetingGoogleSignIn, useMeetingBrowser } from './meetingBrowser.tsx'
 import { mergeMeetingDraft } from './meetingDraft.ts'
 import { MeetingGuests } from './meetingGuests.tsx'
@@ -53,6 +54,7 @@ export function MeetingDetails({
     .flatMap((invitee) => (invitee.selected ? [invitee.selected] : []))
     .filter((guest) => guest.email.toLowerCase() !== fields.account.toLowerCase())
   const conference = calendarConference({ ...fields, guests })
+  const missingAccount = !fields.account && accounts.length > 0
   const change = <K extends keyof CalendarFields>(key: K, value: CalendarFields[K]) =>
     onChange((current) => ({ ...current, assumptions: [], questions: [], fields: { ...current.fields, [key]: value } }))
   return (
@@ -65,8 +67,24 @@ export function MeetingDetails({
         value={fields.title}
         onChange={(event) => change('title', event.currentTarget.value)}
       />
+      <div className="sky-meeting-account" data-missing={missingAccount || undefined}>
+        <Select
+          label="From"
+          aria-label="Send from"
+          placeholder="Choose your Google account"
+          data={accounts}
+          value={fields.account || null}
+          allowDeselect={false}
+          onChange={(value) => change('account', value ?? '')}
+          comboboxProps={{ withinPortal: false }}
+        />
+        {missingAccount && (
+          <p className="sky-meeting-account-hint">Choose which Google account will organize this event.</p>
+        )}
+      </div>
       <MeetingGuests
         value={draft.invitees}
+        account={fields.account}
         onChange={(invitees) => onChange((current) => ({ ...current, assumptions: [], invitees }))}
       />
       <div className="sky-meeting-when">
@@ -94,6 +112,7 @@ export function MeetingDetails({
       </div>
       <Select
         label="Timezone"
+        aria-label="Timezone"
         searchable
         data={[...new Set([fields.timezone, ...zones()])].filter(Boolean)}
         value={fields.timezone}
@@ -205,15 +224,6 @@ export function MeetingDetails({
         }}
         comboboxProps={{ withinPortal: false }}
       />
-      <Select
-        label="From"
-        aria-label="Send from"
-        placeholder="Choose your Google account"
-        data={accounts}
-        value={fields.account || null}
-        onChange={(value) => change('account', value ?? '')}
-        comboboxProps={{ withinPortal: false }}
-      />
       <details className="sky-meeting-description">
         <summary>{fields.description ? 'Agenda or note' : 'Add an agenda or note'}</summary>
         <Textarea
@@ -234,12 +244,14 @@ export function DaySchedule({
   error,
   time,
   onTime,
+  onRetry,
 }: {
   available: CalendarAvailability | null
   busy: boolean
   error: string
   time: string
   onTime: (time: string) => void
+  onRetry?: () => void
 }) {
   const conflicts = available?.events.filter((event) => event.conflict) ?? []
   return (
@@ -264,7 +276,7 @@ export function DaySchedule({
             </strong>
             <p>
               {conflicts.length
-                ? `${clock(time)} overlaps with ${conflicts.map((event) => event.title).join(', ')}.`
+                ? `${clock(time)} overlaps with ${conflicts.map((event) => event.title).join(', ')}. You can still schedule this time.`
                 : available.warnings.length
                   ? 'Some calendars could not be checked.'
                   : 'No conflicts on your connected calendars.'}
@@ -317,9 +329,16 @@ export function DaySchedule({
           </p>
         </>
       ) : (
-        <p className="sky-meeting-note" role={error ? 'alert' : 'status'}>
-          {error || (busy ? 'Checking your calendars…' : 'Choose a date and time to see your schedule.')}
-        </p>
+        <div className="sky-meeting-empty-schedule">
+          <p className="sky-meeting-note" role={error ? 'alert' : 'status'}>
+            {error || (busy ? 'Checking your calendars…' : 'Choose a date and time to see your schedule.')}
+          </p>
+          {error && onRetry && (
+            <Button size="compact-sm" onClick={onRetry}>
+              Retry
+            </Button>
+          )}
+        </div>
       )}
     </aside>
   )
@@ -337,6 +356,7 @@ export function MeetingComposer({
   onClose: () => void
 }) {
   const [setup, setSetup] = useState<CalendarSetup | null>(null)
+  const [setupError, setSetupError] = useState('')
   const [parsedQuery, setParsedQuery] = useState('')
   const [draft, setDraft] = useState<CalendarDraft | null>(null)
   const [parsing, setParsing] = useState(false)
@@ -381,17 +401,18 @@ export function MeetingComposer({
       (setup?.browserSignIn === true || job?.recovery === 'google_sign_in'),
     job?.recovery === 'google_sign_in' ? (job.attemptId ?? job.id) : undefined,
   )
+  const defaultAccount = defaultMeetingAccount(setup)
   const parseContext = useRef({ timezone: '', account: '' })
   parseContext.current = {
     timezone: fields?.timezone || setup?.timezone || browserTimezone(),
-    account: fields?.account || (setup?.accounts.length === 1 ? setup.accounts[0]! : ''),
+    account: fields?.account || defaultAccount,
   }
 
   useEffect(() => {
-    if (setup?.accounts.length === 1 && draft && !draft.fields.account) {
-      setDraft({ ...draft, fields: { ...draft.fields, account: setup.accounts[0]! } })
+    if (defaultAccount && draft && !draft.fields.account) {
+      setDraft({ ...draft, fields: { ...draft.fields, account: defaultAccount } })
     }
-  }, [setup, draft])
+  }, [defaultAccount, draft])
 
   useEffect(() => {
     parseRequest.current?.abort()
@@ -452,12 +473,16 @@ export function MeetingComposer({
     const controller = new AbortController()
     meetingRequest<CalendarSetup>('setup', undefined, controller.signal)
       .then((data) => {
+        setSetupError('')
         setSetup(data)
         if (!data.accounts.length) setError('Connect a Google account with calendar access in Settings → Connections.')
       })
       .catch((failure: unknown) => {
-        if (!controller.signal.aborted)
-          setError(failure instanceof Error ? failure.message : 'Could not load calendar accounts.')
+        if (!controller.signal.aborted) {
+          const message = failure instanceof Error ? failure.message : 'Could not load calendar accounts.'
+          setSetupError(message)
+          setError(message)
+        }
       })
     try {
       const stored = sessionStorage.getItem(PENDING_KEY)
@@ -584,18 +609,86 @@ export function MeetingComposer({
   ].filter((guest) => guest.email.toLowerCase() !== fields?.account.toLowerCase())
   const conference = calendarConference({ ...fields, guests })
   const stale = query.trim() !== parsedQuery
-  const canCreate =
-    connection.ready &&
-    !!fields?.title.trim() &&
-    !!fields.account &&
-    !unresolved &&
-    !draft?.unsupported.length &&
-    !!available &&
-    !checking &&
-    !stale &&
-    !parsing &&
-    !active
+  const blocker = createBlocker({
+    draft,
+    setup,
+    setupError,
+    available,
+    checking,
+    checkError,
+    parsing,
+    parseError,
+    stale,
+    unresolved,
+    connection,
+  })
+  const canCreate = !!draft && !active && !blocker
   const conflicts = available?.events.filter((event) => event.conflict).length ?? 0
+  const scrollMeetingBodyTo = (target: HTMLElement | null, always = false) => {
+    const body = document.querySelector<HTMLElement>('.sky-meeting-body')
+    if (!body || !target) return
+    const bodyRect = body.getBoundingClientRect()
+    const targetRect = target.getBoundingClientRect()
+    if (!always && targetRect.top >= bodyRect.top + 8 && targetRect.bottom <= bodyRect.bottom - 8) return
+    body.scrollTop = Math.max(0, body.scrollTop + targetRect.top - bodyRect.top - 16)
+  }
+  const resolveBlocker = (target: MeetingBlockerTarget) => {
+    if (target === 'retry-parse') {
+      retryParse()
+      return
+    }
+    if (target === 'retry-check') {
+      setRefresh((value) => value + 1)
+      return
+    }
+    if (target === 'account') {
+      const row = document.querySelector<HTMLElement>('.sky-meeting-account')
+      scrollMeetingBodyTo(row)
+      const input = row?.querySelector<HTMLInputElement>('input[aria-label="Send from"]')
+      input?.focus({ preventScroll: true })
+      input?.click()
+      return
+    }
+    if (target === 'title') {
+      const row = document.querySelector<HTMLElement>('.sky-meeting-title-field')
+      scrollMeetingBodyTo(row)
+      row?.querySelector<HTMLInputElement>('input')?.focus({ preventScroll: true })
+      return
+    }
+    if (target === 'invitee') {
+      const card = document.querySelector<HTMLElement>('.sky-meeting-guest[data-unresolved]')
+      scrollMeetingBodyTo(card)
+      card?.querySelector<HTMLElement>('input, button')?.focus({ preventScroll: true })
+      return
+    }
+    if (target === 'date' || target === 'time') {
+      const row = document.querySelector<HTMLElement>('.sky-meeting-when')
+      scrollMeetingBodyTo(row)
+      row?.querySelector<HTMLInputElement>(`input[type="${target}"]`)?.focus({ preventScroll: true })
+      return
+    }
+    if (target === 'timezone') {
+      const input = document.querySelector<HTMLInputElement>('.sky-meeting-details input[aria-label="Timezone"]')
+      scrollMeetingBodyTo(input?.closest<HTMLElement>('.mantine-InputWrapper-root') ?? input)
+      input?.focus({ preventScroll: true })
+      return
+    }
+    if (target === 'unsupported') {
+      scrollMeetingBodyTo(document.querySelector<HTMLElement>('.sky-meeting-unsupported'))
+      return
+    }
+    if (target === 'browser') {
+      const banner = document.querySelector<HTMLElement>('.sky-meeting-browser')
+      scrollMeetingBodyTo(banner)
+      banner?.querySelector<HTMLElement>('button')?.focus({ preventScroll: true })
+      return
+    }
+    if (target === 'prompt') {
+      const prompt = document.querySelector<HTMLElement>('.sky-meeting-prompt')
+      scrollMeetingBodyTo(prompt)
+      document.querySelector<HTMLTextAreaElement>('#sky-meeting-query')?.focus({ preventScroll: true })
+    }
+  }
   const create = async () => {
     if (!canCreate || !fields || !available || submitting.current) return
     submitting.current = true
@@ -688,6 +781,12 @@ export function MeetingComposer({
                   <br />
                   {sentFields.timezone}
                   <br />
+                  {sentFields.account && (
+                    <>
+                      From {sentFields.account}
+                      <br />
+                    </>
+                  )}
                   {sentFields.recurrence && (
                     <>
                       {recurrenceLabel(sentFields)}
@@ -827,7 +926,11 @@ export function MeetingComposer({
             {draft && fields && (
               <>
                 <MeetingGoogleSignIn connection={connection} />
-                {draft.unsupported.length > 0 && <Alert color="yellow">{draft.unsupported.join(' ')}</Alert>}
+                {draft.unsupported.length > 0 && (
+                  <Alert className="sky-meeting-unsupported" color="yellow">
+                    {draft.unsupported.join(' ')}
+                  </Alert>
+                )}
                 <div className="sky-meeting-review" aria-busy={stale || parsing}>
                   <MeetingDetails
                     draft={draft}
@@ -847,6 +950,7 @@ export function MeetingComposer({
                     error={checkError}
                     time={fields.time}
                     onTime={(time) => change('time', time)}
+                    onRetry={() => setRefresh((value) => value + 1)}
                   />
                 </div>
               </>
@@ -854,33 +958,114 @@ export function MeetingComposer({
           </div>
           <footer className="sky-dialog-footer sky-meeting-footer">
             <div className="sky-meeting-footer-summary">
-              {draft ? (
-                <>
-                  <strong>
-                    {unresolved
-                      ? `${unresolved} invitee${unresolved === 1 ? '' : 's'} to resolve`
-                      : guests.length
-                        ? `${guests.length} invitation${guests.length === 1 ? '' : 's'}`
-                        : 'Only on your calendar'}
-                  </strong>
-                  {conflicts || available?.warnings.length ? (
-                    <button
-                      type="button"
-                      className="sky-meeting-review-day"
-                      onClick={() => {
-                        const body = document.querySelector<HTMLElement>('.sky-meeting-body')
-                        const schedule = document.querySelector<HTMLElement>('.sky-meeting-schedule')
-                        if (body && schedule)
-                          body.scrollTop += schedule.getBoundingClientRect().top - body.getBoundingClientRect().top
-                      }}
-                    >
-                      {conflicts ? `${conflicts} conflict${conflicts === 1 ? '' : 's'}` : 'Availability incomplete'} ·
-                      Review your day
-                    </button>
-                  ) : (
-                    <span>{conference === 'zoom' ? 'A fresh Zoom link' : 'No video link'}</span>
-                  )}
-                </>
+              {draft && fields ? (
+                (() => {
+                  const reviewDayButton =
+                    conflicts || available?.warnings.length ? (
+                      <button
+                        type="button"
+                        className="sky-meeting-review-day"
+                        onClick={() =>
+                          scrollMeetingBodyTo(document.querySelector<HTMLElement>('.sky-meeting-schedule'), true)
+                        }
+                      >
+                        {conflicts ? `${conflicts} conflict${conflicts === 1 ? '' : 's'}` : 'Availability incomplete'} ·
+                        Review your day
+                      </button>
+                    ) : null
+                  const metaItems: Array<{ key: string; node: ReactNode }> = []
+                  if (blocker) {
+                    if (fields.account) {
+                      metaItems.push({
+                        key: 'account',
+                        node: <span className="sky-meeting-footer-account">From {fields.account}</span>,
+                      })
+                    }
+                    if (!unresolved) {
+                      metaItems.push({
+                        key: 'guests',
+                        node: (
+                          <span>
+                            {guests.length
+                              ? `${guests.length} invitation${guests.length === 1 ? '' : 's'}`
+                              : 'Only on your calendar'}
+                          </span>
+                        ),
+                      })
+                    } else if (blocker.target !== 'invitee') {
+                      metaItems.push({
+                        key: 'unresolved',
+                        node: (
+                          <span>
+                            {unresolved} invitee{unresolved === 1 ? '' : 's'} to resolve
+                          </span>
+                        ),
+                      })
+                    }
+                    if (reviewDayButton) metaItems.push({ key: 'review', node: reviewDayButton })
+                  } else {
+                    if (reviewDayButton) metaItems.push({ key: 'review', node: reviewDayButton })
+                    metaItems.push({
+                      key: 'video',
+                      node: <span>{conference === 'zoom' ? 'A fresh Zoom link' : 'No video link'}</span>,
+                    })
+                  }
+                  return (
+                    <>
+                      <div className="sky-meeting-footer-main">
+                        {blocker ? (
+                          blocker.pending ? (
+                            <span className="sky-meeting-blocker-pending" role="status">
+                              <Loader size="xs" /> {blocker.message}
+                            </span>
+                          ) : blocker.target === 'connections' ? (
+                            <a href="/settings/connections" className="sky-meeting-blocker">
+                              {blocker.message}
+                            </a>
+                          ) : blocker.target ? (
+                            <button
+                              type="button"
+                              className="sky-meeting-blocker"
+                              onClick={() => resolveBlocker(blocker.target!)}
+                            >
+                              {blocker.message}
+                            </button>
+                          ) : (
+                            <span className="sky-meeting-blocker-text">{blocker.message}</span>
+                          )
+                        ) : (
+                          <>
+                            <strong>
+                              {guests.length
+                                ? `${guests.length} invitation${guests.length === 1 ? '' : 's'}`
+                                : 'Only on your calendar'}
+                            </strong>
+                            <span className="sky-meeting-footer-sep" aria-hidden="true">
+                              ·
+                            </span>
+                            <span className="sky-meeting-footer-account">
+                              From <strong>{fields.account}</strong>
+                            </span>
+                          </>
+                        )}
+                      </div>
+                      {metaItems.length > 0 && (
+                        <div className="sky-meeting-footer-meta">
+                          {metaItems.map((item, index) => (
+                            <Fragment key={item.key}>
+                              {index > 0 && (
+                                <span className="sky-meeting-footer-sep" aria-hidden="true">
+                                  ·
+                                </span>
+                              )}
+                              {item.node}
+                            </Fragment>
+                          ))}
+                        </div>
+                      )}
+                    </>
+                  )
+                })()
               ) : (
                 <span>Block off time or invite others. Video conferencing is optional.</span>
               )}
