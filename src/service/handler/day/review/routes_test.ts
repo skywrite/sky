@@ -464,3 +464,36 @@ test('automatic reminder rollover omits the Reminders step and summarizes withou
     await f.dispose()
   }
 })
+
+test('filed meetings without an end time stay out of Day Review', async () => {
+  const f = await reviewFixture()
+  try {
+    const meetingFile = path.join(
+      path.dirname(f.file(REVIEW_DAY)),
+      'actions/meetings/08-15_Zoom_Jane-Doe_Atlas-kickoff.md',
+    )
+    const eventFile = path.join(path.dirname(f.file(REVIEW_DAY)), 'actions/events/13-00_Northwind-demo.md')
+    await mkdir(path.dirname(meetingFile), { recursive: true })
+    await mkdir(path.dirname(eventFile), { recursive: true })
+    await writeFile(
+      meetingFile,
+      `---\nwho: Jane Doe\nwhen: ${REVIEW_DAY} 08:15\nmedium: Zoom\nsummary: Atlas kickoff\n---\n\n# Atlas kickoff\n`,
+    )
+    await writeFile(eventFile, `---\nwhat: Northwind demo\nwhen: ${REVIEW_DAY} 13:00\n---\n\n# Northwind demo\n`)
+    const meetings = (await f.view()).items.filter((item) => item.kind === 'meeting')
+    assert({
+      given: 'a filed meeting and event with start-only when:, plus one unfiled calendar meeting',
+      should: 'ignore the filed start-only records and list only the unfiled calendar meeting',
+      actual: meetings.map((item) => ({ title: item.title, detail: item.detail, meeting: item.meeting })),
+      expected: [
+        {
+          title: 'Atlas planning',
+          detail: '10:00–10:30 · No filed notes',
+          meeting: { title: 'Atlas planning', when: `${REVIEW_DAY} 10:00` },
+        },
+      ],
+    })
+  } finally {
+    await f.dispose()
+  }
+})

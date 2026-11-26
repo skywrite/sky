@@ -1,9 +1,7 @@
-import * as path from 'node:path'
 import { Hono, type Context } from 'hono'
 import { z } from 'zod'
 import { hash } from '#lib/outbox/files.ts'
 import type { TrackingStore } from '#lib/tracking/store.ts'
-import { dayDir } from '#shared/nbfs/mod.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import { hold } from '../../../activity.ts'
 import type { ThreadSummary } from '../../chat/mod.ts'
@@ -11,7 +9,6 @@ import type { StreaksStore } from '../../streaks/store.ts'
 import isDay from '../isDay.ts'
 import { buildDayView, type DayRoutesOptions } from '../mod.ts'
 import { dayItemKey } from '../organizingTypes.ts'
-import { buildReviewRecords } from '../reviewRecords.ts'
 import type { ScheduleHost } from '../schedule.ts'
 import { DayReviewStore } from './store.ts'
 import { isReminder, REVIEW_STEPS, reviewSteps, type ReviewItem, type ReviewRuntime } from './types.ts'
@@ -139,18 +136,6 @@ export function createReviewRoutes(options: Options) {
             })
         }
       }
-      const records = await buildReviewRecords({
-        dayDirPath: path.join(options.day.timeDir, dayDir(date)),
-        markdownBaseDir: options.day.markdownBaseDir,
-      })
-      for (const item of records.endless)
-        items.push({
-          id: fingerprint('meeting', item),
-          kind: 'meeting',
-          title: item.title,
-          detail: `Started at ${item.start}; add an end time or duration.`,
-          href: href(item.path),
-        })
       // Inline meeting notes are not filed meeting records yet.
       for (const item of view.record.meetings.filter((m) => m.inline))
         items.push({
