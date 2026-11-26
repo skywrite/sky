@@ -1,5 +1,6 @@
 ---
-updated: 2026-09-10
+created: 2026-07-22
+updated: 2026-11-26
 ---
 
 # VSCode Extension
@@ -82,15 +83,10 @@ depending on who imports it — and (2) the runtime map (package.json
 namespaces with equivalent targets, so the editor never checks a different
 graph than the one Node runs.
 
-**`syncTitles.ts` — "the palette tells the truth about the model."** Command
-titles like `Summarize Transcript (claude-opus-5)` are static manifest
-data — VS Code has no runtime retitling — so the model id must be physically
-baked into `package.json`. Runtime surfaces (the summary heading, the
-progress toast) read the AI registry live via `aiModelId('reasoning')` and
-follow role repoints automatically; the titles cannot. Run the script bare
-after a repoint to re-bake them (`node scripts/syncTitles.ts`, then reload
-the window); its `--check` mode fails `npm run check` while they're stale,
-so a model bump can't leave the dropdown lying.
+**`syncTitles.ts`** keeps static command-palette titles in `package.json` aligned with Sky’s shipped reasoning model.
+After changing the shipped default, run `node scripts/syncTitles.ts` and reload the window.
+The `--check` mode flags stale titles during `npm run check`.
+The summary heading and progress notification use the owner’s current assignment through `aiModelId('reasoning')`.
 
 ## Tests
 

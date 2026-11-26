@@ -8,7 +8,7 @@
 import { readFileSync, writeFileSync } from 'node:fs'
 import * as path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { aiModelId } from '#shared/ai/models.ts'
+import { PROFILES, ROLES } from '#shared/ai/models.ts'
 
 const EXT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const MANIFEST = path.join(EXT, 'package.json')
@@ -22,7 +22,8 @@ const TITLES: Record<string, string> = {
   'attachment.summarizeAll': 'Summarize All Attachments ({model})',
 }
 
-const model = aiModelId('reasoning')
+// The published manifest describes Sky's shipped default. Runtime summaries use the owner's assignment.
+const model = PROFILES[ROLES.reasoning].model
 const check = process.argv.includes('--check')
 const manifest = JSON.parse(readFileSync(MANIFEST, 'utf8'))
 const commands: Array<{ command: string; title: string }> = manifest.contributes?.commands ?? []
