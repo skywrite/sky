@@ -2,6 +2,7 @@ import { createGoogle, type GoogleProvider } from '@ai-sdk/google'
 import { KeychainSecretsProvider } from '#lib/secrets/KeychainSecretsProvider.ts'
 import type { SecretsProvider } from '#lib/secrets/SecretsProvider.ts'
 import { keychainAuthFetch, readKey } from '#shared/ai/keychainAuthFetch.ts'
+import { createModelFetch } from './modelFetch.ts'
 
 /**
  * Gemini provider for the Vercel AI SDK.
@@ -31,7 +32,12 @@ export function createGeminiProvider(options: { secrets: SecretsProvider; fetch?
     baseURL: GEMINI_BASE_URL,
     // The SDK insists on a key at construction; the real one rides in on the fetch.
     apiKey: 'keychain',
-    fetch: keychainAuthFetch(options.secrets, GEMINI_SECRET, MISSING_GEMINI_KEY, options.fetch),
+    fetch: keychainAuthFetch(
+      options.secrets,
+      GEMINI_SECRET,
+      MISSING_GEMINI_KEY,
+      createModelFetch({ fetch: options.fetch }),
+    ),
   })
 }
 

@@ -2,10 +2,11 @@ import type { AnthropicProviderOptions } from '@ai-sdk/anthropic'
 import type { GoogleLanguageModelOptions } from '@ai-sdk/google'
 import { createOpenAI, type OpenAILanguageModelChatOptions, type OpenAIResponsesProviderOptions } from '@ai-sdk/openai'
 import { type JSONValue, type LanguageModel, wrapLanguageModel } from 'ai'
-import { ollama } from 'ollama-ai-provider-v2'
+import { createOllama } from 'ollama-ai-provider-v2'
 import { anthropic } from '#shared/ai/llm/anthropicProvider.ts'
 import { cerebras } from '#shared/ai/llm/cerebrasProvider.ts'
 import { gemini } from '#shared/ai/llm/geminiProvider.ts'
+import { createModelFetch } from '#shared/ai/llm/modelFetch.ts'
 import { openai } from '#shared/ai/llm/openaiProvider.ts'
 import { singleSystemMessageMiddleware } from '#shared/ai/llm/singleSystemMessage.ts'
 import { settingStaleReasoningAside, staleReasoningRetry } from '#shared/ai/staleReasoning.ts'
@@ -41,8 +42,6 @@ import { PROFILES } from './defaultProfiles.ts'
  * on `temperature` — so they're set only on profiles whose model accepts them. Per-call
  * needs pass through `overrides` (`aiModel('fast', { temperature: 0 })`), which the
  * resolver drops when the profile's model rejects them.
- *
- * Built on the no-timeout Anthropic provider so long calls don't hit Bun's 300s cap.
  *
  * Transcription is a different
  * modality (TranscriptionModel, not LanguageModel) and gets its own resolver later,
@@ -152,6 +151,8 @@ const PROVIDER_OPTIONS_KEY: Record<Provider, string> = {
   cerebras: 'openai',
 }
 
+const modelFetch = createModelFetch()
+const ollama = createOllama({ fetch: modelFetch })
 let _lmStudioProvider: { baseUrl: string; provider: ReturnType<typeof createOpenAI> } | null = null
 
 function getLmStudioProvider(): ReturnType<typeof createOpenAI> {
@@ -162,7 +163,7 @@ function getLmStudioProviderWith(baseUrl: string): ReturnType<typeof createOpenA
   if (!_lmStudioProvider || _lmStudioProvider.baseUrl !== baseUrl) {
     _lmStudioProvider = {
       baseUrl,
-      provider: createOpenAI({ name: 'lm-studio', baseURL: baseUrl, apiKey: 'lm-studio' }),
+      provider: createOpenAI({ name: 'lm-studio', baseURL: baseUrl, apiKey: 'lm-studio', fetch: modelFetch }),
     }
   }
   return _lmStudioProvider.provider

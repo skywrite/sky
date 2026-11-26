@@ -1,5 +1,8 @@
+import { spyOn } from 'bun:test'
 import { createAnthropic } from '@ai-sdk/anthropic'
-import { generateText, jsonSchema, Output } from 'ai'
+import { generateText, jsonSchema, Output, streamText } from 'ai'
+import { KeychainSecretsProvider } from '#lib/secrets/KeychainSecretsProvider.ts'
+import { createSecret } from '#lib/secrets/marshal.ts'
 import type { SkyConfig } from '#shared/config/types.ts'
 
 test('custom reasoning presets suppress unsupported sampling without an explicit thinking option', () => {
@@ -25,6 +28,8 @@ test('custom reasoning presets suppress unsupported sampling without an explicit
   })
 })
 import { assert, test } from '#test'
+import { forgetKey } from './keychainAuthFetch.ts'
+import { PROVIDER_KEYS } from './llm/providerKeys.ts'
 import {
   aiModel,
   aiModelByProfile,
@@ -33,10 +38,53 @@ import {
   getAllProfiles,
   getProfile,
   getRoles,
+  KNOWN_PROVIDERS,
   resolveProfile,
   roleProfile,
   type ResolvedModel,
 } from './models.ts'
+
+test('language-model adapters set a deliberate fetch idle policy and forward caller cancellation', async () => {
+  const keys = Object.values(PROVIDER_KEYS).map(({ secret }) => secret)
+  for (const key of keys) forgetKey(key)
+  const list = spyOn(KeychainSecretsProvider.prototype, 'list').mockImplementation(async (category) =>
+    keys.filter((key) => key.category === category).map((key) => ({ ...key, type: 'secret' })),
+  )
+  const get = spyOn(KeychainSecretsProvider.prototype, 'get').mockResolvedValue(createSecret('atlas-test-key'))
+  try {
+    for (const provider of KNOWN_PROVIDERS) {
+      const abort = new AbortController()
+      const cancelOnFetch = (async (_input: RequestInfo | URL): Promise<Response> => {
+        abort.abort()
+        throw abort.signal.reason
+      }) as typeof fetch
+      const request = spyOn(globalThis, 'fetch').mockImplementation(cancelOnFetch)
+      try {
+        const stream = streamText({
+          ...resolveProfile({ provider, model: 'atlas-test-model' }),
+          prompt: 'Say hello.',
+          abortSignal: abort.signal,
+          maxRetries: 0,
+          onError: () => {},
+        })
+        await Promise.resolve(stream.text).catch(() => {})
+        const init = request.mock.calls[0]?.[1] as (RequestInit & { timeout?: number | boolean }) | undefined
+        assert({
+          given: `a streamed call through the ${provider} adapter`,
+          should: 'override the runtime idle default and pass through cancellation',
+          actual: { requests: request.mock.calls.length, timeout: init?.timeout, aborted: init?.signal?.aborted },
+          expected: { requests: 1, timeout: provider === 'anthropic' ? false : 20 * 60_000, aborted: true },
+        })
+      } finally {
+        request.mockRestore()
+      }
+    }
+  } finally {
+    list.mockRestore()
+    get.mockRestore()
+    for (const key of keys) forgetKey(key)
+  }
+})
 
 test('local compatible models keep a provider identity separate from OpenAI token counting', () => {
   const resolved = resolveProfile(

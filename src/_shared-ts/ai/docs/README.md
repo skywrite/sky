@@ -119,6 +119,11 @@ The authenticated fetch observes cancellation while waiting for credentials and 
 It cancels only the caller's wait, leaving the secrets provider's shared read available to other callers.
 Late completion of a cancelled read cannot start that caller's request.
 
+All six language-model adapters use `llm/modelFetch.ts` so Bun's five-minute socket idle default cannot cut a quiet
+generation short before the transcript pipeline's 20-minute deadline.
+The shared fetch forwards caller cancellation and uses a 20-minute idle backstop.
+Anthropic disables Bun's timer and keeps its own SSE stall guard and retry policy because Claude sends heartbeat pings.
+
 Chat request capacity uses the serialized provider input, including native
 images and files. OpenAI's registry provider (`llm/openaiProvider.ts`) supplies
 the scoped counting fetch; the contract and fallback behavior live in

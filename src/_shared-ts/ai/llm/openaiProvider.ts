@@ -3,6 +3,7 @@ import { KeychainSecretsProvider } from '#lib/secrets/KeychainSecretsProvider.ts
 import type { SecretsProvider } from '#lib/secrets/SecretsProvider.ts'
 import { withOpenAITokenCount } from '#shared/ai/inputTokenLimit.ts'
 import { keychainAuthFetch, readKey } from '#shared/ai/keychainAuthFetch.ts'
+import { createModelFetch } from './modelFetch.ts'
 
 /** OpenAI's key: the keychain's, stored under Settings › Connections › OpenAI, else OPENAI_API_KEY from src/.env. */
 export const OPENAI_SECRET = { category: 'openai', name: 'main', env: 'OPENAI_API_KEY' } as const
@@ -15,12 +16,7 @@ const keychain = new KeychainSecretsProvider()
 export const openai = createOpenAI({
   // The SDK insists on a key at construction; the real one rides in on the fetch.
   apiKey: 'keychain',
-  fetch: keychainAuthFetch(
-    keychain,
-    OPENAI_SECRET,
-    MISSING_OPENAI_KEY,
-    withOpenAITokenCount(((input, init) => fetch(input, init)) as typeof fetch),
-  ),
+  fetch: keychainAuthFetch(keychain, OPENAI_SECRET, MISSING_OPENAI_KEY, withOpenAITokenCount(createModelFetch())),
 })
 
 /** The key itself, for the openai package's clients: voice calls, transcription, images. */

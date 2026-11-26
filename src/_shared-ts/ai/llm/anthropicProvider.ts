@@ -5,6 +5,7 @@ import { logAIError } from '#shared/ai/errorLog.ts'
 import { withAnthropicTokenCount } from '#shared/ai/inputTokenLimit.ts'
 import { keychainAuthFetch, readKey } from '#shared/ai/keychainAuthFetch.ts'
 import { withStreamIdleGuard } from './idleGuardFetch.ts'
+import { createModelFetch } from './modelFetch.ts'
 
 /**
  * Anthropic's key: the keychain's, stored under Settings › Connections ›
@@ -29,26 +30,9 @@ export function anthropicKey(secrets: SecretsProvider = keychain): Promise<strin
 }
 
 /**
- * Anthropic provider for the Vercel AI SDK with Bun's default 5-minute (300s) fetch
- * timeout disabled.
- *
- * Long non-streaming calls — e.g. analyzing or rewriting a full meeting transcript —
- * routinely run 6-8 minutes (a single transcript analysis emits ~30k output tokens),
- * and Bun's fetch ceiling was killing the socket at exactly 300s with "operation timed
- * out", regardless of any SDK-level timeout. `timeout: false` is a Bun-specific fetch
- * option; the per-call `timeout` passed to generateText() remains the real upper bound.
- */
-const noTimeoutFetch = ((input: RequestInfo | URL, init?: RequestInit) =>
-  fetch(input, { ...init, timeout: false } as RequestInit & { timeout: boolean })) as typeof globalThis.fetch
-
-/**
- * With the timeout off, a socket that dies without erroring would hang a
- * stream forever (a google:agent mission died exactly this way). A live
- * stream ticks constantly — deltas, SSE pings — so this much silence means
- * the connection is gone: unanswered requests are re-issued invisibly (the
- * model never started answering), mid-body silences fail fast. Non-streaming
- * requests are exempt; they are quiet by design (see above). Every idle event
- * lands in the AI error log.
+ * Claude sends SSE pings while it thinks, so Sky can detect stalled streams with its own guard.
+ * The guard retries unanswered requests and fails mid-body stalls. Non-streaming calls may sit quiet for minutes
+ * and use the caller's deadline. Every detected stall lands in the AI error log.
  */
 const STREAM_IDLE_MS = 90_000
 
@@ -61,7 +45,7 @@ export const anthropic = createAnthropic({
     ANTHROPIC_SECRET,
     MISSING_ANTHROPIC_KEY,
     withAnthropicTokenCount(
-      withStreamIdleGuard(noTimeoutFetch, {
+      withStreamIdleGuard(createModelFetch({ idleTimeoutMs: false }), {
         idleMs: STREAM_IDLE_MS,
         attempts: 3,
         onIdle: (event) =>

@@ -2,6 +2,7 @@ import { createOpenAI, type OpenAIProvider } from '@ai-sdk/openai'
 import { KeychainSecretsProvider } from '#lib/secrets/KeychainSecretsProvider.ts'
 import type { SecretsProvider } from '#lib/secrets/SecretsProvider.ts'
 import { keychainAuthFetch } from '#shared/ai/keychainAuthFetch.ts'
+import { createModelFetch } from './modelFetch.ts'
 
 /**
  * Cerebras provider for the Vercel AI SDK.
@@ -27,7 +28,12 @@ export function createCerebrasProvider(options: { secrets: SecretsProvider; fetc
     baseURL: CEREBRAS_BASE_URL,
     // The SDK insists on a key at construction; the real one rides in on the fetch.
     apiKey: 'keychain',
-    fetch: keychainAuthFetch(options.secrets, CEREBRAS_SECRET, MISSING_CEREBRAS_KEY, options.fetch),
+    fetch: keychainAuthFetch(
+      options.secrets,
+      CEREBRAS_SECRET,
+      MISSING_CEREBRAS_KEY,
+      createModelFetch({ fetch: options.fetch }),
+    ),
   })
 }
 
