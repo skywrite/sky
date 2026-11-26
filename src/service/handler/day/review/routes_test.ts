@@ -465,7 +465,7 @@ test('automatic reminder rollover omits the Reminders step and summarizes withou
   }
 })
 
-test('filed meetings without an end time stay out of Day Review', async () => {
+test('filed meetings without an end time stay out of Day Review, while unfiled calendar slots carry duration', async () => {
   const f = await reviewFixture()
   try {
     const meetingFile = path.join(
@@ -482,14 +482,14 @@ test('filed meetings without an end time stay out of Day Review', async () => {
     await writeFile(eventFile, `---\nwhat: Northwind demo\nwhen: ${REVIEW_DAY} 13:00\n---\n\n# Northwind demo\n`)
     const meetings = (await f.view()).items.filter((item) => item.kind === 'meeting')
     assert({
-      given: 'a filed meeting and event with start-only when:, plus one unfiled calendar meeting',
-      should: 'ignore the filed start-only records and list only the unfiled calendar meeting',
+      given: 'a filed meeting and event with start-only when:, plus one unfiled 30-minute calendar meeting',
+      should: 'ignore the filed start-only records and expose the unfiled calendar slot with its 30-minute duration',
       actual: meetings.map((item) => ({ title: item.title, detail: item.detail, meeting: item.meeting })),
       expected: [
         {
           title: 'Atlas planning',
           detail: '10:00–10:30 · No filed notes',
-          meeting: { title: 'Atlas planning', when: `${REVIEW_DAY} 10:00` },
+          meeting: { title: 'Atlas planning', when: `${REVIEW_DAY} 10:00`, durationMinutes: 30 },
         },
       ],
     })

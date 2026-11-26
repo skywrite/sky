@@ -1561,3 +1561,47 @@ test('CAF additions validate the destination and retain it across failures and r
     ],
   })
 })
+
+test('POST /import/:id/start validates and preserves calendarDurationMinutes for meetings', async () => {
+  const w = await world()
+  w.script.outcome = 'failed'
+  const app = createTestHttpApp([w.notebook], { imports: w.options })
+  const form = new FormData()
+  form.append('file', new File(['mock recording'], 'memo.m4a', { type: 'audio/mp4' }))
+  const { job } = (await (await app.request('/import', { method: 'POST', body: form })).json()) as { job: ImportJob }
+  const badZero = await postJson(app, `/import/${job.id}/start`, {
+    kind: 'meeting',
+    when: job.suggestedWhen,
+    calendarDurationMinutes: 0,
+  })
+  const badFloat = await postJson(app, `/import/${job.id}/start`, {
+    kind: 'meeting',
+    when: job.suggestedWhen,
+    calendarDurationMinutes: 30.5,
+  })
+  const started = await postJson(app, `/import/${job.id}/start`, {
+    kind: 'meeting',
+    when: job.suggestedWhen,
+    whenStated: true,
+    calendarDurationMinutes: 45,
+  })
+  await events(
+    await app.request(`/import/${job.id}/events`),
+    (event) => event.type === 'state' && event.state === 'failed',
+  )
+  const reopened = createTestHttpApp([w.notebook], { imports: w.options })
+  const loaded = (await (await reopened.request(`/import/${job.id}`)).json()).job as ImportJob
+  assert({
+    given: 'invalid calendarDurationMinutes followed by a valid meeting slot duration across restart',
+    should: 'reject invalid values and persist valid minutes on job.fields for retries',
+    actual: [
+      badZero.status,
+      badFloat.status,
+      started.status,
+      loaded.fields?.calendarDurationMinutes,
+      startArgs({ ...w.runs[0], source: w.runs[0].readback.source }, w.runs[0].fields!, w.paths[0]).args
+        .defaultDuration,
+    ],
+    expected: [400, 400, 200, 45, 45],
+  })
+})

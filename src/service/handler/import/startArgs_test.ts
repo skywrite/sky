@@ -403,3 +403,41 @@ test('startArgs carries who one audio message is to', () => {
     expected: ['Joe Smith', undefined],
   })
 })
+
+test('startArgs() — calendar duration flows into meeting:new as a fallback when applicable', () => {
+  const matched = {
+    title: 'Atlas sync',
+    start: '13:30',
+    end: '14:00',
+    who: ['Jane Doe'],
+    relation: 'just-after' as const,
+  }
+  const slotDrop = startArgs(
+    { ...memo, calendar: matched },
+    fields({ when: '2026-01-27 09:00', whenStated: true, calendarDurationMinutes: 45 }),
+    '/tmp/memo.m4a',
+  )
+  const autoMatch = startArgs({ ...memo, calendar: matched }, fields({}), '/tmp/memo.m4a')
+  const movedToStart = startArgs({ ...memo, calendar: matched }, fields({ when: '2026-01-27 13:30' }), '/tmp/memo.m4a')
+  const movedAway = startArgs({ ...memo, calendar: matched }, fields({ when: '2026-01-27 16:00' }), '/tmp/memo.m4a')
+  const sectionDrop = startArgs({ ...memo, calendar: matched }, fields({ dayStated: true }), '/tmp/memo.m4a')
+  const asJournal = startArgs(
+    { ...memo, calendar: matched },
+    fields({ kind: 'journal', calendarDurationMinutes: 45 }),
+    '/tmp/memo.m4a',
+  )
+  assert({
+    given: 'a slot drop, an automatic calendar match, edited times, a Meetings-section drop, and a journal import',
+    should:
+      'pass defaultDuration only when the meeting matches a calendar slot, letting slot drops win over auto-match',
+    actual: [
+      slotDrop.args.defaultDuration,
+      autoMatch.args.defaultDuration,
+      movedToStart.args.defaultDuration,
+      movedAway.args.defaultDuration,
+      sectionDrop.args.defaultDuration,
+      asJournal.args.defaultDuration,
+    ],
+    expected: [45, 30, 30, undefined, undefined, undefined],
+  })
+})

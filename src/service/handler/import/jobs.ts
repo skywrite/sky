@@ -54,6 +54,8 @@ export interface StartFields {
   whenStated?: boolean
   /** Only the date was chosen by dropping on the Meetings section; the clock time remains a proposal */
   dayStated?: boolean
+  /** Scheduled calendar length in minutes, used as a fallback when a meeting import states no duration. */
+  calendarDurationMinutes?: number
   category: 'Professional' | 'Personal'
   /** False while the dialog's category is only a suggestion; absent on older jobs with a settled choice. */
   categoryStated?: boolean

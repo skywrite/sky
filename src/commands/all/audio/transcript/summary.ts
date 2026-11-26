@@ -33,7 +33,7 @@ import {
   renamesText,
   rewriteWithModel,
 } from './lib/renames.ts'
-import { resolveTimeField } from './lib/timeField.ts'
+import { resolveDurationField, resolveTimeField } from './lib/timeField.ts'
 import { clockLabel, runOptionsFor, TranscriptRun } from './lib/transcriptRun.ts'
 import { extractTypedNameLists } from './lib/typedNameLists.ts'
 
@@ -119,6 +119,10 @@ const params = {
   }),
   clock: Flag.string(
     "The start the file's clock gives — when a recording was made, or when a transcript began — in notebook time, YYYY-MM-DD HH:MM; sky's own reading, passed by a host: the words are resolved against it, and it fills the time field only when they give no time",
+    { optional: true, hidden: true },
+  ),
+  defaultDuration: Flag.number(
+    'Fallback meeting length in minutes (e.g. from a calendar event), used only when the transcript or memo states none',
     { optional: true, hidden: true },
   ),
 }
@@ -540,10 +544,6 @@ export default class AudioTranscriptSummaryTask extends Command {
         })
       }
 
-      // Duration computed from VTT cue timestamps is exact — prefer it over the
-      // model's guess from the summary prose. User corrections below still override.
-      if (pipelineDuration !== null) extractedDuration = pipelineDuration
-
       // Merge who/rel: prefer the analysis step's lists — it phonetically matched names
       // against known contacts (canonical full names), so it's the authoritative source.
       // Fall back to the summary-extracted lists on the paste/file path (no analysis step).
@@ -556,14 +556,21 @@ export default class AudioTranscriptSummaryTask extends Command {
       finalRel = excludeParties(finalRel, partyExclusionSet([...finalWho, extractedFrom, extractedTo]))
     }
 
-    // The time field, settled: a stated start is the person's word, the clock
-    // is sky's reading, and a time settled at an earlier check stays.
+    // The time and duration fields, settled: a stated start is the person's word, the clock
+    // is sky's reading, exact transcript timestamps win over prose guesses, a calendar
+    // duration fills only a blank, and values settled at an earlier check stay.
     extractedTime = resolveTimeField({
       time: extractedTime,
       kept: Boolean(keptExtract),
       stated: statedWhen,
       day: statedDay,
       clock: clockWhen,
+    })
+    extractedDuration = resolveDurationField({
+      extracted: extractedDuration,
+      pipeline: pipelineDuration,
+      fallback: args.defaultDuration ?? null,
+      kept: Boolean(keptExtract),
     })
 
     // The fields as they stand, kept after extraction and after every round

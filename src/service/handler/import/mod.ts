@@ -251,11 +251,24 @@ function parseStart(body: unknown, job: ImportJob): StartFields | string {
       to = value
     }
   }
+  let calendarDurationMinutes: number | undefined
+  if (b.calendarDurationMinutes !== undefined) {
+    if (
+      typeof b.calendarDurationMinutes !== 'number' ||
+      !Number.isInteger(b.calendarDurationMinutes) ||
+      b.calendarDurationMinutes < 1 ||
+      b.calendarDurationMinutes >= 24 * 60
+    ) {
+      return 'calendarDurationMinutes must be a positive number of minutes.'
+    }
+    if (kind === 'meeting') calendarDurationMinutes = b.calendarDurationMinutes
+  }
   return {
     kind: kind as StartFields['kind'],
     when,
     ...(b.whenStated === true ? { whenStated: true } : {}),
     ...(b.dayStated === true ? { dayStated: true } : {}),
+    ...(calendarDurationMinutes !== undefined ? { calendarDurationMinutes } : {}),
     category,
     ...(typeof b.categoryStated === 'boolean' ? { categoryStated: b.categoryStated } : {}),
     journalType,

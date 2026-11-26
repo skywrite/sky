@@ -1,5 +1,6 @@
 import { ActionIcon, Button, FileButton, Menu, UnstyledButton } from '@mantine/core'
 import { type DragEvent, Fragment, type ReactNode, useEffect, useRef, useState } from 'react'
+import { calendarDurationMinutes } from '../../../service/handler/import/calendarDuration.ts'
 import { filesHref, type Kept, moveIn, readListing } from '../attachments/files.tsx'
 import { fileHref } from '../explorer/explorer.tsx'
 import { acceptsImports, type ImportJob, importStateWord, type MeetingImport, useFileDrop } from '../import/import.tsx'
@@ -283,7 +284,14 @@ function MeetingRow({
     setBusy(false)
   }
   const canDrop = Boolean(!notification && onImportMeeting && m.state === 'past' && !m.record && !m.allDay && m.start)
-  const drop = useFileDrop(canDrop, (files) => onImportMeeting?.(files, { title: m.title, when: `${ymd} ${m.start}` }))
+  const durationMinutes = calendarDurationMinutes(m.start, m.end)
+  const drop = useFileDrop(canDrop, (files) =>
+    onImportMeeting?.(files, {
+      title: m.title,
+      when: `${ymd} ${m.start}`,
+      ...(durationMinutes ? { durationMinutes } : {}),
+    }),
+  )
   // A running import says where it is in the mark instead.
   const showsFiling = !notification && !m.allDay && !importing
   const whoText = [whoLine(m.who), m.state === 'now' && !m.allDay ? `until ${m.end}` : ''].filter(Boolean).join(' · ')

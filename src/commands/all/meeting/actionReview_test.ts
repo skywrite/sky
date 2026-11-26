@@ -80,6 +80,7 @@ test('meeting:new resumes a filed meeting, saves notes before routing, and retai
         day: undefined,
         who: undefined,
         duration: undefined,
+        defaultDuration: undefined,
         clock: undefined,
         category: 'Professional Complete',
         medium: 'Zoom',

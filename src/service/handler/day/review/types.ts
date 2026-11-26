@@ -21,7 +21,7 @@ export interface ReviewItem {
   address?: DayItemAddress
   name?: string
   tracker?: Tracker
-  meeting?: { title: string; when: string }
+  meeting?: { title: string; when: string; durationMinutes?: number }
 }
 
 /** A recap is `missing` with no file and no run here, `skipped` when the person let the summary go ahead without it. */

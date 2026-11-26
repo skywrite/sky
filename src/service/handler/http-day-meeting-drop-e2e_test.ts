@@ -167,12 +167,13 @@ test(
         }
         assert({
           given: 'VTT, TXT and audio imports started from the slot',
-          should: 'run meeting:new through the correct source door with the chosen time stated',
+          should: 'run meeting:new through the correct source door with the chosen time and scheduled duration',
           actual: runs.map((run) => ({
             command: run.command,
             file: path.basename(String(run.args.fromZoomVtt ?? run.args.fromVoiceMemo)),
             when: String(run.args.when),
             clock: run.args.clock,
+            defaultDuration: run.args.defaultDuration,
             rawArgs: run.rawArgs,
           })),
           expected: ['recap.vtt', 'recap.txt', 'memo.m4a'].map((file) => ({
@@ -180,6 +181,7 @@ test(
             file,
             when: '2026-08-05 09:30',
             clock: undefined,
+            defaultDuration: 30,
             rawArgs: { _: [], when: '2026-08-05 09:30' },
           })),
         })
@@ -351,6 +353,7 @@ test(
               when: String(run.args.when),
               day: run.args.day,
               clock: run.args.clock,
+              defaultDuration: run.args.defaultDuration,
               rawArgs: run.rawArgs,
               meetingTime: resolveTimeField({
                 time: '2026-08-09 09:30',
@@ -368,6 +371,7 @@ test(
               when: `${DAY.ymd} ${time}`,
               day: DAY.ymd,
               clock: stated ? undefined : '2026-08-09 15:45',
+              defaultDuration: undefined,
               rawArgs: stated ? { _: [], when: `${DAY.ymd} ${time}` } : { _: [] },
               meetingTime: `${DAY.ymd} ${stated ? time : '09:30'}`,
             })),

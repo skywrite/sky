@@ -58,6 +58,10 @@ const params = {
     hidden: true,
   }),
   duration: Flag.string('Meeting length e.g. 45m, 2h', { short: 'd', optional: true }),
+  defaultDuration: Flag.number(
+    'Fallback meeting length in minutes (e.g. from a calendar event), used only when the transcript or memo states none',
+    { optional: true, hidden: true },
+  ),
   category: categoryComplete(),
   medium: Flag.string('Meeting medium e.g. Zoom, Phone, etc', { short: 'm', default: () => 'Zoom' }),
   summary: Flag.string('Meeting summary', { short: 's', default: () => '' }),
@@ -181,6 +185,7 @@ export default class MeetingNewTask extends Command {
         when: whenStated ? when.toString() : undefined,
         day: args.day,
         clock: args.clock,
+        defaultDuration: args.defaultDuration,
       })
       if (!summaryResult.ok || !summaryResult.data) {
         return CommandResult.fail(`Transcript pipeline failed: ${summaryResult.message}`)
@@ -290,6 +295,15 @@ export default class MeetingNewTask extends Command {
     // Validate required fields for manual path
     if (!who) {
       return CommandResult.fail('Missing required argument: who (or use --from-voice-memo/--from-zoom-vtt/--from-text)')
+    }
+    if (
+      !usePipeline &&
+      duration === undefined &&
+      args.defaultDuration !== undefined &&
+      Number.isFinite(args.defaultDuration) &&
+      args.defaultDuration >= 1
+    ) {
+      duration = `${Math.round(args.defaultDuration)}m`
     }
 
     if (usePipeline) output.stage('file', 'Filing')

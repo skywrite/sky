@@ -23,7 +23,8 @@
 import { basename } from 'node:path'
 import { documentWorkWhen, isAttachmentNote } from '#commands/all/notes/lib/documentInput.ts'
 import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
-import type { StartFields } from './jobs.ts'
+import { matchedCalendarDuration } from './calendarDuration.ts'
+import type { CalendarMatch, StartFields } from './jobs.ts'
 import type { ReadBack } from './readback.ts'
 
 export interface StartContext {
@@ -33,6 +34,8 @@ export interface StartContext {
   runKey: string | null
   /** The when sky proposed, notebook time, YYYY-MM-DD HH:MM */
   suggestedWhen: string
+  /** Calendar event matched to the upload, if any */
+  calendar?: CalendarMatch | null
   id?: string
 }
 
@@ -86,7 +89,16 @@ export function startArgs(job: StartContext, fields: StartFields, input: string 
   const rawArgs = stated ? { _: [], when: fields.when } : { _: [] }
   const text = job.source === 'text' || job.source === 'selection'
   switch (fields.kind) {
-    case 'meeting':
+    case 'meeting': {
+      const defaultDuration =
+        fields.calendarDurationMinutes ??
+        matchedCalendarDuration({
+          calendar: job.calendar,
+          suggestedWhen: job.suggestedWhen,
+          when: fields.when,
+          dayStated: fields.dayStated,
+        }) ??
+        undefined
       return {
         command: 'meeting:new',
         args: {
@@ -101,9 +113,11 @@ export function startArgs(job: StartContext, fields: StartFields, input: string 
           run: job.runKey ?? undefined,
           ...(day ? { day } : {}),
           ...(stated || job.source === 'selection' ? {} : { clock: job.suggestedWhen }),
+          ...(defaultDuration !== undefined ? { defaultDuration } : {}),
         },
         rawArgs,
       }
+    }
     case 'journal':
       return {
         command: 'journal:new',

@@ -122,6 +122,7 @@ export interface ImportJob {
     when: string
     whenStated?: boolean
     dayStated?: boolean
+    calendarDurationMinutes?: number
     category: 'Professional' | 'Personal'
     categoryStated?: boolean
     journalType: string | null
@@ -656,7 +657,9 @@ export function DropOverlay({ what = 'files' }: { what?: Dragged }) {
 // -----------------------------------------------------------------------------
 
 /** A calendar slot, or just the day chosen by dropping on the Meetings section. */
-export type MeetingImport = { title: string; when: string; day?: never } | { day: string; title?: never; when?: never }
+export type MeetingImport =
+  | { title: string; when: string; durationMinutes?: number; day?: never }
+  | { day: string; title?: never; when?: never; durationMinutes?: never }
 
 interface QueuedImport {
   files: File[]
@@ -1234,11 +1237,22 @@ function ConfirmBody({
         throw new Error("Enter who's speaking in each audio file.")
       }
       if (audioConversation && count === 1 && !appendTo && !to.trim()) throw new Error('Enter who the message is to.')
+      const calendarDurationMinutes =
+        fields.kind === 'meeting'
+          ? meeting?.when
+            ? fields.when.trim() === meeting.when
+              ? meeting.durationMinutes
+              : undefined
+            : job?.fields?.calendarDurationMinutes && fields.when.trim() === job.fields.when
+              ? job.fields.calendarDurationMinutes
+              : undefined
+          : undefined
       const { job: started } = await post<{ job: ImportJob }>(`/import/${live.id}/start`, {
         kind: fields.kind,
         when: fields.when.trim(),
         whenStated,
         dayStated,
+        ...(calendarDurationMinutes !== undefined ? { calendarDurationMinutes } : {}),
         category: fields.category,
         categoryStated: categoryTouched.current,
         fresh: fields.fresh,

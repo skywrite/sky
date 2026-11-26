@@ -265,7 +265,13 @@ export function createImportHost(config: typeof ConfigModule, env: Record<string
     // A when the person changed goes as stated, and the command keeps it over
     // anything the words say; left as proposed, it goes as the file's clock.
     const { command, args, rawArgs } = startArgs(
-      { source: job.readback.source, runKey: job.runKey, suggestedWhen: job.suggestedWhen, id: job.id },
+      {
+        source: job.readback.source,
+        runKey: job.runKey,
+        suggestedWhen: job.suggestedWhen,
+        calendar: job.calendar,
+        id: job.id,
+      },
       fields,
       filePaths,
     )

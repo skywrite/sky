@@ -1,5 +1,5 @@
 import { assert, test } from '#test'
-import { resolveTimeField, type TimeFieldInputs } from './timeField.ts'
+import { type DurationFieldInputs, resolveDurationField, resolveTimeField, type TimeFieldInputs } from './timeField.ts'
 
 const EXTRACTED = '2026-01-27 09:30'
 const STATED = '2026-01-27 09:00'
@@ -83,5 +83,55 @@ test('resolveTimeField()', () => {
   ]
   for (const [given, should, inputs, expected] of cases) {
     assert({ given, should, actual: resolveTimeField(inputs), expected })
+  }
+})
+
+test('resolveDurationField()', () => {
+  const cases: [string, string, DurationFieldInputs, number | null][] = [
+    [
+      'exact transcript timestamps alongside a model guess and a calendar fallback',
+      'keep the exact transcript duration',
+      { extracted: 50, pipeline: 47, fallback: 60, kept: false },
+      47,
+    ],
+    [
+      'a voice memo that states a length alongside a calendar fallback',
+      'keep the spoken duration',
+      { extracted: 45, pipeline: null, fallback: 30, kept: false },
+      45,
+    ],
+    [
+      'a voice memo that states no length alongside a calendar fallback',
+      'use the calendar fallback duration',
+      { extracted: null, pipeline: null, fallback: 30, kept: false },
+      30,
+    ],
+    [
+      'a kept duration from an earlier check alongside timestamps and a fallback',
+      'keep the checked value',
+      { extracted: 20, pipeline: 47, fallback: 60, kept: true },
+      20,
+    ],
+    [
+      'a kept record with no duration alongside a calendar fallback',
+      'fill from the calendar fallback',
+      { extracted: null, pipeline: null, fallback: 30, kept: true },
+      30,
+    ],
+    [
+      'a sub-minute transcript whose cue timestamps round to zero alongside a calendar fallback',
+      'keep zero rather than inventing the calendar length',
+      { extracted: null, pipeline: 0, fallback: 60, kept: false },
+      0,
+    ],
+    [
+      'no extracted or pipeline duration and a non-positive fallback',
+      'stay null',
+      { extracted: null, pipeline: null, fallback: 0, kept: false },
+      null,
+    ],
+  ]
+  for (const [given, should, inputs, expected] of cases) {
+    assert({ given, should, actual: resolveDurationField(inputs), expected })
   }
 })

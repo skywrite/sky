@@ -32,3 +32,25 @@ export function resolveTimeField({ time, kept, stated, day, clock }: TimeFieldIn
   const resolved = time || clock
   return day && resolved ? resolved.replace(/^\d{4}-\d{2}-\d{2}/, day) : resolved
 }
+
+export interface DurationFieldInputs {
+  /** Duration extracted from the summary, or carried by a kept run record; null when neither has one */
+  extracted: number | null
+  /** Exact duration computed from transcript timestamps; null for voice memos or unstamped text */
+  pipeline: number | null
+  /** Fallback duration in minutes (e.g. from a matched calendar event); null when none */
+  fallback: number | null
+  /** Whether `extracted` came from a kept run record rather than a fresh extraction */
+  kept: boolean
+}
+
+/**
+ * Settle meeting duration in minutes: a kept check value stays, then exact transcript timestamps,
+ * then duration extracted from the words, and finally a calendar fallback when none of those gave one.
+ */
+export function resolveDurationField({ extracted, pipeline, fallback, kept }: DurationFieldInputs): number | null {
+  if (kept && extracted !== null) return extracted
+  if (pipeline !== null) return pipeline
+  if (extracted !== null) return extracted
+  return fallback !== null && Number.isFinite(fallback) && fallback >= 1 ? Math.round(fallback) : null
+}

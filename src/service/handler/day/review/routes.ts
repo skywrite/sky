@@ -5,6 +5,7 @@ import type { TrackingStore } from '#lib/tracking/store.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import { hold } from '../../../activity.ts'
 import type { ThreadSummary } from '../../chat/mod.ts'
+import { calendarDurationMinutes } from '../../import/calendarDuration.ts'
 import type { StreaksStore } from '../../streaks/store.ts'
 import isDay from '../isDay.ts'
 import { buildDayView, type DayRoutesOptions } from '../mod.ts'
@@ -154,15 +155,21 @@ export function createReviewRoutes(options: Options) {
           if (calendars.size > 20) calendars.delete(calendars.keys().next().value!)
         }
         const schedule = await cached.value
-        for (const meeting of schedule.meetings.filter((m) => !m.allDay && !m.record))
+        for (const meeting of schedule.meetings.filter((m) => !m.allDay && !m.record)) {
+          const durationMinutes = calendarDurationMinutes(meeting.start, meeting.end)
           items.push({
             id: fingerprint('meeting', [meeting.classification?.key, meeting.title, meeting.start]),
             kind: 'meeting',
             title: meeting.title,
             detail: `${meeting.start}–${meeting.end} · No filed notes`,
             href: `/${ymd}?view=record`,
-            meeting: { title: meeting.title, when: `${ymd} ${meeting.start}` },
+            meeting: {
+              title: meeting.title,
+              when: `${ymd} ${meeting.start}`,
+              ...(durationMinutes ? { durationMinutes } : {}),
+            },
           })
+        }
         for (const message of schedule.errors) warning('Check meeting notes', message, `/${ymd}?view=record`)
       }
     }
