@@ -3,6 +3,7 @@ import { ActionIcon, Button, Popover, Select, Tooltip } from '@mantine/core'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { toolDisplayName } from '#universal/ai/toolDisplay.ts'
 import type { VoiceChatRequest } from '../../../service/handler/voice/chatTools.ts'
+import { keepScreenAwake } from './screenAwake.ts'
 import { whenSpeakersWarm } from './speakers.ts'
 import { VoiceAudioLevels } from './voiceAudio.ts'
 import './voice.css'
@@ -105,6 +106,9 @@ export function useVoice(id: string) {
   useEffect(() => {
     if (state.phase === 'ended' || state.phase === 'failed') audioMotion.stop()
   }, [state.phase, audioMotion])
+  // A phone that locks its screen ends the call, so the screen stays on while one runs.
+  const inCall = state.phase === 'starting' || state.phase === 'live'
+  useEffect(() => (inCall ? keepScreenAwake() : undefined), [inCall])
   useEffect(() => {
     if (state.phase !== 'live' || !navigator.mediaDevices?.addEventListener) return
     const onChange = () => void refreshDevices()
