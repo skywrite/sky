@@ -5,7 +5,10 @@ import type { DownloadResponse } from '../existing/downloads.ts'
 
 interface RequestPolicy {
   origin(): string | undefined
-  /** Once file bytes enter a page, every request and redirect stays on the upload origin. */
+  /**
+   * Once file bytes enter a page, every request and redirect stays on the upload website: its origin
+   * and other addresses of the same site, such as an upload host of its own.
+   */
   uploadOrigin?(): string | undefined
   containsLogin(text: string): boolean
   containsCredential?(text: string): boolean
@@ -37,7 +40,7 @@ export async function guardBrowserRequests(page: Page, policy: RequestPolicy): P
     const url = new URL(address)
     const origin = policy.origin()
     const uploadOrigin = policy.uploadOrigin?.()
-    if (uploadOrigin && url.origin !== uploadOrigin) return false
+    if (uploadOrigin && !sameLoginWebsite(uploadOrigin, url.origin)) return false
     if (!['https:', 'http:'].includes(url.protocol)) return false
     if (url.username || url.password) return false
     if (policy.nativeActive?.()) {

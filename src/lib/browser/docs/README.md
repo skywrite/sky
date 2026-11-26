@@ -1,6 +1,6 @@
 ---
 created: 2026-09-25
-updated: 2026-11-22
+updated: 2026-11-25
 ---
 
 # Sky's browser
@@ -247,7 +247,7 @@ items do not grant other subdomains. This permission expires after two minutes
 and is revoked when either captured document navigates; it never permits a
 redirected credential body. Callback parameters join private redaction. This does not grant
 permission to fill on the destination: each new form requires its own permitted saved
-website match. File uploads retain their exact-origin restriction. A blocked top-level navigation is
+website match. File uploads retain their same-website restriction. A blocked top-level navigation is
 reported as a Sky restriction with its destination, not a password-manager outage
 or a generic request to finish sign-in on the browser's error page.
 
@@ -281,8 +281,10 @@ The worker offers ordinary navigation, accessible snapshots, control actions,
 and downloads. Upload tasks additionally receive an exact staged file manifest
 and HTTPS destination origin from the chat host. Only those files can enter a
 file input or chooser on that origin; after selection, the network guard keeps
-all requests and redirect hops on that origin. Sites requiring a separate upload
-origin are consequently blocked and must be reported as incomplete. Selecting
+all requests and redirect hops on that website: the origin itself and other
+addresses of the same site, such as an upload host of its own. Sites that hand
+the file to another website are consequently blocked and must be reported as
+incomplete. Selecting
 files is not proof of upload: the driver must inspect the destination receipt.
 Uploads use the reasoning driver because Jev's action table has no file chooser
 operation. It offers no arbitrary JavaScript, console/network inspection,

