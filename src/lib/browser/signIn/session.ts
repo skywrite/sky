@@ -856,8 +856,9 @@ export class PrivateBrowserSession {
           const files = await Promise.all(
             requested.map(async (entry) => ({
               name: entry!.name,
-              mimeType:
-                path.extname(entry!.name).toLowerCase() === '.pdf' ? 'application/pdf' : 'application/octet-stream',
+              // The file's usual type by its name, as a browser gives one picked from disk: pages that
+              // accept only certain kinds read it. Parameters such as a charset are not part of it.
+              mimeType: Bun.file(entry!.name).type.split(';')[0]!,
               buffer: await readFile(entry!.path),
             })),
           )

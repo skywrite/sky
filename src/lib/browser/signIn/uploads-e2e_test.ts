@@ -87,3 +87,62 @@ test(
     }
   },
 )
+
+test(
+  'private uploads reach the page with the type a browser gives each file by its name',
+  { timeout: 30000 },
+  async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'sky-upload-types-'))
+    const sources = ['example.png', 'example.txt', 'example.pdf', 'example.data'].map((name) => path.join(root, name))
+    for (const source of sources) await writeFile(source, 'synthetic example')
+    await mkdir(path.join(root, 'task'))
+    const uploads = await prepareBrowserUploads(sources, 'https://atlas.example', path.join(root, 'task'))
+    let page!: Page
+    const browser = await PrivateBrowserSession.launch({
+      filesDir: path.join(root, 'downloads'),
+      profileDir: path.join(root, 'profile'),
+      uploads,
+      headless: true,
+      broker: new SignInBroker({
+        sources: async () => [],
+        connect: async () => {
+          throw new Error('No credentials in this test')
+        },
+        approval: { allowLookup: async () => false, choose: async () => null },
+      }),
+      prepare: async (created) => {
+        page = created
+        // A picture uploader's shape: the page reads the chosen file's type and turns away what it does not list.
+        await page.context().route('**/*', (route) =>
+          route.fulfill({
+            contentType: 'text/html',
+            body: '<title>Atlas example picture</title><h1>Choose a picture</h1><input id="picture" type="file" hidden><button onclick="document.getElementById(\'picture\').click()">Upload new picture</button><script>document.getElementById("picture").onchange = event => { const type = event.target.files[0].type; document.querySelector("h1").textContent = ["image/png", "image/gif", "image/jpeg"].includes(type) ? "Picture accepted: " + type : "Not a picture: " + type; }</script>',
+          }),
+        )
+      },
+    })
+    try {
+      await browser.callTool('browser_navigate', { url: uploads.origin })
+      const seen: Array<string | null> = []
+      for (const file of uploads.files) {
+        await page.getByRole('button', { name: 'Upload new picture' }).click()
+        await browser.callTool('browser_file_upload', { paths: [file.path] })
+        seen.push(await page.getByRole('heading').textContent())
+      }
+      assert({
+        given: 'staged files of four kinds, chosen on a page that checks the type',
+        should: 'give the page each file’s usual type, without parameters, as a file picked from disk has',
+        actual: seen,
+        expected: [
+          'Picture accepted: image/png',
+          'Not a picture: text/plain',
+          'Not a picture: application/pdf',
+          'Not a picture: application/octet-stream',
+        ],
+      })
+    } finally {
+      await browser.close()
+      await rm(root, { recursive: true, force: true })
+    }
+  },
+)
