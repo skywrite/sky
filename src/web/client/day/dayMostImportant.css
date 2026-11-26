@@ -2,6 +2,9 @@
   margin-top: 0;
   color: var(--sky-accent);
 }
+.sky-entry-launch.sky-mi-launch {
+  margin-top: 0;
+}
 .sky-mi-add-another {
   flex-shrink: 0;
   height: auto;
@@ -213,7 +216,7 @@
 .sky-mi-document[contenteditable='false'] {
   opacity: 0.75;
 }
-.sky-mi-title textarea {
+.sky-entry-input .sky-mi-title textarea {
   padding: 0;
   font-size: 1.35em;
   font-weight: 600;
@@ -413,7 +416,7 @@
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .sky-mi-composer *,
+  .sky-mi-composer :not(.sky-entry-wave),
   .sky-mi-composer *::before,
   .sky-mi-composer *::after {
     animation: none !important;

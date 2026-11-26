@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises'
 import type { Locator, Page } from 'playwright'
+import type { MIDraftInput } from '#lib/mostImportant/types.ts'
 import { dayFile } from '#shared/nbfs/mod.ts'
 import { assert, test } from '#test'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
@@ -375,6 +376,184 @@ test(
             errors,
           ],
           expected: [true, true, true, true, []],
+        })
+        await page.getByRole('button', { name: 'Dictate reminder', exact: true }).click()
+        const reminder = page.getByRole('form', { name: 'Add a reminder' })
+        await reminder.getByRole('button', { name: 'Stop dictation' }).waitFor()
+        const commits = await page.evaluate(() => {
+          const fixture = (window as unknown as DictationWindow).entryAudio
+          fixture.defer = true
+          return fixture.commits
+        })
+        await page.getByRole('button', { name: 'Dictate most important task', exact: true }).click()
+        const dialog = page.getByRole('dialog', { name: 'Most important' })
+        await dialog.getByRole('button', { name: 'Cancel dictation' }).waitFor()
+        await page.waitForFunction(
+          (previous) => (window as unknown as DictationWindow).entryAudio.commits > previous,
+          commits,
+        )
+        const previousTrack = await page.evaluate(
+          () => (window as unknown as DictationWindow).entryAudio.tracks.at(-1)!.readyState,
+        )
+        await sendEvent(page, { type: 'input_audio_buffer.committed', item_id: 'last' })
+        await sendEvent(page, {
+          type: 'conversation.item.input_audio_transcription.completed',
+          item_id: 'last',
+          transcript: 'Check the notes.',
+        })
+        await dialog.getByRole('button', { name: 'Close', exact: true }).click()
+        await page.evaluate(() => (window as unknown as DictationWindow).entryAudio.grant!())
+        const draft = reminder.getByRole('textbox', { name: 'Item text' })
+        await draft.waitFor()
+        assert({
+          given: 'starting Most Important dictation while a reminder is listening',
+          should: 'release the old mic and put its late final transcript in the original unsaved reminder',
+          actual: [previousTrack, await draft.inputValue(), await readFile(file, 'utf8')],
+          expected: ['ended', 'Check the notes.', saved],
+        })
+      },
+    )
+  },
+)
+
+test(
+  { name: 'Most Important dictation follows the writing, interview and review workflow on a phone', timeout: 60_000 },
+  async (t) => {
+    const drafts: MIDraftInput[] = []
+    const directions: string[] = []
+    await runWysiwygE2e(
+      t,
+      {
+        initialMarkdown: EMPTY,
+        tempPrefix: 'sky-mi-dictation-',
+        file: 'time/' + dayFile(DAY),
+        day: true,
+        mostImportant: {
+          suggest: async (_day, options) => {
+            directions.push(options?.feedback ?? '')
+            return {
+              contextSummary: '',
+              suggestions: [{ summary: 'Plan the Atlas review', reason: 'Prepare the next draft.' }],
+            }
+          },
+          question: async (_day, input) => (input.answers.length ? null : 'Who will review the draft?'),
+          draft: async (_day, input) => {
+            drafts.push(input)
+            return {
+              summary: input.previous?.summary ?? input.statement,
+              dueBy: '',
+              body: input.previous?.body ?? 'Prepare the draft for review.',
+            }
+          },
+        },
+      },
+      async ({ page, origin, file, errors }) => {
+        await page.setViewportSize({ width: 390, height: 844 })
+        await connectPeers(page)
+        await page.goto(`${origin}/${DAY.ymd}?view=record`)
+        const launch = page.getByRole('button', { name: 'Dictate most important task', exact: true })
+        await launch.waitFor()
+        const originalTitle = await page.title()
+        await launch.click()
+        const dialog = page.getByRole('dialog', { name: 'Most important' })
+        const next = dialog.getByRole('button', { name: 'Continue', exact: true })
+        await dialog.getByRole('button', { name: 'Stop dictation' }).waitFor()
+        await page.emulateMedia({ reducedMotion: 'reduce' })
+        assert({
+          given: 'the mic on the Most Important card',
+          should: 'open the writing field directly with the same listening cue and hold Continue',
+          actual: [
+            directions.length,
+            await next.isDisabled(),
+            await dialog.locator('.sky-entry-wave').evaluate((w) => getComputedStyle(w).animationName),
+            await page.title(),
+          ],
+          expected: [
+            0,
+            true,
+            'sky-entry-listening-fade',
+            `sky · ${DAY.ymd} · Most important · Dictating most important task`,
+          ],
+        })
+        await finishSpeech(page, dialog, 'Review the Atlas draft')
+        const task = dialog.getByRole('textbox', { name: 'Your most important task' })
+        await task.waitFor()
+        await task.fill('Review the Atlas proposal')
+        await next.click()
+        const answer = dialog.getByRole('textbox', { name: 'Answer Sky' })
+        await answer.waitFor()
+        await dialog.getByRole('button', { name: 'Dictate answer', exact: true }).click()
+        await dialog.getByRole('button', { name: 'Stop dictation' }).waitFor()
+        await sendEvent(page, {
+          type: 'conversation.item.input_audio_transcription.delta',
+          item_id: 'pause',
+          delta: 'Jane',
+        })
+        await dialog.getByRole('group', { name: 'Live answer text' }).getByText('Jane').waitFor()
+        await dialog.getByRole('button', { name: 'Close', exact: true }).click()
+        await dialog.waitFor({ state: 'hidden' })
+        await page.getByRole('button', { name: 'Continue draft', exact: true }).click()
+        assert({
+          given: 'closing the interview mid-dictation',
+          should: 'keep the received words and release the microphone',
+          actual: [
+            await answer.inputValue(),
+            await page.evaluate(() => (window as unknown as DictationWindow).entryAudio.tracks.at(-1)!.readyState),
+          ],
+          expected: ['Jane', 'ended'],
+        })
+        await dialog.getByRole('button', { name: 'Continue dictating answer', exact: true }).click()
+        await finishSpeech(page, dialog, 'will review it.')
+        await next.click()
+        const title = dialog.getByRole('textbox', { name: 'Most important', exact: true })
+        await title.waitFor()
+        await dialog.getByRole('button', { name: 'Continue dictating task title' }).click()
+        await finishSpeech(page, dialog, 'with Jane')
+        await dialog.getByRole('button', { name: 'Refine with Sky', exact: true }).click()
+        await dialog.getByRole('button', { name: 'Dictate refinement' }).click()
+        await finishSpeech(page, dialog, 'Keep the scope narrow.')
+        await dialog.getByRole('button', { name: 'Refine draft', exact: true }).click()
+        await dialog.getByRole('textbox', { name: 'Refine with Sky' }).waitFor({ state: 'hidden' })
+        assert({
+          given: 'dictated and edited task, answer, title and refinement',
+          should: 'pass the reviewed words to the correct workflow steps before any notebook save',
+          actual: [
+            drafts[0]?.statement,
+            drafts[0]?.answers[0]?.answer,
+            drafts[1]?.feedback,
+            await title.inputValue(),
+            await readFile(file, 'utf8'),
+          ],
+          expected: [
+            'Review the Atlas proposal',
+            'Jane will review it.',
+            'Keep the scope narrow.',
+            'Review the Atlas proposal with Jane',
+            EMPTY,
+          ],
+        })
+        await dialog.getByRole('button', { name: 'Add to day', exact: true }).click()
+        await dialog.waitFor({ state: 'hidden' })
+        assert({
+          given: 'accepting the Most Important draft',
+          should: 'write the task and restore the day title',
+          actual: [(await readFile(file, 'utf8')).includes('Review the Atlas proposal with Jane'), await page.title()],
+          expected: [true, originalTitle],
+        })
+        await page.getByRole('button', { name: 'Add another', exact: true }).click()
+        await dialog.getByText('Give Sky some direction', { exact: true }).click()
+        const directionMic = dialog.getByRole('button', { name: 'Dictate suggestion direction' })
+        await directionMic.click()
+        await finishSpeech(page, dialog, 'Focus on Atlas.')
+        await Promise.all([
+          page.waitForResponse((r) => r.url().endsWith('/mi/suggest')),
+          dialog.getByRole('button', { name: 'Rethink suggestions' }).click(),
+        ])
+        assert({
+          given: 'dictation in the suggestion prompt',
+          should: 'send its text when Rethink is chosen',
+          actual: [directions.at(-1), errors],
+          expected: ['Focus on Atlas.', []],
         })
       },
     )

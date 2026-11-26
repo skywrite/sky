@@ -1,12 +1,17 @@
 import './dayMostImportant.css'
-import { Button, Drawer, Modal, Textarea, TextInput } from '@mantine/core'
+import { Button, Drawer, Modal, TextInput } from '@mantine/core'
 import { useMediaQuery } from '@mantine/hooks'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import type { MIAnswer, MIDraft, MIProgress, MISuggestion, MISuggestions } from '#lib/mostImportant/types.ts'
 import { frames } from '../chat/turnStream.ts'
 import { mountEditor, type EditorHandle } from '../editor/wysiwyg/mod.ts'
+import { useDialogTitle } from '../lib/useDialogTitle.ts'
 import type { DayData } from './day.tsx'
 import { MIActivity, MISuggestionSkeletons, type MIAction, type MIWorking } from './dayMostImportantProgress.tsx'
+import { DictationInput } from './DictationInput.tsx'
+import { stopDayMicrophone } from './entryDictation.ts'
+import { EntryMicrophone } from './EntryMicrophone.tsx'
+import { type DictationField, useEntryDictation } from './useEntryDictation.ts'
 
 interface DraftState {
   step: 'choose' | 'write' | 'interview' | 'review'
@@ -106,6 +111,8 @@ export function DayMostImportant({
   const ymd = day.day.ymd
   const mobile = useMediaQuery('(max-width: 900px)')
   const [opened, setOpened] = useState(false)
+  const readOnly = day.record.summarized
+  const dictation = useEntryDictation(ymd, opened && !readOnly)
   const [state, setState] = useState(() => restore(ymd))
   const [busy, setBusy] = useState<MIWorking | null>(null)
   const [error, setError] = useState('')
@@ -119,6 +126,39 @@ export function DayMostImportant({
   const snapshot = useRef(state)
   snapshot.current = state
   const change = (patch: Partial<DraftState>) => setState((current) => ({ ...current, ...patch }))
+  const textField = (
+    key: 'statement' | 'answer' | 'direction' | 'feedback',
+    name: string,
+    limit: number,
+  ): DictationField => ({
+    name,
+    limit,
+    text: state[key],
+    setText: (text) => change({ [key]: text }),
+  })
+  const task = textField('statement', 'most important task', 12000)
+  const reply = textField('answer', 'answer', 16000)
+  const direction = textField('direction', 'suggestion direction', 12000)
+  const feedback = textField('feedback', 'refinement', 12000)
+  const summary: DictationField = {
+    name: 'task title',
+    limit: 2000,
+    text: state.draft?.summary ?? '',
+    setText: (text) =>
+      setState((current) =>
+        current.draft ? { ...current, draft: { ...current.draft, summary: text.replace(/[\r\n]+/g, ' ') } } : current,
+      ),
+  }
+  const locked = Boolean(busy) || readOnly || dictation.active
+  const stepTitle = {
+    choose: 'Choose a task',
+    write: 'Write your own',
+    interview: 'Interview',
+    review: summary.text.trim() || 'Review draft',
+  }[state.step]
+  useDialogTitle(
+    opened ? `sky · ${ymd} · Most important · ${dictation.active ? `Dictating ${dictation.field}` : stepTitle}` : null,
+  )
   useEffect(() => {
     if (scroll.current) scroll.current.scrollTop = 0
   }, [state.step, editorVersion])
@@ -285,10 +325,20 @@ export function DayMostImportant({
     })
   }
   function open() {
+    stopDayMicrophone()
     setOpened(true)
     if (state.step === 'choose' && !state.suggestions.length && !state.context && !busy) suggest()
   }
-  const readOnly = day.record.summarized
+  function close() {
+    dictation.keepText()
+    setOpened(false)
+  }
+  const quickField = {
+    choose: task,
+    write: task,
+    interview: state.question ? reply : null,
+    review: state.draft && (refinementOpen ? feedback : summary),
+  }[state.step]
   const hasTask = day.record.mostImportant.length > 0
   const body = (
     <div className="sky-mi-composer">
@@ -306,7 +356,7 @@ export function DayMostImportant({
                   type="button"
                   className={`sky-mi-suggestion${index === 0 ? ' sky-mi-recommended' : ''}`}
                   title={`${item.summary}\n${item.reason}`}
-                  disabled={Boolean(busy) || readOnly}
+                  disabled={locked}
                   onClick={() => void advance(item.summary, [])}
                 >
                   <span className="sky-mi-option-number" aria-hidden="true">
@@ -332,18 +382,25 @@ export function DayMostImportant({
                 <p className="sky-mi-context">{state.context}</p>
               </details>
             )}
-            <details className="sky-mi-direction">
+            <details
+              className="sky-mi-direction"
+              onToggle={(event) => {
+                if (!event.currentTarget.open && dictation.field === direction.name) dictation.keepText()
+              }}
+            >
               <summary>Give Sky some direction</summary>
-              <Textarea
+              <DictationInput
+                dictation={dictation}
+                field={direction}
                 label="Direction for suggestions"
-                autosize
                 minRows={2}
-                value={state.direction}
-                disabled={Boolean(busy)}
-                onChange={(event) => change({ direction: event.currentTarget.value })}
+                disabled={Boolean(busy) || readOnly}
                 placeholder="What should Sky focus on?"
               />
-              <Button disabled={Boolean(busy) || !state.direction.trim() || readOnly} onClick={() => suggest()}>
+              <Button
+                disabled={locked || !direction.text.trim() || direction.text.length > direction.limit}
+                onClick={() => suggest()}
+              >
                 Rethink suggestions
               </Button>
             </details>
@@ -354,19 +411,17 @@ export function DayMostImportant({
             id="sky-mi-own-task"
             onSubmit={(event) => {
               event.preventDefault()
-              if (state.statement.trim()) void advance(state.statement.trim(), [])
+              if (!locked && task.text.trim() && task.text.length <= task.limit) void advance(task.text.trim(), [])
             }}
           >
-            <Textarea
+            <DictationInput
+              dictation={dictation}
+              field={task}
               label="Your most important task"
               autoFocus
-              autosize
               minRows={3}
-              maxLength={12000}
               placeholder="What do you want to accomplish?"
-              value={state.statement}
               disabled={Boolean(busy) || readOnly}
-              onChange={(event) => change({ statement: event.currentTarget.value })}
             />
           </form>
         )}
@@ -380,17 +435,15 @@ export function DayMostImportant({
               <section className="sky-mi-question">
                 <span className="sky-mi-question-number">Question {state.answers.length + 1}</span>
                 <h2 id="sky-mi-question">{state.question}</h2>
-                <Textarea
+                <DictationInput
+                  dictation={dictation}
+                  field={reply}
                   aria-label="Answer Sky"
                   aria-describedby="sky-mi-question"
                   placeholder="Your answer…"
                   autoFocus
-                  autosize
                   minRows={3}
-                  maxLength={16000}
-                  value={state.answer}
                   disabled={Boolean(busy) || readOnly}
-                  onChange={(event) => change({ answer: event.currentTarget.value })}
                 />
               </section>
             )}
@@ -409,18 +462,14 @@ export function DayMostImportant({
         )}
         {state.step === 'review' && state.draft && (
           <div className="sky-mi-review">
-            <Textarea
+            <DictationInput
+              dictation={dictation}
+              field={summary}
               aria-label="Most important"
               className="sky-mi-title"
               variant="unstyled"
-              autosize
               minRows={1}
-              value={state.draft.summary}
-              maxLength={2000}
               disabled={Boolean(busy) || readOnly}
-              onChange={(event) =>
-                change({ draft: { ...state.draft!, summary: event.currentTarget.value.replace(/[\r\n]+/g, ' ') } })
-              }
             />
             {(state.draft.dueBy || deadlineOpen) && (
               <TextInput
@@ -448,7 +497,7 @@ export function DayMostImportant({
                   variant="secondary"
                   aria-expanded={refinementOpen}
                   aria-controls="sky-mi-refine-fields"
-                  disabled={Boolean(busy) || readOnly}
+                  disabled={locked}
                   onClick={() => setRefinementOpen((value) => !value)}
                 >
                   Refine with Sky
@@ -465,21 +514,24 @@ export function DayMostImportant({
               </div>
               {refinementOpen && (
                 <div id="sky-mi-refine-fields" className="sky-mi-refine-fields">
-                  <Textarea
+                  <DictationInput
+                    dictation={dictation}
+                    field={feedback}
                     aria-label="Refine with Sky"
                     placeholder="What should change?"
                     autoFocus
-                    autosize
                     minRows={2}
-                    maxLength={12000}
-                    value={state.feedback}
                     disabled={Boolean(busy) || readOnly}
-                    onChange={(event) => change({ feedback: event.currentTarget.value })}
                   />
                   <Button
                     variant="secondary"
                     loading={busy?.action === 'refine'}
-                    disabled={Boolean(busy) || readOnly || !state.feedback.trim()}
+                    disabled={
+                      locked ||
+                      !feedback.text.trim() ||
+                      feedback.text.length > feedback.limit ||
+                      summary.text.length > summary.limit
+                    }
                     onClick={refine}
                   >
                     Refine draft
@@ -526,29 +578,33 @@ export function DayMostImportant({
             <>
               {state.suggestions.length > 0 && (
                 <Button
-                  disabled={Boolean(busy) || readOnly || state.suggestions.length >= 100}
+                  disabled={locked || state.suggestions.length >= 100 || direction.text.length > direction.limit}
                   loading={busy?.action === 'suggest'}
                   onClick={() => suggest(true)}
                 >
                   More suggestions
                 </Button>
               )}
-              {!busy && !state.suggestions.length && <Button onClick={() => suggest()}>Try suggestions again</Button>}
-              <Button variant="primary" disabled={readOnly} onClick={own}>
+              {!busy && !state.suggestions.length && (
+                <Button disabled={locked || direction.text.length > direction.limit} onClick={() => suggest()}>
+                  Try suggestions again
+                </Button>
+              )}
+              <Button variant="primary" disabled={readOnly || dictation.active} onClick={own}>
                 Write your own
               </Button>
             </>
           )}
           {state.step === 'write' && (
             <>
-              <Button disabled={Boolean(busy)} onClick={() => change({ step: 'choose' })}>
+              <Button disabled={Boolean(busy) || dictation.active} onClick={() => change({ step: 'choose' })}>
                 Back
               </Button>
               <Button
                 type="submit"
                 form="sky-mi-own-task"
                 variant="primary"
-                disabled={!state.statement.trim() || readOnly}
+                disabled={locked || !task.text.trim() || task.text.length > task.limit}
                 loading={Boolean(busy)}
               >
                 Continue
@@ -557,13 +613,13 @@ export function DayMostImportant({
           )}
           {state.step === 'interview' && (
             <>
-              <Button disabled={Boolean(busy) || readOnly} onClick={() => answer(true)}>
+              <Button disabled={locked || reply.text.length > reply.limit} onClick={() => answer(true)}>
                 Draft now
               </Button>
               <Button
                 variant="primary"
                 loading={Boolean(busy)}
-                disabled={readOnly || Boolean(state.question && !state.answer.trim())}
+                disabled={locked || reply.text.length > reply.limit || Boolean(state.question && !state.answer.trim())}
                 onClick={() => answer()}
               >
                 Continue
@@ -572,13 +628,15 @@ export function DayMostImportant({
           )}
           {state.step === 'review' && state.draft && (
             <>
-              <Button disabled={Boolean(busy)} onClick={() => setOpened(false)}>
+              <Button disabled={Boolean(busy)} onClick={close}>
                 Keep for later
               </Button>
               <Button
                 variant="primary"
                 loading={busy?.action === 'save'}
-                disabled={Boolean(busy) || readOnly || !state.draft.summary.trim() || !state.draft.body.trim()}
+                disabled={
+                  locked || !summary.text.trim() || summary.text.length > summary.limit || !state.draft.body.trim()
+                }
                 onClick={save}
               >
                 Add to day
@@ -593,20 +651,35 @@ export function DayMostImportant({
     <>
       {children(
         !readOnly && (
-          <Button
-            variant="secondary"
-            className={hasTask ? 'sky-mi-add-another' : 'sky-plan-add sky-mi-invitation'}
-            leftSection={!hasTask && <span aria-hidden="true">＋</span>}
-            onClick={open}
-          >
-            {state.step !== 'choose' ? 'Continue draft' : hasTask ? 'Add another' : "What's most important?"}
-          </Button>
+          <div className="sky-entry-launch sky-mi-launch">
+            <Button
+              variant="secondary"
+              className={hasTask ? 'sky-mi-add-another' : 'sky-plan-add sky-mi-invitation'}
+              leftSection={!hasTask && <span aria-hidden="true">＋</span>}
+              onClick={open}
+            >
+              {state.step !== 'choose' ? 'Continue draft' : hasTask ? 'Add another' : "What's most important?"}
+            </Button>
+            {!opened && quickField && (
+              <EntryMicrophone
+                subject={quickField.name}
+                phase="idle"
+                hasText={!!quickField.text.trim()}
+                disabled={quickField.text.length >= quickField.limit || (Boolean(busy) && busy?.action !== 'suggest')}
+                onClick={() => {
+                  if (state.step === 'choose') own()
+                  setOpened(true)
+                  dictation.toggle(quickField)
+                }}
+              />
+            )}
+          </div>
         ),
       )}
       {mobile ? (
         <Drawer
           opened={opened}
-          onClose={() => setOpened(false)}
+          onClose={close}
           title="Most important"
           closeButtonProps={{ 'aria-label': 'Close' }}
           position="bottom"
@@ -620,7 +693,7 @@ export function DayMostImportant({
       ) : (
         <Modal
           opened={opened}
-          onClose={() => setOpened(false)}
+          onClose={close}
           title="Most important"
           closeButtonProps={{ 'aria-label': 'Close' }}
           centered
