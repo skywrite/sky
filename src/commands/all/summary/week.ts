@@ -7,7 +7,7 @@ import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod
 import { DIR_OUTPUT } from '#config'
 import openEditor from '#lib/shell/openEditor.ts'
 import { logAIError } from '#shared/ai/errorLog.ts'
-import { aiModelByProfile, getProfile } from '#shared/ai/models.ts'
+import { aiModelByProfile, getProfile, roleProfile } from '#shared/ai/models.ts'
 import { exists, readTextFile } from '#shared/fs/mod.ts'
 import { estimateTokens } from '#shared/models/AI/ContextAssembler/mod.ts'
 import { dayDir, weekDir } from '#shared/nbfs/mod.ts'
@@ -27,16 +27,14 @@ const PROMPT_FILE = new URL('./prompts/week.prompt.md', import.meta.url).pathnam
 // practice; like the day, an over-budget week refuses instead of trimming.
 const CONTEXT_BUDGET_TOKENS = 300_000
 
-// The weekly is the week's canonical record and the primary input to weekly
-// planning — same top-tier model as the dailies it is built from.
-const DEFAULT_PROFILE = 'default-fable-5.2'
-
 const params = {
   effort: aiEffortFlag(),
   week: Arg.string('Week to summarize (e.g., 33, W33, 2026-W02) — defaults to the last completed week', {
     optional: true,
   }),
-  model: Flag.string('Model profile to use', { long: 'ai-model', short: 'm', default: () => DEFAULT_PROFILE }),
+  // The weekly is the week's canonical record and the primary input to weekly
+  // planning — defaults to the frontier role alongside the dailies it is built from.
+  model: Flag.string('Model profile to use', { long: 'ai-model', short: 'm', default: () => roleProfile('frontier') }),
   force: Flag.bool('Overwrite existing summary file', { short: 'f', default: false }),
   allowMissing: Flag.bool('Continue even if some days are missing summaries', { default: false }),
   dryRun: Flag.bool('Show prompt without calling AI', { default: false }),

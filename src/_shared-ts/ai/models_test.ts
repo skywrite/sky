@@ -34,6 +34,7 @@ import {
   getProfile,
   getRoles,
   resolveProfile,
+  roleProfile,
   type ResolvedModel,
 } from './models.ts'
 
@@ -124,6 +125,17 @@ test('aiModel resolves a role to its baseline profile model', () => {
     should: 'resolve to the gpt-6.1-sol profile model',
     actual: modelId(aiModel('chat').model),
     expected: 'gpt-6.1-sol',
+  })
+  assert({
+    given: 'the frontier role',
+    should: 'resolve to the fable-5.2 profile model at xhigh effort',
+    actual: [
+      roleProfile('frontier', { models: { strong: '', fast: '', transcription: '' } }),
+      modelId(aiModel('frontier').model),
+      aiModel('frontier').providerOptions?.['anthropic']?.['effort'],
+      aiModel('frontier').contextWindow,
+    ],
+    expected: ['default-fable-5.2', 'claude-fable-5-2', 'xhigh', 1_000_000],
   })
   assert({
     given: 'the reasoning role',

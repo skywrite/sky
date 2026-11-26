@@ -88,7 +88,7 @@ export interface SkyConfig {
     }
     profiles?: Record<string, AiProfileConfig>
     /** Each role chooses a named preset from ai.profiles or the built-in catalog. */
-    roles?: Partial<Record<'chat' | 'reasoning' | 'fast' | 'balanced' | 'vision', string>>
+    roles?: Partial<Record<'chat' | 'frontier' | 'reasoning' | 'fast' | 'balanced' | 'vision', string>>
     /** Decision model configurations (provider + model) for structured decision calls. */
     decisionProfiles?: Record<string, AiProfileConfig>
     /** Each decision role chooses a named preset from ai.decisionProfiles or the built-in catalog. */

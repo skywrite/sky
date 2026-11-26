@@ -367,6 +367,7 @@ export const SETTABLE_KEYS = {
   'ai.writingVoiceProfile': ['ai', 'writingVoiceProfile'],
   'ai.models.transcription': ['ai', 'models', 'transcription'],
   'ai.roles.chat': ['ai', 'roles', 'chat'],
+  'ai.roles.frontier': ['ai', 'roles', 'frontier'],
   'ai.roles.reasoning': ['ai', 'roles', 'reasoning'],
   'ai.roles.fast': ['ai', 'roles', 'fast'],
   'ai.roles.balanced': ['ai', 'roles', 'balanced'],
@@ -448,6 +449,7 @@ async function refuse(host: SettingsHost, key: SettableKey, value: string): Prom
         : `openSavedIn must be one of ${OPEN_SAVED_TARGETS.join(', ')}`
     case 'ai.writingVoiceProfile':
     case 'ai.roles.chat':
+    case 'ai.roles.frontier':
     case 'ai.roles.reasoning':
     case 'ai.roles.fast':
     case 'ai.roles.balanced':
@@ -832,6 +834,7 @@ export const PROVIDER_LABEL: Record<string, string> = {
 
 export const ROLE_LABEL: Record<string, string> = {
   chat: 'Chat',
+  frontier: 'Frontier',
   reasoning: 'Thinking',
   fast: 'Quick',
   balanced: 'Balanced',

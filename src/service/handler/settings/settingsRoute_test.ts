@@ -10,6 +10,7 @@ import {
   choiceLabel,
   type ConfigSnapshot,
   type ProfileInput,
+  ROLE_LABEL,
   type SettableKey,
   type SettingsData,
   type SettingsRoutesOptions,
@@ -196,14 +197,46 @@ test('roles select presets and effort edits preserve all other preset settings',
     },
   }
   const { host } = hostWith(config)
+  host.models = () => [
+    {
+      role: 'reasoning',
+      label: ROLE_LABEL.reasoning,
+      value: 'Claude Opus 5.5 · Anthropic',
+      profile: 'default-opus-5.5',
+    },
+    {
+      role: 'frontier',
+      label: ROLE_LABEL.frontier,
+      value: 'Claude Fable 5.2 · Anthropic',
+      profile: 'default-fable-5.2',
+    },
+  ]
+  host.builtinProfiles = () => [
+    {
+      name: 'default-opus-5.5',
+      provider: 'anthropic',
+      model: 'claude-opus-5-5',
+      options: { effort: 'xhigh' },
+    },
+    {
+      name: 'default-fable-5.2',
+      provider: 'anthropic',
+      model: 'claude-fable-5-2',
+      contextWindow: 1_000_000,
+      options: { effort: 'xhigh', thinking: { type: 'adaptive' } },
+    },
+  ]
   host.write = async (key, value) => {
     if (key === 'ai.roles.reasoning') config.ai.roles = { ...config.ai.roles, reasoning: value }
+    if (key === 'ai.roles.frontier') config.ai.roles = { ...config.ai.roles, frontier: value }
   }
   host.writeProfile = async (name, profile) => {
     config.ai.profiles![name] = profile
   }
   const app = await appWith(host)
   const selected = await post(app, '/settings/_api/set', { key: 'ai.roles.reasoning', value: 'deep-work' })
+  const frontierSelected = await post(app, '/settings/_api/set', { key: 'ai.roles.frontier', value: 'deep-work' })
+  const frontierInvalid = await post(app, '/settings/_api/set', { key: 'ai.roles.frontier', value: 'missing' })
   const changed = await post(app, '/settings/_api/profile', {
     name: 'deep-work',
     ...config.ai.profiles['deep-work'],
@@ -219,13 +252,17 @@ test('roles select presets and effort edits preserve all other preset settings',
     effort: 'max',
   })
   assert({
-    given: 'Thinking assigned to a custom preset, then its effort adjusted',
-    should: 'reflect the assignment immediately, keep provider options and window, and protect the assigned preset',
+    given: 'Thinking and Frontier assigned to a custom preset, then its effort adjusted',
+    should: 'reflect the assignments immediately, keep provider options and window, and protect the assigned preset',
     actual: [
       selected.status,
+      frontierSelected.status,
+      frontierInvalid.status,
       changed.status,
       data.models[0].profile,
       data.models[0].value,
+      data.models[1].label,
+      data.models[1].profile,
       config.ai.profiles['deep-work'],
       blocked.status,
       invalid.status,
@@ -234,8 +271,12 @@ test('roles select presets and effort edits preserve all other preset settings',
     expected: [
       200,
       200,
+      400,
+      200,
       'deep-work',
       'GPT 6 Astra · OpenAI',
+      'Frontier',
+      'deep-work',
       {
         provider: 'openai',
         model: 'gpt-6-astra',

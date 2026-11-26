@@ -9,7 +9,7 @@ import { DIR_OUTPUT, DIR_STATE_SLACK_DAYS } from '#config'
 import { listOwnAddresses } from '#lib/google/ownAddresses.ts'
 import openEditor from '#lib/shell/openEditor.ts'
 import { logAIError } from '#shared/ai/errorLog.ts'
-import { aiModelByProfile, getProfile, type ModelProfile } from '#shared/ai/models.ts'
+import { aiModelByProfile, getProfile, roleProfile, type ModelProfile } from '#shared/ai/models.ts'
 import { ratioFor } from '#shared/ai/tokenRatio.ts'
 import { exists, readTextFile, writeTextFile } from '#shared/fs/mod.ts'
 import { AboutMeDocument } from '#shared/models/AboutMe/mod.ts'
@@ -45,10 +45,6 @@ const READING_BUDGET_TOKENS = 750_000
 // context without dragging in a week-old tail.
 const PREVIOUS_HOPS = 2
 
-// The summary is the day's canonical record and feeds every downstream
-// consumer — worth the top-tier model.
-const DEFAULT_PROFILE = 'default-fable-5.2'
-
 // What a run ended by the host's Stop (context.signal) reports; nothing
 // reaches summary.md.
 const STOPPED = 'Stopped before the summary was written.'
@@ -56,7 +52,9 @@ const STOPPED = 'Stopped before the summary was written.'
 const params = {
   effort: aiEffortFlag(),
   day: dayNoFutureArg(),
-  model: Flag.string('Model profile to use', { long: 'ai-model', short: 'm', default: () => DEFAULT_PROFILE }),
+  // The summary is the day's canonical record and feeds every downstream
+  // consumer — defaults to the frontier role so repoints reach it.
+  model: Flag.string('Model profile to use', { long: 'ai-model', short: 'm', default: () => roleProfile('frontier') }),
   force: Flag.bool('Overwrite existing summary file', { short: 'f', default: false }),
   dryRun: Flag.bool('Show prompt without calling AI', { default: false }),
   stdout: Flag.bool('Output summary to stdout instead of file', { default: false }),

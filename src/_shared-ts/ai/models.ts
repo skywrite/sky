@@ -104,7 +104,7 @@ export interface ResolvedModel {
   providerOptions?: Record<string, Record<string, JSONValue>>
 }
 
-export type Role = 'chat' | 'reasoning' | 'fast' | 'balanced' | 'vision'
+export type Role = 'chat' | 'frontier' | 'reasoning' | 'fast' | 'balanced' | 'vision'
 
 /** Identity builder — infers the provider literal so `options` is checked per-provider. */
 export function defineProfile<P extends Provider>(profile: ModelProfile<P>): ModelProfile<P> {
@@ -122,11 +122,14 @@ export type ProfileName = keyof typeof PROFILES
  *
  * `chat` is the profile a new chat opens on, and only that. Chat is its own lane because a long,
  * tool-driven conversation earns Sol's Ultrafast tier, while the one-shot work on `reasoning`
- * (summaries, extraction, meetings) keeps Opus's depth without that tier's 6x price. Chat summaries
- * read `reasoning` too; a thread's picker overrides `chat` for that thread alone.
+ * (meetings, extraction, document summaries) keeps Opus's depth without that tier's 6x price.
+ * `frontier` is the top-tier lane for the hardest problems — canonical summaries (`summary:day`,
+ * `summary:week`) and weekly grading (`week:checkin`) — defaulting to Fable 5.2 at xhigh effort.
+ * Chat summaries read `reasoning` too; a thread's picker overrides `chat` for that thread alone.
  */
 export const ROLES = {
   chat: 'default-gpt-6.1-sol-ultrafast',
+  frontier: 'default-fable-5.2',
   reasoning: 'default-opus-5.5',
   fast: 'default-haiku-5.5',
   balanced: 'default-sonnet-5.5',

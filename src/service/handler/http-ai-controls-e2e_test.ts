@@ -315,6 +315,18 @@ test(
       )
       await page.goto(`${origin}/settings/ai/models`)
       await capture('settings-before-interaction')
+      const frontier = page.getByRole('combobox', { name: 'Default preset for Frontier', exact: true })
+      const frontierEffort = page.getByRole('radiogroup', { name: 'Default effort for Frontier', exact: true })
+      assert({
+        given: 'the Frontier role in Settings > AI > Models',
+        should: 'default to default-fable-5.2 at X-high effort and list the preset in use',
+        actual: [
+          await frontier.inputValue(),
+          await frontierEffort.getByRole('radio', { name: 'X-high', exact: true }).getAttribute('aria-checked'),
+          await page.locator('.sky-preset-toggle').filter({ hasText: 'default-fable-5.2' }).isVisible(),
+        ],
+        expected: ['default-fable-5.2', 'true', true],
+      })
       const thinking = page.getByRole('combobox', { name: 'Default preset for Thinking', exact: true })
       await thinking.click()
       await page.getByRole('option', { name: 'default-sonnet-5.5', exact: true }).click()

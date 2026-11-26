@@ -7,7 +7,7 @@ import type { CommandArgs, CommandDescription, InferParams } from '#commands/mod
 import { DIR_TIME } from '#config'
 import openEditor from '#lib/shell/openEditor.ts'
 import { logAIError } from '#shared/ai/errorLog.ts'
-import { aiModelByProfile, getProfile } from '#shared/ai/models.ts'
+import { aiModelByProfile, getProfile, roleProfile } from '#shared/ai/models.ts'
 import { exists, readTextFile, writeTextFile } from '#shared/fs/mod.ts'
 import { estimateTokens } from '#shared/models/AI/ContextAssembler/mod.ts'
 import { fetchNow, weekDir } from '#shared/nbfs/mod.ts'
@@ -24,16 +24,14 @@ const PROMPT_FILE = path.join(import.meta.dir, 'prompts', 'checkin.prompt.md')
 // days of record) lands far below it; over budget refuses instead of trimming.
 const CONTEXT_BUDGET_TOKENS = 300_000
 
-// Grading is judgment against the record — same top-tier model as the
-// summaries the record is made of.
-const DEFAULT_PROFILE = 'default-fable-5.2'
-
 const params = {
   effort: aiEffortFlag(),
   week: Arg.string('Week to check in on (e.g., 35, W35, 2026-W02) — defaults to the current week', {
     optional: true,
   }),
-  model: Flag.string('Model profile to use', { long: 'ai-model', short: 'm', default: () => DEFAULT_PROFILE }),
+  // Grading is judgment against the record — defaults to the frontier role
+  // alongside the summaries the record is made of.
+  model: Flag.string('Model profile to use', { long: 'ai-model', short: 'm', default: () => roleProfile('frontier') }),
   dryRun: Flag.bool('Show prompt without calling AI', { default: false }),
   stdout: Flag.bool('Print the entry instead of writing checkins.md', { default: false }),
   open: Flag.bool('Open checkins.md in editor after writing', { short: 'o', default: true }),
