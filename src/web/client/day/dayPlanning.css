@@ -7,6 +7,7 @@
 }
 
 .sky-plan-next {
+  vertical-align: middle;
   margin-left: var(--sky-space-5);
 }
 
@@ -19,11 +20,27 @@
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--sky-accent) 6%, transparent);
 }
 
-.sky-plan-composer textarea {
-  font-size: var(--sky-content-font-size);
-  background: transparent;
-  border: 0;
-  padding: 0;
+.sky-entry-launch {
+  display: inline-flex;
+  vertical-align: middle;
+  align-items: center;
+  width: fit-content;
+  margin-top: var(--sky-space-2);
+}
+
+.sky-entry-launch .sky-plan-add {
+  margin-top: 0;
+  padding-right: var(--sky-space-1);
+}
+
+.sky-plan-composer[data-kind='complete'] .sky-plan-compose-actions {
+  align-items: end;
+}
+
+.sky-plan-composer[data-kind='complete'] .mantine-InputWrapper-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--sky-dim);
 }
 
 .sky-plan-compose-actions,
@@ -264,6 +281,49 @@
   .sky-plan-category {
     flex: 1;
     min-width: 140px;
+  }
+
+  .sky-plan-composer[data-kind='complete'] {
+    container-type: inline-size;
+  }
+
+  .sky-plan-composer[data-kind='complete'] .sky-plan-compose-actions {
+    display: grid;
+    grid-template-columns: repeat(12, minmax(0, 1fr));
+    gap: var(--sky-space-2);
+  }
+
+  .sky-plan-composer[data-kind='complete'] .sky-plan-category {
+    grid-column: span 5;
+    min-width: 0;
+    width: auto;
+  }
+
+  .sky-plan-composer[data-kind='complete'] .sky-plan-time {
+    grid-column: span 3;
+  }
+
+  .sky-plan-composer[data-kind='complete'] .sky-plan-time .mantine-TextInput-root {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .sky-plan-composer[data-kind='complete'] .sky-plan-length {
+    grid-column: span 4;
+    width: auto;
+  }
+
+  .sky-plan-composer[data-kind='complete'] .sky-plan-compose-actions > button {
+    grid-column: span 6;
+  }
+
+  @container (max-width: 340px) {
+    .sky-plan-composer[data-kind='complete'] .sky-plan-category {
+      grid-column: 1 / -1;
+    }
+    .sky-plan-composer[data-kind='complete'] :is(.sky-plan-time, .sky-plan-length) {
+      grid-column: span 6;
+    }
   }
 
   .sky-next-dialog-body {

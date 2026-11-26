@@ -1,5 +1,5 @@
 import './dayPlanning.css'
-import { ActionIcon, Button, Checkbox, Drawer, Loader, Modal, Select, Textarea, TextInput } from '@mantine/core'
+import { ActionIcon, Button, Checkbox, Drawer, Loader, Modal, Select, TextInput } from '@mantine/core'
 import { useMediaQuery } from '@mantine/hooks'
 import { type FormEvent, useEffect, useRef, useState } from 'react'
 import type { ClockSnapshot } from '../../../service/handler/clock/mod.ts'
@@ -14,9 +14,13 @@ import {
   type NextDestination,
 } from '../../../service/handler/day/planningTypes.ts'
 import { fileHref } from '../explorer/explorer.tsx'
+import { useDialogTitle } from '../lib/useDialogTitle.ts'
 import type { DayData } from './day.tsx'
 import { LinkedText } from './dayItemText.tsx'
+import { DictationInput } from './DictationInput.tsx'
+import { EntryMicrophone } from './EntryMicrophone.tsx'
 import { revealOpacity, useSwipeToDelete } from './swipe.ts'
+import { ENTRY_TEXT_LIMIT, useEntryDictation } from './useEntryDictation.ts'
 import { useItemCategory } from './useItemCategory.ts'
 
 function DeleteCross() {
@@ -59,6 +63,13 @@ function PlanComposer({
   startTime?: () => Promise<string | null>
 }) {
   const [text, setText] = useState('')
+  const entry = kind === 'complete'
+  const dictation = useEntryDictation(ymd, opened)
+  const subject = LABELS[kind]
+  const field = { name: subject, text, setText, limit: ENTRY_TEXT_LIMIT }
+  const tooLong = text.length > field.limit
+  const action = entry ? 'Add entry' : `Add a ${subject}`
+  useDialogTitle(opened ? `sky · ${ymd} · ${dictation.active ? `Dictating ${subject}` : action}` : null)
   const {
     category,
     status: categoryStatus,
@@ -74,8 +85,10 @@ function PlanComposer({
   const [invalidTime, setInvalidTime] = useState(false)
   const [length, setLength] = useState('')
   const [invalidLength, setInvalidLength] = useState(false)
-  const field = useRef<HTMLTextAreaElement>(null)
+  const input = useRef<HTMLTextAreaElement>(null)
   const trigger = useRef<HTMLButtonElement>(null)
+  const mic = useRef<HTMLButtonElement>(null)
+  const openedByMic = useRef(false)
   const wasOpen = useRef(false)
   const request = useRef<{ payload: string; id: string } | null>(null)
   const start = useRef(startTime)
@@ -89,8 +102,13 @@ function PlanComposer({
       setLength('')
       setInvalidLength(false)
       request.current = null
-      field.current?.focus()
-    } else if (wasOpen.current) trigger.current?.focus()
+      if (openedByMic.current) mic.current?.focus({ preventScroll: true })
+      else input.current?.focus()
+    } else if (wasOpen.current) {
+      const button = openedByMic.current ? mic.current : trigger.current
+      button?.focus({ preventScroll: true })
+      openedByMic.current = false
+    }
     wasOpen.current = opened
   }, [opened, kind])
   useEffect(() => {
@@ -104,23 +122,38 @@ function PlanComposer({
       alive = false
     }
   }, [opened])
-  if (!opened)
+  if (!opened) {
     return (
-      <Button
-        ref={trigger}
-        variant="secondary"
-        className="sky-plan-add"
-        disabled={busy}
-        onClick={onOpen}
-        leftSection={<span aria-hidden="true">＋</span>}
-      >
-        {kind === 'complete' ? 'Add entry' : `Add a ${LABELS[kind]}`}
-      </Button>
+      <div className="sky-entry-launch">
+        <Button
+          ref={trigger}
+          variant="secondary"
+          className="sky-plan-add"
+          disabled={busy}
+          onClick={onOpen}
+          leftSection={<span aria-hidden="true">＋</span>}
+        >
+          {action}
+        </Button>
+        <EntryMicrophone
+          buttonRef={mic}
+          phase="idle"
+          subject={subject}
+          hasText={false}
+          disabled={busy}
+          onClick={() => {
+            openedByMic.current = true
+            onOpen()
+            dictation.toggle({ ...field, text: '' })
+          }}
+        />
+      </div>
     )
+  }
   const destination = kind === 'reminders' || kind === 'complete' ? kind : timed ? 'commitments' : 'todos'
   const submit = (event: FormEvent) => {
     event.preventDefault()
-    if (busy || !text.trim()) return
+    if (busy || dictation.active || tooLong || !text.trim()) return
     const normalized = timed ? normalizeDayTime(time) : null
     const stated = length.trim() ? normalizeEntryLength(length) : null
     const badTime = timed && !normalized
@@ -146,7 +179,8 @@ function PlanComposer({
   return (
     <form
       className="sky-plan-composer"
-      aria-label={kind === 'complete' ? 'Add entry' : `Add a ${LABELS[kind]}`}
+      data-kind={kind}
+      aria-label={action}
       onSubmit={submit}
       onKeyDown={(event) => {
         if (event.key === 'Escape' && !busy) {
@@ -155,23 +189,18 @@ function PlanComposer({
         }
       }}
     >
-      <Textarea
-        ref={field}
+      <DictationInput
+        dictation={dictation}
+        field={field}
+        inputRef={input}
+        micRef={mic}
         aria-label="Item text"
-        placeholder={
-          kind === 'complete'
-            ? 'What happened?'
-            : kind === 'reminders'
-              ? 'What do you want to remember?'
-              : 'What needs to happen?'
-        }
-        autosize
+        disabled={busy}
         minRows={1}
         maxRows={5}
-        maxLength={4000}
-        value={text}
-        disabled={busy}
-        onChange={(event) => setText(event.currentTarget.value)}
+        placeholder={
+          entry ? 'What happened?' : kind === 'reminders' ? 'What do you want to remember?' : 'What needs to happen?'
+        }
         onKeyDown={(event) => {
           if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
             event.preventDefault()
@@ -183,6 +212,7 @@ function PlanComposer({
         {kind !== 'reminders' && (
           <Select
             aria-label="Category"
+            label={entry ? 'Category' : undefined}
             className="sky-plan-category"
             data={categories}
             value={category}
@@ -199,6 +229,7 @@ function PlanComposer({
             <div className="sky-plan-time">
               <TextInput
                 aria-label={kind === 'complete' ? 'Entry time' : 'To-do time'}
+                label={entry ? 'Time' : undefined}
                 placeholder="HH:MM"
                 value={time}
                 maxLength={5}
@@ -231,6 +262,7 @@ function PlanComposer({
         {kind === 'complete' && (
           <TextInput
             aria-label="Duration"
+            label="Duration"
             className="sky-plan-length"
             placeholder="How long?"
             value={length}
@@ -247,7 +279,7 @@ function PlanComposer({
         <Button disabled={busy} onClick={onClose}>
           Cancel
         </Button>
-        <Button type="submit" variant="primary" loading={busy} disabled={!text.trim()}>
+        <Button type="submit" variant="primary" loading={busy} disabled={dictation.active || tooLong || !text.trim()}>
           Add {LABELS[destination]}
         </Button>
       </div>
