@@ -473,6 +473,7 @@ export function MeetingComposer({
     const controller = new AbortController()
     meetingRequest<CalendarSetup>('setup', undefined, controller.signal)
       .then((data) => {
+        if (controller.signal.aborted) return
         setSetupError('')
         setSetup(data)
         if (!data.accounts.length) setError('Connect a Google account with calendar access in Settings → Connections.')

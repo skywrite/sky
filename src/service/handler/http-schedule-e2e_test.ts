@@ -383,6 +383,23 @@ test(
             ],
             expected: [await preview.inputValue(), false, false, 'false', true, 0],
           })
+          // Hold booking's setup body open so going forward cancels it after the response headers arrive.
+          await page.evaluate(() => {
+            const browser: Window = window
+            const fetch = browser.fetch
+            browser.fetch = async (input, init) => {
+              const signal = init?.signal
+              if (input !== '/meetings/_api/setup' || !signal) return fetch(input, init)
+              browser.fetch = fetch
+              const response = await fetch(input, init)
+              response.json = () =>
+                new Promise((_, reject) => {
+                  document.body.dataset.setupBody = 'pending'
+                  signal.addEventListener('abort', () => reject(signal.reason), { once: true })
+                })
+              return response
+            }
+          })
           await page.goBack()
           await page.waitForFunction(() => document.title === 'sky · Reviewed title')
           assert({
@@ -391,6 +408,7 @@ test(
             actual: await page.getByLabel('Meeting title', { exact: true }).inputValue(),
             expected: 'Reviewed title',
           })
+          await page.waitForFunction(() => document.body.dataset.setupBody === 'pending')
           await page.goForward()
           await page.waitForFunction(() => document.title === 'sky · Find a time')
           if ((await afternoon.getAttribute('aria-pressed')) === 'false') await afternoon.click()

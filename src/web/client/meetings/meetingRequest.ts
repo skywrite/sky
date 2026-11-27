@@ -19,8 +19,16 @@ export async function meetingRequest<T>(url: string, body?: unknown, signal?: Ab
           signal,
         },
   )
-  const data = (await response.json().catch(() => ({}))) as T & { message?: string }
-  if (!response.ok)
-    throw new MeetingRequestError(data.message ?? 'Could not reach the meeting service. Try again.', response.status)
-  return data
+  const data: unknown = await response.json().catch(() => undefined)
+  signal?.throwIfAborted()
+  if (!response.ok) {
+    const failure = data as { message?: string } | null | undefined
+    throw new MeetingRequestError(
+      failure?.message ?? 'Could not reach the meeting service. Try again.',
+      response.status,
+    )
+  }
+  if (data === undefined)
+    throw new MeetingRequestError('Could not read the meeting service response. Try again.', response.status)
+  return data as T
 }
