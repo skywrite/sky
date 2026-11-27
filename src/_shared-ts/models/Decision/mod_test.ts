@@ -71,7 +71,7 @@ test(`DecisionDocument.fromMarkdown() with pending decision fixture`, async () =
 
 test(`DecisionDocument.fromMarkdown() with resolved decision fixture`, async () => {
   const given = 'Parse resolved Decision from fixture file'
-  const markdown = await readTextFile(path.join(DIR_FIXTURES, 'resolved-decision.md'))
+  const markdown = await readTextFile(path.join(DIR_FIXTURES, 'decided-decision.md'))
   const d = DecisionDocument.fromMarkdown(markdown)
 
   assert({

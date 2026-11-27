@@ -24,7 +24,7 @@ test('decisions:resolve creates the day file when the decision lands on a day th
       import { PlainDateTime } from '#universal/dates/nbdt/mod.ts'
       mock.module('@clack/prompts', () => ({ intro() {}, outro() {}, cancel() {}, isCancel: () => false, text: async () => 'Go with the Atlas vendor.' }))
       mock.module('open-editor', () => ({ default() {} }))
-      const { default: Task } = await import('#commands/all/decisions/resolve.ts')
+      const { default: Task } = await import('#commands/all/decisions/decide.ts')
       const pending = path.join(DIR_DECISIONS, '2026', 'pending', '04', 'atlas-vendor.md')
       await mkdir(path.dirname(pending), { recursive: true })
       await writeFile(pending, DecisionDocument.create({ name: 'atlas-vendor', title: 'Pick the Atlas vendor' }).toMarkdown())
