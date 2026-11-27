@@ -12,7 +12,12 @@ the total describes the filtered result set. Every result is restricted to
 the notebook root and the configured readable directories.
 
 The derived text cache follows `MarkdownStore.version`, so edits and deletions
-invalidate it. The query has no per-type candidate cap: stopping early can
+invalidate it. A rebuild reuses each document's entry by object identity: the
+store parses a new `Document` only for a file that changed, so the first search
+after one edit rebuilds that entry alone (milliseconds, not the second-plus a
+full rebuild takes, which a voice call paid on every turn it saved). This relies
+on the store replacing a document when its file changes, never editing one in
+place. The query has no per-type candidate cap: stopping early can
 hide an exact match or make a type filter incorrectly appear empty.
 
 A file in a day's `journal/` folder is a journal; older notebooks name entries

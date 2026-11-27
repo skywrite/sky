@@ -282,3 +282,33 @@ test(
     })
   },
 )
+
+test(
+  { name: 'after one file changes, search shows its new text, drops a deleted file, and keeps the rest' },
+  async () => {
+    await withNotebook((store, base) => {
+      const note = path.join(base, 'time/2026/W05/01-27/notes/plan.md')
+      store.set(note, '---\ntitle: Atlas plan\n---\n\nShip the mango crate.\n')
+      store.set(path.join(base, 'orgs/Atlas.md'), '---\nname: Atlas Studio\n---\n')
+      const titles = (query: string) =>
+        searchAllNotebook(store, base, query, { today: TODAY })
+          .results.map((result) => result.title)
+          .sort()
+      const before = titles('atlas')
+      store.set(note, '---\ntitle: Widget plan\n---\n\nShip the kiwi crate.\n')
+      const changed = [titles('atlas'), titles('kiwi'), titles('mango')]
+      store.delete(note)
+      const deleted = [titles('widget'), titles('atlas')]
+      assert({
+        given: 'a note and an org, then the note rewritten, then the note deleted',
+        should: 'find both, then the note only by its new words, then only the org',
+        actual: { before, changed, deleted },
+        expected: {
+          before: ['Atlas Studio', 'Atlas plan'],
+          changed: [['Atlas Studio'], ['Widget plan'], []],
+          deleted: [[], ['Atlas Studio']],
+        },
+      })
+    })
+  },
+)

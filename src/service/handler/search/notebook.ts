@@ -27,6 +27,28 @@ interface Entry {
 }
 
 const cache = new WeakMap<MarkdownStore, { version: number; base: string; entries: Entry[] }>()
+
+/** A document's entry and what it was built from. */
+interface Built {
+  absolute: string
+  base: string
+  fallback: SearchKind
+  markdown: string
+  yaml: Document['yaml']
+  /** Undefined when the document lies outside the searched folder */
+  entry?: Entry
+  /** The href when no place claims the document: its day, meeting page or Explorer */
+  ownHref?: string
+  day?: boolean
+}
+
+/**
+ * Entries kept per document object. The store parses a new Document only for a file that changed and
+ * keeps every other object, so a rebuild after one change builds that file's entry alone instead of all
+ * of them. Measured 2026-11-26 on a large notebook: about 1.5 s per full rebuild, paid by the first search
+ * after any change, which a voice call makes with every turn it saves.
+ */
+const builtByDoc = new WeakMap<Document, Built>()
 const primaryKinds = new Set(['person', 'org', 'place', 'day'])
 const entityKinds = new Set(['person', 'org', 'place', 'project', 'goal', 'decision', 'idea', 'streak', 'tracking'])
 
@@ -78,6 +100,59 @@ function properties(doc: Document): SearchResult['properties'] {
     .slice(0, 7)
 }
 
+function buildEntry(doc: Document, absolute: string, base: string, fallback: SearchKind): Built {
+  const built: Built = { absolute, base, fallback, markdown: doc.markdown, yaml: doc.yaml }
+  if (!isPathWithinRoot(absolute, base)) return built
+  const relativePath = path.relative(base, absolute)
+  const kind = kindOf(relativePath, fallback)
+  const date = parseTimePath(relativePath)?.start.toString() ?? docDate(doc, absolute)?.ymd
+  const names = [...strings(doc.yaml['name']), ...strings(doc.yaml['aliases']), ...strings(doc.yaml['alt'])]
+  const title =
+    kind === 'day' && date
+      ? `${new PlainDate(date).dayLong} · ${date}`
+      : entityKinds.has(kind)
+        ? (names[0] ?? docTitle(doc, absolute))
+        : docTitle(doc, absolute)
+  const props = properties(doc)
+  const subtitle = [
+    ...strings(doc.yaml['role']),
+    ...strings(doc.yaml['org']),
+    ...strings(doc.yaml['where']),
+    ...strings(doc.yaml['who']),
+    ...strings(doc.yaml['summary']),
+  ]
+    .filter((value) => value !== title)
+    .join(' · ')
+    .slice(0, 240)
+  const body = doc.markdown
+    .replace(/<!--[\s\S]*?-->/g, '')
+    .replace(/^\s*```[^\n]*$/gm, '')
+    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/^\s{0,3}(?:#{1,6}\s+|>\s?|[-*+]\s+(?:\[[ xX]\]\s*)?)/gm, '')
+    .replace(/[*`~]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+  built.day = kind === 'day' && date !== undefined
+  built.ownHref = built.day ? `/${date}` : (meetingHref(relativePath) ?? explorerHref(relativePath))
+  built.entry = {
+    absolute,
+    result: {
+      relativePath,
+      href: built.ownHref,
+      title,
+      kind,
+      date,
+      subtitle: subtitle || undefined,
+      properties: props,
+    },
+    names: [...new Set([title, ...names].map(normalize))],
+    metadata: normalize(`${relativePath} ${date ?? ''} ${JSON.stringify(doc.yaml)}`),
+    body,
+    normalizedBody: normalize(doc.markdown),
+  }
+  return built
+}
+
 function entriesOf(store: MarkdownStore, base: string): Entry[] {
   const saved = cache.get(store)
   if (saved?.version === store.version && saved.base === base) return saved.entries
@@ -107,59 +182,25 @@ function entriesOf(store: MarkdownStore, base: string): Entry[] {
   const entries: Entry[] = []
   for (const [source, fallback] of sources) {
     for (const { doc, path: absolute } of source.getAllItems()) {
-      if (seen.has(absolute) || !isPathWithinRoot(absolute, base)) continue
+      if (seen.has(absolute)) continue
+      let built = builtByDoc.get(doc)
+      if (
+        !built ||
+        built.absolute !== absolute ||
+        built.base !== base ||
+        built.fallback !== fallback ||
+        built.markdown !== doc.markdown ||
+        built.yaml !== doc.yaml
+      ) {
+        built = buildEntry(doc, absolute, base, fallback)
+        builtByDoc.set(doc, built)
+      }
+      const entry = built.entry
+      if (!entry) continue
       seen.add(absolute)
-      const relativePath = path.relative(base, absolute)
-      const kind = kindOf(relativePath, fallback)
-      const place = placeRefs.get(absolute)
-      const date = parseTimePath(relativePath)?.start.toString() ?? docDate(doc, absolute)?.ymd
-      const names = [...strings(doc.yaml['name']), ...strings(doc.yaml['aliases']), ...strings(doc.yaml['alt'])]
-      const title =
-        kind === 'day' && date
-          ? `${new PlainDate(date).dayLong} · ${date}`
-          : entityKinds.has(kind)
-            ? (names[0] ?? docTitle(doc, absolute))
-            : docTitle(doc, absolute)
-      const props = properties(doc)
-      const subtitle = [
-        ...strings(doc.yaml['role']),
-        ...strings(doc.yaml['org']),
-        ...strings(doc.yaml['where']),
-        ...strings(doc.yaml['who']),
-        ...strings(doc.yaml['summary']),
-      ]
-        .filter((value) => value !== title)
-        .join(' · ')
-        .slice(0, 240)
-      const body = doc.markdown
-        .replace(/<!--[\s\S]*?-->/g, '')
-        .replace(/^\s*```[^\n]*$/gm, '')
-        .replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1')
-        .replace(/^\s{0,3}(?:#{1,6}\s+|>\s?|[-*+]\s+(?:\[[ xX]\]\s*)?)/gm, '')
-        .replace(/[*`~]/g, '')
-        .replace(/\s+/g, ' ')
-        .trim()
-      entries.push({
-        absolute,
-        result: {
-          relativePath,
-          href:
-            kind === 'day' && date
-              ? `/${date}`
-              : place
-                ? placeHref(place)
-                : (meetingHref(relativePath) ?? explorerHref(relativePath)),
-          title,
-          kind,
-          date,
-          subtitle: subtitle || undefined,
-          properties: props,
-        },
-        names: [...new Set([title, ...names].map(normalize))],
-        metadata: normalize(`${relativePath} ${date ?? ''} ${JSON.stringify(doc.yaml)}`),
-        body,
-        normalizedBody: normalize(doc.markdown),
-      })
+      const place = built.day ? undefined : placeRefs.get(absolute)
+      const href = place ? placeHref(place) : built.ownHref!
+      entries.push(href === entry.result.href ? entry : { ...entry, result: { ...entry.result, href } })
     }
   }
   cache.set(store, { version: store.version, base, entries })
