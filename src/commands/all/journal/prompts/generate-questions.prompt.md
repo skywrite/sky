@@ -2,7 +2,7 @@
 schema: 0.2.0
 description: Generate 10 contextual journal questions based on recent notebook activity
 created: 2026-02-28
-updated: 2026-02-28
+updated: 2026-11-26
 ---
 
 Today is {{journal.date}} ({{journal.dayOfWeek}}).{{#if journal.time}} Current time: {{journal.time}} ({{journal.timeOfDay}}).{{/if}}
@@ -48,6 +48,7 @@ Guidelines:
 - Look for patterns across the last 7 days (recurring themes, unresolved issues, mood trends)
 - If recent days had incomplete tasks, ask about them
 - If there are old pending decisions (>7 days), prompt for action
+- If a decision made in the last 30 days still needs carrying out and nothing shows it under way, ask what the next step is
 - If health data shows patterns (poor sleep, no exercise), ask about it
 - Notice what topics appear repeatedly in journal entries — probe deeper
 - Monday: planning/energy tone

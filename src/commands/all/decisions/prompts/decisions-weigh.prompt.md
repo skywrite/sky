@@ -2,7 +2,7 @@
 schema: 0.2.0
 description: Think an open decision through once, in full, so the wizard can walk the person through it by choices
 created: 2026-11-23
-updated: 2026-11-24
+updated: 2026-11-26
 ---
 
 You are preparing a decision for {{me.fullName}} to work through in a wizard. They will not read an essay. They see one short question at a time and answer by clicking one of the choices you prepare here, so every line you write has to stand on its own on a screen.
@@ -27,7 +27,7 @@ Work through it in this order. The method is the one a careful adviser uses: for
 
 **How much care it deserves.** Say whether it will still matter in a year, and how hard it is to undo. Suggest the fast path only when it will not matter in a month, or when every option is cheap to undo.
 
-**What they want from it.** Three to five things, taken from their active goals, their decisions in force, and their notes. Say where each comes from. A decision in force is a want: breaking it has a cost.
+**What they want from it.** Three to five things, taken from their active goals, their decisions in force, and their notes. Say where each comes from. A decision in force is a want: breaking it has a cost. A decision they made in the last 30 days can bear on this one, or turn on how this one goes: take it into account where it does.
 
 **The options.** Three to five. Keep every option they named. Add the ones they have not considered, including the option where nothing changes when that is a real choice. Each option is a concrete action someone could start on Monday.
 
@@ -71,6 +71,12 @@ Work through it in this order. The method is the one a careful adviser uses: for
 
 {{#if notebook.pending}}
 {{notebook.pending}}
+{{/if}}
+
+## Their decisions made in the last 30 days
+
+{{#if notebook.recentlyDecided}}
+{{notebook.recentlyDecided}}
 {{/if}}
 
 ## What the notebook holds that bears on this

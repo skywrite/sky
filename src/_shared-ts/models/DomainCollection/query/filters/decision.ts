@@ -29,3 +29,13 @@ export function matchesDecided(doc: Document): boolean {
   const decided = doc.yaml['decided']
   return (decided !== undefined && decided !== null) || matchesInForce(doc)
 }
+
+/**
+ * Check if the decision was made on or after `start` (YYYY-MM-DD), by the day its 'decided' date names.
+ * A pending decision has none and never matches.
+ */
+export function matchesDecidedGte(doc: Document, start: string): boolean {
+  const decided = doc.yaml['decided']
+  const day = typeof decided === 'string' ? /^\d{4}-\d{2}-\d{2}/.exec(decided.trim())?.[0] : undefined
+  return day !== undefined && day >= start
+}

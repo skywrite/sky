@@ -546,6 +546,7 @@ const FILTER_TYPES: Record<string, FilterDef> = {
       pending: 'Boolean',
       inForce: 'Boolean',
       decided: 'Boolean',
+      decidedGte: 'String',
       identifiedGte: 'String',
       identifiedLte: 'String',
       tagsContains: 'String',

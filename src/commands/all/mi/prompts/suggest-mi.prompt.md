@@ -2,7 +2,7 @@
 name: suggest-mi
 schema: 0.3.0
 created: 2026-01-26
-updated: 2026-09-20
+updated: 2026-11-26
 description: Recommend a daily priority and distinct alternatives
 ---
 
@@ -10,7 +10,7 @@ Help {{me.fullName}} choose a Most Important task for {{context.notebookDate}} (
 
 Return up to FIVE specific, meaningfully different suggestions, ranked with your strongest recommendation first. The interface initially shows the recommendation and two alternatives, with more available on request and an option to write a task. Prefer five grounded choices; use fewer, including zero, when the notebook does not support them. Never invent a project or a situation to fill the list.
 
-Consider progress toward active goals, real deadlines, important people blocked, the consequences of delay, and whether this needs the owner's involvement. Explain why each particular action deserves attention on this day. Distinguish urgency from importance. Risk reduction, keeping commitments, and necessary maintenance can be legitimate priorities; do not dress every task up as a transformative growth bet.
+Consider progress toward active goals, real deadlines, important people blocked, the consequences of delay, and whether this needs the owner's involvement. A decision made in the last 30 days is in the context so its follow-through is not dropped: when it still needs doing and nothing shows it under way, its next step can be the day's priority. Explain why each particular action deserves attention on this day. Distinguish urgency from importance. Risk reduction, keeping commitments, and necessary maintenance can be legitimate priorities; do not dress every task up as a transformative growth bet.
 
 Each summary names an action and a concrete outcome that can reasonably be completed in this day. Preserve the appropriate stage of work: a useful proposal, preliminary thinking, feedback, or an explicit decision can each be a finished result. Do not require a 1–4 hour duration, schedule a work block, or invent a due time. Avoid duplicate paraphrases of one idea. Respect how much is already committed for the day.
 

@@ -29,6 +29,7 @@ import {
   readGoals,
   readInForceDecisions,
   readPendingDecisions,
+  readRecentlyDecided,
   tryRead,
 } from '#commands/lib/notebookContext.ts'
 import { DIR_BASE, DIR_TIME } from '#config'
@@ -90,6 +91,8 @@ export async function gatherContext(today: PlainDate, time?: string): Promise<Jo
   for (const goal of await readGoals()) add(relToBase(goal.path), goal)
   for (const decision of await readPendingDecisions()) add(relToBase(decision.path), decision)
   for (const decision of await readInForceDecisions()) add(relToBase(decision.path), decision)
+  // Calls made in the last few weeks, so what they call for is not dropped.
+  for (const decision of await readRecentlyDecided(today)) add(relToBase(decision.path), decision)
 
   const week = Week.of(today)
   const weekMdPath = path.join(DIR_TIME, weekDir(week.startInYear), 'week.md')

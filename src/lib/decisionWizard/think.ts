@@ -11,6 +11,7 @@ import {
   readGoals,
   readInForceDecisions,
   readPendingDecisions,
+  readRecentlyDecided,
 } from '#commands/lib/notebookContext.ts'
 import { DIR_BASE, DIR_TIME } from '#config'
 import { extractJson } from '#shared/ai/extractJson.ts'
@@ -192,10 +193,11 @@ export function createDecisionThinking(tasks: () => CommandService): DecisionThi
     async plan({ statement, why, decided }, progress) {
       progress('reading')
       const { today, fallback } = await days()
-      const [goals, inForce, pending, related, recent] = await Promise.all([
+      const [goals, inForce, pending, recentlyDecided, related, recent] = await Promise.all([
         readGoals(),
         readInForceDecisions(),
         readPendingDecisions(),
+        readRecentlyDecided(today),
         gatherNotebookContext(tasks(), DIR_BASE, statement, today),
         recentDays(today),
       ])
@@ -208,6 +210,7 @@ export function createDecisionThinking(tasks: () => CommandService): DecisionThi
       const references = [
         ...goals.map((goal) => `goals/${nameOf(goal)}`),
         ...inForce.map((decision) => `decisions/${nameOf(decision)}`),
+        ...recentlyDecided.map((decision) => `decisions/${nameOf(decision)}`),
         ...related.relCandidates,
       ]
       const prompt = await render(decided ? 'decisions-recall' : 'decisions-weigh', {
@@ -218,6 +221,7 @@ export function createDecisionThinking(tasks: () => CommandService): DecisionThi
           goals: files(goals),
           inForce: files(inForce),
           pending: files(pending),
+          recentlyDecided: files(recentlyDecided),
           related: related.notebookContext,
           recent: recent.text,
           references: references.length ? [...new Set(references)].join('\n') : undefined,

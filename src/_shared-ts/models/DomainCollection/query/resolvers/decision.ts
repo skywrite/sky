@@ -4,6 +4,7 @@ import {
   matchesDateGte,
   matchesDateLte,
   matchesDecided,
+  matchesDecidedGte,
   matchesInForce,
   matchesPending,
 } from '../filters/mod.ts'
@@ -30,6 +31,8 @@ export interface DecisionFilter extends TagFilter, TextFilter, InvolvesFilter, A
   pending?: boolean
   inForce?: boolean
   decided?: boolean
+  /** Made on or after this day (YYYY-MM-DD) */
+  decidedGte?: string
   identifiedGte?: string
   identifiedLte?: string
 }
@@ -39,6 +42,7 @@ export function matchesDecisionFilter(doc: Document, filter: DecisionFilter, res
   if (filter.pending === true && !matchesPending(doc)) return false
   if (filter.inForce === true && !matchesInForce(doc)) return false
   if (filter.decided === true && !matchesDecided(doc)) return false
+  if (filter.decidedGte && !matchesDecidedGte(doc, filter.decidedGte)) return false
   // Each bound applies on its own — same one-ended contract as dateGte/dateLte.
   if (filter.identifiedGte && !matchesDateGte(doc, filter.identifiedGte)) return false
   if (filter.identifiedLte && !matchesDateLte(doc, filter.identifiedLte)) return false

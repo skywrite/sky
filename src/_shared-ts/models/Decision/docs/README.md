@@ -22,6 +22,16 @@ Until 2026-11-26 the folder, the date and the command said "resolved", and the d
 "Resolved" was picked in January 2026, most likely because `decisions:decide` read awkwardly as a command.
 Keep one word; a second one for the same event makes summaries and searches read as two different things.
 
+## A made call stays in view for 30 days
+
+Chats, the day's Most Important, journal questions and the decision wizard read the open decisions and those in force.
+They also read every decision made in the last `DecisionDocument.RECENTLY_DECIDED_DAYS` (30) days that is not in
+force or archived.
+A call that needs carrying out is easy to drop once it is made; keeping it in front of Sky for a month lets the day's
+priority pick up its next step, and lets a chat that touches it check that it is under way.
+The four prompts say "30 days" in words, so keep them in step with the constant.
+Readers: `readRecentlyDecided` in `commands/lib/notebookContext.ts`, and the `decidedGte` filter that chats query.
+
 ## Why "in force" exists
 
 Some decisions are carried out once.

@@ -135,6 +135,32 @@ export async function readInForceDecisions(): Promise<ContextFile[]> {
 }
 
 /**
+ * Decisions made in the last DecisionDocument.RECENTLY_DECIDED_DAYS days that are not in force: calls whose
+ * follow-through is still fresh. An archived decision is done with; one in force is read by readInForceDecisions.
+ */
+export async function readRecentlyDecided(today: PlainDate): Promise<ContextFile[]> {
+  if (!(await exists(DIR_DECISIONS))) return []
+  const since = today.addDays(-DecisionDocument.RECENTLY_DECIDED_DAYS).ymd
+  const archived = `${path.sep}archived${path.sep}`
+  const found: string[] = []
+  for await (const entry of walk(DIR_DECISIONS, { exts: ['.md'], includeDirs: false })) {
+    if (!entry.path.includes(archived)) found.push(entry.path)
+  }
+  found.sort()
+  const files: ContextFile[] = []
+  for (const filePath of found) {
+    const body = await tryRead(filePath)
+    if (body === undefined) continue
+    const decision = DecisionDocument.fromMarkdown(body)
+    const day = decision.decided?.plainDateTime.plainDate.ymd
+    if (day !== undefined && day >= since && !decision.inForce) {
+      files.push({ name: path.basename(filePath), path: filePath, body })
+    }
+  }
+  return files
+}
+
+/**
  * A day's best available narration: summary.md when it has content, else
  * day.md. The summary tells what the day amounted to; the day file is the
  * raw ledger of commitments, todos, and completions (captures record every

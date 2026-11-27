@@ -533,6 +533,7 @@ input DecisionFilter {
   pending: Boolean
   inForce: Boolean
   decided: Boolean
+  decidedGte: String
   identifiedGte: String
   identifiedLte: String
   tagsContains: String

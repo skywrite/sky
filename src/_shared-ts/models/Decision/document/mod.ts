@@ -20,6 +20,11 @@ export default class DecisionDocument extends Document {
   static readonly IN_FORCE_FLAG = 'inForce'
   /** The folder Sky files such a decision under */
   static readonly IN_FORCE_DIR = 'in-force'
+  /**
+   * How many days a made call stays in front of the AI (chats, the day's Most Important, the decision wizard)
+   * beside the open decisions and those in force, so what it calls for is not dropped.
+   */
+  static readonly RECENTLY_DECIDED_DAYS = 30
 
   constructor(yaml: Record<string, unknown> = {}, markdown = '', yamlError?: string) {
     // Normalize tags to string format if they're an array or other format

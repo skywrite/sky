@@ -31,6 +31,8 @@ const FIX = {
   goal: abs('goals/2026.md'),
   decision: abs('decisions/2026-01_Atlas-Tooling.md'),
   inForce: abs('decisions/2026/in-force/01/No-Friday-Releases.md'),
+  recentlyDecided: abs('decisions/2026/decided/01/Ship-Widget-In-February.md'),
+  archivedDecision: abs('decisions/2026/archived/01/Pick-A-Vendor.md'),
   roadmap: abs('projects/Atlas/Roadmap.md'),
   person: abs('people/Jane-Doe.md'),
   ownChat: abs('time/2026/W05/01-27/actions/ai-chats/09-00_Prior-Session.md'),
@@ -115,11 +117,13 @@ function fetchFake(sets: {
   goals?: string[]
   decisions?: string[]
   inForce?: string[]
+  recent?: string[]
   memory?: string[]
 }) {
   return async (query: string): Promise<Array<{ doc: Document; path: string }>> => {
     let paths: string[] = []
-    if (query.includes('dateGte')) paths = sets.prev ?? []
+    if (query.includes('decidedGte')) paths = sets.recent ?? []
+    else if (query.includes('dateGte')) paths = sets.prev ?? []
     else if (query.includes('goals')) paths = sets.goals ?? []
     else if (query.includes('inForce')) paths = sets.inForce ?? []
     else if (query.includes('decisions')) paths = sets.decisions ?? []
@@ -172,6 +176,39 @@ test('ChatContext.seedBaseline - a decision in force rides along beside a pendin
     should: 'seed both and count both as decisions',
     actual: { paths: [...context.paths].sort(), decisions: report.counts.decisions },
     expected: { paths: [FIX.day, FIX.decision, FIX.inForce].sort(), decisions: 2 },
+  })
+})
+
+test('ChatContext.seedBaseline - a decision made in the last 30 days rides along, and an archived one does not', async () => {
+  const queries: string[] = []
+  const fake = fetchFake({
+    today: [FIX.day],
+    decisions: [FIX.decision],
+    inForce: [FIX.inForce],
+    recent: [FIX.recentlyDecided, FIX.inForce, FIX.archivedDecision],
+  })
+  const { context } = makeContext({
+    fetchContext: async (query) => {
+      queries.push(query)
+      return await fake(query)
+    },
+  })
+  const report = await context.seedBaseline()
+
+  assert({
+    given: 'a call made last week, the decision in force again, and an archived call among the recent ones',
+    should:
+      'ask for the calls made in the last 30 days, seed the recent one once beside the others, and leave the archived one out',
+    actual: {
+      window: queries.some((query) => query.includes('decidedGte: "2025-12-28"')),
+      paths: [...context.paths].sort(),
+      decisions: report.counts.decisions,
+    },
+    expected: {
+      window: true,
+      paths: [FIX.day, FIX.decision, FIX.inForce, FIX.recentlyDecided].sort(),
+      decisions: 3,
+    },
   })
 })
 

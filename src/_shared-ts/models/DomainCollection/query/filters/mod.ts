@@ -33,7 +33,7 @@ export { matchesInvolvesAll } from './involvesAll.ts'
 export { matchesInvolvesAny } from './involvesAny.ts'
 
 // Decision filters
-export { matchesDecided, matchesInForce, matchesPending } from './decision.ts'
+export { matchesDecided, matchesDecidedGte, matchesInForce, matchesPending } from './decision.ts'
 
 // Generic field filters
 export { matchesContains, matchesExact, matchesNull, matchesPrefix, matchesSubstring, matchesSuffix } from './field.ts'
