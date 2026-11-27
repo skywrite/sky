@@ -925,6 +925,109 @@ test(
 
 test(
   {
+    name: 'At the call, a decision that is not one of the options is typed in with its reason, and saved with it',
+    ignore: env.get('SKY_BROWSER_TESTS') !== '1',
+    timeout: 180000,
+  },
+  async () => {
+    const f = await futureFixture()
+    const { page, origin, errors, shot, close } = await open(f)
+    const { step, choice, chip, ticked, typed, use, on } = wizardControls(page)
+    try {
+      // Every step before the call is answered already, so the page opens on the call.
+      const run = await f.wizard.start({ statement: 'Hire a VP of Sales now, or after the launch', decided: false })
+      await f.settled(run.id)
+      await f.post(`/decisions/wizard/${run.id}/progress`, {
+        answers: {
+          frame: 1,
+          care: 'full',
+          wants: [0, 1, 2],
+          top: 0,
+          options: [0, 2, 3],
+          odds: { 0: 1, 2: 2, 3: 3 },
+          hinge: 'now',
+        },
+        step: 'call',
+      })
+      await page.goto(`${origin}/future/decisions/new/${run.id}`)
+      await step('Your call').waitFor()
+      const offered = await page
+        .getByRole('radiogroup', { name: 'Your call' })
+        .locator('.sky-wizard-opt-title')
+        .allInnerTexts()
+
+      await choice('Something else…').click()
+      const boxes = await page.locator('.sky-wizard-own label').allInnerTexts()
+      await page.getByLabel('Something else', { exact: true }).fill('Hold the hire until the October launch is out')
+      await page.getByLabel('Because', { exact: true }).fill('the launch needs my full attention until then')
+      await page.locator('.sky-wizard-ask').evaluate((heading) => heading.scrollIntoView({ block: 'start' }))
+      await shot('24-wizard-something-else')
+      await use()
+      await page
+        .locator('.sky-wizard-opt[aria-checked="true"]', { hasText: 'Hold the hire until the October launch is out' })
+        .waitFor()
+      const call = {
+        picked: await ticked(),
+        because: await page.getByLabel('Because', { exact: true }).inputValue(),
+        lastColumn: flat(await page.locator('.sky-wizard-grid thead th').last().innerText()).includes(
+          'Hold the hire until the October launch is out',
+        ),
+        odds: flat(await page.locator('.sky-wizard-odds').last().innerText()),
+      }
+      await page.locator('.sky-wizard-ask').evaluate((heading) => heading.scrollIntoView({ block: 'start' }))
+      await shot('25-wizard-own-call')
+
+      await on('Sky would choose “Bring in a part-time sales lead for six months”')
+      await choice('Keep my call').click()
+      await on('It is a year from now and this went badly. Why?')
+      await on('What will you do if it starts going wrong?')
+      await on('What do you expect to happen?')
+      await choice('Say it another way…').click()
+      await typed().fill('The launch ships in October and the hire starts in November')
+      await use()
+      await on('How sure are you that it turns out that way?')
+      await chip('60–80%').click()
+      await chip('Sep 1').click()
+      await on('The record')
+      const preview = flat(await page.locator('.sky-wizard-doc').innerText())
+      await page.getByRole('button', { name: 'Save decision' }).click()
+      await step('Saved').waitFor()
+      assert({
+        given: 'a decision typed in at the call with a reason, then carried through to the end',
+        should:
+          'offer it as the last choice with a box for the reason, make it the call once Sky has worked it out without asking for odds, keep Sky’s odds back, and save the reason under the decision',
+        actual: [
+          offered.at(-1),
+          boxes,
+          call,
+          preview.includes(
+            'The call Hold the hire until the October launch is out. Sky would have chosen “Bring in a part-time sales lead for six months”. Because: the launch needs my full attention until then.',
+          ),
+          f.made.at(-1)?.decision,
+          errors,
+        ],
+        expected: [
+          'Something else…',
+          ['Something else', 'Because'],
+          {
+            picked: ['Hold the hire until the October launch is out'],
+            because: 'the launch needs my full attention until then',
+            lastColumn: true,
+            odds: 'You: —',
+          },
+          true,
+          'Hold the hire until the October launch is out. Sky would have chosen “Bring in a part-time sales lead for six months”.\n\nBecause: the launch needs my full attention until then.',
+          [],
+        ],
+      })
+    } finally {
+      await close()
+    }
+  },
+)
+
+test(
+  {
     name: 'The decision wizard follows Sky’s thinking, decides a small one fast, records one already made on a phone, and discards one that failed',
     ignore: env.get('SKY_BROWSER_TESTS') !== '1',
     timeout: 180000,

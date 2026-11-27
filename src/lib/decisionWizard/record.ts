@@ -18,6 +18,8 @@ export interface DecisionRecord {
   call: string | null
   /** A line under the call: what Sky would have chosen, or what ends it */
   callNote: string | null
+  /** Why, in the person's own words, when they typed the decision in themselves */
+  because: string | null
   inForce: boolean
   /** What the person wants from it */
   wants: string[]
@@ -80,6 +82,7 @@ export function decidingRecord(
           `${sentence(hinge.belief)} ${answers.hinge === 'checked' ? 'Set aside to check before deciding.' : 'Not checked.'}`,
       )
   const expect = call === undefined ? undefined : answers.expect?.[call]
+  const because = call === undefined ? '' : (answers.because?.[call] ?? '').trim()
   const lookDays = [...new Set(answers.look ?? [])].sort()
   return {
     title:
@@ -89,13 +92,21 @@ export function decidingRecord(
     when: null,
     call: option && !open ? sentence(option.title) : null,
     callNote: open ? null : skyNote,
+    because: because ? sentence(because) : null,
     inForce: !open && answers.force === true,
     wants: fast ? [] : wants.map((want) => plan.wants[want]!.title),
     wantsOrdered: !fast && wants.length > 1,
     sections: [
       ...(fast && !open ? [] : section(open ? 'Options being weighed' : 'Options weighed', weighed)),
       ...(open && option
-        ? section('Leaning toward', [[sentence(option.title), skyNote].filter(Boolean).join(' ')], false)
+        ? section(
+            'Leaning toward',
+            [
+              [sentence(option.title), skyNote].filter(Boolean).join(' '),
+              ...(because ? [`Because: ${sentence(because)}`] : []),
+            ],
+            false,
+          )
         : []),
       ...(expect
         ? section(
@@ -132,6 +143,7 @@ export function decidedRecord(plan: DecidedPlan, answers: DecidedAnswers): Decis
     call: sentence(wording),
     callNote:
       answers.force === 'until' && answers.until ? `It holds until ${answers.until.replace(/[.]$/, '')}.` : null,
+    because: null,
     inForce: answers.force === 'until' || answers.force === 'noEnd',
     wants,
     // Nobody ranked what was wanted back then, so the record does not claim an order.
@@ -179,6 +191,14 @@ export function recordMarkdown(record: DecisionRecord): {
           `## ${heading}\n\n${list ? lines.map((line) => `- ${line}`).join('\n') : lines.join('\n\n')}`,
       )
       .join('\n\n'),
-    decision: record.call === null ? undefined : [record.call, record.callNote].filter(Boolean).join(' '),
+    // The reason is the person's own, so it stays a line of its own under the call. An open decision keeps it
+    // under what they lean toward, which is one of the sections above.
+    decision:
+      record.call === null
+        ? undefined
+        : [
+            [record.call, record.callNote].filter(Boolean).join(' '),
+            ...(record.because ? [`Because: ${record.because}`] : []),
+          ].join('\n\n'),
   }
 }

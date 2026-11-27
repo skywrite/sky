@@ -1,5 +1,5 @@
 import { Button } from '@mantine/core'
-import { useId, useState } from 'react'
+import { type ReactNode, useId, useState } from 'react'
 
 export interface Choice {
   id: string
@@ -21,7 +21,9 @@ export interface OtherChoice {
   max?: string
   /** What happens with what is typed, said under the box */
   note?: string
-  onUse: (text: string) => void | Promise<void>
+  /** A second box under the first, for something that goes with what is typed. It may be left empty. */
+  second?: { label: string; placeholder?: string }
+  onUse: (text: string, second?: string) => void | Promise<void>
 }
 
 /**
@@ -35,6 +37,7 @@ export function Choices({
   onPick,
   multi = false,
   other,
+  tail,
   label,
   sideBySide = false,
 }: {
@@ -44,6 +47,8 @@ export function Choices({
   onPick: (id: string) => void
   multi?: boolean
   other?: OtherChoice
+  /** Something that goes with what was picked, shown under the choices and above the last card */
+  tail?: ReactNode
   /** Names the group for a screen reader when the screen's question does not */
   label?: string
   /** A plain either-or: the two choices sit side by side where there is room */
@@ -51,6 +56,7 @@ export function Choices({
 }) {
   const [open, setOpen] = useState(false)
   const [text, setText] = useState('')
+  const [second, setSecond] = useState('')
   const [busy, setBusy] = useState(false)
   const box = useId()
   const use = async () => {
@@ -58,8 +64,9 @@ export function Choices({
     if (!value || !other || busy) return
     setBusy(true)
     try {
-      await other.onUse(value)
+      await other.onUse(value, other.second ? second.trim() : undefined)
       setText('')
+      setSecond('')
       setOpen(false)
     } finally {
       setBusy(false)
@@ -96,6 +103,7 @@ export function Choices({
           )}
         </button>
       ))}
+      {tail}
       {other &&
         (open ? (
           <form
@@ -125,6 +133,18 @@ export function Choices({
                 onChange={(event) => setText(event.currentTarget.value)}
                 autoFocus
               />
+            )}
+            {other.second && (
+              <>
+                <label htmlFor={`${box}-second`}>{other.second.label}</label>
+                <textarea
+                  id={`${box}-second`}
+                  rows={2}
+                  placeholder={other.second.placeholder}
+                  value={second}
+                  onChange={(event) => setSecond(event.currentTarget.value)}
+                />
+              </>
             )}
             <div className="sky-wizard-own-actions">
               <Button variant="primary" size="sm" type="submit" loading={busy} disabled={!text.trim()}>

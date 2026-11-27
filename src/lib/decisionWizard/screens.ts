@@ -64,6 +64,10 @@ export function finalOdds(plan: DecidingPlan, answers: DecidingAnswers, option: 
 export const oddsFarApart = (plan: DecidingPlan, answers: DecidingAnswers, option: number): boolean =>
   answers.odds?.[option] !== undefined && Math.abs(answers.odds[option]! - plan.options[option]!.odds) >= 2
 
+/** The person typed this option in at the call, as their decision. Their reason is kept for it, even when empty. */
+export const typedAtCall = (answers: DecidingAnswers, option: number): boolean =>
+  answers.because?.[option] !== undefined
+
 /** The option the record is written for: the call, or Sky's when the person switched to it. */
 export const finalCall = (plan: DecidingPlan, answers: DecidingAnswers): number | undefined =>
   answers.call === undefined ? undefined : answers.final === 'switch' ? skyPick(plan, answers) : answers.call
@@ -124,8 +128,9 @@ export function decidingReady(screen: string, plan: DecidingPlan, answers: Decid
   const call = finalCall(plan, answers)
   if (screen.startsWith('out:')) {
     const option = Number(screen.slice(4))
+    // A decision typed in at the call was chosen before Sky worked it out: its odds can be given, and need not be.
     return (
-      answers.odds?.[option] !== undefined &&
+      (answers.odds?.[option] !== undefined || typedAtCall(answers, option)) &&
       (!oddsFarApart(plan, answers, option) || answers.oddsUse?.[option] !== undefined)
     )
   }

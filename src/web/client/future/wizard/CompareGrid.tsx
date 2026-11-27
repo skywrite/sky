@@ -69,7 +69,8 @@ export function CompareGrid({
                 <td key={option} data-picked={picked(option)}>
                   <span className="sky-wizard-odds">
                     <b>You: {odds === undefined ? '—' : BANDS[odds]}</b>
-                    <small>Sky: {BANDS[plan.options[option]!.odds]}</small>
+                    {/* Sky's odds show beside the person's own, never ahead of them. */}
+                    {odds !== undefined && <small>Sky: {BANDS[plan.options[option]!.odds]}</small>}
                   </span>
                 </td>
               )

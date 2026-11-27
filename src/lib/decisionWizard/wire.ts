@@ -391,6 +391,15 @@ export function withOption(
   }
 }
 
+/**
+ * A decision typed in at the call is recorded in the person's own words. Sky rewords what it is given, which suits
+ * an option put up to weigh; a decision the person has made keeps their wording, and Sky's short name for it.
+ */
+export function inOwnWords(plan: DecidingPlan, text: string): DecidingPlan {
+  const last = plan.options.length - 1
+  return { ...plan, options: plan.options.map((option, at) => (at === last ? { ...option, title: text } : option)) }
+}
+
 /** A typed-in want, with its effect on every option, added to the end of the plan. */
 export function withWant(plan: DecidingPlan, wire: z.infer<typeof WireWantExtension>): DecidingPlan {
   const want = toWant(wire.want)

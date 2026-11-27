@@ -36,7 +36,15 @@ export interface WizardSession {
   /** The step the person is on */
   step: string | null
   /** An option or a want the person typed in, while Sky works it out */
-  adding: { kind: 'option' | 'want'; text: string; since: number; error: string | null } | null
+  adding: {
+    kind: 'option' | 'want'
+    text: string
+    since: number
+    error: string | null
+    /** Typed in at the call: once worked out it becomes the call, and the person's reason is kept beside it */
+    call?: boolean
+    because?: string
+  } | null
   /** The open decision this wizard saved before the call was made, by name */
   open: string | null
   /**

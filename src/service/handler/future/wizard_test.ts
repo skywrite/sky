@@ -189,6 +189,119 @@ test('decision wizard: answers are kept, and only a typed-in option or want send
   }
 })
 
+test('decision wizard: a decision typed in at the call becomes the call, with the reason the person gave', async () => {
+  const f = await futureFixture({ reword: (text) => `Sky’s wording of: ${text}` })
+  try {
+    const before = await decisionFiles(f.root)
+    const run = await f.wizard.start({ statement: 'Hire a VP of Sales now, or after the launch', decided: false })
+    await f.settled(run.id)
+    const step = (answers: DecidingAnswers, at: string) =>
+      f.post(`/decisions/wizard/${run.id}/progress`, { answers, step: at })
+    const text = async () =>
+      readFile(
+        path.join(
+          f.root,
+          'decisions',
+          (await decisionFiles(f.root)).find((name) => !before.includes(name))!,
+        ),
+        'utf8',
+      )
+    await step(FULL, 'call')
+
+    await f.wizard.add(run.id, {
+      kind: 'option',
+      text: 'this one will fail',
+      call: true,
+      because: 'the launch needs my full attention until then',
+    })
+    const failed = await f.settled(run.id)
+    assert({
+      given: 'a decision typed in at the call that Sky could not work out',
+      should: 'hold what was typed and the reason, so it can be sent again, and leave the call as it was',
+      actual: [
+        failed.adding?.error,
+        failed.adding?.call,
+        failed.adding?.because,
+        (failed.answers as DecidingAnswers).call,
+      ],
+      expected: [
+        'Sky could not work that out: The model did not answer.',
+        true,
+        'the launch needs my full attention until then',
+        3,
+      ],
+    })
+
+    const working = await (
+      await f.post(`/decisions/wizard/${run.id}/add`, {
+        kind: 'option',
+        text: 'Hold the hire until the October launch is out',
+        call: true,
+        because: 'the launch needs my full attention until then',
+      })
+    ).json()
+    const added = await f.settled(run.id)
+    const answers = added.answers as DecidingAnswers
+    assert({
+      given: 'the same sent again in words Sky can work out',
+      should:
+        'say it is working, then add the option in the person’s own words, make it the call, and clear the answer Sky gave to the old call',
+      actual: [
+        working.adding?.error,
+        (added.plan as DecidingPlan).options.at(-1)?.title,
+        (added.plan as DecidingPlan).options.at(-1)?.short,
+        answers.options,
+        answers.call,
+        answers.final,
+        answers.because,
+        added.adding,
+        added.step,
+      ],
+      expected: [
+        null,
+        'Hold the hire until the October launch is out',
+        'Sky’s wording of: Hold the hire until the October launch is out',
+        [0, 2, 3, 4],
+        4,
+        undefined,
+        { 4: 'the launch needs my full attention until then' },
+        null,
+        'call',
+      ],
+    })
+
+    await step(answers, 'answer')
+    const open = await text()
+    await step(
+      {
+        ...answers,
+        final: 'keep',
+        expect: { 4: 'The launch ships in October and the hire starts in November.' },
+        sure: 3,
+        look: ['2030-12-31'],
+      },
+      'record',
+    )
+    await f.post(`/decisions/wizard/${run.id}/save`, {})
+    const made = await text()
+    assert({
+      given: 'the next step, and then the decision saved',
+      should: 'write the reason under what is leaned toward while it is open, and under the decision once it is made',
+      actual: [
+        open.includes(
+          '## Leaning toward\n\nHold the hire until the October launch is out.\n\nBecause: the launch needs my full attention until then.',
+        ),
+        /## Decision\n\nHold the hire until the October launch is out\.[^\n]*\n\nBecause: the launch needs my full attention until then\./.test(
+          made,
+        ),
+      ],
+      expected: [true, true],
+    })
+  } finally {
+    await f.dispose()
+  }
+})
+
 test('decision wizard: "check first" saves an open decision, and finishing later settles that same decision', async () => {
   const f = await futureFixture()
   try {

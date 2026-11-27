@@ -168,6 +168,60 @@ test('wizard record: what is shown is what the decision file is written from', (
   })
 })
 
+test('wizard record: a decision typed in at the call keeps the reason the person gave', () => {
+  const plan = sampleDecidingPlan()
+  const answers: DecidingAnswers = {
+    frame: 1,
+    care: 'fast',
+    call: 3,
+    final: 'keep',
+    because: { 3: 'she asked for the job, and the launch needs my time', 0: 'a reason given for another option' },
+    expect: { 3: 'By Dec 31 Jane runs the team' },
+    sure: 3,
+    look: ['2030-12-31'],
+  }
+  const made = decidingRecord(plan, answers)
+  assert({
+    given: 'a call with a reason in the person’s own words',
+    should: 'keep the reason for that call only, as a line of its own under the call in the file',
+    actual: [made.because, recordMarkdown(made).decision],
+    expected: [
+      'she asked for the job, and the launch needs my time.',
+      'Promote Jane Doe to lead sales. Sky would have chosen “Bring in a part-time sales lead for six months”.\n\nBecause: she asked for the job, and the launch needs my time.',
+    ],
+  })
+  assert({
+    given: 'the same decision while it is still open',
+    should: 'keep the reason under what the person leans toward',
+    actual: decidingRecord(plan, { ...answers, final: undefined }, true).sections.find(
+      (part) => part.heading === 'Leaning toward',
+    )?.lines,
+    expected: ['Promote Jane Doe to lead sales.', 'Because: she asked for the job, and the launch needs my time.'],
+  })
+  assert({
+    given: 'the step that asks for odds on an option',
+    should: 'need them for an option Sky or the person put up to weigh, and not for a decision typed in at the call',
+    actual: [
+      decidingReady('out:3', plan, { ...answers, because: undefined }),
+      decidingReady('out:3', plan, answers),
+      decidingReady('out:3', plan, { ...answers, because: { 3: '' } }),
+    ],
+    expected: [false, true, true],
+  })
+  assert({
+    given: 'a call whose reason was left empty',
+    should: 'write no reason',
+    actual: [
+      decidingRecord(plan, { ...answers, because: { 3: '  ' } }).because,
+      recordMarkdown(decidingRecord(plan, { ...answers, because: { 3: '  ' } })).decision,
+    ],
+    expected: [
+      null,
+      'Promote Jane Doe to lead sales. Sky would have chosen “Bring in a part-time sales lead for six months”.',
+    ],
+  })
+})
+
 test('wizard record: a decision already made rests on what was known that day', () => {
   const plan = sampleDecidedPlan()
   const answers: DecidedAnswers = {

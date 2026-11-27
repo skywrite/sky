@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { type ReactNode, useId } from 'react'
 import type { DecidingAnswers } from '#lib/decisionWizard/answers.ts'
 import { BANDS, type Band, type DecidingPlan, type Feel } from '#lib/decisionWizard/plan.ts'
 import { decidingRecord } from '#lib/decisionWizard/record.ts'
@@ -69,26 +69,42 @@ export interface DecidingStepProps {
   today: string
   /** What Sky is working out because the person typed it in */
   adding: WizardSession['adding']
-  onAdd: (kind: 'option' | 'want', text: string) => Promise<void>
+  /** `call` is given for a decision typed in at the call: it becomes the call, with the person's reason */
+  onAdd: (kind: 'option' | 'want', text: string, call?: { because: string }) => Promise<void>
   onDropAddition: () => void
+  onRetryAddition: () => void
   onReword: (text: string) => Promise<void>
 }
 
 /** While Sky works out something the person typed in, the step says so instead of offering more choices. */
-function Adding({ adding, onDrop }: { adding: NonNullable<WizardSession['adding']>; onDrop: () => void }) {
+function Adding({
+  adding,
+  onDrop,
+  onRetry,
+}: {
+  adding: NonNullable<WizardSession['adding']>
+  onDrop: () => void
+  /** Send the same words to Sky again: what was typed is still held, the reason with it */
+  onRetry: () => void
+}) {
   return (
     <div className="sky-wizard-read" role="status">
       <h3>{adding.error ? 'Sky could not work that out' : `Sky is working out “${adding.text}”`}</h3>
       <p>
         {adding.error ??
           (adding.kind === 'option'
-            ? 'It is going through what could happen, the odds, and what could go wrong, as it did for the others. This takes a few minutes.'
+            ? `It is going through what could happen, the odds, and what could go wrong, as it did for the others. This takes about five minutes.${adding.call ? ' Then it is set as your call.' : ''}`
             : 'It is going through how each option affects it. This takes a minute or two.')}
       </p>
       {adding.error && (
-        <button type="button" className="sky-wizard-link" onClick={onDrop}>
-          Go on without it
-        </button>
+        <p className="sky-wizard-links">
+          <button type="button" className="sky-wizard-link" onClick={onRetry}>
+            Try again
+          </button>
+          <button type="button" className="sky-wizard-link" onClick={onDrop}>
+            Go on without it
+          </button>
+        </p>
       )}
     </div>
   )
@@ -96,9 +112,10 @@ function Adding({ adding, onDrop }: { adding: NonNullable<WizardSession['adding'
 
 /** One step of deciding: a question, and Sky's choices for answering it. */
 export function DecidingStep(props: DecidingStepProps) {
-  const { screen, plan, answers, set, today, adding, onAdd, onDropAddition, onReword } = props
+  const { screen, plan, answers, set, today, adding, onAdd, onDropAddition, onRetryAddition, onReword } = props
   const chosen = chosenOptions(plan, answers)
   const call = finalCall(plan, answers)
+  const becauseBox = useId()
 
   if (screen === 'frame')
     return (
@@ -179,7 +196,7 @@ export function DecidingStep(props: DecidingStepProps) {
         lede="Sky found these in your goals, your decisions in force, and your notes. Tick the ones that matter here."
       >
         {adding?.kind === 'want' ? (
-          <Adding adding={adding} onDrop={onDropAddition} />
+          <Adding adding={adding} onDrop={onDropAddition} onRetry={onRetryAddition} />
         ) : (
           <Choices
             multi
@@ -232,7 +249,7 @@ export function DecidingStep(props: DecidingStepProps) {
         lede={`You named ${number(yours)}. Sky added ${number(plan.options.length - yours)}. Keep at least two.`}
       >
         {adding?.kind === 'option' ? (
-          <Adding adding={adding} onDrop={onDropAddition} />
+          <Adding adding={adding} onDrop={onDropAddition} onRetry={onRetryAddition} />
         ) : (
           <Choices
             multi
@@ -248,7 +265,7 @@ export function DecidingStep(props: DecidingStepProps) {
             other={{
               label: 'Add an option…',
               hint: 'One that Sky did not think of.',
-              note: 'Sky works it out like the others: what could happen, the odds, what could go wrong. That takes a few minutes.',
+              note: 'Sky works it out like the others: what could happen, the odds, what could go wrong. That takes about five minutes.',
               onUse: (text) => onAdd('option', text),
             }}
           />
@@ -471,12 +488,45 @@ export function DecidingStep(props: DecidingStepProps) {
         )}
         <h3 className="sky-wizard-ask">Which one?</h3>
         <p className="sky-wizard-note">Choose before Sky says what it would do.</p>
-        <Choices
-          label="Your call"
-          items={chosen.map((at) => ({ id: String(at), title: plan.options[at]!.title, why: plan.options[at]!.why }))}
-          picked={answers.call === undefined ? [] : [String(answers.call)]}
-          onPick={(id) => set({ call: Number(id), final: undefined })}
-        />
+        {adding?.kind === 'option' ? (
+          <Adding adding={adding} onDrop={onDropAddition} onRetry={onRetryAddition} />
+        ) : (
+          <Choices
+            label="Your call"
+            items={chosen.map((at) => ({
+              id: String(at),
+              title: plan.options[at]!.title,
+              why: plan.options[at]!.why,
+            }))}
+            picked={answers.call === undefined ? [] : [String(answers.call)]}
+            onPick={(id) => set({ call: Number(id), final: undefined })}
+            tail={
+              answers.call !== undefined &&
+              answers.because?.[answers.call] !== undefined && (
+                <div className="sky-wizard-because">
+                  <label htmlFor={becauseBox}>Because</label>
+                  <textarea
+                    id={becauseBox}
+                    rows={2}
+                    placeholder="Why this, in your own words"
+                    value={answers.because[answers.call]}
+                    onChange={(event) =>
+                      set({ because: { ...answers.because, [answers.call!]: event.currentTarget.value } })
+                    }
+                  />
+                </div>
+              )
+            }
+            other={{
+              label: 'Something else…',
+              hint: 'A decision that is not one of these, in your own words.',
+              placeholder: 'What you have decided',
+              second: { label: 'Because', placeholder: 'Why this, in your own words' },
+              note: 'Sky works it out like the others: what could happen, the odds, what could go wrong. That takes about five minutes. Then it is set as your call.',
+              onUse: (text, because) => onAdd('option', text, { because: because ?? '' }),
+            }}
+          />
+        )}
       </Step>
     )
   }

@@ -14,6 +14,7 @@ import {
 import type { FindsView, WizardSaved, WizardSession, WizardSummary } from '#lib/decisionWizard/session.ts'
 import type { DecisionThinking } from '#lib/decisionWizard/think.ts'
 import { decisionThreadId } from '#lib/decisionWizard/thread.ts'
+import { inOwnWords } from '#lib/decisionWizard/wire.ts'
 import { readTextFile } from '#shared/fs/mod.ts'
 import type { PlainDate } from '#universal/dates/nbdt/mod.ts'
 import { hold } from '../../activity.ts'
@@ -52,6 +53,10 @@ const ProgressInput = z.object({
 const AddInput = z.object({
   kind: z.enum(['option', 'want']),
   text: z.string().trim().min(1, 'Say what to add.').max(600),
+  /** An option typed in at the call: once Sky has worked it out, it is the call */
+  call: z.boolean().optional(),
+  /** Why, in the person's own words; kept beside the call */
+  because: z.string().trim().max(2000).optional(),
 })
 const RewordInput = z.object({ text: z.string().trim().min(1, 'Say the decision in your own words.').max(2000) })
 
@@ -385,13 +390,21 @@ export class DecisionWizard {
 
   /** An option or a want the person typed in: Sky works it out against the plan and adds it. */
   async add(id: string, input: unknown): Promise<WizardSession> {
-    const { kind, text } = AddInput.parse(input)
+    const { kind, text, call, because } = AddInput.parse(input)
+    const asCall = kind === 'option' && call === true
     const session = await this.change(id, (current) => {
       if (current.status !== 'ready' || current.plan?.kind !== 'deciding')
         throw new FutureError('There is no plan to add that to yet.', 409)
       if (current.adding && !current.adding.error)
         throw new FutureError('Sky is already working out something you added.', 409)
-      current.adding = { kind, text, since: nowMs(), error: null }
+      // The reason is kept on the addition while Sky works, so a failed think can be tried again without retyping it.
+      current.adding = {
+        kind,
+        text,
+        since: nowMs(),
+        error: null,
+        ...(asCall ? { call: true, because: because ?? '' } : {}),
+      }
     })
     const key = `${id}:add`
     this.running.add(key)
@@ -400,7 +413,7 @@ export class DecisionWizard {
       try {
         const plan = session.plan as DecidingPlan
         const title = this.titleOf(session)
-        const extended =
+        const worked =
           kind === 'option'
             ? await this.options.thinking.addOption({
                 plan,
@@ -409,14 +422,23 @@ export class DecisionWizard {
                 related: await readTextFile(this.file(id, 'evidence.md')).catch(() => ''),
               })
             : await this.options.thinking.addWant({ plan, title, text })
+        const extended = asCall ? inOwnWords(worked, text) : worked
         await this.change(id, (current) => {
           const answers = current.answers as DecidingAnswers
           current.plan = extended
           current.adding = null
           // What the person added is theirs to weigh: it joins what they had ticked.
-          if (kind === 'option')
-            answers.options = [...(answers.options ?? plan.options.map((_, at) => at)), extended.options.length - 1]
-          else answers.wants = [...(answers.wants ?? []), extended.wants.length - 1]
+          if (kind === 'option') {
+            const added = extended.options.length - 1
+            answers.options = [...(answers.options ?? plan.options.map((_, at) => at)), added]
+            if (asCall) {
+              // Typed in at the call, so it is the call. Sky is not told the reason: its read of the option stays
+              // its own, and what it would do is still held back until the person moves on.
+              answers.call = added
+              delete answers.final
+              answers.because = { ...answers.because, [added]: because ?? '' }
+            }
+          } else answers.wants = [...(answers.wants ?? []), extended.wants.length - 1]
         })
       } catch (error) {
         await this.change(id, (current) => {

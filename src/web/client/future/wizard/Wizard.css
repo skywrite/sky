@@ -300,10 +300,45 @@
   border-color: var(--sky-wizard-pick);
   outline: none;
 }
+.sky-wizard-own textarea + label {
+  margin-top: 14px;
+}
 .sky-wizard-own-actions {
   display: flex;
   gap: 8px;
   margin-top: 12px;
+}
+/* The person's own reason for a decision they typed in, under the choices once it is the call. */
+.sky-wizard-because {
+  display: block;
+  margin: 2px 0 6px;
+}
+.sky-wizard-because label {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 15px;
+  font-weight: 620;
+}
+.sky-wizard-because textarea {
+  width: 100%;
+  padding: 11px 13px;
+  border: 1px solid var(--sky-border-soft);
+  border-radius: 11px;
+  background: var(--sky-bg);
+  color: inherit;
+  font: inherit;
+  font-size: 18px;
+  line-height: 1.5;
+  resize: vertical;
+}
+.sky-wizard-because textarea:focus {
+  border-color: var(--sky-wizard-pick);
+  outline: none;
+}
+.sky-wizard-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
 }
 
 /* Back and Continue stay within reach on a long step. */

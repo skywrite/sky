@@ -31,6 +31,11 @@ export interface DecidingAnswers {
   by?: string
   todos?: number[]
   call?: number
+  /**
+   * Why, in the person's own words, for a decision they typed in at the call: by option. An entry, even an
+   * empty one, also says the option came in that way.
+   */
+  because?: Record<number, string>
   /** After Sky's answer: keep the call, switch to Sky's, or go back and look at the options again */
   final?: 'keep' | 'switch' | 'again'
   /** Per option: the worries ticked, the rules adopted, and the expectation chosen, each in words */

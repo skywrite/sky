@@ -38,7 +38,12 @@ const decision = (name: string, summary: string, extra: string, rel: string[]) =
  * was reached, and one archived before endings were recorded.
  * `goals: false` leaves it with a tracker and nothing else, as a new notebook is.
  */
-export async function futureFixture({ ready = true, goals = true } = {}) {
+export async function futureFixture({
+  ready = true,
+  goals = true,
+  /** How Sky words an option the person typed in. The real one rewords it; by default the stand-in does not. */
+  reword = (text: string) => text,
+} = {}) {
   const tracking = await trackingFixture()
   const { root, put } = tracking
   await tracking.store.create(crypto.randomUUID(), {
@@ -202,7 +207,7 @@ export async function futureFixture({ ready = true, goals = true } = {}) {
     },
     async addOption({ plan, text }) {
       if (text.includes('fail')) throw new Error('The model did not answer.')
-      const added = { ...plan.options[2]!, title: text, short: text, mine: true, hinges: [] }
+      const added = { ...plan.options[2]!, title: reword(text), short: reword(text), mine: true, hinges: [] }
       return { ...plan, options: [...plan.options, added], rank: [...plan.rank, plan.options.length] }
     },
     async addWant({ plan, text }) {

@@ -36,6 +36,23 @@ Nearly all of the wait is the model reasoning before it writes, not the reading 
 `record.ts` builds the record from the two, and both the page's preview and the server's save call it.
 What is shown is what is saved; do not build the record in two places.
 
+## A decision typed in at the call
+
+At "Which one?" the last choice is "Something else…": a decision that is not among the options, with a box for the
+person's own "because".
+Sky works it out like any added option, and it then becomes the call (`add` with `call`, in `wizard.ts`).
+Sky rewords an option it is given; a decision the person has made keeps their own wording (`inOwnWords`).
+A real run on a made-up notebook took a little over five minutes, which is what the page says to expect.
+
+The reason is the person's, so it lives in the answers (`because`, by option) and is written as its own line under
+the call in the decision's file.
+Sky is not given the reason when it works the option out.
+Its read of the option has to stay its own, for the same reason its pick is held back until the person has chosen.
+
+An entry in `because`, even an empty one, also marks the option as typed in at the call.
+Such an option was chosen before Sky worked it out, so the step that asks for the person's odds on it may be skipped,
+and Sky's odds for it stay hidden until they give their own.
+
 ## The shape of the answer travels in the prompt
 
 A provider's constrained structured output refused the plan's schema: "The compiled grammar is too large".

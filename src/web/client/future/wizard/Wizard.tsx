@@ -375,11 +375,19 @@ export function Wizard({
               set={set}
               today={today}
               adding={run.adding}
-              onAdd={async (kind, text) => {
+              onAdd={async (kind, text, call) => {
                 await flush()
-                await act('/add', { kind, text })
+                await act('/add', { kind, text, ...(call ? { call: true, because: call.because } : {}) })
               }}
               onDropAddition={() => void guarded(async () => void (await act('/drop')))}
+              onRetryAddition={() =>
+                void guarded(async () => {
+                  const held = run.adding
+                  if (!held) return
+                  const { kind, text, call, because } = held
+                  await act('/add', { kind, text, ...(call ? { call: true, because: because ?? '' } : {}) })
+                })
+              }
               onReword={async (text) => {
                 await flush()
                 await act('/reword', { text })

@@ -20,6 +20,7 @@ export function RecordView({ record, today }: { record: DecisionRecord; today: s
           <h3>The call</h3>
           <p>{record.call}</p>
           {record.callNote && <small>{record.callNote}</small>}
+          {record.because && <p>Because: {record.because}</p>}
         </>
       )}
       {record.wants.length > 0 && (

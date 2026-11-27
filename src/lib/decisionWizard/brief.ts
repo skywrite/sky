@@ -111,6 +111,9 @@ function deciding(plan: DecidingPlan, answers: DecidingAnswers, title: string, s
     call !== undefined
       ? `His call: ${plan.options[call]!.title}${answers.final === 'switch' ? ' (he switched to Sky’s pick)' : answers.final === 'keep' ? ' (he kept it after seeing Sky’s view)' : ''}.`
       : 'He has not made the call yet.',
+    call !== undefined && answers.because?.[call]?.trim()
+      ? `Why he chose it, in his own words: ${answers.because[call]!.trim()}`
+      : '',
     call !== undefined && answers.wrong?.[call]?.length
       ? `What worries him about it:\n${list(answers.wrong[call]!)}`
       : '',
