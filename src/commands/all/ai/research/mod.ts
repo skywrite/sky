@@ -170,7 +170,11 @@ export default class AiResearchTask extends Command {
         instructions: [parent?.instructions ?? '', systemPrompt],
         tools,
         toolApproval: {},
+        // The caller's Stop (an ended voice call, a stopped chat turn) ends the research with it.
+        abortSignal: context.signal,
       })
+      // A stopped turn returns what it had so far rather than throwing: never pass that off as a finished report.
+      if (result.stopped || context.signal?.aborted) return CommandResult.fail('Research stopped.')
       const digest = truncate(result.text.trim(), DIGEST_MAX_CHARS, '\n\n[Report truncated]')
       const sources = [...trace.sources].sort()
 
@@ -184,6 +188,7 @@ export default class AiResearchTask extends Command {
       if (result.timing) output.log(colors.dim(`Timing: ${timingLine(result.timing)}`))
       return CommandResult.success({ digest, sources, timing: result.timing })
     } catch (err) {
+      if (context.signal?.aborted) return CommandResult.fail('Research stopped.')
       const message = (err as Error).message ?? String(err)
       await logAIError({ source: 'ai:research', stage: 'turn', message, question })
       return CommandResult.fail(message)
