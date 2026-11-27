@@ -282,11 +282,11 @@ test('voice shares chat tools, approvals, files and drafts and retains results f
       approvalId: string
     }
     assert({
-      given: 'a document read and an unapproved write',
-      should: 'send actual large document content and hold the write',
+      given: 'a long document read and an unapproved write',
+      should: 'send one page of the document’s actual text with the offset to continue from, and hold the write',
       actual: [
         JSON.stringify(outputs[0].output).includes('Atlas source evidence.'),
-        JSON.stringify(outputs[0].output).length > 65_536,
+        JSON.stringify(outputs[0].output).includes('Continue with read_file offset'),
         writes,
         contexts.at(-1)?.includes(spoken[0].text),
       ],

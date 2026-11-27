@@ -1,17 +1,22 @@
 type ContextEntry = { source: string; body: string }
 export type VoiceEntityFetcher = (input: string, init: RequestInit) => Promise<Response>
 
+/** The most pending decisions a call starts with; the index may hold more. */
+export const DECISIONS_LIMIT = 12
+
 export interface VoiceEntities {
   people: ContextEntry[]
   projects: ContextEntry[]
   decisions: ContextEntry[]
+  /** Whether the index answered for pending decisions, so an empty list means none pending */
+  decisionsRead: boolean
   unavailable: string[]
   notes: string[]
 }
 
 const ENTITY_QUERY = `{
   projects(where: {status: "open"}, limit: 20) {path name status}
-  decisions(where: {pending: true}, limit: 12) {path name summary identified target}
+  decisions(where: {pending: true}, limit: ${DECISIONS_LIMIT}) {path name summary identified target}
   peopleWithScores {name}
 }`
 
@@ -33,10 +38,11 @@ export async function loadVoiceEntities(port: number, fetcher: VoiceEntityFetche
     people: [],
     projects: [],
     decisions: [],
+    decisionsRead: false,
     unavailable: [],
     notes: [
       'Open projects: at most the first 20 service results; additional projects may be omitted.',
-      'Pending decisions: at most the first 12 service results; additional decisions may be omitted.',
+      `Pending decisions: at most the first ${DECISIONS_LIMIT} service results; additional decisions may be omitted.`,
       'People: at most the top 30 interaction-ranked names; this is not a complete contact list.',
     ],
   }
@@ -69,13 +75,14 @@ export async function loadVoiceEntities(port: number, fetcher: VoiceEntityFetche
 
   for (const [field, limit] of [
     ['projects', 20],
-    ['decisions', 12],
+    ['decisions', DECISIONS_LIMIT],
   ] as const) {
     const entries = data[field]
     if (!Array.isArray(entries)) {
       unavailable(`${field === 'projects' ? 'Open projects' : 'Pending decisions'} were unavailable.`)
       continue
     }
+    if (field === 'decisions') result.decisionsRead = true
     for (const entry of entries.slice(0, limit)) {
       if (!record(entry) || !nonempty(entry.path) || !nonempty(entry.name)) {
         unavailable(`Some ${field} could not be loaded.`)

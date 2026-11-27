@@ -142,6 +142,26 @@ test('voice entities separate partial service errors from valid empty selections
   })
 })
 
+test('voice entities say whether pending decisions were read, so an empty list can mean none pending', async () => {
+  const read = await loadVoiceEntities(
+    4321,
+    responses([{ data: { projects: [], decisions: [], peopleWithScores: [] } }]),
+  )
+  const missing = await loadVoiceEntities(
+    4321,
+    responses([{ data: { projects: [], decisions: null, peopleWithScores: [] } }]),
+  )
+  const down = await loadVoiceEntities(4321, async () => {
+    throw new Error('connection refused')
+  })
+  assert({
+    given: 'an index that returned no pending decisions, one that returned none at all, and no index',
+    should: 'mark only the first as read',
+    actual: [read.decisionsRead, missing.decisionsRead, down.decisionsRead],
+    expected: [true, false, false],
+  })
+})
+
 test('voice entities enforce selection limits even if the service returns oversized lists', async () => {
   const queries: string[] = []
   const profiles = Object.fromEntries(Array.from({ length: 30 }, (_, i) => [`p${i}`, null]))

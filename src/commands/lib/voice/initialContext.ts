@@ -10,7 +10,7 @@ import dayDir from '#shared/nbfs/dayDir.ts'
 import dayFile from '#shared/nbfs/dayFile.ts'
 import weekDir from '#shared/nbfs/weekDir.ts'
 import { PlainDate } from '#universal/dates/nbdt/mod.ts'
-import { loadVoiceEntities } from './contextEntities.ts'
+import { loadVoiceEntities, type VoiceEntities } from './contextEntities.ts'
 import type { VoiceClock } from './sessionConfig.ts'
 
 type ContextConfig = Pick<
@@ -103,12 +103,25 @@ function section(title: keyof typeof BUDGETS, records: RecordExcerpt[], baseDir:
   return `### ${title}\n\n${parts.join('\n\n') || '[No records loaded for this section.]'}`
 }
 
-/** Browser call setup gathers this once, alongside calendar/tool discovery. */
-export async function loadVoiceInitialContext(
+export interface VoiceSources {
+  profile?: RecordExcerpt
+  goals: RecordExcerpt[]
+  week?: RecordExcerpt
+  day?: RecordExcerpt
+  recent: RecordExcerpt[]
+  memories: MemoryEntry[]
+  entities: VoiceEntities
+  unavailable: string[]
+  missing: string[]
+  recentDates: PlainDate[]
+}
+
+/** The reads a call starts with, once: the snapshot for the backend and the speaking model's page both come from them. */
+export async function loadVoiceSources(
   config: ContextConfig,
   clock: Pick<VoiceClock, 'notebookDate' | 'notebookTime' | 'notebookTimezone'>,
   readers: Partial<ContextReaders> = {},
-): Promise<string> {
+): Promise<VoiceSources> {
   const read = readers.read ?? readTextFile
   const unavailable: string[] = []
   const missing: string[] = []
@@ -161,6 +174,28 @@ export async function loadVoiceInitialContext(
     (readers.entities ?? loadVoiceEntities)(config.PORT_SERVER),
   ])
   const present = (items: (RecordExcerpt | undefined)[]): RecordExcerpt[] => items.filter((item) => item !== undefined)
+  return {
+    profile,
+    goals: present(goals),
+    week,
+    day,
+    recent: present(recent),
+    memories,
+    entities,
+    unavailable,
+    missing,
+    recentDates,
+  }
+}
+
+/** The backend's bounded snapshot, rendered from the call's sources. */
+export function renderVoiceSnapshot(
+  sources: VoiceSources,
+  config: Pick<ContextConfig, 'DIR_BASE'>,
+  clock: Pick<VoiceClock, 'notebookDate' | 'notebookTime' | 'notebookTimezone'>,
+): string {
+  const { memories, entities, unavailable, missing, recentDates } = sources
+  const present = (items: (RecordExcerpt | undefined)[]): RecordExcerpt[] => items.filter((item) => item !== undefined)
   const memoryRecords = (kinds: MemoryEntry['kind'][]): RecordExcerpt[] =>
     memories
       .filter((memory) => kinds.includes(memory.kind))
@@ -169,14 +204,14 @@ export async function loadVoiceInitialContext(
         body: `Memory kind: ${memory.kind ?? 'unclassified'}; last confirmed/updated: ${memory.freshness ?? 'unknown'}\n${memory.body}`,
       }))
   const sections: Record<keyof typeof BUDGETS, RecordExcerpt[]> = {
-    Profile: present([profile]),
+    Profile: present([sources.profile]),
     Preferences: memoryRecords(['preference']),
     'Vocabulary and lessons': memoryRecords(['glossary', 'lesson']),
     'Other remembered context': memoryRecords(['thread', 'observation', undefined]),
-    Goals: present(goals),
-    'Current week': present([week]),
-    Today: present([day]),
-    'Recent days': present(recent),
+    Goals: sources.goals,
+    'Current week': present([sources.week]),
+    Today: present([sources.day]),
+    'Recent days': sources.recent,
     People: entities.people,
     'Open projects': entities.projects,
     'Pending decisions': entities.decisions,
@@ -189,8 +224,17 @@ export async function loadVoiceInitialContext(
     `Empty sections mean no records loaded, not that no such facts exist. Missing files and budget omissions require a lookup when relevant. Notebook records take precedence over conflicting remembered context; current user corrections take precedence over older records.`,
     ...entities.notes,
     ...entities.unavailable,
-    ...unavailable.sort(),
-    ...(missing.length ? [`Local sources missing or empty: ${missing.sort().join(', ')}.`] : []),
+    ...[...unavailable].sort(),
+    ...(missing.length ? [`Local sources missing or empty: ${[...missing].sort().join(', ')}.`] : []),
   ].join('\n')
   return `${coverage}\n\n${(Object.keys(BUDGETS) as (keyof typeof BUDGETS)[]).map((key) => section(key, sections[key], config.DIR_BASE)).join('\n\n')}`
+}
+
+/** Browser call setup gathers this once, alongside calendar/tool discovery. */
+export async function loadVoiceInitialContext(
+  config: ContextConfig,
+  clock: Pick<VoiceClock, 'notebookDate' | 'notebookTime' | 'notebookTimezone'>,
+  readers: Partial<ContextReaders> = {},
+): Promise<string> {
+  return renderVoiceSnapshot(await loadVoiceSources(config, clock, readers), config, clock)
 }

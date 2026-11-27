@@ -19,7 +19,7 @@ const CLOCK = {
   systemTimezone: 'Europe/London',
 }
 
-test('voice config selects GPT-Live with Sol 6.1 Ultrafast high and delegates optional tool schemas', () => {
+test('voice config selects GPT-Live with Sol 6.1 Ultrafast at low effort, an immediate acknowledgement, and optional tool schemas', () => {
   const session = voiceSessionConfig({
     voice: 'marin',
     instructions: 'Be Sky.',
@@ -43,10 +43,12 @@ test('voice config selects GPT-Live with Sol 6.1 Ultrafast high and delegates op
       store: false,
       delegation: {
         type: 'responses',
+        acknowledgement_delay_ms: 0,
         responses: {
           model: 'gpt-6.1-sol',
           service_tier: 'ultrafast',
-          reasoning: { effort: 'high' },
+          reasoning: { effort: 'low' },
+          text: { verbosity: 'low' },
           instructions: 'Use verified records.',
           parallel_tool_calls: true,
           tool_choice: 'auto',
@@ -119,6 +121,33 @@ test('voice prompts retain evidence and action rules in the backend while Live r
       /Sonny|Sunny|invite_sonny|research_together/.test(prompts.askPrompt + prompts.instructions),
     ],
     expected: [true, true, true, true, true, true, true, false],
+  })
+})
+
+test('the speaking prompt carries the short page and the rules for answering from it; the backend gets speed rules', async () => {
+  const page = 'Now:\nIt is Tuesday, January 27, 2026, 9:30 AM (Europe/London), when this call started.'
+  const prompts = await renderVoicePrompts({ ...CLOCK, page })
+  const without = await renderVoicePrompts(CLOCK)
+  assert({
+    given: 'a page of what Sky knows, and no page',
+    should:
+      'put the page and its rules in the speaking prompt only when there is one, and tell the backend to look up before researching',
+    actual: [
+      prompts.instructions.includes(`## What you know right now\n\n${page}`),
+      prompts.instructions.includes('Answer from this page when it holds the answer'),
+      prompts.askPrompt.includes(page),
+      without.instructions.includes('## What you know right now'),
+      prompts.instructions.includes('One sec.'),
+      prompts.instructions.includes('wait quietly without a preamble'),
+      prompts.askPrompt.includes('search_notebook'),
+      prompts.askPrompt.includes('only when the user asks you to dig in'),
+      prompts.instructions.includes('The user asks what to prioritize or focus on today or this week'),
+      prompts.askPrompt.includes(
+        'a request to look something up ("look up X", "what do we know about Y") goes to ai_research: in voice it starts with search_notebook',
+      ),
+      prompts.instructions.includes('ending the call stops the research'),
+    ],
+    expected: [true, true, false, false, true, false, true, true, true, true, true],
   })
 })
 

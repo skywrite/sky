@@ -17,7 +17,7 @@ const CONFIG = {
   PORT_SERVER: 12345,
 }
 const CLOCK = { notebookDate: '2026-01-27', notebookTime: '09:30', notebookTimezone: 'Europe/London' }
-const EMPTY_ENTITIES = { people: [], projects: [], decisions: [], notes: [], unavailable: [] }
+const EMPTY_ENTITIES = { people: [], projects: [], decisions: [], decisionsRead: true, notes: [], unavailable: [] }
 
 function reader(files: Record<string, string>, reads: string[] = []) {
   return async (file: string): Promise<string> => {
@@ -66,6 +66,7 @@ test('voice initial context: local evidence, recent summaries, and entity identi
       ...EMPTY_ENTITIES,
       people: [{ source: '/Notebook/people/jane.md', body: 'Jane Doe (aka Jane), engineer at Example Labs.' }],
       decisions: [{ source: '/Notebook/decisions/atlas-scope.md', body: 'Pending: choose the pilot scope.' }],
+      decisionsRead: true,
     }),
   })
   assert({
@@ -118,6 +119,7 @@ test('voice initial context: large sources cannot crowd out other categories or 
         body: `Atlas-${i}\nStatus: open`,
       })),
       decisions: [{ source: '/Notebook/decisions/pilot.md', body: 'Choose a pilot date.' }],
+      decisionsRead: true,
     }),
   })
   assert({

@@ -7,7 +7,15 @@ import { type RenderInput, renderPromptFile, renderTemplate } from '#shared/prom
 export const DEFAULT_VOICE_MODEL = 'gpt-live-1.1'
 export const VOICE_PROCESSING_MODEL = 'gpt-6.1-sol'
 export const VOICE_PROCESSING_TIER = 'ultrafast'
-export const VOICE_PROCESSING_EFFORT = 'high'
+/** Sol's lowest. Measured 2026-11-26 on the voice prompt: first word in 0.9 s at low against 3.2 s at high. */
+export const VOICE_PROCESSING_EFFORT = 'low'
+/**
+ * How long Live waits before acknowledging work handed to the backend: not at all. Quick questions are
+ * answered from the page without the backend, and Sol's first word takes about 0.9 s even at low effort,
+ * so any wait the API allows (at most 800 ms) never saves an acknowledgement; it only adds silence.
+ * Measured 2026-11-26: first sound on looked-up questions 2.4 to 2.7 s at 800 ms, against 1.5 to 1.9 s at 0.
+ */
+export const VOICE_ACKNOWLEDGEMENT_DELAY_MS = 0
 
 /** Keep the existing, auditioned voice selection. Live supports all of these. */
 export const VOICES = ['alloy', 'ash', 'ballad', 'cedar', 'coral', 'echo', 'marin', 'sage', 'shimmer', 'verse'] as const
@@ -51,14 +59,17 @@ export interface VoicePrompts {
 export interface VoicePromptInput extends VoiceClock {
   notebookContext?: string
   calendar?: string
+  /** The speaking model's short page of what Sky knows right now (page.ts) */
+  page?: string
 }
 
 export async function renderVoicePrompts(input: VoicePromptInput): Promise<VoicePrompts> {
-  const { calendar, notebookContext, ...clock } = input
+  const { calendar, notebookContext, page, ...clock } = input
   const renderInput: RenderInput = {
     context: { ...clock },
     calendar: { block: calendar ?? '' },
     voiceContext: { block: notebookContext ?? '' },
+    page: { block: page ?? '' },
   }
   const [voice, backend] = await Promise.all([readPromptFile(VOICE_PROMPT_FILE), readPromptFile(ASK_PROMPT_FILE)])
   return {
@@ -84,10 +95,13 @@ export function voiceSessionConfig(spec: VoiceSessionSpec): MediaSessionConfig {
     store: false,
     delegation: {
       type: 'responses',
+      acknowledgement_delay_ms: VOICE_ACKNOWLEDGEMENT_DELAY_MS,
       responses: {
         model: VOICE_PROCESSING_MODEL,
         service_tier: VOICE_PROCESSING_TIER,
         reasoning: { effort: VOICE_PROCESSING_EFFORT },
+        // Its text becomes speech: short results, which Sky then says in a sentence or two.
+        text: { verbosity: 'low' },
         instructions: spec.backendInstructions,
         // Existing command schemas have optional fields; do not let Responses
         // normalize them into required fields via its default strict mode.

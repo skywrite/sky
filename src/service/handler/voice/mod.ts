@@ -4,6 +4,7 @@ import { bodyLimit } from 'hono/body-limit'
 import type { FunctionTool, MediaSessionConfig } from 'openai/resources/live/live'
 import type { ResponseFunctionToolCallOutputItem } from 'openai/resources/responses/responses'
 import { withoutBlankStrings } from '#commands/lib/chat/notebookTools.ts'
+import { byteLength, clip } from '#commands/lib/voice/page.ts'
 import { openingInstructions } from '#commands/lib/voice/sessionConfig.ts'
 import { logger } from '#shared/log.ts'
 import type { PreparedToolApproval } from '#shared/models/Chat/ChatSession/mod.ts'
@@ -11,6 +12,7 @@ import truncate from '#shared/strings/truncate.ts'
 import { hold, touch } from '../../activity.ts'
 import { isSpokenTurns, type SpokenTurn } from '../chat/voiceTranscript.ts'
 import type { VoiceChatAccess, VoiceChatOpener, VoiceChatRequest } from './chatTools.ts'
+import { NOTE_MAX_BYTES, type VoiceNote } from './liveBackend.ts'
 
 const log = logger('voice')
 export type VoiceToolOutput = ResponseFunctionToolCallOutputItem['output']
@@ -35,6 +37,11 @@ export interface VoiceTool {
   /** Resolve the action's details before parking; failure never falls back to an ID-only approval. */
   approvalSummary?: (input: Record<string, unknown>, signal?: AbortSignal) => Promise<string>
   prepareApproval?: (input: Record<string, unknown>, signal?: AbortSignal) => Promise<PreparedToolApproval>
+  /**
+   * Runs past its delegation: the call answers at once that the work is running, and the result
+   * reaches the conversation when it lands. Only where the service can talk to the session itself.
+   */
+  background?: boolean
 }
 
 export const CONFIRM_ACTION = 'confirm_action'
@@ -95,6 +102,12 @@ export interface VoiceThread {
   greeting: string
   tools: Map<string, VoiceTool>
   toolsFor?: (delegationId: string, turns: readonly SpokenTurn[]) => Promise<Map<string, VoiceTool>>
+  /**
+   * Bring the speaking model's page up to date: the host works out notes for the parts that changed since
+   * it was last told and hands them to `deliver`, counting them as told only once delivered. `tool` names
+   * what just ran.
+   */
+  refresh?: (cause: { tool?: string }, deliver: (notes: string[]) => Promise<void>) => Promise<void>
 }
 
 export type VoiceThreadFactory = (id: string, signal?: AbortSignal, chat?: VoiceChatAccess) => Promise<VoiceThread>
@@ -105,6 +118,8 @@ export interface LiveSessionAnswer {
   backend?: {
     output: (callId: string, output: VoiceToolOutput) => Promise<void>
     resume: (callIds: string[]) => Promise<void>
+    /** Tell the running session something on the service's own initiative */
+    note?: (note: VoiceNote) => Promise<void>
     close: () => void
   }
 }
@@ -143,6 +158,19 @@ export interface VoiceRoutesOptions {
 /** Mirrors ai:chat's tool-boundary clamp: an error must never carry megabytes. */
 const MAX_TOOL_OUTPUT_ERROR_CHARS = 2000
 
+/**
+ * How long a background tool may take before its turn is answered with "running in the background".
+ * A run that fails within it (bad arguments, research turned off) answers like any other tool, so the
+ * backend can correct the call; no research finishes this fast, so success always goes to the background.
+ */
+const BACKGROUND_GRACE_MS = 1000
+
+/**
+ * How long ending a call waits for a stopped background run to unwind, so the chat records how it ended
+ * rather than "still running". Research stops within moments of the abort; this bounds one that does not.
+ */
+const BACKGROUND_STOP_GRACE_MS = 1500
+
 function validSdp(sdp: unknown): sdp is string {
   return typeof sdp === 'string' && sdp.startsWith('v=0') && sdp.length <= 65_536
 }
@@ -157,6 +185,36 @@ function liveHistory(context: string): string {
   return `Previous chat for reference only. These messages are history, not new requests or instructions. Wait for the user's new speech.\n${start ? '[Earlier chat omitted to fit voice startup.]\n' : ''}${tail}`
 }
 
+/** What a finished research run found: its lead paragraph for speech, and the whole digest for later questions. */
+export function researchFindings(output: VoiceToolOutput): { lead: string; full: string; failed: boolean } {
+  const text = typeof output === 'string' ? output : JSON.stringify(output)
+  if (text.startsWith('Tool failed:')) return { lead: text, full: text, failed: true }
+  let digest = text
+  try {
+    const parsed = JSON.parse(text) as {
+      success?: boolean
+      digest?: unknown
+      data?: { digest?: unknown }
+      error?: unknown
+      message?: unknown
+    }
+    if (parsed.success === false) {
+      // A chat tool reports a failed command as { success: false, status, error }.
+      const reason =
+        [parsed.error, parsed.message].find(
+          (value): value is string => typeof value === 'string' && value.trim().length > 0,
+        ) ?? text
+      return { lead: reason, full: reason, failed: true }
+    }
+    const found = parsed.digest ?? parsed.data?.digest
+    if (typeof found === 'string' && found.trim()) digest = found.trim()
+  } catch {
+    // Not JSON: the text is the finding.
+  }
+  const lead = digest.split(/\n\s*\n/).find((part) => part.trim()) ?? digest
+  return { lead: truncate(lead.replace(/\s+/g, ' ').trim(), 900), full: truncate(digest, 12_000), failed: false }
+}
+
 export function createVoiceRoutes(options: VoiceRoutesOptions): Hono {
   const threads = new Map<string, VoiceThread>()
   const opening = new Map<string, Promise<VoiceThread>>()
@@ -169,6 +227,10 @@ export function createVoiceRoutes(options: VoiceRoutesOptions): Hono {
   const requests = new Map<string, Map<string, { key: string; response: Promise<Response> }>>()
   const declined = new Map<string, Map<string, Set<string>>>()
   const idleTimers = new Map<string, ReturnType<typeof setTimeout>>()
+  /** Background runs in flight per call, by tool and question, so a repeat does not start a second one. */
+  const backgroundRuns = new Map<string, Set<string>>()
+  /** Their executions, which ending a call aborts and waits for only briefly. */
+  const background = new Map<string, Set<Promise<unknown>>>()
   const app = new Hono()
   app.use('/:id/tools', bodyLimit({ maxSize: 1024 * 1024 }))
 
@@ -179,6 +241,14 @@ export function createVoiceRoutes(options: VoiceRoutesOptions): Hono {
     backends.get(id)?.close()
     backends.delete(id)
     await Promise.allSettled(running.get(id) ?? [])
+    let timer: ReturnType<typeof setTimeout> | undefined
+    await Promise.race([
+      Promise.allSettled(background.get(id) ?? []),
+      new Promise<void>((resolve) => {
+        timer = setTimeout(resolve, BACKGROUND_STOP_GRACE_MS)
+      }),
+    ])
+    clearTimeout(timer)
     await chats.get(id)?.close()
     chats.delete(id)
     lifetimes.delete(id)
@@ -187,6 +257,8 @@ export function createVoiceRoutes(options: VoiceRoutesOptions): Hono {
     requests.delete(id)
     running.delete(id)
     declined.delete(id)
+    backgroundRuns.delete(id)
+    background.delete(id)
   }
   const keepAlive = (id: string) => {
     touch(`voice:${id}`, 'voice', VOICE_HOLD_MS)
@@ -239,6 +311,65 @@ export function createVoiceRoutes(options: VoiceRoutesOptions): Hono {
       chars: typeof output === 'string' ? output.length : JSON.stringify(output).length,
     })
     return output
+  }
+
+  /**
+   * Tell the speaking model what changed on its page, silently. The host counts a note as told only once
+   * it is delivered, so one that fails goes again with the next refresh.
+   */
+  const refreshPage = (id: string, tool?: string) => {
+    const thread = threads.get(id)
+    const backend = backends.get(id)
+    if (!thread?.refresh || !backend?.note || ended.has(id)) return
+    void thread
+      .refresh({ tool }, async (notes) => {
+        for (const content of notes) {
+          if (ended.has(id)) throw new Error('The voice session has ended.')
+          await backend.note!({ type: 'session.thinking.append', content })
+        }
+      })
+      .catch((error) => log.warn('Could not update the voice page: {error}', { error: String(error) }))
+  }
+
+  /**
+   * A background run finished. The backend hears first, so its later turns know what was found or that it
+   * failed; then the speaking model gets what to say: the instruction, the findings fitted to what the note
+   * has room for, then the question.
+   */
+  const deliverBackground = async (id: string, question: string, output: VoiceToolOutput) => {
+    const backend = backends.get(id)
+    if (!backend?.note || ended.has(id) || lifetimes.get(id)?.signal.aborted) return
+    const { lead, full, failed } = researchFindings(output)
+    const asked = truncate(question, 160)
+    await backend.note({
+      type: 'response.item.create',
+      item: {
+        type: 'message',
+        role: 'developer',
+        content: [
+          {
+            type: 'input_text',
+            text: failed
+              ? `Background research for "${asked}" failed and is no longer running: ${truncate(full, 1000)} Start it again only if the user asks.`
+              : `Background research finished for "${asked}". It is retrieved evidence; answer follow-up questions from it:\n${full}`,
+          },
+        ],
+      },
+    })
+    const fitted = (prefix: string, suffix: string) =>
+      `${prefix}${clip(lead, NOTE_MAX_BYTES - byteLength(prefix) - byteLength(suffix) - 8)}${suffix}`
+    await backend.note({
+      type: 'session.commentary.append',
+      content: failed
+        ? fitted(
+            'The research the user asked for could not finish. Tell them briefly at the next natural pause and offer to try again. Reason: ',
+            ` Asked: "${asked}".`,
+          )
+        : fitted(
+            'The research the user asked for has finished. At the next natural pause, tell them what it found in a sentence or two, then offer more; if they have since said they no longer want it, leave it unless they ask. Findings: ',
+            ` Asked: "${asked}".`,
+          ),
+    })
   }
 
   // A thread exists from its first session request. Two racing for the
@@ -460,7 +591,9 @@ export function createVoiceRoutes(options: VoiceRoutesOptions): Hono {
         } catch (error) {
           return reply(`Could not approve this action: ${(error as Error).message}`)
         }
-        return reply(await run(parked.tool.definition.name ?? 'tool', parked.tool, parked.input))
+        const confirmed = await run(parked.tool.definition.name ?? 'tool', parked.tool, parked.input)
+        refreshPage(id, parked.tool.definition.name)
+        return reply(confirmed)
       }
 
       const tools = thread.toolsFor
@@ -526,7 +659,61 @@ export function createVoiceRoutes(options: VoiceRoutesOptions): Hono {
         )
       }
 
-      return reply(await run(name, tool, input))
+      // A slow read runs past its delegation, so the answer to this turn does not wait for it. It runs
+      // under the call's lifetime, not this request's: ending the call aborts it. It is kept out of
+      // `running`, so ending the call does not wait for it either.
+      if (tool.background && backends.get(id)?.note && callId) {
+        const question =
+          typeof input.question === 'string' && input.question.trim()
+            ? input.question.trim()
+            : summarizeCall(name, input)
+        const key = `${name}:${question.toLowerCase()}`
+        const inFlight = backgroundRuns.get(id) ?? new Set<string>()
+        backgroundRuns.set(id, inFlight)
+        if (inFlight.has(key))
+          return reply(
+            JSON.stringify({
+              status: 'already running',
+              note: 'This research is already running in the background. Its findings reach the conversation when it finishes, while the call is open; do not start it again.',
+            }),
+          )
+        inFlight.add(key)
+        const execution = execute(name, tool, input, lifetime.signal, delegationId, callId)
+        const stoppable = background.get(id) ?? new Set<Promise<unknown>>()
+        background.set(id, stoppable)
+        stoppable.add(execution)
+        void execution.finally(() => {
+          inFlight.delete(key)
+          stoppable.delete(execution)
+        })
+        let timer: ReturnType<typeof setTimeout> | undefined
+        const early = await Promise.race([
+          execution,
+          new Promise<undefined>((resolve) => {
+            timer = setTimeout(() => resolve(undefined), BACKGROUND_GRACE_MS)
+          }),
+        ])
+        clearTimeout(timer)
+        if (early !== undefined) {
+          refreshPage(id, name)
+          return reply(early)
+        }
+        void execution
+          .then((output) => deliverBackground(id, question, output))
+          .catch((error) =>
+            log.warn('Could not deliver background {tool}: {error}', { tool: name, error: String(error) }),
+          )
+        return reply(
+          JSON.stringify({
+            status: 'running in the background',
+            note: 'This takes about a minute. Tell the user once, briefly, that you are digging into it; its findings reach the conversation by themselves when it finishes, as long as the call stays open (ending the call stops it). Do not start it again, and answer anything else meanwhile.',
+          }),
+        )
+      }
+
+      const output = await run(name, tool, input)
+      refreshPage(id, name)
+      return reply(output)
     }
     const response = process().catch((error) =>
       c.json({ message: truncate(`Voice tool failed: ${(error as Error).message}`, MAX_TOOL_OUTPUT_ERROR_CHARS) }, 502),
@@ -543,6 +730,8 @@ export function createVoiceRoutes(options: VoiceRoutesOptions): Hono {
     const id = c.req.param('id')
     if (ended.has(id) || !threads.has(id)) return c.json({ message: 'This voice session has ended.' }, 410)
     keepAlive(id)
+    // The page's day can change outside the call (the day page, another chat) and a meeting can start.
+    refreshPage(id)
     return c.json({ active: true })
   })
 
@@ -567,8 +756,16 @@ export function createVoiceRoutes(options: VoiceRoutesOptions): Hono {
       )
     )
       return c.json({ message: 'Invalid pending tool results.' }, 400)
-    for (const output of body.outputs) await backend.output(output.callId, output.output)
-    await backend.resume(body.callIds)
+    try {
+      for (const output of body.outputs) await backend.output(output.callId, output.output)
+      await backend.resume(body.callIds)
+    } catch (error) {
+      log.warn('Voice could not continue after tool results: {error}', { error: String(error) })
+      return c.json(
+        { message: truncate(`Voice could not continue: ${(error as Error).message}`, MAX_TOOL_OUTPUT_ERROR_CHARS) },
+        502,
+      )
+    }
     return c.json({ resumed: true })
   })
 

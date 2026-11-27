@@ -1,15 +1,44 @@
 ---
 created: 2026-09-06
-updated: 2026-11-23
+updated: 2026-11-26
 ---
 
 # Browser voice
 
 Sky is the single speaking participant. `gpt-live-1.1` listens and speaks over
 one browser WebRTC connection. Its managed Responses backend is
-`gpt-6.1-sol`, with `service_tier: ultrafast` and `reasoning.effort: high`.
-The retired second voice and Qwen/Astra research loops are no longer part of
-browser calls. Existing saved two-speaker transcripts remain readable.
+`gpt-6.1-sol`, with `service_tier: ultrafast`, `reasoning.effort: low` and
+`text.verbosity: low`. Live acknowledges work it hands to the backend at once
+(`acknowledgement_delay_ms: 0`): quick questions are answered from the page
+below without the backend, so anything delegated takes seconds, and a wait
+only adds silence. The retired second voice and Qwen/Astra research loops are
+no longer part of browser calls. Existing saved two-speaker transcripts remain
+readable. Why voice is tuned this way, and what was measured:
+[2026-11-26 — voice answers fast](2026-11-26-voice-answers-fast.md).
+
+## What the speaking model knows
+
+Live's own instructions carry a short page, `page.ts` (`renderVoicePage`):
+the date and time, who the user is, their goals and pending decisions, the
+people they deal with most, today's calendar and lists, and one-line summaries
+of standing memory. Every part has a byte cap and the page stays under 6,000
+bytes, because a larger context makes the speaking model invent. It is built
+from the reads the call already makes (`loadVoiceSources`), with no model call.
+The prompt tells Live to answer from it rather than delegate, and only from
+the part that matches the question: without its own part for pending
+decisions, Live once answered a question about them from the to-do list.
+
+Live's instructions cannot change after startup, so the service keeps the
+page's "today" current with silent `session.thinking.append` notes. After a
+tool runs, and on each 30-second heartbeat, it re-reads the day file when it
+changed and re-renders where each meeting stands at the current time; the
+calendar itself is fetched again only after a `calendar_*` tool, and a fetch
+less complete than the one the call has (an account failing, or no answer)
+keeps the earlier list. Only the parts that differ from what Live
+was last told are sent, each within one append, and a part counts as told
+only once its note is delivered. The page states the time the call started;
+when no day has been started for more than a night, it leads with the real
+date and names the notebook's last started day.
 
 ## Conversation and processing
 
@@ -23,6 +52,18 @@ precedence and apply to newly started calls.
 Voice opens a lease on its owning chat. `ChatSession.conversationTools` supplies
 the same command registry, local files, writing drafts, research, plans, and
 browser tasks as text. There is no voice allowlist or second tool factory.
+Three things differ, all because a spoken turn skips the retrieval a typed
+message runs first and the user waits in silence on every step.
+Voice adds its own `search_notebook` (the service's search index, answering in
+well under a second), besides the `confirm_action` and `cancel_action` tools
+for spoken approval whenever a chat tool needs it. A text `read_file` returns one
+8,000-character page of the whole document, opened at a `find` term when Sol
+gives one; a file that fits in one page comes back whole, and PDFs and images
+pass through as they do in chat. `ai_research` runs past its delegation: a run
+still going after a second answers its turn that the research is running (one
+that fails sooner answers like any tool, so Sol can correct the call), and when
+it finishes the service tells Sol what it found or that it failed, then says
+the lead aloud through `session.commentary.append`. Ending the call stops it.
 The adapter converts schemas and native model outputs; tool execution still
 uses Chat's context hooks, calendar safeguards, approval policy, and persistent
 file grants. Each delegation builds against the latest spoken user request and
@@ -95,6 +136,8 @@ The dated notes below describe the earlier architecture and its investigations.
 
 ## Notes
 
+- Answer from what Live knows, look up before researching, research in the background:
+  [2026-11-26 — voice answers fast](2026-11-26-voice-answers-fast.md)
 - Test a diagnosis before judging the response to it; weigh saved chats as past output:
   [2026-09-10 — past chats are not evidence](../../chat/docs/2026-09-10-past-chats-are-not-evidence.md)
 - Carry questions and answers across speakers and leave room after a reply:
