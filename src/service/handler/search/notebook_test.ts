@@ -255,3 +255,30 @@ test({ name: 'people, organizations and places open on their pages; other record
     })
   })
 })
+
+test(
+  { name: "journal entries in a day's journal folder are journals, and the kind filter lists them newest first" },
+  async () => {
+    await withNotebook((store, base) => {
+      store.set(
+        path.join(base, 'time/2026/W05/01-26/journal/08-15_Morning-pages.md'),
+        '---\ntitle: Morning pages\n---\n\nThe Atlas launch went well.\n',
+      )
+      store.set(
+        path.join(base, 'time/2026/W05/01-27/journal/journal_evening.md'),
+        '---\ntitle: Evening\n---\n\nAtlas review.\n',
+      )
+      store.set(path.join(base, 'time/2026/W05/01-27/notes/Atlas.md'), '---\ntitle: Atlas notes\n---\n\nAtlas.\n')
+      const found = searchAllNotebook(store, base, '', { today: TODAY, kind: 'journal', sort: 'newest' })
+      assert({
+        given: "an entry in a day's journal folder, an older-style journal file, and a note",
+        should: 'label both journal files as journals and list them newest first without a query',
+        actual: found.results.map((result) => [result.kind, result.title]),
+        expected: [
+          ['journal', 'Evening'],
+          ['journal', 'Morning pages'],
+        ],
+      })
+    })
+  },
+)

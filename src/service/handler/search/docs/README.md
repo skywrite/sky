@@ -15,6 +15,9 @@ The derived text cache follows `MarkdownStore.version`, so edits and deletions
 invalidate it. The query has no per-type candidate cap: stopping early can
 hide an exact match or make a type filter incorrectly appear empty.
 
+A file in a day's `journal/` folder is a journal; older notebooks name entries
+`journal_<part>.md`.
+
 Date queries resolve on the server using notebook time. A time document's
 partition date takes precedence over its last edit date. Day results open
 `/<YYYY-MM-DD>`. A recognized day can be opened even without a day file, but

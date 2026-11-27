@@ -50,7 +50,8 @@ function kindOf(file: string, fallback: SearchKind): SearchKind {
     [/\/(?:actions\/)?meetings\/|\/(?:[^/]*_)?meeting_/, 'meeting'],
     [/\/(?:actions\/)?videos\/|\/(?:[^/]*_)?video_/, 'video'],
     [/\/(?:actions\/)?messages\/|\/(?:email|slack|message)_/i, 'message'],
-    [/\/journals\/|\/journal_/, 'journal'],
+    // A day's entries live in its journal/ folder; older notebooks name them journal_<part>.md.
+    [/\/journals?\/|\/journal_/, 'journal'],
   ] as const)
     if (pattern.test(file)) return kind
   return fallback
