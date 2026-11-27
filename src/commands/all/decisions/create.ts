@@ -26,7 +26,7 @@ const params = {
     required: true,
   }),
   decision: Flag.string(
-    'The decision as made — pass when the call is already settled; the document lands resolved with this in its Decision section. Omit for a still-open decision.',
+    'The decision as made — pass when the call is already settled; the document lands decided with this in its Decision section. Omit for a still-open decision.',
     { optional: true },
   ),
   inForce: Flag.bool(
@@ -71,7 +71,7 @@ export default class DecisionsCreateTask extends Command {
   static override description: CommandDescription = {
     name: 'decisions:create',
     description:
-      'Write a decision document into the notebook plus its day item — pending/ for an open decision, resolved/ when `decision` carries the call already made, in-force/ when `inForce` says that made call still binds what the person does. Headless — pass fields produced by decisions_clarify; the user approves before anything is written.',
+      'Write a decision document into the notebook plus its day item — pending/ for an open decision, decided/ when `decision` carries the call already made, in-force/ when `inForce` says that made call still binds what the person does. Headless — pass fields produced by decisions_clarify; the user approves before anything is written.',
     descriptionLong: [
       'Creates the Decision document and day item exactly as decisions:new',
       'would, from explicit fields. No AI calls — pure write.',
@@ -86,7 +86,7 @@ export default class DecisionsCreateTask extends Command {
 
   static formatApproval(input: Record<string, unknown>, output: OutputHandler): void {
     output.log(`  Decision: ${String(input.title ?? '')}`)
-    const landing = input.inForce ? 'decided and in force — lands in in-force/' : 'decided — lands in resolved/'
+    const landing = input.inForce ? 'decided and in force — lands in in-force/' : 'decided — lands in decided/'
     output.log(`  Status:   ${input.decision ? landing : 'pending'}`)
     if (input.decision) output.log(`  The call: ${String(input.decision)}`)
     if (input.when) output.log(`  When:     ${String(input.when)}`)
@@ -166,7 +166,7 @@ export default class DecisionsCreateTask extends Command {
       if (moment.plainDate.ymd > today.plainDateTime.plainDate.ymd) {
         return CommandResult.fail(`When "${args.when}" has not happened yet — leave it out for a decision made now.`)
       }
-      // That day's own timezone, as decisions:resolve --when uses; a day with no file takes today's
+      // That day's own timezone, as decisions:decide --when uses; a day with no file takes today's
       let timezone = today.timezone
       try {
         timezone = (await readDay(moment.plainDate)).timezone

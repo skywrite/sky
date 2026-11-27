@@ -1,6 +1,6 @@
 ---
 created: 2026-07-28
-updated: 2026-11-10
+updated: 2026-11-26
 ---
 
 # Commands
@@ -110,7 +110,7 @@ sky projects:close               # close one out
 
 ```bash
 sky decisions:new                # AI-guided interview to record a decision
-sky decisions:resolve            # record how it turned out
+sky decisions:decide             # record the call on an open decision
 sky decisions:list               # review the register
 sky decisions:export             # export one as a PDF
 sky goals:review                 # review and update goals
@@ -118,9 +118,9 @@ sky ideas:new                    # capture an idea, AI-clarified
 sky ideas:list                   # review them
 ```
 
-Decisions are recorded with their reasoning at the time, then resolved later with the
-outcome. Reading a year of resolved decisions is the single most useful thing in the
-notebook for calibrating your own judgment.
+Decisions are recorded with their reasoning at the time, decided later, and archived once
+the outcome is known. Reading a year of decided decisions is the single most useful thing in
+the notebook for calibrating your own judgment.
 
 ## AI over your notebook
 

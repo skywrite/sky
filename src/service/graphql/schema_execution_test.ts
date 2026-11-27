@@ -264,7 +264,7 @@ Still open.`),
 name: new-office
 summary: Move to new office
 identified: "2026-01-10"
-resolved: "2026-01-25"
+decided: "2026-01-25"
 ---
 Decided.`),
     path: '/test/decisions/new-office.md',
@@ -274,7 +274,7 @@ Decided.`),
 name: no-friday-releases
 summary: No releases on Fridays
 identified: "2026-01-12"
-resolved: "2026-01-12"
+decided: "2026-01-12"
 inForce: true
 ---
 Still binding.`),

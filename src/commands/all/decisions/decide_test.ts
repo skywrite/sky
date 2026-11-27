@@ -4,8 +4,8 @@ import * as path from 'node:path'
 import { runCommand } from '#lib/sys/mod.ts'
 import { assert, test } from '#test'
 
-test('decisions:resolve creates the day file when the decision lands on a day that has none', async () => {
-  const temp = await mkdtemp(path.join(tmpdir(), 'decisions-resolve-test-'))
+test('decisions:decide creates the day file when the decision lands on a day that has none', async () => {
+  const temp = await mkdtemp(path.join(tmpdir(), 'decisions-decide-test-'))
   try {
     // Config is resolved on import, so a child process isolates the notebook.
     const result = await runCommand(
@@ -29,20 +29,20 @@ test('decisions:resolve creates the day file when the decision lands on a day th
       await mkdir(path.dirname(pending), { recursive: true })
       await writeFile(pending, DecisionDocument.create({ name: 'atlas-vendor', title: 'Pick the Atlas vendor' }).toMarkdown())
       const when = new PlainDateTime('2026-04-11 10:00')
-      const resolved = await new Task().run({
+      const decided = await new Task().run({
         args: { name: 'atlas-vendor', when, category: 'Professional Complete' },
         context: { output: { log() {}, error() {} } },
       })
-      check.equal(resolved.ok, true, resolved.message)
+      check.equal(decided.ok, true, decided.message)
       check.equal((await readDay(when.plainDate)).started, undefined)
       const daily = await readFile(path.join(DIR_TIME, dayFile(when.plainDate)), 'utf8')
-      check.equal(daily.split('decisions/atlas-vendor -> Resolved').length - 1, 1)
+      check.equal(daily.split('decisions/atlas-vendor -> Decided').length - 1, 1)
     `,
       ],
       { env: { SKY_DIR: path.join(temp, 'notebook'), SKY_DATA_DIR: path.join(temp, 'user-data') } },
     )
     assert({
-      given: 'a decision resolved onto a day that has no day file',
+      given: 'a decision made on a day that has no day file',
       should: 'create the day, unstarted, with the resolution logged',
       actual: result.success || result.stderr,
       expected: true,

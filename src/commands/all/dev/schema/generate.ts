@@ -177,13 +177,13 @@ const DOCUMENT_TYPES: Record<string, TypeDef> = {
     },
   },
   Decision: {
-    description: 'Decision record: pending, in force, or resolved',
+    description: 'Decision record: pending, in force, or decided',
     fields: {
       name: { type: 'String!', description: 'Decision identifier/slug' },
       summary: { type: 'String', description: 'Human-readable summary', nullable: true },
       identified: { type: 'String', description: 'When identified (ISO datetime)', nullable: true },
       target: { type: 'String', description: 'Target decision date', nullable: true },
-      resolved: { type: 'String', description: 'When resolved (null if pending)', nullable: true },
+      decided: { type: 'String', description: 'When decided (null if pending)', nullable: true },
       isPending: { type: 'Boolean!', description: 'True if not yet made' },
       inForce: {
         type: 'Boolean!',

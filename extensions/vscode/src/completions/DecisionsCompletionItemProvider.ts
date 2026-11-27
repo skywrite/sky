@@ -42,7 +42,7 @@ export default class DecisionsCompletionProvider implements vscode.CompletionIte
 
   private async findAllDecisions(): Promise<Array<{ slug: string; year: string; status: string; month: string }>> {
     const decisions: Array<{ slug: string; year: string; status: string; month: string }> = []
-    const validStatuses = ['pending', 'resolved']
+    const validStatuses = ['pending', 'decided']
 
     try {
       // Read year directories
@@ -53,7 +53,7 @@ export default class DecisionsCompletionProvider implements vscode.CompletionIte
 
         const yearPath = path.join(DIR_DECISIONS, yearEntry.name)
 
-        // Read status directories (pending, resolved - not archived)
+        // Read status directories (pending, decided - not archived)
         const statuses = await fs.readdir(yearPath, { withFileTypes: true })
 
         for (const statusEntry of statuses) {

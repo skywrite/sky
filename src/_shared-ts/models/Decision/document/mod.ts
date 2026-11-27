@@ -8,11 +8,11 @@ import ZonedDateTime from '#universal/dates/nbdt/ZonedDateTime/mod.ts'
  * DecisionDocument model - represents a decision with minimal queryable metadata in YAML
  * and free-form narrative in markdown.
  *
- * Stored at: $SKY_DIR/decisions/{year}/{pending|in-force|resolved|archived}/{month}/{name}.md
+ * Stored at: $SKY_DIR/decisions/{year}/{pending|in-force|decided|archived}/{month}/{name}.md
  *
  * A decision is pending until it is made. A made decision that still binds what
  * the person does (a rule, a freeze, a quit) is in force, until something ends
- * it or the person retires it. Any other made decision is resolved: history.
+ * it or the person retires it. Any other made decision is decided: history.
  * See ../docs/README.md.
  */
 export default class DecisionDocument extends Document {
@@ -86,8 +86,8 @@ export default class DecisionDocument extends Document {
   /**
    * When the decision was made (null if pending)
    */
-  get resolved(): ZonedDateTime | undefined {
-    const value = this.yaml['resolved']
+  get decided(): ZonedDateTime | undefined {
+    const value = this.yaml['decided']
     if (!value) return undefined
     return DecisionDocument.parseZonedDateTime(value)
   }
@@ -102,10 +102,10 @@ export default class DecisionDocument extends Document {
   }
 
   /**
-   * Whether this decision is still pending: not made yet (no resolved date, not in force)
+   * Whether this decision is still pending: not made yet (no decided date, not in force)
    */
   get isPending(): boolean {
-    return !this.resolved && !this.inForce
+    return !this.decided && !this.inForce
   }
 
   /**
@@ -178,8 +178,8 @@ export default class DecisionDocument extends Document {
      * Desired Outcomes and Decision.
      */
     record?: string
-    /** When the decision was made; a decision captured after the fact is born resolved */
-    resolved?: ZonedDateTime
+    /** When the decision was made; a decision captured after the fact is born decided */
+    decided?: ZonedDateTime
     /** The made decision still binds what the person does */
     inForce?: boolean
     tags?: string | TagSet
@@ -194,7 +194,7 @@ export default class DecisionDocument extends Document {
       summary: input.summary ?? input.title ?? input.name,
       identified: DecisionDocument.formatZonedDateTime(identified),
       target: input.target ? DecisionDocument.formatTargetDate(input.target) : null,
-      resolved: input.resolved ? DecisionDocument.formatZonedDateTime(input.resolved) : null,
+      decided: input.decided ? DecisionDocument.formatZonedDateTime(input.decided) : null,
       // Written only when set, so an ordinary decision carries no flag to misread
       ...(input.inForce ? { [DecisionDocument.IN_FORCE_FLAG]: true } : {}),
       created: null, // placeholder, filled by ensureCreatedUpdated
@@ -271,12 +271,12 @@ ${outcome}
   }
 
   /**
-   * Mark this decision as resolved with current time
+   * Mark this decision as decided with current time
    */
-  resolve(resolvedAt?: ZonedDateTime): DecisionDocument {
-    const resolved = resolvedAt ?? new ZonedDateTime()
+  decide(decidedAt?: ZonedDateTime): DecisionDocument {
+    const decided = decidedAt ?? new ZonedDateTime()
     const doc = this.clone()
-    doc._yaml['resolved'] = DecisionDocument.formatZonedDateTime(resolved)
+    doc._yaml['decided'] = DecisionDocument.formatZonedDateTime(decided)
     return doc.ensureUpdated() as DecisionDocument
   }
 

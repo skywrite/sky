@@ -1,7 +1,7 @@
 ---
 name: q1-pricing-strategy
 identified: 2026-01-10T09:00:00-06:00[America/Chicago]
-resolved: 2026-01-19T14:00:00-06:00[America/Chicago]
+decided: 2026-01-19T14:00:00-06:00[America/Chicago]
 created: 2026-01-10
 updated: 2026-01-19
 rel:

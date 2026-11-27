@@ -7,7 +7,7 @@
 #
 # To modify the schema, edit generate.ts and re-run the generator.
 #
-# Generated at: 2026-11-23T03:42:08.852Z
+# Generated at: 2026-11-26T23:32:10.539Z
 # =============================================================================
 
 type Query {
@@ -187,14 +187,14 @@ type Project {
 }
 
 """
-Decision record: pending, in force, or resolved
+Decision record: pending, in force, or decided
 """
 type Decision {
   name: String! # Decision identifier/slug
   summary: String # Human-readable summary
   identified: String # When identified (ISO datetime)
   target: String # Target decision date
-  resolved: String # When resolved (null if pending)
+  decided: String # When decided (null if pending)
   isPending: Boolean! # True if not yet made
   inForce: Boolean! # True while a made decision still binds what the person does (the inForce flag)
   tags: [String!]! # Tags

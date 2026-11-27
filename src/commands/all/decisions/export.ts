@@ -13,7 +13,7 @@ import DecisionDocument from '#shared/models/Decision/mod.ts'
 
 const params = {
   name: Arg.string('Name/slug of the decision to export', { optional: true }),
-  all: Flag.bool('Include resolved and archived decisions in the picker', {
+  all: Flag.bool('Include decided and archived decisions in the picker', {
     short: 'A',
     default: false,
   }),
@@ -35,7 +35,7 @@ declare module '#commands/lib/core/CommandTypesRegistry.ts' {
 // Helpers
 // -----------------------------------------------------------------------------
 
-type DecisionStatus = 'pending' | 'resolved' | 'archived'
+type DecisionStatus = 'pending' | 'decided' | 'archived'
 
 interface DecisionEntry {
   name: string
@@ -61,7 +61,7 @@ async function findDecisions(includeArchived: boolean): Promise<DecisionEntry[]>
       const decision = DecisionDocument.fromMarkdown(content)
 
       let status: DecisionStatus = 'pending'
-      if (entry.path.includes('/resolved/')) status = 'resolved'
+      if (entry.path.includes('/decided/')) status = 'decided'
       else if (entry.path.includes('/archived/')) status = 'archived'
 
       if (!includeArchived && status !== 'pending') continue
@@ -76,8 +76,8 @@ async function findDecisions(includeArchived: boolean): Promise<DecisionEntry[]>
     }
   }
 
-  // Sort: pending first, then resolved, then archived; within each group by name
-  const statusOrder: Record<DecisionStatus, number> = { pending: 0, resolved: 1, archived: 2 }
+  // Sort: pending first, then decided, then archived; within each group by name
+  const statusOrder: Record<DecisionStatus, number> = { pending: 0, decided: 1, archived: 2 }
   decisions.sort((a, b) => {
     if (a.status !== b.status) return statusOrder[a.status] - statusOrder[b.status]
     return a.name.localeCompare(b.name)
@@ -101,7 +101,7 @@ async function findDecision(name: string): Promise<DecisionEntry | null> {
 
       if (decision.name === name) {
         let status: DecisionStatus = 'pending'
-        if (entry.path.includes('/resolved/')) status = 'resolved'
+        if (entry.path.includes('/decided/')) status = 'decided'
         else if (entry.path.includes('/archived/')) status = 'archived'
 
         const titleMatch = content.match(/^#\s+(.+)$/m)
@@ -136,7 +136,7 @@ export default class DecisionsExportTask extends Command {
     descriptionLong: [
       'Exports a decision as a styled PDF to ~/Desktop/',
       'Shows pending decisions by default.',
-      'Use --all to include resolved and archived decisions.',
+      'Use --all to include decided and archived decisions.',
     ],
     usage: [
       'sky decisions:export                    # Interactive selection',
@@ -166,8 +166,8 @@ export default class DecisionsExportTask extends Command {
           const statusLabel =
             d.status === 'pending'
               ? colors.yellow('pending')
-              : d.status === 'resolved'
-                ? colors.green('resolved')
+              : d.status === 'decided'
+                ? colors.green('decided')
                 : colors.dim('archived')
           return {
             value: d.name,

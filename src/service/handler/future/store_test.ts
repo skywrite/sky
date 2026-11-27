@@ -63,7 +63,7 @@ test('Future: a goal with a number shows where it stands and everything tied to 
       expected: {
         inForce: ['No late nights before a long run (2030-03-02)'],
         toDecide: ['Which race to enter'],
-        decided: ['decisions/2030/resolved/03/Hire-a-Coach.md'],
+        decided: ['decisions/2030/decided/03/Hire-a-Coach.md'],
         ideas: ['Join a running club: draft'],
         habits: ['run-before-work'],
         smaller: ['A long run every week'],

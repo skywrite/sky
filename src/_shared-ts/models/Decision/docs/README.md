@@ -1,18 +1,26 @@
 ---
 created: 2026-11-22
-updated: 2026-11-23
+updated: 2026-11-26
 ---
 
-# Decisions — pending, in force, resolved
+# Decisions — pending, in force, decided
 
 A decision is one Markdown file.
 It moves through at most three states.
 
 | State | What it means | Frontmatter | Folder |
 | --- | --- | --- | --- |
-| Pending | Not made yet | no `resolved` date | `decisions/<year>/pending/<month>/` |
+| Pending | Not made yet | no `decided` date | `decisions/<year>/pending/<month>/` |
 | In force | Made, and still binding what the person does | `inForce: true` | `decisions/<year>/in-force/<month>/` |
-| Resolved | Made, and carried out or retired: history | a `resolved` date, no flag | `decisions/<year>/resolved/<month>/` |
+| Decided | Made, and carried out or retired: history | a `decided` date, no flag | `decisions/<year>/decided/<month>/` |
+
+## One word for a made call
+
+Every call is logged on its day as `-> Decided |`, whether it settles an open decision or was written down already made.
+Until 2026-11-26 the folder, the date and the command said "resolved", and the day line used both words for the same event:
+`Resolved` for a call that settled an open decision, `Decided` for one written down already made.
+"Resolved" was picked in January 2026, most likely because `decisions:decide` read awkwardly as a command.
+Keep one word; a second one for the same event makes summaries and searches read as two different things.
 
 ## Why "in force" exists
 
@@ -29,7 +37,7 @@ A decision is in force while it still takes keeping.
 - It may name what ends it ("until the rota is staffed"), in the decision's own prose.
 - It may have no end. Quitting something belongs here for the first years, when a plan can still cut against it.
 - It leaves when the person retires it: the ending arrived, the decision was reversed, or it has simply become who
-  they are. Then the flag comes off and the file moves to `resolved/`.
+  they are. Then the flag comes off and the file moves to `decided/`.
 
 There is nothing to check off, daily or otherwise.
 A habit that is checked each day is a streak, not a decision in force.
@@ -38,12 +46,12 @@ A habit that is checked each day is a streak, not a decision in force.
 
 `inForce: true` is the truth everywhere in code: `DecisionDocument.inForce`, the store's `getInForce()`, the GraphQL
 `inForce` field and filter, and `readInForceDecisions()`.
-Decisions already work this way for the other boundary: the `resolved` date decides pending versus made, and the
+Decisions already work this way for the other boundary: the `decided` date decides pending versus made, and the
 folder follows it.
 
 `decisions:create --in-force` sets the flag and files the document under `in-force/`.
 A file moved into that folder by hand without the flag is not in force, and a flagged file sitting elsewhere is.
-An in-force decision is never pending, even when a hand edit left it without a `resolved` date.
+An in-force decision is never pending, even when a hand edit left it without a `decided` date.
 
 The flag is written only when set.
 An ordinary decision carries no `inForce:` line to misread.
@@ -54,11 +62,11 @@ The folder is `in-force`, hyphenated like other folder names, with no space.
 ## A decision recorded after the fact
 
 A decision is dated by when it was made, not by when it was written down.
-`decisions:create --when "2025-03-10 15:00"` stamps `identified`, `resolved` and `created` with that moment, files the
+`decisions:create --when "2025-03-10 15:00"` stamps `identified`, `decided` and `created` with that moment, files the
 document under that year and month, and puts the day line on that day.
 `updated` alone carries the day the file was written.
 
-The moment takes the timezone of its own day file, as `decisions:resolve --when` does.
+The moment takes the timezone of its own day file, as `decisions:decide --when` does.
 A day with no file takes today's.
 A bare date reads as noon, for a decision whose hour the notebook does not show.
 A moment that has not happened yet is refused.
@@ -77,7 +85,7 @@ edit.
 
 The write core can settle an open decision in place (`settles`): the made call takes the open file's place and
 keeps the day the decision came up.
-`decisions:resolve` does the same from a terminal prompt; the wizard cannot answer a prompt, so it uses the core.
+`decisions:decide` does the same from a terminal prompt; the wizard cannot answer a prompt, so it uses the core.
 An open decision can also be rewritten in place while it is worked on (`updateOpenDecision`): its name, the day it
 came up, its tags and its references are kept, and a file changed by hand since the last write is left alone.
 `decisions:create --no-editor` writes the file without opening it, for a caller that is not a terminal.

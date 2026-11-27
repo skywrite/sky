@@ -79,14 +79,14 @@ test('DecisionStore.build: indexes decision by name', async () => {
     })
 
     assert({
-      given: 'decision without resolved date',
+      given: 'decision without decided date',
       should: 'appear in pending list',
       actual: store.getPending().size,
       expected: 1,
     })
 
     assert({
-      given: 'decision without resolved date',
+      given: 'decision without decided date',
       should: 'not appear in decided list',
       actual: store.getDecided().size,
       expected: 0,

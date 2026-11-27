@@ -108,7 +108,6 @@ Decision details.`),
 name: new-office
 summary: Move to new office
 identified: "2026-01-10"
-resolved: "2026-01-25"
 decided: "2026-01-25"
 tags: [Operations]
 ---

@@ -42,9 +42,9 @@ test(`DecisionDocument.fromMarkdown() with pending decision fixture`, async () =
 
   assert({
     given,
-    should: 'have no resolved date (pending)',
+    should: 'have no decided date (pending)',
     expected: undefined,
-    actual: d.resolved,
+    actual: d.decided,
   })
 
   assert({
@@ -69,8 +69,8 @@ test(`DecisionDocument.fromMarkdown() with pending decision fixture`, async () =
   })
 })
 
-test(`DecisionDocument.fromMarkdown() with resolved decision fixture`, async () => {
-  const given = 'Parse resolved Decision from fixture file'
+test(`DecisionDocument.fromMarkdown() with decided decision fixture`, async () => {
+  const given = 'Parse decided Decision from fixture file'
   const markdown = await readTextFile(path.join(DIR_FIXTURES, 'decided-decision.md'))
   const d = DecisionDocument.fromMarkdown(markdown)
 
@@ -83,16 +83,16 @@ test(`DecisionDocument.fromMarkdown() with resolved decision fixture`, async () 
 
   assert({
     given,
-    should: 'have resolved date',
+    should: 'have decided date',
     expected: '2026-01-19',
-    actual: d.resolved?.date,
+    actual: d.decided?.date,
   })
 
   assert({
     given,
-    should: 'have resolved time',
+    should: 'have decided time',
     expected: '14:00',
-    actual: d.resolved?.time,
+    actual: d.decided?.time,
   })
 
   assert({
@@ -150,7 +150,7 @@ test(`DecisionDocument.create()`, () => {
 
   assert({
     given,
-    should: 'be pending (no resolved)',
+    should: 'be pending (no decided)',
     expected: true,
     actual: d.isPending,
   })
@@ -255,9 +255,9 @@ test(`Decision.toMarkdown()`, () => {
   })
 })
 
-test(`Decision.resolve()`, () => {
-  const given = 'Create pending decision and resolve it'
-  const d = DecisionDocument.create({ name: 'resolve-test' })
+test(`Decision.decide()`, () => {
+  const given = 'Create pending decision and decide it'
+  const d = DecisionDocument.create({ name: 'decide-test' })
 
   assert({
     given,
@@ -266,35 +266,35 @@ test(`Decision.resolve()`, () => {
     actual: d.isPending,
   })
 
-  const resolvedAt = new ZonedDateTime('2026-01-25 15:00', 'America/Chicago')
-  const resolvedDoc = d.resolve(resolvedAt)
+  const decidedAt = new ZonedDateTime('2026-01-25 15:00', 'America/Chicago')
+  const decidedDoc = d.decide(decidedAt)
 
   assert({
     given,
-    should: 'no longer be pending after resolve',
+    should: 'no longer be pending after decide',
     expected: false,
-    actual: resolvedDoc.isPending,
+    actual: decidedDoc.isPending,
   })
 
   assert({
     given,
-    should: 'have resolved date',
+    should: 'have decided date',
     expected: '2026-01-25',
-    actual: resolvedDoc.resolved?.date,
+    actual: decidedDoc.decided?.date,
   })
 
   assert({
     given,
-    should: 'have resolved time',
+    should: 'have decided time',
     expected: '15:00',
-    actual: resolvedDoc.resolved?.time,
+    actual: decidedDoc.decided?.time,
   })
 
   assert({
     given,
     should: 'preserve original name',
-    expected: 'resolve-test',
-    actual: resolvedDoc.name,
+    expected: 'decide-test',
+    actual: decidedDoc.name,
   })
 })
 
@@ -345,13 +345,13 @@ test(`DecisionDocument.create() stamps created/updated from the identified date`
   })
 })
 
-test(`DecisionDocument.create() with a made call is born resolved`, () => {
-  const given = 'Create Decision carrying the decision text and resolved time'
+test(`DecisionDocument.create() with a made call is born decided`, () => {
+  const given = 'Create Decision carrying the decision text and decided time'
   const when = new ZonedDateTime('2026-03-05 09:15', 'America/Chicago')
   const d = DecisionDocument.create({
     name: 'ship-widget',
     identified: when,
-    resolved: when,
+    decided: when,
     title: 'Ship Widget',
     decision: 'Widget ships flagged off.',
   })
@@ -365,9 +365,9 @@ test(`DecisionDocument.create() with a made call is born resolved`, () => {
 
   assert({
     given,
-    should: 'stamp resolved from the provided time',
+    should: 'stamp decided from the provided time',
     expected: '2026-03-05',
-    actual: d.resolved?.date,
+    actual: d.decided?.date,
   })
 
   assert({
@@ -380,17 +380,17 @@ test(`DecisionDocument.create() with a made call is born resolved`, () => {
 
 test('DecisionDocument: a decision in force is made, not pending, and carries the flag only when set', () => {
   const inForce = DecisionDocument.fromMarkdown(
-    '---\nname: No-Friday-Releases\nresolved: 2026-01-12T09:00:00-06:00[America/Chicago]\ninForce: true\n---\n\n# No releases on Fridays',
+    '---\nname: No-Friday-Releases\ndecided: 2026-01-12T09:00:00-06:00[America/Chicago]\ninForce: true\n---\n\n# No releases on Fridays',
   )
   const flagOnly = DecisionDocument.fromMarkdown('---\nname: Quit-Coffee\ninForce: true\n---\n\n# Quit coffee')
   const done = DecisionDocument.fromMarkdown(
-    '---\nname: Ship-Widget\nresolved: 2026-01-12T09:00:00-06:00[America/Chicago]\n---\n\n# Ship Widget',
+    '---\nname: Ship-Widget\ndecided: 2026-01-12T09:00:00-06:00[America/Chicago]\n---\n\n# Ship Widget',
   )
   const open = DecisionDocument.fromMarkdown('---\nname: Choose-Vendor\ninForce: yes please\n---\n\n# Choose a vendor')
 
   assert({
     given:
-      'a decision in force, one flagged by hand with no resolved date, a done one, and an open one with a stray value',
+      'a decision in force, one flagged by hand with no decided date, a done one, and an open one with a stray value',
     should: 'read in force only from `inForce: true`, and never call an in-force decision pending',
     actual: [inForce, flagOnly, done, open].map((d) => [d.name, d.inForce, d.isPending]),
     expected: [
@@ -405,15 +405,15 @@ test('DecisionDocument: a decision in force is made, not pending, and carries th
     DecisionDocument.create({
       name: 'No-Friday-Releases',
       identified: new ZonedDateTime('2026-01-12 09:00', 'America/Chicago'),
-      resolved: new ZonedDateTime('2026-01-12 09:00', 'America/Chicago'),
+      decided: new ZonedDateTime('2026-01-12 09:00', 'America/Chicago'),
       decision: 'No releases on Fridays.',
       inForce,
     }).toMarkdown()
 
   assert({
     given: 'the same made decision created in force and not',
-    should: 'write the flag after resolved in the first, and no flag at all in the second',
-    actual: [/\nresolved: .+\ninForce: true\ncreated: /.test(created(true)), created(false).includes('inForce')],
+    should: 'write the flag after decided in the first, and no flag at all in the second',
+    actual: [/\ndecided: .+\ninForce: true\ncreated: /.test(created(true)), created(false).includes('inForce')],
     expected: [true, false],
   })
 })

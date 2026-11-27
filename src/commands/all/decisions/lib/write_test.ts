@@ -47,7 +47,7 @@ test('writeDecision - writes the document under pending/ keyed to notebook now',
   })
 })
 
-test('writeDecision - a made call lands resolved with the Decision section filled', async () => {
+test('writeDecision - a made call lands decided with the Decision section filled', async () => {
   const decisionsDir = await makeTempDir({ prefix: 'decisions-' })
   const timeDir = await makeTempDir({ prefix: 'time-' })
 
@@ -66,13 +66,13 @@ test('writeDecision - a made call lands resolved with the Decision section fille
 
   assert({
     given: 'a decision that was already made',
-    should: 'land under resolved/, not pending/',
+    should: 'land under decided/, not pending/',
     actual: result.file,
-    expected: path.join(decisionsDir, '2026', 'resolved', '03', 'Ship-Widget.md'),
+    expected: path.join(decisionsDir, '2026', 'decided', '03', 'Ship-Widget.md'),
   })
 
   const content = await readTextFile(result.file)
-  assert({ actual: content.includes('resolved: 2026-03-05'), expected: true })
+  assert({ actual: content.includes('decided: 2026-03-05'), expected: true })
   assert({ actual: content.includes('target:'), expected: true })
   assert({
     given: 'the made call',
@@ -82,7 +82,7 @@ test('writeDecision - a made call lands resolved with the Decision section fille
   })
 
   assert({
-    given: 'a resolved-at-birth decision',
+    given: 'a decided-at-birth decision',
     should: 'record a Decided day item, not Identified',
     actual: result.dayItem,
     expected: '09:15 > decisions/Ship-Widget -> Decided | Ship Widget in the next release',
@@ -152,7 +152,7 @@ test('writeDecision - a made call that still binds lands in in-force/ with the f
     actual: {
       file: inForce.file,
       flag: content.includes('\ninForce: true\n'),
-      resolved: content.includes('resolved: 2026-03-05'),
+      decided: content.includes('decided: 2026-03-05'),
       dayItem: inForce.dayItem,
       unmade: unmade.file,
       unmadeFlag: (await readTextFile(unmade.file)).includes('inForce'),
@@ -160,7 +160,7 @@ test('writeDecision - a made call that still binds lands in in-force/ with the f
     expected: {
       file: path.join(decisionsDir, '2026', 'in-force', '03', 'No-Friday-Releases.md'),
       flag: true,
-      resolved: true,
+      decided: true,
       dayItem: '09:15 > decisions/No-Friday-Releases -> Decided | No releases on Fridays',
       unmade: path.join(decisionsDir, '2026', 'pending', '03', 'Friday-Policy.md'),
       unmadeFlag: false,
@@ -214,7 +214,7 @@ test('writeDecision - a decision recorded after the fact keeps its own day and s
     actual: {
       file: result.file,
       identified: content.includes('identified: 2025-03-10 15:00-04:00[America/New_York]'),
-      resolved: content.includes('resolved: 2025-03-10 15:00-04:00[America/New_York]'),
+      decided: content.includes('decided: 2025-03-10 15:00-04:00[America/New_York]'),
       created: content.includes('\ncreated: 2025-03-10\n'),
       updated: content.includes('\nupdated: 2026-03-05\n'),
       dayItem: result.dayItem,
@@ -222,7 +222,7 @@ test('writeDecision - a decision recorded after the fact keeps its own day and s
     expected: {
       file: path.join(decisionsDir, '2025', 'in-force', '03', 'No-Friday-Releases.md'),
       identified: true,
-      resolved: true,
+      decided: true,
       created: true,
       updated: true,
       dayItem: '15:00 > decisions/No-Friday-Releases -> Decided | No releases on Fridays',
@@ -261,12 +261,12 @@ test('writeDecision - a made call settles an open decision and carries the rest 
 
   assert({
     given: 'an open decision with what was being weighed, then the call made four weeks later',
-    should: 'file the made decision by the day it was made, take the open file away, and log it as resolved',
+    should: 'file the made decision by the day it was made, take the open file away, and log it as decided',
     actual: [made.file, await exists(open.file), made.dayItem],
     expected: [
-      path.join(decisionsDir, '2026', 'resolved', '04', 'Choose-Vendor.md'),
+      path.join(decisionsDir, '2026', 'decided', '04', 'Choose-Vendor.md'),
       false,
-      '10:00 > decisions/Choose-Vendor -> Resolved | Choose Vendor',
+      '10:00 > decisions/Choose-Vendor -> Decided | Choose Vendor',
     ],
   })
   assert({
@@ -274,7 +274,7 @@ test('writeDecision - a made call settles an open decision and carries the rest 
     should: 'keep the day it first came up, and say when it was made and last written',
     actual: [
       content.includes('identified: 2026-03-05 09:15'),
-      content.includes('resolved: 2026-04-02 10:00'),
+      content.includes('decided: 2026-04-02 10:00'),
       content.includes('created: 2026-03-05'),
       content.includes('updated: 2026-04-02'),
     ],
@@ -329,7 +329,7 @@ test('updateOpenDecision - rewrites an open decision in place, and leaves one ed
       [first.changed, first.edited, same.changed],
       written === first.markdown,
       /\nname: Choose-Vendor\nsummary: Which vendor signs the Atlas contract\n/.test(written),
-      /\nidentified: 2026-03-05 09:15[^\n]*\ntarget: 2026-03-20\nresolved:\ncreated: 2026-03-05\nupdated: 2026-03-08\n/.test(
+      /\nidentified: 2026-03-05 09:15[^\n]*\ntarget: 2026-03-20\ndecided:\ncreated: 2026-03-05\nupdated: 2026-03-08\n/.test(
         written,
       ),
       written.includes('rel:\n  - Atlas\n  - goals/Launch\n'),

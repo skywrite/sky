@@ -35,8 +35,8 @@ export default class Decision {
     return this.doc.identified
   }
 
-  get resolved(): ZonedDateTime | undefined {
-    return this.doc.resolved
+  get decided(): ZonedDateTime | undefined {
+    return this.doc.decided
   }
 
   get isPending(): boolean {

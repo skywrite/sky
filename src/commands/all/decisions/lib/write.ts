@@ -58,13 +58,13 @@ export interface WriteDecisionInput {
   target?: string
   /**
    * The decision as made. Presence means the decision was already settled:
-   * it lands in resolved/ with the Decision section filled and resolved
+   * it lands in decided/ with the Decision section filled and decided
    * stamped, instead of joining the pending queue.
    */
   decision?: string
   /**
    * The made decision still binds what the person does (a rule, a freeze, a
-   * quit): it lands in in-force/ with the flag set instead of resolved/.
+   * quit): it lands in in-force/ with the flag set instead of decided/.
    * Means nothing without `decision`.
    */
   inForce?: boolean
@@ -107,7 +107,7 @@ export interface WriteDecisionResult {
 
 /**
  * Create the decision document — under pending/ for an open decision, under
- * resolved/ when the call was already made, or under in-force/ when that made
+ * decided/ when the call was already made, or under in-force/ when that made
  * call still binds what the person does — refuse slug collisions,
  * and record the day item. With `settles`, the made call takes the place of
  * the open decision's file. Directory overrides exist for tests only.
@@ -119,10 +119,10 @@ export async function writeDecision(
   const decisionsDir = dirs.decisionsDir ?? DIR_DECISIONS
   const { now } = input
 
-  // A made call is a resolved decision — it never passes through pending
+  // A made call is filed as decided — it never passes through pending
   const madeCall = input.decision?.trim() || undefined
   const inForce = Boolean(madeCall && input.inForce)
-  const status = inForce ? DecisionDocument.IN_FORCE_DIR : madeCall ? 'resolved' : 'pending'
+  const status = inForce ? DecisionDocument.IN_FORCE_DIR : madeCall ? 'decided' : 'pending'
 
   const year = now.plainDateTime.plainDate.year
   const month = String(now.plainDateTime.plainDate.month).padStart(2, '0')
@@ -141,7 +141,7 @@ export async function writeDecision(
     desiredOutcomes: input.desiredOutcomes,
     record: input.record,
     decision: madeCall,
-    resolved: madeCall ? now : undefined,
+    decided: madeCall ? now : undefined,
     inForce,
     tags: input.tags,
     rel: input.rel,
@@ -157,7 +157,8 @@ export async function writeDecision(
   // The open decision's file goes only once the made one is safely written.
   if (input.settles && input.settles.file !== file) await rm(input.settles.file, { force: true })
 
-  const verb = input.settles && madeCall ? 'Resolved' : madeCall ? 'Decided' : 'Identified'
+  // Every call is logged as Decided, whether it settles an open decision or was written down already made.
+  const verb = madeCall ? 'Decided' : 'Identified'
   const dayItem = `${now.plainDateTime.time} > decisions/${input.name} -> ${verb} | ${input.title}`
   let dayItemWarning: string | undefined
   try {

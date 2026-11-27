@@ -95,7 +95,7 @@ export async function futureFixture({
       decision(
         'No-Late-Nights',
         'No late nights before a long run',
-        'resolved: 2030-03-02T09:00:00-06:00[America/Chicago]\ninForce: true',
+        'decided: 2030-03-02T09:00:00-06:00[America/Chicago]\ninForce: true',
         ['goals/run-a-marathon', 'goals/Learn-Spanish'],
       ),
     )
@@ -104,8 +104,8 @@ export async function futureFixture({
       decision('Which-Race', 'Which race to enter', 'none', ['goals/Run-a-Marathon']),
     )
     await put(
-      'decisions/2030/resolved/03/Hire-a-Coach.md',
-      decision('Hire-a-Coach', 'Hire a coach', 'resolved: 2030-04-01T09:00:00-06:00[America/Chicago]', [
+      'decisions/2030/decided/03/Hire-a-Coach.md',
+      decision('Hire-a-Coach', 'Hire a coach', 'decided: 2030-04-01T09:00:00-06:00[America/Chicago]', [
         'goals/Run-a-Marathon',
       ]),
     )

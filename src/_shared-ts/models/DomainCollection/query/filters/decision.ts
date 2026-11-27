@@ -5,12 +5,12 @@
 import type { Document } from '#shared/models/Markdown/mod.ts'
 
 /**
- * Check if decision is pending (no 'resolved' field).
- * Mirrors DecisionDocument.isPending: pending = not made yet (no resolved date, not in force).
+ * Check if decision is pending (no 'decided' field).
+ * Mirrors DecisionDocument.isPending: pending = not made yet (no decided date, not in force).
  */
 export function matchesPending(doc: Document): boolean {
-  const resolved = doc.yaml['resolved']
-  return (resolved === undefined || resolved === null) && !matchesInForce(doc)
+  const decided = doc.yaml['decided']
+  return (decided === undefined || decided === null) && !matchesInForce(doc)
 }
 
 /**
@@ -22,10 +22,10 @@ export function matchesInForce(doc: Document): boolean {
 }
 
 /**
- * Check if decision is decided/resolved (has 'resolved' field).
+ * Check if decision is decided (has a 'decided' field, or is in force).
  * Mirrors !DecisionDocument.isPending.
  */
 export function matchesDecided(doc: Document): boolean {
-  const resolved = doc.yaml['resolved']
-  return (resolved !== undefined && resolved !== null) || matchesInForce(doc)
+  const decided = doc.yaml['decided']
+  return (decided !== undefined && decided !== null) || matchesInForce(doc)
 }

@@ -37,7 +37,7 @@ declare module '#commands/lib/core/CommandTypesRegistry.ts' {
 // Helpers
 // -----------------------------------------------------------------------------
 
-type DecisionStatus = 'pending' | 'resolved' | 'archived'
+type DecisionStatus = 'pending' | 'decided' | 'archived'
 
 interface DecisionFile {
   name: string
@@ -49,7 +49,7 @@ interface DecisionFile {
 function getStatusFromPath(filePath: string): DecisionStatus {
   if (filePath.includes('/pending/')) return 'pending'
   if (filePath.includes('/archived/')) return 'archived'
-  if (filePath.includes('/resolved/')) return 'resolved'
+  if (filePath.includes('/decided/')) return 'decided'
   return 'pending'
 }
 

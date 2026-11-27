@@ -200,7 +200,7 @@ export class FutureStore {
             name: baseName(file),
             title: doc.summary || firstHeading(doc.markdown) || baseName(file),
             file: this.relative(file),
-            since: (doc.resolved ?? doc.identified)?.plainDateTime.plainDate.ymd ?? null,
+            since: (doc.decided ?? doc.identified)?.plainDateTime.plainDate.ymd ?? null,
           },
         }))
         // Newest first: what was decided last is what a person looks for.

@@ -50,7 +50,7 @@ export function matchesDecisionFilter(doc: Document, filter: DecisionFilter, res
 }
 
 export function docToDecision(doc: Document, path: string) {
-  const resolved = getField(doc, 'resolved')
+  const decided = getField(doc, 'decided')
   const identified = getField(doc, 'identified')
   const target = getField(doc, 'target')
   return {
@@ -58,7 +58,7 @@ export function docToDecision(doc: Document, path: string) {
     summary: getOptionalStringField(doc, 'summary'),
     identified: identified != null ? String(identified) : null,
     target: target != null ? String(target) : null,
-    resolved: resolved != null ? String(resolved) : null,
+    decided: decided != null ? String(decided) : null,
     isPending: matchesPending(doc),
     inForce: matchesInForce(doc),
     ...docBase(doc, path),

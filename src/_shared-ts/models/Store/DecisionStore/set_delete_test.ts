@@ -99,11 +99,11 @@ test('DecisionStore.getInForce: a decision in force is neither pending nor lost 
   store.set('/decisions/2026/pending/03/Choose-Vendor.md', '---\nname: Choose-Vendor\n---\n\n# Choose a vendor')
   store.set(
     '/decisions/2026/in-force/01/No-Friday-Releases.md',
-    '---\nname: No-Friday-Releases\nresolved: 2026-01-12T09:00:00-06:00[America/Chicago]\ninForce: true\n---\n\n# No releases on Fridays',
+    '---\nname: No-Friday-Releases\ndecided: 2026-01-12T09:00:00-06:00[America/Chicago]\ninForce: true\n---\n\n# No releases on Fridays',
   )
   store.set(
-    '/decisions/2026/resolved/02/Ship-Widget.md',
-    '---\nname: Ship-Widget\nresolved: 2026-02-03T09:00:00-06:00[America/Chicago]\n---\n\n# Ship Widget',
+    '/decisions/2026/decided/02/Ship-Widget.md',
+    '---\nname: Ship-Widget\ndecided: 2026-02-03T09:00:00-06:00[America/Chicago]\n---\n\n# Ship Widget',
   )
   const names = (docs: { getAll(): Array<{ name: string }> }) => docs.getAll().map((d) => d.name)
 

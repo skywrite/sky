@@ -14,7 +14,7 @@ const params = {
     short: 'A',
     default: false,
   }),
-  resolved: Flag.bool('Show only resolved decisions (not archived)', {
+  decided: Flag.bool('Show only decided decisions (not archived)', {
     short: 'r',
     default: false,
   }),
@@ -34,7 +34,7 @@ const params = {
 
 type Params = InferParams<typeof params>
 
-type DecisionStatus = 'pending' | 'resolved' | 'archived'
+type DecisionStatus = 'pending' | 'decided' | 'archived'
 
 interface DecisionInfo {
   name: string
@@ -42,7 +42,7 @@ interface DecisionInfo {
   status: DecisionStatus
   identified: string
   target: string | null
-  resolved: string | null
+  decided: string | null
   tags: string
   filePath: string
 }
@@ -65,7 +65,7 @@ declare module '#commands/lib/core/CommandTypesRegistry.ts' {
 function getStatusFromPath(filePath: string): DecisionStatus {
   if (filePath.includes('/pending/')) return 'pending'
   if (filePath.includes('/archived/')) return 'archived'
-  if (filePath.includes('/resolved/')) return 'resolved'
+  if (filePath.includes('/decided/')) return 'decided'
   // Legacy paths without status directory - check the document
   return 'pending'
 }
@@ -80,12 +80,12 @@ export default class DecisionsListTask extends Command {
     description: 'List decisions with optional filtering.',
     descriptionLong: [
       'Lists all decisions from the decision register.',
-      'Supports filtering by status (pending/resolved/archived), tags, and year.',
+      'Supports filtering by status (pending/decided/archived), tags, and year.',
     ],
     usage: [
       'sky decisions:list                   # List pending decisions (default)',
       'sky decisions:list --all             # List all decisions',
-      'sky decisions:list --resolved        # List only resolved decisions',
+      'sky decisions:list --decided        # List only decided decisions',
       'sky decisions:list --archived        # List only archived decisions',
       'sky decisions:list --tag hiring      # Filter by tag',
       'sky decisions:list --year 2026       # Filter by year',
@@ -95,9 +95,9 @@ export default class DecisionsListTask extends Command {
 
   async run({ args, context }: CommandArgs<Params>): Promise<CommandResult<Result>> {
     const { output } = context
-    const { all, resolved, archived, tag, year } = args
-    // Default to pending-only unless --all, --resolved, or --archived is set
-    const pending = !all && !resolved && !archived
+    const { all, decided, archived, tag, year } = args
+    // Default to pending-only unless --all, --decided, or --archived is set
+    const pending = !all && !decided && !archived
 
     const decisionsDir = DIR_DECISIONS
     const decisions: DecisionInfo[] = []
@@ -117,7 +117,7 @@ export default class DecisionsListTask extends Command {
 
           // Apply status filters
           if (pending && status !== 'pending') continue
-          if (resolved && status !== 'resolved') continue
+          if (decided && status !== 'decided') continue
           if (archived && status !== 'archived') continue
 
           // Apply tag filter
@@ -143,7 +143,7 @@ export default class DecisionsListTask extends Command {
             status,
             identified: decision.identified?.date ?? 'unknown',
             target: targetStr,
-            resolved: decision.resolved?.date ?? null,
+            decided: decision.decided?.date ?? null,
             tags: String(decision.tags),
             filePath: entry.path,
           })
@@ -157,7 +157,7 @@ export default class DecisionsListTask extends Command {
     decisions.sort((a, b) => b.identified.localeCompare(a.identified))
 
     if (decisions.length === 0) {
-      const filterDesc = pending ? 'pending ' : resolved ? 'resolved ' : archived ? 'archived ' : ''
+      const filterDesc = pending ? 'pending ' : decided ? 'decided ' : archived ? 'archived ' : ''
       output.log(`No ${filterDesc}decisions found.`)
       return CommandResult.success({ decisions: [] })
     }

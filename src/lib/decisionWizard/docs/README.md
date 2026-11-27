@@ -1,6 +1,6 @@
 ---
 created: 2026-11-23
-updated: 2026-11-24
+updated: 2026-11-26
 ---
 
 # The decision wizard
@@ -69,7 +69,7 @@ Everything that does write goes through a command or the write core:
 
 - A new decision: `decisions:create`.
 - An open decision being settled: the write core's `settles`.
-  `decisions:resolve` asks at a terminal prompt, so it cannot be run from the page.
+  `decisions:decide` asks at a terminal prompt, so it cannot be run from the page.
 - A check kept as a to-do, and a reminder on each day chosen to look back: `day:items:add`.
 
 ## A run is Sky's working state

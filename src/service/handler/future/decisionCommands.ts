@@ -70,7 +70,7 @@ export interface DecisionCommands {
  * Each write is the one the terminal and chat make: `decisions:create` for a
  * new decision, `day:items:add` for a to-do or a reminder, both run in-process.
  *
- * Settling an open decision has no command to run. `decisions:resolve` asks
+ * Settling an open decision has no command to run. `decisions:decide` asks
  * for the decision at a terminal prompt, so the wizard goes through the same
  * write core that command and `decisions:create` share.
  */

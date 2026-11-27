@@ -29,7 +29,7 @@ declare module '#commands/lib/core/CommandTypesRegistry.ts' {
   }
 }
 
-interface ResolvedDecision {
+interface DecidedDecision {
   name: string
   title: string
   path: string
@@ -38,58 +38,58 @@ interface ResolvedDecision {
 }
 
 /**
- * Find all resolved (not archived) decisions in year/resolved/ directories
+ * Find all decided (not archived) decisions in year/decided/ directories
  */
-async function findResolvedDecisions(): Promise<ResolvedDecision[]> {
-  const resolved: ResolvedDecision[] = []
+async function findDecidedDecisions(): Promise<DecidedDecision[]> {
+  const decided: DecidedDecision[] = []
 
   if (!(await exists(DIR_DECISIONS))) {
-    return resolved
+    return decided
   }
 
   for await (const entry of walk(DIR_DECISIONS, { exts: ['.md'], includeDirs: false })) {
     if (entry.name === '.gitkeep') continue
-    if (!entry.path.includes('/resolved/')) continue
+    if (!entry.path.includes('/decided/')) continue
 
     try {
       const content = await readTextFile(entry.path)
       const decision = DecisionDocument.fromMarkdown(content)
 
-      // Extract year and month from path: decisions/YYYY/resolved/MM/name.md
-      const pathMatch = entry.path.match(/decisions\/(\d{4})\/resolved\/(\d{2})\//)
+      // Extract year and month from path: decisions/YYYY/decided/MM/name.md
+      const pathMatch = entry.path.match(/decisions\/(\d{4})\/decided\/(\d{2})\//)
       const year = pathMatch ? parseInt(pathMatch[1]) : new Date().getFullYear()
       const month = pathMatch ? pathMatch[2] : '01'
 
       const titleMatch = content.match(/^#\s+(.+)$/m)
       const title = titleMatch ? titleMatch[1] : decision.name
 
-      resolved.push({ name: decision.name, title, path: entry.path, year, month })
+      decided.push({ name: decision.name, title, path: entry.path, year, month })
     } catch {
       // Skip files that can't be parsed
     }
   }
 
-  return resolved
+  return decided
 }
 
 /**
- * Find a specific resolved decision by name
+ * Find a specific decided decision by name
  */
-async function findResolvedDecision(name: string): Promise<ResolvedDecision | null> {
+async function findDecidedDecision(name: string): Promise<DecidedDecision | null> {
   if (!(await exists(DIR_DECISIONS))) {
     return null
   }
 
   for await (const entry of walk(DIR_DECISIONS, { exts: ['.md'], includeDirs: false })) {
     if (entry.name === '.gitkeep') continue
-    if (!entry.path.includes('/resolved/')) continue
+    if (!entry.path.includes('/decided/')) continue
 
     try {
       const content = await readTextFile(entry.path)
       const decision = DecisionDocument.fromMarkdown(content)
 
       if (decision.name === name) {
-        const pathMatch = entry.path.match(/decisions\/(\d{4})\/resolved\/(\d{2})\//)
+        const pathMatch = entry.path.match(/decisions\/(\d{4})\/decided\/(\d{2})\//)
         const year = pathMatch ? parseInt(pathMatch[1]) : new Date().getFullYear()
         const month = pathMatch ? pathMatch[2] : '01'
 
@@ -109,9 +109,9 @@ async function findResolvedDecision(name: string): Promise<ResolvedDecision | nu
 export default class DecisionsArchiveTask extends Command {
   static override description: CommandDescription = {
     name: 'decisions:archive',
-    description: 'Archive a resolved decision after reviewing its outcome.',
+    description: 'Archive a decided decision after reviewing its outcome.',
     descriptionLong: [
-      'Moves a decision from resolved/ to archived/ after outcome review.',
+      'Moves a decision from decided/ to archived/ after outcome review.',
       'Use this when you have reviewed the outcome of a decision and',
       'no longer need to track it for follow-up.',
     ],
@@ -129,18 +129,18 @@ export default class DecisionsArchiveTask extends Command {
 
     p.intro(colors.bold(colors.cyan('Archive Decision')))
 
-    // If no name provided, list resolved decisions and let user pick
+    // If no name provided, list decided decisions and let user pick
     if (!name) {
-      const resolved = await findResolvedDecisions()
+      const decided = await findDecidedDecisions()
 
-      if (resolved.length === 0) {
-        output.log('No resolved decisions found to archive.')
-        return CommandResult.fail('No resolved decisions')
+      if (decided.length === 0) {
+        output.log('No decided decisions found to archive.')
+        return CommandResult.fail('No decided decisions')
       }
 
       const selected = await p.select({
         message: 'Which decision do you want to archive?',
-        options: resolved.map((d) => ({
+        options: decided.map((d) => ({
           value: d.name,
           label: d.name,
           hint: d.title,
@@ -155,12 +155,12 @@ export default class DecisionsArchiveTask extends Command {
       name = selected as string
     }
 
-    // Find the decision in resolved/
-    const decision = await findResolvedDecision(name)
+    // Find the decision in decided/
+    const decision = await findDecidedDecision(name)
 
     if (!decision) {
-      output.error(`Resolved decision "${name}" not found.`)
-      return CommandResult.fail(`Resolved decision "${name}" not found`)
+      output.error(`No decided decision is named "${name}".`)
+      return CommandResult.fail(`No decided decision is named "${name}"`)
     }
 
     // Read the decision file
@@ -203,7 +203,7 @@ export default class DecisionsArchiveTask extends Command {
       }
     }
 
-    // Determine the new path: year/archived/month/name.md (same month as resolved)
+    // Determine the new path: year/archived/month/name.md (same month as decided)
     const newPath = path.join(DIR_DECISIONS, String(decision.year), 'archived', decision.month, `${decision.name}.md`)
 
     // Ensure the archived directory exists
@@ -216,10 +216,10 @@ export default class DecisionsArchiveTask extends Command {
     await writeTextFile(newPath, finalContent)
     output.log(colors.green(`Archived: ${newPath}`))
 
-    // Remove the old file from resolved/
+    // Remove the old file from decided/
     try {
       await unlink(decision.path)
-      output.log(colors.gray(`Removed from resolved/`))
+      output.log(colors.gray(`Removed from decided/`))
     } catch (err) {
       output.log(colors.yellow(`Warning: Could not remove old file: ${(err as Error).message}`))
     }

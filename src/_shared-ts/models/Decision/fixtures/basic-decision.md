@@ -1,7 +1,7 @@
 ---
 name: hire-sarah-vp-engineering
 identified: 2026-01-15T10:30:00-06:00[America/Chicago]
-resolved:
+decided:
 created: 2026-01-15
 updated: 2026-01-15
 rel:

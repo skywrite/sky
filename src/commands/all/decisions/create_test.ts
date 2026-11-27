@@ -53,7 +53,7 @@ test('decisions:create --when dates, files and logs a decision on the day it was
       check.equal(created.ok, true, created.message)
       const content = await readFile(path.join(DIR_DECISIONS, '2025', 'in-force', '03', 'No-Friday-Releases.md'), 'utf8')
       check.ok(content.includes('identified: 2025-03-10 15:00-04:00[America/New_York]'), content)
-      check.ok(content.includes('resolved: 2025-03-10 15:00-04:00[America/New_York]'), content)
+      check.ok(content.includes('decided: 2025-03-10 15:00-04:00[America/New_York]'), content)
       check.ok(content.includes('\\ninForce: true\\n'), content)
       check.ok(content.includes('\\ncreated: 2025-03-10\\n'), content)
       check.ok(content.includes('\\nupdated: ' + today.ymd + '\\n'), content)

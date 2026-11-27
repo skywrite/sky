@@ -3,7 +3,7 @@ name: No-Friday-Releases
 summary: No releases on Fridays until the on-call rota is staffed
 identified: 2026-01-12T09:00:00-06:00[America/Chicago]
 target:
-resolved: 2026-01-12T09:00:00-06:00[America/Chicago]
+decided: 2026-01-12T09:00:00-06:00[America/Chicago]
 inForce: true
 created: 2026-01-12
 updated: 2026-01-12

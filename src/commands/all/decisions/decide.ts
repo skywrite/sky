@@ -15,7 +15,7 @@ import ZonedDateTime from '#universal/dates/nbdt/ZonedDateTime/mod.ts'
 
 const params = {
   name: Arg.string('Name/slug of the decision to decide', { optional: true }),
-  when: Flag.plainDateTime('Resolve at a past date/time (e.g., 2026-01-20 14:00)', {
+  when: Flag.plainDateTime('Decide at a past date/time (e.g., 2026-01-20 14:00)', {
     short: 'w',
     optional: true,
   }),
@@ -27,7 +27,7 @@ type Result = { file: string; name: string }
 
 declare module '#commands/lib/core/CommandTypesRegistry.ts' {
   interface CommandTypesRegistry {
-    'decisions:resolve': {
+    'decisions:decide': {
       params: Params
       result: Result
     }
@@ -132,21 +132,21 @@ function updateDecisionSection(markdown: string, decisionText: string): string {
   return markdown + `\n\n## Decision\n\n${decisionText}\n`
 }
 
-export default class DecisionsResolveTask extends Command {
+export default class DecisionsDecideTask extends Command {
   static override description: CommandDescription = {
-    name: 'decisions:resolve',
-    description: 'Mark a decision as resolved and record the decision.',
+    name: 'decisions:decide',
+    description: 'Mark a decision as decided and record the decision.',
     descriptionLong: [
-      'Marks a pending decision as resolved by:',
+      'Marks a pending decision as decided by:',
       '1. Recording what was decided in the ## Decision section',
-      '2. Setting the resolved timestamp',
-      '3. Moving the file from pending/ to resolved/',
+      '2. Setting the decided timestamp',
+      '3. Moving the file from pending/ to decided/',
     ],
     usage: [
-      'sky decisions:resolve                              # Interactive selection',
-      'sky decisions:resolve my-decision                  # Decide by name',
-      'sky decisions:resolve --when "2026-01-20 14:00"    # Resolve at a past date/time',
-      'sky decisions:resolve --category Personal           # Set day item category',
+      'sky decisions:decide                              # Interactive selection',
+      'sky decisions:decide my-decision                  # Decide by name',
+      'sky decisions:decide --when "2026-01-20 14:00"    # Decide at a past date/time',
+      'sky decisions:decide --category Personal           # Set day item category',
     ],
     params,
   }
@@ -196,28 +196,28 @@ export default class DecisionsResolveTask extends Command {
     const decisionDoc = DecisionDocument.fromMarkdown(content)
 
     if (!decisionDoc.isPending) {
-      output.error(`Decision "${name}" has already been resolved.`)
-      return CommandResult.fail('Decision already resolved')
+      output.error(`Decision "${name}" has already been decided.`)
+      return CommandResult.fail('Decision already decided')
     }
 
-    // Build the resolved ZonedDateTime: from --when + day's TZ, or fetchNow()
-    let resolvedAt: ZonedDateTime
+    // Build the decided ZonedDateTime: from --when + day's TZ, or fetchNow()
+    let decidedAt: ZonedDateTime
     if (when) {
       const dayDate = when.plainDate
       try {
         const dayDoc = await readDay(dayDate)
-        resolvedAt = new ZonedDateTime(when, dayDoc.timezone)
+        decidedAt = new ZonedDateTime(when, dayDoc.timezone)
       } catch {
         // Day file may not exist for that date; fall back to default TZ
-        resolvedAt = new ZonedDateTime(when, 'America/Chicago')
+        decidedAt = new ZonedDateTime(when, 'America/Chicago')
       }
     } else {
       const now = await fetchNow()
-      resolvedAt = new ZonedDateTime(now.plainDateTime, now.timezone)
+      decidedAt = new ZonedDateTime(now.plainDateTime, now.timezone)
     }
 
     // Prompt for what was decided
-    const whenLabel = when ? colors.yellow(`(resolving as of ${resolvedAt.toString()})`) : ''
+    const whenLabel = when ? colors.yellow(`(deciding as of ${decidedAt.toString()})`) : ''
     const decisionText = await p.text({
       message: `What did you decide? ${whenLabel}\n`,
       placeholder: 'Enter the decision...',
@@ -234,24 +234,24 @@ export default class DecisionsResolveTask extends Command {
     // Update the Decision section in the full content (frontmatter + body)
     const updatedContent = updateDecisionSection(content, decisionText as string)
 
-    // Parse and resolve the decision (sets resolved timestamp)
-    const resolvedDoc = DecisionDocument.fromMarkdown(updatedContent).resolve(resolvedAt)
+    // Mark the decision decided (sets the decided timestamp)
+    const decidedDoc = DecisionDocument.fromMarkdown(updatedContent).decide(decidedAt)
 
-    // Determine the new path: year/resolved/month/name.md
-    const resolvedDate = resolvedAt.plainDateTime.plainDate
-    const year = resolvedDate.year
-    const month = String(resolvedDate.month).padStart(2, '0')
-    const newPath = path.join(DIR_DECISIONS, String(year), 'resolved', month, `${decision.name}.md`)
+    // Determine the new path: year/decided/month/name.md
+    const decidedDate = decidedAt.plainDateTime.plainDate
+    const year = decidedDate.year
+    const month = String(decidedDate.month).padStart(2, '0')
+    const newPath = path.join(DIR_DECISIONS, String(year), 'decided', month, `${decision.name}.md`)
 
-    // Ensure the resolved directory exists
+    // Ensure the decided directory exists
     const newDir = path.dirname(newPath)
     if (!(await exists(newDir))) {
       await outputFile(path.join(newDir, '.gitkeep'), '')
     }
 
     // Write to the new location
-    await writeTextFile(newPath, resolvedDoc.toMarkdown())
-    output.log(colors.green(`Resolved: ${newPath}`))
+    await writeTextFile(newPath, decidedDoc.toMarkdown())
+    output.log(colors.green(`Decided: ${newPath}`))
 
     // Remove the old file from pending/
     try {
@@ -262,11 +262,11 @@ export default class DecisionsResolveTask extends Command {
     }
 
     // Add day item
-    const entryTime = resolvedAt.plainDateTime.time
-    const dayItem = `${entryTime} > decisions/${decision.name} -> Resolved | ${decision.title}`
+    const entryTime = decidedAt.plainDateTime.time
+    const dayItem = `${entryTime} > decisions/${decision.name} -> Decided | ${decision.title}`
 
     try {
-      await writeDayItems(resolvedAt.plainDateTime.plainDate, category, dayItem)
+      await writeDayItems(decidedAt.plainDateTime.plainDate, category, dayItem)
       output.log(colors.gray(`Added to ${category}: ${dayItem}`))
     } catch (err) {
       output.log(colors.yellow(`Warning: Could not add day item: ${(err as Error).message}`))
@@ -280,7 +280,7 @@ export default class DecisionsResolveTask extends Command {
       // Editor opening is best-effort
     }
 
-    p.outro(colors.green(`Decision "${name}" marked as resolved`))
+    p.outro(colors.green(`Decision "${name}" marked as decided`))
 
     return CommandResult.success({ file: newPath, name: decision.name })
   }

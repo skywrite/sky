@@ -36,7 +36,7 @@ interface OpenQuestion {
 type Result = {
   title: string
   name: string
-  /** The call as made — non-null means the decision is already settled and will land resolved */
+  /** The call as made — non-null means the decision is already settled and will land decided */
   decision: string | null
   target: string | null
   context: string
