@@ -544,6 +544,22 @@ test('provider startup and asynchronous backend validation failures retain their
   })
 })
 
+test('a rejected note from the service is skipped; the call goes on', async () => {
+  const h = harness()
+  const peer = await h.open()
+  peer.dc.emit({
+    type: 'error',
+    error: { code: 'too_long', message: 'Context too long.', client_event_id: 'sky-note-3' },
+  })
+  assert({
+    given: 'an error answering one of the service’s own notes',
+    should: 'keep the call live with no error shown',
+    actual: [h.controller.state.phase, h.controller.state.error, peer.connectionState],
+    expected: ['live', null, 'connected'],
+  })
+  await h.close()
+})
+
 test('mute and microphone replacement preserve the selected recording state', async () => {
   const h = harness()
   await h.open()

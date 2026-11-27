@@ -1,3 +1,4 @@
+import { isVoiceNoteError } from '#universal/ai/voiceNotes.ts'
 import type { VoiceChatRequest } from '../../../service/handler/voice/chatTools.ts'
 import { LiveTranscript, type VoiceTurn } from './liveTranscript.ts'
 /** One GPT-Live connection; speech and delegated Responses work have independent lifecycles. */
@@ -365,6 +366,8 @@ export class VoiceController {
         this.backendEvent(call, event)
         break
       case 'error':
+        // A note the service added on its own was rejected: only that note is lost, not the call.
+        if (isVoiceNoteError(event)) break
         this.fail(call, event.error?.message ?? 'The voice service rejected a request. Try again.')
         break
     }

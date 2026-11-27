@@ -24,7 +24,8 @@ export interface VoiceEvent {
     item?: { type: string; call_id?: string; name?: string; arguments?: string }
     response?: { id: string; status?: string; error?: { message?: string } }
   }
-  error?: { code?: string | null; message?: string }
+  error?: { code?: string | null; message?: string; client_event_id?: string }
+  client_event_id?: string
 }
 
 /** The Live session needs the gathered SDP, not the earlier candidate-free offer. */
