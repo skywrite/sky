@@ -3,8 +3,9 @@ import type { LanguageModelV4CallOptions, LanguageModelV4ToolResultOutput } from
 import { APICallError, type LanguageModelMiddleware, RetryError } from 'ai'
 import {
   ANTHROPIC_REQUEST_BYTES,
-  InputTokenLimitError,
+  countsOwnRequests,
   inputTokenLimit,
+  InputTokenLimitError,
   RequestBodyLimitError,
   withContextWindow,
 } from '#shared/ai/inputTokenLimit.ts'
@@ -281,9 +282,9 @@ export function requestBudgetMiddleware(options: {
       const fitted = prepared(params)
       const workingWindow = window === undefined ? undefined : reserveHeadroom ? Math.floor(window * 0.85) : window
       try {
-        // Claude and OpenAI Responses count after SDK serialization by their provider fetch.
+        // Claude, OpenAI Responses and Gemini count after SDK serialization by their provider fetch.
         // Other hosts use a conservative estimate and the same rejection retry.
-        if (workingWindow !== undefined && !provider.startsWith('anthropic') && provider !== 'openai.responses') {
+        if (workingWindow !== undefined && !countsOwnRequests(provider)) {
           const tokens = Math.ceil(JSON.stringify({ prompt: fitted.prompt, tools: fitted.tools }).length / 2)
           const limit = inputTokenLimit(workingWindow, fitted.maxOutputTokens)
           if (tokens > limit) throw new InputTokenLimitError(tokens, limit)

@@ -1,6 +1,7 @@
 import { createGoogle, type GoogleProvider } from '@ai-sdk/google'
 import { KeychainSecretsProvider } from '#lib/secrets/KeychainSecretsProvider.ts'
 import type { SecretsProvider } from '#lib/secrets/SecretsProvider.ts'
+import { withGeminiTokenCount } from '#shared/ai/inputTokenLimit.ts'
 import { keychainAuthFetch, readKey } from '#shared/ai/keychainAuthFetch.ts'
 import { createModelFetch } from './modelFetch.ts'
 
@@ -30,13 +31,14 @@ export function createGeminiProvider(options: { secrets: SecretsProvider; fetch?
   return createGoogle({
     name: 'gemini',
     baseURL: GEMINI_BASE_URL,
-    // The SDK insists on a key at construction; the real one rides in on the fetch.
+    // The SDK insists on a key at construction; the real one rides in on the fetch,
+    // outermost so the token count's preflight is signed too.
     apiKey: 'keychain',
     fetch: keychainAuthFetch(
       options.secrets,
       GEMINI_SECRET,
       MISSING_GEMINI_KEY,
-      createModelFetch({ fetch: options.fetch }),
+      withGeminiTokenCount(createModelFetch({ fetch: options.fetch })),
     ),
   })
 }

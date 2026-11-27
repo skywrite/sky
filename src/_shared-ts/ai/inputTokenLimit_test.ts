@@ -3,8 +3,10 @@ import {
   ANTHROPIC_REQUEST_BYTES,
   InputTokenLimitError,
   RequestBodyLimitError,
+  countsOwnRequests,
   withAnthropicTokenCount,
   withContextWindow,
+  withGeminiTokenCount,
   withOpenAITokenCount,
 } from './inputTokenLimit.ts'
 
@@ -255,5 +257,140 @@ test('an unavailable token counter falls back to the ordinary request, but cance
     should: 'continue the first request and stop the second before generation',
     actual: { generations, stopped },
     expected: { generations: 1, stopped: true },
+  })
+})
+
+const GEMINI_URL = 'https://generativelanguage.googleapis.com/v1beta/models/test-model:streamGenerateContent?alt=sse'
+const GEMINI_BODY = {
+  generationConfig: { maxOutputTokens: 200, thinkingConfig: { thinkingLevel: 'high' } },
+  contents: [{ role: 'user', parts: [{ text: 'What is on the Atlas roadmap?' }] }],
+  systemInstruction: { parts: [{ text: 'You are a test assistant.' }] },
+  safetySettings: [],
+  tools: [{ functionDeclarations: [{ name: 'lookup', description: 'Look up one Atlas record.' }] }],
+  toolConfig: { functionCallingConfig: { mode: 'AUTO' } },
+}
+
+test('Gemini counts the whole request with Google’s counter and reserves its actual output allowance', async () => {
+  const calls: Array<{ url: string; body: Record<string, unknown>; key: string | null }> = []
+  const fetcher = withGeminiTokenCount((async (url, init) => {
+    calls.push({
+      url: String(url),
+      body: JSON.parse(init!.body as string),
+      key: new Headers(init?.headers).get('x-goog-api-key'),
+    })
+    return Response.json({ totalTokens: 810 })
+  }) as typeof fetch)
+  let failure: unknown
+  try {
+    await withContextWindow(1000, () =>
+      fetcher(GEMINI_URL, {
+        method: 'POST',
+        headers: { 'x-goog-api-key': 'test-key' },
+        body: JSON.stringify(GEMINI_BODY),
+      }),
+    )
+  } catch (error) {
+    failure = error
+  }
+  const { safetySettings: _unused, ...counted } = GEMINI_BODY
+  assert({
+    given:
+      'a streaming request whose system instruction, tools and history fit alone but leave too little room for output',
+    should:
+      'count them together under the model’s path before generation, with the same key, and refuse the request without sending it',
+    actual: {
+      calls,
+      failure: failure instanceof InputTokenLimitError ? [failure.tokens, failure.limit] : null,
+    },
+    expected: {
+      calls: [
+        {
+          url: 'https://generativelanguage.googleapis.com/v1beta/models/test-model:countTokens',
+          body: { generateContentRequest: { model: 'models/test-model', ...counted } },
+          key: 'test-key',
+        },
+      ],
+      failure: [810, 790],
+    },
+  })
+})
+
+test('Gemini counting is scoped to each chat, covers both generation calls, and leaves other endpoints alone', async () => {
+  const urls: string[] = []
+  const fetcher = withGeminiTokenCount((async (url) => {
+    urls.push(String(url).replace('https://generativelanguage.googleapis.com/v1beta/', ''))
+    return Response.json({ totalTokens: 300 })
+  }) as typeof fetch)
+  const post = (url: string) => fetcher(url, { method: 'POST', body: JSON.stringify(GEMINI_BODY) })
+  const base = 'https://generativelanguage.googleapis.com/v1beta'
+  await post(GEMINI_URL)
+  await withContextWindow(1000, () => post(`${base}/models/test-model:generateContent`))
+  await withContextWindow(1000, () => post(`${base}/models/test-model:embedContent`))
+  await withContextWindow(1000, () => post(GEMINI_URL))
+  assert({
+    given: 'a call outside any chat window, then a plain and a streaming generation and an unrelated call inside one',
+    should: 'count only the two generations inside the window, each before its own request',
+    actual: urls,
+    expected: [
+      'models/test-model:streamGenerateContent?alt=sse',
+      'models/test-model:countTokens',
+      'models/test-model:generateContent',
+      'models/test-model:embedContent',
+      'models/test-model:countTokens',
+      'models/test-model:streamGenerateContent?alt=sse',
+    ],
+  })
+})
+
+test('a Gemini counter that fails does not reject valid generation or swallow cancellation', async () => {
+  const outcomes: string[] = []
+  for (const counter of ['error', 'unreadable', 'throws'] as const) {
+    const fetcher = withGeminiTokenCount((async (url) => {
+      if (!String(url).endsWith(':countTokens')) return new Response('generated')
+      if (counter === 'error') return Response.json({ error: { code: 400 } }, { status: 400 })
+      if (counter === 'unreadable') return Response.json({ totalTokens: 'many' })
+      throw new Error('counter offline')
+    }) as typeof fetch)
+    const response = await withContextWindow(1000, () =>
+      fetcher(GEMINI_URL, { method: 'POST', body: JSON.stringify(GEMINI_BODY) }),
+    )
+    outcomes.push(await response.text())
+  }
+  const controller = new AbortController()
+  const cancelled = withGeminiTokenCount((async () => {
+    controller.abort()
+    throw new Error('aborted mid-count')
+  }) as unknown as typeof fetch)
+  let stopped = false
+  try {
+    await withContextWindow(1000, () =>
+      cancelled(GEMINI_URL, { method: 'POST', body: JSON.stringify(GEMINI_BODY), signal: controller.signal }),
+    )
+  } catch {
+    stopped = controller.signal.aborted
+  }
+  assert({
+    given:
+      'a counter that answers with an error, with an unreadable count, or not at all, and a count cancelled midway',
+    should: 'send the generation each time the counter merely failed, and stop when the person cancelled',
+    actual: { outcomes, stopped },
+    expected: { outcomes: ['generated', 'generated', 'generated'], stopped: true },
+  })
+})
+
+test('only providers with a counter of their own skip the conservative estimate', () => {
+  assert({
+    given: 'the three cloud providers Sky counts with, and hosts it cannot count with',
+    should: 'say yes for Claude, OpenAI Responses and Gemini, and no for the rest',
+    actual: [
+      'anthropic.messages',
+      'openai.responses',
+      'gemini',
+      'openai.chat',
+      'cerebras.chat',
+      'lmstudio.chat',
+      'ollama',
+    ].map(countsOwnRequests),
+    expected: [true, true, true, false, false, false, false],
   })
 })

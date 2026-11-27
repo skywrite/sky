@@ -1,6 +1,6 @@
 ---
 created: 2026-09-01
-updated: 2026-11-23
+updated: 2026-11-24
 ---
 
 # Chat model — the pieces under every chat host
@@ -170,10 +170,18 @@ at the same SDK serialization boundary. Native image and PDF encodings are
 transport bytes, not prose tokens: estimating the base64 string can reject
 a small image edit as a million-token conversation. The count receives the
 original native inputs and tool schemas with the model's options; generation
-keeps the original payload. Compatible local providers retain a separate
-identity and use a conservative estimate. If either counting endpoint is
-unavailable or cannot count a supported generation input, a context-length
-rejection still triggers the same bounded retry.
+keeps the original payload. Gemini uses Google's
+[token counter](https://ai.google.dev/api/tokens) the same way, with the whole
+request under `generateContentRequest`: `contents` alone would leave out the
+system instruction and the tools. Compatible local providers retain a separate
+identity and use a conservative estimate of two characters a token. That is
+about double the real count, so a chat on such a host is compacted at about
+half its window. A cloud provider with a counting endpoint needs a wrapper of
+its own and its name in `countsOwnRequests` (`ai/inputTokenLimit.ts`), or it is
+measured by that estimate
+([2026-11-24](2026-11-24-gemini-was-measured-by-estimate.md)). If a counting
+endpoint is unavailable or cannot count a supported generation input, a
+context-length rejection still triggers the same bounded retry.
 
 A request that does not fit is compacted: it frees a quarter of what the request may hold, in one step, so the next
 compaction is many replies away.
@@ -287,6 +295,8 @@ item, as `slack:unread` does per conversation. Read the
 [2026-09-23 note](2026-09-23-stop-reaches-the-command.md).
 
 ## Notes
+
+- [2026-11-24 — Gemini was measured by estimate](2026-11-24-gemini-was-measured-by-estimate.md): a provider without a counter of its own is measured at two characters a token, so Gemini chats were compacted at under half the model's window; Gemini now counts with Google's counter.
 
 - [2026-11-22 — a full chat is compacted once](2026-11-22-a-full-chat-is-compacted-once.md): a request that does not fit frees a quarter of its room in one step, older tool results first and the first reading last; what it clears stays cleared; the conversation shows a line where it happened.
 

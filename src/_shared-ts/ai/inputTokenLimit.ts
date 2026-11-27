@@ -35,6 +35,16 @@ export function inputTokenLimit(contextWindow: number, outputTokens = REPLY_TOKE
   return Math.max(0, contextWindow - outputTokens - Math.ceil(contextWindow * 0.01))
 }
 
+/**
+ * Whether a provider's requests are counted by the provider itself, in its fetch (the wrappers
+ * below). Every other host is measured by a conservative estimate of two characters a token,
+ * about double the real count, so a chat on it is treated as full at half its window. A cloud
+ * provider with a counting endpoint belongs here, with a wrapper of its own.
+ */
+export function countsOwnRequests(provider: string): boolean {
+  return provider.startsWith('anthropic') || provider === 'openai.responses' || provider === 'gemini'
+}
+
 const windows = new AsyncLocalStorage<number | undefined>()
 
 /** Scoped to one provider call, never the tool loop or other simultaneous chats. */
@@ -154,6 +164,62 @@ export function withAnthropicTokenCount(fetcher: typeof fetch): typeof fetch {
       init.signal?.throwIfAborted()
     }
     const limit = inputTokenLimit(window, typeof body.max_tokens === 'number' ? body.max_tokens : undefined)
+    if (tokens !== undefined && tokens > limit) throw new InputTokenLimitError(tokens, limit)
+    return fetcher(input, init)
+  }) as typeof fetch
+}
+
+/**
+ * Count the Google SDK's actual Gemini payload with Google's own counter: the system
+ * instruction, the tools, native files and the history, as the model will read them. The
+ * counter takes the whole request under `generateContentRequest` with the model's path;
+ * `contents` alone would leave the system instruction and the tools out.
+ */
+export function withGeminiTokenCount(fetcher: typeof fetch): typeof fetch {
+  return (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const window = windows.getStore()
+    const url = new URL(input instanceof Request ? input.url : String(input))
+    const call = /^(.*\/(models\/[^/:]+)):(?:streamGenerateContent|generateContent)$/.exec(url.pathname)
+    if (window === undefined || !call || typeof init?.body !== 'string') return fetcher(input, init)
+    init.signal?.throwIfAborted()
+    const body = JSON.parse(init.body) as Record<string, unknown>
+    const request = Object.fromEntries(
+      ['contents', 'systemInstruction', 'tools', 'toolConfig', 'cachedContent', 'generationConfig'].flatMap((key) =>
+        body[key] === undefined ? [] : [[key, body[key]]],
+      ),
+    )
+    const countUrl = new URL(url)
+    countUrl.pathname = `${call[1]}:countTokens`
+    countUrl.search = ''
+    let tokens: number | undefined
+    try {
+      const timeout = AbortSignal.timeout(10_000)
+      const response = await fetcher(countUrl, {
+        ...init,
+        body: JSON.stringify({ generateContentRequest: { model: call[2], ...request } }),
+        signal: init.signal ? AbortSignal.any([init.signal, timeout]) : timeout,
+      })
+      if (response.ok) {
+        const result = (await response.json()) as { totalTokens?: unknown }
+        if (
+          typeof result.totalTokens === 'number' &&
+          Number.isSafeInteger(result.totalTokens) &&
+          result.totalTokens >= 0
+        )
+          tokens = result.totalTokens
+      } else {
+        await response.body?.cancel()
+      }
+    } catch {
+      // Counting is an extra endpoint with its own availability. Its failure must not
+      // break an otherwise valid chat; the provider's own rejection remains the backstop.
+      init.signal?.throwIfAborted()
+    }
+    const generation = body.generationConfig as { maxOutputTokens?: unknown } | undefined
+    const limit = inputTokenLimit(
+      window,
+      typeof generation?.maxOutputTokens === 'number' ? generation.maxOutputTokens : undefined,
+    )
     if (tokens !== undefined && tokens > limit) throw new InputTokenLimitError(tokens, limit)
     return fetcher(input, init)
   }) as typeof fetch

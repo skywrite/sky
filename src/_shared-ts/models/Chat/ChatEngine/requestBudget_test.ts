@@ -827,3 +827,42 @@ test('a first reading cut to nothing leaves no empty block in the request', asyn
     expected: ['The sources agree.', [['Standing rule.', notebook.trim()], ['Standing rule.']]],
   })
 })
+
+test('a provider that counts its own requests is not treated as full by the two-characters estimate', async () => {
+  const run = async (provider: string) => {
+    const accepted: string[] = []
+    const events: ChatEngineEvent[] = []
+    const engine = new ChatEngine({
+      model: {
+        model: new MockLanguageModelV3({
+          provider,
+          doStream: async ({ prompt }) => {
+            accepted.push(JSON.stringify(prompt))
+            return reply()
+          },
+        }),
+        contextWindow: 200_000,
+        maxOutputTokens: 200,
+      },
+      approvalHandler: async () => ({ approved: false, reason: '' }),
+      onEvent: (event) => events.push(event),
+    })
+    // Sixty results of 6,000 characters: about 90,000 tokens as a model reads them, 180,000 by the estimate.
+    engine.seedConversation([], [{ role: 'user', content: 'Look up the Atlas records.' }, ...lookups(60)])
+    engine.appendUserMessage('What did they say?')
+    await engine.runTurn({ instructions: ['Standing rule.'], tools: {}, toolApproval: {} })
+    const [request] = accepted as [string]
+    return {
+      compacted: events.some((event) => event.type === 'context-adjusted' && !!event.adjustment.compacted),
+      resultsWhole: Array.from({ length: 60 }, (_, i) =>
+        request.includes(JSON.stringify(lookup(i)).slice(1, -1)),
+      ).filter(Boolean).length,
+    }
+  }
+  assert({
+    given: 'the same chat, half the size of its model’s window, on Gemini and on a host with no counter',
+    should: 'send it whole on Gemini, whose own counter decides, and compact it on the host measured by estimate',
+    actual: [await run('gemini'), (await run('cerebras.chat')).compacted],
+    expected: [{ compacted: false, resultsWhole: 60 }, true],
+  })
+})
